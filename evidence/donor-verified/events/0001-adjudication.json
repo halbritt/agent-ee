@@ -1,0 +1,278 @@
+{
+  "at": "2026-10-16T22:27:09.136826+00:00",
+  "decisions": {
+    "candidate_id": "2767e5a30de2c3bcdee814eda2dbc63cc460f744b8029c74079b8feea3e0ae9b",
+    "decisions": [
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "line 1: 'Found 353 violations'",
+            "path": "work/erc/console.log"
+          },
+          {
+            "locator": "sheets[path='/'].violations: power_pin_not_driven uuids ad746bdd/acdd6b6d/3d2dd476, pin_not_connected uuid a25f94e0, pin_to_pin uuids 2f453565/b5fc1cf2",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "exit_code 0, argv kicad-cli sch erc --severity-all",
+            "path": "work/erc/execution.json"
+          }
+        ],
+        "finding_id": "check/erc",
+        "reason": "Executable ERC check ran to completion (exit 0) and reports 353 violations including 5 error-severity items confirmed in the report body: power_pin_not_driven on #PWR01 GND (36.83,78.74), A1 pin 8 VMOT (48.26,219.71), J2 pin 90 12V_IGN (293.37,173.99); pin_not_connected on A1 pin 2 ~FLT (38.1,224.79); pin_to_pin on J2 pins 40/41 (both Power output, 5V_SENSOR_1). A failing native check criterion with tool-confirmed error entries is an established defect and cannot be dismissed; canonical record for the ERC error set."
+      },
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "'Found 142 violations / Found 0 unconnected items / Found 114 schematic parity issues'",
+            "path": "work/drc/console.log"
+          },
+          {
+            "locator": "check summary by_type {padstack:5, annular_width:5, starved_thermal:3}, by_severity {error:13, warning:243}",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "exit_code 0, argv kicad-cli pcb drc --severity-all --schematic-parity",
+            "path": "work/drc/execution.json"
+          }
+        ],
+        "finding_id": "check/drc",
+        "reason": "Executable DRC check ran to completion (exit 0) and reports 142 violations with by_severity error=13, decomposed by the tool as padstack:5, annular_width:5, starved_thermal:3, plus 114 schematic parity issues. Error-severity DRC results are native evidence of a failing check criterion (fabrication-relevant annular/padstack geometry independent of zone-fill state), so the defect stands; canonical record for the board-level DRC error set. Individual error coordinates lie beyond the 100000-byte excerpt of drc.json but the tool summary and console confirm the counts."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/erc",
+        "evidence": [
+          {
+            "locator": "sheets[path='/'] error entries: power_pin_not_driven x3, pin_not_connected (A1 ~FLT), pin_to_pin (J2 40/41)",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "nets '/12V_KEY':[J1.45,J2.90]; '/12V_MR_FUSE' fed via F1.2; 'unconnected-(A1-~{FLT}-Pad2)':[A1.2]",
+            "path": "work/netlist/connectivity.json"
+          }
+        ],
+        "finding_id": "circuit/f1-erc-errors",
+        "reason": "Restates and triages the same 5 error-severity ERC violations already established by the accepted check/erc finding (same uuids, locations, and types). The circuit-level mechanism analysis (harness-fed rails lacking PWR_FLAG, open-drain ~FLT, paralleled module power-output pins) is sound and verified against connectivity.json, but the underlying defect is identical; defect-to-defect duplication preserves it under the accepted canonical check."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/drc",
+        "evidence": [
+          {
+            "locator": "by_type {padstack:5, annular_width:5, starved_thermal:3}; by_severity error=13",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "'Found 142 violations'",
+            "path": "work/drc/console.log"
+          }
+        ],
+        "finding_id": "circuit/f2-drc-errors",
+        "reason": "Identical content to the accepted check/drc defect: the same 13 error-severity violations (padstack 5, annular_width 5, starved_thermal 3) reported by the same tool run, with no additional independent evidence beyond the tool summary. Linked as duplicate so the defect remains attached to the accepted canonical check rather than double-counted."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "physical/PHY-002",
+        "evidence": [
+          {
+            "locator": "symbol Device:R uuid d69380f9-5487-4782-9ce9-0690df62e543: Value '120', (in_bom no), (dnp yes), instances R36/R37",
+            "path": "inputs/project/wbo-can-trans.kicad_sch"
+          },
+          {
+            "locator": "components R36/R37 dnp:true; nets '/CAN2+' and '/CAN2-' include R36.1/2 and R37.1/2",
+            "path": "work/netlist/connectivity.json"
+          }
+        ],
+        "finding_id": "circuit/f3-can2-termination-dnp",
+        "reason": "Same observation as physical/PHY-002: the single 120R terminator in wbo-can-trans.kicad_sch is (dnp yes)/(in_bom no), so both hierarchy instances R36/R37 are unpopulated and the internal CAN2 bus ships unterminated. PHY-002 carries the fuller evidence set (board placement of both terminators, README functional claim) and the higher severity, so it is the surviving canonical record; this concern-to-concern duplication loses no defect status."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "'/CRANK +':[J1.59,R25.2]; 'Net-(R25-Pad1)':[R25.1,R27.2]; 'Net-(U10-IN-)':[C23.1,R27.1,R29.2,U10.2]; '/CRANK -':[J1.55,R26.2]; 'Net-(R26-Pad1)':[R26.1,R28.2]; 'Net-(U10-IN+)':[C23.2,R28.1,R29.1,U10.1]",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "U10 pad 1 net 'Net-(U10-IN+)' (134.81,53.88), pad 2 net 'Net-(U10-IN-)' (134.31,53.88); R27/R28 pad nets consistent",
+            "path": "work/geometry/geometry.json"
+          }
+        ],
+        "finding_id": "circuit/f4-vr-input-polarity",
+        "reason": "The connectivity observation is verified: '/CRANK +' (J1.59) reaches U10 pin 2 (Net-(U10-IN-)) via R25/R27, and '/CRANK -' (J1.55) reaches U10 pin 1 (Net-(U10-IN+)) via R26/R28, so connector-positive lands on the inverting input. However, no declared criterion or documented FOME polarity convention is violated: VR zero-cross edge polarity is commonly an intentional design choice and is firmware-selectable, and the MAX9924 symbol comes from an unverifiable custom library. Supported minor concern with no established failure mechanism; preserved as noted for confirmation against firmware conventions."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "physical/PHY-004",
+        "evidence": [
+          {
+            "locator": "schematic_parity: 'Simon:Polygonus-With-USB-SWD doesn't match footprint given by symbol (fome_modules:polygonus)' for Footprint J2 uuid f447e585-df78-4239-b8cb-4653b3837bb1",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "J2 footprint 'fome_modules:polygonus'; J2 pins carry expected nets (e.g. /CAN2+ J2.73, +5V J2.81, +3.3V J2.82)",
+            "path": "work/netlist/connectivity.json"
+          }
+        ],
+        "finding_id": "circuit/f5-j2-footprint-substitution",
+        "reason": "Same parity observation as physical/PHY-004: footprint J2 on the board is Simon:Polygonus-With-USB-SWD while the symbol assigns fome_modules:polygonus (same drc.json parity entries, same uuid f447e585). PHY-004 is the surviving canonical record; concern-to-concern duplication is consistent since net-level parity holds (0 unconnected items) and no electrical defect is established."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "'/CAN+':[J1.47,J2.93]; '/CAN-':[J1.46,J2.94]; contrast '/CAN2+'/'/CAN2-' containing D10/D11, C29/C30/C33/C34, R36/R37",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "Features/Connectivity: 'Dual CAN'; declared_limitations: modular design, transients/EMC out of scope",
+            "path": "inputs/project/README.md"
+          }
+        ],
+        "finding_id": "circuit/f6-can1-no-protection",
+        "reason": "Verified in connectivity: '/CAN+' [J1.47,J2.93] and '/CAN-' [J1.46,J2.94] contain only the harness and module connector pins, with no TVS, filter, or termination footprints, in contrast to CAN2 which carries D10/D11 (NUP2105L), 47p filters, and terminator footprints. No declared criterion requires base-board CAN1 protection, the CAN1 transceiver lives on the Polygonus module whose internals are explicitly out of this donor review's scope, and automotive transient qualification is a declared limitation. Supported info-level observation of the asymmetric protection scheme; canonical record for this topic."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/drc",
+        "evidence": [
+          {
+            "locator": "by_type {padstack:5, annular_width:5, starved_thermal:3}; by_severity error=13",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "'Found 142 violations'",
+            "path": "work/drc/console.log"
+          }
+        ],
+        "finding_id": "physical/PHY-001",
+        "reason": "Identical to the accepted check/drc defect: same 13 error-severity DRC violations (padstack x5, annular_width x5, starved_thermal x3) from the same tool run, known only through the tool's own summary because the individual entries fall beyond the supplied drc.json excerpt. Defect-to-defect duplication keeps it attached to the accepted canonical check finding."
+      },
+      {
+        "disposition": "deferred",
+        "evidence": [
+          {
+            "locator": "symbol uuid d69380f9-5487-4782-9ce9-0690df62e543: Value '120', (in_bom no), (dnp yes), instances R36 (/2889b04e...) and R37 (/10870bd0...)",
+            "path": "inputs/project/wbo-can-trans.kicad_sch"
+          },
+          {
+            "locator": "R36/R37 dnp:true; '/CAN2+':[C29.2,C33.2,D10.1,D11.1,J1.15,J2.73,R36.1,R37.1,U20.7,U21.7]",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "R36 dnp:true, pads on /CAN2+ and /CAN2- at (175.01,142.13); U21 at (75.48,140.27)",
+            "path": "work/geometry/geometry.json"
+          },
+          {
+            "locator": "'Dual wideband O2 sensor controllers ... connected internally to CAN bus #2'",
+            "path": "inputs/project/README.md"
+          }
+        ],
+        "finding_id": "physical/PHY-002",
+        "reason": "Major-severity concern that evidence confirms but does not resolve. The native sheet proves R36/R37 are DNP (symbol uuid d69380f9: value 120, in_bom no, dnp yes applied to both instances), connectivity and geometry confirm both terminators sit correctly at the two transceiver ends of /CAN2+-/CAN2-, and the README advertises internal wideband operation on CAN bus #2. Whether the all-DNP population is a deliberate builder option (the bus is also exposed on J1 pins 11/15, where internal termination would conflict with harness terminators) or an omission cannot be determined from the packet; no population/termination requirement is declared. Per adjudication rules a major concern cannot be merely noted, and inventing a termination requirement is not permitted, so it is deferred pending design-intent documentation or build instructions."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/erc",
+        "evidence": [
+          {
+            "locator": "root sheet '/': power_pin_not_driven x3, pin_to_pin (J2 pins 40/41), pin_not_connected (A1 pin 2 ~FLT)",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "'Found 353 violations'",
+            "path": "work/erc/console.log"
+          }
+        ],
+        "finding_id": "physical/PHY-003",
+        "reason": "Restates the same 5 error-severity ERC violations established by the accepted check/erc finding (same uuids ad746bdd/acdd6b6d/3d2dd476/a25f94e0/2f453565-b5fc1cf2, same locations and types). Defect-to-defect duplication preserves the defect under the accepted canonical check record."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "schematic_parity entries for Footprint J2 uuid f447e585-df78-4239-b8cb-4653b3837bb1: footprint name mismatch and 'Exclude from bill of materials' mismatch",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "'Found 0 unconnected items'",
+            "path": "work/drc/console.log"
+          },
+          {
+            "locator": "J2 pin nets populated across all functions (power, CAN, I/O)",
+            "path": "work/netlist/connectivity.json"
+          }
+        ],
+        "finding_id": "physical/PHY-004",
+        "reason": "Verified parity observation: the board carries Simon:Polygonus-With-USB-SWD for J2 while the schematic symbol assigns fome_modules:polygonus, plus a BOM-attribute mismatch (both visible in the drc.json parity section). No electrical defect is established: DRC reports 0 unconnected items and the J2 pads carry the expected nets throughout, indicating the variant footprint's pad numbering maps correctly; the substitution is plausibly an intentional USB/SWD variant. Supported minor configuration-management concern that violates no declared criterion; the mechanical compatibility caveat stands but cannot be evaluated with the Simon library absent. Canonical record for this topic."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "by_type lib_symbol_mismatch=89, lib_symbol_issues=14, footprint_link_issues=8; e.g. 'The current configuration does not include the footprint library Simon' for J1 uuid 6971898b",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "by_type lib_footprint_mismatch=106, lib_footprint_issues=9; e.g. 'The current configuration does not include the footprint library Simon' for J1 uuid 93ba26da",
+            "path": "work/drc/drc.json"
+          }
+        ],
+        "finding_id": "physical/PHY-005",
+        "reason": "Verified coverage limitation, not a board defect: ERC reports lib_symbol_mismatch=89, lib_symbol_issues=14, footprint_link_issues=8 and DRC reports lib_footprint_mismatch=106, lib_footprint_issues=9 because the Simon, hellen-one-common, fome_modules and related project libraries are absent from the sandbox, so cached symbols/footprints cannot be validated against sources. This weakens the effective breadth of the native rule coverage claimed in scope but violates no design criterion; the checks themselves executed. Supported minor concern, noted."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "by_type endpoint_off_grid=229; sampled uuids 15d9afbe, 34654827 (R25 pin 1), c2f74bd3 (R34 pin 1)",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "Net-(R25-Pad1), Net-(U10-IN-), Net-(U10-BIAS) etc. resolve with expected members",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "'Found 0 unconnected items'",
+            "path": "work/drc/console.log"
+          }
+        ],
+        "finding_id": "physical/PHY-006",
+        "reason": "Verified: ERC reports 229 endpoint_off_grid warnings with sampled entries confirmed in the report (e.g. uuid 15d9afbe at 286.385,107.315; R25 pin 1 at 107.315,80.01; R34 pin 1 at 165.735,75.565). No present-day connectivity fault exists: the netlist resolves all affected nets with expected members and DRC reports 0 unconnected items, so no criterion is currently violated. This is a supported latent-risk hygiene concern (fragility under future edits, concentrated in the VR conditioner analog front end), correctly preserved as a non-defect observation."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "sheet number 4 name '/VR Conditioner/' source 'VR Conditioner.kicad_sch'",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "sheet '/VR Conditioner/' uuid 76f66c7e-94ea-4f9a-aa2e-a01725934e38 hosting C23-C25, R25-R34, U10, JP1",
+            "path": "work/netlist/connectivity.json"
+          }
+        ],
+        "finding_id": "physical/PHY-007",
+        "reason": "Verified and explicitly declared: the packet's declared_limitations state the candidate adds VR Conditioner.kicad_sch as a byte copy of the lowercase original as a disposable alias, and the netlist export confirms the hierarchy resolves through it (sheet 4 source 'VR Conditioner.kicad_sch', schematic_files list). Two case-differing byte-identical files are a real fork/collision risk for future edits, but this is a declared workaround of the review scaffolding, not a defect in the design under review; all verified connectivity applies to the alias as supplied. Supported minor concern, noted."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "circuit/f6-can1-no-protection",
+        "evidence": [
+          {
+            "locator": "'/CAN+':[J1.47,J2.93]; '/CAN-':[J1.46,J2.94] vs '/CAN2+'/'/CAN2-' with D10/D11, C29/C30/C33/C34, R36/R37",
+            "path": "work/netlist/connectivity.json"
+          }
+        ],
+        "finding_id": "physical/PHY-008",
+        "reason": "Same observation as circuit/f6: CAN1 nets /CAN+ and /CAN- run connector-to-module with no on-board protection, filtering, or termination footprints, in contrast to CAN2. circuit/f6 is the surviving canonical noted record (it additionally cites the README's modular-architecture context); concern-to-concern duplication, no defect status lost."
+      }
+    ],
+    "run_id": "127a9e8e-5b06-4239-87ce-8ad95a4c01af",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

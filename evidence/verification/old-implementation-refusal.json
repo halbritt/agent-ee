@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "agent-ee",
+    "verify",
+    "evidence/rc-final/control"
+  ],
+  "exit_code": 2,
+  "stdout": "",
+  "stderr": "agent-ee: review implementation changed; rerun under the current rules\n",
+  "expected": "refuse interpretation evidence produced under changed implementation rules"
+}

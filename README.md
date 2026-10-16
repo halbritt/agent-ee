@@ -153,6 +153,8 @@ independent expected outcomes and failure cases in tests. Preserve native/source
 locators, simulator/model limitations and execution-vs-design status. Reviewer
 instructions, executable rules and limits are part of run identity; changing
 them invalidates acceptance under the old implementation.
+See [coverage and extension instructions](docs/coverage.md) for current check
+parameters, reviewer configuration, packet limits and unsupported coverage.
 
 ```sh
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
@@ -160,13 +162,14 @@ PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
 
 The [evaluation plan](docs/evaluation-plan.md) records the independent expected
 control and seeded responses before code. Recorded demonstrations, the donor
-baseline and implementation decisions are indexed under `evidence/` and `docs/`.
+baseline and implementation decisions are indexed in
+[recorded acceptance evidence](evidence/README.md) and [decisions](docs/decisions.md).
 This small exercise demonstrates observed behavior; it is not a general hardware
 correctness benchmark. Prototype and bench validation remain necessary.
 
 Recorded input trees are stored in compressed archives alongside readable reports
 and check/reviewer records. Restore a group in a fresh checkout with
-`python3 scripts/evidence_archive.py restore rc-final` (or `donor-final`).
+`python3 scripts/evidence_archive.py restore rc-verified` (or `donor-verified`).
 Restoration checks the archive checksum and refuses to overwrite changed files.
 The archive manifest pins each group's implementation commit and recorded
 outcomes; historical failure attempts remain incomplete. Use a matching source

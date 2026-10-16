@@ -1,0 +1,8 @@
+{
+  "archive": "rc-demonstration",
+  "restored_candidates_verified": [
+    "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+    "62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927"
+  ],
+  "outcome": "all captured file hashes reproduced"
+}

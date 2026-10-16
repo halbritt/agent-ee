@@ -1,0 +1,45 @@
+{
+  "kibot_version": {
+    "argv": [
+      "/home/halbritt/git/fome-mc/toolchain/.venv/bin/kibot",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "KiBot 1.9.1 - Copyright 2018-2026, Salvador E. Tropea/INTI/John Beard - License: AGPL v3\n",
+    "stderr": "",
+    "interpretation": "version/help probe only; not credited as a design check"
+  },
+  "kicad_happy_schematic_help": {
+    "argv": [
+      "/home/halbritt/git/fome-mc/toolchain/.venv/bin/python",
+      "-I",
+      "-B",
+      "/home/halbritt/git/fome-mc/toolchain/vendor/kicad-happy/skills/kicad/scripts/analyze_schematic.py",
+      "--help"
+    ],
+    "exit_code": 0,
+    "stdout": "usage: analyze_schematic.py [-h] [--output OUTPUT] [--compact] [--schema]\n                            [--config CONFIG] [--project-root PROJECT_ROOT]\n                            [--no-hierarchy] [--lifecycle]\n                            [--analysis-dir ANALYSIS_DIR] [--text]\n                            [--stage {schematic,layout,pre_fab,bring_up}]\n                            [--audience {designer,reviewer,manager}]\n                            [--only-deterministic]\n                            [schematic]\n\nKiCad Schematic Analyzer\n\npositional arguments:\n  schematic             Path to .kicad_sch, .kicad_pro, or project directory\n\noptions:\n  -h, --help            show this help message and exit\n  --output OUTPUT, -o OUTPUT\n                        Output JSON file (default: stdout)\n  --compact             Compact JSON output\n  --schema              Print JSON output schema and exit\n  --config CONFIG       Path to .kicad-happy.json project config file\n  --project-root PROJECT_ROOT\n                        Root .kicad_sch for hierarchy context (auto-discovered\n                        if omitted)\n  --no-hierarchy        Disable hierarchy auto-discovery (treat file as\n                        standalone root)\n  --lifecycle           Run lifecycle/obsolescence audit (requires network +\n                        API keys)\n  --analysis-dir ANALYSIS_DIR\n                        Write output to analysis cache directory (timestamped\n                        runs)\n  --text                Print human-readable text report to stdout\n  --stage {schematic,layout,pre_fab,bring_up}\n                        Filter findings by review stage\n  --audience {designer,reviewer,manager}\n                        Audience level for summaries and --text output\n  --only-deterministic  Accepted for consistency; analyzers never write llm_*\n                        fields. Honored by downstream consumers (Phase 4 spec\n                        \u00a73.4).\n",
+    "stderr": "",
+    "interpretation": "version/help probe only; not credited as a design check"
+  },
+  "pdf_text_version": {
+    "argv": [
+      "pdftotext",
+      "-v"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "pdftotext version 24.02.0\nCopyright 2005-2024 The Poppler Developers - http://poppler.freedesktop.org\nCopyright 1996-2011, 2022 Glyph & Cog, LLC\n",
+    "interpretation": "version/help probe only; not credited as a design check"
+  },
+  "pdf_render_version": {
+    "argv": [
+      "pdftoppm",
+      "-v"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "pdftoppm version 24.02.0\nCopyright 2005-2024 The Poppler Developers - http://poppler.freedesktop.org\nCopyright 1996-2011, 2022 Glyph & Cog, LLC\n",
+    "interpretation": "version/help probe only; not credited as a design check"
+  }
+}

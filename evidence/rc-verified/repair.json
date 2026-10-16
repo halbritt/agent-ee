@@ -1,0 +1,16 @@
+{
+  "authorization": "Owner task authorizes disposable fixture repairs",
+  "finding_id": "check/rc-step",
+  "saved_native_changes": [
+    {
+      "after_sha256": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+      "before_sha256": "ac819f42ead77072a9d070fabbad53640bf97ef0d6ce0331d3f6597921a27337",
+      "path": "/home/halbritt/git/agent-ee/evidence/rc-verified/disposable/rc_filter.kicad_sch"
+    },
+    {
+      "after_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "before_sha256": "69ab00b2c31dfa93c0dcb9371ff24111af233ef2ee233a2b7edd83dd48bc2c87",
+      "path": "/home/halbritt/git/agent-ee/evidence/rc-verified/disposable/rc_filter.kicad_pcb"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "candidate_id": "693f8163ce687e039a86a686decde90440b8c14b5ae3b38c294486b2f1e4fb44",
+  "details": {
+    "missing_sheet_files": [
+      "VR Conditioner.kicad_sch"
+    ]
+  },
+  "evidence": [],
+  "execution": "malformed",
+  "id": "erc",
+  "kind": "erc",
+  "limitations": [],
+  "outcome": "unknown",
+  "summary": "hierarchy references missing sheet files: ['VR Conditioner.kicad_sch']; coverage is incomplete"
+}

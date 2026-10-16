@@ -1,0 +1,92 @@
+[
+  {
+    "run": "evidence/rc-demonstration/seed",
+    "source_ref": "6efecc7",
+    "method": "SIGINT delivered to the owned Python orchestrator after completed real KiCad/ERC/DRC/geometry/ngspice checks",
+    "expected": "incomplete review with completed useful findings retained",
+    "state": "interrupted",
+    "outcome": "incomplete",
+    "checks": [
+      {
+        "id": "drc",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "erc",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "geometry",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "netlist",
+        "execution": "ok",
+        "outcome": "info"
+      },
+      {
+        "id": "rc-step",
+        "execution": "ok",
+        "outcome": "defect"
+      }
+    ],
+    "retained_findings": [
+      {
+        "id": "check/rc-step",
+        "assessment": "defect"
+      }
+    ]
+  },
+  {
+    "run": "evidence/rc-final/seed",
+    "source_ref": "2a0e7f0",
+    "method": "SIGINT delivered to the owned Python orchestrator after completed real KiCad/ERC/DRC/geometry/ngspice checks",
+    "expected": "incomplete review with completed useful findings retained",
+    "state": "interrupted",
+    "outcome": "incomplete",
+    "checks": [
+      {
+        "id": "drc",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "erc",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "geometry",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "netlist",
+        "execution": "ok",
+        "outcome": "info"
+      },
+      {
+        "id": "rc-step",
+        "execution": "ok",
+        "outcome": "defect"
+      }
+    ],
+    "retained_findings": [
+      {
+        "id": "check/rc-step",
+        "assessment": "defect"
+      },
+      {
+        "id": "circuit/CKT-1",
+        "assessment": "defect"
+      },
+      {
+        "id": "circuit/CKT-2",
+        "assessment": "concern"
+      }
+    ]
+  }
+]

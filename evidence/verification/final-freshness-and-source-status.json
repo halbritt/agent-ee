@@ -1,0 +1,32 @@
+{
+  "rc-verified/control": {
+    "exit_code": 0,
+    "stdout": "fresh criteria_satisfied: 7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283\n",
+    "stderr": ""
+  },
+  "rc-verified/seed": {
+    "exit_code": 0,
+    "stdout": "fresh defects_or_unresolved: 62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927\n",
+    "stderr": ""
+  },
+  "rc-verified/repair": {
+    "exit_code": 0,
+    "stdout": "fresh criteria_satisfied: 72d838a74f12bc3a5801c8329b33273edfd60194b5c827cc50dbe68fdaaa563f\n",
+    "stderr": ""
+  },
+  "donor-verified": {
+    "exit_code": 0,
+    "stdout": "fresh defects_or_unresolved: 2767e5a30de2c3bcdee814eda2dbc63cc460f744b8029c74079b8feea3e0ae9b\n",
+    "stderr": ""
+  },
+  "/home/halbritt/git/Polygonus-Universal-112": {
+    "git_status_exit": 0,
+    "git_status": "",
+    "stderr": ""
+  },
+  "/home/halbritt/git/kicad-libraries": {
+    "git_status_exit": 0,
+    "git_status": "",
+    "stderr": ""
+  }
+}

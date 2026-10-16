@@ -1,0 +1,124 @@
+{
+  "donor-baseline": {
+    "archive": "donor-baseline.tar.gz",
+    "bytes": 5743889,
+    "implementation_ref": "6efecc7",
+    "reviews": {
+      "result.json": {
+        "candidate_id": "f3717c91fdffe4ac7dfaf448870d40118f4e390fd2989e024e062347c682dcc8",
+        "outcome": "incomplete",
+        "run_id": "4e74d366-21ff-4e2c-9d7b-4f90cd022b51",
+        "state": "incomplete"
+      }
+    },
+    "sha256": "7de5d3b5eb08d6dc7083f17da9a3f1029bea088b1882d6424d1396b09dfec76f"
+  },
+  "donor-baseline-v2": {
+    "archive": "donor-baseline-v2.tar.gz",
+    "bytes": 5778655,
+    "implementation_ref": "6efecc7",
+    "reviews": {
+      "result.json": {
+        "candidate_id": "693f8163ce687e039a86a686decde90440b8c14b5ae3b38c294486b2f1e4fb44",
+        "outcome": "incomplete",
+        "run_id": "c16148a8-57ce-4062-aed0-6365d94bccdb",
+        "state": "interrupted"
+      }
+    },
+    "sha256": "50711dbb8091c4121fc22244fe48e1f0f7f07db8f473ca5826c660d38893e39c"
+  },
+  "donor-final": {
+    "archive": "donor-final.tar.gz",
+    "bytes": 5835906,
+    "implementation_ref": "2a0e7f0",
+    "reviews": {
+      "result.json": {
+        "candidate_id": "693f8163ce687e039a86a686decde90440b8c14b5ae3b38c294486b2f1e4fb44",
+        "outcome": "incomplete",
+        "run_id": "c6cb3775-cb6c-446f-acaa-f3eb7229b643",
+        "state": "complete"
+      }
+    },
+    "sha256": "d439621b33058a6df8429c3bba31e8003e255239d789c613cd73b4e0463e88e4"
+  },
+  "donor-verified": {
+    "archive": "donor-verified.tar.gz",
+    "bytes": 6139892,
+    "implementation_ref": "30b2256",
+    "reviews": {
+      "result.json": {
+        "candidate_id": "2767e5a30de2c3bcdee814eda2dbc63cc460f744b8029c74079b8feea3e0ae9b",
+        "outcome": "defects_or_unresolved",
+        "run_id": "127a9e8e-5b06-4239-87ce-8ad95a4c01af",
+        "state": "complete"
+      }
+    },
+    "sha256": "ab4a05d8b663b3617ccfc6fd7e9dacdcf0b6332530f4e80ed5b7cd7a61e76cf5"
+  },
+  "rc-demonstration": {
+    "archive": "rc-demonstration.tar.gz",
+    "bytes": 2348349,
+    "implementation_ref": "6efecc7",
+    "reviews": {
+      "control/result.json": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "outcome": "incomplete",
+        "run_id": "c2a8c4b2-b486-46d7-a4ff-fd3cc013debf",
+        "state": "incomplete"
+      },
+      "seed/result.json": {
+        "candidate_id": "62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927",
+        "outcome": "incomplete",
+        "run_id": "605423cc-8069-4518-8827-91afa4b945e1",
+        "state": "interrupted"
+      }
+    },
+    "sha256": "459745eab653c84158bdabe383205a457945775dc9f1eeb5c1d33cf2f373847b"
+  },
+  "rc-final": {
+    "archive": "rc-final.tar.gz",
+    "bytes": 2372388,
+    "implementation_ref": "2a0e7f0",
+    "reviews": {
+      "control/result.json": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "outcome": "defects_or_unresolved",
+        "run_id": "99bc3409-4df5-4dcf-acc4-e7670a404f4b",
+        "state": "complete"
+      },
+      "seed/result.json": {
+        "candidate_id": "62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927",
+        "outcome": "incomplete",
+        "run_id": "4c35aac2-1907-4a00-b689-ae18e9cf2fe6",
+        "state": "interrupted"
+      }
+    },
+    "sha256": "59f9f796c7930b753e57abe6efff88077aed2a61420ee648c41cd096d9b0fd5e"
+  },
+  "rc-verified": {
+    "archive": "rc-verified.tar.gz",
+    "bytes": 3610348,
+    "implementation_ref": "30b2256",
+    "reviews": {
+      "control/result.json": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "outcome": "criteria_satisfied",
+        "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+        "state": "complete"
+      },
+      "repair/result.json": {
+        "candidate_id": "72d838a74f12bc3a5801c8329b33273edfd60194b5c827cc50dbe68fdaaa563f",
+        "outcome": "criteria_satisfied",
+        "run_id": "5681696b-3617-4222-986f-3cb1f36e7dbb",
+        "state": "complete"
+      },
+      "seed/result.json": {
+        "candidate_id": "62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927",
+        "outcome": "defects_or_unresolved",
+        "run_id": "f532d848-7cf2-459a-bb11-b54997995f96",
+        "state": "complete"
+      }
+    },
+    "sha256": "9263b25c7b986104f66744b9fa02e41f72a171036e8efb2e3050c0baf29d2cb1"
+  }
+}

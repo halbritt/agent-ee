@@ -1,0 +1,4 @@
+# Retained evidence must preserve tool-produced bytes, including whitespace.
+evidence/** -text
+evidence/**/*.log -whitespace
+evidence/**/*.patch -whitespace

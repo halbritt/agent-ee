@@ -1,0 +1,52 @@
+{
+  "candidate_id": "693f8163ce687e039a86a686decde90440b8c14b5ae3b38c294486b2f1e4fb44",
+  "details": {
+    "board_sha256": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
+    "dnp_refs": [
+      "C1",
+      "J3",
+      "J5",
+      "R29",
+      "R3",
+      "R32",
+      "R33",
+      "R36",
+      "R37",
+      "R4"
+    ],
+    "nets": 199,
+    "pads": 719,
+    "pcbnew_version": "10.0.7",
+    "tool": {
+      "argv": [
+        "/usr/bin/python3",
+        "-B",
+        "-m",
+        "agent_ee.geometry_probe",
+        "/candidate/project/Polygonus-Universal-Base.kicad_pcb",
+        "-o",
+        "/work/geometry.json"
+      ],
+      "console_sha256": "c67eb88fd0ad1733ad443f25cc5238f6c41638bbc2067a8b353d11aca02faaa0",
+      "duration_s": 1.978,
+      "exit_code": 0
+    },
+    "track_segments": 2207,
+    "unconnected_items": 0,
+    "vias": 1224,
+    "zones": 18
+  },
+  "evidence": [
+    "work/geometry/execution.json",
+    "work/geometry/console.log",
+    "work/geometry/geometry.json"
+  ],
+  "execution": "ok",
+  "id": "geometry",
+  "kind": "geometry",
+  "limitations": [
+    "geometry read from the saved board file; zone fill state as saved"
+  ],
+  "outcome": "info",
+  "summary": "saved-board geometry extracted (no declared geometric requirement applied)"
+}

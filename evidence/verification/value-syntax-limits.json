@@ -1,0 +1,11 @@
+{
+  "method": "direct installed check-parser inspection",
+  "values": {
+    "10k": 10000.0,
+    "100n": 1.0000000000000001e-07,
+    "1Meg": 1000000.0,
+    "1M": 0.001,
+    "4k7": null
+  },
+  "interpretation": "The passive generator accepts SPICE scalar syntax; it is not a general KiCad display-value/unit normalizer."
+}

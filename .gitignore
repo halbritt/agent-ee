@@ -6,3 +6,6 @@ build/
 .pytest_cache/
 # Exact captured input trees are versioned in evidence/archives/*.tar.gz.
 evidence/**/inputs/
+# Generated scratch configuration and caches are retained in the same archives.
+evidence/**/home/
+evidence/**/kicad-config/

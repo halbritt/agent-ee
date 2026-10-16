@@ -1,0 +1,24 @@
+{
+  "packet_id": "pkt-b69d7c56c6d56ba2",
+  "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "packet_content_sha256": "b69d7c56c6d56ba2290a044e26b8054f73e86eeef67034bd27e8ee1e0542965e",
+  "corpus": "corpus-2026-07-12-a11702cc9217",
+  "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+  "gate": "clean checksum/source-fingerprint/committed retrieval state",
+  "authority": "owner authorizes implementation and disposable repairs only",
+  "material_evidence": [
+    "docs/evaluation-plan.md",
+    "docs/contracts.md",
+    "src/agent_ee/executor.py",
+    "evidence/verification/tests-final.log"
+  ],
+  "nonmaterial_omissions": "No general performance, business-domain modeling, platform-portability or physical qualification claim is made; those generic evidence obligations do not establish this narrower candidate-identity/failure-status implementation decision.",
+  "selected_concepts": [
+    "universal-repository-contract-precedence",
+    "universal-evidence-before-intervention",
+    "agent-conduct-authority-bounded-action",
+    "python-structured-cleanup",
+    "universal-measure-claimed-improvement"
+  ]
+}

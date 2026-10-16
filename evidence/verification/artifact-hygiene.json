@@ -1,0 +1,6 @@
+{
+  "files_considered": 14199,
+  "credential_named_files": [],
+  "credential_value_pattern_matches": [],
+  "limits": "Pattern/file-name check only; not proof of absence of every possible secret. Captured source inputs are engineering files; subscription credential contents are readonly mounts, not captured."
+}

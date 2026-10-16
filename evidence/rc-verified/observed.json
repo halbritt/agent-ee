@@ -1,0 +1,492 @@
+{
+  "control_concerns": [
+    {
+      "assessment": "concern",
+      "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+      "condition": "The geometry probe console log contains three repeated assertion messages: 'assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined', alongside the normal summary line, while execution.json records exit_code 0.",
+      "decision": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "lines 2-4: property.h(607) assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM()",
+            "path": "work/geometry/console.log"
+          },
+          {
+            "locator": "exit_code: 0",
+            "path": "work/geometry/execution.json"
+          },
+          {
+            "locator": "segment uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0 all (width 0.25)",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "tracks[]: five track entries width_mm 0.25; narrowest matches independent read",
+            "path": "work/geometry/geometry.json"
+          }
+        ],
+        "reason": "Supported info-level tool-health observation, not a defect. The console log genuinely contains three PROPERTY_ENUM assertion messages despite exit_code 0, but the probe's output was independently confirmed: all five segment blocks in the native board file carry (width 0.25), matching the probe's reported narrowest 0.25 mm and segment count, so the geometry pass against the declared 0.2 mm minimum is electrically and geometrically correct. No declared criterion is violated and no failure mechanism is established for the design itself.",
+        "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+        "seq": 1
+      },
+      "decision_evidence": [
+        {
+          "locator": "lines 2-4: property.h(607) assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM()",
+          "path": "work/geometry/console.log"
+        },
+        {
+          "locator": "exit_code: 0",
+          "path": "work/geometry/execution.json"
+        },
+        {
+          "locator": "segment uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0 all (width 0.25)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "tracks[]: five track entries width_mm 0.25; narrowest matches independent read",
+          "path": "work/geometry/geometry.json"
+        }
+      ],
+      "disposition": "noted",
+      "disposition_reason": "Supported info-level tool-health observation, not a defect. The console log genuinely contains three PROPERTY_ENUM assertion messages despite exit_code 0, but the probe's output was independently confirmed: all five segment blocks in the native board file carry (width 0.25), matching the probe's reported narrowest 0.25 mm and segment count, so the geometry pass against the declared 0.2 mm minimum is electrically and geometrically correct. No declared criterion is violated and no failure mechanism is established for the design itself.",
+      "events": [
+        {
+          "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+          "disposition": "noted",
+          "evidence": [
+            {
+              "locator": "lines 2-4: property.h(607) assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM()",
+              "path": "work/geometry/console.log"
+            },
+            {
+              "locator": "exit_code: 0",
+              "path": "work/geometry/execution.json"
+            },
+            {
+              "locator": "segment uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0 all (width 0.25)",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "tracks[]: five track entries width_mm 0.25; narrowest matches independent read",
+              "path": "work/geometry/geometry.json"
+            }
+          ],
+          "reason": "Supported info-level tool-health observation, not a defect. The console log genuinely contains three PROPERTY_ENUM assertion messages despite exit_code 0, but the probe's output was independently confirmed: all five segment blocks in the native board file carry (width 0.25), matching the probe's reported narrowest 0.25 mm and segment count, so the geometry pass against the declared 0.2 mm minimum is electrically and geometrically correct. No declared criterion is violated and no failure mechanism is established for the design itself.",
+          "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+          "seq": 1
+        }
+      ],
+      "evidence": [
+        {
+          "locator": "lines 2-4 (property.h(607) assert messages)",
+          "path": "work/geometry/console.log"
+        },
+        {
+          "locator": "exit_code: 0, stderr_sha256 ecfdabc9...",
+          "path": "work/geometry/execution.json"
+        },
+        {
+          "locator": "segment blocks: all five (segment ... (width 0.25)) entries, uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        }
+      ],
+      "id": "circuit/geom-probe-assert-noise",
+      "local_id": "geom-probe-assert-noise",
+      "location": "work/geometry/console.log",
+      "mechanism": "Internal library assertions during a measurement run indicate the tool exercised an unexpected code path; a successful exit is not by itself proof the reported measurements are trustworthy, so the probe output needed independent confirmation.",
+      "reason": "Supported info-level tool-health observation, not a defect. The console log genuinely contains three PROPERTY_ENUM assertion messages despite exit_code 0, but the probe's output was independently confirmed: all five segment blocks in the native board file carry (width 0.25), matching the probe's reported narrowest 0.25 mm and segment count, so the geometry pass against the declared 0.2 mm minimum is electrically and geometrically correct. No declared criterion is violated and no failure mechanism is established for the design itself.",
+      "reasoning": "I independently read every track segment in the native board file: all five are 0.25 mm wide, matching the probe's reported narrowest 0.25 mm and segment count of 5, so the geometry verdict stands despite the assertion noise. Logged as an informational concern about tool health only; it does not change the pass result.",
+      "role": "circuit",
+      "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+      "severity": "info",
+      "source": "review",
+      "status": "noted",
+      "title": "Geometry probe emitted wxWidgets assertion failures on console despite exit 0"
+    },
+    {
+      "assessment": "concern",
+      "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+      "condition": "There is no F.Cu copper between J1 pad 3 (GND, at 100,105.08) and C1 pad 2 (GND); the only ground path is C1.2 -> 2.05 mm track -> single via (0.6 mm pad / 0.3 mm drill) -> B.Cu GND zone -> thermal-relief spokes into J1.3. The zone fill is evaluated as saved and a refill pass is forbidden.",
+      "decision": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "via (at 113 100) (size 0.6) (drill 0.3) net GND; zone uuid 38a83012 layer B.Cu filled_polygon with thermal spokes around (100,105.08)",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "unconnected_items: []",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "unconnected_items: 0; zones[0] filled true net GND",
+            "path": "work/geometry/geometry.json"
+          }
+        ],
+        "reason": "Canonical ground-redundancy observation; supported and verified, but not a defect. The saved board shows GND connectivity is complete: F.Cu segment 7deb1fb0 joins C1.2 (110.95,100) to the via at (113,100), the via lands in solid B.Cu fill, and the zone's filled_polygon shows thermal spokes reaching J1 pad 3 at (100,105.08); DRC and the geometry probe both report zero unconnected items. No declared criterion constrains ground redundancy, via count, or annular ring, so the single-path topology violates nothing. Retained as a worthwhile info concern for anyone fabricating this fixture.",
+        "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+        "seq": 1
+      },
+      "decision_evidence": [
+        {
+          "locator": "via (at 113 100) (size 0.6) (drill 0.3) net GND; zone uuid 38a83012 layer B.Cu filled_polygon with thermal spokes around (100,105.08)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "unconnected_items: []",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "unconnected_items: 0; zones[0] filled true net GND",
+          "path": "work/geometry/geometry.json"
+        }
+      ],
+      "disposition": "noted",
+      "disposition_reason": "Canonical ground-redundancy observation; supported and verified, but not a defect. The saved board shows GND connectivity is complete: F.Cu segment 7deb1fb0 joins C1.2 (110.95,100) to the via at (113,100), the via lands in solid B.Cu fill, and the zone's filled_polygon shows thermal spokes reaching J1 pad 3 at (100,105.08); DRC and the geometry probe both report zero unconnected items. No declared criterion constrains ground redundancy, via count, or annular ring, so the single-path topology violates nothing. Retained as a worthwhile info concern for anyone fabricating this fixture.",
+      "duplicates": [
+        "physical/PHY-01"
+      ],
+      "events": [
+        {
+          "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+          "disposition": "noted",
+          "evidence": [
+            {
+              "locator": "via (at 113 100) (size 0.6) (drill 0.3) net GND; zone uuid 38a83012 layer B.Cu filled_polygon with thermal spokes around (100,105.08)",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "unconnected_items: []",
+              "path": "work/drc/drc.json"
+            },
+            {
+              "locator": "unconnected_items: 0; zones[0] filled true net GND",
+              "path": "work/geometry/geometry.json"
+            }
+          ],
+          "reason": "Canonical ground-redundancy observation; supported and verified, but not a defect. The saved board shows GND connectivity is complete: F.Cu segment 7deb1fb0 joins C1.2 (110.95,100) to the via at (113,100), the via lands in solid B.Cu fill, and the zone's filled_polygon shows thermal spokes reaching J1 pad 3 at (100,105.08); DRC and the geometry probe both report zero unconnected items. No declared criterion constrains ground redundancy, via count, or annular ring, so the single-path topology violates nothing. Retained as a worthwhile info concern for anyone fabricating this fixture.",
+          "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+          "seq": 1
+        }
+      ],
+      "evidence": [
+        {
+          "locator": "via (at 113 100) (size 0.6) (drill 0.3) net GND; zone net GND layer B.Cu with filled_polygon thermal spokes around (100,105.08), e.g. points (xy 99.517037 104.950591)...(xy 100.482962 104.95059)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "unconnected_items: [] (count 0)",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "unconnected_items: 0; zones[0] filled: true, net GND",
+          "path": "work/geometry/geometry.json"
+        }
+      ],
+      "id": "circuit/gnd-return-single-path",
+      "local_id": "gnd-return-single-path",
+      "location": "inputs/project/rc_filter.kicad_pcb (via b71a70d7 at 113,100; zone 38a83012 on B.Cu)",
+      "mechanism": "If the saved fill were stale relative to an edited outline or clearance, or the single via failed in fabrication, the GND net would open with no redundant path; connectivity evidence here is the saved filled_polygon plus DRC/geometry unconnected counts of zero.",
+      "reason": "Canonical ground-redundancy observation; supported and verified, but not a defect. The saved board shows GND connectivity is complete: F.Cu segment 7deb1fb0 joins C1.2 (110.95,100) to the via at (113,100), the via lands in solid B.Cu fill, and the zone's filled_polygon shows thermal spokes reaching J1 pad 3 at (100,105.08); DRC and the geometry probe both report zero unconnected items. No declared criterion constrains ground redundancy, via count, or annular ring, so the single-path topology violates nothing. Retained as a worthwhile info concern for anyone fabricating this fixture.",
+      "reasoning": "As saved, the ground net is demonstrably connected: the filled polygon shows thermal spokes reaching J1 pad 3, the via lands in an uncut region of the fill, and both DRC and the geometry probe report zero unconnected items. No declared requirement constrains ground redundancy or via count, and this is a disposable fixture, so this is informational rather than a defect; it is worth knowing that the entire GND return is a single via plus zone fill.",
+      "role": "circuit",
+      "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+      "severity": "info",
+      "source": "review",
+      "status": "noted",
+      "title": "Connector ground return depends entirely on saved zone fill and one 0.3 mm-drill via"
+    },
+    {
+      "assessment": "concern",
+      "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+      "condition": "GND exists on F.Cu only as the 2.05 mm track from C1 pad 2 to one 0.6 mm/0.3 mm via; all continuity to J1 pin 3 runs through the B.Cu zone and the 0.5 mm thermal-relief spokes at J1 pad 3. There is no redundant via or direct F.Cu GND route.",
+      "decision": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "disposition": "duplicate",
+        "duplicate_of": "circuit/gnd-return-single-path",
+        "evidence": [
+          {
+            "locator": "segment uuid 7deb1fb0 net GND; via uuid b71a70d7 size 0.6 drill 0.3; zone uuid 38a83012 thermal_bridge_width 0.5",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "tracks[] via entry width_mm 0.6 drill_mm 0.3; zones[0] net GND layers B.Cu",
+            "path": "work/geometry/geometry.json"
+          },
+          {
+            "locator": "unconnected_items: []",
+            "path": "work/drc/drc.json"
+          }
+        ],
+        "reason": "Same condition and mechanism as the surviving canonical finding circuit/gnd-return-single-path: the GND return between C1 and J1 depends on one 0.6/0.3 mm via plus B.Cu zone thermal spokes, with no redundant path. Both findings cite the same via (b71a70d7), zone (38a83012), GND segment (7deb1fb0) and the same zero-unconnected-items evidence; PHY-01 adds only the derived 0.15 mm annular-ring figure. Both are non-defect info concerns, so folding this into the noted canonical finding loses nothing and does not downgrade a defect.",
+        "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+        "seq": 1
+      },
+      "decision_evidence": [
+        {
+          "locator": "segment uuid 7deb1fb0 net GND; via uuid b71a70d7 size 0.6 drill 0.3; zone uuid 38a83012 thermal_bridge_width 0.5",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "tracks[] via entry width_mm 0.6 drill_mm 0.3; zones[0] net GND layers B.Cu",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "unconnected_items: []",
+          "path": "work/drc/drc.json"
+        }
+      ],
+      "disposition": "duplicate",
+      "disposition_reason": "Same condition and mechanism as the surviving canonical finding circuit/gnd-return-single-path: the GND return between C1 and J1 depends on one 0.6/0.3 mm via plus B.Cu zone thermal spokes, with no redundant path. Both findings cite the same via (b71a70d7), zone (38a83012), GND segment (7deb1fb0) and the same zero-unconnected-items evidence; PHY-01 adds only the derived 0.15 mm annular-ring figure. Both are non-defect info concerns, so folding this into the noted canonical finding loses nothing and does not downgrade a defect.",
+      "duplicate_of": "circuit/gnd-return-single-path",
+      "events": [
+        {
+          "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+          "disposition": "duplicate",
+          "duplicate_of": "circuit/gnd-return-single-path",
+          "evidence": [
+            {
+              "locator": "segment uuid 7deb1fb0 net GND; via uuid b71a70d7 size 0.6 drill 0.3; zone uuid 38a83012 thermal_bridge_width 0.5",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "tracks[] via entry width_mm 0.6 drill_mm 0.3; zones[0] net GND layers B.Cu",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "unconnected_items: []",
+              "path": "work/drc/drc.json"
+            }
+          ],
+          "reason": "Same condition and mechanism as the surviving canonical finding circuit/gnd-return-single-path: the GND return between C1 and J1 depends on one 0.6/0.3 mm via plus B.Cu zone thermal spokes, with no redundant path. Both findings cite the same via (b71a70d7), zone (38a83012), GND segment (7deb1fb0) and the same zero-unconnected-items evidence; PHY-01 adds only the derived 0.15 mm annular-ring figure. Both are non-defect info concerns, so folding this into the noted canonical finding loses nothing and does not downgrade a defect.",
+          "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+          "seq": 1
+        }
+      ],
+      "evidence": [
+        {
+          "locator": "segment uuid 7deb1fb0 (110.95,100)-(113,100) net GND; via uuid b71a70d7 size 0.6 drill 0.3; zone uuid 38a83012 thermal_gap 0.5 thermal_bridge_width 0.5",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "tracks[] via entry width_mm 0.6 drill_mm 0.3; nets GND count 2; zones[0] net GND layers B.Cu",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "unconnected_items: [] (connectivity as saved is complete)",
+          "path": "work/drc/drc.json"
+        }
+      ],
+      "id": "physical/PHY-01",
+      "local_id": "PHY-01",
+      "location": "inputs/project/rc_filter.kicad_pcb \u2014 via uuid b71a70d7-bbc1-43d1-ae55-5e4d992412a4 at (113,100); zone uuid 38a83012-bcf9-4bb9-b9f4-50d49cd91d90 (B.Cu, thermal_bridge_width 0.5); pad J1.3 uuid ddcb81c6-a965-456f-b8c7-71a870b91a1d",
+      "mechanism": "A single manufacturing or mechanical defect in the via barrel (0.15 mm annular ring) or a broken thermal spoke opens the only return path, leaving C1's ground floating relative to the connector and invalidating the filter output reference at J1. At the fixture's ~0.1 mA signal level there is no ampacity issue, but there is no redundancy.",
+      "reason": "Same condition and mechanism as the surviving canonical finding circuit/gnd-return-single-path: the GND return between C1 and J1 depends on one 0.6/0.3 mm via plus B.Cu zone thermal spokes, with no redundant path. Both findings cite the same via (b71a70d7), zone (38a83012), GND segment (7deb1fb0) and the same zero-unconnected-items evidence; PHY-01 adds only the derived 0.15 mm annular-ring figure. Both are non-defect info concerns, so folding this into the noted canonical finding loses nothing and does not downgrade a defect.",
+      "reasoning": "Verified connectivity is intact in the saved file (zone fill cutouts and spoke geometry match current pad positions, DRC reports zero unconnected items), so this is not a defect. It is a robustness observation appropriate to a disposable fixture: acceptable here, but worth knowing the GND net has exactly one inter-layer path and no declared fab criterion covers the 0.15 mm annular ring.",
+      "role": "physical",
+      "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+      "severity": "info",
+      "source": "review",
+      "status": "duplicate",
+      "title": "GND return between C1 and connector depends on a single 0.3 mm-drill via plus zone thermal spokes"
+    },
+    {
+      "assessment": "concern",
+      "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+      "condition": "The rc_transient criterion declares measurement vout_5ms at 5 ms with min and max both null; the check records measured 0.9932621 with within_limits absent, yet the overall rc-step outcome is 'pass \u2014 meets all declared measurement limits'.",
+      "decision": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "vout_5ms = 9.932621e-01",
+            "path": "work/rc-step/ngspice.log"
+          },
+          {
+            "locator": ".meas tran vout_5ms FIND v(OUT) AT=5m",
+            "path": "work/rc-step/deck.cir"
+          },
+          {
+            "locator": "requirement 1: limits apply only to V(/OUT) at t = 1 ms",
+            "path": "inputs/requirements/fixture-requirements.md"
+          }
+        ],
+        "reason": "Supported coverage observation, not a defect. The rc-step criterion genuinely declares vout_5ms with no min/max, so the 5 ms measurement is logged but enforces nothing; the check's 'meets all declared measurement limits' summary remains literally accurate because only vout_1ms carries limits, and the fixture requirements bound only the 1 ms point. The measured 0.9932621 V independently matches the analytic 1-exp(-5)=0.99326 V, so no electrical problem exists. Adding a limit would invent a requirement, which adjudication forbids; the finding is preserved as info so the pass is read as verifying one point.",
+        "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+        "seq": 1
+      },
+      "decision_evidence": [
+        {
+          "locator": "vout_5ms = 9.932621e-01",
+          "path": "work/rc-step/ngspice.log"
+        },
+        {
+          "locator": ".meas tran vout_5ms FIND v(OUT) AT=5m",
+          "path": "work/rc-step/deck.cir"
+        },
+        {
+          "locator": "requirement 1: limits apply only to V(/OUT) at t = 1 ms",
+          "path": "inputs/requirements/fixture-requirements.md"
+        }
+      ],
+      "disposition": "noted",
+      "disposition_reason": "Supported coverage observation, not a defect. The rc-step criterion genuinely declares vout_5ms with no min/max, so the 5 ms measurement is logged but enforces nothing; the check's 'meets all declared measurement limits' summary remains literally accurate because only vout_1ms carries limits, and the fixture requirements bound only the 1 ms point. The measured 0.9932621 V independently matches the analytic 1-exp(-5)=0.99326 V, so no electrical problem exists. Adding a limit would invent a requirement, which adjudication forbids; the finding is preserved as info so the pass is read as verifying one point.",
+      "events": [
+        {
+          "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+          "disposition": "noted",
+          "evidence": [
+            {
+              "locator": "vout_5ms = 9.932621e-01",
+              "path": "work/rc-step/ngspice.log"
+            },
+            {
+              "locator": ".meas tran vout_5ms FIND v(OUT) AT=5m",
+              "path": "work/rc-step/deck.cir"
+            },
+            {
+              "locator": "requirement 1: limits apply only to V(/OUT) at t = 1 ms",
+              "path": "inputs/requirements/fixture-requirements.md"
+            }
+          ],
+          "reason": "Supported coverage observation, not a defect. The rc-step criterion genuinely declares vout_5ms with no min/max, so the 5 ms measurement is logged but enforces nothing; the check's 'meets all declared measurement limits' summary remains literally accurate because only vout_1ms carries limits, and the fixture requirements bound only the 1 ms point. The measured 0.9932621 V independently matches the analytic 1-exp(-5)=0.99326 V, so no electrical problem exists. Adding a limit would invent a requirement, which adjudication forbids; the finding is preserved as info so the pass is read as verifying one point.",
+          "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+          "seq": 1
+        }
+      ],
+      "evidence": [
+        {
+          "locator": "vout_5ms = 9.932621e-01 (no limit comparison)",
+          "path": "work/rc-step/ngspice.log"
+        },
+        {
+          "locator": ".meas tran vout_5ms FIND v(OUT) AT=5m",
+          "path": "work/rc-step/deck.cir"
+        },
+        {
+          "locator": "requirement 1 constrains only V(/OUT) at t=1 ms",
+          "path": "inputs/requirements/fixture-requirements.md"
+        }
+      ],
+      "id": "physical/PHY-02",
+      "local_id": "PHY-02",
+      "location": "packet criteria rc-step / work/rc-step results",
+      "mechanism": "An unconstrained measurement is logged but never compared against anything, so the settled-value behavior (expected ~0.9933 = 1-exp(-5)) is observed but not verified. Any settled value \u2014 including one revealing a wrong C or a loading error \u2014 would still yield 'pass' as long as the 1 ms point happened to land in band. This weakens the apparent verification coverage of the step response.",
+      "reason": "Supported coverage observation, not a defect. The rc-step criterion genuinely declares vout_5ms with no min/max, so the 5 ms measurement is logged but enforces nothing; the check's 'meets all declared measurement limits' summary remains literally accurate because only vout_1ms carries limits, and the fixture requirements bound only the 1 ms point. The measured 0.9932621 V independently matches the analytic 1-exp(-5)=0.99326 V, so no electrical problem exists. Adding a limit would invent a requirement, which adjudication forbids; the finding is preserved as info so the pass is read as verifying one point.",
+      "reasoning": "The measured 5 ms value does independently match my analytic expectation (1-exp(-5)=0.99326), so no electrical problem is indicated. But as a coverage critique: the declared requirements only bound the 1 ms point, and the extra measurement gives an illusion of broader checking while enforcing nothing. Flagged so the pass verdict is read as verifying exactly one point on the curve.",
+      "role": "physical",
+      "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+      "severity": "info",
+      "source": "review",
+      "status": "noted",
+      "title": "vout_5ms measurement has no limits and contributes nothing to the pass verdict"
+    },
+    {
+      "assessment": "concern",
+      "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+      "condition": "The declared 0.20 mm geometry requirement applies to track segments (all 5 are 0.25 mm, verified). The via (0.6 mm pad / 0.3 mm drill, 0.15 mm annular ring), the zone's 0.25 mm min_thickness, pad-to-track clearances and hole-to-edge distances are governed only by the board's default DRC rules; the .kicad_pcb setup section defines no explicit net classes or custom constraint rules.",
+      "decision": {
+        "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "narrowest_mm 0.25 across 5 segments; via width_mm 0.6 drill_mm 0.3; zones[0].min_thickness_mm 0.25",
+            "path": "work/geometry/geometry.json"
+          },
+          {
+            "locator": "(setup ...) block contains no net classes or custom design rules; via uuid b71a70d7",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "requirement 2: 'not an ampacity or manufacturing guarantee'",
+            "path": "inputs/requirements/fixture-requirements.md"
+          }
+        ],
+        "reason": "Supported scope observation, not a defect. The declared geometry criterion (min_track_width_mm 0.2) covers track segments only, and all five segments pass at 0.25 mm; the via (0.6 mm pad / 0.3 mm drill, 0.15 mm annular ring), zone min_thickness and clearances are governed only by KiCad default DRC rules since the board setup declares no net classes or custom rules. The requirements document itself scopes requirement 2 to track segments and explicitly disclaims manufacturing guarantees, so no declared criterion is violated; the finding correctly cautions that the all-green checks are not fabrication qualification.",
+        "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+        "seq": 1
+      },
+      "decision_evidence": [
+        {
+          "locator": "narrowest_mm 0.25 across 5 segments; via width_mm 0.6 drill_mm 0.3; zones[0].min_thickness_mm 0.25",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "(setup ...) block contains no net classes or custom design rules; via uuid b71a70d7",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "requirement 2: 'not an ampacity or manufacturing guarantee'",
+          "path": "inputs/requirements/fixture-requirements.md"
+        }
+      ],
+      "disposition": "noted",
+      "disposition_reason": "Supported scope observation, not a defect. The declared geometry criterion (min_track_width_mm 0.2) covers track segments only, and all five segments pass at 0.25 mm; the via (0.6 mm pad / 0.3 mm drill, 0.15 mm annular ring), zone min_thickness and clearances are governed only by KiCad default DRC rules since the board setup declares no net classes or custom rules. The requirements document itself scopes requirement 2 to track segments and explicitly disclaims manufacturing guarantees, so no declared criterion is violated; the finding correctly cautions that the all-green checks are not fabrication qualification.",
+      "events": [
+        {
+          "candidate_id": "7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283",
+          "disposition": "noted",
+          "evidence": [
+            {
+              "locator": "narrowest_mm 0.25 across 5 segments; via width_mm 0.6 drill_mm 0.3; zones[0].min_thickness_mm 0.25",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "(setup ...) block contains no net classes or custom design rules; via uuid b71a70d7",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "requirement 2: 'not an ampacity or manufacturing guarantee'",
+              "path": "inputs/requirements/fixture-requirements.md"
+            }
+          ],
+          "reason": "Supported scope observation, not a defect. The declared geometry criterion (min_track_width_mm 0.2) covers track segments only, and all five segments pass at 0.25 mm; the via (0.6 mm pad / 0.3 mm drill, 0.15 mm annular ring), zone min_thickness and clearances are governed only by KiCad default DRC rules since the board setup declares no net classes or custom rules. The requirements document itself scopes requirement 2 to track segments and explicitly disclaims manufacturing guarantees, so no declared criterion is violated; the finding correctly cautions that the all-green checks are not fabrication qualification.",
+          "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+          "seq": 1
+        }
+      ],
+      "evidence": [
+        {
+          "locator": "narrowest_mm 0.25 across 5 segments; via width_mm 0.6 drill_mm 0.3 not subject to the width criterion; zones[0].min_thickness_mm 0.25",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "(setup ...) block: no net classes or custom design rules declared; via uuid b71a70d7 (size 0.6 drill 0.3)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "requirement 2: track-segment width only, explicitly 'not an ampacity or manufacturing guarantee'",
+          "path": "inputs/requirements/fixture-requirements.md"
+        }
+      ],
+      "id": "physical/PHY-03",
+      "local_id": "PHY-03",
+      "location": "packet criteria geometry (min_track_width_mm 0.2); inputs/project/rc_filter.kicad_pcb setup section",
+      "mechanism": "DRC passing with default rules demonstrates internal consistency, not manufacturability at a specific fab. If this fixture is actually fabricated, features like the 0.15 mm annular ring may violate a vendor's capability even though every declared criterion and DRC check passes. A successful DRC exit is not proof the board can be built to spec by an arbitrary vendor.",
+      "reason": "Supported scope observation, not a defect. The declared geometry criterion (min_track_width_mm 0.2) covers track segments only, and all five segments pass at 0.25 mm; the via (0.6 mm pad / 0.3 mm drill, 0.15 mm annular ring), zone min_thickness and clearances are governed only by KiCad default DRC rules since the board setup declares no net classes or custom rules. The requirements document itself scopes requirement 2 to track segments and explicitly disclaims manufacturing guarantees, so no declared criterion is violated; the finding correctly cautions that the all-green checks are not fabrication qualification.",
+      "reasoning": "The requirements document itself scopes requirement 2 to track segments and disclaims manufacturing guarantees, so this is not a violation of anything declared \u2014 hence a concern, not a defect, at info severity. It is recorded so that the all-green check set is not mistaken for fabrication qualification of the via, zone and clearance geometry.",
+      "role": "physical",
+      "run_id": "a219d556-531c-4bf1-b25a-2f6350cbb45d",
+      "severity": "info",
+      "source": "review",
+      "status": "noted",
+      "title": "Geometry criterion covers track segments only; vias, zone copper and clearances are checked solely against KiCad defaults"
+    }
+  ],
+  "control_outcome": "criteria_satisfied",
+  "limitation": "One functional seed and one control are not a hardware correctness benchmark.",
+  "repair_closed": true,
+  "repair_outcome": "criteria_satisfied",
+  "seed_detected": true,
+  "seed_outcome": "defects_or_unresolved",
+  "seeded_defects": [
+    {
+      "detected": true,
+      "parameter": "saved R1 value 100k instead of 10k",
+      "supporting_findings": [
+        "check/rc-step"
+      ]
+    }
+  ]
+}

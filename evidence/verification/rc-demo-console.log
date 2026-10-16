@@ -1,0 +1,10 @@
+incomplete: /home/halbritt/git/agent-ee/evidence/rc-demonstration/control/REPORT.md
+incomplete: /home/halbritt/git/agent-ee/evidence/rc-demonstration/seed/REPORT.md
+Traceback (most recent call last):
+  File "/home/halbritt/git/agent-ee/scripts/demo.py", line 101, in <module>
+    main()
+  File "/home/halbritt/git/agent-ee/scripts/demo.py", line 97, in main
+    demonstrate(args.out, args.seconds_per_run)
+  File "/home/halbritt/git/agent-ee/scripts/demo.py", line 46, in demonstrate
+    raise ValueError("control/seed expectations not met; inspect preserved actual reviews")
+ValueError: control/seed expectations not met; inspect preserved actual reviews

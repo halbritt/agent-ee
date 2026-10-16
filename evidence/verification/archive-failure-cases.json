@@ -1,0 +1,5 @@
+{
+  "changed_existing_file_refused": true,
+  "operator_change_preserved": true,
+  "corrupt_archive_refused": true
+}
