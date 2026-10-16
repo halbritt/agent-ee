@@ -1,0 +1,753 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from agent_ee.candidate import capture
+from agent_ee.findings import (
+    adjudicate,
+    collect_findings,
+    validate_check_result,
+    validate_closure,
+    validate_review,
+)
+from agent_ee.storage import write_json
+
+
+class FindingsTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / "source"
+        self.source.mkdir()
+        (self.source / "rc.kicad_sch").write_text("(kicad_sch (symbol R1 100k))")
+        (self.source / "rc.kicad_pcb").write_text("(kicad_pcb (footprint R1 100k))")
+        (self.source / "requirements.md").write_text("0.62 <= Vout(1ms) <= 0.65 V")
+        self.scope_path = self.root / "scope.json"
+        self.scope_data = {
+            "schema": "agent-ee.scope/1",
+            "name": "rc-fixture",
+            "scope": "RC low-pass filter verification",
+            "schematic": "project/rc.kicad_sch",
+            "board": "project/rc.kicad_pcb",
+            "requirements": ["project/requirements.md"],
+            "checks": [
+                {"id": "erc", "kind": "erc"},
+                {"id": "drc", "kind": "drc"},
+                {"id": "rc_transient", "kind": "rc_transient"},
+            ],
+            "inputs": [{"path": "source", "at": "project"}],
+        }
+        self.scope_path.write_text(json.dumps(self.scope_data))
+        self.run_dir = self.root / "run1"
+        self.run_dir.mkdir()
+        self.manifest = capture(self.scope_path, self.run_dir)
+        self.candidate_id = self.manifest["candidate_id"]
+        self.run_id = "run-101"
+        self.packet_sha256 = "pkt-sha256-001"
+
+        self.erc_check = {
+            "id": "erc",
+            "kind": "erc",
+            "execution": "ok",
+            "outcome": "pass",
+            "summary": "ERC clean (1 sheet)",
+            "evidence": ["checks/erc.json"],
+            "details": {"violations": 0},
+            "limitations": [],
+        }
+        self.rc_check = {
+            "id": "rc_transient",
+            "kind": "rc_transient",
+            "execution": "ok",
+            "outcome": "defect",
+            "summary": "Vout(1ms) = 0.0952 V outside [0.62, 0.65] V",
+            "evidence": ["checks/rc_transient.json", "work/rc_transient/spice.log"],
+            "details": {"v_1ms": 0.095162582},
+            "limitations": ["Ideal unloaded RC simulation"],
+        }
+        write_json(self.run_dir / "checks" / "erc.json", self.erc_check)
+        write_json(self.run_dir / "checks" / "rc_transient.json", self.rc_check)
+        (self.run_dir / "work" / "rc_transient").mkdir(parents=True, exist_ok=True)
+        (self.run_dir / "work" / "rc_transient" / "spice.log").write_text("v_1ms = 9.516258e-02\n")
+        write_json(
+            self.run_dir / "result.json",
+            {"schema": "agent-ee.result/1", "candidate_id": self.candidate_id, "run_id": self.run_id},
+        )
+
+    def _finding(self, fid="r1-tau-too-slow", assessment="defect", evidence=None):
+        if evidence is None:
+            evidence = [
+                {"path": "inputs/project/rc.kicad_sch", "locator": "symbol R1 value 100k"},
+                {"path": "checks/rc_transient.json", "locator": "details.v_1ms=0.095162582"},
+                {"path": "work/rc_transient/spice.log", "locator": "line 1: v_1ms"},
+            ]
+        return {
+            "id": fid,
+            "title": "R1 is 100 kohm instead of 10 kohm, causing Vout(1ms) = 0.095 V",
+            "location": "R1 (project/rc.kicad_sch, project/rc.kicad_pcb)",
+            "condition": "1 V ideal step input on IN, unloaded OUT",
+            "mechanism": "tau = R1 * C1 = 100k * 100n = 10 ms; Vout(1ms) = 1 - exp(-0.1) = 0.0952 V < 0.62 V",
+            "severity": "blocking",
+            "assessment": assessment,
+            "evidence": evidence,
+            "reasoning": "Exported netlist and transient check confirm 10 ms time constant violates 1 ms step requirement.",
+        }
+
+    def _review(self, role="circuit", findings=None):
+        return {
+            "schema": "agent-ee.review/1",
+            "candidate_id": self.candidate_id,
+            "run_id": self.run_id,
+            "packet_sha256": self.packet_sha256,
+            "role": role,
+            "coverage": ["Inspected R1, C1 values and transient check output"],
+            "limitations": ["Temperature and tolerance not modeled"],
+            "findings": [self._finding()] if findings is None else findings,
+        }
+
+    def test_stale_or_malformed_review_and_packet_mismatch_rejected(self):
+        valid = validate_review(
+            self._review(),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        self.assertEqual(valid["role"], "circuit")
+        self.assertEqual(valid["findings"][0]["assessment"], "defect")
+
+        for label, mutator in (
+            ("stale_candidate", lambda r: r.__setitem__("candidate_id", "stale-candidate-id")),
+            ("stale_run", lambda r: r.__setitem__("run_id", "stale-run-id")),
+            ("stale_packet", lambda r: r.__setitem__("packet_sha256", "stale-packet-hash")),
+            ("bad_schema", lambda r: r.__setitem__("schema", "agent-ee.review/99")),
+            ("unsafe_role", lambda r: r.__setitem__("role", "../bad-role")),
+            ("reserved_role_check", lambda r: r.__setitem__("role", "check")),
+            ("reserved_role_adjudicator", lambda r: r.__setitem__("role", "adjudicator")),
+            ("extra_top_key", lambda r: r.__setitem__("unexpected", True)),
+            ("duplicate_finding_id", lambda r: r.__setitem__("findings", [self._finding("dup"), self._finding("dup")])),
+            ("invalid_severity", lambda r: r["findings"][0].__setitem__("severity", "critical")),
+            ("empty_mechanism", lambda r: r["findings"][0].__setitem__("mechanism", "   ")),
+        ):
+            bad = self._review()
+            mutator(bad)
+            with self.subTest(case=label), self.assertRaises(ValueError):
+                validate_review(bad, self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+
+        write_json(
+            self.run_dir / "packet.json",
+            {
+                "schema": "agent-ee.packet/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "packet_sha256": "different-packet-sha",
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "packet.json"):
+            validate_review(self._review(), self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+
+    def test_invalid_citation_paths_rejected(self):
+        (self.run_dir / "reviews").mkdir(exist_ok=True)
+        write_json(self.run_dir / "reviews" / "physical.json", {"role": "physical"})
+        symlink_path = self.run_dir / "checks" / "linked.json"
+        symlink_path.symlink_to(self.run_dir / "checks" / "erc.json")
+
+        for bad_path in (
+            "inputs/project/does_not_exist.kicad_sch",
+            "inputs/../scope.json",
+            "/etc/passwd",
+            "reviews/physical.json",
+            "result.json",
+            "work/console.log",
+            "checks/linked.json",
+        ):
+            rev = self._review(findings=[self._finding(evidence=[{"path": bad_path, "locator": "line 1"}])])
+            with self.subTest(path=bad_path), self.assertRaises(ValueError):
+                validate_review(rev, self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+
+        empty_loc = self._review(
+            findings=[self._finding(evidence=[{"path": "inputs/project/rc.kicad_sch", "locator": "  "}])]
+        )
+        with self.assertRaisesRegex(ValueError, "locator"):
+            validate_review(empty_loc, self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+
+    def test_unsupported_defect_downgraded_to_concern_and_cannot_be_accepted_without_evidence(self):
+        ungrounded = self._review(findings=[self._finding(fid="unbacked-claim", assessment="defect", evidence=[])])
+        validated = validate_review(
+            ungrounded, self.candidate_id, self.run_id, self.packet_sha256, self.run_dir
+        )
+        finding = validated["findings"][0]
+        self.assertEqual(finding["assessment"], "concern")
+        self.assertEqual(finding["downgraded_from"], "defect")
+        self.assertTrue(any("downgraded from defect to concern" in lim for lim in validated["limitations"]))
+
+        collected = collect_findings([validated], [])
+        self.assertEqual(len(collected), 1)
+        self.assertEqual(collected[0]["id"], "circuit/unbacked-claim")
+        self.assertEqual(collected[0]["assessment"], "concern")
+        self.assertEqual(collected[0]["status"], "unresolved")
+
+        with self.assertRaisesRegex(ValueError, "accepted disposition requires non-empty evidence"):
+            adjudicate(
+                collected,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/unbacked-claim",
+                            "disposition": "accepted",
+                            "reason": "Accepting without evidence should fail",
+                            "evidence": [],
+                        }
+                    ],
+                },
+                self.run_dir,
+            )
+
+        deferred = adjudicate(
+            collected,
+            {
+                "schema": "agent-ee.decisions/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "decisions": [
+                    {
+                        "finding_id": "circuit/unbacked-claim",
+                        "disposition": "deferred",
+                        "reason": "No thermal/tolerance model in scope; retaining as open concern.",
+                        "evidence": [],
+                    }
+                ],
+            },
+            self.run_dir,
+        )
+        self.assertEqual(deferred[0]["status"], "deferred")
+        self.assertEqual(deferred[0]["disposition"], "deferred")
+        self.assertEqual(deferred[0]["decision"]["reason"], deferred[0]["reason"])
+
+    def test_non_ok_check_execution_requires_unknown_outcome_and_never_becomes_defect(self):
+        for exec_status in ("failed", "unavailable", "timeout", "malformed", "not_run", "interrupted", "unsupported"):
+            for bad_outcome in ("pass", "defect", "info"):
+                bad_check = {
+                    "id": "broken_check",
+                    "kind": "erc",
+                    "execution": exec_status,
+                    "outcome": bad_outcome,
+                    "summary": "Non-ok execution must be unknown",
+                    "evidence": [],
+                }
+                with self.subTest(execution=exec_status, outcome=bad_outcome), self.assertRaisesRegex(
+                    ValueError, "dishonest status"
+                ):
+                    validate_check_result(bad_check)
+                with self.subTest(collect_execution=exec_status, outcome=bad_outcome), self.assertRaisesRegex(
+                    ValueError, "dishonest status"
+                ):
+                    collect_findings([], [bad_check])
+
+        honest_failed_check = {
+            "id": "broken_check",
+            "kind": "erc",
+            "execution": "failed",
+            "outcome": "unknown",
+            "summary": "Tool crashed; coverage is unknown, not a pass or established defect",
+            "evidence": [],
+        }
+        self.assertEqual(collect_findings([], [honest_failed_check]), [])
+
+    def test_supported_singleton_survives_clean_other_reviews_and_check_defects_cannot_be_dismissed(self):
+        pre_review_findings = collect_findings([], [self.erc_check, self.rc_check])
+        self.assertEqual([f["id"] for f in pre_review_findings], ["check/rc_transient"])
+        self.assertEqual(pre_review_findings[0]["status"], "unresolved")
+
+        circuit_review = validate_review(
+            self._review(role="circuit"),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        physical_clean = validate_review(
+            self._review(role="physical", findings=[]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        layout_clean = validate_review(
+            self._review(role="layout", findings=[]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+
+        all_findings = collect_findings(
+            [circuit_review, physical_clean, layout_clean],
+            [self.erc_check, self.rc_check],
+        )
+        self.assertEqual(
+            [f["id"] for f in all_findings],
+            ["check/rc_transient", "circuit/r1-tau-too-slow"],
+        )
+
+        # Authoritative check defect cannot be dismissed or deferred by adjudicator.
+        for bad_disp in ("dismissed", "deferred"):
+            with self.subTest(bad_check_disp=bad_disp), self.assertRaisesRegex(
+                ValueError, "authoritative check defect"
+            ):
+                adjudicate(
+                    all_findings,
+                    {
+                        "schema": "agent-ee.decisions/1",
+                        "candidate_id": self.candidate_id,
+                        "run_id": self.run_id,
+                        "decisions": [
+                            {
+                                "finding_id": "check/rc_transient",
+                                "disposition": bad_disp,
+                                "reason": "Trying to waive native/simulation check defect",
+                                "evidence": [{"path": "checks/rc_transient.json", "locator": "summary"}],
+                            }
+                        ],
+                    },
+                    self.run_dir,
+                )
+
+        adjudicated = adjudicate(
+            all_findings,
+            {
+                "schema": "agent-ee.decisions/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "decisions": [
+                    {
+                        "finding_id": "circuit/r1-tau-too-slow",
+                        "disposition": "accepted",
+                        "reason": "Confirmed R1=100k in schematic and spice Vout(1ms)=0.0952V < 0.62V.",
+                        "evidence": [
+                            {"path": "inputs/project/rc.kicad_sch", "locator": "R1 100k"},
+                            {"path": "checks/rc_transient.json", "locator": "details.v_1ms"},
+                        ],
+                    },
+                    {
+                        "finding_id": "check/rc_transient",
+                        "disposition": "duplicate",
+                        "duplicate_of": "circuit/r1-tau-too-slow",
+                        "reason": "Same root cause (R1=100k causing tau=10ms).",
+                        "evidence": [{"path": "checks/rc_transient.json", "locator": "summary"}],
+                    },
+                ],
+            },
+            self.run_dir,
+        )
+        by_id = {f["id"]: f for f in adjudicated}
+        self.assertEqual(by_id["circuit/r1-tau-too-slow"]["status"], "accepted")
+        self.assertEqual(by_id["circuit/r1-tau-too-slow"]["duplicates"], ["check/rc_transient"])
+        self.assertEqual(by_id["check/rc_transient"]["status"], "duplicate")
+        self.assertEqual(by_id["check/rc_transient"]["duplicate_of"], "circuit/r1-tau-too-slow")
+
+    def test_dismissed_finding_requires_reason_and_counter_evidence_for_supported_defect(self):
+        rev = validate_review(
+            self._review(
+                role="circuit",
+                findings=[
+                    self._finding(fid="supported-claim"),
+                    self._finding(fid="unsupported-concern", assessment="concern", evidence=[]),
+                ],
+            ),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        findings = collect_findings([rev], [])
+
+        with self.assertRaisesRegex(ValueError, "reason"):
+            adjudicate(
+                findings,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/unsupported-concern",
+                            "disposition": "dismissed",
+                            "reason": "   ",
+                            "evidence": [],
+                        }
+                    ],
+                },
+                self.run_dir,
+            )
+
+        with self.assertRaisesRegex(ValueError, "counter-evidence"):
+            adjudicate(
+                findings,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/supported-claim",
+                            "disposition": "dismissed",
+                            "reason": "Claiming dismissal without citing evidence",
+                            "evidence": [],
+                        }
+                    ],
+                },
+                self.run_dir,
+            )
+
+        decided = adjudicate(
+            findings,
+            {
+                "schema": "agent-ee.decisions/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "decisions": [
+                    {
+                        "finding_id": "circuit/supported-claim",
+                        "disposition": "dismissed",
+                        "reason": "ERC check confirms net connectivity is valid.",
+                        "evidence": [{"path": "checks/erc.json", "locator": "details.violations=0"}],
+                    },
+                    {
+                        "finding_id": "circuit/unsupported-concern",
+                        "disposition": "dismissed",
+                        "reason": "Speculative concern outside declared unloaded step scope.",
+                        "evidence": [{"path": "inputs/project/requirements.md", "locator": "line 1"}],
+                    },
+                ],
+            },
+            self.run_dir,
+        )
+        for item in decided:
+            self.assertEqual(item["status"], "dismissed")
+            self.assertEqual(item["disposition"], "dismissed")
+            self.assertTrue(item["reason"])
+            self.assertEqual(item["decision"]["reason"], item["reason"])
+        self.assertEqual(len(decided[0]["evidence"]), 3)
+        self.assertEqual(len(decided[0]["decision_evidence"]), 1)
+
+    def test_duplicate_validation_rejects_self_unknown_cycle_and_hiding_behind_dismissed(self):
+        r1 = validate_review(
+            self._review(role="circuit", findings=[self._finding("f1"), self._finding("f2")]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        r2 = validate_review(
+            self._review(role="physical", findings=[self._finding("f3")]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        findings = collect_findings([r1, r2], [])
+        ev = [{"path": "checks/rc_transient.json", "locator": "summary"}]
+
+        for case, dec_list in (
+            (
+                "self_duplicate",
+                [{"finding_id": "circuit/f1", "disposition": "duplicate", "duplicate_of": "circuit/f1", "reason": "self", "evidence": ev}],
+            ),
+            (
+                "unknown_target",
+                [{"finding_id": "circuit/f1", "disposition": "duplicate", "duplicate_of": "circuit/nope", "reason": "missing", "evidence": ev}],
+            ),
+            (
+                "two_node_cycle",
+                [
+                    {"finding_id": "circuit/f1", "disposition": "duplicate", "duplicate_of": "circuit/f2", "reason": "a->b", "evidence": ev},
+                    {"finding_id": "circuit/f2", "disposition": "duplicate", "duplicate_of": "circuit/f1", "reason": "b->a", "evidence": ev},
+                ],
+            ),
+            (
+                "three_node_cycle",
+                [
+                    {"finding_id": "circuit/f1", "disposition": "duplicate", "duplicate_of": "circuit/f2", "reason": "1->2", "evidence": ev},
+                    {"finding_id": "circuit/f2", "disposition": "duplicate", "duplicate_of": "physical/f3", "reason": "2->3", "evidence": ev},
+                    {"finding_id": "physical/f3", "disposition": "duplicate", "duplicate_of": "circuit/f1", "reason": "3->1", "evidence": ev},
+                ],
+            ),
+            (
+                "hide_behind_dismissed",
+                [
+                    {"finding_id": "circuit/f1", "disposition": "dismissed", "reason": "dismissed target", "evidence": ev},
+                    {"finding_id": "circuit/f2", "disposition": "duplicate", "duplicate_of": "circuit/f1", "reason": "hiding", "evidence": ev},
+                ],
+            ),
+        ):
+            with self.subTest(case=case), self.assertRaises(ValueError):
+                adjudicate(
+                    findings,
+                    {
+                        "schema": "agent-ee.decisions/1",
+                        "candidate_id": self.candidate_id,
+                        "run_id": self.run_id,
+                        "decisions": dec_list,
+                    },
+                    self.run_dir,
+                )
+
+    def test_closure_unified_between_adjudicate_and_validate_closure(self):
+        rev = validate_review(
+            self._review(role="circuit"),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        findings = collect_findings([rev], [self.erc_check, self.rc_check])
+        accepted = adjudicate(
+            findings,
+            {
+                "schema": "agent-ee.decisions/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "decisions": [
+                    {
+                        "finding_id": "circuit/r1-tau-too-slow",
+                        "disposition": "accepted",
+                        "reason": "R1=100k gives Vout(1ms)=0.0952V, violating [0.62, 0.65]V.",
+                        "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms"}],
+                    },
+                    {
+                        "finding_id": "check/rc_transient",
+                        "disposition": "duplicate",
+                        "duplicate_of": "circuit/r1-tau-too-slow",
+                        "reason": "Same R1=100k fault.",
+                        "evidence": [{"path": "checks/rc_transient.json", "locator": "summary"}],
+                    },
+                ],
+            },
+            self.run_dir,
+        )
+        write_json(
+            self.run_dir / "result.json",
+            {
+                "schema": "agent-ee.result/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "state": "complete",
+                "outcome": "defects_or_unresolved",
+                "checks": [self.erc_check, self.rc_check],
+                "findings": accepted,
+            },
+        )
+
+        # Attempting to close in the SAME candidate must fail.
+        with self.assertRaisesRegex(ValueError, "same candidate"):
+            adjudicate(
+                accepted,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/r1-tau-too-slow",
+                            "disposition": "closed",
+                            "previous_run": str(self.run_dir),
+                            "reason": "Cannot close without a new repaired candidate.",
+                            "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms"}],
+                        }
+                    ],
+                },
+                self.run_dir,
+            )
+
+        # Repair source (100k -> 10k in both schematic and board) and capture fresh run2.
+        (self.source / "rc.kicad_sch").write_text("(kicad_sch (symbol R1 10k))")
+        (self.source / "rc.kicad_pcb").write_text("(kicad_pcb (footprint R1 10k))")
+        run2 = self.root / "run2"
+        run2.mkdir()
+        manifest2 = capture(self.scope_path, run2)
+        cand2 = manifest2["candidate_id"]
+        run2_id = "run-202"
+        self.assertNotEqual(self.candidate_id, cand2)
+
+        write_json(run2 / "checks" / "erc.json", self.erc_check)
+        failed_rc = {
+            **self.rc_check,
+            "execution": "failed",
+            "outcome": "unknown",
+            "evidence": ["checks/rc_transient.json"],
+        }
+        write_json(run2 / "checks" / "rc_transient.json", failed_rc)
+        write_json(
+            run2 / "result.json",
+            {
+                "schema": "agent-ee.result/1",
+                "candidate_id": cand2,
+                "run_id": run2_id,
+                "state": "complete",
+                "outcome": "incomplete",
+                "previous_run": str(self.run_dir),
+                "checks": [self.erc_check, failed_rc],
+                "findings": [],
+            },
+        )
+        with self.assertRaises(ValueError):
+            validate_closure(self.run_dir, run2, "circuit/r1-tau-too-slow", ["rc_transient"], "Repaired R1 to 10k")
+        with self.assertRaisesRegex(ValueError, "has not satisfied its declared criteria"):
+            adjudicate(
+                accepted,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": cand2,
+                    "run_id": run2_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/r1-tau-too-slow",
+                            "disposition": "closed",
+                            "previous_run": str(self.run_dir),
+                            "reason": "Repaired R1 to 10k",
+                            "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms"}],
+                        }
+                    ],
+                },
+                run2,
+            )
+
+        # Now write fresh passing rc_transient check in run2.
+        fresh_rc_pass = {
+            "id": "rc_transient",
+            "kind": "rc_transient",
+            "execution": "ok",
+            "outcome": "pass",
+            "summary": "Vout(1ms) = 0.6321 V within [0.62, 0.65] V",
+            "evidence": ["checks/rc_transient.json"],
+            "details": {"v_1ms": 0.6321205588},
+            "limitations": ["Ideal unloaded RC simulation"],
+        }
+        write_json(run2 / "checks" / "rc_transient.json", fresh_rc_pass)
+        write_json(
+            run2 / "result.json",
+            {
+                "schema": "agent-ee.result/1",
+                "candidate_id": cand2,
+                "run_id": run2_id,
+                "state": "complete",
+                "outcome": "criteria_satisfied",
+                "checks": [self.erc_check, fresh_rc_pass],
+                "findings": [],
+            },
+        )
+
+        # Without previous_run linkage (in decision or result.json), adjudicate refuses closed disposition.
+        with self.assertRaisesRegex(ValueError, "previous_run"):
+            adjudicate(
+                accepted,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": cand2,
+                    "run_id": run2_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/r1-tau-too-slow",
+                            "disposition": "closed",
+                            "reason": "Missing previous_run linkage",
+                            "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms=0.6321205588"}],
+                        }
+                    ],
+                },
+                run2,
+            )
+
+        correction = validate_closure(
+            self.run_dir,
+            run2,
+            "circuit/r1-tau-too-slow",
+            ["erc", "rc_transient"],
+            "Restored R1=10k in schematic and PCB; Vout(1ms)=0.6321V passes.",
+            evidence=[{"path": "checks/rc_transient.json", "locator": "details.v_1ms=0.6321205588"}],
+        )
+        self.assertEqual(correction["old_candidate_id"], self.candidate_id)
+        self.assertEqual(correction["new_candidate_id"], cand2)
+
+        closed_findings = adjudicate(
+            accepted,
+            {
+                "schema": "agent-ee.decisions/1",
+                "candidate_id": cand2,
+                "run_id": run2_id,
+                "decisions": [
+                    {
+                        "finding_id": "circuit/r1-tau-too-slow",
+                        "disposition": "closed",
+                        "previous_run": str(self.run_dir),
+                        "checks": ["erc", "rc_transient"],
+                        "reason": "Restored R1=10k in schematic and PCB; fresh rc_transient passes.",
+                        "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms=0.6321205588"}],
+                    }
+                ],
+            },
+            run2,
+        )
+        closed_target = next(f for f in closed_findings if f["id"] == "circuit/r1-tau-too-slow")
+        self.assertEqual(closed_target["status"], "closed")
+        self.assertEqual(len(closed_target["events"]), 2)
+        self.assertEqual(closed_target["events"][0]["disposition"], "accepted")
+        self.assertEqual(closed_target["events"][1]["disposition"], "closed")
+        self.assertEqual(closed_target["events"][1]["closed_in_candidate_id"], cand2)
+
+        # Changing requirements.md in run3 must refuse closure in BOTH validate_closure and adjudicate.
+        (self.source / "requirements.md").write_text("0.05 <= Vout(1ms) <= 0.95 V")
+        run3 = self.root / "run3"
+        run3.mkdir()
+        manifest3 = capture(self.scope_path, run3)
+        write_json(run3 / "checks" / "erc.json", self.erc_check)
+        write_json(run3 / "checks" / "rc_transient.json", fresh_rc_pass)
+        write_json(
+            run3 / "result.json",
+            {
+                "schema": "agent-ee.result/1",
+                "candidate_id": manifest3["candidate_id"],
+                "run_id": "run-303",
+                "state": "complete",
+                "outcome": "criteria_satisfied",
+                "previous_run": str(self.run_dir),
+                "checks": [self.erc_check, fresh_rc_pass],
+                "findings": [],
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "requirements changed"):
+            validate_closure(
+                self.run_dir,
+                run3,
+                "circuit/r1-tau-too-slow",
+                ["erc", "rc_transient"],
+                "Weakened requirement instead of fixing circuit",
+            )
+        with self.assertRaisesRegex(ValueError, "requirements changed"):
+            adjudicate(
+                accepted,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": manifest3["candidate_id"],
+                    "run_id": "run-303",
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/r1-tau-too-slow",
+                            "disposition": "closed",
+                            "previous_run": str(self.run_dir),
+                            "reason": "Weakened requirement instead of fixing circuit",
+                            "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms"}],
+                        }
+                    ],
+                },
+                run3,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

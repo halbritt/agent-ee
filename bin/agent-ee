@@ -1,0 +1,9 @@
+#!/usr/bin/python3
+"""Run the source checkout using the system Python that provides KiCad bindings."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from agent_ee.cli import main
+
+raise SystemExit(main())
