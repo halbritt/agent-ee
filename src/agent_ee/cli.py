@@ -119,7 +119,7 @@ def render(run, result):
         "## Checks", "", "| Check | Execution | Design result | Summary |",
         "| --- | --- | --- | --- |"]
     if result.get("previous_run"):
-        lines[8:8] = [f"Previous run and its retained findings: [{result['previous_run']}]({result['previous_run']}/REPORT.md).", ""]
+        lines[8:8] = [f"Previous run and its retained findings: [{result['previous_run']}](<{result['previous_run']}/REPORT.md>).", ""]
     for c in result.get("checks", []):
         lines.append(f"| {c['id']} | {c['execution']} | {c['outcome']} | {c['summary'].replace('|', '/')} |")
     lines += ["", "## Initial reviews", ""]
@@ -140,7 +140,7 @@ def render(run, result):
             lines += ["", "Disposition reason: " + reason]
         for e in f.get("evidence", []):
             if isinstance(e, dict):
-                lines.append(f"- [{e['path']}]({e['path']}): {e.get('locator', '')}")
+                lines.append(f"- [{e['path']}](<{e['path']}>): {e.get('locator', '')}")
         lines.append("")
     if not result.get("findings"):
         lines += ["No findings recorded. Acceptance still requires complete applicable execution and review.", ""]
@@ -152,7 +152,7 @@ def render(run, result):
     for path in sorted((run / "events").glob("*-correction.json")):
         event = read_json(path)
         lines += ["", f"Correction of `{event['finding_id']}` verified in candidate `{event['new_candidate_id']}`:",
-                  f"{event['reason']} Fresh evidence: [{event['new_run']}]({event['new_run']}/REPORT.md).",
+                  f"{event['reason']} Fresh evidence: [{event['new_run']}](<{event['new_run']}/REPORT.md>).",
                   "The original finding remains a defect in this captured candidate."]
     lines += ["", "This result applies only to the captured candidate and declared criteria. Prototype and bench",
               "validation, including operating conditions omitted from this review, remain necessary.", ""]

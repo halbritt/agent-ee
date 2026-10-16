@@ -27,7 +27,7 @@ DECISIONS_SCHEMA = {"type": "object", "additionalProperties": False,
         "decisions": {"type": "array", "items": {"type": "object", "additionalProperties": False,
             "required": ["finding_id", "disposition", "reason", "evidence"],
             "properties": {"finding_id": {"type": "string"},
-                "disposition": {"type": "string", "enum": ["accepted", "dismissed", "deferred", "duplicate"]},
+                "disposition": {"type": "string", "enum": ["accepted", "noted", "dismissed", "deferred", "duplicate"]},
                 "duplicate_of": {"type": "string"},
                 "reason": {"type": "string"}, "evidence": EVIDENCE_SCHEMA}}}}}
 
@@ -180,8 +180,14 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline):
     prompt = ("Adjudicate this engineering review through evidence, never majority vote. Preserve supported singleton "
         "findings even if other reviews are clean. Check every claim's condition/mechanism against original native input "
         "and check evidence in the packet. Existing path/citation is not proof of electrical truth. For every finding ID "
-        "return one explicit decision: accepted for established defect, dismissed only with evidence-based explanation, "
-        "deferred for uncertainty, or duplicate with duplicate_of naming its surviving accepted/unresolved canonical finding. "
+        "return one explicit decision: accepted only for an established defect (assessment=defect), "
+        "noted for a supported minor/info concern that violates no declared criterion, "
+        "dismissed with counter-evidence/reason when the alleged defect is unsupported, "
+        "deferred for material uncertainty, or duplicate with duplicate_of naming its surviving canonical finding. "
+        "A checkable observation is not by itself evidence of a defect: establish an applicable violated criterion "
+        "and failure mechanism or preserve its non-defect classification. Do not invent requirements or limits. Major/blocking concerns must remain "
+        "deferred unless evidence resolves them; they cannot be merely noted. A defect may never be duplicated "
+        "into a non-defect observation. "
         "Include duplicate_of only for duplicate decisions. Keep supported executable defects accepted or linked to an "
         "accepted canonical finding; do not dismiss a failing check criterion. Use exact finding IDs and cite exact paths/locators. Do not close repairs, silently "
         "change requirements/limits, or make missing execution pass. Return agent-ee.decisions/1 JSON with exact candidate_id "

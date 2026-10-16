@@ -189,7 +189,7 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(collected[0]["assessment"], "concern")
         self.assertEqual(collected[0]["status"], "unresolved")
 
-        with self.assertRaisesRegex(ValueError, "accepted disposition requires non-empty evidence"):
+        with self.assertRaisesRegex(ValueError, "requires assessment='defect'"):
             adjudicate(
                 collected,
                 {
@@ -200,8 +200,27 @@ class FindingsTests(unittest.TestCase):
                         {
                             "finding_id": "circuit/unbacked-claim",
                             "disposition": "accepted",
-                            "reason": "Accepting without evidence should fail",
-                            "evidence": [],
+                            "reason": "Concerns cannot be accepted as defects",
+                            "evidence": [{"path": "inputs/project/rc.kicad_sch", "locator": "R1"}],
+                        }
+                    ],
+                },
+                self.run_dir,
+            )
+
+        with self.assertRaisesRegex(ValueError, "unsupported or downgraded claim cannot be 'noted'"):
+            adjudicate(
+                collected,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/unbacked-claim",
+                            "disposition": "noted",
+                            "reason": "Unsupported downgraded claim cannot be noted",
+                            "evidence": [{"path": "inputs/project/rc.kicad_sch", "locator": "R1"}],
                         }
                     ],
                 },
@@ -228,6 +247,157 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(deferred[0]["status"], "deferred")
         self.assertEqual(deferred[0]["disposition"], "deferred")
         self.assertEqual(deferred[0]["decision"]["reason"], deferred[0]["reason"])
+
+    def test_noted_disposition_contract_and_restrictions(self):
+        minor_concern_1 = {**self._finding(fid="gnd-single-via", assessment="concern"), "severity": "minor"}
+        info_concern_dup = {**self._finding(fid="gnd-via-note", assessment="concern"), "severity": "info"}
+        major_concern = {**self._finding(fid="major-concern", assessment="concern"), "severity": "major"}
+        real_defect = self._finding(fid="real-defect", assessment="defect")
+
+        r_circuit = validate_review(
+            self._review(role="circuit", findings=[info_concern_dup, major_concern]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        r_physical = validate_review(
+            self._review(role="physical", findings=[minor_concern_1, real_defect]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        findings = collect_findings([r_circuit, r_physical], [self.erc_check, self.rc_check])
+        ev = [{"path": "inputs/project/rc.kicad_pcb", "locator": "via (113,100)"}]
+
+        # 1. Established defect, check failure, or major/blocking concern cannot be 'noted'.
+        for bad_fid, expected_msg in (
+            ("check/rc_transient", "established defect or check failure cannot be 'noted'"),
+            ("physical/real-defect", "established defect or check failure cannot be 'noted'"),
+            ("circuit/major-concern", "'major' concern cannot be 'noted'"),
+        ):
+            with self.subTest(bad_noted=bad_fid), self.assertRaisesRegex(ValueError, expected_msg):
+                adjudicate(
+                    findings,
+                    {
+                        "schema": "agent-ee.decisions/1",
+                        "candidate_id": self.candidate_id,
+                        "run_id": self.run_id,
+                        "decisions": [
+                            {
+                                "finding_id": bad_fid,
+                                "disposition": "noted",
+                                "reason": "Attempting to note defect or major concern",
+                                "evidence": ev,
+                            }
+                        ],
+                    },
+                    self.run_dir,
+                )
+
+        # 2. 'noted' requires non-empty evidence citations.
+        with self.assertRaisesRegex(ValueError, "noted disposition requires non-empty evidence"):
+            adjudicate(
+                findings,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "physical/gnd-single-via",
+                            "disposition": "noted",
+                            "reason": "Verified observation without citing evidence",
+                            "evidence": [],
+                        }
+                    ],
+                },
+                self.run_dir,
+            )
+
+        # 3. Duplicating a defect or major concern into a 'noted' target must fail.
+        for bad_dup_fid in ("physical/real-defect", "circuit/major-concern", "check/rc_transient"):
+            with self.subTest(bad_dup_into_noted=bad_dup_fid), self.assertRaisesRegex(ValueError, "duplicate"):
+                adjudicate(
+                    findings,
+                    {
+                        "schema": "agent-ee.decisions/1",
+                        "candidate_id": self.candidate_id,
+                        "run_id": self.run_id,
+                        "decisions": [
+                            {
+                                "finding_id": "physical/gnd-single-via",
+                                "disposition": "noted",
+                                "reason": "Verified non-defect observation",
+                                "evidence": ev,
+                            },
+                            {
+                                "finding_id": bad_dup_fid,
+                                "disposition": "duplicate",
+                                "duplicate_of": "physical/gnd-single-via",
+                                "reason": "Trying to hide defect or major concern behind noted observation",
+                                "evidence": ev,
+                            },
+                        ],
+                    },
+                    self.run_dir,
+                )
+
+        # 4. Valid adjudication: minor/info concern noted with reason+citations, other info concern duplicated to it,
+        #    major concern deferred, and real defect accepted.
+        adjudicated = adjudicate(
+            findings,
+            {
+                "schema": "agent-ee.decisions/1",
+                "candidate_id": self.candidate_id,
+                "run_id": self.run_id,
+                "decisions": [
+                    {
+                        "finding_id": "physical/gnd-single-via",
+                        "disposition": "noted",
+                        "reason": "Verified in native board: single via + B.Cu zone fill connects J1.3 as saved.",
+                        "evidence": ev,
+                    },
+                    {
+                        "finding_id": "circuit/gnd-via-note",
+                        "disposition": "duplicate",
+                        "duplicate_of": "physical/gnd-single-via",
+                        "reason": "Same single-via GND return observation.",
+                        "evidence": ev,
+                    },
+                    {
+                        "finding_id": "circuit/major-concern",
+                        "disposition": "deferred",
+                        "reason": "Unresolved major concern stays deferred.",
+                        "evidence": ev,
+                    },
+                    {
+                        "finding_id": "physical/real-defect",
+                        "disposition": "accepted",
+                        "reason": "Confirmed R1=100k defect.",
+                        "evidence": [{"path": "checks/rc_transient.json", "locator": "details.v_1ms"}],
+                    },
+                    {
+                        "finding_id": "check/rc_transient",
+                        "disposition": "duplicate",
+                        "duplicate_of": "physical/real-defect",
+                        "reason": "Same R1=100k defect.",
+                        "evidence": [{"path": "checks/rc_transient.json", "locator": "summary"}],
+                    },
+                ],
+            },
+            self.run_dir,
+        )
+        by_id = {f["id"]: f for f in adjudicated}
+        self.assertEqual(by_id["physical/gnd-single-via"]["status"], "noted")
+        self.assertEqual(by_id["physical/gnd-single-via"]["disposition"], "noted")
+        self.assertEqual(by_id["physical/gnd-single-via"]["duplicates"], ["circuit/gnd-via-note"])
+        self.assertEqual(len(by_id["physical/gnd-single-via"]["evidence"]), 3)
+        self.assertEqual(by_id["circuit/gnd-via-note"]["status"], "duplicate")
+        self.assertEqual(by_id["circuit/gnd-via-note"]["duplicate_of"], "physical/gnd-single-via")
+        self.assertEqual(by_id["circuit/major-concern"]["status"], "deferred")
+        self.assertEqual(by_id["physical/real-defect"]["status"], "accepted")
 
     def test_non_ok_check_execution_requires_unknown_outcome_and_never_becomes_defect(self):
         for exec_status in ("failed", "unavailable", "timeout", "malformed", "not_run", "interrupted", "unsupported"):

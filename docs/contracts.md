@@ -70,9 +70,13 @@ Preserve checks with outcome defect as findings; no majority elimination.
 
 `adjudicate(findings: list[dict], decisions: dict, run_dir: Path) -> list[dict]`.
 Decisions schema `agent-ee.decisions/1`, candidate_id, run_id,
-`decisions`: list `{finding_id, disposition: accepted|dismissed|deferred|duplicate|closed,
+`decisions`: list `{finding_id, disposition: accepted|noted|dismissed|deferred|duplicate|closed,
 reason: string, evidence: [{path,locator}], duplicate_of?: id}`.
 Require explanation, valid evidence paths; accepted/closed need evidence;
+`accepted` requires an established `assessment=defect`. `noted` retains a supported
+minor/info `assessment=concern` that does not establish a violated criterion;
+it needs citations and a reason. Major/blocking or unsupported concerns cannot
+be noted, and defects cannot be hidden as duplicates of noted observations.
 duplicate target must exist and cannot hide unresolved/accepted defects.
 Closed in SAME candidate is invalid for a claimed repair. Closure needs explicit
 new-candidate linkage + fresh affected checks; coordinate exact closure API.

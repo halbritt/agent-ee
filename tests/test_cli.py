@@ -57,6 +57,13 @@ class OutcomeTests(unittest.TestCase):
                                      {"role": "physical", "execution": "ok"}]
         self.assertEqual(outcome(value), "incomplete")
 
+    def test_supported_nondefect_observation_does_not_invent_a_failing_criterion(self):
+        value = self.result()
+        value["findings"] = [{"id": "observer/note", "assessment": "concern", "severity": "minor", "status": "noted"}]
+        self.assertEqual(outcome(value), "criteria_satisfied")
+        value["findings"][0]["status"] = "deferred"
+        self.assertEqual(outcome(value), "defects_or_unresolved")
+
 
 class LifecycleTests(unittest.TestCase):
     def test_interruption_preserves_a_completed_defect_and_pending_coverage(self):

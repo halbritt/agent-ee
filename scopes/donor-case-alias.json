@@ -1,0 +1,109 @@
+{
+  "schema": "agent-ee.scope/1",
+  "name": "Universal 112 disposable hierarchy alias review",
+  "scope": "Review the saved Universal 112 donor with an explicit disposable sheet-path alias, native rule coverage, saved-board implementation, and internal dual-wideband CAN termination. Original as-received snapshot is reported separately. No source circuit redesign or manufacturing approval.",
+  "schematic": "project/Polygonus-Universal-Base.kicad_sch",
+  "board": "project/Polygonus-Universal-Base.kicad_pcb",
+  "inputs": [
+    {
+      "path": "/home/halbritt/git/Polygonus-Universal-112",
+      "at": "project",
+      "include": [
+        "*.kicad_sch",
+        "*.kicad_pcb",
+        "*.kicad_pro",
+        "*.kicad_dru",
+        "*.pretty/**",
+        "*.kicad_sym",
+        "*.lib",
+        "*.dcm",
+        "sym-lib-table",
+        "fp-lib-table",
+        "README.md"
+      ]
+    },
+    {
+      "path": "/home/halbritt/git/kicad-libraries",
+      "at": "project/fome-kicad-libs",
+      "include": [
+        "*.kicad_sym",
+        "*.pretty/**",
+        "*.lib",
+        "*.dcm"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad",
+      "at": "stock",
+      "include": [
+        "template/sym-lib-table",
+        "template/fp-lib-table",
+        "symbols/74xx.kicad_sym",
+        "symbols/Amplifier_Operational.kicad_sym",
+        "symbols/Analog_Switch.kicad_sym",
+        "symbols/Comparator.kicad_sym",
+        "symbols/Connector.kicad_sym",
+        "symbols/Connector_Generic.kicad_sym",
+        "symbols/Device.kicad_sym",
+        "symbols/Driver_Motor.kicad_sym",
+        "symbols/Interface_CAN_LIN.kicad_sym",
+        "symbols/Jumper.kicad_sym",
+        "symbols/Mechanical.kicad_sym",
+        "symbols/Power_Protection.kicad_sym",
+        "symbols/power.kicad_sym",
+        "footprints/Capacitor_SMD.pretty/**",
+        "footprints/Capacitor_THT.pretty/**",
+        "footprints/Connector_PinHeader_2.00mm.pretty/**",
+        "footprints/Connector_PinHeader_2.54mm.pretty/**",
+        "footprints/Diode_SMD.pretty/**",
+        "footprints/Fuse.pretty/**",
+        "footprints/Jumper.pretty/**",
+        "footprints/LED_SMD.pretty/**",
+        "footprints/Module.pretty/**",
+        "footprints/Package_SO.pretty/**",
+        "footprints/Package_TO_SOT_SMD.pretty/**",
+        "footprints/Resistor_SMD.pretty/**"
+      ]
+    },
+    {
+      "path": "/home/halbritt/git/Polygonus-Universal-112/VR conditioner.kicad_sch",
+      "at": "project/VR Conditioner.kicad_sch"
+    }
+  ],
+  "requirements": [
+    "project/README.md"
+  ],
+  "packet_inputs": [
+    "project/wbo-can-trans.kicad_sch"
+  ],
+  "packet_max_bytes": 500000,
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry"
+    }
+  ],
+  "limitations": [
+    "Donor carrier remains a modular design; integrated FOME-MC coverage is not established by this donor review.",
+    "Scope omits full automotive transients, ignition energy, wideband control stability, EMC and thermal qualification.",
+    "Saved copper is checked without refilling or changing the board.",
+    "This disposable candidate adds VR Conditioner.kicad_sch as a byte copy of the existing lowercase VR conditioner.kicad_sch. The original checkout remains unchanged, and its filename discrepancy remains open there."
+  ],
+  "packet_artifacts": [
+    "work/netlist/connectivity.json",
+    "work/geometry/geometry.json",
+    "work/drc/drc.json"
+  ]
+}

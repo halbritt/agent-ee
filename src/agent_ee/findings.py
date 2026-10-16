@@ -10,7 +10,7 @@ from .storage import read_json
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SEVERITIES = ("blocking", "major", "minor", "info")
 ASSESSMENTS = ("defect", "concern")
-DISPOSITIONS = ("accepted", "dismissed", "deferred", "duplicate", "closed")
+DISPOSITIONS = ("accepted", "noted", "dismissed", "deferred", "duplicate", "closed")
 CHECK_EXECUTIONS = (
     "ok",
     "failed",
@@ -592,8 +592,26 @@ def adjudicate(findings, decisions, run_dir):
             raise ValueError(f"decision {fid}: duplicate_of is only allowed when disposition is 'duplicate'")
 
         if disp == "accepted":
+            if target_finding.get("assessment") != "defect":
+                raise ValueError(
+                    f"decision {fid}: 'accepted' requires assessment='defect' "
+                    f"(got {target_finding.get('assessment')!r}); use 'noted' for verified non-defect minor/info concerns "
+                    "or 'deferred' for unresolved uncertainty"
+                )
             if not validated_ev:
                 raise ValueError(f"decision {fid}: accepted disposition requires non-empty evidence")
+        elif disp == "noted":
+            if target_finding.get("source") == "check" or target_finding.get("assessment") == "defect":
+                raise ValueError(f"decision {fid}: established defect or check failure cannot be 'noted'")
+            if target_finding.get("downgraded_from") == "defect" or not target_finding.get("evidence"):
+                raise ValueError(f"decision {fid}: unsupported or downgraded claim cannot be 'noted'")
+            if target_finding.get("severity") in ("blocking", "major"):
+                raise ValueError(
+                    f"decision {fid}: {target_finding.get('severity')!r} concern cannot be 'noted'; "
+                    "refute with counter-evidence ('dismissed') or keep as open uncertainty ('deferred')"
+                )
+            if not validated_ev:
+                raise ValueError(f"decision {fid}: noted disposition requires non-empty evidence")
         elif disp == "dismissed":
             if target_finding.get("source") == "check":
                 raise ValueError(
@@ -658,6 +676,17 @@ def adjudicate(findings, decisions, run_dir):
         ):
             raise ValueError(
                 f"duplicate {fid} -> {root_id}: accepted or check defect cannot be duplicated into {root_status!r} target"
+            )
+        if root_status == "noted" and (
+            by_id[fid].get("source") == "check"
+            or by_id[fid].get("assessment") == "defect"
+            or by_id[fid].get("downgraded_from") == "defect"
+            or by_id[fid].get("severity") in ("blocking", "major")
+            or not by_id[fid].get("evidence")
+        ):
+            raise ValueError(
+                f"duplicate {fid} -> {root_id}: defect, major/blocking, or unsupported finding "
+                "cannot be duplicated into 'noted' target"
             )
 
     for target_finding, disp, reason, validated_ev, dup_of, raw_item in staged:

@@ -66,9 +66,12 @@ validation logic with provenance noted, under the agent-ee executor API.
 - No invented manufacturing/current/thermal requirements for donor geometry;
   donor geometry checks report facts with source locators only.
 - Coordinator carrier-netlist observation (2026-10-16): CAN2 termination on
-  the actual carrier is R36=120 Ω and R37=120 Ω in parallel (60 Ω net);
+  the actual carrier is R36=120 Ω and R37=120 Ω across the same nets (60 Ω if both fitted);
   R10=100k sits on different nets. The FOME DESIGN.md "triple 120" claim must
   not be repeated by reviewers without attached brain-board evidence.
+- Subsequent native XML and saved-board inspection established both R36 and R37
+  are DNP. The all-fitted 60 Ω calculation does not describe the specified
+  population. This correction supersedes any inference of fitted parallel loading.
 - Reviewer backends verified on this host: `claude` 2.1.302 and `agy`
   (gemini-4-argon-high listed by `agy models`). Subscription-only; quota or
   auth failure must surface as reviewer failure, never a fallback route.

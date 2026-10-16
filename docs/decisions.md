@@ -84,3 +84,17 @@ this small set of checks needs it. Correction closure appends a link from an
 accepted old finding to a distinct saved candidate and fresh passing review/checks,
 with original criteria preserved. Repair demonstration is on disposable native
 files; the real donor and active FOME-MC source remain protected.
+
+## Distinguish supported observations from established defects
+
+The full control exercise at `2a0e7f0` passed every native and simulation
+criterion, but the adjudicator accepted several minor/info concerns as accurate
+observations. Treating every accepted claim as a defect falsely blocked the
+control even though no claim established a violated criterion.
+
+The corrected contract adds `noted` for evidence-supported minor/info concerns.
+`accepted` requires an established defect; major/blocking uncertainty remains
+deferred. Unsupported allegations and defects cannot be converted to notes, and
+duplicate links cannot hide defects behind notes. This is a general disposition
+rule; the fixture, its electrical limits and its geometry requirements did not
+change. The observed failure and subsequent fresh runs are retained separately.

@@ -19,9 +19,10 @@ authentication. Do not add an OpenRouter fallback on auth/quota failure.
    `agent-ee review /absolute/path/scope.json --out /fresh/path/review --max-seconds 1200`.
 3. Read `REPORT.md`, `result.json`, raw native evidence and reviewer limitations.
    `agent-ee inspect /path/review` reports progress and freshness.
-   Exit 0 means declared criteria satisfied. Exit 1 includes defects, unresolved
+   For `review`, exit 0 means declared criteria satisfied. Exit 1 includes defects, unresolved
    questions or incomplete coverage; exit 2 is invocation/freshness refusal.
 4. Use `agent-ee verify /path/review` before using a result as current acceptance.
+   Its exit 0 establishes freshness only; also require `criteria_satisfied`.
    Source, requirement, rule or evidence changes require a new run.
    `agent-ee resume /path/review --out /fresh/path/review` recaptures and reruns;
    it preserves old evidence and never silently reuses acceptance.

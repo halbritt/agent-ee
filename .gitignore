@@ -4,3 +4,5 @@ __pycache__/
 build/
 *.egg-info/
 .pytest_cache/
+# Exact captured input trees are versioned in evidence/archives/*.tar.gz.
+evidence/**/inputs/

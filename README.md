@@ -69,17 +69,26 @@ reviewers see the same evidence packet under different lenses and cannot read
 each other's output. The adjudicator sees all claims and must explain each
 disposition through evidence. No majority vote removes a finding.
 
+`accepted` means an established defect. `noted` preserves a supported minor/info
+observation that violates no declared criterion; it does not block satisfaction
+of those criteria. Major/blocking concerns stay deferred until evidence resolves
+them. Defects cannot be hidden as noted observations or duplicates of them.
+
 | Result | Meaning |
 | --- | --- |
-| `criteria_satisfied` | Applicable declared execution and reviews completed; no accepted or unresolved findings remain. |
+| `criteria_satisfied` | Applicable declared execution and reviews completed; no accepted defects or unresolved findings remain. Noted observations may remain. |
 | `defects_or_unresolved` | Review completed with defects or open questions. |
 | `incomplete` | Execution, evidence, review, adjudication or budget left work unfinished. |
 
 Check `execution` and design `outcome` are separate. A successful tool reporting
 a violation is `ok` / `defect`; missing tools, malformed output, timeout and
 solver failure are unknown coverage. A checks-only run is always incomplete as
-an adversarial review. Exit 0 means `criteria_satisfied`, exit 1 another review
-outcome, and exit 2 invocation/freshness refusal.
+an adversarial review. For `review` and `resume`, exit 0 means
+`criteria_satisfied`, exit 1 another review outcome, and exit 2 an invocation
+refusal. `verify` checks freshness: exit 0 means its integrity/freshness checks
+passed, including for an honestly incomplete or defective review. Check the
+printed outcome or `result.json`; freshness alone is not acceptance. A freshness
+refusal exits 2.
 
 Inspect partial work with `agent-ee inspect RUN`. Interrupting or exhausting the
 wall-clock budget preserves useful completed records. `agent-ee resume RUN
@@ -92,6 +101,13 @@ scope, implementation hashes, and retained evidence hashes. Source changes make
 old evidence historical, never acceptance of the new source. `verify RUN
 --snapshot-only` checks a preserved historical candidate without requiring the
 old source tree still exist unchanged.
+
+`packet_artifacts` optionally names required generated evidence to place early
+in a reviewer packet. Each path must be among the evidence actually produced by
+this run's checks. A missing required artifact makes the run incomplete before
+reviewers are invoked; correct the scope or failed prerequisite and use a fresh
+run. With no such declaration, failed checks remain visible in the packet and
+reviewers can investigate the evidence that is available.
 
 ## Isolation guarantees
 
@@ -147,3 +163,13 @@ control and seeded responses before code. Recorded demonstrations, the donor
 baseline and implementation decisions are indexed under `evidence/` and `docs/`.
 This small exercise demonstrates observed behavior; it is not a general hardware
 correctness benchmark. Prototype and bench validation remain necessary.
+
+Recorded input trees are stored in compressed archives alongside readable reports
+and check/reviewer records. Restore a group in a fresh checkout with
+`python3 scripts/evidence_archive.py restore rc-final` (or `donor-final`).
+Restoration checks the archive checksum and refuses to overwrite changed files.
+The archive manifest pins each group's implementation commit and recorded
+outcomes; historical failure attempts remain incomplete. Use a matching source
+version when replaying their integrity checks. To run the actual control, seed
+and disposable repair demonstration again, use
+`python3 scripts/demo.py --out build/my-demo` from the repository root.
