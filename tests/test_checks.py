@@ -89,6 +89,10 @@ class ControlFixtureTest(unittest.TestCase):
         self.assertGreater(r["details"]["raw"]["points"], 2)
         self.assertEqual(r["details"]["elements"]["R1"]["parsed"], 10_000.0)
 
+    def test_geometry_console_has_no_via_width_assert(self):
+        console = (self.run_dir / "work/geometry/console.log").read_text()
+        self.assertNotIn("PCB_VIA::GetWidth called without a layer argument", console)
+
 
 class SeededFixtureTest(unittest.TestCase):
     """100k seed: natively clean, functionally defective at the 1 ms limit."""

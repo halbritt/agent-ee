@@ -22,6 +22,9 @@ def policy_files():
     return {p.name: digest(p) for p in sorted(root.glob("*.py"))}
 
 
+LOADED_POLICY_FILES = policy_files()
+
+
 def runtime_files():
     files = {}
     for name in ("kicad-cli", "ngspice", "bwrap", "/usr/bin/python3", "claude"):
@@ -251,6 +254,8 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
     deadline = time.monotonic() + max_seconds
     save_result(run, result)
     try:
+        if result["policy_files"] != LOADED_POLICY_FILES:
+            raise ValueError("implementation files changed after this process loaded; start a fresh process")
         m = capture(scope_path, run)
         validate_scope(m["scope"])
         for rel in [m["scope"]["schematic"], m["scope"]["board"], *m["scope"].get("requirements", [])]:

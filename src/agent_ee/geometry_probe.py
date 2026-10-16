@@ -80,7 +80,9 @@ def extract(board_path):
     tracks = []
     for t in board.GetTracks():
         cls = t.GetClass()
-        entry = {"net": t.GetNetname(), "width_mm": mm(t.GetWidth()),
+        width = (t.GetWidth(pcbnew.PADSTACK.ALL_LAYERS) if cls == "PCB_VIA"
+                 else t.GetWidth())
+        entry = {"net": t.GetNetname(), "width_mm": mm(width),
                  "start_mm": vec_mm(t.GetStart()), "end_mm": vec_mm(t.GetEnd()),
                  "uuid": t.m_Uuid.AsString()}
         if cls == "PCB_VIA":
