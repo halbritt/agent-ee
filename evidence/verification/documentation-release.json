@@ -1,0 +1,188 @@
+{
+  "cli_help": [
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee [-h]\n                {doctor,review,inspect,verify,resume,adjudicate,close-correction}\n                ...\n\nCLI lifecycle. Interrupted runs preserve records; resumes always make fresh\nruns.\n\npositional arguments:\n  {doctor,review,inspect,verify,resume,adjudicate,close-correction}\n    doctor              inspect installed prerequisites; real runs establish\n                        integration\n    review              capture and review a fresh candidate\n    resume              preserve old run; recapture/rerun all evidence into\n                        new run\n\noptions:\n  -h, --help            show this help message and exit\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "doctor",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee doctor [-h]\n\noptions:\n  -h, --help  show this help message and exit\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "review",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee review [-h] --out OUT [--max-seconds MAX_SECONDS]\n                       [--checks-only]\n                       scope\n\npositional arguments:\n  scope\n\noptions:\n  -h, --help            show this help message and exit\n  --out OUT\n  --max-seconds MAX_SECONDS\n  --checks-only\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "inspect",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee inspect [-h] run\n\npositional arguments:\n  run\n\noptions:\n  -h, --help  show this help message and exit\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "verify",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee verify [-h] [--snapshot-only] run\n\npositional arguments:\n  run\n\noptions:\n  -h, --help       show this help message and exit\n  --snapshot-only\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "resume",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee resume [-h] --out OUT [--max-seconds MAX_SECONDS] run\n\npositional arguments:\n  run\n\noptions:\n  -h, --help            show this help message and exit\n  --out OUT\n  --max-seconds MAX_SECONDS\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "adjudicate",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee adjudicate [-h] run decisions\n\npositional arguments:\n  run\n  decisions\n\noptions:\n  -h, --help  show this help message and exit\n"
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "close-correction",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: agent-ee close-correction [-h] --finding FINDING --checks CHECKS\n                                 --reason REASON\n                                 previous current\n\npositional arguments:\n  previous\n  current\n\noptions:\n  -h, --help         show this help message and exit\n  --finding FINDING\n  --checks CHECKS\n  --reason REASON\n"
+    },
+    {
+      "argv": [
+        "python3",
+        "scripts/demo.py",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: demo.py [-h] --out OUT [--seconds-per-run SECONDS_PER_RUN]\n\nRun the real RC control, defect and disposable saved-design repair\ndemonstration.\n\noptions:\n  -h, --help            show this help message and exit\n  --out OUT\n  --seconds-per-run SECONDS_PER_RUN\n"
+    },
+    {
+      "argv": [
+        "python3",
+        "scripts/freshness_demo.py",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: freshness_demo.py [-h] --disposable-root DISPOSABLE_ROOT --from-value\n                         FROM_VALUE --to-value TO_VALUE --out OUT\n                         run\n\nTemporarily mutate only an explicit disposable design; demonstrate stale\nrefusal.\n\npositional arguments:\n  run\n\noptions:\n  -h, --help            show this help message and exit\n  --disposable-root DISPOSABLE_ROOT\n  --from-value FROM_VALUE\n  --to-value TO_VALUE\n  --out OUT\n"
+    },
+    {
+      "argv": [
+        "python3",
+        "scripts/evidence_archive.py",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "usage: evidence_archive.py [-h] {pack,restore} ...\n\nPack complete recorded directories; restore without overwriting changed files.\n\npositional arguments:\n  {pack,restore}\n\noptions:\n  -h, --help      show this help message and exit\n"
+    }
+  ],
+  "local_links": {
+    "files_checked": 25,
+    "broken": [],
+    "unbalanced_fences": []
+  },
+  "limits": "Link paths checked against current checkout; command/help flags exercised without model calls. Workflow templates with operator-supplied paths/decisions require their stated prerequisites.",
+  "native_example": {
+    "argv": [
+      "agent-ee",
+      "review",
+      "fixtures/rc/control.scope.json",
+      "--out",
+      "build/docs-native-check",
+      "--max-seconds",
+      "120",
+      "--checks-only"
+    ],
+    "expected_exit": 1,
+    "observed_outcome": "incomplete",
+    "checks": [
+      {
+        "id": "erc",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "drc",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "netlist",
+        "execution": "ok",
+        "outcome": "info"
+      },
+      {
+        "id": "geometry",
+        "execution": "ok",
+        "outcome": "pass"
+      },
+      {
+        "id": "rc-step",
+        "execution": "ok",
+        "outcome": "pass"
+      }
+    ]
+  },
+  "record_verification": [
+    {
+      "name": "control",
+      "stdout": "fresh criteria_satisfied: 7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283\n",
+      "exit_code": 0
+    },
+    {
+      "name": "seed",
+      "stdout": "fresh defects_or_unresolved: 62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927\n",
+      "exit_code": 0
+    },
+    {
+      "name": "repair",
+      "stdout": "fresh criteria_satisfied: 72d838a74f12bc3a5801c8329b33273edfd60194b5c827cc50dbe68fdaaa563f\n",
+      "exit_code": 0
+    }
+  ],
+  "acceptance_gate_example": {
+    "exit_code": 0,
+    "stdout": "fresh criteria_satisfied: 7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283\nDeclared criteria satisfied for 7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283\n",
+    "method": "Exact documented Python sample; its run path temporarily linked to the completed recorded control, then removed. No inference repeated."
+  },
+  "scope_samples_parsed": [
+    "scopes/donor-case-alias.json",
+    "scopes/donor.json",
+    "fixtures/rc/seeded.scope.json",
+    "fixtures/rc/control.scope.json"
+  ],
+  "source_review": {
+    "cli": "argparse registration, verify/outcome, lifecycle, decisions and correction linkage",
+    "candidate": "path selection/capture/hash/source verification",
+    "checks": "all five handlers, parameter validation, model/deck and native parsers",
+    "reviewers": "packet ordering/limits, subscription adapter, identity schemas, lenses and adjudicator",
+    "findings": "review/citation/check validation, collection, dispositions, duplicates and closure",
+    "executor": "mount/env/network view, timeouts, logs and cancellation",
+    "storage_and_geometry": "JSON identity/atomic writes and native geometry fields",
+    "scripts": "installation links, live demo, freshness mutation and archive packing/restoration"
+  },
+  "changes": "Documentation and discovery pointers only; Python implementation unchanged."
+}

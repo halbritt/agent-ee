@@ -1,0 +1,85 @@
+# Security, data exposure and trust
+
+## Candidate permissions
+
+The native tools and model harness run inside Bubblewrap. Inputs and package
+code are read-only mounts. Each invocation gets its own writable work directory,
+a private temporary directory, process/IPC/UTS namespaces, and a minimal visible
+filesystem. The host home, host temporary files, runtime sockets and other
+reviewer workspaces are absent. Native tools also get a separate network
+namespace. A read-only prompt is not the enforcement mechanism.
+
+System `/usr` and `/etc` are visible read-only, with system executable/library
+paths exposed as required. This is a host tool execution boundary, not a
+container image containing only captured dependencies. Inspect `sandbox_argv`
+in an execution record to see the actual mounts and arguments.
+
+The parent CLI performs capture and record writes on the host under the owner's
+permissions. Bubblewrap does not constrain the owner, another host process with
+sufficient access, a compromised kernel/provider, or a malicious change to the
+parent application. Before/after hashing detects changes at boundaries; it
+cannot prevent privileged mutation or turn capture into an atomic transaction.
+
+## Inference and credentials
+
+Reviewers have network access for subscription inference. The selected artifact
+text, declared criteria and check details are supplied to the provider. The
+adjudicator additionally sees initial judgments and collected findings. The
+current adapter is not an offline local-model path. Review only information
+appropriate for the configured provider/account.
+
+The parent locates `~/.claude/.credentials.json` and mounts it read-only during
+the child call. Its contents are never copied into retained run files, and the
+temporary reviewer home is removed after the call. The execution record names
+the credential mount path, which is not the credential value. Parent API keys
+are omitted by the child's cleared environment. No subscription error enables
+an OpenRouter fallback.
+
+The harness is invoked in safe mode, without tools, MCP servers, setting sources,
+slash commands or session persistence. These flags reduce its allowed behavior;
+they do not independently attest every provider implementation detail. Harness
+usage metadata is retained when available. Do not add host runtime sockets or
+credential copies to scratch as a convenience fix.
+
+## Evidence trust
+
+Design prose and extracted documents are untrusted evidence, not authority to
+change the review rules. Fixed instructions tell reviewers and adjudication to
+ignore such attempts. Tools are disabled and the candidate is read-only, but
+this does not prove immunity to every prompt-injection or model judgment error.
+
+Citation validation proves that a path is allowed, exists in this run and has
+an explicit locator. It does not prove the electrical argument, datasheet
+interpretation, component identity or operating condition. A supported singleton
+must survive a favorable majority; conversely, repeated unsupported prose is
+not corroborating measurement.
+
+SHA-256 inventories detect accidental/stale modification against trusted
+records. They are not signed by an external authority. A party able to edit
+candidate, evidence, result and all expected hashes can forge internal
+consistency. This implementation does not claim hostile-host tamper evidence,
+cross-machine binary reproducibility or a qualified hardware verification chain.
+
+## Storage and publishing
+
+Scopes copy explicit inputs, including uncommitted files. Directory selections
+can accidentally include private material; inspect them. Retained evidence may
+contain proprietary design text, absolute local paths, model outputs and harness
+session identifiers. Keep it under the appropriate repository visibility.
+This project's remote is private; no public release or hardware fabrication
+approval follows from that remote existing.
+
+The archive helper refuses links and files named `.credentials.json`, normalizes
+archive ownership/timestamps, verifies checksums on restore and refuses changed
+existing files. It is not a general secret scanner. The recorded hygiene probe
+is a bounded filename/pattern check, not proof of every possible secret's absence.
+Preserve raw evidence bytes rather than editing logs to make them look clean.
+
+## Engineering trust boundary
+
+`criteria_satisfied` covers the named candidate and declared checks. It does not
+assert all component tolerances, failure states, active-device behavior, current
+limits, thermal paths, mechanical constraints or vehicle conditions were tested.
+An undeclared condition is not automatically a defect, and missing necessary
+coverage is not a pass. State consequential unknowns and obtain project-specific
+requirements and physical validation before expanding the conclusion.

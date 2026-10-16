@@ -1,5 +1,11 @@
 # Internal contracts (implementation agreement)
 
+This is the historical builder agreement. The current
+[manual](README.md), [scope reference](scope-reference.md) and
+[result reference](result-reference.md) describe the implemented operator
+contracts. Builder ownership assignments below record the original work split;
+they are not ongoing restrictions on repository maintenance.
+
 Python 3.12, standard library; installed KiCad `pcbnew` runs in `/usr/bin/python3`.
 Implementation owners: coordinator candidate/executor/CLI/reviewers; Fable native
 and engineering checks + fixtures; Argon finding validation/adjudication + tests.
@@ -21,8 +27,9 @@ candidate_id, run_id, packet_sha256. Old run evidence is never auto-imported.
 
 Schema `agent-ee.scope/1`; `name`, `scope` (text), `limitations` (string list),
 `inputs`: list of `{path, at, include?, exclude?}`; `path` relative to scope file,
-expanded `~` allowed, `at` relative to inputs. No symlinks are followed: declare
-external libraries as another input at their effective path. Overlap is refused.
+expanded `~` allowed, `at` relative to inputs. Explicit source roots are resolved;
+symlinks encountered inside a selected tree are refused. Declare external
+libraries as another input at their effective path. Overlap is refused.
 `schematic` and `board` relative to inputs; `checks` list, described below;
 `reviewers` optional backend definitions; `requirements` list of input-relative
 text paths for packet context. Include all relevant config/models/requirements.

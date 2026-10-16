@@ -4,6 +4,10 @@
 fresh agent judgments. It retains evidence, unresolved claims and correction
 history. Review never changes the source design.
 
+The [full manual](docs/README.md) covers installation, operator workflows, every
+CLI command and scope field, native/engineering checks, result formats,
+isolation, troubleshooting, extension and evidence reproduction.
+
 ```sh
 cd ~/git/agent-ee
 ./scripts/install.sh
@@ -17,6 +21,9 @@ The installer links the CLI into `~/.local/bin` and its skill into existing agen
 discovery locations. It refuses to replace unrelated files. No Python packages
 are needed; `/usr/bin/python3` must provide the installed KiCad `pcbnew` bindings.
 The editable Python package entry point is also available from `pyproject.toml`.
+
+Source remote: [halbritt/agent-ee](https://github.com/halbritt/agent-ee), private.
+Clone and authentication prerequisites are in [installation](docs/installation.md).
 
 ## Prerequisites and integration
 

@@ -10,6 +10,8 @@ Use the installed `agent-ee` CLI. Source and scope examples live at
 The CLI coordinates checks and fresh initial reviewers; it does not need manual
 reviewer-prompt coordination. Current default reviewers use Claude subscription
 authentication. Do not add an OpenRouter fallback on auth/quota failure.
+The [full manual](../../docs/README.md) includes exact scope/check/result
+contracts, operator workflows, troubleshooting and extension instructions.
 
 1. Inspect the design requirements and native artifacts. Declare the actual
    review scope in an `agent-ee.scope/1` JSON file, including external libraries,
