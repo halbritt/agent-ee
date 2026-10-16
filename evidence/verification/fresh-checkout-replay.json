@@ -1,0 +1,78 @@
+{
+  "implementation_commit": "c434c96",
+  "method": "Fresh detached Git worktree; only versioned files initially present, archived ignored input/config bytes restored, original source paths not used for snapshot-only verification. No model calls repeated.",
+  "results": [
+    {
+      "argv": [
+        "python3",
+        "scripts/evidence_archive.py",
+        "restore",
+        "rc-verified"
+      ],
+      "cwd": "/tmp/agent-ee-release-check-c434c96",
+      "exit_code": 0,
+      "stdout": "/tmp/agent-ee-release-check-c434c96/evidence/rc-verified\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "python3",
+        "scripts/evidence_archive.py",
+        "restore",
+        "donor-verified"
+      ],
+      "cwd": "/tmp/agent-ee-release-check-c434c96",
+      "exit_code": 0,
+      "stdout": "/tmp/agent-ee-release-check-c434c96/evidence/donor-verified\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "verify",
+        "evidence/rc-verified/control",
+        "--snapshot-only"
+      ],
+      "cwd": "/tmp/agent-ee-release-check-c434c96",
+      "exit_code": 0,
+      "stdout": "fresh criteria_satisfied: 7b6d5a949427df9a9100abf2208581f5564cf9ec758e1b0f1fbe731ff3a60283\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "verify",
+        "evidence/rc-verified/seed",
+        "--snapshot-only"
+      ],
+      "cwd": "/tmp/agent-ee-release-check-c434c96",
+      "exit_code": 0,
+      "stdout": "fresh defects_or_unresolved: 62f16f3261185780b238caa726245d57ddcd2230c124e5e360b89aef094fd927\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "verify",
+        "evidence/rc-verified/repair",
+        "--snapshot-only"
+      ],
+      "cwd": "/tmp/agent-ee-release-check-c434c96",
+      "exit_code": 0,
+      "stdout": "fresh criteria_satisfied: 72d838a74f12bc3a5801c8329b33273edfd60194b5c827cc50dbe68fdaaa563f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "./bin/agent-ee",
+        "verify",
+        "evidence/donor-verified",
+        "--snapshot-only"
+      ],
+      "cwd": "/tmp/agent-ee-release-check-c434c96",
+      "exit_code": 0,
+      "stdout": "fresh defects_or_unresolved: 2767e5a30de2c3bcdee814eda2dbc63cc460f744b8029c74079b8feea3e0ae9b\n",
+      "stderr": ""
+    }
+  ]
+}

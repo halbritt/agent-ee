@@ -71,6 +71,10 @@ reproduced all captured hashes, and [failure cases](verification/archive-failure
 refused changed files and corrupt archives. Historical attempts require their
 recorded implementation version for integrity replay; they do not become
 acceptance under new rules.
+The [fresh-checkout replay](verification/fresh-checkout-replay.json) restored both
+final archives into a clean detached Git worktree and verified all four final
+candidate records with `--snapshot-only`. This verifies retained evidence
+identity; it does not rerun the native tools or model judgments.
 
 To reproduce a fresh full engineering demonstration with the same fixed
 requirements, run `python3 scripts/demo.py --out build/my-demo` from the repo.
