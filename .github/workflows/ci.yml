@@ -1,7 +1,7 @@
 name: CI
 
-# The owner removed pull-request CI for this repository: pushes to main and
-# manual dispatch only. Consumer projects may call action.yml from any trigger.
+# Changes are integrated directly on main under the owner's no-PR workflow.
+# Consumer projects may call action.yml from any trigger.
 on:
   push:
     branches: [main]

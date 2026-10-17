@@ -78,8 +78,10 @@ Scopes copy explicit inputs, including uncommitted files. Directory selections
 can accidentally include private material; inspect them. Retained evidence may
 contain proprietary design text, absolute local paths, model outputs and harness
 session identifiers. Keep it under the appropriate repository visibility.
-This project's remote is private; no public release or hardware fabrication
-approval follows from that remote existing.
+This project's remote is public. Repository visibility does not establish
+redistribution rights for captured third-party material or authorize hardware
+fabrication. Publication of additional design files and evidence remains subject
+to the owner's approval.
 
 The archive helper refuses links and files named `.credentials.json`, normalizes
 archive ownership/timestamps, verifies checksums on restore and refuses changed

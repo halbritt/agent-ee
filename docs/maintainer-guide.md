@@ -14,7 +14,7 @@ observations and histories; `build/` is ignored disposable output.
 
 The initial repository had no prior implementation or remote. The working
 capability was developed on `build/review-capability` and integrated locally
-on `main`; the remote is `https://github.com/halbritt/agent-ee`, private.
+on `main`; the remote is `https://github.com/halbritt/agent-ee`, now public.
 Preserve unrelated work and use an isolated branch/worktree for changes. Do
 not include credentials, host caches or undeclared source-project mutations.
 

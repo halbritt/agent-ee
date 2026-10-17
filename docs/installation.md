@@ -37,8 +37,7 @@ review subprocesses. Explicit profiles select Claude, Codex or Agy; see [profile
 
 ## Checkout and links
 
-The GitHub repository is private. These commands require access to it and the
-prerequisites above:
+The GitHub repository is public. These commands require the prerequisites above:
 
 ```sh
 git clone https://github.com/halbritt/agent-ee.git
