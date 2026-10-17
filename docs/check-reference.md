@@ -27,6 +27,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
+| `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
 | `fab_consistency` | Coordinator reads the earlier export's sealed staging tree and version run, the captured board, the sealed netlist and earlier sealed geometry; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
@@ -312,6 +313,26 @@ inside the common completion image remains separate.
 schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
+
+## Footprint assignment
+
+`footprint_assignment` requires captured `manifest` and `declaration` paths and
+immutable `assembly_intent` records. The manifest declares complete pinned
+footprint membership; every member and symbol library must be readable and
+hash-valid. Empty selections, absent exact footprint names, missing or extra
+electrical pad numbers, connector count mismatches and assembly mismatches are
+defects. Duplicate thermal pad numbers count once; qualified paste-only and
+unnumbered mechanical pads do not participate in electrical parity. Library
+read or parse failures leave unknown coverage.
+
+Adding `netlist_check` binds each declaration to every native board component
+and its captured whole-device pin inventory. Missing declarations or ambiguous
+occurrence identities leave unknown coverage. DNP components still require
+parity. Native-bound evidence uses `footprint:native-assignment-parity/1`;
+declared-only evidence uses `footprint:assignment-parity/1`. Reports retain
+per-reference findings and library member hashes. See the
+[captured library contract](footprint-libraries.md) and
+[native binding rules](native-binding.md) for parameters, exclusions and limits.
 
 ## Supplier land patterns
 
