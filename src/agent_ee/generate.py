@@ -463,24 +463,28 @@ def stage_requirements(stage, state, options):
 # ------------------------------------------------------------------ stage 2: parts
 
 def capture_catalog(checkout=None):
-    """Read the committed fome-mc BOM; an uncommitted or modified copy has no provenance."""
+    """The fome-mc BOM as committed at the checkout's HEAD; working-tree edits are not used.
+
+    Another session may be editing fome-mc. Reading the committed blob gives exact
+    provenance (commit + sha256); a differing working copy is recorded, never read.
+    """
     checkout = Path(checkout or CATALOG_CHECKOUT)
     path = checkout / CATALOG_PATH
-    if not path.is_file():
-        raise StageFailure(f'catalog {path} is absent')
-    raw = path.read_bytes()
     def git(*args):
         proc = subprocess.run(['git', '-C', str(checkout), *args], capture_output=True, timeout=60)
         if proc.returncode:
-            raise StageFailure('git provenance unavailable: ' + proc.stderr.decode(errors='replace').strip())
+            raise StageFailure('catalog provenance unavailable: ' + proc.stderr.decode(errors='replace').strip())
         return proc.stdout
-    commit = git('log', '-1', '--format=%H', '--', CATALOG_PATH).decode().strip()
-    if not commit or git('show', f'{commit}:{CATALOG_PATH}') != raw:
-        raise StageFailure('catalog bytes differ from their last commit; refusing an uncommitted catalog')
-    source = {'path': str(path), 'repository_path': CATALOG_PATH, 'commit': commit,
-              'checkout_head': git('rev-parse', 'HEAD').decode().strip(),
-              'remote': git('remote', 'get-url', 'origin').decode().strip(), 'sha256': sha256_bytes(raw),
-              'bytes': len(raw), 'note': "owner's own fome-mc design BOM; copied into the run directory only"}
+    head = git('rev-parse', 'HEAD').decode().strip()
+    raw = git('show', f'{head}:{CATALOG_PATH}')
+    commit = git('log', '-1', '--format=%H', head, '--', CATALOG_PATH).decode().strip()
+    working = path.read_bytes() if path.is_file() else None
+    source = {'path': str(path), 'repository_path': CATALOG_PATH, 'read_from': f'git blob {head}:{CATALOG_PATH}',
+              'commit': commit, 'checkout_head': head, 'remote': git('remote', 'get-url', 'origin').decode().strip(),
+              'sha256': sha256_bytes(raw), 'bytes': len(raw),
+              'working_tree_differs': working != raw,
+              'working_tree_sha256': sha256_bytes(working) if working is not None else None,
+              'note': "owner's own fome-mc design BOM; copied into the run directory only"}
     return path, raw, source
 
 
@@ -536,11 +540,11 @@ def footprint_file(footprint):
 def stage_parts(stage, state, options):
     params = state['params']
     path, raw, source = capture_catalog(options.get('catalog_checkout'))
-    stage.input(path, 'fome-mc BOM catalog (live, committed)')
     rows = read_catalog(raw)
     (stage.dir / 'catalog').mkdir()
     copy = stage.dir / 'catalog' / path.name
     copy.write_bytes(raw)
+    stage.input(copy, 'fome-mc BOM catalog (committed blob, copied)')
     stage.receipt['details']['catalog'] = source
     components = [('Device:R', params['resistor']), ('Device:C', params['capacitor'])]
     parts, selections = {}, {}

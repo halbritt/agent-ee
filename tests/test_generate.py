@@ -212,15 +212,20 @@ class PartsTest(unittest.TestCase):
         with self.assertRaises(g.StageFailure):
             g.select_part(rows_of(ROWS), 'Device:C', '100nF')
 
-    def test_catalog_must_be_committed(self):
+    def test_catalog_is_the_committed_blob_never_working_edits(self):
         with tempfile.TemporaryDirectory() as tmp:
-            checkout = git_catalog(Path(tmp), HEADER + '\n'.join(ROWS) + '\n')
+            body = HEADER + '\n'.join(ROWS) + '\n'
+            checkout = git_catalog(Path(tmp), body)
             path, raw, source = g.capture_catalog(checkout)
-            self.assertEqual(source['sha256'], g.sha256_bytes(raw))
+            self.assertEqual((raw.decode(), source['sha256']), (body, g.sha256_bytes(raw)))
             self.assertEqual(len(source['commit']), 40)
+            self.assertFalse(source['working_tree_differs'])
             (checkout / g.CATALOG_PATH).write_text(HEADER + ROWS[0] + '\n')
-            with self.assertRaises(g.StageFailure):
-                g.capture_catalog(checkout)
+            path, raw, source = g.capture_catalog(checkout)
+            self.assertEqual(raw.decode(), body)
+            self.assertTrue(source['working_tree_differs'])
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(g.StageFailure):
+            g.capture_catalog(tmp)  # not a git checkout: no provenance
 
     def test_not_assembled_rule_in_manifest(self):
         if not (g.STOCK / 'footprints/Resistor_SMD.pretty').is_dir():
