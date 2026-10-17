@@ -84,6 +84,12 @@ one excluded row can contribute more than one reason. `excluded_rows` is the
 separate row count. Repeating the same inputs produces canonical byte-identical
 JSON via `agent_ee.storage.canonical`.
 
+The acceptance tests compare these bytes with output from separate networkless
+Bubblewrap processes using different Python hash seeds. Stock-boundary tests
+exercise both build quantity and stock floor: exactly sufficient Basic stock
+wins over a cheaper Preferred part; one unit short excludes the Basic row and
+records `low_stock`.
+
 `execution: ok, outcome: pass` means all parts matched the declared catalog
 constraints. It does not grant engineering acceptance. An empty candidate set
 has `outcome: unknown`, reason `no candidate`, and null `chosen`. The
@@ -101,6 +107,13 @@ Datasheet facts, package/pin binding and later assembly-readiness verification
 remain separate checks. The tests use original synthetic catalog rows, including
 a 33-row Basic/stock ranking case; they do not reproduce or qualify the named
 third-party Konnect fixture.
+
+The named-fixture acceptance criterion therefore remains unqualified. Its
+33-row synthetic counterpart demonstrates the ranking behavior only. Reusing a
+third-party fixture requires compatible provenance and licensing. The upstream
+[Konnect license](https://github.com/mixelpixx/Konnect/blob/main/LICENSE) is
+AGPL-3.0; importing its fixture requires owner authorization under this task's
+MIT-only boundary.
 
 ## Requirement-bound check
 

@@ -27,6 +27,8 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
+| `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json` | 120 s |
+| `part_selection` | `/usr/bin/python3 -m agent_ee.catalog_checks part_selection /candidate/SNAPSHOT MANIFEST_SHA256 --requirements /candidate/REQUIREMENTS --out /work/catalog.json` | 120 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
 | `fab_consistency` | Coordinator reads the earlier export's sealed staging tree and version run, the captured board, the sealed netlist and earlier sealed geometry; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
@@ -38,6 +40,27 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
+
+## Captured catalog and part selection
+
+The [catalog check](catalog.md) takes exactly `snapshot` and `manifest_sha256`.
+It verifies the captured manifest and database and rederives normalized intervals
+from retained raw attributes. Its scope/3 coverage is informational.
+
+The [part-selection check](part-selection.md) also requires `requirements` and
+`requirement_id`, mapped to exactly one baseline requirement sourced from that
+requirements file. Capture both catalog files and the requirements file as
+immutable inputs. Eligible rows must meet every declared constraint and
+`max(build_quantity * quantity_per_board, stock_floor)` available stock. Ranking
+prefers Basic, then Preferred, then Extended, followed by known price, lower
+price, higher available stock and numeric LCSC ID. The report records matched
+intervals, rejection reasons, exclusion counts and the deciding rank key.
+
+An empty selection returns `execution: ok`, `outcome: unknown`, `chosen: null`
+and reason `no candidate`. Invalid requirements or snapshots return
+`execution: failed`, `outcome: unknown`. An unparseable attribute excludes its
+row as unknown. These results establish consistency with captured catalog
+claims; upstream authenticity and datasheet correctness require separate evidence.
 
 ## Hierarchy validation
 
