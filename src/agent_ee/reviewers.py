@@ -60,7 +60,9 @@ def build_packet(run_dir, checks, run_id):
     if baseline is not None:
         paths += ["inputs/" + p for p in baseline["files"]]
     paths += ["inputs/" + p for p in scope.get("packet_inputs", [scope.get("schematic", ""), scope.get("board", "")]) if p]
-    evidence_paths = [p for c in checks for p in c.get("evidence", [])]
+    # Preserve exact locators in packet checks; artifact traversal deduplicates paths.
+    evidence_paths = [p["path"] if isinstance(p, dict) else p
+                      for c in checks for p in c.get("evidence", [])]
     priorities = scope.get("packet_artifacts", [])
     if any(p not in evidence_paths for p in priorities):
         raise ValueError("packet_artifacts must name evidence produced by this run's declared checks")

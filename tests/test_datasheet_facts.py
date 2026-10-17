@@ -108,6 +108,13 @@ class DatasheetFactsTests(unittest.TestCase):
                     finding = collect_findings([], [results['pin-map']])[0]
                     self.assertIn('U1, pin 6', finding['location'])
                     self.assertTrue(any('U1, pin 6' in e['locator'] for e in finding['evidence']))
+                    from agent_ee.reviewers import build_packet
+                    packet = build_packet(self.run, self.results, 'native-pin-mismatch')
+                    artifact = next(a for a in packet['artifacts'] if a['path'] == 'work/pin-map/pin-map.json')
+                    self.assertIn('CANH', artifact['content'])
+                    self.assertEqual(packet['checks'][-1]['evidence'], results['pin-map']['evidence'])
+                    self.assertEqual(sum(a['path'] == artifact['path'] for a in packet['artifacts']), 1)
+
 
     def test_consumer_of_unverified_fact_is_unsupported(self):
         require_toolchain(native=True)
