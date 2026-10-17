@@ -99,7 +99,7 @@ def _components(root, parts, sheets):
             properties[name] = prop.get('value')
         components[ref] = {'reference': ref, 'sheet': sheet, 'uuid': uuid,
             'lib_id': ':'.join(symbol), 'value': _one(comp, 'value').text or '',
-            'footprint': _footprint(comp), 'populated': 'dnp' not in properties,
+            'datasheet': _datasheet(comp, properties), 'footprint': _footprint(comp), 'populated': 'dnp' not in properties,
             'on_board': 'exclude_from_board' not in properties,
             'in_bom': 'exclude_from_bom' not in properties, 'properties': properties,
             'pins': tuple(selected), 'units': tuple(units),
@@ -107,6 +107,26 @@ def _components(root, parts, sheets):
             'library_pins': tuple(sorted(parts[symbol])),
             'locator': f'components/comp[@ref={ref!r}], sheet={sheet}, UUID={uuid}'}
     return components
+
+
+def _datasheet(comp, properties):
+    """Preserve absent versus empty; reject contradictory native representations."""
+    nodes = comp.findall('datasheet')
+    if len(nodes) > 1 or any(n.attrib or len(n) for n in nodes):
+        raise ValueError('duplicate or structured native datasheet')
+    values = [(n.text or '') for n in nodes]
+    for field in comp.findall("./fields/field[@name='Datasheet']"):
+        if set(field.attrib) != {'name'} or len(field):
+            raise ValueError('structured native Datasheet field')
+        values.append(field.text or '')
+    if 'Datasheet' in properties:
+        prop = comp.find("./property[@name='Datasheet']")
+        if set(prop.attrib) != {'name', 'value'} or len(prop) or (prop.text or '').strip():
+            raise ValueError('unqualified native Datasheet property')
+        values.append(properties['Datasheet'])
+    if values and any(value != values[0] for value in values):
+        raise ValueError('contradictory native Datasheet representations')
+    return values[0] if values else None
 
 
 def _footprint(comp):

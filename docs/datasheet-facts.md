@@ -117,3 +117,49 @@ comparison must still execute successfully.
 
 PDFs can be prepared with the separate [capture module](datasheet-capture.md).
 Its URL records do not authenticate the document or replace citation verification.
+
+## Per-part missing coverage
+
+`agent-ee.datasheet-facts/2` is an explicit opt-in alongside unchanged facts/1.
+Its exact keys are `schema`, `bindings`, `acquisition`, `required_parts`, and
+`facts`. The two document locators each contain candidate-root-relative `path`
+and file-byte `sha256`. `required_parts` is a nonempty complete binding inventory;
+every entry has `reference`, `selection_id`, nullable `part_number`, and a nonempty
+list of distinct `required_facts`. Preparation writes this envelope; an engineer
+adds actual citations in the unchanged fact-record format. An empty `facts` list
+is valid only under this versioned missing-obligation contract.
+
+The offline loader validates both document hashes, exact acquisition schema,
+complete reference/URL sets and the downloader's binding hash. Every successful
+PDF must exist under the captured root and match its content hash and PDF
+envelope. Missing records have a reason and no path/hash. Safe relative paths
+and symlink refusal apply to document/PDF dependencies. A missing **successful**
+PDF refuses baseline construction; it cannot be relabelled as a missing download.
+Citations must match the declared part number and that part's successful PDF.
+Unknown MPN never acquires fabricated citation or pin applicability.
+
+Each declared part yields a `details.required_parts` record. Absent URL/PDF,
+unknown part number, or any missing/unverified required citation yields
+`status: unsupported`, and the overall check is `execution: unsupported`,
+`outcome: unknown`. All parts must have verified required citations before the
+text-support check passes. Downloading a PDF alone cannot pass. Existing
+`pin_map` remains unsupported when its facts prerequisite is unsupported; no
+pin numbers are invented to fill gaps.
+
+Normal scope/2 baseline capture freezes the envelope, bindings, acquisition
+manifest and every successful PDF through `verification_inputs`. Runtime checks
+also require those dependencies in the captured file inventory. Public verify
+checks ordinary snapshot/baseline/evidence seals. Unknown results are retained
+and verifiable; verifiability does not mean acceptance. Neither version establishes
+vendor authenticity, owner approval, MPN applicability or electrical correctness.
+Scope/3 descriptor integration and dispatcher requirement mapping remain root's
+integration work; this lane adds no new acceptance predicates or coverage waiver.
+
+Focused tests use owned canonical catalog rows, exact-schema owned experimental
+BOM manifests and original loopback PDFs. The server stops before checks.
+Positive text/pin tests use explicit synthetic applicability; they do not qualify
+physical equivalence between a selected catalog row and the native test symbol.
+No-URL, HTML and deadline cases retain every per-part unknown through scope/2
+capture and public verification. Native URL extraction and distinct population,
+board and BOM flags are checked separately. Third-party project data is not
+published by these tests.

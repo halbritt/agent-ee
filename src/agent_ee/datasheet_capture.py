@@ -129,7 +129,7 @@ def _parts(parts):
     return sorted(parts, key=lambda part: part['id'])
 
 
-def bindings_from_native(native_xml, datasheet_properties):
+def bindings_from_native(native_xml, datasheet_properties=None):
     """Join explicit Datasheet properties to the existing full native inventory.
 
     Missing properties remain missing; unknown references cannot silently replace
@@ -137,6 +137,9 @@ def bindings_from_native(native_xml, datasheet_properties):
     """
     from .native_netlist import read_native_inventory
     components = read_native_inventory(native_xml)['components']
+    if datasheet_properties is None:
+        return _parts([{'id': ref, 'datasheet_url': c['datasheet']}
+                       for ref, c in components.items()])
     if not isinstance(datasheet_properties, dict) or set(datasheet_properties) - components.keys():
         raise ValueError('datasheet properties must name known native references')
     bindings = []
@@ -208,6 +211,57 @@ def capture_datasheets(parts, out, *, timeout=30, max_bytes=MAX_BYTES):
         stage.replace(out)
         published = True
         return manifest
+    finally:
+        if not published:
+            if stage is not None:
+                shutil.rmtree(stage)
+            if not out.is_symlink() and out.exists() and out.stat().st_ino == reservation:
+                out.rmdir()
+
+
+def prepare_datasheets(bindings, required_facts, out, *, timeout=30, max_bytes=MAX_BYTES):
+    """Prepare source inputs only. Missing acquisitions remain explicit obligations.
+
+    The caller owns approval, scope requirements and the subsequent ordinary
+    candidate capture. This callable never starts or modifies a campaign.
+    """
+    from .datasheet_parts import validate_bindings
+    from .storage import digest, write_json
+    validate_bindings(bindings)
+    refs = {p['reference'] for p in bindings['parts']}
+    if not isinstance(required_facts, dict) or set(required_facts) != refs:
+        raise ValueError('required facts must cover every binding reference')
+    for ids in required_facts.values():
+        if (not isinstance(ids, list) or not ids or
+                any(not isinstance(fid, str) or not fid.strip() for fid in ids) or len(ids) != len(set(ids))):
+            raise ValueError('each part needs distinct nonempty required fact IDs')
+    out = Path(out).absolute()
+    if out.parent.resolve() != out.parent or out.name in ('', '.', '..'):
+        raise ValueError('preparation output requires a real contained parent')
+    out.mkdir()
+    reservation = out.stat().st_ino
+    stage = None
+    published = False
+    try:
+        stage = Path(tempfile.mkdtemp(prefix='.datasheet-preparation-', dir=out.parent))
+        parts = [{'id': p['reference'], 'datasheet_url': p['datasheet_url']} for p in bindings['parts']]
+        acquisition = capture_datasheets(parts, stage / 'acquisition', timeout=timeout, max_bytes=max_bytes)
+        write_json(stage / 'bindings.json', bindings)
+        obligations = [{k: p[k] for k in ('reference', 'selection_id', 'part_number')} |
+                       {'required_facts': required_facts[p['reference']]} for p in bindings['parts']]
+        write_json(stage / 'facts.json', {'schema': 'agent-ee.datasheet-facts/2',
+            'bindings': {'path': 'bindings.json', 'sha256': digest(stage / 'bindings.json')},
+            'acquisition': {'path': 'acquisition/manifest.json', 'sha256': digest(stage / 'acquisition/manifest.json')},
+            'required_parts': obligations, 'facts': []})
+        if out.is_symlink() or out.stat().st_ino != reservation:
+            raise RuntimeError('preparation output reservation changed')
+        stage.replace(out)
+        published = True
+        return {'outcome': acquisition['outcome'], 'qualification': bindings['qualification'],
+                'path': str(out), 'facts': 'facts.json', 'bindings': 'bindings.json',
+                'acquisition': 'acquisition/manifest.json',
+                'inputs': [{'path': str(out / name), 'at': name}
+                           for name in ('bindings.json', 'facts.json', 'acquisition')]}
     finally:
         if not published:
             if stage is not None:
