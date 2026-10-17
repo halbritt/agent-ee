@@ -1,0 +1,536 @@
+"""Coordinator-observed stage receipts: real sandbox steps, exact applicability, tamper refusal.
+
+The step tool here is an original test program, not a scaffold, placer or router. These
+tests qualify the receipt and campaign seam; they do not establish any rung-1 tool.
+"""
+import contextlib
+import io
+import json
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from agent_ee import stage_receipts
+from agent_ee.campaign import run_campaign, verify_campaign
+from agent_ee.executor import Cancellation, sandbox_argv
+from agent_ee.stage_receipts import (adopt, applicability, bind_implementation, build_index, run_step,
+                                     sandbox_profile, validate_receipt, validate_step, verify_implementation)
+from agent_ee.storage import digest, identity, read_json, write_json
+
+from toolchain import toolchain_test
+
+TOOL = '''import json, sys, time
+from pathlib import Path
+mode = sys.argv[1]
+board = Path("/work/design/project/board.txt")
+if mode == "version":
+    print("step-tool 1.2.3"); raise SystemExit(0)
+if mode == "silent-version":
+    raise SystemExit(0)
+if mode == "sleep":
+    time.sleep(30)
+if mode == "crash":
+    raise RuntimeError("tool crashed")
+if mode == "outside":
+    Path("/work/design/project/rules.txt").write_text("relaxed")
+if mode == "add":
+    Path("/work/design/project/extra.txt").write_text("new")
+if mode == "out":
+    Path("/work/out").mkdir()
+    Path("/work/out/board.txt").write_text("routed board")
+    Path("/work/out/result.json").write_text(json.dumps({"backend": {"name": "test", "version": None, "build": "b1"}}))
+    raise SystemExit(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
+board.write_text("placed board " + Path("/candidate/project/board.txt").read_text())
+raise SystemExit(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
+'''
+
+
+def step(mode='edit', *extra, **overrides):
+    spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'test-helper',
+            'argv': ['/usr/bin/python3', '/tool/step.py', mode, *extra],
+            'mounts': [{'source': '<tool>', 'at': '/tool'}], 'source': '/tool',
+            'version_argv': ['/usr/bin/python3', '/tool/step.py', 'version'],
+            'writes': {'project/board.txt': 'design/project/board.txt'}, 'timeout_s': 20}
+    spec.update(overrides)
+    return spec
+
+
+class StepDeclarationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        (Path(self.tmp.name) / 'tool').mkdir()
+        self.tool = str(Path(self.tmp.name) / 'tool')
+
+    def spec(self, **overrides):
+        value = step(**overrides)
+        value['mounts'] = [{'source': self.tool, 'at': '/tool'}] if 'mounts' not in overrides else overrides['mounts']
+        return value
+
+    def test_normalizes_defaults(self):
+        spec = validate_step({k: v for k, v in self.spec().items() if k != 'timeout_s'})
+        self.assertEqual(spec['adoptable_exits'], [0])
+        self.assertEqual(spec['timeout_s'], 120)
+        self.assertEqual(spec['artifacts'], [])
+        self.assertIsNone(spec['backend_report'])
+
+    def test_refuses_tools_and_writes_outside_declared_authority(self):
+        cases = {
+            'stage': dict(stage='optimizer'),
+            'executable from design': dict(argv=['/work/design/tool.py']),
+            'executable from candidate': dict(argv=['/candidate/tool'], version_argv=None),
+            'reserved mount': dict(mounts=[{'source': '/usr', 'at': '/work/tool'}]),
+            'relative mount': dict(mounts=[{'source': 'tool', 'at': '/tool'}]),
+            'overlap': dict(mounts=[{'source': '/usr', 'at': '/tool'}, {'source': '/usr', 'at': '/tool/x'}]),
+            'in-place rename': dict(writes={'project/board.txt': 'design/project/other.txt'}),
+            'executor collision': dict(writes={'project/board.txt': 'stdout.log'}),
+            'escape': dict(writes={'../board.txt': 'design/../board.txt'}),
+            'empty writes': dict(writes={}),
+            'undeclared backend artifact': dict(backend_report={'artifact': 'out/result.json', 'key': 'backend'}),
+            'exit without zero': dict(adoptable_exits=[2]),
+            'boolean exit': dict(adoptable_exits=[0, True]),
+            'timeout': dict(timeout_s=0),
+            'unknown field': dict(summary='writer says it worked'),
+            'source outside mounts': dict(source='/usr/lib/python3'),
+        }
+        for label, overrides in cases.items():
+            with self.subTest(label), self.assertRaises(ValueError):
+                validate_step(self.spec(**overrides))
+
+    def test_missing_mount_source_refused_at_launch_but_not_for_retained_verification(self):
+        spec = self.spec(mounts=[{'source': str(Path(self.tmp.name) / 'gone'), 'at': '/tool'}])
+        with self.assertRaisesRegex(ValueError, 'does not exist'):
+            validate_step(spec)
+        self.assertEqual(validate_step(spec, host=False)['mounts'][0]['at'], '/tool')
+
+    def test_sandbox_profile_ignores_run_paths_but_not_isolation(self):
+        a = sandbox_argv('/tmp/a/inputs', '/tmp/a/run', ['/usr/bin/true'], extra_ro=[(self.tool, '/tool')])
+        b = sandbox_argv('/tmp/b/inputs', '/tmp/b/run', ['/usr/bin/false'], extra_ro=[(self.tmp.name, '/tool')])
+        networked = sandbox_argv('/tmp/a/inputs', '/tmp/a/run', ['/usr/bin/true'], network=True,
+                                 extra_ro=[(self.tool, '/tool')])
+        self.assertEqual(sandbox_profile(a), sandbox_profile(b))
+        self.assertNotEqual(sandbox_profile(a), sandbox_profile(networked))
+
+
+def fake(inputs, outputs, status='completed'):
+    return {'inputs': inputs, 'outputs': outputs, 'status': status}
+
+
+class ApplicabilityTests(unittest.TestCase):
+    def test_exact_whole_tree_relation_and_unbroken_chain(self):
+        start = {'board': 'a', 'sch': 's'}
+        placed = fake(start, {'board': 'b'})
+        routed = fake({'board': 'b', 'sch': 's'}, {'board': 'c'})
+        relations = applicability([placed, routed], {'board': 'c', 'sch': 's'})
+        self.assertEqual([r['applicability'] for r in relations], ['superseded', 'applicable'])
+
+    def test_writer_edit_after_step_makes_receipt_inapplicable(self):
+        routed = fake({'board': 'b', 'sch': 's'}, {'board': 'c'})
+        relation, = applicability([routed], {'board': 'c2', 'sch': 's'})
+        self.assertEqual(relation, {'applicability': 'not_applicable', 'differences': ['board']})
+        # Matching outputs are not enough: an unrelated later edit also breaks exactness.
+        relation, = applicability([routed], {'board': 'c', 'sch': 's2'})
+        self.assertEqual(relation, {'applicability': 'not_applicable', 'differences': ['sch']})
+
+    def test_writer_edit_between_steps_breaks_chain(self):
+        placed = fake({'board': 'a'}, {'board': 'b'})
+        routed = fake({'board': 'b-edited'}, {'board': 'c'})
+        relations = applicability([placed, routed], {'board': 'c'})
+        self.assertEqual([r['applicability'] for r in relations], ['not_applicable', 'applicable'])
+
+    def test_unadoptable_attempts_never_apply(self):
+        for status in ('failed', 'timeout', 'cancelled', 'unavailable', 'refused'):
+            relation, = applicability([fake({'board': 'a'}, {'board': 'b'}, status)], {'board': 'b'})
+            self.assertEqual(relation, {'applicability': 'not_applicable', 'differences': ['status:' + status]})
+
+
+class StepExecutionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.tool = self.root / 'tool'
+        self.tool.mkdir()
+        (self.tool / 'step.py').write_text(TOOL)
+        self.design = self.root / 'design'
+        (self.design / 'project').mkdir(parents=True)
+        (self.design / 'project/board.txt').write_text('empty board')
+        (self.design / 'project/rules.txt').write_text('rules')
+        self.binding = {'implementation': 1, 'source_candidate_id': 'c' * 64, 'receipt_index': 1}
+        self.count = 0
+
+    def spec(self, mode='edit', *extra, **overrides):
+        value = step(mode, *extra, **overrides)
+        value['mounts'] = [{'source': str(self.tool), 'at': '/tool'}]
+        return value
+
+    def run_step(self, spec, **kwargs):
+        self.count += 1
+        path = self.root / 'work/receipts' / f'{self.count}-{spec["step"]}'
+        return path, run_step(path, self.design, spec, {**self.binding, 'receipt_index': self.count}, **kwargs)
+
+    @toolchain_test
+    def test_completed_step_records_coordinator_observed_identity_and_adopts_exactly(self):
+        before = (self.design / 'project/board.txt').read_bytes()
+        path, receipt = self.run_step(self.spec())
+        self.assertEqual((self.design / 'project/board.txt').read_bytes(), before)
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual(receipt['exit_code'], 0)
+        self.assertEqual(receipt['tool']['executable']['sha256'], digest('/usr/bin/python3'))
+        self.assertEqual(receipt['tool']['reported_version'],
+                         {'status': 'reported', 'value': 'step-tool 1.2.3', 'reason': None})
+        self.assertEqual(receipt['tool']['source_tree']['files'], 1)
+        self.assertEqual(receipt['tool']['source_tree']['sha256'],
+                         identity({'step.py': digest(self.tool / 'step.py')}))
+        self.assertEqual(receipt['inputs'], {'project/board.txt': digest(self.design / 'project/board.txt'),
+                                             'project/rules.txt': digest(self.design / 'project/rules.txt')})
+        produced = path / 'run/design/project/board.txt'
+        self.assertEqual(produced.read_text(), 'placed board empty board')
+        self.assertEqual(receipt['outputs'], {'project/board.txt': digest(produced)})
+        self.assertEqual(receipt['changed'], ['project/board.txt'])
+        self.assertEqual(receipt['violations'], [])
+        self.assertIn('--unshare-net', receipt['execution']['sandbox_argv'])
+        self.assertEqual(receipt['sandbox_profile_sha256'],
+                         identity(sandbox_profile(receipt['execution']['sandbox_argv'])))
+        self.assertEqual(validate_receipt(path, binding=self.binding), receipt)
+        adopt(path, receipt, self.design)
+        self.assertEqual((self.design / 'project/board.txt').read_text(), 'placed board empty board')
+
+    @toolchain_test
+    def test_tool_without_version_string_keeps_executable_hash_and_unknown_identity(self):
+        for label, overrides in (('undeclared', {'version_argv': None}),
+                                 ('silent', {'version_argv': ['/usr/bin/python3', '/tool/step.py', 'silent-version']})):
+            with self.subTest(label):
+                path, receipt = self.run_step(self.spec(**overrides))
+                self.assertEqual(receipt['tool']['reported_version']['status'], 'unknown')
+                self.assertIsNone(receipt['tool']['reported_version']['value'])
+                self.assertEqual(receipt['tool']['executable']['sha256'], digest('/usr/bin/python3'))
+                self.assertEqual(receipt['status'], 'completed')
+                validate_receipt(path)
+
+    @toolchain_test
+    def test_exit_semantics_partial_failed_crash_and_scope_refusals(self):
+        cases = [
+            (self.spec('edit', '2', adoptable_exits=[0, 2]), 'partial', []),
+            (self.spec('edit', '3', adoptable_exits=[0, 2]), 'failed', []),
+            (self.spec('crash'), 'failed', []),
+            (self.spec('outside'), 'refused', ['write_outside_scope:project/rules.txt']),
+            (self.spec('add'), 'refused', ['inventory_changed:project/extra.txt']),
+            (self.spec('edit', argv=['/tool/missing']), 'failed', ['tool_changed']),
+        ]
+        for spec, status, violations in cases:
+            with self.subTest(spec['argv']):
+                original = stage_receipts.file_tree(self.design)
+                path, receipt = self.run_step(spec)
+                self.assertEqual(receipt['status'], status)
+                for violation in violations:
+                    self.assertIn(violation, receipt['violations'])
+                self.assertEqual(validate_receipt(path)['status'], status)
+                if status == 'partial':
+                    continue
+                with self.assertRaisesRegex(ValueError, 'no output adopted or substituted'):
+                    adopt(path, receipt, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), original)
+
+    @toolchain_test
+    def test_out_of_place_output_and_verbatim_backend_identity(self):
+        spec = self.spec('out', '2', writes={'project/board.txt': 'out/board.txt'}, adoptable_exits=[0, 2],
+                         artifacts=['out/result.json'],
+                         backend_report={'artifact': 'out/result.json', 'key': 'backend'})
+        path, receipt = self.run_step(spec)
+        self.assertEqual(receipt['status'], 'partial')
+        self.assertEqual(receipt['tool']['backend'],
+                         {'status': 'reported', 'value': {'name': 'test', 'version': None, 'build': 'b1'},
+                          'reason': None})
+        self.assertEqual(set(receipt['artifacts']), {'out/result.json'})
+        validate_receipt(path)
+        missing = self.spec('edit', writes={'project/board.txt': 'out/board.txt'}, artifacts=['out/result.json'],
+                            backend_report={'artifact': 'out/result.json', 'key': 'backend'})
+        path, receipt = self.run_step(missing)
+        self.assertEqual(receipt['tool']['backend']['status'], 'unknown')
+        self.assertEqual(receipt['artifacts'], {'out/result.json': None})
+        self.assertEqual(receipt['status'], 'refused')
+        self.assertIn('missing_output:project/board.txt', receipt['violations'])
+
+    @toolchain_test
+    def test_timeout_and_cancellation_bind_partial_receipts(self):
+        path, receipt = self.run_step(self.spec('sleep', timeout_s=1, version_argv=None))
+        self.assertEqual(receipt['status'], 'timeout')
+        validate_receipt(path)
+        cancellation = Cancellation()
+        timer = threading.Timer(1, cancellation.cancel)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_step(self.spec('sleep', version_argv=None), cancellation=cancellation)
+        path = self.root / 'work/receipts' / f'{self.count}-test-helper'
+        receipt = validate_receipt(path)
+        self.assertEqual(receipt['status'], 'cancelled')
+        self.assertEqual(receipt['execution']['execution'], 'interrupted')
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(path, receipt, self.design)
+
+    @toolchain_test
+    def test_tampered_forged_and_foreign_receipts_refused(self):
+        path, receipt = self.run_step(self.spec())
+
+        def forged(change):
+            value = json.loads(json.dumps(receipt))
+            change(value)
+            value['identity'] = identity({k: v for k, v in value.items() if k != 'identity'})
+            write_json(path / 'receipt.json', value)
+
+        def restore():
+            write_json(path / 'receipt.json', receipt)
+
+        attacks = {
+            'claimed output': (lambda r: r['outputs'].update({'project/board.txt': '0' * 64}), 'outputs changed'),
+            'filled version': (lambda r: r['tool']['reported_version'].update(value='step-tool 9'), 'reported version'),
+            'status': (lambda r: r.update(status='partial'), 'status mismatch'),
+            'exit code': (lambda r: r.update(exit_code=2), 'exit code'),
+            'inputs': (lambda r: r['inputs'].update({'project/rules.txt': '0' * 64}), 'inputs changed'),
+            'network': (lambda r: r['execution']['sandbox_argv'].remove('--unshare-net'), 'execution record'),
+            'foreign tool path': (lambda r: r['tool']['executable'].update(path='/tool/other'), 'tool identity'),
+            'violations': (lambda r: r.update(violations=[]) or r.update(violations=['tool_changed']), 'violations'),
+        }
+        for label, (change, message) in attacks.items():
+            with self.subTest(label):
+                forged(change)
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_receipt(path)
+                restore()
+        # Rewriting both retained execution copies still cannot remove network isolation.
+        record = read_json(path / 'run/execution.json')
+        write_json(path / 'run/execution.json', {**record, 'sandbox_argv': [
+            a for a in record['sandbox_argv'] if a != '--unshare-net']})
+        forged(lambda r: r['execution'].update(sandbox_argv=[a for a in r['execution']['sandbox_argv']
+                                                             if a != '--unshare-net']))
+        with self.assertRaisesRegex(ValueError, 'network isolation'):
+            validate_receipt(path)
+        write_json(path / 'run/execution.json', record)
+        restore()
+        value = dict(receipt, summary='writer: routed and passed')
+        write_json(path / 'receipt.json', value)
+        with self.assertRaisesRegex(ValueError, 'malformed'):
+            validate_receipt(path)
+        restore()
+        unsigned = dict(receipt, status='failed')
+        write_json(path / 'receipt.json', unsigned)
+        with self.assertRaisesRegex(ValueError, 'identity'):
+            validate_receipt(path)
+        restore()
+        with self.assertRaisesRegex(ValueError, 'foreign'):
+            validate_receipt(path, binding={**self.binding, 'implementation': 2})
+        produced = path / 'run/design/project/board.txt'
+        produced.write_text('edited after the step')
+        with self.assertRaisesRegex(ValueError, 'outputs changed'):
+            validate_receipt(path)
+        produced.write_text('placed board empty board')
+        (path / 'run/stdout.log').write_text('injected')
+        with self.assertRaisesRegex(ValueError, 'execution artifacts changed'):
+            validate_receipt(path)
+
+    @toolchain_test
+    def test_index_applicability_and_captured_proposal(self):
+        work = self.root / 'work'
+        path, receipt = self.run_step(self.spec())
+        adopt(path, receipt, self.design)
+        anchor = bind_implementation(work, self.design, 1, 'c' * 64)
+        index = read_json(work / 'stage-receipts.json')
+        self.assertEqual(index['receipts'][0]['applicability'], 'applicable')
+        delivered = stage_receipts.file_tree(self.design)[0]
+        verify_implementation(work, anchor, 1, 'c' * 64, captured=delivered, steps=[self.spec()])
+        changed = {**delivered, 'project/board.txt': '0' * 64}
+        with self.assertRaisesRegex(ValueError, 'claimed applicable stage receipt output differs from captured'):
+            verify_implementation(work, anchor, 1, 'c' * 64, captured=changed)
+        with self.assertRaisesRegex(ValueError, 'differs from the campaign declaration'):
+            verify_implementation(work, anchor, 1, 'c' * 64, steps=[self.spec('crash')])
+        with self.assertRaisesRegex(ValueError, 'foreign'):
+            verify_implementation(work, anchor, 2, 'c' * 64)
+        with self.assertRaisesRegex(ValueError, 'changed or missing'):
+            verify_implementation(work, '0' * 64, 1, 'c' * 64)
+        # A writer edit after the step leaves the receipt retained but inapplicable.
+        (self.design / 'project/board.txt').write_text('writer edit')
+        rebound = build_index(work, self.design, 1, 'c' * 64)
+        self.assertEqual(rebound['receipts'][0]['applicability'], 'not_applicable')
+        self.assertEqual(rebound['receipts'][0]['differences'], ['project/board.txt'])
+        stray = work / 'receipts/2-forged'
+        stray.mkdir()
+        write_json(stray / 'receipt.json', receipt)
+        with self.assertRaisesRegex(ValueError, 'foreign|malformed|changed'):
+            build_index(work, self.design, 1, 'c' * 64)
+
+
+class CampaignStageReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        source = self.root / 'source'
+        source.mkdir()
+        for name in ('board', 'schematic', 'requirements', 'targets', 'reference', 'model'):
+            (source / name).write_text(name)
+        write_json(source / 'design.json', {'value': 15})
+        (source / 'solver.py').write_text('from pathlib import Path\nimport json\nvalue=json.loads(Path("/candidate/design/design.json").read_text())["value"]\nPath("raw.json").write_text(json.dumps({"value":value}))\n')
+        (source / 'adapter.py').write_text('''import json, sys
+from pathlib import Path
+request = json.loads(Path(sys.argv[1]).read_text())
+value = json.loads(Path("/work/tool/raw.json").read_text())["value"]
+report = {"schema": "agent-ee.measurements/1", "candidate_id": request["candidate_id"],
+ "files": request["files"], "tool": "test-protocol", "version": "1", "domain": "electrical",
+ "artifacts": ["tool/raw.json"], "metrics": {"output": {"value": value, "unit": "V", "condition": "load"}}}
+Path(sys.argv[2]).write_text(json.dumps(report))
+''')
+        self.tool = self.root / 'tool'
+        self.tool.mkdir()
+        (self.tool / 'fix.py').write_text('import json, sys\nfrom pathlib import Path\n'
+            'Path("/work/design/design/design.json").write_text(json.dumps({"value": 5}))\n'
+            'raise SystemExit(int(sys.argv[1]))\n')
+        definition = {'harness': 'codex', 'model': 'test', 'effort': 'high', 'timeout_s': 10}
+        self.profile = {'schema': 'agent-ee.profile/1', 'name': 'protocol-test',
+            'reviewers': [{**definition, 'role': 'circuit'}, {**definition, 'role': 'physical'}],
+            'adjudicator': definition}
+        scope = {'schema': 'agent-ee.scope/2', 'name': 'protocol', 'scope': 'stage receipt integration test',
+            'board': 'design/board', 'schematic': 'design/schematic', 'mutable_inputs': ['design/design.json'],
+            'inputs': [{'path': str(source), 'at': 'design'}], 'review_profile': self.profile,
+            'checks': [{'id': 'response', 'kind': 'measurements', 'params': {
+                'adapter': 'design/adapter.py', 'tool': {'argv': ['/usr/bin/python3', '/candidate/design/solver.py'],
+                'sha256': digest('/usr/bin/python3'), 'domain': 'electrical', 'inputs': ['design/solver.py']},
+                'calibration_inputs': ['design/model'],
+                'limits': {'output': {'unit': 'V', 'condition': 'load', 'min': 0, 'max': 10}}}}],
+            'baseline': {'requirements': [{'id': 'R1', 'statement': 'Output in [0,10] V at load',
+                'source': {'path': 'design/requirements', 'locator': 'R1'}, 'checks': ['response']}],
+                'targets': ['design/targets'], 'reference_architectures': ['design/reference']}}
+        write_json(self.root / 'scope.json', scope)
+        self.config = {'schema': 'agent-ee.campaign/1', 'scope': 'scope.json', 'review_profile': self.profile,
+                       'implementation': definition, 'max_iterations': 3, 'max_seconds': 60}
+        self.addCleanup(patch.stopall)
+        patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
+        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}).start()
+
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
+        run = Path(run)
+        if label == 'implementation':
+            # The writer's statement and its scratch files are not evidence; only the coordinator step edits here.
+            forged = run / 'review-work/implementation/receipts/1-fix-helper/receipt.json'
+            write_json(forged, {'schema': 'agent-ee.stage-receipt/1', 'status': 'completed'})
+            return {'execution': 'ok'}, {'summary': 'Ran the helper; it passed'}
+        packet = read_json(run / 'packet.json')
+        ident = {k: packet[k] for k in ('candidate_id', 'run_id')}
+        if label == 'adjudicator':
+            checks = [read_json(p) for p in (run / 'checks').glob('*.json')]
+            decisions = [{'finding_id': 'check/' + c['id'], 'disposition': 'accepted', 'reason': 'R1 failed',
+                'evidence': [{'path': 'checks/' + c['id'] + '.json', 'locator': 'outcome'}]}
+                for c in checks if c['outcome'] == 'defect']
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/1', **ident, 'decisions': decisions}
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/1', **ident,
+            'packet_sha256': packet['packet_sha256'], 'role': label,
+            'coverage': ['protocol'], 'limitations': ['scripted test response'], 'findings': []}
+
+    def step(self, code=0, **overrides):
+        return {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'fix-helper',
+                'argv': ['/usr/bin/python3', '/tool/fix.py', str(code)],
+                'mounts': [{'source': str(self.tool), 'at': '/tool'}], 'source': '/tool',
+                'writes': {'design/design.json': 'design/design/design.json'}, 'timeout_s': 20, **overrides}
+
+    def campaign(self, steps):
+        write_json(self.root / 'campaign.json', {**self.config, 'implementation_steps': steps})
+        with contextlib.redirect_stdout(io.StringIO()):
+            status = run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+        return status, read_json(self.root / 'campaign/state.json')
+
+    @toolchain_test
+    def test_coordinator_step_receipt_bound_to_captured_proposal(self):
+        status, state = self.campaign([self.step()])
+        self.assertEqual(status, 0, state)
+        self.assertEqual(state['state'], 'criteria_satisfied')
+        work = self.root / 'campaign/implementations/1'
+        index = read_json(work / 'stage-receipts.json')
+        self.assertEqual(state['stage_receipts'], {'1': digest(work / 'stage-receipts.json')})
+        self.assertEqual([r['applicability'] for r in index['receipts']], ['applicable'])
+        self.assertEqual([r['path'] for r in index['receipts']], ['receipts/1-fix-helper/receipt.json'])
+        receipt = read_json(work / index['receipts'][0]['path'])
+        self.assertEqual(receipt['tool']['reported_version']['status'], 'unknown')
+        self.assertEqual(receipt['tool']['executable']['sha256'], digest('/usr/bin/python3'))
+        proposal = read_json(self.root / 'campaign/runs/2/candidate.json')
+        self.assertEqual(proposal['files'], index['delivered'])
+        self.assertEqual(proposal['files']['design/design.json'], receipt['outputs']['design/design.json'])
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+        # The writer could not reach this coordinator record; tampering is still detected.
+        output = work / 'receipts/1-fix-helper/run/design/design/design.json'
+        output.write_text('{"value": 5} ')
+        with self.assertRaisesRegex(ValueError, 'stage receipt outputs changed'):
+            verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_claimed_output_differing_from_captured_proposal_fails_verify_campaign(self):
+        original = stage_receipts.bind_implementation
+
+        def late_edit(work, design, *args):
+            anchor = original(work, design, *args)
+            # A mutation after the coordinator bound the receipt reaches the capture.
+            write_json(Path(design) / 'design/design.json', {'value': 4})
+            return anchor
+
+        with patch('agent_ee.stage_receipts.bind_implementation', side_effect=late_edit):
+            status, state = self.campaign([self.step()])
+        self.assertEqual(status, 1)
+        self.assertEqual(state['state'], 'incomplete')
+        self.assertIn('claimed applicable stage receipt output differs from captured proposal', state['error'])
+        with self.assertRaisesRegex(ValueError, 'claimed applicable stage receipt output differs'):
+            verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_failed_step_stops_repair_without_substitution_and_stays_verifiable(self):
+        status, state = self.campaign([self.step(3)])
+        self.assertEqual(status, 1)
+        self.assertEqual(state['state'], 'incomplete')
+        self.assertIn('no output adopted or substituted', state['error'])
+        work = self.root / 'campaign/implementations/1'
+        self.assertFalse((work / 'proposal.scope.json').exists())
+        self.assertFalse((self.root / 'campaign/runs/2').exists())
+        index = read_json(work / 'stage-receipts.json')
+        self.assertEqual(index['receipts'][0]['applicability'], 'not_applicable')
+        self.assertEqual(read_json(work / index['receipts'][0]['path'])['status'], 'failed')
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        (work / 'stage-receipts.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'stage receipt index changed or missing'):
+            verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_step_writing_immutable_input_refused_before_execution(self):
+        status, state = self.campaign([self.step(writes={'design/adapter.py': 'design/design/adapter.py'})])
+        self.assertEqual(status, 1)
+        self.assertIn('writes outside mutable_inputs', state['error'])
+        self.assertFalse((self.root / 'campaign/implementations/1/receipts').exists())
+        self.assertEqual(read_json(self.root / 'campaign/implementations/1/stage-receipts.json')['receipts'], [])
+        verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_no_steps_records_empty_index_and_unanchored_receipts_refused(self):
+        write_json(self.root / 'source/design.json', {'value': 15})
+        status, state = self.campaign([])
+        self.assertEqual(status, 1, state)
+        # The writer changed nothing, so the campaign does not converge; the index is still explicit.
+        self.assertEqual((state['state'], state['reason']), ('escalated', 'repeated_design'))
+        work = self.root / 'campaign/implementations/1'
+        self.assertEqual(read_json(work / 'stage-receipts.json')['receipts'], [])
+        verify_campaign(self.root / 'campaign')
+        state.pop('stage_receipts')
+        write_json(self.root / 'campaign/state.json', state)
+        with self.assertRaisesRegex(ValueError, 'stage receipts exist without campaign anchors'):
+            verify_campaign(self.root / 'campaign')
+
+    def test_invalid_step_declaration_refused_before_campaign_creation(self):
+        write_json(self.root / 'campaign.json', {**self.config, 'implementation_steps': [self.step(stage='router')]})
+        with self.assertRaisesRegex(ValueError, 'unknown stage'):
+            run_campaign(self.root / 'campaign.json', self.root / 'campaign')
+        self.assertFalse((self.root / 'campaign').exists())
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -135,6 +135,13 @@ The initial captured scope owns that allowlist; campaign verification re-derives
 it. The implementation cannot broaden it by editing state or adding a file.
 This protects the supported proposal path, not arbitrary host filesystem writes.
 
+[Stage receipts](stage-receipts.md) for writer-side steps are created only by the
+coordinator. It runs the declared tool itself without network access and stores the
+receipt outside the writer's writable mount. Writer statements and writer-made
+files are never receipts. A receipt is provenance only: it neither satisfies a
+check nor replaces the fresh checks of the captured proposal. An unknown tool version
+is recorded as unknown.
+
 The implementation call receives baseline and campaign history in its prompt.
 That is additional inference exposure compared with an initial reviewer. The
 same subscription credential/network limitations apply to it. Initial reviewers

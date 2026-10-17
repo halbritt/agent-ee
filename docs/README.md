@@ -29,6 +29,7 @@ product's hardware qualification.
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
 | Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
 | Plan generation from an empty candidate: stages, benchmark ladder and epics | [Generator roadmap](generator-roadmap.md) |
+| Record coordinator-run writer-side steps and their exact applicability | [Stage receipts](stage-receipts.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 

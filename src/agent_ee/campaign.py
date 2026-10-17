@@ -51,6 +51,24 @@ def implement(root, previous, definition, state, deadline):
     verify_receipt(work, record, expected, "implementation", "implementation")
     if record["execution"] != "ok" or response is None:
         raise ValueError("implementation execution failed; no retry or provider fallback")
+    check_proposal(design, manifest, state)
+    if digest(root / "config.json") != state["config_sha256"]:
+        raise ValueError("campaign configuration changed")
+    steps = read_json(root / "config.json").get("implementation_steps", [])
+    if "stage_receipts" in state:
+        run_implementation_steps(work, design, manifest, state, deadline, steps)
+        if steps:
+            check_proposal(design, manifest, state)
+    elif steps:
+        raise ValueError("campaign predates stage receipts; start a fresh campaign to run implementation steps")
+    scope = copy.deepcopy(manifest["scope"])
+    scope["inputs"] = [{"path": str(p), "at": p.name} for p in sorted(design.iterdir())]
+    path = work / "proposal.scope.json"
+    write_json(path, scope)
+    return path
+
+
+def check_proposal(design, manifest, state):
     actual = {}
     for path in design.rglob("*"):
         if path.is_symlink():
@@ -70,11 +88,26 @@ def implement(root, previous, definition, state, deadline):
         adapter = spec.get("params", {}).get("adapter")
         if adapter and (not (design / adapter).is_file() or digest(design / adapter) != manifest["files"][adapter]):
             raise ValueError("implementation changed a verification adapter")
-    scope = copy.deepcopy(manifest["scope"])
-    scope["inputs"] = [{"path": str(p), "at": p.name} for p in sorted(design.iterdir())]
-    path = work / "proposal.scope.json"
-    write_json(path, scope)
-    return path
+
+
+def run_implementation_steps(work, design, manifest, state, deadline, steps):
+    """Coordinator-run declared steps on the delivered design; receipts are provenance only."""
+    from .stage_receipts import adopt, bind_implementation, run_step, validate_step
+
+    number = int(work.name)
+    try:
+        for k, spec in enumerate(steps, 1):
+            spec = validate_step(spec)
+            outside = sorted(set(spec["writes"]) - set(state["mutable_inputs"]))
+            if outside:
+                raise ValueError(f"implementation step {spec['step']} writes outside mutable_inputs: {outside}")
+            receipt_dir = work / "receipts" / f"{k}-{spec['step']}"
+            receipt = run_step(receipt_dir, design, spec, {"implementation": number,
+                "source_candidate_id": manifest["candidate_id"], "receipt_index": k}, deadline=deadline)
+            # A failed, partial-but-unadoptable or refused step stops the repair; no default output.
+            adopt(receipt_dir, receipt, design)
+    finally:
+        state["stage_receipts"][work.name] = bind_implementation(work, design, number, manifest["candidate_id"])
 
 
 def run_campaign(config_path, out):
@@ -96,6 +129,12 @@ def run_campaign(config_path, out):
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
         raise ValueError("campaign requires an immutable scope/2 or scope/3 baseline")
     profile = validate_profile(config["review_profile"])
+    steps = config.get("implementation_steps", [])
+    if not isinstance(steps, list):
+        raise ValueError("implementation_steps must be a list of agent-ee.stage-step/1 declarations")
+    from .stage_receipts import validate_step
+    for spec in steps:
+        validate_step(spec)
     # Reuse the subscription route validator for the implementation definition.
     validate_profile({**profile, "adjudicator": config["implementation"]})
     root = Path(out).resolve()
@@ -105,7 +144,7 @@ def run_campaign(config_path, out):
         write_json(root / "config.json", config)
         write_json(root / "profile.json", profile)
         state = {"schema": "agent-ee.campaign-state/1", "state": "running", "history": [],
-                 "config_sha256": digest(root / "config.json"),
+                 "config_sha256": digest(root / "config.json"), "stage_receipts": {},
                  "launch_environment": {"policy_files": policy_files(), "runtime_files": runtime_files()},
                  "implementation_definition": {**config["implementation"], "tool_mode": "investigate"}}
         write_json(root / "state.json", state)
@@ -207,6 +246,8 @@ def verify_campaign_records(root):
             if expected != wanted:
                 raise ValueError('implementation launch expectation changed')
             verify_receipt(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation')
+    from .stage_receipts import verify_campaign_receipts
+    verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []))
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
