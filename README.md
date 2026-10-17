@@ -166,6 +166,12 @@ URLs before offline checks, with byte limits, deadlines and per-part missing
 records. Automatic propagation from selected parts remains pending; capturing a
 PDF does not verify its applicability or its engineering claims.
 
+[Reference-block capture](docs/reference-block-interface.md) retains files from a
+pinned local commit and checks declared ports against the native sheet. It credits
+sealed interface evidence only for the block's actual native components and
+hierarchy. Parts subsets, layouts and adapted designs still need qualification;
+a passing run on a separate schematic cannot qualify the block.
+
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references. These checks do not yet establish that an
