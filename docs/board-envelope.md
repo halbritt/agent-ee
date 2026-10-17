@@ -10,7 +10,8 @@ envelope adds what an empty candidate needs before any part is placed
 ```sh
 PYTHONPATH=src python3 -m agent_ee.board_envelope ENVELOPE.json \
   --source-path requirements/envelope.json --out NEW_DIRECTORY \
-  [--profile CAPTURED_PROFILE.json] [--board SAVED.kicad_pcb]
+  [--profile PROFILE.json [--sources SOURCE_DIRECTORY]] \
+  [--original-requirements REQUIREMENTS.json] [--board SAVED.kicad_pcb]
 ```
 
 The command is offline, standard library only and deterministic. Exit 0 means
@@ -21,7 +22,8 @@ directory must not already exist. An I/O failure can leave a partial
 directory; discard it and use a new one.
 
 No check kind is registered. A structural pass is not placement, fabrication or
-acceptance evidence. Every output records `acceptance_ready: false`.
+acceptance evidence. Every output records `acceptance_ready: false`. Acceptance
+needs the [baseline integration](#baseline-integration) and mapped checks.
 
 ## Record
 
@@ -74,21 +76,38 @@ partial validation record.
 
 ## Fabricator profile
 
-Profile support stays unresolved: the validator never supplies a default
-fabricator, layer limit or rule. The AGENTEE-75 `agent-ee.fab-profile/1`
-contract is not on main, so the validator does not interpret profile contents.
+`fab_profile` is `null` (none selected yet) or `{name, sha256}` naming a
+captured [AGENTEE-75 profile](fab-profile.md). The validator never supplies a
+default fabricator, layer limit or rule. Profile contents are read only by
+`fab_profile.compile_profile` and `fab_profile.evaluate_geometry`, with
+`fab_profile.simple_polygon` qualifying the declared outline. There is no second
+profile interpreter.
 
-- With `fab_profile: null`, the record reports `fab_profile_selected` as
-  unresolved.
-- With a reference, profile bytes passed through `--profile` must match its
-  `sha256`, or the envelope is refused. Bytes passed without a reference are
-  also refused.
-- Whether the profile supports the layer count, and whether its name matches,
-  is always reported as unresolved (`fab_profile_supports_layer_count`).
+- With `fab_profile: null`, `fab_profile_selected` is unresolved.
+- With a reference, the profile bytes must match its `sha256`, and the profile's
+  `name` must equal the referenced name. Otherwise the envelope is refused. Bytes
+  passed without a reference are also refused. A profile the AGENTEE-75 compiler
+  refuses (missing fields, duplicate JSON keys, bad limits) refuses the envelope.
+- Without profile bytes, `fab_profile_bytes` is unresolved.
 
-While anything is unresolved, `outcome` is `unknown`. Once the profile contract
-is committed, the layer-count predicate belongs to that integration. It is not
-reimplemented here.
+Support is decided only by a **ready** (source-verified) **minimum-tier** limit.
+Preferred limits only classify surcharges and never decide support.
+
+| Predicate | Limit | Result |
+| --- | --- | --- |
+| `fab_profile_supports_layer_count` | `max_layers` | `layer_count` above the limit is refused. Without a minimum-tier `max_layers` limit the predicate is unresolved |
+| `fab_profile_supports_board_size` | `max_board_mm` | Outline extents are compared on fixed saved axes, x to x and y to y. No rotation is granted, so a 20 × 12 mm outline is refused against `[12, 20]`. Without the limit there is no predicate |
+
+A limit is ready only when its cited source is found unchanged in a capture
+inventory. Offline (`--profile` alone) no source is verified, so both predicates
+stay unresolved with the compiler's reason. `--sources DIR` hashes the regular
+files under `DIR` now, as capture would, and resolves the cited paths there.
+Symlinks are not followed. That offline run is a preview. The baseline repeats
+the same check against the actual capture.
+
+The validation record lists each satisfied predicate with its limit ID, value and
+the declared value, plus `sources_verified` and the verified `source_paths`.
+While anything is unresolved, `outcome` is `unknown`.
 
 ## Derived obligations
 
@@ -101,7 +120,8 @@ selected as a scope input. The outputs are:
 | `envelope-validation.json` | `agent-ee.envelope-validation/1`: envelope SHA-256, normalized geometry, edge outward axes, fixed-footprint anchors and mating axes, unresolved predicates |
 | `envelope-requirements.json` | `agent-ee.envelope-requirements/1`: one obligation per outline, layer count, stackup, profile reference, hole, keepout and fixed footprint |
 | `requirements.md` | The same obligations and unresolved predicates as text |
-| `dialog-requirements.json` | The obligations as original requirements in the stage-one dialog format `agent-ee.requirements/1` (`id`, `text`, empty `source_question_ids`), from branch `impl/intent-record` (AGENTEE-26/25, not on main) |
+| `dialog-requirements.json` | The obligations as original requirements in the [dialog's](design-dialog.md) `agent-ee.requirements/1` format (`id`, `text` with source locator and envelope SHA-256, empty `source_question_ids`) |
+| `stage-one-requirements.json` | With `--original-requirements` only, see [stage-one requirements](#stage-one-requirements) |
 | `round-trip.json` | With `--board` only, see below |
 
 Each obligation has a stable ID, `R-envelope-<id>-<field>[-<name>]`. It also
@@ -114,39 +134,109 @@ has:
 - the SHA-256 of the canonical normalized field value;
 - the `check_kinds` that may evaluate it.
 
-The same envelope bytes always produce byte-identical outputs. Reformatting the
+The same envelope, profile and source bytes always produce byte-identical outputs. Reformatting the
 JSON changes the envelope hash but no obligation. Changing one field changes
 only the obligation that cites it.
 
-Proposed check-kind names, taken from the ticket graph. They are not
-registered capability kinds and are not an executable gate. Their owners
-still have to confirm them:
+Each obligation's `check_kinds` names the check kinds that may evaluate it. A
+kind name is not coverage by itself. An obligation is covered only through a
+**binding**, a validator for one `(field, kind)` pair that proves the mapped
+check evaluates that exact field:
 
-| Obligation | Check kind |
-| --- | --- |
-| Outline, holes, keepouts, fixed footprints | `placement` (AGENTEE-92) |
-| Layer count, profile reference | `fab_profile` (AGENTEE-75) |
-| Stackup | `fab_package` (AGENTEE-94) |
+| Obligation | Check kinds | Binding today |
+| --- | --- | --- |
+| Profile reference | `fab_profile` (AGENTEE-75, registered) | Bound when the check's `fab_profile` parameter names captured bytes with the referenced SHA-256 |
+| Outline, holes, keepouts, fixed footprints | `placement` (AGENTEE-92, proposed) | None: coverage unknown |
+| Layer count, stackup | `fab_package` (AGENTEE-94, proposed) | None: coverage unknown |
 
-None of these kinds is registered on main, so capture refuses a scope/3
-baseline that maps them today. The AGENTEE-75 profile is delivered through the
-routing-rules lane, so its actual kind and its layer-count predicate must be
-taken from that contract once it is integrated. This module does not register
-them.
+A `fab_profile` check's `max_layers` limit bounds only the maximum, so it cannot
+establish "exactly N copper layers". The layer-count obligation is therefore
+proposed for `fab_package`, not `fab_profile`. AGENTEE-75 also binds exactly one
+requirement per `fab_profile` check, so the profile's limits must name the
+`R-envelope-<id>-fab-profile` requirement.
 
-`agent_ee.board_envelope.require_obligations(scope, requirements)` refuses an
-`agent-ee.scope/3` baseline when any obligation:
+Adding coverage for `placement` or `fab_package` means the owning item adds a
+binding in `board_envelope.BINDINGS`. Registering the kind alone covers nothing.
 
-- is missing or has no mapped check;
-- has a changed statement or source, or a non-acceptance intent;
-- maps a check whose kind is outside its `check_kinds`.
+`obligation_coverage(scope, requirements, record, files)` reports each
+obligation as `bound`, `unmapped` or `unknown`, with its locator and the pending
+item. It refuses:
 
-An obligation is refused rather than dropped. The function also refuses
-requirements derived while predicates remained unresolved. It trusts the
-requirements document it is given. A caller-supplied `complete` flag or
-obligation list is not evidence, so baseline integration must first re-derive
-the document from the captured envelope (and profile) bytes. Calling it from
-baseline compilation is an integration step that has not been done.
+- a scope that is not `agent-ee.scope/3`;
+- a changed statement, source path or locator, or a non-acceptance intent;
+- a mapped check whose kind is outside the field's `check_kinds`, even an
+  executable one, and a binding whose validator fails. A `fab_profile` check over
+  other bytes cannot cover the referenced profile;
+- a baseline `R-envelope-` requirement that the captured envelope does not
+  derive;
+- a validation record and requirements document for different envelope bytes.
+
+`require_obligations(scope, requirements, record, files)` then refuses anything
+not `bound`, listing every such obligation. It also refuses requirements derived
+while predicates were unresolved. An obligation is refused rather than dropped.
+
+## Stage-one requirements
+
+`stage_one_requirements(original, dialog_requirements)` appends the envelope's
+`dialog-requirements.json` to an `agent-ee.requirements/1` original set, for
+example an [intent import's](design-intent.md) `requirements.json`. Both inputs
+and the result pass the [dialog's](design-dialog.md) requirement validator. The
+envelope entries must all be `R-envelope-` obligations without question sources.
+An original set that already holds envelope obligations is refused, so nothing
+is silently merged. `--original-requirements FILE` writes the result as
+`stage-one-requirements.json`.
+
+The result is the dialog's `--requirements` input. The dialog keeps original IDs
+and text unchanged, and refuses a question whose `requirement_id` collides with
+an obligation. So the captured decision record carries every obligation, its
+envelope field and the envelope SHA-256.
+
+## Baseline integration
+
+A scope/3 declares its envelope in a top-level `envelope` field:
+
+```json
+{"envelope": {"path": "requirements/envelope.json",
+              "profile": "requirements/fab-profile.json",
+              "dialog": "requirements/dialog-requirements.json"}}
+```
+
+All three keys are required. `profile` is `null` only when the envelope
+references no profile. `dialog` is the dialog's derived `requirements.json`, or
+an explicit `null` to bind no decision record. While compiling the baseline,
+before the coverage audit, capture:
+
+1. reads the declared envelope and profile from captured bytes with their hashes
+   checked. It refuses a reference without a declared profile path;
+2. revalidates the envelope and resolves profile support against the capture
+   inventory, then re-derives the obligations with `source.path` equal to the
+   declared path. No caller-supplied requirements document or `complete` flag is
+   trusted;
+3. if `dialog` is set, refuses a decision record that lacks an obligation, holds
+   different text (for example from other envelope bytes) or carries an extra
+   `R-envelope-` ID;
+4. applies `require_obligations` to the scope's baseline;
+5. freezes the envelope, profile, verified profile sources and dialog as
+   immutable baseline files. A campaign's `mutable_inputs` cannot include them;
+6. records `envelope` in `agent-ee.baseline/2`: the declaration, the validation
+   record, the derived requirements and the per-obligation coverage. These are
+   part of `baseline_id`, so verification recompiles and compares them.
+
+For scope/2 and scope/3, capture also scans every captured file of at most
+1 MiB that starts with `{` and parses as JSON, whatever its name. It refuses:
+
+- an envelope field on scope/1 or scope/2;
+- a captured `agent-ee.envelope/1` file or an `R-envelope-` requirement without
+  a declaration;
+- a second captured envelope.
+
+Today no envelope scope can be captured. Its outline (and any layer count,
+stackup, hole, keepout or fixed footprint) needs `placement` or `fab_package`,
+which are not registered and have no binding. Capture refuses and names those
+obligations with their pending items. It writes no baseline or candidate record.
+Tests stand in for the missing bindings only inside a test block. They show that
+with complete bindings capture freezes and recompiles the envelope baseline, and
+that the same retained run fails verification once the stand-in is gone.
 
 ## Board round trip
 
@@ -200,6 +290,8 @@ mismatch.
 
 This record states obligations; it does not check placement, courtyards,
 clearances or fabrication. Arcs, cutouts, slots, multiple outlines and oblique
-connector edges are not supported. The proposed check kinds, the profile
-contract and baseline integration are pending other items, and are reported
-here rather than assumed.
+connector edges are not supported. Placement and fab-package bindings are
+pending AGENTEE-92 and AGENTEE-94, so an envelope scope/3 is refused at capture
+until they land. The envelope scan covers captured files up to 1 MiB that start
+with `{`. Profile support means only that the typed, source-quoted minimum
+limits admit the declared values, not that a fabricator accepts the board.

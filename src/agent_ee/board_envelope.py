@@ -2,19 +2,21 @@
 
 Geometry is exact integer nanometres in KiCad board axes (y grows downward).
 A structural pass is not fabrication or placement acceptance: obligations are
-only satisfied later by mapped coordinator checks. Fabricator support is never
-inferred here; it stays unresolved until a captured profile contract exists.
+only satisfied later by mapped coordinator checks. Fabricator support is read
+only through the AGENTEE-75 profile compiler, from sourced minimum-tier limits;
+it is never defaulted, and stays unresolved while a source is unverified.
 """
 import argparse
 from decimal import Decimal, DecimalException
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 
 from .candidate import safe_relative
-from .storage import canonical
+from .storage import canonical, digest
 from .symbol_library import LibraryError, children, nanometres, parse_sexpr
 
 SCHEMA = 'agent-ee.envelope/1'
@@ -30,15 +32,17 @@ MAX_BYTES, MAX_VERTICES, MAX_ITEMS = 1024 * 1024, 1024, 1024
 # Rotations and copper weights stay exact decimals. Values needing more than this
 # many digits before or after the point are refused, never rounded.
 MAX_PLACES = 32
-# Proposed check-kind names from the ticket graph (AGENTEE-92, AGENTEE-75,
-# AGENTEE-94), not registered capability kinds and not an executable gate: the
-# owners still confirm them, and capture refuses a scope that maps them today.
-CHECK_KINDS = {'outline': ['placement'], 'layer_count': ['fab_profile'],
+# Check kinds that may evaluate each field. A kind name alone never covers an
+# obligation: only a (field, kind) entry in BINDINGS, whose validator proves the
+# mapped check evaluates that exact field, does. placement (AGENTEE-92) and
+# fab_package (AGENTEE-94) are proposed and unregistered, so those obligations
+# have explicit unknown coverage and a scope/3 capture refuses them. fab_profile
+# max_layers bounds only the maximum, so it cannot establish an exact layer count.
+CHECK_KINDS = {'outline': ['placement'], 'layer_count': ['fab_package'],
                'stackup': ['fab_package'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement'], 'keepouts': ['placement'],
                'fixed_footprints': ['placement']}
-PROFILE_PENDING = ('AGENTEE-75 fab-profile contract is not committed on main; '
-                   'profile name and layer-count support are not interpreted')
+PENDING_KINDS = {'placement': 'AGENTEE-92', 'fab_package': 'AGENTEE-94'}
 
 
 def load(raw):
@@ -278,13 +282,14 @@ def validate_outline(value):
     for label, start, end in parsed:
         dx, dy = end[0] - start[0], end[1] - start[1]
         record = {'name': label, 'start_mm': mm_point(start), 'end_mm': mm_point(end),
-                  'axis_aligned': dx == 0 or dy == 0, 'length_mm': None, 'outward': None}
+                  'axis_aligned': dx == 0 or dy == 0, 'length_mm': None, 'outward': None,
+                  '_start': start, '_end': end}
         if record['axis_aligned']:
             unit = (sign(dx), sign(dy))
             # Positive shoelace area: interior lies left of each directed edge.
             inward = (-unit[1], unit[0]) if area2 > 0 else (unit[1], -unit[0])
             record.update(length_mm=mm(abs(dx) + abs(dy)), outward=axis((-inward[0], -inward[1])),
-                          _unit=unit, _inward=inward, _start=start, _length=abs(dx) + abs(dy))
+                          _unit=unit, _inward=inward, _length=abs(dx) + abs(dy))
         records[label] = record
     xs, ys = [v[0] for v in vertices], [v[1] for v in vertices]
     rectangle = (len(vertices) == 4 and all(r['axis_aligned'] for r in records.values())
@@ -343,7 +348,64 @@ def validate_stackup(value, count):
     return {'thickness_mm': mm(total), 'layers': records}
 
 
-def validate_profile(value, profile):
+def profile_document(profile):
+    """Profile bytes as the AGENTEE-75 compiler reads them; duplicate keys are refused."""
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError(f'duplicate JSON key in fab profile: {key}')
+            value[key] = item
+        return value
+    try:
+        return json.loads(profile.decode('utf-8'), object_pairs_hook=unique)
+    except (UnicodeError, RecursionError) as exc:
+        raise ValueError(f'fab profile is not UTF-8 JSON: {exc}') from exc
+
+
+def profile_support(document, captured, inventory):
+    """Evaluate envelope support through fab_profile's own compiler and geometry.
+
+    Only a ready (source-verified) minimum-tier limit can resolve a predicate;
+    preferred tiers classify surcharges and never decide support. Board size is
+    compared on fixed saved axes, x to x and y to y, exactly as fab-profile/1.
+    """
+    from .fab_profile import compile_profile, evaluate_geometry
+    files, inputs = captured if captured is not None else ({}, Path(os.devnull))
+    try:
+        compiled = compile_profile(document, files, inputs)
+    except (TypeError, KeyError, AttributeError) as exc:
+        raise ValueError(f'malformed fab profile: {exc}') from exc
+    minima = {c['expected']['key']: c for c in compiled['constraints'] if c['expected']['tier'] == 'minimum'}
+    support, unresolved = [], []
+    for key, predicate in (('max_layers', 'fab_profile_supports_layer_count'),
+                           ('max_board_mm', 'fab_profile_supports_board_size')):
+        constraint = minima.get(key)
+        if constraint is None:
+            if key == 'max_layers':
+                unresolved.append({'predicate': predicate,
+                                   'reason': 'profile states no minimum-tier max_layers limit'})
+            continue
+        if constraint['execution'] != 'ready':
+            unresolved.append({'predicate': predicate, 'limit_id': constraint['id'],
+                               'reason': 'limit source not verified: ' + constraint['reason']})
+            continue
+        result = evaluate_geometry(constraint, inventory)
+        if result['status'] == 'violation':
+            raise ValueError(f"fab profile {document['name']} limit {constraint['id']} ({key} "
+                             f"{constraint['expected']['value']}) does not support the envelope: {result['actual']}"
+                             + (' on fixed saved axes; no rotation is granted' if key == 'max_board_mm' else ''))
+        if result['status'] != 'satisfied':
+            unresolved.append({'predicate': predicate, 'limit_id': constraint['id'],
+                               'reason': result.get('reason', 'not evaluated')})
+            continue
+        support.append({'predicate': predicate, 'limit_id': constraint['id'], 'key': key,
+                        'value': constraint['expected']['value'], 'actual': result['actual'],
+                        'status': 'satisfied'})
+    return compiled, support, unresolved
+
+
+def validate_profile(value, profile, captured, inventory):
     if value is None:
         if profile is not None:
             raise ValueError('profile bytes supplied but the envelope references no fab profile')
@@ -355,14 +417,19 @@ def validate_profile(value, profile):
     if not isinstance(value['sha256'], str) or not SHA256.fullmatch(value['sha256']):
         raise ValueError('fab_profile sha256 must be 64 lowercase hex digits')
     record = {'status': 'referenced', 'name': value['name'], 'sha256': value['sha256']}
-    unresolved = [{'predicate': 'fab_profile_supports_layer_count', 'reason': PROFILE_PENDING}]
     if profile is None:
         record['bytes'] = 'not_supplied'
-        unresolved.insert(0, {'predicate': 'fab_profile_bytes', 'reason': 'profile bytes not supplied'})
-    elif hashlib.sha256(profile).hexdigest() != value['sha256']:
+        return record, [{'predicate': 'fab_profile_bytes', 'reason': 'profile bytes not supplied'}]
+    if hashlib.sha256(profile).hexdigest() != value['sha256']:
         raise ValueError('fab profile bytes do not match the referenced sha256')
-    else:
-        record['bytes'] = 'sha256_match'
+    record['bytes'] = 'sha256_match'
+    document = profile_document(profile)
+    compiled, support, unresolved = profile_support(document, captured, inventory)
+    if compiled['name'] != value['name']:
+        raise ValueError(f"fab profile is named {compiled['name']!r}, not the referenced {value['name']!r}")
+    # source_paths lists only cited sources found in the capture inventory.
+    record.update(as_of=compiled['as_of'], support=support, sources_verified=captured is not None,
+                  source_paths=compiled['immutable_inputs'])
     return record, unresolved
 
 
@@ -461,8 +528,29 @@ def validate_fixed(footprints, vertices, edges):
     return records
 
 
-def validate(raw, *, profile=None):
-    """Return the validator record or raise ValueError; never a partial pass."""
+def declared_inventory(count, copper, edges):
+    """The envelope's own declared facts in fab_profile's inventory shape.
+
+    The outline is qualified by fab_profile's polygon routine, with edge names as
+    locators, so profile limits read the declaration exactly as they read a board.
+    """
+    from .fab_profile import simple_polygon
+    segments = sorted((e['name'], tuple(e['_start']), tuple(e['_end'])) for e in edges.values())
+    extents, problem = simple_polygon(segments)
+    inventory = {'copper_layers': count, 'copper_layer_names': copper, 'outline_xy_mm': extents,
+                 'outline_ids': sorted(edges), 'smt_ids': []}
+    if problem:
+        inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
+    return inventory
+
+
+def validate(raw, *, profile=None, captured=None):
+    """Return the validator record or raise ValueError; never a partial pass.
+
+    captured=(files, inputs) is a capture inventory against which the profile's
+    cited sources are verified; without it no limit is ready, so profile support
+    stays unresolved rather than assumed.
+    """
     envelope = load(raw)
     fields(envelope, 'envelope', ['schema', 'id', 'outline', 'layer_count', 'stackup', 'fab_profile',
                                   'mounting_holes', 'keepouts', 'fixed_footprints'])
@@ -474,7 +562,8 @@ def validate(raw, *, profile=None):
     vertices, edges, outline = validate_outline(envelope['outline'])
     stackup = validate_stackup(envelope['stackup'], envelope['layer_count'])
     copper = copper_names(envelope['layer_count'])
-    fab, unresolved = validate_profile(envelope['fab_profile'], profile)
+    fab, unresolved = validate_profile(envelope['fab_profile'], profile, captured,
+                                       declared_inventory(envelope['layer_count'], copper, edges))
     namespace = set()
     unique_names(envelope['fixed_footprints'], 'reference', 'fixed footprint', namespace)
     unique_names(envelope['mounting_holes'], 'id', 'mounting hole', namespace)
@@ -550,13 +639,17 @@ def derive_requirements(record, source_path):
             'requirements': out}
 
 
-def derive(raw, *, source_path, profile=None):
-    record = validate(raw, profile=profile)
-    requirements = derive_requirements(record, source_path)
-    dialog = {'schema': 'agent-ee.requirements/1', 'requirements': [
+def dialog_requirements(requirements):
+    """Obligations as stage-one original requirements (agent-ee.requirements/1, AGENTEE-25)."""
+    return {'schema': 'agent-ee.requirements/1', 'requirements': [
         {'id': r['id'], 'text': f"{r['statement']} [source {r['source']['path']}#{r['source']['locator']}, "
-                                f"envelope sha256 {record['envelope_sha256']}]",
+                                f"envelope sha256 {requirements['envelope_sha256']}]",
          'source_question_ids': []} for r in requirements['requirements']]}
+
+
+def derive(raw, *, source_path, profile=None, captured=None):
+    record = validate(raw, profile=profile, captured=captured)
+    requirements = derive_requirements(record, source_path)
     markdown = ''.join(f"{r['id']}: {r['statement']}\n  Source: {r['source']['path']} {r['source']['locator']} "
                        f"(field sha256 {r['field_sha256']}); check kinds: {', '.join(r['check_kinds'])}\n\n"
                        for r in requirements['requirements'])
@@ -564,30 +657,197 @@ def derive(raw, *, source_path, profile=None):
     return {'envelope.json': raw, 'envelope-validation.json': canonical(record) + b'\n',
             'envelope-requirements.json': canonical(requirements) + b'\n',
             'requirements.md': markdown.encode('utf-8'),
-            'dialog-requirements.json': canonical(dialog) + b'\n'}
+            'dialog-requirements.json': canonical(dialog_requirements(requirements)) + b'\n'}
 
 
-def require_obligations(scope, requirements):
-    """Refuse a scope/3 baseline that drops, alters or vacuously maps an obligation."""
+def stage_one_requirements(original, envelope_dialog):
+    """Append envelope obligations to stage-one original requirements, unchanged.
+
+    Both inputs are agent-ee.requirements/1 bytes accepted by the AGENTEE-25
+    dialog validator: the original set (for example an AGENTEE-26 intent import)
+    and an envelope's dialog-requirements.json. The result is the dialog's
+    --requirements input, so every obligation enters the owner's decision record
+    with its ID, text and envelope hash. Collisions are refused, never merged.
+    """
+    from .design_dialog import validate_requirements
+    first, second = validate_requirements(original), validate_requirements(envelope_dialog)
+    if not second or any(not r['id'].startswith('R-envelope-') or r['source_question_ids'] for r in second):
+        raise ValueError('envelope dialog requirements must be nonempty R-envelope- obligations without questions')
+    if any(r['id'].startswith('R-envelope-') for r in first):
+        raise ValueError('original requirements already contain envelope obligations; derive a new set')
+    merged = {'schema': 'agent-ee.requirements/1', 'requirements': first + second}
+    raw = canonical(merged) + b'\n'
+    validate_requirements(raw)
+    return raw
+
+
+def bind_fab_profile(item, spec, record, files):
+    """A fab_profile check covers the profile obligation only for the exact referenced bytes."""
+    path = spec.get('params', {}).get('fab_profile') if isinstance(spec.get('params'), dict) else None
+    if not isinstance(path, str) or files.get(path) != record['fab_profile'].get('sha256'):
+        raise ValueError(f"envelope obligation {item['id']} maps fab_profile check {spec['id']} whose "
+                         'captured profile is not the referenced sha256')
+
+
+# (field, check kind) -> validator. Extending coverage to placement or fab_package
+# needs the owning item to add a validator here; registering a kind is not enough.
+BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile}
+
+
+def field_of(item):
+    return item['source']['locator'].split('/')[1]
+
+
+def obligation_coverage(scope, requirements, record, files):
+    """Per-obligation coverage: bound, unmapped or unknown; vacuous maps are refused.
+
+    An altered statement, source locator or intent, or a mapped check that cannot
+    evaluate the obligation's exact field, raises. A missing or unmapped
+    obligation is reported, so the caller refuses it rather than dropping it.
+    """
     if not isinstance(scope, dict) or scope.get('schema') != 'agent-ee.scope/3':
         raise ValueError('envelope obligations require an agent-ee.scope/3 baseline')
     if not isinstance(requirements, dict) or requirements.get('schema') != 'agent-ee.envelope-requirements/1':
         raise ValueError('expected agent-ee.envelope-requirements/1')
+    if record.get('envelope_sha256') != requirements['envelope_sha256']:
+        raise ValueError('envelope validation and requirements describe different bytes')
     baseline = {r.get('id'): r for r in scope.get('baseline', {}).get('requirements', []) if isinstance(r, dict)}
-    kinds = {c.get('id'): c.get('kind') for c in scope.get('checks', []) if isinstance(c, dict)}
+    specs = {c.get('id'): c for c in scope.get('checks', []) if isinstance(c, dict)}
+    derived = {r['id'] for r in requirements['requirements']}
+    stale = sorted(i for i in baseline if isinstance(i, str) and i.startswith('R-envelope-') and i not in derived)
+    if stale:
+        raise ValueError(f'baseline envelope requirements not derived from the captured envelope: {stale}')
+    report = []
     for item in requirements['requirements']:
         rid, mapped = item['id'], baseline.get(item['id'])
+        kinds = item['check_kinds']
+        pending = sorted({PENDING_KINDS[k] for k in kinds if k in PENDING_KINDS})
+        entry = {'id': rid, 'locator': item['source']['locator'], 'check_kinds': kinds, 'checks': []}
         if mapped is None or not mapped.get('checks'):
-            raise ValueError(f'envelope obligation {rid} has no mapped check')
+            report.append({**entry, 'status': 'unmapped' if not pending else 'unknown',
+                           'reason': 'no mapped check' + (f"; kinds {kinds} pending {pending}" if pending else '')})
+            continue
         if (mapped.get('statement') != item['statement'] or mapped.get('source') != item['source']
                 or mapped.get('intent') != 'acceptance'):
             raise ValueError(f'envelope obligation {rid} statement, source or acceptance intent differs')
-        wrong = sorted(c for c in mapped['checks'] if kinds.get(c) not in item['check_kinds'])
-        if wrong:
-            raise ValueError(f"envelope obligation {rid} maps checks {wrong} outside kinds {item['check_kinds']}")
+        unknown = []
+        for cid in mapped['checks']:
+            spec = specs.get(cid)
+            kind = spec.get('kind') if spec else None
+            if kind not in kinds:
+                raise ValueError(f"envelope obligation {rid} maps check {cid} of kind {kind!r} outside kinds {kinds}")
+            binding = BINDINGS.get((field_of(item), kind))
+            if binding is None:
+                unknown.append(cid)
+                continue
+            binding(item, spec, record, files)
+        entry['checks'] = list(mapped['checks'])
+        if unknown:
+            report.append({**entry, 'status': 'unknown',
+                           'reason': f'checks {unknown} have no executable envelope binding'
+                                     + (f'; kinds pending {pending}' if pending else '')})
+        else:
+            report.append({**entry, 'status': 'bound'})
+    return report
+
+
+def require_obligations(scope, requirements, record, files):
+    """Refuse a scope/3 baseline that drops, alters, vacuously maps or leaves unknown an obligation."""
+    report = obligation_coverage(scope, requirements, record, files)
+    missing = [f"{r['id']} ({r['status']}: {r['reason']})" for r in report if r['status'] != 'bound']
+    if missing:
+        raise ValueError('envelope obligations lack executable coverage and are refused, not dropped: '
+                         + '; '.join(missing))
     if not requirements['complete']:
         raise ValueError('envelope requirements are incomplete: unresolved ' +
                          ', '.join(u['predicate'] for u in requirements['unresolved']))
+    return report
+
+
+def json_object_start(path):
+    """True when the first non-whitespace byte is '{'; reads no further than that."""
+    with path.open('rb') as stream:
+        while chunk := stream.read(4096):
+            stripped = chunk.lstrip(b' \t\r\n')
+            if stripped:
+                return stripped.startswith(b'{')
+    return False
+
+
+def captured_envelopes(files, inputs):
+    """Every captured file (at most MAX_BYTES) that parses as an envelope/1 object, declared or not."""
+    found = []
+    for rel in sorted(files):
+        path = Path(inputs) / rel
+        try:
+            if (path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_BYTES
+                    or not json_object_start(path)):
+                continue
+            value = json.loads(path.read_bytes().decode('utf-8'))
+        except (OSError, UnicodeError, ValueError, RecursionError):
+            continue
+        if isinstance(value, dict) and value.get('schema') == SCHEMA:
+            found.append(rel)
+    return found
+
+
+def captured_bytes(files, inputs, rel, label):
+    from .routing_rules import captured_file
+    try:
+        return captured_file(inputs, files, rel).read_bytes()
+    except (ValueError, OSError) as exc:
+        raise ValueError(f'envelope {label}: {exc}') from exc
+
+
+def baseline_envelope(scope, files, inputs):
+    """Capture-time envelope integration for compile_baseline; None without one.
+
+    Re-derives obligations and profile support from captured bytes, so no caller
+    document or flag is trusted. Returns the immutable paths and the record that
+    becomes part of the baseline identity.
+    """
+    declared = scope.get('envelope')
+    ids = [r.get('id') for r in scope.get('baseline', {}).get('requirements', []) if isinstance(r, dict)]
+    found = captured_envelopes(files, inputs) if inputs is not None else []
+    if declared is None:
+        if found or any(isinstance(i, str) and i.startswith('R-envelope-') for i in ids):
+            raise ValueError(f'captured envelope or envelope requirement without a scope envelope declaration: '
+                             f'{found or sorted(i for i in ids if isinstance(i, str) and i.startswith("R-envelope-"))}')
+        return None
+    if scope.get('schema') != 'agent-ee.scope/3':
+        raise ValueError('a scope envelope requires agent-ee.scope/3 executable coverage')
+    if inputs is None:
+        raise ValueError('envelope integration requires captured inputs')
+    fields(declared, 'scope envelope', ['path', 'profile', 'dialog'])
+    path = declared['path']
+    if not isinstance(path, str):
+        raise ValueError('scope envelope path must be a captured input path')
+    raw = captured_bytes(files, inputs, path, 'path')
+    if found != [path]:
+        raise ValueError(f'scope must declare exactly the one captured envelope; captured {found}')
+    profile = None
+    if declared['profile'] is not None:
+        profile = captured_bytes(files, inputs, declared['profile'], 'profile')
+    record = validate(raw, profile=profile, captured=(files, inputs))
+    if record['fab_profile'].get('bytes') == 'not_supplied':
+        raise ValueError('envelope references a fab profile; declare its captured path')
+    requirements = derive_requirements(record, path)
+    dependencies = {path} | ({declared['profile']} if profile is not None else set())
+    dependencies.update(record['fab_profile'].get('source_paths', []))
+    if declared['dialog'] is not None:
+        from .design_dialog import validate_requirements
+        captured = validate_requirements(captured_bytes(files, inputs, declared['dialog'], 'dialog'))
+        by_id = {r['id']: r for r in captured}
+        expected = dialog_requirements(requirements)['requirements']
+        extra = sorted(i for i in by_id if i.startswith('R-envelope-') and i not in {r['id'] for r in expected})
+        if extra or any(by_id.get(r['id']) != r for r in expected):
+            raise ValueError('captured stage-one dialog requirements do not carry exactly these envelope '
+                             'obligations and envelope hash' + (f'; extra {extra}' if extra else ''))
+        dependencies.add(declared['dialog'])
+    coverage = require_obligations(scope, requirements, record, files)
+    return {'inputs': sorted(dependencies), 'record': {
+        'schema': 'agent-ee.envelope-baseline/1', **declared,
+        'validation': record, 'requirements': requirements, 'coverage': coverage}}
 
 
 def atoms(node):
@@ -746,18 +1006,37 @@ def write_artifacts(artifacts, output):
         (output / filename).write_bytes(data)
 
 
+def source_inventory(root):
+    """Hash regular files under root now, as capture would; symlinks are never followed."""
+    root = Path(root)
+    if not root.is_dir():
+        raise ValueError(f'profile source directory not found: {root}')
+    return {p.relative_to(root).as_posix(): digest(p) for p in sorted(root.rglob('*'))
+            if p.is_file() and not p.is_symlink()}, root
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('envelope', type=Path)
     parser.add_argument('--source-path', required=True, help='capture-relative path cited by derived requirements')
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, help='captured fab profile bytes referenced by sha256')
+    parser.add_argument('--sources', type=Path,
+                        help='directory the profile\'s cited source paths resolve in; without it no limit is ready')
+    parser.add_argument('--original-requirements', type=Path,
+                        help='agent-ee.requirements/1 to extend into stage-one-requirements.json')
     parser.add_argument('--board', type=Path, help='saved .kicad_pcb to compare field by field')
     args = parser.parse_args()
     try:
+        if args.sources and not args.profile:
+            raise ValueError('--sources needs --profile')
         raw = args.envelope.read_bytes()
         artifacts = derive(raw, source_path=args.source_path,
-                           profile=args.profile.read_bytes() if args.profile else None)
+                           profile=args.profile.read_bytes() if args.profile else None,
+                           captured=source_inventory(args.sources) if args.sources else None)
+        if args.original_requirements:
+            artifacts['stage-one-requirements.json'] = stage_one_requirements(
+                args.original_requirements.read_bytes(), artifacts['dialog-requirements.json'])
         trip = None
         if args.board:
             trip = round_trip(raw, args.board.read_bytes())

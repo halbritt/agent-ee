@@ -9,9 +9,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from agent_ee.board_envelope import (board_facts, derive, require_obligations, round_trip, validate)
-from agent_ee.storage import canonical
+from agent_ee.board_envelope import (BINDINGS, CHECK_KINDS, board_facts, derive, obligation_coverage,
+                                     require_obligations, round_trip, stage_one_requirements, validate)
+from agent_ee.storage import canonical, digest
+from test_fab_profile import owned_profile
 from toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,13 +59,44 @@ def fixed_status(trip):
 
 
 def mapped_scope(requirements, kinds=None):
-    checks = [{'id': 'placement', 'kind': 'placement'}, {'id': 'fab', 'kind': 'fab_profile'},
+    checks = [{'id': 'placement', 'kind': 'placement'}, {'id': 'fab', 'kind': 'fab_profile',
+                                                          'params': {'fab_profile': 'requirements/fab-profile.json'}},
               {'id': 'package', 'kind': 'fab_package'}]
     by_kind = {'placement': 'placement', 'fab_profile': 'fab', 'fab_package': 'package'}
     return {'schema': 'agent-ee.scope/3', 'checks': checks, 'baseline': {'requirements': [
         {'id': r['id'], 'statement': r['statement'], 'source': dict(r['source']), 'intent': 'acceptance',
          'checks': [by_kind[(kinds or {}).get(r['id'], r['check_kinds'][0])]]}
         for r in requirements['requirements']]}}
+
+
+PROFILE_ID = 'R-envelope-rc-filter-fab-profile'
+
+
+def owned_capture(root, specs, requirement=PROFILE_ID, prefix=''):
+    """Owned synthetic profile and source text (not a real fabricator), hashed as captured.
+
+    Returns (profile bytes, files, inputs); the profile cites its source at
+    prefix + 'owned-capabilities.txt' relative to root.
+    """
+    target = root / prefix if prefix else root
+    target.mkdir(parents=True, exist_ok=True)
+    document = owned_profile(target, specs)
+    for limit in document['limits']:
+        limit['requirement'] = requirement
+        limit['source']['path'] = prefix + limit['source']['path']
+    data = json.dumps(document).encode()
+    (target / 'fab-profile.json').write_bytes(data)
+    files = {p.relative_to(root).as_posix(): digest(p) for p in root.rglob('*') if p.is_file()}
+    return data, files, root
+
+
+def profiled(profile):
+    value = rc()
+    value['fab_profile'] = {'name': 'owned_standard_2026-10', 'sha256': hashlib.sha256(profile).hexdigest()}
+    return value
+
+
+LAYERS_AND_SIZE = [('max_layers', 2, 'count', 'minimum'), ('max_board_mm', [20, 12], 'mm', 'minimum')]
 
 
 class EnvelopeValidationTests(unittest.TestCase):
@@ -390,26 +424,87 @@ class EnvelopeExactAngleTests(unittest.TestCase):
 
 
 class EnvelopeProfileTests(unittest.TestCase):
-    def test_profile_reference_is_hash_bound_and_support_stays_unresolved(self):
-        profile = b'{"schema": "agent-ee.fab-profile/1", "name": "owned"}'
-        value = rc()
-        value['fab_profile'] = {'name': 'owned', 'sha256': hashlib.sha256(profile).hexdigest()}
-        record = validate(raw(value), profile=profile)
-        self.assertEqual(record['fab_profile']['bytes'], 'sha256_match')
-        self.assertEqual(record['outcome'], 'unknown')
-        self.assertEqual([u['predicate'] for u in record['unresolved']], ['fab_profile_supports_layer_count'])
-        self.assertEqual([u['predicate'] for u in validate(raw(value))['unresolved']],
-                         ['fab_profile_bytes', 'fab_profile_supports_layer_count'])
+    """Profile support comes only from the AGENTEE-75 compiler and its sourced minima."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def capture(self, specs, **kwargs):
+        return owned_capture(self.root, specs, **kwargs)
+
+    def test_profile_reference_is_hash_bound_and_malformed_profiles_are_refused(self):
+        profile, files, inputs = self.capture(LAYERS_AND_SIZE)
+        value = profiled(profile)
+        self.assertEqual(validate(raw(value), profile=profile)['fab_profile']['bytes'], 'sha256_match')
+        self.assertEqual([u['predicate'] for u in validate(raw(value))['unresolved']], ['fab_profile_bytes'])
         with self.assertRaisesRegex(ValueError, 'do not match the referenced sha256'):
             validate(raw(value), profile=profile + b' ')
         with self.assertRaisesRegex(ValueError, 'references no fab profile'):
             validate(RC_ENVELOPE.read_bytes(), profile=profile)
+        for bad, message in ((b'{"schema": "agent-ee.fab-profile/1", "name": "owned"}', 'no defaults'),
+                             (b'{', 'Expecting'), (b'\xff', 'UTF-8'),
+                             (profile.replace(b'"as_of": "2026-10-17", "limits"',
+                                              b'"as_of": "2026-10-17", "as_of": "2026-10-17", "limits"'),
+                              'duplicate JSON key')):
+            with self.subTest(bad=bad[:30]), self.assertRaisesRegex(ValueError, message):
+                validate(raw(profiled(bad)), profile=bad)
+        renamed = profiled(profile)
+        renamed['fab_profile']['name'] = 'another_fab'
+        with self.assertRaisesRegex(ValueError, "named 'owned_standard_2026-10', not the referenced 'another_fab'"):
+            validate(raw(renamed), profile=profile, captured=(files, inputs))
         value['fab_profile']['sha256'] = value['fab_profile']['sha256'].upper()
         with self.assertRaisesRegex(ValueError, 'lowercase hex'):
             validate(raw(value))
         value['fab_profile'] = {'name': 'owned'}
         with self.assertRaisesRegex(ValueError, 'fab_profile fields'):
             validate(raw(value))
+
+    def test_captured_sourced_minima_resolve_layer_count_and_fixed_axis_size(self):
+        profile, files, inputs = self.capture(LAYERS_AND_SIZE)
+        record = validate(raw(profiled(profile)), profile=profile, captured=(files, inputs))
+        self.assertEqual((record['outcome'], record['unresolved']), ('pass', []))
+        self.assertFalse(record['acceptance_ready'])
+        fab = record['fab_profile']
+        self.assertTrue(fab['sources_verified'])
+        self.assertEqual(fab['source_paths'], ['owned-capabilities.txt'])
+        self.assertEqual([(s['predicate'], s['limit_id'], s['actual'], s['status']) for s in fab['support']],
+                         [('fab_profile_supports_layer_count', 'limit-0', 2, 'satisfied'),
+                          ('fab_profile_supports_board_size', 'limit-1', [20.0, 12.0], 'satisfied')])
+
+    def test_offline_or_changed_sources_leave_support_unresolved_never_assumed(self):
+        profile, files, inputs = self.capture(LAYERS_AND_SIZE)
+        offline = validate(raw(profiled(profile)), profile=profile)
+        self.assertEqual(offline['outcome'], 'unknown')
+        self.assertEqual([u['predicate'] for u in offline['unresolved']],
+                         ['fab_profile_supports_layer_count', 'fab_profile_supports_board_size'])
+        self.assertIn('limit source not verified: captured file missing', offline['unresolved'][0]['reason'])
+        self.assertEqual((offline['fab_profile']['support'], offline['fab_profile']['sources_verified']), ([], False))
+        (inputs / 'owned-capabilities.txt').write_text('changed after hashing')
+        changed = validate(raw(profiled(profile)), profile=profile, captured=(files, inputs))
+        self.assertEqual(changed['outcome'], 'unknown')
+        self.assertIn('captured file missing or hash changed', changed['unresolved'][0]['reason'])
+
+    def test_unsupported_layer_count_and_rotated_size_are_refused(self):
+        profile, files, inputs = self.capture([('max_layers', 1, 'count', 'minimum')])
+        with self.assertRaisesRegex(ValueError, r'limit-0 \(max_layers 1\) does not support the envelope: 2'):
+            validate(raw(profiled(profile)), profile=profile, captured=(files, inputs))
+        # The RC board is 20 mm in x and 12 mm in y; [12, 20] fits only if rotated, which is never granted.
+        for bound in ([12, 20], [19.999999, 12], [20, 11.999999]):
+            with self.subTest(bound=bound):
+                profile, files, inputs = self.capture([('max_layers', 2, 'count', 'minimum'),
+                                                       ('max_board_mm', bound, 'mm', 'minimum')])
+                with self.assertRaisesRegex(ValueError, 'max_board_mm .* fixed saved axes; no rotation'):
+                    validate(raw(profiled(profile)), profile=profile, captured=(files, inputs))
+
+    def test_preferred_or_absent_layer_limits_cannot_decide_support(self):
+        for specs in ([('max_layers', 1, 'count', 'preferred')], [('min_trace_mm', 0.1, 'mm', 'minimum')]):
+            with self.subTest(specs=specs):
+                profile, files, inputs = self.capture(specs)
+                record = validate(raw(profiled(profile)), profile=profile, captured=(files, inputs))
+                self.assertEqual(record['outcome'], 'unknown')
+                self.assertEqual(record['unresolved'], [{'predicate': 'fab_profile_supports_layer_count',
+                                                         'reason': 'profile states no minimum-tier max_layers limit'}])
 
 
 class EnvelopeRequirementTests(unittest.TestCase):
@@ -467,9 +562,9 @@ class EnvelopeRequirementTests(unittest.TestCase):
         self.assertEqual(reformatted['requirements'], before['requirements'])
 
     def test_holes_keepouts_and_profile_become_obligations(self):
-        profile = b'profile bytes'
-        value = rc()
-        value['fab_profile'] = {'name': 'owned', 'sha256': hashlib.sha256(profile).hexdigest()}
+        with tempfile.TemporaryDirectory() as tmp:
+            profile, _, _ = owned_capture(Path(tmp), LAYERS_AND_SIZE)
+        value = profiled(profile)
         value['mounting_holes'] = [{'id': 'H1', 'at': [113, 105], 'drill_mm': 2.2, 'plated': True}]
         value['keepouts'] = [{'id': 'K1', 'polygon': [[106, 104], [110, 104], [110, 107], [106, 107]],
                               'layers': ['B.Cu'], 'forbid': ['vias']}]
@@ -480,7 +575,11 @@ class EnvelopeRequirementTests(unittest.TestCase):
         self.assertIn('plated 2.2 mm hole centred at (113, 105) mm',
                       by_id['R-envelope-rc-filter-hole-H1']['statement'])
         self.assertEqual(by_id['R-envelope-rc-filter-keepout-K1']['source']['locator'], '/keepouts/0')
-        self.assertEqual([u['predicate'] for u in document['unresolved']], ['fab_profile_supports_layer_count'])
+        self.assertEqual(by_id[PROFILE_ID]['check_kinds'], ['fab_profile'])
+        self.assertEqual(by_id['R-envelope-rc-filter-layer-count']['check_kinds'], ['fab_package'])
+        # Offline the profile's sources are unverified, so support is not assumed.
+        self.assertEqual([u['predicate'] for u in document['unresolved']],
+                         ['fab_profile_supports_layer_count', 'fab_profile_supports_board_size'])
 
     def test_unsafe_source_path_is_refused(self):
         for path in ('/abs/envelope.json', '../envelope.json'):
@@ -489,41 +588,336 @@ class EnvelopeRequirementTests(unittest.TestCase):
 
 
 class EnvelopeObligationTests(unittest.TestCase):
+    """A kind name never covers an obligation; only a field binding can."""
     def setUp(self):
-        artifacts = derive(RC_ENVELOPE.read_bytes(), source_path='requirements/envelope.json')
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        profile, self.files, inputs = owned_capture(Path(self.tmp.name), LAYERS_AND_SIZE, prefix='requirements/')
+        artifacts = derive(raw(profiled(profile)), source_path='requirements/envelope.json',
+                           profile=profile, captured=(self.files, inputs))
+        self.record = json.loads(artifacts['envelope-validation.json'])
         self.document = json.loads(artifacts['envelope-requirements.json'])
+        self.assertTrue(self.document['complete'])
 
-    def test_fully_mapped_obligations_still_refuse_unresolved_profile(self):
-        with self.assertRaisesRegex(ValueError, 'incomplete: unresolved fab_profile_selected'):
-            require_obligations(mapped_scope(self.document), self.document)
+    def coverage(self, scope):
+        return {r['id']: r for r in obligation_coverage(scope, self.document, self.record, self.files)}
 
-    def test_obligation_without_mapped_check_is_refused_not_dropped(self):
+    def test_only_the_exact_profile_obligation_binds_and_the_rest_stay_unknown(self):
+        self.assertEqual(set(BINDINGS), {('fab_profile', 'fab_profile')})
+        report = self.coverage(mapped_scope(self.document))
+        self.assertEqual(report.pop(PROFILE_ID)['status'], 'bound')
+        self.assertEqual({k: (r['status'], r['locator']) for k, r in report.items()}, {
+            'R-envelope-rc-filter-outline': ('unknown', '/outline'),
+            'R-envelope-rc-filter-layer-count': ('unknown', '/layer_count'),
+            'R-envelope-rc-filter-stackup': ('unknown', '/stackup'),
+            'R-envelope-rc-filter-fixed-J1': ('unknown', '/fixed_footprints/0')})
+        self.assertIn('pending [\'AGENTEE-92\']', report['R-envelope-rc-filter-outline']['reason'])
+        self.assertIn('pending [\'AGENTEE-94\']', report['R-envelope-rc-filter-stackup']['reason'])
+        with self.assertRaisesRegex(ValueError, 'refused, not dropped: R-envelope-rc-filter-outline .*'
+                                                'R-envelope-rc-filter-fixed-J1') as raised:
+            require_obligations(mapped_scope(self.document), self.document, self.record, self.files)
+        self.assertNotIn(PROFILE_ID, str(raised.exception))
+
+    def test_unresolved_profile_is_refused_even_when_every_obligation_binds(self):
+        artifacts = derive(RC_ENVELOPE.read_bytes(), source_path='requirements/envelope.json')
+        document = json.loads(artifacts['envelope-requirements.json'])
+        record = json.loads(artifacts['envelope-validation.json'])
+        scope = mapped_scope(document)
+        with patch.dict(BINDINGS, {(f, 'placement'): accept for f in ('outline', 'fixed_footprints')} |
+                        {(f, 'fab_package'): accept for f in ('layer_count', 'stackup')}):
+            with self.assertRaisesRegex(ValueError, 'incomplete: unresolved fab_profile_selected'):
+                require_obligations(scope, document, record, {})
+
+    def test_omitted_or_unmapped_obligations_are_refused_not_dropped(self):
         scope = mapped_scope(self.document)
-        scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements']
-                                             if r['id'] != 'R-envelope-rc-filter-fixed-J1']
-        with self.assertRaisesRegex(ValueError, 'R-envelope-rc-filter-fixed-J1 has no mapped check'):
-            require_obligations(scope, self.document)
+        scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements'] if r['id'] != PROFILE_ID]
+        self.assertEqual(self.coverage(scope)[PROFILE_ID]['status'], 'unmapped')
+        with self.assertRaisesRegex(ValueError, f'{PROFILE_ID} \\(unmapped: no mapped check\\)'):
+            require_obligations(scope, self.document, self.record, self.files)
         scope = mapped_scope(self.document)
         scope['baseline']['requirements'][0]['checks'] = []
-        with self.assertRaisesRegex(ValueError, 'R-envelope-rc-filter-outline has no mapped check'):
-            require_obligations(scope, self.document)
+        self.assertEqual(self.coverage(scope)['R-envelope-rc-filter-outline']['reason'],
+                         "no mapped check; kinds ['placement'] pending ['AGENTEE-92']")
 
-    def test_altered_informational_or_wrong_kind_mappings_are_refused(self):
+    def test_altered_stale_wrong_kind_and_vacuous_mappings_are_refused(self):
         for label, mutate, message in (
                 ('statement', lambda r: r.update(statement=r['statement'] + ' approximately'), 'differs'),
                 ('locator', lambda r: r['source'].update(locator='/outline/edges/0'), 'differs'),
+                ('path', lambda r: r['source'].update(path='requirements/other.json'), 'differs'),
                 ('intent', lambda r: r.update(intent='informational'), 'differs')):
             scope = mapped_scope(self.document)
             mutate(scope['baseline']['requirements'][0])
             with self.subTest(label), self.assertRaisesRegex(ValueError, message):
-                require_obligations(scope, self.document)
-        scope = mapped_scope(self.document, kinds={'R-envelope-rc-filter-fixed-J1': 'fab_package'})
-        with self.assertRaisesRegex(ValueError, r"maps checks \['package'\] outside kinds \['placement'\]"):
-            require_obligations(scope, self.document)
+                obligation_coverage(scope, self.document, self.record, self.files)
+        # A registered kind outside the field's kinds is a vacuous remap, even if executable.
+        scope = mapped_scope(self.document, kinds={'R-envelope-rc-filter-layer-count': 'fab_profile'})
+        with self.assertRaisesRegex(ValueError, "layer-count maps check fab of kind 'fab_profile' outside kinds"):
+            obligation_coverage(scope, self.document, self.record, self.files)
+        scope = mapped_scope(self.document)
+        scope['baseline']['requirements'][-1]['checks'].append('fab')
+        with self.assertRaisesRegex(ValueError, "fixed-J1 maps check fab of kind 'fab_profile'"):
+            obligation_coverage(scope, self.document, self.record, self.files)
+        # The right kind over different profile bytes cannot cover the referenced profile.
+        scope = mapped_scope(self.document)
+        scope['checks'][1]['params'] = {'fab_profile': 'requirements/owned-capabilities.txt'}
+        with self.assertRaisesRegex(ValueError, 'captured profile is not the referenced sha256'):
+            obligation_coverage(scope, self.document, self.record, self.files)
+        scope = mapped_scope(self.document)
+        scope['baseline']['requirements'].append({**scope['baseline']['requirements'][0],
+                                                  'id': 'R-envelope-rc-filter-hole-H9'})
+        with self.assertRaisesRegex(ValueError, r"not derived from the captured envelope: \['R-envelope-rc-filter-hole-H9'\]"):
+            obligation_coverage(scope, self.document, self.record, self.files)
         scope = mapped_scope(self.document)
         scope['schema'] = 'agent-ee.scope/2'
         with self.assertRaisesRegex(ValueError, 'scope/3'):
-            require_obligations(scope, self.document)
+            obligation_coverage(scope, self.document, self.record, self.files)
+        other = dict(self.record, envelope_sha256='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'different bytes'):
+            obligation_coverage(mapped_scope(self.document), self.document, other, self.files)
+
+
+def accept(*args):
+    """Test double for a binding a future owner item must supply; never production coverage."""
+
+
+INTENT = json.dumps({'id': 'rc-1', 'task': 'Passive RC low-pass filter between VIN and VOUT.',
+                     'input_nodes': ['VIN', 'GND'], 'output_nodes': ['VOUT', 'GND'], 'input_voltage': '5',
+                     'output_voltage': '5', 'components': ['R', 'C', 'Conn_01x03'],
+                     'sub_module_name': 'rc_filter'}).encode()
+
+
+def stage_one_dialog(envelope_dialog, extra_question_requirement='R-shape'):
+    """AGENTEE-26 intent import, envelope obligations appended, AGENTEE-25 dialog captured."""
+    from agent_ee.design_dialog import capture_dialog
+    from agent_ee.design_intent import import_record
+    original = stage_one_requirements(import_record(INTENT)['requirements.json'], envelope_dialog)
+    idea = b'Owner idea: the RC fixture as a generated board.\n'
+    questions = json.dumps({'schema': 'agent-ee.questions/1', 'context': 'Mechanics', 'questions': [
+        {'id': 'shape', 'question': 'Keep the captured envelope?', 'options': ['yes', 'no'], 'default': 'yes',
+         'depends_on': [], 'requirement_id': extra_question_requirement}]}).encode()
+    answers = json.dumps({'schema': 'agent-ee.answers/1', 'questions_sha256': hashlib.sha256(questions).hexdigest(),
+                          'idea_sha256': hashlib.sha256(idea).hexdigest(),
+                          'requirements_sha256': hashlib.sha256(original).hexdigest(),
+                          'answers': {'shape': {'value': 'yes'}}}).encode()
+    return original, capture_dialog(idea, questions, answers, original)
+
+
+class EnvelopeStageOneTests(unittest.TestCase):
+    def test_intent_import_and_dialog_carry_every_obligation_unchanged(self):
+        artifacts = derive(RC_ENVELOPE.read_bytes(), source_path='requirements/envelope.json')
+        envelope = json.loads(artifacts['dialog-requirements.json'])['requirements']
+        original, dialog = stage_one_dialog(artifacts['dialog-requirements.json'])
+        self.assertEqual(json.loads(dialog['dialog.json'])['outcome'], 'pass')
+        derived = json.loads(dialog['requirements.json'])['requirements']
+        self.assertTrue(derived[0]['id'].startswith('R-intent-'))
+        self.assertEqual(derived[1:1 + len(envelope)], envelope)
+        self.assertEqual([r['id'] for r in derived[1 + len(envelope):]], ['R-shape'])
+        self.assertEqual(dialog['original-requirements.json'], original)
+        self.assertEqual(stage_one_requirements(import_record_requirements(), artifacts['dialog-requirements.json']),
+                         original)
+
+    def test_collisions_foreign_ids_and_malformed_inputs_are_refused(self):
+        envelope = derive(RC_ENVELOPE.read_bytes(), source_path='requirements/envelope.json')['dialog-requirements.json']
+        intent = import_record_requirements()
+        with self.assertRaisesRegex(ValueError, 'already contain envelope obligations'):
+            stage_one_requirements(envelope, envelope)
+        foreign = json.loads(envelope)
+        foreign['requirements'][0]['id'] = 'R-outline'
+        with self.assertRaisesRegex(ValueError, 'R-envelope- obligations'):
+            stage_one_requirements(intent, raw(foreign))
+        empty = raw({'schema': 'agent-ee.requirements/1', 'requirements': []})
+        with self.assertRaisesRegex(ValueError, 'nonempty'):
+            stage_one_requirements(intent, empty)
+        with self.assertRaisesRegex(ValueError, 'duplicate JSON key'):
+            stage_one_requirements(intent.replace(b'"schema"', b'"schema":"x","schema"', 1), envelope)
+        # A dialog question cannot claim an obligation ID either.
+        with self.assertRaisesRegex(ValueError, 'collision'):
+            stage_one_dialog(envelope, 'R-envelope-rc-filter-outline')
+
+
+def import_record_requirements():
+    from agent_ee.design_intent import import_record
+    return import_record(INTENT)['requirements.json']
+
+
+class EnvelopeBaselineTests(unittest.TestCase):
+    """Capture-time integration in compile_baseline; no tools run."""
+    def setUp(self):
+        import shutil
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        source = self.root / 'source'
+        (source / 'project').mkdir(parents=True)
+        for suffix in ('.kicad_pcb', '.kicad_pro', '.kicad_sch'):
+            shutil.copyfile(RC_BOARD.with_suffix(suffix), source / 'project' / f'rc_filter{suffix}')
+        self.profile, _, _ = owned_capture(source, LAYERS_AND_SIZE, prefix='requirements/')
+        self.requirements = source / 'requirements'
+        for name in ('targets.md', 'reference.md'):
+            (self.requirements / name).write_text(f'Owned {name} for the envelope integration test.\n')
+        self.envelope = raw(profiled(self.profile))
+        (self.requirements / 'envelope.json').write_bytes(self.envelope)
+        artifacts = derive(self.envelope, source_path='requirements/envelope.json', profile=self.profile)
+        self.document = json.loads(artifacts['envelope-requirements.json'])
+        _, dialog = stage_one_dialog(artifacts['dialog-requirements.json'])
+        (self.requirements / 'dialog-requirements.json').write_bytes(dialog['requirements.json'])
+        self.runs = 0
+
+    def scope(self, *, schema='agent-ee.scope/3', envelope=True, mapping=None, dialog=True):
+        mapping = mapping or {}
+        requirements = [{'id': r['id'], 'statement': r['statement'], 'source': dict(r['source']),
+                         'intent': 'acceptance', 'checks': [mapping.get(r['id'], 'fab' if r['id'] == PROFILE_ID
+                                                                         else 'drc')]}
+                        for r in self.document['requirements'] if mapping.get(r['id'], True) is not None]
+        if schema != 'agent-ee.scope/3':
+            for requirement in requirements:
+                del requirement['intent']
+        scope = {'schema': schema, 'name': 'envelope', 'scope': 'Envelope baseline integration',
+                 'inputs': [{'path': 'source/project', 'at': 'project'},
+                            {'path': 'source/requirements', 'at': 'requirements'}],
+                 'schematic': 'project/rc_filter.kicad_sch', 'board': 'project/rc_filter.kicad_pcb',
+                 'checks': [{'id': 'drc', 'kind': 'drc'},
+                            {'id': 'fab', 'kind': 'fab_profile', 'params': {'fab_profile': 'requirements/fab-profile.json'}}],
+                 'baseline': {'requirements': requirements, 'targets': ['requirements/targets.md'],
+                              'reference_architectures': ['requirements/reference.md']}}
+        if envelope:
+            scope['envelope'] = {'path': 'requirements/envelope.json', 'profile': 'requirements/fab-profile.json',
+                                 'dialog': 'requirements/dialog-requirements.json' if dialog else None}
+        return scope
+
+    def capture(self, scope):
+        from agent_ee.candidate import capture
+        from agent_ee.storage import write_json
+        self.runs += 1
+        run = self.root / f'run{self.runs}'
+        run.mkdir()
+        write_json(self.root / 'scope.json', scope)
+        return run, capture(self.root / 'scope.json', run)
+
+    def stand_in(self):
+        """Test double for the AGENTEE-92/94 bindings: these fields bind to drc only inside this block."""
+        fields = ('outline', 'layer_count', 'stackup', 'fixed_footprints')
+        return patch.dict(CHECK_KINDS, {f: ['drc'] for f in fields}), \
+            patch.dict(BINDINGS, {(f, 'drc'): accept for f in fields})
+
+    def test_production_capture_refuses_unbound_obligations_before_any_baseline(self):
+        unknown = 'R-envelope-rc-filter-outline .*R-envelope-rc-filter-fixed-J1'
+        for label, scope, message in (
+                ('vacuous drc', self.scope(), "outline maps check drc of kind 'drc' outside kinds \\['placement'\\]"),
+                ('proposed kinds', self.scope(mapping={'R-envelope-rc-filter-outline': 'placement'}), 'kind'),
+                ('omitted', self.scope(mapping={r['id']: None for r in self.document['requirements']
+                                                if r['id'] != PROFILE_ID}), 'refused, not dropped: ' + unknown)):
+            if label == 'proposed kinds':
+                # Mapped to the proposed, unregistered kinds: unknown coverage, named, refused.
+                scope['checks'] += [{'id': 'placement', 'kind': 'placement'}, {'id': 'package', 'kind': 'fab_package'}]
+                kinds = {r['id']: r['check_kinds'][0] for r in self.document['requirements']}
+                for requirement in scope['baseline']['requirements']:
+                    if requirement['id'] != PROFILE_ID:
+                        requirement['checks'] = [{'placement': 'placement', 'fab_package': 'package'}[
+                            kinds[requirement['id']]]]
+                scope['baseline']['requirements'].append({
+                    'id': 'R-erc', 'statement': 'DRC passes.', 'source': {'path': 'requirements/targets.md',
+                                                                          'locator': 'drc'},
+                    'intent': 'acceptance', 'checks': ['drc']})
+                message = 'refused, not dropped: ' + unknown
+            if label == 'omitted':
+                scope['checks'] = [c for c in scope['checks'] if c['id'] != 'drc']
+            with self.subTest(label), self.assertRaisesRegex(ValueError, message):
+                run, _ = self.capture(scope)
+            self.assertFalse((self.root / f'run{self.runs}' / 'baseline.json').exists())
+            self.assertFalse((self.root / f'run{self.runs}' / 'candidate.json').exists())
+
+    def test_complete_bindings_freeze_envelope_profile_sources_and_dialog(self):
+        from agent_ee.baseline import load_baseline
+        from agent_ee.campaign import mutable_inputs
+        kinds, bindings = self.stand_in()
+        with kinds, bindings:
+            self.document = json.loads(derive(self.envelope, source_path='requirements/envelope.json',
+                                              profile=self.profile)['envelope-requirements.json'])
+            run, manifest = self.capture(self.scope())
+            baseline = load_baseline(run)
+            frozen = baseline['envelope']
+            self.assertEqual(baseline['schema'], 'agent-ee.baseline/2')
+            self.assertEqual({k: frozen[k] for k in ('path', 'profile', 'dialog')},
+                             {'path': 'requirements/envelope.json', 'profile': 'requirements/fab-profile.json',
+                              'dialog': 'requirements/dialog-requirements.json'})
+            self.assertEqual(frozen['validation']['envelope_sha256'], hashlib.sha256(self.envelope).hexdigest())
+            self.assertEqual((frozen['validation']['outcome'], frozen['requirements']['complete']), ('pass', True))
+            self.assertEqual({c['id']: c['status'] for c in frozen['coverage']},
+                             {r['id']: 'bound' for r in self.document['requirements']})
+            self.assertTrue({'requirements/envelope.json', 'requirements/fab-profile.json',
+                             'requirements/owned-capabilities.txt', 'requirements/dialog-requirements.json'}
+                            <= baseline['files'].keys())
+            self.assertEqual(baseline['coverage']['checks']['fab']['predicates'], ['fab:limit-0', 'fab:limit-1'])
+            with self.assertRaisesRegex(ValueError, 'outside the immutable baseline'):
+                mutable_inputs({**manifest, 'scope': {**manifest['scope'], 'mutable_inputs': [
+                    'project/rc_filter.kicad_pcb', 'requirements/envelope.json']}}, baseline)
+            # Identical bytes compile to the identical baseline in a fresh capture.
+            again, _ = self.capture(self.scope())
+            self.assertEqual(load_baseline(again)['baseline_id'], baseline['baseline_id'])
+            envelope = run / 'inputs/requirements/envelope.json'
+            envelope.write_bytes(envelope.read_bytes() + b' ')
+            with self.assertRaisesRegex(ValueError, 'envelope path: captured file missing or hash changed'):
+                load_baseline(run)
+        # Without the stand-in the same retained run is no longer a valid baseline.
+        with self.assertRaisesRegex(ValueError, 'outside kinds'):
+            load_baseline(again)
+
+    def test_dialog_must_carry_exactly_the_captured_envelope_obligations(self):
+        kinds, bindings = self.stand_in()
+        moved = profiled(self.profile)
+        moved['fixed_footprints'][0]['position_mm'] = 9
+        stale = derive(raw(moved), source_path='requirements/envelope.json')['dialog-requirements.json']
+        _, other = stage_one_dialog(stale)
+        partial = json.loads((self.requirements / 'dialog-requirements.json').read_bytes())
+        partial['requirements'] = [r for r in partial['requirements'] if r['id'] != PROFILE_ID]
+        extra = json.loads((self.requirements / 'dialog-requirements.json').read_bytes())
+        extra['requirements'].append({'id': 'R-envelope-rc-filter-hole-H9', 'text': 'Forged.',
+                                      'source_question_ids': []})
+        with kinds, bindings:
+            self.document = json.loads(derive(self.envelope, source_path='requirements/envelope.json',
+                                              profile=self.profile)['envelope-requirements.json'])
+            for label, data, message in (('stale envelope', other['requirements.json'], 'do not carry exactly'),
+                                         ('omitted', raw(partial), 'do not carry exactly'),
+                                         ('extra', raw(extra), r"extra \['R-envelope-rc-filter-hole-H9'\]")):
+                (self.requirements / 'dialog-requirements.json').write_bytes(data)
+                with self.subTest(label), self.assertRaisesRegex(ValueError, message):
+                    self.capture(self.scope())
+            # An explicit null dialog binds no decision record; obligations are still enforced.
+            run, _ = self.capture(self.scope(dialog=False))
+            self.assertNotIn('requirements/dialog-requirements.json',
+                             json.loads((run / 'baseline.json').read_text())['files'])
+
+    def test_undeclared_duplicate_and_unaudited_envelopes_are_refused(self):
+        cases = [('undeclared', self.scope(envelope=False), 'without a scope envelope declaration'),
+                 ('scope/2', self.scope(schema='agent-ee.scope/2'), 'requires agent-ee.scope/3'),
+                 ('scope/2 undeclared', self.scope(schema='agent-ee.scope/2', envelope=False),
+                  'without a scope envelope declaration')]
+        scope = self.scope(envelope=False)
+        scope['inputs'] = scope['inputs'][:1] + [{'path': f'source/requirements/{n}', 'at': f'requirements/{n}'}
+                                                 for n in ('fab-profile.json', 'owned-capabilities.txt',
+                                                           'targets.md', 'reference.md')]
+        cases.append(('requirement IDs only', scope, r"envelope requirement without .*R-envelope-rc-filter-outline"))
+        for label, scope, message in cases:
+            with self.subTest(label), self.assertRaisesRegex(ValueError, message):
+                self.capture(scope)
+        # A second envelope is found by content, whatever its name or leading whitespace.
+        for name, data in (('copy.json', self.envelope), ('padded.txt', b' \n' * 3000 + self.envelope)):
+            (self.requirements / name).write_bytes(data)
+            with self.subTest(name), self.assertRaisesRegex(ValueError, 'exactly the one captured envelope'):
+                self.capture(self.scope())
+            (self.requirements / name).unlink()
+        scope = self.scope()
+        scope['envelope']['profile'] = None
+        with self.assertRaisesRegex(ValueError, 'declare its captured path'):
+            self.capture(scope)
+        scope = self.scope()
+        scope['envelope']['extra'] = True
+        with self.assertRaisesRegex(ValueError, 'scope envelope fields'):
+            self.capture(scope)
+        from agent_ee.baseline import compile_baseline
+        with self.assertRaisesRegex(ValueError, 'requires agent-ee.scope/3'):
+            compile_baseline({'schema': 'agent-ee.scope/1', 'envelope': {}, 'checks': []}, {})
 
 
 class EnvelopeRoundTripTests(unittest.TestCase):
@@ -748,6 +1142,32 @@ class EnvelopeCliTests(unittest.TestCase):
             self.assertEqual(refused.returncode, 2)
             self.assertIn('outline is open', refused.stderr)
             self.assertFalse((Path(tmp) / 'x').exists())
+
+    def test_cli_resolves_profile_only_against_hashed_sources_and_writes_stage_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            profile, files, inputs = owned_capture(tmp / 'capture', LAYERS_AND_SIZE)
+            envelope = tmp / 'envelope.json'
+            envelope.write_bytes(raw(profiled(profile)))
+            intent = tmp / 'intent-requirements.json'
+            intent.write_bytes(import_record_requirements())
+            common = [envelope, '--source-path', 'requirements/envelope.json', '--profile',
+                      inputs / 'fab-profile.json']
+            offline = self.run_cli(*common, '--out', tmp / 'offline')
+            self.assertEqual(offline.returncode, 1, offline.stderr)
+            resolved = self.run_cli(*common, '--sources', inputs, '--board', RC_BOARD, '--out', tmp / 'resolved',
+                                    '--original-requirements', intent)
+            self.assertEqual(resolved.returncode, 0, resolved.stderr)
+            expected = derive(envelope.read_bytes(), source_path='requirements/envelope.json', profile=profile,
+                              captured=(files, inputs))
+            for name, data in expected.items():
+                self.assertEqual((tmp / 'resolved' / name).read_bytes(), data, name)
+            self.assertEqual((tmp / 'resolved/stage-one-requirements.json').read_bytes(),
+                             stage_one_requirements(intent.read_bytes(), expected['dialog-requirements.json']))
+            unsourced = self.run_cli(envelope, '--source-path', 'requirements/envelope.json', '--sources', inputs,
+                                     '--out', tmp / 'unsourced')
+            self.assertEqual(unsourced.returncode, 2)
+            self.assertIn('--sources needs --profile', unsourced.stderr)
 
 
 if __name__ == '__main__':

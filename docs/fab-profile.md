@@ -67,6 +67,12 @@ Supported minimum/preferred keys:
 Assembly coverage is limited to the declared presence of SMD pads. It does not
 establish assembly process compatibility, component sourcing or factory approval.
 
+A [board envelope](board-envelope.md#fabricator-profile) that references a
+profile is read through this same compiler before generation. Its sourced
+minimum `max_layers` and `max_board_mm` limits are evaluated against the declared
+layer count and outline on the same fixed axes. Its profile obligation is covered
+only by a `fab_profile` check over the referenced bytes.
+
 ## Board outline qualification
 
 Board size and edge clearance need one simple polygon built from exact saved

@@ -13,6 +13,9 @@ An explicit empty array represents an idea with no existing requirements. The
 [intent importer](design-intent.md) emits this original-requirement format.
 Original requirement text and IDs survive derivation unchanged, and the original
 JSON bytes are retained separately as `original-requirements.json`.
+A [board envelope's](board-envelope.md#stage-one-requirements) obligations are
+appended to these originals with `stage_one_requirements`. They then reach the
+decision record with their source locators and the envelope hash.
 
 Questions use `agent-ee.questions/1` with nonempty `context` and a `questions`
 array. Each question has exactly these fields:
