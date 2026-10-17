@@ -41,7 +41,7 @@ def implement(root, previous, definition, state, deadline):
     if not campaign_environment:
         raise ValueError('campaign missing original launch environment; start a fresh campaign')
     expected = capture_expectation({**original, **campaign_environment}, manifest,
-                                   [state['implementation_definition']])
+                                   [state['implementation_definition']], inputs=previous / 'inputs')
     write_json(work / 'launch-expectation.json', expected)
     record, response = reviewer_call(work, "implementation", {**definition, "tool_mode": "investigate"},
         prompt, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
@@ -203,7 +203,7 @@ def verify_campaign_records(root):
             source = Path(state['history'][int(work.name) - 1]['run'])
             original = read_json(source / 'result.json')
             wanted = capture_expectation({**original, **state['launch_environment']},
-                read_json(source / 'candidate.json'), [{**config['implementation'], 'tool_mode': 'investigate'}])
+                read_json(source / 'candidate.json'), [{**config['implementation'], 'tool_mode': 'investigate'}], inputs=source / 'inputs')
             if expected != wanted:
                 raise ValueError('implementation launch expectation changed')
             verify_receipt(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation')

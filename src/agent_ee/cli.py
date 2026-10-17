@@ -7,6 +7,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -41,7 +42,7 @@ def runtime_files(*, checkpoint=None):
                 value.update(block)
 
     files = {}
-    for name in ("kicad-cli", "ngspice", "bwrap", "/usr/bin/python3", "claude"):
+    for name in ("kicad-cli", "ngspice", "/usr/bin/ngspice", "bwrap", "/usr/bin/python3", "claude"):
         path = shutil.which(name)
         files[name] = {"path": path, "sha256": fingerprint(path) if path else None}
     from .harnesses import executable_for
@@ -67,7 +68,8 @@ def pcbnew_extension(*, checkpoint=None):
     if checkpoint is None:
         probe = subprocess.run(argv, capture_output=True, text=True, timeout=15)
         return (probe.stdout.strip(), '') if probe.returncode == 0 else (None, probe.stderr)
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as probe:
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, start_new_session=True) as probe:
         end = time.monotonic() + 15
         try:
             while True:
@@ -80,9 +82,15 @@ def pcbnew_extension(*, checkpoint=None):
                 except subprocess.TimeoutExpired:
                     continue
         finally:
-            if probe.poll() is None:
-                probe.kill()
+            # The leader may have exited while a descendant still holds a pipe.
+            try:
+                os.killpg(probe.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
                 probe.communicate(timeout=1)
+            except subprocess.TimeoutExpired as exc:
+                raise ValueError('runtime_probe_cleanup_timeout') from exc
 
 
 DOCTOR_PROBES = {"kicad-cli": ["kicad-cli", "version"], "ngspice": ["ngspice", "--version"],
@@ -404,7 +412,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         selected = m['scope'].get('review_profile', {})
         definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
                        for d in [*selected.get('reviewers', []), *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
-        result['launch_expectation'] = capture_expectation(result, m, definitions)
+        result['launch_expectation'] = capture_expectation(result, m, definitions, inputs=run / 'inputs')
         launch_context = {'expected': result['launch_expectation']}
         save_result(run, result)
         result["checks"] = run_checks(run, deadline)

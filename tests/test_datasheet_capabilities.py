@@ -116,3 +116,9 @@ class NativeDatasheetCoverageTests(unittest.TestCase):
                         self.assertEqual(by_id[cid]['outcome'], 'pass', by_id[cid])
                     freeze_evidence(run, checks)
                     verify_evidence(run, checks, required=True)
+                    from agent_ee.cli import run_review, verify
+                    reviewed = root / (name + '-review')
+                    self.assertEqual(run_review(root / 'scope.json', reviewed, 90, checks_only=True), 1)
+                    result = verify(reviewed)
+                    self.assertEqual(len(result['checks']), len(scope['checks']), result)
+                    self.assertEqual(result['checks'][-1]['outcome'], outcome, result)

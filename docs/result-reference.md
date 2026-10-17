@@ -362,7 +362,11 @@ New reviews retain an `agent-ee.launch-expectation/1` object in
 `result.json.launch_expectation`, captured before deterministic checks. It binds
 run, candidate and baseline identities, profile and role definitions, the loaded
 policy/runtime inventories, native prerequisites of the declared checks and
-declared measurement producer pins. Every admitted
+declared measurement and PDF extractor pins. `declared_installations` binds
+installed kicad-happy roots to the declared file-inventory hash; active SPICE
+requires the captured `/usr/bin/ngspice` binary, even when `PATH` resolves
+`ngspice` elsewhere. Baseline reconstruction uses the same
+captured inputs as capture and verification, including facts files. Every admitted
 initial reviewer, adjudicator and implementation call compares those expectations
 with fresh local observations before provider dispatch.
 
@@ -375,6 +379,9 @@ probe workspace; receipts and prior judgments are absent from initial prompts.
 The probe runs `/usr/bin/true` through the native Bubblewrap executor with its
 network disabled. It checks namespace/execution availability and consumes the
 call's wall-clock budget. Cancellation applies to the probe's process group.
+The separate pcbnew version probe also owns a process group, including descendants
+that retain output pipes after the leader exits. Timeout cleanup records a
+diagnostic refusal rather than leaving a receipt with no reason.
 
 Missing prerequisites, observable drift, invalid expectations, duplicate receipts
 and unsuccessful or malformed probes refuse inference. A refusal records

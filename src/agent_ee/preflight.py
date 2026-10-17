@@ -1,5 +1,6 @@
 """Retained local launch observations; no provider calls or acceptance authority."""
 import math
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -8,18 +9,24 @@ from .executor import execute
 from .storage import digest, identity, read_json, write_json
 
 
-def capture_expectation(result, manifest, definitions):
+def capture_expectation(result, manifest, definitions, *, inputs=None):
     """Capture once before checks/edits; callers supply the original runtime."""
     from .baseline import compile_baseline
-    baseline = compile_baseline(manifest['scope'], manifest.get('files', {}))
-    tools = {}
+    baseline = compile_baseline(manifest['scope'], manifest.get('files', {}), inputs)
+    tools, installations = {}, {}
     required_runtime = {'/usr/bin/python3', 'bwrap'}
     native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
-                           'geometry': 'pcbnew', 'rc_transient': 'ngspice'}
+                           'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice'}
     for spec in manifest['scope'].get('checks', []):
         if spec.get('kind') in native_requirements:
             required_runtime.add(native_requirements[spec['kind']])
-        tool = spec.get('params', {}).get('tool')
+        params = spec.get('params', {})
+        if spec.get('kind') == 'datasheet_facts':
+            extractor = params['extractor']
+            tools[extractor['path']] = extractor['sha256']
+        if spec.get('kind') == 'kicad_happy':
+            installations[str(Path(params['installation']).expanduser().resolve())] = params['installation_sha256']
+        tool = params.get('tool')
         if tool:
             tools[tool['argv'][0]] = tool['sha256']
     value = {'schema': 'agent-ee.launch-expectation/1',
@@ -27,16 +34,17 @@ def capture_expectation(result, manifest, definitions):
         'baseline_id': baseline['baseline_id'] if baseline else None,
         'policy_files': result['policy_files'], 'runtime_files': result['runtime_files'],
         'profile': manifest['scope'].get('review_profile'),
-        'definitions': definitions, 'declared_tools': tools, 'required_runtime': sorted(required_runtime)}
+        'definitions': definitions, 'declared_tools': tools, 'declared_installations': installations,
+        'required_runtime': sorted(required_runtime)}
     return {**value, 'identity': identity(value)}
 
 
 def validate_expectation(value):
     if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.launch-expectation/1' or
             set(value) != {'schema', 'run_id', 'candidate_id', 'baseline_id', 'policy_files',
-                           'runtime_files', 'profile', 'definitions', 'declared_tools', 'required_runtime', 'identity'} or
+                           'runtime_files', 'profile', 'definitions', 'declared_tools', 'declared_installations', 'required_runtime', 'identity'} or
             identity({k: v for k, v in value.items() if k != 'identity'}) != value['identity'] or
-            any(not isinstance(value[k], dict) for k in ('policy_files', 'runtime_files', 'declared_tools')) or
+            any(not isinstance(value[k], dict) for k in ('policy_files', 'runtime_files', 'declared_tools', 'declared_installations')) or
             not isinstance(value['definitions'], list) or
             not isinstance(value['required_runtime'], list) or
             any(not isinstance(name, str) for name in value['required_runtime'])):
@@ -98,6 +106,13 @@ def guard(run, role, definition, context, cancellation=None):
         observed['declared_tools'] = {path: digest(path) for path in expected['declared_tools']}
         if observed['declared_tools'] != expected['declared_tools']:
             raise ValueError('declared_tool_drift')
+        from .kicad_happy import installation
+        observed['declared_installations'] = {}
+        for root in expected['declared_installations']:
+            checkpoint()
+            observed['declared_installations'][root] = installation(root)['sha256']
+        if observed['declared_installations'] != expected['declared_installations']:
+            raise ValueError('declared_installation_drift')
         remaining = context['deadline'] - time.monotonic()
         if remaining <= 0:
             raise ValueError('deadline_exhausted')
@@ -129,6 +144,10 @@ def guard(run, role, definition, context, cancellation=None):
         if context.get('admit') and not context['admit']():
             raise ValueError('operation_stopped')
         receipt['result'] = 'ok'
+    except subprocess.TimeoutExpired:
+        receipt['reasons'].append('runtime_probe_timeout')
+        if isinstance(context, dict) and context.get('refuse'):
+            context['refuse']('runtime_probe_timeout')
     except (ValueError, KeyError, TypeError, OSError) as exc:
         receipt['reasons'].append(str(exc))
         if isinstance(context, dict) and context.get('refuse'):
@@ -177,7 +196,7 @@ def verify_receipt(run, record, expected, role, boundary):
         if receipt['reasons']:
             raise ValueError('successful preflight contains refusal reasons')
         observed = receipt.get('observed', {})
-        if any(observed.get(k) != expected[k] for k in ('policy_files', 'runtime_files', 'declared_tools')):
+        if any(observed.get(k) != expected[k] for k in ('policy_files', 'runtime_files', 'declared_tools', 'declared_installations')):
             raise ValueError('preflight observation mismatch')
         probe = receipt.get('probe', {})
         if not isinstance(probe, dict) or probe != read_json(path.parent / 'probe/execution.json'):
@@ -204,7 +223,7 @@ def verify_calls(run, result, manifest):
     definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
                    for d in [*selected.get('reviewers', []),
                              *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
-    if expected != capture_expectation(result, manifest, definitions):
+    if expected != capture_expectation(result, manifest, definitions, inputs=Path(run) / 'inputs'):
         raise ValueError('launch expectation differs from captured run')
     invocation_ids = set()
     for record in result.get('review_executions', []):

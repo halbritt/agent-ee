@@ -83,9 +83,75 @@ class PreflightTests(unittest.TestCase):
         producer.write_bytes(b'replaced declared producer')
         self.assert_refused('declared_tool_drift')
 
+    def optional_expectation(self, specs):
+        from agent_ee.preflight import capture_expectation
+        from agent_ee.cli import policy_files
+        self.expected = capture_expectation({'run_id': 'run', 'policy_files': policy_files(),
+            'runtime_files': self.runtime}, {'candidate_id': 'candidate', 'scope': {
+                'schema': 'agent-ee.scope/1', 'checks': specs}}, [self.definition])
+        self.context['expected'] = self.expected
+
+    def test_pdf_extractor_drift_blocks_dispatch(self):
+        from agent_ee.storage import digest
+        tool = self.run / 'extractor'
+        tool.write_bytes(b'extractor v1')
+        self.optional_expectation([{'kind': 'datasheet_facts', 'params': {'extractor': {
+            'path': str(tool), 'sha256': digest(tool)}}}])
+        tool.write_bytes(b'extractor v2')
+        self.assert_refused('declared_tool_drift')
+
+    def test_analyzer_helper_drift_blocks_dispatch(self):
+        from agent_ee.kicad_happy import installation
+        from agent_ee.storage import write_json
+        root = self.run / 'analyzer'
+        write_json(root / '.claude-plugin/plugin.json', {'name': 'kicad-happy', 'version': '2.3.1'})
+        source = root / 'skills/probe.py'
+        source.parent.mkdir()
+        source.write_text('# original installed bytes')
+        self.optional_expectation([{'kind': 'kicad_happy', 'params': {
+            'installation': str(root), 'installation_sha256': installation(root)['sha256']}}])
+        source.write_text('# changed after capture')
+        self.assert_refused('declared_installation_drift')
+
+    def test_path_shadow_cannot_replace_absolute_active_solver_identity(self):
+        # Probe identities independently of the test host's installed toolchain.
+        def which(name):
+            return '/shadow/ngspice' if name == 'ngspice' else name if name == '/usr/bin/ngspice' else None
+        self.runtime_patch.stop()
+        from agent_ee.cli import runtime_files
+        with patch('agent_ee.cli.shutil.which', side_effect=which), \
+                patch('agent_ee.harnesses.executable_for', return_value=None), \
+                patch('agent_ee.cli.pcbnew_extension', return_value=(None, '')), \
+                patch('agent_ee.cli.digest', side_effect=lambda path: 'hash:' + path):
+            actual = runtime_files()
+        self.runtime_patch.start()
+        self.assertEqual(actual['ngspice']['path'], '/shadow/ngspice')
+        self.assertEqual(actual['/usr/bin/ngspice'], {
+            'path': '/usr/bin/ngspice', 'sha256': 'hash:/usr/bin/ngspice'})
+        self.runtime['/usr/bin/ngspice'] = actual['/usr/bin/ngspice']
+        self.optional_expectation([{'kind': 'active_spice', 'params': {}}])
+        self.assertIn('/usr/bin/ngspice', self.expected['required_runtime'])
+        self.runtime = {**self.runtime, '/usr/bin/ngspice': {'path': '/usr/bin/ngspice', 'sha256': 'changed'}}
+        self.assert_refused('runtime_drift')
+
+    def test_active_spice_requires_solver_before_dispatch(self):
+        self.runtime['/usr/bin/ngspice'] = {'path': None, 'sha256': None}
+        self.optional_expectation([{'kind': 'active_spice', 'params': {}}])
+        self.assert_refused('missing_binary:/usr/bin/ngspice')
+
     def test_broken_and_malformed_probe_never_dispatch(self):
         with patch('agent_ee.preflight.execute', return_value={'execution': 'ok'}):
             self.assert_refused('malformed_probe_receipt')
+
+    def test_runtime_probe_timeout_retains_valid_refusal_without_dispatch(self):
+        import subprocess
+        from agent_ee.preflight import verify_receipt
+        refusals = []
+        self.context['refuse'] = refusals.append
+        with patch('agent_ee.cli.runtime_files', side_effect=subprocess.TimeoutExpired(['probe'], 1)):
+            record = self.assert_refused('runtime_probe_timeout')
+        self.assertEqual(refusals, ['runtime_probe_timeout'])
+        verify_receipt(self.run, record, self.expected, 'circuit', 'initial')
 
     def test_native_networkless_probe_and_tamper_detection(self):
         from toolchain import require_toolchain
@@ -213,3 +279,42 @@ class PreflightTests(unittest.TestCase):
         from agent_ee.preflight import verify_receipt
         with self.assertRaisesRegex(ValueError, 'missing or foreign'):
             verify_receipt(self.run, {'execution': 'ok'}, self.expected, 'circuit', 'initial')
+
+class RuntimeProbeCleanupTests(unittest.TestCase):
+    def test_cancelled_probe_cleans_descendant_holding_output_pipe(self):
+        import os
+        import signal
+        import subprocess
+        from agent_ee.cli import pcbnew_extension
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / 'child.pid'
+            script = ('import subprocess,sys,pathlib; '
+                      'p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
+                      f'pathlib.Path({str(marker)!r}).write_text(str(p.pid))')
+            original = subprocess.Popen
+            def launch(argv, **kwargs):
+                return original(['/usr/bin/python3', '-c', script], **kwargs)
+            end = time.monotonic() + 5
+            def checkpoint():
+                if marker.exists() or time.monotonic() >= end:
+                    raise ValueError('operation cancelled')
+            try:
+                with patch('agent_ee.cli.subprocess.Popen', side_effect=launch), \
+                        self.assertRaisesRegex(ValueError, 'operation cancelled'):
+                    pcbnew_extension(checkpoint=checkpoint)
+                self.assertTrue(marker.exists(), 'test probe did not start child')
+                pid = int(marker.read_text())
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline:
+                    stat = Path(f'/proc/{pid}/stat')
+                    if not stat.exists() or stat.read_text().split()[2] == 'Z':
+                        break
+                    time.sleep(.01)
+                else:
+                    self.fail('runtime probe left descendant alive')
+            finally:
+                if marker.exists():
+                    try:
+                        os.kill(int(marker.read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
