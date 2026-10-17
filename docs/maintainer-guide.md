@@ -60,6 +60,7 @@ runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` and no permitted skips.
 | [test_cli.py](../tests/test_cli.py) | Required work, outcome projection, interruption/budget preservation and correction behavior |
 | [test_doctor.py](../tests/test_doctor.py) | Doctor version output and binary hashes, missing tools, unimportable pcbnew, unhashable binaries and `--checks-only` |
 | [test_action_gate.py](../tests/test_action_gate.py) | CI/action verdicts from `result.json`: passing checks, defects, incomplete coverage, missing or malformed results and failed verification |
+| [test_file_origins.py](../tests/test_file_origins.py) | MIT declaration in LICENSE, package metadata and README; every file classified once by origin; unreviewed third-party-looking files, undeclared capture origins and archive gaps refused |
 
 Avoid tests that only echo generated implementation text. Define the engineering
 expected response and failure mechanism independently, then exercise actual
@@ -264,6 +265,24 @@ syntax with `bash -n`, and counts Mermaid blocks. It does not execute examples,
 fetch external URLs, render diagrams or verify prose against implementation.
 Run interface examples separately with their real validators and render changed
 Mermaid diagrams before reviewing their meaning and readability.
+
+## Recording file origins
+
+Every tracked file needs a rule in [docs/file-origins.json](file-origins.json).
+Check it with:
+
+```sh
+python3 scripts/check_origins.py
+```
+
+New code, tests and documentation under existing agent-ee directories are
+already covered. A new fixture, evidence directory, archive or copied file needs
+its own rule with the correct origin. A file that looks like third-party
+material (PDF, web page, image, archive, KiCad design or library, Gerber, PGP
+key, or embedded KiCad text) needs a third-party origin, or an exact-path rule
+whose `reviewed` field says why it is agent-ee material. Do not add a
+third-party file under MIT, and do not mark an origin `owner-confirmed` without
+the owner's recorded decision. See [third-party origins](third-party-origins.md).
 
 
 Scope/3 execution extensions require matching focused capability validators in

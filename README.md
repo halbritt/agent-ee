@@ -333,7 +333,8 @@ and partial runs.
 
 The project has tests covering native checks, evidence integrity, isolated
 review contexts, single-writer ownership, regression detection, empirical
-feedback, doctor's binary hashes and the CI action's result gate. The original
+feedback, doctor's binary hashes, the CI action's result gate and the
+file-origin inventory. The original
 RC defect-and-repair demonstration used actual agent
 reviews. The newer complete campaign and bench-feedback loops are exercised with
 scripted agent responses and synthetic bench samples. A live subscription
@@ -369,3 +370,20 @@ Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
 series/parallel networks; unsupported conductors leave coverage incomplete.
+
+## License
+
+The [MIT License](LICENSE) is proposed for material written for agent-ee and
+for outputs of its runs on that material, and it is declared in the package
+metadata. The proposal is included for review; owner approval remains pending.
+
+The MIT grant does not cover files that come from other projects. These include
+the RC fixture copied from FOME-MC, logic in `src/agent_ee/checks.py` adapted
+from FOME-MC, donor ECU design files and their libraries, stock KiCad libraries
+inside the evidence archives, datasheets and fetched web pages. The
+[file-origin inventory](docs/file-origins.json) classifies every tracked file by
+origin, upstream license and publication status, and
+[third-party origins](docs/third-party-origins.md) summarizes it for review.
+Publication rights for those files are unresolved, and each origin needs an
+owner decision. The public repository already contains many of them. That does
+not establish a right to publish them.
