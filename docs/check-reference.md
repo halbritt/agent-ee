@@ -348,7 +348,9 @@ raw EasyEDA geometry and KiCad library members. The check retains native
 extraction and bounded overlap evidence through the coordinator seal; missing
 or unsupported geometry cannot pass. See the [contract and qualification](land-pattern.md)
 for exact parameters, pin-number comparisons and coverage limits. The actual
-C11702/0402 comparison does not meet the requested 0.98 threshold.
+C11702/0402 comparison does not meet the requested 0.98 threshold. The absolute
+threshold is the only acceptance rule. Any other acceptance criterion for that
+pair is an owner decision.
 
 ## Footprint and catalog package names
 

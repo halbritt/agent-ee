@@ -1,5 +1,6 @@
 """Registered land-pattern check through capture, sandbox, seal and witness verification."""
 import shutil
+import sys
 import tempfile
 import time
 import unittest
@@ -7,6 +8,7 @@ from pathlib import Path
 
 from agent_ee.footprint_library import canonical
 from agent_ee.storage import read_json, write_json
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_land_pattern import Workspace, lib
 from land_pattern_fixtures import SOT_KICAD, sot_supplier
 

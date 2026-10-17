@@ -3,17 +3,20 @@ import copy
 from fractions import Fraction
 import hashlib
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_ee.easyeda_footprint import SupplierError, parse_package
 from agent_ee.footprint_library import canonical
 from agent_ee.land_pattern import (PatternError, board_footprint, board_footprints, capability, evaluate,
                                    extract_footprint, main, replay, validate_criteria)
 from agent_ee.symbol_library import parse_sexpr
-from land_pattern_fixtures import (MODEL, SILK, SOT_KICAD, chip, chip_kicad, component, kicad_footprint,
-                                   manifest, pad, provenance, sot_supplier)
+from land_pattern_fixtures import (MODEL, SILK, SOT_KICAD, chip, chip_kicad, chip_roundrect_kicad, component,
+                                   kicad_footprint, manifest, pad, provenance, sot_supplier)
 
 
 def ratio(record):
@@ -410,6 +413,93 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(record['holes']['decision'], 'defect')
         record = self.only(self.ws.evaluate(None))
         self.assertEqual((record['execution'], record['mode']), ('unsupported', 'native_missing'))
+
+
+# Published pad dimensions as facts (no supplier or library file is copied): the
+# EasyEDA C11702 land pattern has 2.227 x 2.126 unit RECT pads at +-1.704 units
+# (0.5657 x 0.5400 mm at +-0.4328 mm); KiCad 10 stock R_0402/R_0603 pads are
+# 0.25-ratio roundrects 0.54 x 0.64 at +-0.51 and 0.80 x 0.95 at +-0.825 mm.
+C11702_SHAPES = chip(Fraction('1.704'), '2.227', '2.126')
+VARIANTS = {'R0402': chip_roundrect_kicad('0.51', '0.54', '0.64'),
+            'R0603': chip_roundrect_kicad('0.825', '0.8', '0.95')}
+
+
+def sampled_iou(supplier_pad, native_pad, step=0.002):
+    """Independent float control: midpoint sampling of one rect pad against one roundrect pad (mm)."""
+    (sx, sw, sh), (nx, nw, nh, r) = supplier_pad, native_pad
+    def inside_native(x, y):
+        dx, dy = max(abs(x - nx) - (nw / 2 - r), 0), max(abs(y) - (nh / 2 - r), 0)
+        return abs(x - nx) <= nw / 2 and abs(y) <= nh / 2 and dx * dx + dy * dy <= r * r
+    x0, x1 = min(sx - sw / 2, nx - nw / 2), max(sx + sw / 2, nx + nw / 2)
+    y1 = max(sh, nh) / 2
+    inter = union = 0
+    for i in range(int((x1 - x0) / step) + 1):
+        x = x0 + (i + 0.5) * step
+        for j in range(int(2 * y1 / step) + 1):
+            y = -y1 + (j + 0.5) * step
+            a = abs(x - sx) <= sw / 2 and abs(y) <= sh / 2
+            b = inside_native(x, y)
+            inter += a and b
+            union += a or b
+    return inter / union
+
+
+class C11702ThresholdTests(unittest.TestCase):
+    """The absolute threshold is the only acceptance rule; relative acceptance awaits an owner decision."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.ws = Workspace(tmp.name)
+        self.ws.library(VARIANTS)
+        self.binding = self.ws.supplier('R1', 'C11702', C11702_SHAPES)
+
+    def test_c11702_shaped_pattern_is_low_accuracy_against_0402_and_0603(self):
+        self.ws.require('R1', 'C11702', self.binding, lib('R0402'))
+        self.ws.require('R2', 'C11702', self.binding, lib('R0603'))
+        report = self.ws.evaluate(pin_tolerance_nm='250000')
+        r0402, r0603 = report['references']
+        self.assertEqual((r0402['execution'], r0402['outcome'], r0402['modes']), ('ok', 'defect', ['low_accuracy']))
+        self.assertEqual(r0402['pins']['mode'], 'pin_agreement')
+        self.assertEqual([(p['native'], p['supplier']) for p in r0402['pins']['pairs']], [('1', '1'), ('2', '2')])
+        metric = r0402['copper']['F.Cu']
+        self.assertEqual(metric['decision'], 'defect')
+        control = sampled_iou((0.4328, 0.5657, 0.54), (0.51, 0.54, 0.64, 0.135))
+        self.assertLess(ratio(metric['lower']), control)
+        self.assertLess(control, ratio(metric['upper']))
+        self.assertAlmostEqual(control, 0.671, delta=0.002)
+        self.assertLess(ratio(metric['upper']), Fraction('0.98'))
+        self.assertEqual((r0603['execution'], r0603['outcome']), ('ok', 'defect'))
+        self.assertEqual(r0603['modes'][0], 'low_accuracy')
+        self.assertLess(ratio(r0603['copper']['F.Cu']['upper']), Fraction('0.19'))
+        self.assertIn('presented', r0603['copper']['F.Cu'])
+        self.assertEqual((report['execution'], report['outcome'], report['coverage']), ('ok', 'defect', 'complete'))
+        self.assertEqual(report['counts']['passed'], 0)
+        self.assertEqual(canonical(report), canonical(self.ws.evaluate(pin_tolerance_nm='250000')))
+        self.assertTrue(replay(report, self.ws.criteria(pin_tolerance_nm='250000'), dict(self.ws.files)))
+
+    def test_three_percent_overlap_is_low_accuracy_never_pass(self):
+        # Regression for the withdrawn nearest-variant rule, which passed this pair at IoU about 0.031.
+        tiny = self.ws.supplier('R1', 'C900000009', chip(Fraction('2.008'), '0.4', '0.4'))
+        self.ws.require('R1', 'C900000009', tiny, lib('R0402'))
+        record = self.ws.evaluate()['references'][0]
+        self.assertEqual((record['execution'], record['outcome'], record['modes']), ('ok', 'defect', ['low_accuracy']))
+        metric = record['copper']['F.Cu']
+        self.assertGreater(ratio(metric['lower']), Fraction('0.03'))
+        self.assertLess(ratio(metric['upper']), Fraction('0.033'))
+        self.assertEqual(record['pins']['mode'], 'pin_agreement')
+
+    def test_relative_acceptance_criteria_are_refused(self):
+        self.ws.require('R1', 'C11702', self.binding, lib('R0402'))
+        nearest = dict(rule='nearest_variant', alternatives=[lib('R0603')])
+        for schema in ('agent-ee.land-pattern-criteria/1', 'agent-ee.land-pattern-criteria/2'):
+            criteria = self.ws.criteria(schema=schema)
+            criteria['requirements'][0]['acceptance'] = nearest
+            with self.subTest(schema=schema):
+                with self.assertRaises((ValueError, TypeError)):
+                    validate_criteria(criteria)
+                report = evaluate(criteria, dict(self.ws.files))
+                self.assertEqual((report['execution'], report['outcome']), ('malformed', 'unknown'))
 
 
 class CriteriaTests(unittest.TestCase):

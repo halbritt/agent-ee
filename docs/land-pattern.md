@@ -228,10 +228,9 @@ sandbox:
 /usr/bin/python3 -m agent_ee.land_pattern /candidate/CRITERIA --captures /candidate --board BOARD --out /work/land-pattern.json
 ```
 
-`land-pattern.json` is retained as evidence. Root integration still has to add
-`land_pattern` to `CHECK_FUNCS`, the baseline dependency loop, and the
-capability `KINDS`/descriptor dispatch, following the existing `catalog`
-pattern.
+`land-pattern.json` is retained as evidence. `land_pattern` is registered in
+`CHECK_FUNCS`, the baseline dependency loop and the capability
+`KINDS`/descriptor dispatch.
 
 ## C11702 qualification
 
@@ -253,9 +252,18 @@ substantially from KiCad's IPC-nominal 0.54 × 0.64 mm roundrect pads at
 ±0.51 mm. The ticket's literal "C11702 passes against R_0402_1005Metric at IoU
 above 0.98" is therefore false for these actual bytes, and the threshold was
 not tuned. Resolving it is an owner decision: a justified per-pair criterion, a
-variant-discrimination criterion, or a different library reference. The
-raw/derived supplier data remain unpublished. The EasyEDA data licence is
+variant-discrimination criterion, or a different library reference. Until that
+decision, the only acceptance rule is the absolute threshold. No relative or
+nearest-variant rule exists, and a criteria schema other than `/1` is refused
+as malformed.
+
+The raw/derived supplier data remain unpublished. The EasyEDA data licence is
 unclear, so committed tests use only owned synthetic EasyEDA-format records.
+`C11702ThresholdTests` builds one from the published C11702 pad dimensions as
+facts, against owned roundrect footprints with the stock R_0402/R_0603 pad
+dimensions. It checks that both bindings are `low_accuracy` defects with the
+IoU reported, that the 0402 interval contains an independent float control of
+about 0.671, and that a 3 % overlap (IoU about 0.031) is also `low_accuracy`.
 
 ## Limitations
 
