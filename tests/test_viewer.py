@@ -79,6 +79,22 @@ else:
         manifest = capture(scope, run)
         return run, manifest
 
+    def test_staging_preserves_native_uri_alias_and_foreign_absolute_models(self):
+        native_paths = ("kicad-embed://part.step", ":MY_MODELS:part.step",
+                        "C:/Models/part.step", "${KIPRJMOD}/part.step")
+        self.board.write_text('(kicad_pcb ' + ' '.join(
+            f'(model "{path}")' for path in (*native_paths, "local model.step")) + ')')
+        before = self.board.read_bytes()
+        build_viewer(self.board, self.out)
+        exported = (self.out / 'export.stdout.log').read_text()
+        for path in native_paths:
+            with self.subTest(path=path):
+                self.assertIn(f'(model "{path}")', exported)
+        self.assertIn(str(self.board.parent / 'local model.step'), exported)
+        self.assertEqual(self.board.read_bytes(), before)
+        metadata = json.loads((self.out / 'export.json').read_text())
+        self.assertEqual(metadata['relative_model_paths_resolved'], 1)
+
     def test_retained_run_uses_captured_board_when_live_source_changes(self):
         run, manifest = self.capture_run()
         self.board.write_text('live source has changed')

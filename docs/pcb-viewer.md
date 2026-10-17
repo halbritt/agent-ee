@@ -5,6 +5,9 @@ viewer. Use it to inspect board shape, copper, component placement and the
 available component models alongside the review workflow. It makes no model
 calls.
 
+For high-quality top, bottom and isometric still images, use
+[`agent-ee render3d`](pcb-renders.md).
+
 From the checkout:
 
 ```sh

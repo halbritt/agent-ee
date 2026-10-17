@@ -8,7 +8,7 @@ import struct
 import subprocess
 import tempfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import unquote, urlsplit
 
 from .candidate import safe_relative, verify_snapshot
@@ -35,7 +35,9 @@ def _stage_board(board, stage):
         if opening.group() != "(" or name.group() != "model" or not value.group().startswith('"'):
             continue
         filename = value.group()[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-        if not filename or "$" in filename or Path(filename).is_absolute():
+        if (not filename or "$" in filename or Path(filename).is_absolute()
+                or PureWindowsPath(filename).is_absolute()
+                or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://|^:[^:]+:", filename)):
             continue
         absolute = str((board.parent / filename).resolve())
         quoted = '"' + absolute.replace("\\", "\\\\").replace('"', '\\"') + '"'

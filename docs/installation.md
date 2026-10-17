@@ -31,6 +31,12 @@ plus a browser with WebGL support. Install the matching KiCad 3D model libraries
 for footprint model references to resolve. The viewer bundles its browser
 dependencies and does not require a reviewer harness or subscription inference.
 
+[Native 3D still renders](pcb-renders.md) require `kicad-cli pcb render` with
+the high-quality, floor and board-stackup-color options (tested with KiCad
+10.0.7). They use the standard Python library and require no browser. Stock
+component models may come from the installed libraries, a local `--models`
+cache, or explicitly requested `--fetch-models` downloads.
+
 Bubblewrap must actually be allowed to create the required namespaces and mount
 view. An installed binary alone does not establish that. Native execution in
 the [control demonstration](../evidence/rc-verified/control/REPORT.md) exercised

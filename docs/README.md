@@ -19,6 +19,7 @@ product's hardware qualification.
 | Build the pinned image, run checks in CI or use the GitHub Action | [Container image and CI action](container.md) |
 | Run a review, investigate findings and verify a repair | [Operator guide](operator-guide.md) |
 | Inspect a saved board or captured candidate in 3D | [3D PCB viewer](pcb-viewer.md) |
+| Render top, bottom and isometric board images | [Native 3D renders](pcb-renders.md) |
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |

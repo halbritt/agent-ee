@@ -572,6 +572,22 @@ def view3d(source, out, *, port=0, no_browser=False, export_only=False):
     return 0
 
 
+def render3d(args):
+    """Render a complete native three-view bundle without starting a browser."""
+    from .render3d import render_board
+
+    try:
+        manifest = render_board(args.source, args.out, width=args.width,
+            height=args.height, quality=args.quality, jobs=args.jobs,
+            timeout=args.timeout, models=args.models, fetch_models=args.fetch_models,
+            progress=lambda message: print(message, flush=True))
+    except KeyboardInterrupt:
+        print("agent-ee: rendering interrupted; inspect the retained output logs", file=sys.stderr)
+        return 130
+    print(f"3D render manifest: {manifest}", flush=True)
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -581,6 +597,16 @@ def main(argv=None):
     viewer.add_argument("--port", type=int, default=0, help="loopback HTTP port (default: choose a free port)")
     viewer.add_argument("--no-browser", action="store_true", help="print the URL without opening a browser")
     viewer.add_argument("--export-only", action="store_true", help="build the bundle without starting a server")
+    renders = sub.add_parser("render3d", help="ray trace top, bottom and isometric PCB images with native KiCad")
+    renders.add_argument("source", help=".kicad_pcb file or retained review directory")
+    renders.add_argument("--out", required=True, help="new directory for images, snapshots, logs and manifest")
+    renders.add_argument("--width", type=int, default=4096, help="requested pixel width (default: 4096)")
+    renders.add_argument("--height", type=int, default=3072, help="requested pixel height (default: 3072)")
+    renders.add_argument("--quality", choices=("basic", "high"), default="high", help="native ray-tracing quality (default: high)")
+    renders.add_argument("--jobs", type=int, choices=(1, 2, 3), default=3, help="concurrent views (default: 3)")
+    renders.add_argument("--timeout", type=float, default=1200, help="maximum seconds per view (default: 1200)")
+    renders.add_argument("--models", help="local stock-model directory; maps KiCad model-library variables")
+    renders.add_argument("--fetch-models", action="store_true", help="fetch referenced stock models into --models from pinned official KiCad sources")
     request = sub.add_parser("evidence-request", help="export an inert request from a retained concern")
     request.add_argument("run")
     request.add_argument("--finding", required=True)
@@ -645,6 +671,8 @@ def main(argv=None):
     closure.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "render3d":
+            return render3d(args)
         if args.command == "view3d":
             return view3d(args.source, args.out, port=args.port,
                           no_browser=args.no_browser, export_only=args.export_only)

@@ -91,6 +91,7 @@ also acquire process leases to prevent concurrent campaign mutations.
 | [Bench feedback](docs/bench-feedback.md) | Bind prototype observations to the measured candidate, retain raw samples, and feed simulation-to-bench discrepancies back into subsequent acceptance checks and fresh reviews. |
 | [Historical verification](docs/result-reference.md) | Check that retained evidence still belongs to the captured inputs and policy. Changed sources do not inherit an old candidate's passing review. |
 | [3D PCB viewer](docs/pcb-viewer.md) | Inspect a saved board or captured candidate in a local browser, using KiCad's native GLB export and bundled browser assets. |
+| [Native 3D renders](docs/pcb-renders.md) | Produce top, bottom and isometric PNGs with KiCad's ray tracer, model coverage and retained run records. |
 
 Campaigns are designed to terminate with satisfied criteria, an explicit
 escalation, or an incomplete execution. They do not promise that an arbitrary
