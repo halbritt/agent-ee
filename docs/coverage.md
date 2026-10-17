@@ -15,6 +15,7 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `drc` | Native all-severity DRC, saved fill, and schematic parity. Reports retain exclusions and native items. A violation is distinct from execution failure. |
 | `netlist` | Complete-hierarchy native XML export, with derived connectivity, DNP, native symbol identity, and sheet/UUID provenance. Informational rather than functional acceptance. |
 | `geometry` | Saved-board pcbnew extraction. `params.min_track_width_mm` retains its historical straight-segment meaning; `params.exclude_nets` records explicit exemptions. Opt-in `params.criterion: "copper-width/1"` covers straight tracks and native arcs with explicit coverage evidence (see below). |
+| `passive_corners` | [Qualified first-order unloaded RC](passive-corners.md), complete independent tolerance endpoints and retained numerical envelope; no nominal empirical transfer. |
 | `rc_transient` | Prior `params.netlist_check` supplies actual native connectivity/values. A supported populated passive R/C/L network receives the declared `input_net`, `output_net`, `ground_net`, positive `step_v`, `stop_ms`, and named measurements with `at_ms`, optional `min`/`max`. |
 
 For `rc_transient`, omitted `step_v` uses 1.0 V and omitted `stop_ms` uses
@@ -141,7 +142,10 @@ does not close individual repairs while other blocking findings remain.
 
 ## Coverage that remains outside the demonstrations
 
-The RC demonstration does not establish active-device behavior, component
+The separate [passive-corner qualification](passive-corners.md) covers only its
+explicit unloaded first-order RC domain.
+
+The nominal RC demonstration does not establish active-device behavior, component
 tolerances, thermal limits, manufacturing approval, EMC or vehicle transients.
 The donor's modules and assembled harness introduce behavior beyond the captured
 carrier. Startup/reset/brownout safety, ignition energy, wideband loop stability,

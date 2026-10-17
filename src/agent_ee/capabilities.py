@@ -13,7 +13,7 @@ from .storage import identity
 
 
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
-                   'measurements', 'coupled_margins'))
+                   'measurements', 'coupled_margins', 'passive_corners'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -133,14 +133,17 @@ def _coupled_margins(params, prerequisite):
     condition = text(params['condition'], 'coupling condition')
     domains, names = set(), set()
     for member in members:
-        source = prerequisite(member['check'], ('measurements', 'rc_transient'))
+        source = prerequisite(member['check'], ('measurements', 'rc_transient', 'passive_corners'))
         source_params = source.get('params', {})
         if source['kind'] == 'measurements':
             metric = source_params['limits'][member['metric']]
             domain = source_params['tool']['domain']
         else:
             m = next(m for m in source_params['measurements'] if m['name'].lower() == member['metric'])
-            metric = {'unit': 'V', 'condition': f"ideal-unloaded-{source_params.get('step_v', 1.0)}V-step-at-{float(m['at_ms'])}ms"}
+            from .passive_corners import condition as corner_condition
+            metric = {'unit': 'V', 'condition': (corner_condition(source_params, m)
+                if source['kind'] == 'passive_corners' else
+                f"ideal-unloaded-{source_params.get('step_v', 1.0)}V-step-at-{float(m['at_ms'])}ms")}
             domain = 'electrical'
         if metric['condition'] != condition:
             raise ValueError('coupled source condition mismatch')
@@ -214,6 +217,11 @@ def describe_check(spec, *, check_specs, files, scope):
             captured(scope.get('board'))
             result['predicates'] = _geometry(params)
         elif kind == 'rc_transient':
+            result['predicates'] = _rc_transient(params, prerequisite)
+        elif kind == 'passive_corners':
+            from .passive_corners import validate_contract
+            validate_contract(params)
+            captured(params['qualification'], immutable=True)
             result['predicates'] = _rc_transient(params, prerequisite)
         elif kind == 'measurements':
             result['predicates'] = _measurements(params, captured)

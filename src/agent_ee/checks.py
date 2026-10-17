@@ -810,10 +810,12 @@ def check_rc_transient(ctx):
 
 
 from .measurements import check_measurements, check_coupled_margins
+from .passive_corners import check_passive_corners
 
 
 CHECK_FUNCS = {"measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
-               "geometry": check_geometry, "rc_transient": check_rc_transient}
+               "geometry": check_geometry, "rc_transient": check_rc_transient,
+               "passive_corners": check_passive_corners}
 
 
 # ------------------------------------------------------------------ entry point

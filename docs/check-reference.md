@@ -224,3 +224,9 @@ A scope/2 RC result can fail despite an in-range raw SPICE value when its
 empirically corrected interval crosses a bound. Inspect `details.metrics`
 (`nominal`, `lower`, `upper`), `details.margins` and `bench-replay.json` alongside
 the raw `details.measurements`; they answer different questions.
+
+## Qualified passive tolerance endpoints
+
+See [passive corners](passive-corners.md) for the optional `passive_corners`
+contract, supported topology, immutable qualification inputs, bounded ensemble,
+retained per-corner evidence and empirical-transfer refusal.

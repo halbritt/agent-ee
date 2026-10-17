@@ -1,0 +1,128 @@
+{
+  "schema": "agent-ee.scope/3",
+  "name": "Owned RC tolerance control",
+  "scope": "Qualify independent ideal passive RC tolerance endpoints against immutable fixture criteria.",
+  "limitations": [
+    "Ideal unloaded first-order RC only; no physical validation or empirical transfer."
+  ],
+  "inputs": [
+    {
+      "path": "../rc/control",
+      "at": "project"
+    },
+    {
+      "path": "/usr/share/kicad/symbols",
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/footprints",
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/template",
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ]
+    },
+    {
+      "path": "requirements",
+      "at": "requirements"
+    },
+    {
+      "path": "qualification.json",
+      "at": "qualification.json"
+    }
+  ],
+  "schematic": "project/rc_filter.kicad_sch",
+  "board": "project/rc_filter.kicad_pcb",
+  "requirements": [
+    "requirements/system.md"
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "rc-step",
+      "kind": "passive_corners",
+      "params": {
+        "netlist_check": "netlist",
+        "input_net": "/IN",
+        "output_net": "/OUT",
+        "ground_net": "GND",
+        "step_v": 1.0,
+        "stop_ms": 5.0,
+        "measurements": [
+          {
+            "name": "vout_1ms",
+            "at_ms": 1.0,
+            "min": 0.55,
+            "max": 0.72
+          }
+        ],
+        "calibration_inputs": [
+          "requirements/reference.md"
+        ],
+        "tolerances": {
+          "R1": [
+            -0.1,
+            0.1
+          ],
+          "C1": [
+            -0.1,
+            0.1
+          ]
+        },
+        "max_corners": 4,
+        "qualification": "qualification.json"
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "I-netlist",
+        "statement": "Retain native connectivity",
+        "source": {
+          "path": "requirements/system.md",
+          "locator": "I-netlist"
+        },
+        "checks": [
+          "netlist"
+        ],
+        "intent": "informational"
+      },
+      {
+        "id": "R-response",
+        "statement": "Complete RC tolerance envelope at 1 ms in [0.55, 0.72] V",
+        "source": {
+          "path": "requirements/system.md",
+          "locator": "R-response"
+        },
+        "checks": [
+          "rc-step"
+        ],
+        "intent": "acceptance"
+      }
+    ],
+    "targets": [
+      "requirements/targets.md"
+    ],
+    "reference_architectures": [
+      "requirements/reference.md"
+    ]
+  }
+}
