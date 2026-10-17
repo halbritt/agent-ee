@@ -14,3 +14,6 @@ agent-ee = "agent_ee.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+agent_ee = ["viewer_assets/*", "viewer_assets/vendor/*"]

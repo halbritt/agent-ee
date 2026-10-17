@@ -543,9 +543,44 @@ def _link_correction(previous, current, finding_id, check_ids, reason):
     print(json.dumps(event, indent=2))
 
 
+def view3d(source, out, *, port=0, no_browser=False, export_only=False):
+    """Build a separate preview and keep its loopback server alive until Ctrl-C."""
+    if not 0 <= port <= 65535:
+        raise ValueError("viewer port must be between 0 and 65535")
+    from .viewer import build_viewer, serve_viewer
+
+    print("Exporting the board with KiCad…", flush=True)
+    page = build_viewer(source, out)
+    print(f"Viewer bundle: {page.parent}", flush=True)
+    if export_only:
+        return 0
+    import webbrowser
+
+    with serve_viewer(page.parent, port=port) as server:
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
+        print(f"3D PCB viewer: {url}\nPress Ctrl-C to stop.", flush=True)
+        if not no_browser:
+            try:
+                if not webbrowser.open(url):
+                    print("Open the URL above in your browser.", file=sys.stderr)
+            except (OSError, webbrowser.Error) as exc:
+                print(f"Could not open a browser: {exc}. Open the URL above.", file=sys.stderr)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    viewer = sub.add_parser("view3d", help="open a local 3D preview of a KiCad board or captured review")
+    viewer.add_argument("source", help=".kicad_pcb file or retained review directory")
+    viewer.add_argument("--out", required=True, help="new directory for the exported viewer bundle")
+    viewer.add_argument("--port", type=int, default=0, help="loopback HTTP port (default: choose a free port)")
+    viewer.add_argument("--no-browser", action="store_true", help="print the URL without opening a browser")
+    viewer.add_argument("--export-only", action="store_true", help="build the bundle without starting a server")
     request = sub.add_parser("evidence-request", help="export an inert request from a retained concern")
     request.add_argument("run")
     request.add_argument("--finding", required=True)
@@ -610,6 +645,9 @@ def main(argv=None):
     closure.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "view3d":
+            return view3d(args.source, args.out, port=args.port,
+                          no_browser=args.no_browser, export_only=args.export_only)
         if args.command == "evidence-request":
             from .evidence_requests import export_request
             record = export_request(args.run, args.finding, read_json(args.spec), args.out, script=args.script)

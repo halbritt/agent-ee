@@ -1,0 +1,43 @@
+schema_version: 1
+app:
+  serve: [/usr/bin/python3, scripts/serve_viewer_fixture.py, --port, "{port}"]
+  ready_path: /
+timeouts:
+  startup: 120
+  case: 40
+  total: 360
+viewports:
+  desktop: {width: 1440, height: 1000}
+  phone: {width: 390, height: 844}
+surfaces:
+  pcb-viewer:
+    states:
+      loaded:
+        route: /
+        ready: '#render-status[data-ready="true"]'
+      bottom:
+        route: /
+        actions:
+          - {type: click, selector: 'button[data-view="bottom"]'}
+        ready: 'button[data-view="bottom"][aria-pressed="true"]'
+      hidden-object:
+        route: /
+        actions:
+          - {type: click, selector: '#objects .object-row:first-child input'}
+        ready: '#objects .object-row.dimmed'
+      metadata-unavailable:
+        route: /
+        responses:
+          - path: /viewer.json
+            status: 503
+            content_type: text/plain
+            body_file: tests/fixtures/viewer-unavailable.txt
+        ready: '#state-panel.error'
+      model-unavailable:
+        route: /
+        responses:
+          - path: /board.glb
+            status: 404
+            content_type: text/plain
+            body_file: tests/fixtures/viewer-unavailable.txt
+        ready: '#state-panel.error'

@@ -22,6 +22,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
 | `doctor` | `[--checks-only]` | Probe prerequisite versions/imports and hash the probed binaries; no design or inference run |
 | `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
+| `view3d` | `SOURCE --out NEW [--port N] [--no-browser] [--export-only]` | Export a saved board or captured candidate into a local 3D browser viewer |
 | `diagnose` | `RUN_OR_CAMPAIGN [--json] [--snapshot-only]` | Report retained facts, unavailable evidence and ambiguous transitions without writes |
 | `inspect` | `RUN` | Show recorded outcome/state, findings, checks, freshness and correction links |
 | `verify` | `RUN [--snapshot-only]` | Check input, policy, runtime and retained evidence consistency |
@@ -41,6 +42,7 @@ operation, with configuration and limits described in the closed-loop reference.
 | --- | --- | --- | --- |
 | `doctor` | Every recorded probe exited 0 and its binary was hashed | A prerequisite probe failed or timed out, or a probed binary could not be hashed | Parser/handled invocation error |
 | `review`, `resume` | `criteria_satisfied` | Any other recorded review outcome, including execution/capture failure and interruption | Refusal before the run is handled, such as an existing output directory or invalid budget; parser error |
+| `view3d` | Export completed; normal viewer shutdown | Not a normal handled result | Invocation/native-export error |
 | `campaign`, `campaign-feedback`, `bench-review` | Criteria satisfied | Retained nonpassing/incomplete outcome | Invocation refusal |
 | `verify-campaign` | Integrity checks succeeded; read printed campaign state | Not a normal handled result | Inconsistent/unavailable evidence |
 | `verify` | Integrity/freshness checks succeeded, whatever the design outcome | Not a normal handled result | Stale/inconsistent/unavailable evidence or handled invocation/parser error |
@@ -81,6 +83,20 @@ but it does not prove the process is still alive or finalize acceptance.
 An interrupt caught inside the subprocess executor records the interrupted
 invocation and propagates to the outer boundary, which finalizes an interrupted
 run. Check process status and saved records after a force kill.
+
+## `view3d`
+
+`SOURCE` is a saved `.kicad_pcb` file or a retained review directory. `--out`
+must be new. A retained review uses the board in its verified captured inputs;
+viewing does not verify the review result or establish design acceptance.
+
+The command exports native GLB geometry, serves the output on `127.0.0.1` and
+opens the default browser. `--port` accepts 0 through 65535; its default 0 chooses
+an available port. `--no-browser` keeps the server and prints its URL without
+opening a browser. `--export-only` builds the bundle and exits without starting
+a server. Ctrl+C stops an active server. Native export has a 300-second timeout.
+See [3D PCB viewer](pcb-viewer.md) for controls, model-library limits and remote
+use.
 
 ## `doctor`
 

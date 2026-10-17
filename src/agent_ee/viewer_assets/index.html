@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>agent-ee · 3D PCB viewer</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./viewer.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+  <script type="module" src="./viewer.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="./" aria-label="agent-ee viewer home"><span class="brand-symbol" aria-hidden="true">⊞</span> agent-ee <span class="brand-divider">/</span> <span class="brand-context">3D PCB viewer</span></a>
+    <span class="local-badge"><span aria-hidden="true"></span> LOCAL VIEWER</span>
+  </header>
+  <main class="workspace">
+    <section class="viewport-panel" aria-label="3D board workspace">
+      <div class="board-heading"><div><p class="eyebrow">BOARD INSPECTION</p><h1 id="board-name">Loading board…</h1></div><span class="native-badge">KiCad geometry</span></div>
+      <div class="toolbar" role="toolbar" aria-label="Camera controls">
+        <div class="view-buttons"><button type="button" data-view="iso" disabled aria-pressed="true">Isometric</button><button type="button" data-view="top" disabled aria-pressed="false">Top</button><button type="button" data-view="bottom" disabled aria-pressed="false">Bottom</button></div>
+        <div class="tool-actions"><button type="button" id="fit" disabled title="Fit board (F)"><span aria-hidden="true">⛶</span> Fit</button><button type="button" id="screenshot" disabled title="Download the current view as a PNG"><span aria-hidden="true">↓</span> PNG</button></div>
+      </div>
+      <div id="viewport" role="group" tabindex="0" aria-label="Interactive 3D board. Drag to orbit, right drag to pan, scroll to zoom. Press F to fit or Escape to clear selection.">
+        <div id="state-panel" class="state-panel" role="status" aria-live="polite"><div class="spinner" aria-hidden="true"></div><h2 id="state-title">Preparing your board</h2><p id="state-detail">Loading the native KiCad 3D export.</p><button type="button" id="retry" hidden>Reload viewer</button></div>
+        <div class="axis-key" role="img" aria-label="Model coordinates: Y up"><span class="axis-x">X</span><span class="axis-y">Y ↑</span><span class="axis-z">Z</span></div>
+        <span id="view-label" class="view-label">ISOMETRIC</span>
+      </div>
+      <footer class="viewport-footer"><span id="render-status" role="status">Initializing viewer</span><span class="gesture-hint">Drag orbit · Right drag pan · Scroll zoom · Click inspect</span></footer>
+    </section>
+    <aside class="inspector" aria-label="Board inspector">
+      <section class="inspector-section"><h2>Board overview</h2><dl class="metadata"><div><dt>Source</dt><dd id="source-name">—</dd></div><div><dt>Candidate</dt><dd id="candidate-id">—</dd></div><div><dt>Rendered meshes</dt><dd id="mesh-count">—</dd></div><div><dt>Model size</dt><dd id="model-size">—</dd></div></dl><details class="source-details"><summary>Source fingerprint</summary><code id="board-hash">Not loaded</code><p id="board-path"></p></details></section>
+      <section class="inspector-section selection-section"><div class="section-heading"><h2>Inspect</h2><button id="clear-selection" type="button" class="text-button" hidden>Clear</button></div><p id="selection-hint" class="muted">Select geometry on the board to inspect its native object and material.</p><dl id="selection-info" class="metadata" hidden><div><dt>Object</dt><dd id="selected-object"></dd></div><div><dt>Material</dt><dd id="selected-material"></dd></div></dl></section>
+      <section class="inspector-section objects-section"><div class="section-heading"><h2>Scene objects</h2><button id="show-all" type="button" class="text-button" disabled>Show all</button></div><p class="muted small">Visibility uses the names in the KiCad export.</p><label class="search-label" for="object-search">Filter objects</label><input id="object-search" type="search" placeholder="Find an object…" disabled><div id="objects" class="object-list"><p class="muted small">Objects appear when the model loads.</p></div><p id="object-empty" class="muted small" hidden>No objects match this filter.</p></section>
+      <section class="inspector-section appearance-section"><h2>Display</h2><label class="checkbox-row"><input id="grid-toggle" type="checkbox" checked disabled><span>Reference grid</span></label><label class="checkbox-row"><input id="outline-toggle" type="checkbox" checked disabled><span>Highlight selection</span></label><label class="range-label" for="lighting">Lighting <output id="lighting-value">100%</output></label><input id="lighting" type="range" min="40" max="180" value="100" disabled></section>
+      <section id="warnings-section" class="inspector-section warnings-section" hidden><h2>Export notes</h2><ul id="warnings"></ul></section>
+      <div class="inspector-footnote">Native board geometry and model colors.<br>Visual inspection complements ERC and DRC.</div>
+    </aside>
+  </main>
+</body>
+</html>

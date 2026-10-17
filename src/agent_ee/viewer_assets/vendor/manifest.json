@@ -1,0 +1,45 @@
+{
+  "package": "three",
+  "version": "0.180.0",
+  "upstream": "https://github.com/mrdoob/three.js/tree/r180",
+  "files": {
+    "three.module.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r180/build/three.module.min.js",
+      "upstream_sha256": "e2b5ee6bccd38fd6d8a2428546b83c5f2426d84b152ef82be8055556e3b40eb6",
+      "sha256": "e2b5ee6bccd38fd6d8a2428546b83c5f2426d84b152ef82be8055556e3b40eb6",
+      "transforms": []
+    },
+    "three.core.min.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r180/build/three.core.min.js",
+      "upstream_sha256": "61ba0df005b05991361d040d8ff670e1aadfd0ce7aeebd1fdb0725957a8957de",
+      "sha256": "61ba0df005b05991361d040d8ff670e1aadfd0ce7aeebd1fdb0725957a8957de",
+      "transforms": []
+    },
+    "GLTFLoader.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples/jsm/loaders/GLTFLoader.js",
+      "upstream_sha256": "67ac5551fdafa6e349bd80c8f8e5e39c136d6b2fb1ad647db9abb21dc86f9e4a",
+      "sha256": "adbbafe8ce40416525b6be0ee5cac0d3782482bcf0122c8ca8ec1ffa77d3440b",
+      "transforms": [
+        "Local BufferGeometryUtils import flattened to ./BufferGeometryUtils.js"
+      ]
+    },
+    "OrbitControls.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples/jsm/controls/OrbitControls.js",
+      "upstream_sha256": "b97879c748170baadeb3fb84cea1ffdf4674e283dc06042f34e2acb95a76042c",
+      "sha256": "b97879c748170baadeb3fb84cea1ffdf4674e283dc06042f34e2acb95a76042c",
+      "transforms": []
+    },
+    "BufferGeometryUtils.js": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples/jsm/utils/BufferGeometryUtils.js",
+      "upstream_sha256": "fda7e946b8e0b5ab39b779206589e7a1079a22eb24efb89d7223e03fdfb1f751",
+      "sha256": "fda7e946b8e0b5ab39b779206589e7a1079a22eb24efb89d7223e03fdfb1f751",
+      "transforms": []
+    },
+    "LICENSE": {
+      "source": "https://raw.githubusercontent.com/mrdoob/three.js/r180/LICENSE",
+      "upstream_sha256": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601",
+      "sha256": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601",
+      "transforms": []
+    }
+  }
+}

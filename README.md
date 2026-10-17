@@ -90,6 +90,7 @@ also acquire process leases to prevent concurrent campaign mutations.
 | [Cross-domain checks](docs/measurement-adapters.md#cross-domain-coupling) | Evaluate electrical, thermal, parasitic or manufacturing margins together at the same operating condition so a local improvement cannot hide a failed coupled limit. The supplied tools must calculate the relevant physics. |
 | [Bench feedback](docs/bench-feedback.md) | Bind prototype observations to the measured candidate, retain raw samples, and feed simulation-to-bench discrepancies back into subsequent acceptance checks and fresh reviews. |
 | [Historical verification](docs/result-reference.md) | Check that retained evidence still belongs to the captured inputs and policy. Changed sources do not inherit an old candidate's passing review. |
+| [3D PCB viewer](docs/pcb-viewer.md) | Inspect a saved board or captured candidate in a local browser, using KiCad's native GLB export and bundled browser assets. |
 
 Campaigns are designed to terminate with satisfied criteria, an explicit
 escalation, or an incomplete execution. They do not promise that an arbitrary
