@@ -11,8 +11,8 @@ reported as an exact finite-polygon area.
 
 Status: the supplier reader, native extraction, comparison, CLI and coordinator
 adapter are implemented and tested with owned fixtures. The `land_pattern`
-kind is **not yet registered** in the shared check registry (`checks.py`,
-`baseline.py`, `capabilities.py`); root integration owns that. The ticket's
+kind is registered in the shared check registry, with captured dependencies,
+scope/3 coverage and coordinator-sealed evidence. The ticket's
 C11702-passes-against-R_0402 criterion is **not met** at the 0.98 threshold.
 See [C11702 qualification](#c11702-qualification).
 

@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from .storage import identity
 
 
-KINDS = frozenset(('catalog', 'part_selection', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
                    'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement'))
@@ -264,6 +264,12 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind in ('catalog', 'part_selection'):
             from .catalog_checks import capability
             descriptor = capability(kind, params, scope, files, inputs, spec['id'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'land_pattern':
+            from .land_pattern import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']

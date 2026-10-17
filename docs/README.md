@@ -93,11 +93,11 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
-- [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement; shared check registration pending.
+- [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement through a registered check.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
-- [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison; supplier/native check integration remains pending.
+- [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison used by the supplier/native check.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
 - [Native schematic emission](schematic-emitter.md) and [forward annotation](forward-annotation.md) — captured-intent generation and native-netlist board updates; full campaign integration remains pending.
 - [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
