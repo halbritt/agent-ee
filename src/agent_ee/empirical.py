@@ -242,7 +242,7 @@ def ingest(run, report_path, out):
         "baseline_id": baseline["baseline_id"], "source_result_sha256": digest(run / "result.json"),
         "model_inputs": models, "artifacts": hashes, "observations": all_observations}
     from .applicability import validate_bundle
-    validate_bundle(out.parent, bundle, baseline, empirical_root=out)
+    validate_bundle(run / 'inputs', bundle, baseline, empirical_root=out)
     write_json(out / "calibration.json", bundle)
     return bundle
 

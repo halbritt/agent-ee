@@ -107,7 +107,7 @@ def validate_bundle(inputs, bundle, baseline, *, empirical_root=None):
         raise ValueError('source epoch lacks parent closure')
     from .baseline import compile_baseline
     if (identity({'scope': source['scope'], 'files': source['files']}) != source['candidate_id'] or
-            compile_baseline(source['scope'], source['files']) != baseline):
+            compile_baseline(source['scope'], source['files'], inputs) != baseline):
         raise ValueError('source candidate or baseline identity mismatch')
     if source['empirical'] != source['scope'].get('empirical'):
         raise ValueError('source empirical identity mismatch')
