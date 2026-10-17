@@ -17,6 +17,20 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `geometry` | Saved-board pcbnew extraction. `params.min_track_width_mm` optionally applies a declared minimum to track segments; `params.exclude_nets` records explicit exemptions. Via diameters are not track-width acceptance criteria. |
 | `rc_transient` | Prior `params.netlist_check` supplies actual native connectivity/values. A supported populated passive R/C/L network receives the declared `input_net`, `output_net`, `ground_net`, positive `step_v`, `stop_ms`, and named measurements with `at_ms`, optional `min`/`max`. |
 
+For `rc_transient`, omitted `step_v` uses 1.0 V and omitted `stop_ms` uses
+5.0 ms. The result records the effective amplitude in `details.step_v` without
+adding defaults to the captured scope. Omitted `step_v` and explicit `1.0`
+produce the same metric condition, but their different scopes retain distinct
+candidate identities.
+
+Condition text preserves historical explicit amplitude spellings: `1`, `1.0`
+and `"1.00"` remain `1V`, `1.0V` and `1.00V`. Measurement times retain the
+existing float conversion (`1`, `1.0` and `"1.00"` become `1.0ms`). There is no
+condition or empirical-observation migration; use the original condition text
+when matching retained observations. This implementation change alters the
+runtime policy hash, so historical results require their original policy for
+verification and do not become fresh evidence under the new implementation.
+
 The passive generator excludes DNP parts and identifies passives through native
 symbol class, rather than assuming a designator proves component identity.
 Unmodeled active devices are unsupported, not replaced by an ideal approximation.
