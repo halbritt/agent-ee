@@ -46,6 +46,13 @@ def load_facts(inputs, rel):
     return data['facts']
 
 
+def value_in_quote(value, unit, quote):
+    """Whole-token occurrence: CAN is not in CANL, 5 is not in 15, 4.5 or 5.5."""
+    suffix = rf'(?:\s*{re.escape(unit)})?' if unit.strip() else ''
+    return re.search(r'(?<!\w)(?<!\d[.,])' + re.escape(value) + suffix + r'(?!\w)(?![.,]\d)',
+                     quote) is not None
+
+
 def verification_inputs(scope, inputs):
     """Only new fact checks opt in; historical baseline compilation is unchanged."""
     paths = set()
@@ -114,10 +121,9 @@ def check_datasheet_facts(ctx):
             record['reason'] = 'pdf_not_captured'
         elif digest(pdf) != source['sha256'] or ctx.manifest['files'][source['path']] != source['sha256']:
             record['reason'] = 'pdf_hash_mismatch'
-        elif fact['value'] not in source['quote']:
+        elif not value_in_quote(fact['value'], fact['unit'], source['quote']):
             record['reason'] = 'value_absent_from_quote'
-        elif fact['kind'] == 'pin_function' and not re.search(
-                r'(?<!\w)' + re.escape(fact['pin']) + r'(?!\w)', source['quote']):
+        elif fact['kind'] == 'pin_function' and not value_in_quote(fact['pin'], '', source['quote']):
             record['reason'] = 'pin_absent_from_quote'
         else:
             work = extract(ctx, f'page-{index}', [EXTRACTOR, '-layout',

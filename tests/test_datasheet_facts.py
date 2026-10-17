@@ -89,6 +89,31 @@ class DatasheetFactsTests(unittest.TestCase):
                 self.assertEqual(result['details']['facts'][0]['reason'], reason)
                 self.fact['source'][key] = old
 
+    def test_value_must_be_a_complete_token_in_the_quote(self):
+        # Exact quotes on the real pages; only a fragment of another token matches each value.
+        cases = [('CAN', '6', 4, 'CANL          6'),
+                 ('5', '', 2, '4.5    -             5.5')]
+        for value, pin, page, quote in cases:
+            with self.subTest(value=value):
+                self.fact.update(value=value, pin=pin or '6',
+                                 kind='pin_function' if pin else 'supply_voltage', unit='' if pin else 'V')
+                self.fact['source'].update(page=page, quote=quote)
+                result = self.run_fact()
+                self.assertEqual(result['execution'], 'unsupported', result)
+                self.assertEqual(result['details']['facts'][0]['reason'], 'value_absent_from_quote')
+        self.fact.update(value='5.5', kind='supply_voltage', unit='V')
+        self.assertEqual(self.run_fact()['execution'], 'ok')
+
+    def test_value_token_boundaries(self):
+        from agent_ee.datasheet_facts import value_in_quote
+        for value, unit, quote, expected in [
+                ('5', 'V', 'max 5 V', True), ('5', 'V', 'max 5V', True), ('5', 'V', 'max 5.', True),
+                ('5', 'V', '+15 V', False), ('5', 'V', '4.5 V', False), ('5', 'V', '5.5 V', False),
+                ('1', 'A', '1,000 A', False), ('5', 'V', '5k', False), ('CAN', '', 'CANL 6', False),
+                ('CAN', '', 'CAN bus', True), ('-0.3', 'V', '-0.3 to +6 V', True)]:
+            with self.subTest(value=value, quote=quote):
+                self.assertIs(value_in_quote(value, unit, quote), expected)
+
     def test_native_swapped_pin_defect_with_clean_erc_drc(self):
         require_toolchain(native=True)
         for fixture, expected in [('control', 'pass'), ('swapped', 'defect')]:

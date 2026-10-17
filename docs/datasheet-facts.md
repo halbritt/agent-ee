@@ -19,8 +19,10 @@ System shared libraries are provided by the host sandbox, not individually
 pinned by this adapter. Extractor outputs and invocation records are retained.
 
 Verification compares the PDF hash to the captured manifest, finds the exact
-quote on the cited physical page, and checks that the value occurs in the quote.
-Pin-function facts additionally require the pin token in the quote. Whitespace
+quote on the cited physical page, and checks that the value occurs in the quote
+as a whole token, optionally followed directly by the declared unit: `CAN` is
+absent from `CANL`, and `5` is absent from `15`, `4.5` and `5.5`.
+Pin-function facts additionally require the pin as a whole token. Whitespace
 and case are significant; there is no OCR, normalization or model-generated
 replacement text. `facts.json` in the check workspace records each fact's status
 and reason. Incorrect hashes, absent values, altered quotes and wrong pages
