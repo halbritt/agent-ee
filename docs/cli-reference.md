@@ -235,3 +235,22 @@ printed, even for busy, unknown or failed evidence; it does not establish design
 acceptance or recovery safety. Byte hashes and directory inventory stay unchanged;
 filesystem access times may change from reads. Leases coordinate supported writers,
 not arbitrary host processes.
+
+## Bench transaction recovery
+
+`bench-review --operation-id ID` and `campaign-feedback --operation-id ID` opt
+new operations into the [recoverable feedback contract](bench-feedback.md#recoverable-feedback-transactions).
+The ID accepts 1–80 ASCII letters, digits, underscores or hyphens.
+
+| Command | Effect |
+| --- | --- |
+| `bench-status PATH` | Read-only structured phase, identity and ambiguity diagnosis under existing leases. |
+| `bench-recover PATH` | Reconcile exact deterministic publication and adopt verified terminal review evidence; never call a provider. |
+| `bench-launch PATH` | Explicitly launch the first review only if no start intent exists. |
+| `bench-new-attempt PATH --attempt-id ID --out DIR` | Explicitly launch a fresh review after an uncertain attempt, retaining all old evidence. |
+
+Commands print JSON. Status/recovery/launch return 0 for completed or ready for
+explicit review, 1 for unresolved execution, and 2 on refusal. The initial
+transaction returns 0 only when the reviewed outcome satisfies criteria.
+A completed transaction with an incomplete review remains an incomplete design
+outcome. No command acquires measurements or authorizes a new design writer.

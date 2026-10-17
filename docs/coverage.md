@@ -289,3 +289,16 @@ provenance closure, never by a directory prefix or author list. Executed nominal
 predictions remain unqualified diagnostics for fresh bench recovery. Historical
 calibration/1 does not acquire scope/3 qualification. See [bench feedback](bench-feedback.md).
 These contracts do not authenticate instruments or establish physical validation.
+
+### Bench transaction recovery coverage
+
+`test_bench_transactions.py` exercises the real coordinator and sandboxed
+synthetic measurement producer/parser with scripted independent reviewers.
+It covers duplicate/conflicting requests, captured-parent epoch closure,
+source supersession, explicit replacement attempts, full external-target leases,
+coherent reader refusal, completed-result adoption and exactly-once campaign
+history projection. A process exits immediately before and after every fsync
+and rename in the prelaunch transaction; recovery runs in another process and
+must reconcile deterministically or refuse with retained evidence. Recovery
+has a provider boundary assertion. These tests model process interruption,
+not physical power loss, instrument authenticity or live-provider reliability.

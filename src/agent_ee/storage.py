@@ -36,3 +36,13 @@ def write_json(path, value):
         stream.flush()
         os.fsync(stream.fileno())
     temp.replace(path)
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def json_digest(value):
+    """Identity of the exact bytes produced by write_json."""
+    return hashlib.sha256((json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()).hexdigest()

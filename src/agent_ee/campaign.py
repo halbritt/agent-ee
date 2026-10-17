@@ -212,6 +212,12 @@ def verify_campaign_records(root):
     feedback_seen = False
     for index, stored in enumerate(state["history"], 1):
         run = root / "runs" / str(index)
+        if stored.get('bench_transaction'):
+            from .bench_transactions import verify_campaign_attempt
+            if not history:
+                raise ValueError('initial campaign run cannot be a replacement bench attempt')
+            verify_campaign_attempt(root, stored, history[-1])
+            run = Path(stored['run'])
         snapshot = root / "history" / f"{index}.json"
         if (str(run) != stored["run"] or str(snapshot) != stored["result_snapshot"] or
                 digest(snapshot) != stored["result_sha256"]):
@@ -245,14 +251,15 @@ def verify_campaign_records(root):
             previous_result = read_json(Path(previous["run"]) / "result.json")
             transitions = previous_result.get("empirical_feedback", [])
             if (stored["epoch"] != previous["epoch"] + 1 or calibration_id == previous["calibration_id"] or
-                    not any(e["bundle_sha256"] == calibration_id and e["review"] == str(run) for e in transitions)):
+                    not any(e["bundle_sha256"] == calibration_id and e["review"] == (verify_campaign_attempt(root, stored, previous)
+                        if stored.get('bench_transaction') else str(run)) for e in transitions)):
                 raise ValueError("campaign epoch lacks a bound physical feedback transition")
         elif history[-1]["calibration_id"] != calibration_id:
             raise ValueError("calibration changed without an empirical epoch transition")
         comparable = [h for h in history if h["epoch"] == stored["epoch"]]
         budget = config["max_iterations"] - (len(history) - len(comparable))
         record, diagnostic = advance(comparable, result, manifest, budget)
-        metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id"}
+        metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id", "bench_transaction", "bench_attempt_id"}
         if record != {k: v for k, v in stored.items() if k not in metadata}:
             raise ValueError("campaign history projection differs from evidence")
         history.append(stored)

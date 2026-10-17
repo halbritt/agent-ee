@@ -155,7 +155,16 @@ def artifacts(run):
 
 def verify(run, *, current_source=True):
     run = Path(run).resolve()
-    result = read_json(run / "result.json")
+    from .locking import reader_lock
+    from .bench_transactions import verify_publications
+    with reader_lock(run):
+        result = read_json(run / "result.json")
+        verify_publications(run, result)
+        return verify_records(run, result, current_source=current_source)
+
+
+def verify_records(run, result, *, current_source=True):
+    """Validate an explicit projection; callers separately bind publication intent."""
     manifest = verify_source(run) if current_source else verify_snapshot(run)
     if manifest["candidate_id"] != result.get("candidate_id"):
         raise ValueError("result candidate identity differs from snapshot")
@@ -365,14 +374,14 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None):
     from .locking import writer_lock
     with writer_lock(out):
         return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
-                           previous=previous, profile=profile, expected_baseline=expected_baseline)
+                           previous=previous, profile=profile, expected_baseline=expected_baseline, output_stream=output_stream)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -471,7 +480,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         recover_records(run, result)
     result["finished_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     save_result(run, result)
-    print(f"{result['outcome']}: {run / 'REPORT.md'}")
+    print(f"{result['outcome']}: {run / 'REPORT.md'}", file=output_stream)
     return 0 if result["outcome"] == "criteria_satisfied" else 1
 
 
@@ -551,11 +560,20 @@ def main(argv=None):
     bench.add_argument("report")
     bench.add_argument("--out", required=True)
     bench.add_argument("--max-seconds", type=float, default=1200)
+    bench.add_argument("--operation-id", help="opt into durable bench-transaction/1")
+    for command in ('bench-status', 'bench-recover', 'bench-launch'):
+        transaction = sub.add_parser(command, help='inspect, reconcile, or explicitly launch a prepared bench transaction')
+        transaction.add_argument('path')
     feedback = sub.add_parser("campaign-feedback", help="ingest bench evidence and continue a campaign in a new model epoch")
     feedback.add_argument("campaign")
     feedback.add_argument("report")
     feedback.add_argument("--out", required=True)
     feedback.add_argument("--max-seconds", type=float, default=1200)
+    feedback.add_argument("--operation-id", help="bounded durable feedback; no automatic repair continuation")
+    attempt = sub.add_parser('bench-new-attempt', help='explicitly authorize a fresh review after uncertain execution')
+    attempt.add_argument('path')
+    attempt.add_argument('--attempt-id', required=True)
+    attempt.add_argument('--out', required=True)
     diagnosis = sub.add_parser("diagnose", help="read-only advisory run or campaign diagnosis")
     diagnosis.add_argument("path")
     diagnosis.add_argument("--json", action="store_true", dest="machine")
@@ -598,10 +616,32 @@ def main(argv=None):
             return 0
         if args.command == "doctor":
             return doctor(checks_only=args.checks_only)
+        if args.command in ('bench-status', 'bench-recover', 'bench-launch'):
+            from .bench_transactions import recover, status
+            value = (status(args.path) if args.command == 'bench-status' else
+                     recover(args.path, launch_review=args.command == 'bench-launch'))
+            print(json.dumps(value, indent=2))
+            return 0 if value['disposition'] in ('completed', 'ready_for_explicit_review') else 1
         if args.command == "bench-review":
+            if args.operation_id:
+                from .bench_transactions import transact
+                value = transact(args.run, args.report, args.out, args.max_seconds, operation_id=args.operation_id)
+                print(json.dumps(value, indent=2))
+                return 0 if (value.get('current_review') or {}).get('outcome') == 'criteria_satisfied' else 1
             from .empirical import bench_review
             return bench_review(args.run, args.report, args.out, args.max_seconds)
+        if args.command == 'bench-new-attempt':
+            from .bench_transactions import new_attempt
+            value = new_attempt(args.path, args.attempt_id, args.out)
+            print(json.dumps(value, indent=2))
+            return 0 if value['disposition'] == 'completed' else 1
         if args.command == "campaign-feedback":
+            if args.operation_id:
+                from .bench_transactions import campaign_transaction
+                value = campaign_transaction(args.campaign, args.report, args.out, args.max_seconds,
+                                             operation_id=args.operation_id)
+                print(json.dumps(value, indent=2))
+                return 0 if (value.get('current_review') or {}).get('outcome') == 'criteria_satisfied' else 1
             from .campaign import campaign_feedback
             return campaign_feedback(args.campaign, args.report, args.out, args.max_seconds)
         if args.command == "verify-campaign":
@@ -650,8 +690,17 @@ def main(argv=None):
         elif args.command == "close-correction":
             link_correction(args.previous, args.current, args.finding, args.checks.split(","), args.reason)
         return 0
-    except (ValueError, OSError, KeyError) as exc:
-        print(f"agent-ee: {exc}", file=sys.stderr)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        from .bench_transactions import TransactionError
+        if isinstance(exc, TransactionError):
+            print(json.dumps(exc.diagnostic, indent=2), file=sys.stderr)
+        elif args.command in ('bench-status', 'bench-recover', 'bench-launch', 'bench-new-attempt') or (
+                args.command in ('bench-review', 'campaign-feedback') and args.operation_id):
+            print(json.dumps({'schema': 'agent-ee.bench-recovery/1', 'disposition': 'unverified',
+                              'reason': f'{type(exc).__name__}: {exc}',
+                              'operator_actions': ['preserve retained evidence; diagnose before recovery']}, indent=2), file=sys.stderr)
+        else:
+            print(f"agent-ee: {exc}", file=sys.stderr)
         return 2
 
 

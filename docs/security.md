@@ -189,3 +189,12 @@ sandbox. This bounded dialect does not qualify arbitrary vendor model syntax,
 model accuracy or publication rights. Retained decks, traces and bindings use
 the existing coordinator evidence seal.
 
+
+Opt-in bench transactions hold the source, journal, declared review target and
+campaign ancestry leases through publication and the launch boundary. Ordinary
+run verification uses shared existing leases and refuses a live writer or a
+source-side publication intent whose event/result/report projection is partial.
+Transaction status is read-only. Recovery never dispatches inference or controls
+instruments; an uncertain start needs an explicit new attempt and fresh output.
+Journal receipts and source publication markers detect inconsistent trusted-local
+state; they are not signatures against a host owner who rewrites every record.
