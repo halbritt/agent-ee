@@ -139,27 +139,26 @@ the `kicad-cli` path, sha256 and version, and this module's source sha256.
 It records the status, outcome, placer step counts and reason, the judgment
 verdict, and the parity counts and items.
 
-## Known gap: stock pad shapes
+## Stock pad shapes
 
-The landed placer accepts only rectangular pads. Stock KiCad footprints use
-round-rectangle SMD pads and round through-hole pads: `R_0805_2012Metric`
-and `C_0805_2012Metric` have shape 4, and the 1x03 header has shapes 1, 0
-and 0. With stock footprints, the build stops at exit 2 with
-`unsupported_geometry` and "only axis-aligned rectangular pads supported".
-The unplaced board still passes parity with zero items and zero violations.
+The merged placer supports the stock pads used by this control (AGENTEE-109).
+`R_0805_2012Metric` and `C_0805_2012Metric` have round-rectangle SMD pads;
+the 1x03 header has rectangular and circular through-hole pads. The native
+build places these footprints, preserves their pad shapes, sizes and nets,
+and retains exact schematic parity. Unsupported pad geometry still produces
+a typed unknown rather than a passing placement.
 
 The tests show the placed path with owned placeholder copies of the three
 footprints in which every pad is rectangular. The placeholders exist only in
 the test's temporary directory. They are not production footprint models,
-and native DRC reports them as `lib_footprint_mismatch`. Placing stock
-footprints needs the placer to accept these pad shapes (AGENTEE-109). The packer and the
+and native DRC reports them as `lib_footprint_mismatch`. The packer and the
 judge use pad centres and courtyards only, not pad outlines.
 
 ## Row stand-in (`--placement-fallback row`)
 
-The row stand-in is **unqualified**. It lets rung 1 continue with real stock
-footprints until AGENTEE-109 changes the placer, and it does not replace that
-change. Without the flag, behaviour is unchanged.
+The row stand-in is **unqualified**. It predates the stock-pad support in
+AGENTEE-109. The current stock control uses the qualified placer even when
+this fallback flag is supplied. Without the flag, behaviour is unchanged.
 
 The stand-in is used in one case only: the landed placer returns
 `unsupported_geometry` with the pad-shape reason. Any other placer result
@@ -224,8 +223,8 @@ prerequisite reason when the toolchain is absent. The tests check the
 following:
 
 - The unplaced board has three footprints whose pad nets equal the XML
-  terminals and the shared rung-1 connectivity. Stock pads give a typed
-  `unsupported_geometry` result.
+  terminals and the shared rung-1 connectivity. Stock pads are placed without
+  changing their shapes or sizes.
 - The placed board passes `placement.judge` and has zero schematic-parity
   items.
 - Boards are byte-identical in process and in the sandbox.
@@ -233,6 +232,7 @@ following:
 - A footprint that is missing from FPDIR is refused.
 - An `OUTDIR` that is not empty is refused.
 - Envelope, request and netlist validation work as specified.
-- With stock footprints, the row stand-in gives a judge pass, zero parity
+- With stock footprints, enabling the row fallback still uses the qualified
+  placer and gives a judge pass, zero parity
   items, zero violations other than unconnected items, and byte-identical
   boards from two builds. The row arithmetic is checked separately.
