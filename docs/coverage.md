@@ -367,8 +367,11 @@ control run stopped with both initial reviewers timed out at their 300-second
 limits, empty console logs, and no session or token-usage records. Origin-snapshot
 verification succeeded. No adjudicator, treatment sample, replacement sample or
 fallback followed. The attempt therefore establishes neither token savings,
-latency improvement nor recognition performance. The cause of the empty-log
-timeouts remains under investigation.
+latency improvement nor recognition performance. An offline reproduction subsequently showed that the executor abandoned
+pending prompt-pipe writes after its first polling timeout. Private regular-file
+input fixes that transport defect; six native input tests and the existing
+cancellation/preflight suite pass. No live comparison was repeated, so the
+measurement acceptance remains incomplete.
 
 The private manifest SHA-256 is
 `b2a73834bd2f21d62694d3ff6929bc6dc3bf6c70052163b75596d514a7508072`;

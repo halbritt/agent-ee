@@ -3,6 +3,7 @@
 import os
 import signal
 import subprocess
+import tempfile
 import time
 from threading import Event, Lock
 from pathlib import Path
@@ -69,15 +70,21 @@ def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra
     output, stderr = b"", b""
     try:
         cancellation = cancellation or Cancellation()
-        with cancellation.launch_lock:
-            if cancellation.cancelled.is_set():
-                proc = None
-            else:
-                proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, start_new_session=True)
+        # A private, unlinked regular file supplies complete input independently
+        # of communicate()'s short output/cancellation polling intervals. Retrying
+        # communicate(input=None) can abandon pending pipe writes after a timeout.
+        with tempfile.TemporaryFile() as input_stream:
+            if stdin is not None:
+                input_stream.write(stdin.encode())
+            input_stream.seek(0)
+            with cancellation.launch_lock:
+                if cancellation.cancelled.is_set():
+                    proc = None
+                else:
+                    proc = subprocess.Popen(command, stdin=input_stream, stdout=subprocess.PIPE,
+                                            stderr=subprocess.PIPE, start_new_session=True)
         if proc is not None:
             try:
-                data = stdin.encode() if stdin is not None else None
                 try:
                     while True:
                         if cancellation.cancelled.is_set():
@@ -86,10 +93,10 @@ def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra
                         if remaining <= 0:
                             raise subprocess.TimeoutExpired(command, timeout)
                         try:
-                            output, stderr = proc.communicate(data, timeout=min(.05, remaining))
+                            output, stderr = proc.communicate(timeout=min(.05, remaining))
                             break
                         except subprocess.TimeoutExpired:
-                            data = None
+                            continue
                     record["exit_code"] = proc.returncode
                     record["execution"] = "ok" if proc.returncode == 0 else "failed"
                 except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
