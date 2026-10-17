@@ -51,6 +51,136 @@ class DatasheetCaptureTests(unittest.TestCase):
             self.server.server_close()
             self.thread.join()
 
+    def test_cancellation_reaps_owned_child_and_allows_retry(self):
+        import os
+        import subprocess
+        import sys
+        from unittest.mock import patch
+        from agent_ee import datasheet_capture as dc
+
+        real_popen = subprocess.Popen
+        children = []
+        cancellation = KeyboardInterrupt('owned capture cancellation')
+
+        def launch(*args, **kwargs):
+            child = real_popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            children.append(child)
+            def cancel(**kwargs):
+                raise cancellation
+
+            child.communicate = cancel
+            return child
+
+        try:
+            with patch.object(dc.subprocess, 'Popen', launch):
+                with self.assertRaises(KeyboardInterrupt) as raised:
+                    capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + '/pdf'}],
+                                       self.root / 'cancelled')
+            self.assertIs(raised.exception, cancellation)
+            self.assertIsNotNone(children[0].returncode)
+            with self.assertRaises(ChildProcessError):
+                os.waitpid(children[0].pid, os.WNOHANG)
+            self.assertFalse((self.root / 'cancelled').exists())
+            self.assertEqual(list(self.root.glob('.datasheet-*')), [])
+        finally:
+            # Only our direct, unreaped child can retain this PID.
+            for child in children:
+                if child.poll() is None:
+                    self.assertEqual(dc._process_identity(child.pid)[1], str(Path.cwd()))
+                    child.kill()
+                child.wait()
+        result = capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + '/pdf'}],
+                                    self.root / 'cancelled')
+        self.assertEqual(result['outcome'], 'captured')
+
+    def test_exceptional_fetch_lifecycle_reaps_real_children(self):
+        import os
+        import subprocess
+        import sys
+        from unittest.mock import patch
+        from agent_ee import datasheet_capture as dc
+
+        real_popen, real_identity = subprocess.Popen, dc._process_identity
+        real_stop = dc._stop_fetch
+        for boundary in ('identity', 'communicate', 'exited', 'cleanup'):
+            with self.subTest(boundary=boundary):
+                children = []
+                failure = SystemExit('identity cancellation') if boundary == 'identity' else OSError('read failure')
+
+                def launch(*args, **kwargs):
+                    child = real_popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    children.append(child)
+
+                    def fail(**kwargs):
+                        if boundary == 'exited':
+                            owner = real_identity(child.pid)
+                            self.assertEqual(real_identity(child.pid), owner)
+                            child.kill()
+                            child.wait()
+                        raise failure
+
+                    child.communicate = fail
+                    return child
+
+                def identify(pid):
+                    if boundary == 'identity' and not getattr(identify, 'failed', False):
+                        identify.failed = True
+                        raise failure
+                    return real_identity(pid)
+
+                def stop(child, owner):
+                    real_stop(child, owner)
+                    if boundary == 'cleanup':
+                        raise OSError('secondary cleanup failure')
+
+                try:
+                    with patch.object(dc.subprocess, 'Popen', launch), patch.object(dc, '_process_identity', identify), patch.object(dc, '_stop_fetch', stop):
+                        with self.assertRaises(type(failure)) as raised:
+                            capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + '/pdf'}],
+                                               self.root / boundary)
+                    self.assertIs(raised.exception, failure)
+                    if boundary == 'cleanup':
+                        self.assertIn('secondary cleanup failure', raised.exception.__notes__[0])
+                    self.assertIsNotNone(children[0].returncode)
+                    with self.assertRaises(ChildProcessError):
+                        os.waitpid(children[0].pid, os.WNOHANG)
+                    self.assertFalse((self.root / boundary).exists())
+                    self.assertEqual(list(self.root.glob('.datasheet-*')), [])
+                finally:
+                    for child in children:
+                        if child.poll() is None:
+                            self.assertEqual(real_identity(child.pid)[1], str(Path.cwd()))
+                            child.kill()
+                        child.wait()
+
+    def test_real_child_success_and_timeout_are_reaped(self):
+        import os
+        import subprocess
+        from unittest.mock import patch
+        from agent_ee import datasheet_capture as dc
+
+        real_popen = subprocess.Popen
+        children = []
+
+        def launch(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+
+        with patch.object(dc.subprocess, 'Popen', launch):
+            success = capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + '/pdf'}],
+                                        self.root / 'success')
+            timeout = capture_datasheets([{'id': 'U1', 'datasheet_url': self.url + '/slow'}],
+                                        self.root / 'timeout', timeout=0.05)
+        self.assertEqual(success['outcome'], 'captured')
+        self.assertEqual(timeout['parts'][0]['reason'], 'fetch deadline exceeded')
+        for child in children:
+            self.assertIsNotNone(child.returncode)
+            with self.assertRaises(ChildProcessError):
+                os.waitpid(child.pid, os.WNOHANG)
+
     def test_deduplicates_and_retains_each_part_provenance(self):
         parts = [{'id': 'U1', 'datasheet_url': self.url + '/redirect'},
                  {'id': 'U2', 'datasheet_url': self.url + '/redirect'}]
