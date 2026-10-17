@@ -53,9 +53,11 @@ def validate_statement(line):
         if directive not in ('.subckt', '.ends', '.model', '.param'):
             raise ValueError(f'unsupported model directive {directive}')
         if directive == '.model':
-            m = re.match(r'^\.model\s+\S+\s+([A-Za-z]+)', line, re.I)
+            m = re.match(r'^\.model\s+\S+\s+([A-Za-z]+)(?=\s|\(|$)', line, re.I)
             if not m or m[1].lower() not in MODEL_TYPES:
                 raise ValueError('unsupported model type')
+            if m[1].lower() == 'd' and re.search(r'\blevel\b', line[m.end():], re.I):
+                raise ValueError('explicit diode model level is unsupported; use the native default')
     elif directive[0] not in 'rclviefghdqjmsx':
         raise ValueError(f'unsupported model device {directive}')
     # Function calls are the expression escape boundary (e.g. read(), vector(), etc.).
@@ -86,7 +88,7 @@ def capture_models(inputs, files, declared):
             raise ValueError('model closure exceeds 2 MB')
         originals[rel] = path.read_bytes().decode('ascii')
         parsed[rel] = logical_lines(originals[rel])
-    includes, staged = {}, {}
+    includes, staged, model_names = {}, {}, set()
     for rel, lines in parsed.items():
         includes[rel], replacements = [], {}
         current = None
@@ -119,6 +121,13 @@ def capture_models(inputs, files, declared):
                     raise ValueError('duplicate subcircuit or invalid/duplicate formal ports')
                 subcircuits[current] = {'name': tokens[1], 'formals': formals,
                                         'path': rel, 'line': number}
+            elif op == '.model':
+                if len(tokens) < 3 or not TOKEN.fullmatch(tokens[1]):
+                    raise ValueError('invalid model name/header')
+                key = (current, tokens[1].lower())
+                if key in model_names:
+                    raise ValueError('duplicate model name in the same scope')
+                model_names.add(key)
             elif op == '.ends':
                 if not current or len(tokens) > 2 or (len(tokens) == 2 and tokens[1].lower() != current):
                     raise ValueError('unmatched subcircuit end')
@@ -608,10 +617,22 @@ def check_active_spice(ctx):
         log = directory / 'ngspice.log'
         if not log.is_file():
             raise CheckError('malformed', 'ngspice produced no log')
+        diagnostics = '\n'.join(path.read_text(errors='replace') for path in
+            (log, directory / 'stdout.log', directory / 'stderr.log') if path.is_file())
         for pattern in NGSPICE_FAIL_PATTERNS:
-            match = re.search(pattern, log.read_text(errors='replace'), re.M)
+            match = re.search(pattern, diagnostics, re.M)
             if match:
                 raise CheckError('failed', f'ngspice solver reported {match[0]}')
+        # ngspice can exit successfully and write complete traces after changing a
+        # model. No warning is qualified as harmless by this bounded contract.
+        semantic_issue = re.search(
+            r'^.*(?:\bwarning\b|\bunrecognized\b|\bunknown parameter\b|'
+            r'\bignored\b|\bunsupported\b|\bsubstitut(?:ed|ing)\b|'
+            r'\breplaced\b|\breset to\b|\bclamped\b|\bout of range\b).*$',
+            diagnostics, re.I | re.M)
+        if semantic_issue:
+            raise CheckError('unsupported', 'ngspice model/device semantics unqualified: '
+                             + semantic_issue[0].strip())
         try:
             measured, bounded, raw = extract_metrics(directory / 'result.raw', analysis, nodes, configuration)
         except (ValueError, KeyError, OSError, UnicodeError, OverflowError) as exc:
