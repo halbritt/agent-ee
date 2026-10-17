@@ -144,7 +144,7 @@ The tests show the placed path with owned placeholder copies of the three
 footprints in which every pad is rectangular. The placeholders exist only in
 the test's temporary directory. They are not production footprint models,
 and native DRC reports them as `lib_footprint_mismatch`. Placing stock
-footprints needs the placer to accept these pad shapes. The packer and the
+footprints needs the placer to accept these pad shapes (AGENTEE-109). The packer and the
 judge use pad centres and courtyards only, not pad outlines.
 
 ## Tests

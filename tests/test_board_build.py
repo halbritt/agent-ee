@@ -141,7 +141,7 @@ class NativeBoardBuildTest(unittest.TestCase):
         for lib, name in LIBRARIES.items():
             entry = receipt['inputs']['footprints'][f'{lib}:{name}']
             self.assertEqual(entry['sha256'], board_build.digest(STOCK / f'{lib}.pretty' / f'{name}.kicad_mod'))
-        # The landed placer does not accept stock roundrect/circle pads: an
+        # The landed placer does not accept stock roundrect/circle pads (AGENTEE-109): an
         # honest typed unknown, with no placed board published.
         self.assertEqual((receipt['status'], receipt['placement']['status']), ('not_placed', 'unsupported_geometry'))
         self.assertEqual(receipt['placement']['reason'], 'only axis-aligned rectangular pads supported')
