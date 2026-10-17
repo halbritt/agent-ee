@@ -19,6 +19,7 @@ product's hardware qualification.
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
+| Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
 | Understand capture, isolation and orchestration | [Architecture](architecture.md) |
 | Assess permissions, inference data exposure and trust | [Security and trust](security.md) |

@@ -26,6 +26,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `erc` | `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 900 s |
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
+| `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -224,3 +225,11 @@ A scope/2 RC result can fail despite an in-range raw SPICE value when its
 empirically corrected interval crosses a bound. Inspect `details.metrics`
 (`nominal`, `lower`, `upper`), `details.margins` and `bench-replay.json` alongside
 the raw `details.measurements`; they answer different questions.
+
+## Hardware interface invariants
+
+`hardware_interface` requires `contract` and an earlier `netlist_check`. The
+[interface reference](hardware-interface.md) defines the captured normative
+schema, immutable inputs, supported predicates and unsupported mapping policy.
+It checks declared schematic properties and direct conductors, without inferring
+interfaces from names or treating components as transparent shorts.

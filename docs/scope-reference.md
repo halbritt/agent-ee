@@ -295,3 +295,9 @@ to acceptance. A netlist-only requirement will therefore refuse compilation
 until the owner defines an executable acceptance plan. Conversion does not edit
 historical scopes, evidence or campaigns. Scope/1 needs an owner-authored baseline
 before conversion. Intent changes define a new contract.
+
+## Hardware interface check
+
+See [declared hardware interfaces](hardware-interface.md) for the captured
+`agent-ee.interface/1` schema, exact supported predicates, immutable inputs and
+ordered native netlist prerequisite. Adding it requires a new baseline.

@@ -85,6 +85,14 @@ parsed value and generated deck against the intended component/model before
 using the simulation as electrical evidence. The demonstrations use unambiguous
 `10k`, `100k` and `100n` values; broader value normalization is not demonstrated.
 
+## Declared interface preservation
+
+The [hardware interface check](hardware-interface.md) evaluates captured owner
+predicates over full native schematic terminal inventory and direct conductors.
+Unknown mappings yield incomplete coverage. It protects only declared identities,
+population, exact values and net relations; it never infers obligations or treats
+R/C/L as shorts. Physical access, PCB routing and transfer behavior need separate checks.
+
 ## Input and packet choices
 
 `inputs` selects the actual native project, relevant external libraries, custom

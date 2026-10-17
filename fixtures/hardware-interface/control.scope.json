@@ -14,6 +14,10 @@
     {
       "path": "contract.json",
       "at": "contract.json"
+    },
+    {
+      "path": "interface.kicad_pcb",
+      "at": "interface.kicad_pcb"
     }
   ],
   "schematic": "interface.kicad_sch",
@@ -86,5 +90,6 @@
     "reference_architectures": [
       "requirements.md"
     ]
-  }
+  },
+  "board": "interface.kicad_pcb"
 }
