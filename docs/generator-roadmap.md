@@ -181,31 +181,41 @@ Unconnected items are expected before routing and are not graded by
 
 ## kicad-route integration contract
 
-kicad-route is the routing stage and runs inside the implementation sandbox
-(decision 3, AGENTEE-93). agent-ee relies on the following, from
-kicad-route's `docs/routing.md` and `src/kicad_route/cli.py` at `0a0576b`:
+kicad-route is the routing stage (decision 3, AGENTEE-93). The
+[routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
+the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
+runs the router nor supplies its arguments. The adapter is pinned to
+kicad-route `08179cd`. At that commit agent-ee relies on the following from
+`src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
-  1 backend or process failure; 2 valid but incomplete; 3 fails validation,
-  regardless of completion; 4 refused before routing (ledger or canary).
-  agent-ee uses the board from 0 and 2 as a proposal, records 1 and 4 as
-  missing routing coverage, and never uses the board from 3.
-- **`result.json`**: backend identity and observed version, input fingerprint,
-  effective settings, every command with exit code, and three results:
-  `process`, `routing` (`unrouted_nets`, `blocked_by` when incomplete) and
-  `validation`. agent-ee retains and hashes it with `attempt.json`,
-  `RESULT.md` and `validate/`.
+  1 backend or process failure, or an early failure with no `result.json`;
+  2 valid but incomplete, and also argparse's usage exit; 3 fails validation,
+  regardless of completion; 4 refused before routing (ledger or canary), with
+  the run directory removed. agent-ee uses the board from 0 and 2 as a
+  proposal only when the exact status combination and a contained candidate
+  agree with the exit. It records 1 and 4 as missing routing coverage, never
+  uses the board from 3, and treats any other combination as a contradiction.
+- **Outputs**: `--out` is a global option before `run`. Each attempt writes
+  `OUT/runs/<name>/<label>/<stamp>/` with a mutable `latest` link and no
+  top-level result. `result.json` has no schema version, and the pin has no
+  `--version` flag, so the tool version is recorded as unknown. Backend
+  identity comes verbatim from `result.json`. agent-ee retains and hashes
+  `result.json`, `attempt.json`, `RESULT.md`, `validate/` and the logs.
 - **Preservation**: project files, outline, layers, stackup, footprints, zones
   and keepouts unchanged; only in-scope new copper graded. This is why
   placement cannot live in kicad-route.
-- **State directory**: `KICAD_ROUTE_STATE` holds `vendor/krt`,
-  `vendor/freerouting`, `.venv-krt` and `vendor/skills`. agent-ee mounts it and
-  the kicad-route checkout read-only; `--out` points into the writer's scratch;
-  `kicad-route update` never runs inside the sandbox. The KICADROUTE
-  machine-interface item (workstream B) is to confirm that an attempt needs no
-  writes under the state directory.
-- **Backends**: KRT is the default because it is deterministic. A Freerouting
-  run is an attempt; agent-ee does not cite it as a reproducible measurement.
+- **State directory**: `KICAD_ROUTE_STATE` (the checkout by default) holds
+  `vendor/krt`, `vendor/freerouting`, `.venv-krt` and `vendor/skills`. agent-ee
+  mounts the checkout and state read-only, points `--out` into the step's
+  `/work`, and never runs `kicad-route update`. On the original placed RC,
+  KRT attempts completed with every write probe into the state refused with
+  `EROFS`, and the host state's file contents unchanged. The
+  [adapter page](routing-adapter.md#limits) lists what that does not cover.
+- **Backends**: KRT is the default. Repeated KRT attempts on the placed RC gave
+  the same geometry but not identical bytes, so KRT determinism is not
+  claimed. A Freerouting run is an attempt; agent-ee does not cite it as a
+  reproducible measurement.
 
 kicad-route's validation is diagnostic for agent-ee. Acceptance comes only from
 agent-ee's own fresh checks on the captured proposal: DRC with parity and no

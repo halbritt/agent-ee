@@ -104,5 +104,6 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
 - [Native schematic emission](schematic-emitter.md) and [forward annotation](forward-annotation.md) — captured-intent generation and native-netlist board updates; full campaign integration remains pending.
 - [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
+- [kicad-route routing adapter](routing-adapter.md) — pinned read-only routing attempts, exit semantics and retained reports; campaign integration with AGENTEE-95 remains pending.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
 - [Large-symbol capture](symbol-capture.md) — bounded extraction of selected symbols from libraries above the shared reader limit, with source-bound provenance.
