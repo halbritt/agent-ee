@@ -83,6 +83,33 @@ class DeclarationTests(unittest.TestCase):
     def setUp(self):
         self.params = read_json(FIXTURE / 'control.scope.json')['checks'][1]['params']
 
+    def test_scope3_capability_requires_bounds_prior_netlist_and_models(self):
+        scope = read_json(FIXTURE / 'control.scope.json')
+        scope['schema'] = 'agent-ee.scope/3'
+        for requirement in scope['baseline']['requirements']:
+            requirement['intent'] = 'acceptance'
+        files = {f'design/{name}': 'a' * 64 for name in
+                 ('requirements.md', 'owned.lib', 'active.kicad_sch', 'active.kicad_pcb')}
+        baseline = compile_baseline(scope, files)
+        descriptor = baseline['coverage']['checks']['active']
+        self.assertEqual(descriptor['immutable_inputs'], ['design/owned.lib'])
+        self.assertEqual(descriptor['predicates'],
+                         ['active-spice:out_1ms', 'active-spice:gain_100hz'])
+        self.assertEqual(descriptor['prerequisites'], [{'check_id': 'netlist', 'kind': 'netlist'}])
+        with self.assertRaisesRegex(ValueError, 'not captured'):
+            compile_baseline(scope, {k: v for k, v in files.items() if k != 'design/owned.lib'})
+        scope['checks'].reverse()
+        with self.assertRaisesRegex(ValueError, 'forward'):
+            compile_baseline(scope, files)
+        scope['checks'].reverse()
+        for analysis in scope['checks'][1]['params']['analyses']:
+            for metric in analysis['measurements']:
+                metric.pop('min', None)
+                metric.pop('max', None)
+                metric['informational'] = True
+        with self.assertRaisesRegex(ValueError, 'no executable bound coverage'):
+            compile_baseline(scope, files)
+
     def test_nonfinite_ranges_units_and_missing_bounds_refused(self):
         mutations = [lambda p: p.update(sources=[None]),
                      lambda p: p['sources'][0].update(unrecognized_waveform='custom'),
@@ -224,6 +251,18 @@ class NativeActiveTests(unittest.TestCase):
         self.assertEqual(results[0]['execution'], 'ok', results[0])
         freeze_evidence(run, results)
         return run, results
+
+    def test_scope3_control_retains_nominal_response_and_seals(self):
+        self.scope['schema'] = 'agent-ee.scope/3'
+        for requirement in self.scope['baseline']['requirements']:
+            requirement['intent'] = 'acceptance'
+        self.test_native_control_against_independent_analytic_response()
+
+    def test_scope3_seed_preserves_witness_and_tamper_boundaries(self):
+        self.scope['schema'] = 'agent-ee.scope/3'
+        for requirement in self.scope['baseline']['requirements']:
+            requirement['intent'] = 'acceptance'
+        self.test_seed_fails_both_bounds_and_sealed_witness_rejects_artifact_tampering()
 
     def test_native_control_against_independent_analytic_response(self):
         run, results = self.run_case()

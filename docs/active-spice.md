@@ -140,3 +140,13 @@ modeled and checked. Manufacturer provenance does not establish model accuracy
 or redistribution rights. Third-party models/designs must remain outside the
 repository until the owner authorizes publication. The committed synthetic model
 does not satisfy vendor-model acceptance by itself.
+
+## Scope/3 coverage
+
+The executable-coverage audit validates the active-SPICE declaration and its
+preceding native netlist prerequisite, freezes every declared model file, and
+counts only measurements with explicit bounds toward acceptance coverage.
+Informational-only analyses cannot satisfy an acceptance requirement. Native
+connectivity, complete populated-device bindings, include closure and solver
+behavior still require runtime verification; the static audit does not certify
+a model or its applicability.

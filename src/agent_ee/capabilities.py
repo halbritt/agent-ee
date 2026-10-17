@@ -13,7 +13,7 @@ from .storage import identity
 
 
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
-                   'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map'))
+                   'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -215,6 +215,14 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = _geometry(params)
         elif kind == 'rc_transient':
             result['predicates'] = _rc_transient(params, prerequisite)
+        elif kind == 'active_spice':
+            from .active_spice import capability
+            descriptor = capability(params, files)
+            prerequisite(params.get('netlist_check'), ('netlist',))
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['capability_version'] = descriptor['contract']
+            result['predicates'] = [f'active-spice:{name}' for name in descriptor['bounded_metrics']]
         elif kind == 'measurements':
             result['predicates'] = _measurements(params, captured)
         elif kind == 'coupled_margins':
