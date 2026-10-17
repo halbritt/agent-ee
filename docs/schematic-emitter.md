@@ -125,8 +125,9 @@ executor with networking unshared:
 - `tests/test_emitter_parity.py` passes the emitted output through the AGENTEE-41
   parity predicates: topology, components and instance anchors computed from
   the identity contract. Omitted, shorted and swapped terminals, an extra
-  identical part and changed UUIDs each fail the matching predicate. This test
-  is skipped until `agent_ee.netlist_parity` is integrated.
+  identical part and changed UUIDs each fail the matching predicate. The
+  AGENTEE-41 modules are imported directly, so their absence is an error,
+  never a skip.
 
 ## Limits
 

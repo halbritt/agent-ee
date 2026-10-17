@@ -26,9 +26,15 @@ new file. `--work` must name a new directory.
   output for the schematic. The complete component inventory, sheet paths,
   unit UUIDs and nets come from AGENTEE-41's `agent_ee.native_netlist` reader;
   this module has no other inventory source. Symbol fields such as
-  `Description` (which native parity compares) are read separately and must
-  cover exactly the same references. Do-not-populate and board-excluded symbols
-  are refused, because they are not qualified yet.
+  `Description` (which native parity compares) and instance flags are read from
+  the component elements that the same reader's bounded parser returns, and
+  they must cover exactly the same references. Do-not-populate and
+  board-excluded symbols are refused, because they are not qualified yet.
+  KiCad 10.0.7 exports `on_board no` as a valueless `exclude_from_board`
+  property of the component. The refusal is judged on the parsed property
+  name, so quoting, whitespace, character references and end-tag form do not
+  matter. If the reader later exposes an `on_board` field, that field is also
+  honoured.
 - Board: the existing `.kicad_pcb`. pcbnew runs only in
   `agent_ee.forward_annotation_probe`, a child process started through the
   production Bubblewrap executor with networking unshared and the board copied
@@ -87,19 +93,41 @@ track, via and zone keeps its UUID and its (renamed) net. Existing routing and
 zone fills are never edited or refilled, and tracks of removed footprints stay
 in place for DRC to report. For an in-place apply, the source bytes are first
 copied to `--backup-dir`, which must lie outside the board's directory so that
-the backup never enters a captured candidate's file inventory. The output is
-replaced atomically.
+the backup never enters a captured candidate's file inventory.
+
+## Publication
+
+Destinations are checked before any work and written without following links:
+
+- Every component of the output directory and of the backup directory is
+  opened from `/` with `O_NOFOLLOW`. A link anywhere in either path is refused
+  (`unsafe_path`), and later writes go through the opened directory, so a
+  component swapped during apply cannot redirect them. Missing backup
+  directories are created with mode 0700.
+- The output is staged in a new file in the output directory, with a random
+  name, created exclusively without following links. The staged file takes the
+  source board's permission bits, and it is always removed.
+- A new output is published by a hard link that never replaces an existing
+  entry. An existing output in any form, including a dangling link, is refused
+  (`output_exists`). An in-place target must be a regular file, not a link, and
+  it is replaced atomically.
+- The backup is named by the SHA-256 of the source board. An existing backup
+  entry is reused only if it is a regular file with exactly those bytes.
+  Otherwise, including a link to identical bytes, the apply is refused
+  (`backup_location`).
+- The published bytes are read back without following links and compared with
+  the verified bytes.
 
 ## Refusals (before any mutation)
 
-`native_reader_unavailable`, `native_netlist`, `board_exclusion_unsupported`,
+`native_netlist`, `board_exclusion_unsupported`,
 `dnp_unsupported`, `missing_footprint` (no assignment, or not an exact manifest
 member), `footprint_library_coverage` (unreadable, missing or changed manifest
 member), `pad_pin_mismatch`, `duplicate_native_path`,
 `multiunit_binding_ambiguous`, `footprint_change_unsupported` (a bound footprint
 whose identity differs from the symbol's), `plan_rejected`, `stale_plan`,
-`stale_input`, `backup_location`, `output_exists`, `native_child` and
-`verification`.
+`stale_input`, `backup_location`, `output_exists`, `unsafe_path`,
+`native_child` and `verification`.
 
 ## Evidence
 
@@ -125,9 +153,21 @@ raw copper S-expressions for independent extraction, the tests show:
 - A checks-only review of an annotated board passes ERC, DRC and netlist
   checks. `verify` rejects a changed DRC report, a changed tool identity and a
   changed source board.
+- Board exclusion is refused for an actual native export of a schematic with
+  `on_board no`, and for the same export respelled with single quotes, a
+  newline before `name`, spaces around `=`, a character reference and an
+  explicit end tag. The shared reader accepts each spelling as the same
+  document. A field whose text mentions the flag is not refused. An actual
+  do-not-populate export is refused as `dnp_unsupported`.
+- Publication leaves a planted link or file at the former fixed staging name
+  untouched, refuses a live or dangling link at the output name, refuses a
+  link in an output or backup ancestor and a linked in-place board, and
+  refuses a backup name that is a link or holds different bytes. In each case
+  no file outside the requested output and backup is written.
 
-These tests are skipped until `agent_ee.native_netlist` (AGENTEE-41) is
-integrated.
+`agent_ee.native_netlist` and `agent_ee.netlist_parity` (AGENTEE-41) are
+imported directly by these tests, so a missing module is an error, never a
+skip.
 
 ## Limits
 

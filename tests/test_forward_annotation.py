@@ -5,26 +5,28 @@ routed fixture board (fixtures/generation/regulator.kicad_pcb, native DRC with
 schematic parity clean against the emitted regulator). Preservation is judged
 by the existing independent ``agent_ee.geometry_probe`` and by raw copper
 S-expressions read through the shared reader, never by the helper's own
-facts. The native reader is AGENTEE-41's ``native_netlist``.
+facts. The native reader is AGENTEE-41's ``native_netlist``; it is an internal
+dependency, so its absence is an import error here, never a skip.
 """
 import contextlib
 import copy
 import hashlib
-import importlib.util
 import io
 import json
+import os
 import shutil
 import tempfile
 import unittest
 import uuid
 from pathlib import Path
 
+from agent_ee import forward_annotation as fa
+from agent_ee.native_netlist import read_native_inventory
 from agent_ee.schematic_emitter import emit_schematic
 from agent_ee.symbol_library import children, parse_sexpr
 from test_schematic_emitter import PROJECT, ROOT, captures, load, run_native, tables
 from toolchain import require_toolchain
 
-NATIVE = importlib.util.find_spec('agent_ee.native_netlist')
 BOARD = ROOT / 'regulator.kicad_pcb'
 MANIFEST = ROOT / 'footprints.manifest.json'
 
@@ -57,6 +59,14 @@ def copper(board_bytes):
     return sorted(geometry), sorted(nets)
 
 
+def read_native_inventory_bytes(data, tmp):
+    """Components of native XML bytes through the shared AGENTEE-41 reader."""
+    with tempfile.NamedTemporaryFile(dir=tmp, suffix='.xml') as stream:
+        stream.write(data)
+        stream.flush()
+        return read_native_inventory(stream.name)['components']
+
+
 def footprint_poses(board_bytes):
     root = parse_sexpr(board_bytes)
     poses = {}
@@ -67,7 +77,6 @@ def footprint_poses(board_bytes):
     return poses
 
 
-@unittest.skipIf(NATIVE is None, 'AGENTEE-41 native_netlist is not integrated on this branch')
 class ForwardAnnotationTests(unittest.TestCase):
     def setUp(self):
         require_toolchain(native=True)
@@ -79,14 +88,20 @@ class ForwardAnnotationTests(unittest.TestCase):
     def tearDown(self):
         self.assertEqual(protected(), self.before)
 
-    def project(self, intent, label, name='regulator'):
-        """Emitted project with a copy of the routed fixture board and its native XML."""
+    def project(self, intent, label, name='regulator', edit=None):
+        """Emitted project with a copy of the routed fixture board and its native XML.
+
+        ``edit`` changes the emitted schematic bytes before the native export, so
+        that KiCad itself produces the XML for a schematic the emitter never writes.
+        """
         layout = load(name + '.layout.json')
         result, files = emit_schematic(intent, captures(intent), layout, **tables())
         self.assertEqual(result['execution'], 'ok', result['findings'])
         project = self.tmp / label / 'project'
         shutil.copytree(PROJECT / 'lib', project / 'lib')
         for file, data in files.items():
+            if edit and file.endswith('.kicad_sch'):
+                data = edit(data)
             (project / file).write_bytes(data)
         if name == 'regulator':
             shutil.copyfile(BOARD, project / 'regulator.kicad_pcb')
@@ -111,7 +126,6 @@ class ForwardAnnotationTests(unittest.TestCase):
         return json.loads((work / 'drc.json').read_text())
 
     def annotate(self, project, xml, label):
-        from agent_ee import forward_annotation as fa
         board = project / 'regulator.kicad_pcb'
         plan = fa.plan(board, xml, self.manifest, PROJECT, self.tmp / label / 'plan')
         self.assertEqual(plan['execution'], 'ok', plan['findings'])
@@ -178,7 +192,6 @@ class ForwardAnnotationTests(unittest.TestCase):
                                          for d in unrouted), unrouted)
         self.assertTrue(any('C2' in d for d in unrouted))
         # Same inputs again: no change at all, byte for byte.
-        from agent_ee import forward_annotation as fa
         again = fa.plan(project / 'regulator.kicad_pcb', xml, self.manifest, PROJECT, self.tmp / 'again-plan')
         self.assertEqual(again['execution'], 'ok', again['findings'])
         self.assertEqual({k: v for k, v in again['counts'].items() if k not in ('retain',)},
@@ -236,7 +249,6 @@ class ForwardAnnotationTests(unittest.TestCase):
         self.assertTrue(reported, report['violations'] + report['unconnected_items'])
 
     def test_refusals_happen_before_any_mutation(self):
-        from agent_ee import forward_annotation as fa
         cases = []
         missing = self.intent(lambda i: next(c for c in i['components'] if c['id'] == 'c_out').update(
             footprint='OwnedFP:MISSING'))
@@ -265,7 +277,6 @@ class ForwardAnnotationTests(unittest.TestCase):
                 self.assertFalse((self.tmp / code / 'backup').exists())
 
     def test_stale_or_tampered_plans_and_unsafe_backups_are_refused(self):
-        from agent_ee import forward_annotation as fa
         def add(i):
             i['components'].append(dict(id='c_extra', reference='C2', lib_id='OwnedGen:CAP', value='100n',
                                         footprint='OwnedFP:CAP_2PAD', units=[1]))
@@ -299,7 +310,6 @@ class ForwardAnnotationTests(unittest.TestCase):
         self.assertFalse((self.tmp / 'new.kicad_pcb').exists())
 
     def test_binding_uses_native_unit_identity_never_references(self):
-        from agent_ee import forward_annotation as fa
         project, xml = self.project(load('dual.intent.json'), 'dual', name='dual')
         empty = dict(footprints=[], tracks=[], zones=[], edge_bbox_nm=[0, 0, 10000000, 10000000])
         captured = {m['path']: (PROJECT / m['path']).read_bytes()
@@ -375,6 +385,186 @@ class ForwardAnnotationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify(run)
 
+
+    def test_board_exclusion_is_judged_on_parsed_native_flags(self):
+        """Exclusion is a parsed XML property, whatever its byte spelling."""
+        import xml.etree.ElementTree as ET
+        empty = dict(footprints=[], tracks=[], zones=[], edge_bbox_nm=[0, 0, 10000000, 10000000])
+        captured = {m['path']: (PROJECT / m['path']).read_bytes()
+                    for lib in self.manifest['libraries'] for m in lib['members']}
+
+        def flagged(*flags):
+            def edit(data):
+                # Only the C1 instance (the one OwnedGen:CAP) changes; library symbols precede it.
+                ix = data.index(b'(lib_id "OwnedGen:CAP")')
+                tail = data[ix:]
+                for old, new in flags:
+                    self.assertIn(old, tail)
+                    tail = tail.replace(old, new, 1)
+                return data[:ix] + tail
+            return edit
+
+        def plan(data):
+            return fa.build_plan(data, '0' * 64, empty, self.manifest, captured)
+
+        def flags(data, ref='C1'):
+            comp = next(c for c in ET.fromstring(data).iter('comp') if c.get('ref') == ref)
+            return sorted(p.get('name') for p in comp.iter('property'))
+
+        _, clean = self.project(self.intent(), 'flags-clean')
+        clean = clean.read_bytes()
+        self.assertEqual(plan(clean)['execution'], 'ok', plan(clean)['findings'])
+        _, excluded = self.project(self.intent(), 'flags-board', edit=flagged((b'(on_board yes)', b'(on_board no)')))
+        excluded = excluded.read_bytes()
+        # Native control: KiCad 10.0.7 writes exclusion as a valueless C1 property.
+        self.assertIn(b'<property name="exclude_from_board"/>', excluded)
+        self.assertEqual(flags(excluded), ['Sheetfile', 'Sheetname', 'exclude_from_board'])
+        self.assertEqual(flags(clean), ['Sheetfile', 'Sheetname'])
+        canonical = b'<property name="exclude_from_board"/>'
+        spellings = {
+            'native': excluded,
+            'single_quotes': excluded.replace(canonical, b"<property name='exclude_from_board'/>"),
+            'newline_before_name': excluded.replace(canonical, b'<property\n name="exclude_from_board"/>'),
+            'spaces_around_equals': excluded.replace(canonical, b'<property name = "exclude_from_board" />'),
+            'character_reference': excluded.replace(canonical, b'<property name="exclude&#95;from_board"/>'),
+            'explicit_end_tag': excluded.replace(canonical, b'<property name="exclude_from_board"></property>'),
+        }
+        for label, data in spellings.items():
+            with self.subTest(spelling=label):
+                if label != 'native':
+                    self.assertNotIn(canonical, data)
+                # The shared reader accepts each spelling as the same document.
+                self.assertEqual(flags(data), flags(excluded))
+                with tempfile.NamedTemporaryFile(dir=self.tmp, suffix='.xml') as stream:
+                    stream.write(data)
+                    stream.flush()
+                    self.assertEqual(read_native_inventory(stream.name)['components'].keys(),
+                                     read_native_inventory_bytes(clean, self.tmp).keys())
+                result = plan(data)
+                self.assertEqual((result['execution'], result['findings']),
+                                 ('failed', [dict(code='board_exclusion_unsupported', location='/components/C1',
+                                                  message='native export excludes this symbol from the board')]))
+        # A field merely mentioning the flag is not a flag.
+        mention = clean.replace(b'<field name="Description">', b'<field name="Note">'
+                                b'&lt;property name="exclude_from_board"/&gt;</field><field name="Description">', 1)
+        self.assertNotEqual(mention, clean)
+        self.assertEqual(plan(mention)['execution'], 'ok', plan(mention)['findings'])
+        # Do-not-populate, judged by the shared reader, stays a separate refusal.
+        _, dnp = self.project(self.intent(), 'flags-dnp', edit=flagged((b'(dnp no)', b'(dnp yes)')))
+        self.assertEqual([f['code'] for f in plan(dnp.read_bytes())['findings']], ['dnp_unsupported'])
+
+    def test_publication_never_follows_planted_paths(self):
+        """Every output, backup and staging path is created privately; links are never followed."""
+        project, xml = self.project(self.intent(), 'publish')
+        board = project / 'regulator.kicad_pcb'
+        source = board.read_bytes()
+        record = fa.plan(board, xml, self.manifest, PROJECT, self.tmp / 'publish-plan')
+        self.assertEqual(record['execution'], 'ok', record['findings'])
+        counter = iter(range(100))
+
+        def apply(out, backup_dir=None):
+            return fa.apply(record, board, xml, self.manifest, PROJECT, out, self.tmp / f'publish-{next(counter)}',
+                            backup_dir=backup_dir)
+
+        def listing(directory):
+            """Every entry without following links: name, link flag, target, bytes or subtree."""
+            def entry(p):
+                if p.is_symlink():
+                    return os.readlink(p)
+                return tuple(listing(p)) if p.is_dir() else p.read_bytes()
+            return sorted((p.name, p.is_symlink(), entry(p)) for p in Path(directory).iterdir())
+
+        def codes(result):
+            return result['execution'], [f['code'] for f in result['findings']]
+
+        sentinel = self.tmp / 'owned-sentinel.txt'
+        sentinel.write_bytes(b'owned review sentinel')
+        # The former fixed staging name, as a link and as a regular file: both untouched.
+        for kind in ('symlink', 'regular'):
+            with self.subTest(planted_staging=kind):
+                directory = self.tmp / ('staging-' + kind)
+                directory.mkdir()
+                out = directory / 'published.kicad_pcb'
+                planted = directory / '.published.kicad_pcb.annotation'
+                if kind == 'symlink':
+                    planted.symlink_to(sentinel)
+                else:
+                    planted.write_bytes(b'owned planted file')
+                before = listing(directory)
+                result = apply(out)
+                self.assertEqual(codes(result), ('ok', []))
+                self.assertEqual(sentinel.read_bytes(), b'owned review sentinel')
+                self.assertFalse(out.is_symlink())
+                self.assertEqual(out.read_bytes(), source)
+                self.assertEqual(result['output'], dict(path=str(out), sha256=sha(board)))
+                self.assertEqual(listing(directory), sorted(before + [(out.name, False, source)]))
+        # An existing output entry is never replaced, whether a live or a dangling link.
+        for kind, target in (('live', sentinel), ('dangling', self.tmp / 'absent-target')):
+            with self.subTest(output_link=kind):
+                directory = self.tmp / ('output-' + kind)
+                directory.mkdir()
+                out = directory / 'published.kicad_pcb'
+                out.symlink_to(target)
+                before = listing(directory)
+                self.assertEqual(codes(apply(out)), ('failed', ['output_exists']))
+                self.assertEqual(listing(directory), before)
+                self.assertFalse((self.tmp / 'absent-target').exists())
+                self.assertEqual(sentinel.read_bytes(), b'owned review sentinel')
+        # No path component may be a link: output and backup ancestors are walked without following.
+        real = self.tmp / 'real-directory'
+        real.mkdir()
+        (self.tmp / 'linked-directory').symlink_to(real)
+        with self.subTest(ancestor='output'):
+            self.assertEqual(codes(apply(self.tmp / 'linked-directory' / 'out.kicad_pcb')),
+                             ('failed', ['unsafe_path']))
+        with self.subTest(ancestor='backup'):
+            self.assertEqual(codes(apply(board, self.tmp / 'linked-directory' / 'nested' / 'backup')),
+                             ('failed', ['unsafe_path']))
+        with self.subTest(parent_reference='output'):
+            self.assertEqual(codes(apply(self.tmp / 'linked-directory' / '..' / 'via-parent.kicad_pcb')),
+                             ('failed', ['unsafe_path']))
+            self.assertFalse((self.tmp / 'via-parent.kicad_pcb').exists())
+        self.assertEqual(listing(real), [])
+        # An in-place target reached through a link is refused, not replaced by a file.
+        with self.subTest(in_place='linked board'):
+            linked = project / 'linked.kicad_pcb'
+            linked.symlink_to(board)
+            result = fa.apply(record, linked, xml, self.manifest, PROJECT, linked, self.tmp / 'publish-linked',
+                              backup_dir=self.tmp / 'linked-backup')
+            self.assertEqual(codes(result), ('failed', ['unsafe_path']))
+            self.assertTrue(linked.is_symlink())
+            self.assertFalse((self.tmp / 'linked-backup').exists())
+            linked.unlink()
+        # The content-addressed backup name: a planted link (even to identical bytes) or wrong bytes refuse.
+        name = record['inputs']['board_sha256'] + '.kicad_pcb'
+        identical = self.tmp / 'identical-copy.kicad_pcb'
+        identical.write_bytes(source)
+        for kind in ('dangling', 'identical-link', 'wrong-bytes'):
+            with self.subTest(backup=kind):
+                backup_dir = self.tmp / ('backup-' + kind)
+                backup_dir.mkdir()
+                if kind == 'dangling':
+                    (backup_dir / name).symlink_to(self.tmp / 'absent-backup')
+                elif kind == 'identical-link':
+                    (backup_dir / name).symlink_to(identical)
+                else:
+                    (backup_dir / name).write_bytes(b'not the source')
+                before = listing(backup_dir)
+                self.assertEqual(codes(apply(board, backup_dir)), ('failed', ['backup_location']))
+                self.assertEqual(listing(backup_dir), before)
+                self.assertFalse((self.tmp / 'absent-backup').exists())
+                self.assertEqual(board.read_bytes(), source)
+        # Success in place: private backup with the source bytes, board replaced, nothing else written.
+        backup_dir = self.tmp / 'backup-new' / 'nested'
+        before = listing(project)
+        result = apply(board, backup_dir)
+        self.assertEqual(codes(result), ('ok', []))
+        self.assertEqual(listing(backup_dir), [(name, False, source)])
+        self.assertEqual(listing(project), before)
+        self.assertFalse(board.is_symlink())
+        # An existing regular backup with the source bytes is reused, not rewritten.
+        self.assertEqual(codes(apply(board, backup_dir)), ('ok', []))
+        self.assertEqual(listing(backup_dir), [(name, False, source)])
 
 if __name__ == '__main__':
     unittest.main()

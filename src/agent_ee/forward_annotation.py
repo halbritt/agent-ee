@@ -13,13 +13,18 @@ result before publishing it. Nothing here places or routes; native DRC with
 schematic parity and the coordinator's checks judge the result.
 """
 import argparse
+import errno
 import hashlib
 import json
 import os
+import secrets
 import shutil
+import stat
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from . import native_netlist
 from .footprint_library import FootprintError, index_footprints, load_document
 
 PLAN_SCHEMA = 'agent-ee.forward-annotation-plan/1'
@@ -57,34 +62,46 @@ def _snap(value):
 
 
 def _inventory(xml_bytes):
-    """Native inventory through the AGENTEE-41 reader, from exact bytes."""
-    try:
-        from .native_netlist import read_native_inventory
-    except ImportError as exc:
-        raise AnnotationError('native_reader_unavailable', 'AGENTEE-41 native_netlist is required: ' + str(exc))
-    if b'<property name="exclude_from_board"' in xml_bytes:
-        # The adapter does not expose board exclusion; refuse rather than guess.
-        raise AnnotationError('board_exclusion_unsupported', 'native export contains board-excluded symbols')
+    """Native inventory and parsed component elements from exact bytes.
+
+    Both come from the AGENTEE-41 reader's own bounded parser, so this module
+    never judges the export by its byte spelling.
+    """
     with tempfile.TemporaryDirectory(prefix='agent-ee-annotation-xml-') as tmp:
         path = Path(tmp) / 'netlist.xml'
         path.write_bytes(xml_bytes)
         try:
-            return read_native_inventory(path)
-        except (ValueError, TypeError, UnicodeError) as exc:
+            inventory = native_netlist.read_native_inventory(path)
+            root = native_netlist._parse(path)
+        except (ValueError, TypeError, UnicodeError, ET.ParseError) as exc:
             raise AnnotationError('native_netlist', str(exc)) from exc
-
-
-def _fields(xml_bytes, references):
-    """Symbol fields per reference; the 41 adapter has already accepted these bytes.
-
-    It does not expose fields, which native schematic parity compares on every
-    footprint, so this narrow read is cross-checked against its reference set.
-    """
-    import xml.etree.ElementTree as ET
-    root = ET.fromstring(xml_bytes.decode('utf-8-sig'))
-    fields = {}
+    elements = {}
     for comp in root.findall('./components/comp'):
-        ref = comp.get('ref')
+        elements[comp.get('ref')] = comp
+    if set(elements) != set(inventory['components']) or len(root.findall('./components/comp')) != len(elements):
+        raise AnnotationError('native_netlist', 'parsed components differ from the native inventory')
+    return inventory, elements
+
+
+def _on_board(comp, element):
+    """Board membership from the parsed native flag, never from a lexical match.
+
+    KiCad 10.0.7 exports ``on_board no`` as a valueless ``exclude_from_board``
+    property of the component. The reader's ``on_board`` field is honoured too
+    once it provides one; either source excluding the symbol refuses it.
+    """
+    names = {(prop.get('name') or '').strip() for prop in element.findall('property')}
+    return 'exclude_from_board' not in names and comp.get('on_board', True) is not False
+
+
+def _fields(elements):
+    """Symbol fields per reference from the reader's parsed component elements.
+
+    The 41 adapter does not expose fields, which native schematic parity
+    compares on every footprint.
+    """
+    fields = {}
+    for ref, comp in elements.items():
         values = {}
         for field in comp.findall('./fields/field'):
             name = field.get('name')
@@ -93,8 +110,6 @@ def _fields(xml_bytes, references):
             values[name] = field.text or ''
         values.pop('Footprint', None)  # Bound as the footprint identity itself.
         fields[ref] = values
-    if set(fields) != set(references) or len(root.findall('./components/comp')) != len(fields):
-        raise AnnotationError('native_netlist', 'symbol field inventory differs from the native inventory')
     return fields
 
 
@@ -107,13 +122,17 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
                 add=[], remove=[], update=[], retain=[], board_only=[], renames=[], new_nets=[], pads=[],
                 stale_nets=[], counts={})
     try:
-        inventory = _inventory(xml_bytes)
+        inventory, elements = _inventory(xml_bytes)
+        for ref in sorted(inventory['components'], key=_natural):
+            if not _on_board(inventory['components'][ref], elements[ref]):
+                raise AnnotationError('board_exclusion_unsupported',
+                                      'native export excludes this symbol from the board', '/components/' + ref)
         index = index_footprints(manifest, captured_footprints)
         if index['coverage'] != 'complete':
             raise AnnotationError('footprint_library_coverage',
                                   '; '.join(f.get('message', f['code']) for f in index['findings']))
         library = {fp['lib_id']: fp for fp in index['footprints']}
-        _plan(plan, inventory, _fields(xml_bytes, inventory['components']), facts, library)
+        _plan(plan, inventory, _fields(elements), facts, library)
     except AnnotationError as exc:
         plan['findings'].append(dict(code=exc.code, location=exc.location, message=str(exc)))
         return _seal(plan)
@@ -284,7 +303,7 @@ def _failed(schema, code, message, location='/', **fields):
 def plan(board, xml, manifest, footprint_root, work):
     """Plan for exact current bytes; ``work`` must be a new private directory."""
     work = Path(work)
-    work.mkdir(parents=False, exist_ok=False)
+    work.mkdir(mode=0o700, parents=False, exist_ok=False)
     board_sha = _sha256(board)
     xml_bytes = Path(xml).read_bytes()
     try:
@@ -343,6 +362,151 @@ def _verify(plan_record, before, after):
             raise AnnotationError('verification', key + ' inventory or net binding changed')
 
 
+def _absolute(path):
+    """Absolute lexical path; ``..`` is refused because it would resolve a link first."""
+    if '..' in Path(path).parts:
+        raise AnnotationError('unsafe_path', 'path must not contain parent references', str(path))
+    return Path(os.path.abspath(path))
+
+
+def _directory(path, create=False):
+    """File descriptor of a directory reached from ``/`` without following links.
+
+    Every component is opened with ``O_NOFOLLOW``, so a link anywhere in the
+    path is refused rather than resolved; later steps act through the
+    descriptor, so a component swapped meanwhile cannot redirect a write. With
+    ``create``, missing components are made private (0700). Without it, a
+    missing directory returns ``None``.
+    """
+    path = _absolute(path)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open('/', flags)
+    try:
+        for part in path.parts[1:]:
+            try:
+                child = os.open(part, flags, dir_fd=fd)
+            except FileNotFoundError:
+                if not create:
+                    os.close(fd)
+                    return None
+                os.mkdir(part, 0o700, dir_fd=fd)
+                child = os.open(part, flags, dir_fd=fd)
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise AnnotationError('unsafe_path', 'a path component is a link or not a directory',
+                                          str(path)) from exc
+                raise
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _entry(directory, name):
+    """``lstat`` of one directory entry, or ``None`` when it does not exist."""
+    try:
+        return os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def _read_regular(directory, name):
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise AnnotationError('unsafe_path', 'published entry is not a regular file', name)
+        return stream.read()
+
+
+def _place(directory, name, data, mode, replace):
+    """Write ``data`` to a new private file beside ``name``, then publish it.
+
+    The staging name is random and created exclusively without following
+    links. Publication either replaces an existing regular file (``replace``)
+    or hard-links without clobbering, so an entry that already exists, even a
+    dangling link, is never overwritten. The staged entry is always removed.
+    """
+    temp = f'.{name}.{secrets.token_hex(16)}.annotation'
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600,
+                 dir_fd=directory)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        if replace:
+            current = _entry(directory, name)
+            if current is None or not stat.S_ISREG(current.st_mode):
+                raise AnnotationError('unsafe_path', 'in-place target is not a regular file', name)
+            os.replace(temp, name, src_dir_fd=directory, dst_dir_fd=directory)
+        else:
+            try:
+                os.link(temp, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+            except FileExistsError as exc:
+                raise AnnotationError('output_exists', 'refusing to overwrite an existing entry', name) from exc
+    finally:
+        try:
+            os.unlink(temp, dir_fd=directory)
+        except FileNotFoundError:
+            pass
+    if _read_regular(directory, name) != data:
+        raise AnnotationError('verification', 'published bytes differ from the staged bytes', name)
+
+
+def _backup(backup_dir, source, sha256, mode):
+    """Content-addressed backup: an existing entry must be a regular file holding ``source``."""
+    name = sha256 + '.kicad_pcb'
+    directory = _directory(backup_dir, create=True)
+    try:
+        current = _entry(directory, name)
+        if current is None:
+            try:
+                _place(directory, name, source, mode, replace=False)
+                return
+            except AnnotationError as exc:
+                if exc.code != 'output_exists':
+                    raise
+            current = _entry(directory, name)
+        if current is None or not stat.S_ISREG(current.st_mode) or \
+                hashlib.sha256(_read_regular(directory, name)).hexdigest() != sha256:
+            raise AnnotationError('backup_location', 'backup entry is not a regular file holding the source bytes',
+                                  str(Path(backup_dir) / name))
+    finally:
+        os.close(directory)
+
+
+def _preflight(board, out, backup_dir):
+    """Refuse unsafe or occupied destinations before any work or write.
+
+    Returns whether ``out`` is the board itself. Ancestors of the output and of
+    the backup directory must contain no links; an in-place target must be a
+    regular file, and any other output name must not exist in any form.
+    """
+    board, out = _absolute(board), _absolute(out)
+    in_place = out == board
+    directory = _directory(out.parent)
+    if directory is None:
+        raise AnnotationError('unsafe_path', 'output directory does not exist', str(out.parent))
+    try:
+        current = _entry(directory, out.name)
+    finally:
+        os.close(directory)
+    if in_place:
+        if current is None or not stat.S_ISREG(current.st_mode):
+            raise AnnotationError('unsafe_path', 'in-place target is not a regular file', str(out))
+        if backup_dir is None or _absolute(backup_dir).is_relative_to(out.parent):
+            raise AnnotationError('backup_location', 'in-place apply needs a backup outside the board directory')
+        existing = _directory(backup_dir)
+        if existing is not None:
+            os.close(existing)
+    elif current is not None:
+        raise AnnotationError('output_exists', 'refusing to overwrite an existing output')
+    return in_place
+
+
 def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backup_dir=None):
     """Recompute, compare, apply on a copy, verify, then publish ``out`` atomically.
 
@@ -352,7 +516,7 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
     directory so that no file is added to a captured candidate inventory.
     """
     work = Path(work)
-    work.mkdir(parents=False, exist_ok=False)
+    work.mkdir(mode=0o700, parents=False, exist_ok=False)
     result = dict(schema=RESULT_SCHEMA, execution='failed', outcome='unknown', findings=[],
                   plan_sha256=plan_record.get('canonical_sha256'), output=None, backup=None)
     try:
@@ -362,21 +526,16 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
         if _canonical(fresh) != _canonical(plan_record):
             raise AnnotationError('stale_plan', 'plan differs from a fresh plan over the current inputs')
         board, out = Path(board), Path(out)
-        in_place = out.resolve() == board.resolve()
-        if in_place:
-            if backup_dir is None or Path(backup_dir).resolve().is_relative_to(board.resolve().parent):
-                raise AnnotationError('backup_location', 'in-place apply needs a backup outside the board directory')
-        elif out.exists():
-            raise AnnotationError('output_exists', 'refusing to overwrite an existing output')
+        in_place = _preflight(board, out, backup_dir)
         changes = sum(plan_record['counts'][k] for k in ('add', 'remove', 'update', 'renames', 'new_nets'))
         changes += plan_record['counts']['pad_changes']
-        staged = work / 'apply-output.kicad_pcb'
+        source = board.read_bytes()
         if changes == 0:
-            shutil.copyfile(board, staged)  # Re-applying identical inputs is a byte-for-byte no-op.
+            output = source  # Re-applying identical inputs is a byte-for-byte no-op.
         else:
             inputs = work / 'apply-input'
             (inputs / 'libraries').mkdir(parents=True)
-            shutil.copyfile(board, inputs / 'board.kicad_pcb')
+            (inputs / 'board.kicad_pcb').write_bytes(source)
             captures = _captures(manifest, footprint_root)
             for item in plan_record['add']:
                 data = captures[item['member']['path']]
@@ -392,25 +551,26 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
             # A fresh child reads the saved output; the writer's process is not trusted for it.
             after = board_facts(work / 'apply' / 'board.kicad_pcb', work / 'verify')
             _verify(plan_record, before, after)
-            shutil.copyfile(work / 'apply' / 'board.kicad_pcb', staged)
-        if _sha256(board) != plan_record['inputs']['board_sha256'] or \
+            output = (work / 'apply' / 'board.kicad_pcb').read_bytes()
+            if hashlib.sha256(output).hexdigest() != _sha256(work / 'verify' / 'facts-input' / 'board.kicad_pcb'):
+                raise AnnotationError('verification', 'saved board changed after verification')
+        if hashlib.sha256(source).hexdigest() != plan_record['inputs']['board_sha256'] or \
+                _sha256(board) != plan_record['inputs']['board_sha256'] or \
                 hashlib.sha256(Path(xml).read_bytes()).hexdigest() != plan_record['inputs']['xml_sha256']:
             raise AnnotationError('stale_input', 'inputs changed during apply')
+        mode = stat.S_IMODE(os.stat(board).st_mode)
         if in_place:
-            backup = Path(backup_dir) / (plan_record['inputs']['board_sha256'] + '.kicad_pcb')
-            Path(backup_dir).mkdir(parents=True, exist_ok=True)
-            if not backup.exists():
-                shutil.copyfile(board, backup)
-            if _sha256(backup) != plan_record['inputs']['board_sha256']:
-                raise AnnotationError('backup_location', 'backup does not hold the source bytes')
-            result['backup'] = str(backup)
-        temp = out.with_name('.' + out.name + '.annotation')
-        shutil.copyfile(staged, temp)
-        if not in_place and out.exists():
-            temp.unlink()
-            raise AnnotationError('output_exists', 'refusing to overwrite an existing output')
-        os.replace(temp, out)
-        result.update(execution='ok', outcome='info', output=dict(path=str(out), sha256=_sha256(out)))
+            _backup(backup_dir, source, plan_record['inputs']['board_sha256'], mode)
+            result['backup'] = str(Path(backup_dir) / (plan_record['inputs']['board_sha256'] + '.kicad_pcb'))
+        directory = _directory(out.parent)
+        if directory is None:
+            raise AnnotationError('unsafe_path', 'output directory does not exist', str(out.parent))
+        try:
+            _place(directory, out.name, output, mode, replace=in_place)
+        finally:
+            os.close(directory)
+        result.update(execution='ok', outcome='info',
+                      output=dict(path=str(out), sha256=hashlib.sha256(output).hexdigest()))
     except AnnotationError as exc:
         result['findings'].append(dict(code=exc.code, location=exc.location, message=str(exc)))
     return _seal(result)

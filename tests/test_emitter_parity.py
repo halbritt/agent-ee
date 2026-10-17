@@ -5,9 +5,9 @@ The comparison authority is the separately owned ``agent_ee.netlist_parity``
 intent fixture has no power symbols: 41 has no power-symbol policy yet, and
 KiCad's netlist omits ``#`` references (see docs/schematic-emitter.md).
 Anchors are computed here from the frozen identity contract, not read back
-from emitter output.
+from emitter output. The parity modules are internal dependencies: their
+absence is an import error here, never a skip.
 """
-import importlib.util
 import json
 import shutil
 import tempfile
@@ -16,13 +16,13 @@ import uuid
 from pathlib import Path
 
 from test_schematic_emitter import captures, load, native_project, run_native
+from agent_ee.connectivity_ir import resolve_intent
+from agent_ee.native_netlist import read_native_inventory
+from agent_ee.netlist_parity import compare, resolved_inventory, validate_policy
 from agent_ee.schematic_emitter import emit_schematic
 from toolchain import require_toolchain
 
-PARITY = importlib.util.find_spec('agent_ee.netlist_parity')
 
-
-@unittest.skipIf(PARITY is None, 'AGENTEE-41 netlist_parity is not integrated on this branch')
 class EmitterParityTests(unittest.TestCase):
     def setUp(self):
         require_toolchain(native=True)
@@ -32,7 +32,6 @@ class EmitterParityTests(unittest.TestCase):
         self.layout = load('regulator-core.layout.json')
 
     def native(self, intent, layout, label):
-        from agent_ee.native_netlist import read_native_inventory
         result, files = emit_schematic(intent, captures(intent), layout)
         self.assertEqual(result['execution'], 'ok', result['findings'])
         project = native_project(files, self.tmp / label)
@@ -42,8 +41,6 @@ class EmitterParityTests(unittest.TestCase):
         return read_native_inventory(work / 'design.xml')
 
     def compare(self, actual, predicate, multiset='exactly', **extra):
-        from agent_ee.connectivity_ir import resolve_intent
-        from agent_ee.netlist_parity import compare, resolved_inventory, validate_policy
         expected = resolved_inventory(resolve_intent(self.intent, captures(self.intent)))
         policy = validate_policy(dict(source=dict(kind='intent', path='regulator-core.intent.json'),
                                       netlist_check='netlist', predicate=predicate, multiset=multiset, **extra))
