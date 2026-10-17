@@ -232,3 +232,23 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         metric = second["checks"][0]["details"]["metrics"]["output"]
         self.assertEqual((metric["nominal"], metric["lower"], metric["upper"]), (5, 6, 13))
         self.assertEqual(len(second["checks"][0]["details"]["empirical_cases"]), 2)
+
+    @toolchain_test
+    def test_scope3_campaign_preserves_audited_baseline_and_single_writer(self):
+        from agent_ee.capabilities import convert_scope
+        self.scope = convert_scope(self.scope)
+        write_json(self.root / 'scope.json', self.scope)
+        self.test_single_writer_repair_then_fresh_independent_reviews()
+        first = read_json(self.root / 'campaign/runs/1/baseline.json')
+        second = read_json(self.root / 'campaign/runs/2/baseline.json')
+        self.assertEqual(first['schema'], 'agent-ee.baseline/2')
+        self.assertEqual(first, second)
+        self.assertEqual(first['coverage']['checks']['response']['immutable_inputs'],
+                         ['design/adapter.py', 'design/model', 'design/solver.py'])
+
+    @toolchain_test
+    def test_scope3_implementation_cannot_change_captured_verification_dependencies(self):
+        from agent_ee.capabilities import convert_scope
+        self.scope = convert_scope(self.scope)
+        write_json(self.root / 'scope.json', self.scope)
+        self.test_implementation_cannot_change_verification_inputs_or_add_files()

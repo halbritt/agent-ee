@@ -1,4 +1,4 @@
-"""Immutable requirements and check-bound witnesses for version-2 scopes."""
+"""Immutable requirements, opt-in coverage audits and check-bound witnesses."""
 
 from pathlib import Path
 
@@ -10,6 +10,9 @@ def compile_baseline(scope, files):
     """Bind the complete baseline and verification criteria to captured bytes."""
     if scope.get("schema") == "agent-ee.scope/1":
         return None
+    if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
+        raise ValueError("unknown scope schema")
+    audited = scope["schema"] == "agent-ee.scope/3"
     baseline = scope.get("baseline")
     if not isinstance(baseline, dict) or set(baseline) != {
         "requirements", "targets", "reference_architectures"
@@ -25,8 +28,8 @@ def compile_baseline(scope, files):
     if not isinstance(requirements, list) or not requirements:
         raise ValueError("baseline requires at least one requirement")
     for req in requirements:
-        if not isinstance(req, dict) or set(req) != {"id", "statement", "source", "checks"}:
-            raise ValueError("requirement needs id, statement, source and checks")
+        if not isinstance(req, dict) or set(req) != ({"id", "statement", "source", "checks", "intent"} if audited else {"id", "statement", "source", "checks"}):
+            raise ValueError("requirement needs id, statement, source and checks" + (" and intent" if audited else ""))
         rid = safe_id(req["id"], "requirement id")
         if rid in ids:
             raise ValueError(f"duplicate requirement {rid}")
@@ -51,6 +54,12 @@ def compile_baseline(scope, files):
         if not isinstance(values, list) or not values:
             raise ValueError(f"baseline {category} must name captured sources")
         paths.update(str(safe_relative(p)) for p in values)
+    coverage = None
+    if audited:
+        from .capabilities import compile_coverage
+        coverage = compile_coverage(scope, files)
+        for descriptor in coverage["checks"].values():
+            paths.update(descriptor["immutable_inputs"])
     for spec in checks.values():
         params = spec.get("params", {})
         if spec.get("kind") == "measurements":
@@ -60,8 +69,12 @@ def compile_baseline(scope, files):
     paths.update(str(safe_relative(p)) for p in scope.get("requirements", []))
     if not paths <= files.keys():
         raise ValueError(f"baseline sources not captured: {sorted(paths - files.keys())}")
+    if audited and paths.intersection({scope.get("board"), scope.get("schematic")}):
+        raise ValueError("native design cannot be an immutable verification dependency")
     value = {"schema": "agent-ee.baseline/1", **baseline,
              "files": {p: files[p] for p in sorted(paths)}, "criteria": scope["checks"]}
+    if audited:
+        value.update(schema="agent-ee.baseline/2", coverage=coverage)
     return {**value, "baseline_id": identity(value)}
 
 
@@ -155,6 +168,10 @@ def validate_witnesses(run, witnesses, evidence):
         rid, cid = witness["requirement_id"], witness["check_id"]
         if rid not in requirements or cid not in requirements[rid]["checks"]:
             raise ValueError("witness does not trace to a baseline requirement")
+        if baseline["schema"] == "agent-ee.baseline/2":
+            coverage = baseline["coverage"]["requirements"][rid]
+            if coverage["intent"] != "acceptance" or cid not in coverage["acceptance_checks"]:
+                raise ValueError("witness requires audited acceptance capability")
         path = f"checks/{cid}.json"
         receipt = seal["checks"][cid]
         if path not in cited or digest(run / path) != receipt["result"]:
