@@ -15,3 +15,8 @@ unconnected singleton carrying `pintype=...+no_connect` may be ignored only for 
 compatible declared no-connect physical pin. An unmarked off-pin label singleton
 must remain a missing binding. Declaring NC on port3 and shunt2, with no ground
 net, is a valid two-net topology and must pass an actual native export.
+
+Stronger collapse regression: exchange series.pin2 and shunt.pin2 between output
+and ground. The series resistor becomes input-to-ground and both shunt terminals
+land on output. Every net retains exactly the same SET of (lib_id,value,pin)
+tokens, but the physical instance graph is non-isomorphic and must be a defect.
