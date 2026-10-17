@@ -77,6 +77,17 @@ runs:
         workspace=$(realpath "$GITHUB_WORKSPACE")
         scope=$(realpath -m "$INPUT_SCOPE")
         out=$(realpath -m "$INPUT_OUT")
+        # GITHUB_OUTPUT and workflow commands are line-based, and upload-artifact
+        # reads its path as a glob with trimmed ends: a newline could name another
+        # run to judge, and glob characters or trailing space another one to upload.
+        case "$scope$out" in *[[:cntrl:]]*)
+          echo "::error::scope and output-directory must not contain control characters"
+          printf 'review_exit=2\nverify_exit=2\n' >> "$GITHUB_OUTPUT"; exit 0 ;;
+        esac
+        case "$out" in *[*?[\\]*|*[[:space:]])
+          echo "::error::output-directory must not contain *, ?, [ or \\ or end with whitespace: $out"
+          printf 'review_exit=2\nverify_exit=2\n' >> "$GITHUB_OUTPUT"; exit 0 ;;
+        esac
         for path in "$scope" "$out"; do
           case "$path/" in "$workspace"/*) ;; *)
             # Only the workspace is mounted into the container.
