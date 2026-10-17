@@ -138,7 +138,9 @@ materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
 series/parallel networks; unsupported conductors leave coverage incomplete.
 The [connectivity resolver](docs/connectivity-ir.md) elaborates explicit captured
-symbol pins and scoped sheet ports into physical nets. Hierarchical port names
+symbol pins and scoped sheet ports into physical nets. Symbols from libraries above
+its node limit, such as `MCU_ST_STM32H7`, are first copied into a
+[captured subset library](docs/symbol-capture.md) with source provenance. Hierarchical port names
 that would short distinct local nets are rejected. Repeated sheet files and
 multi-sheet global power remain unsupported. The [native emitter](docs/schematic-emitter.md)
 produces flat and supported hierarchical schematics from that captured intent.

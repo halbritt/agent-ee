@@ -77,7 +77,10 @@ numbers remain distinct. Power classification never follows net-name heuristics.
 
 The tokenizer handles quoted strings, escapes, semicolon comments and nested
 lists. Library input is limited to 32 MiB, 128 nesting levels and two million
-nodes. Intent JSON is limited to 8 MiB and declaration arrays to 10,000 entries.
+nodes. A library over the node limit fails closed with a
+`library_coverage` finding that names the limit and the extraction route. Capture
+the needed symbols with [large-symbol capture](symbol-capture.md) and declare the
+subset library instead. Intent JSON is limited to 8 MiB and declaration arrays to 10,000 entries.
 Only finite coordinates exactly representable in nanometres are supported.
 
 `canonical_resolved(record)` produces deterministic compact UTF-8 JSON. The

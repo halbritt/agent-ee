@@ -8,13 +8,21 @@ ELECTRICAL_TYPES = frozenset(('input', 'output', 'bidirectional', 'tri_state', '
                               'open_collector', 'open_emitter', 'no_connect'))
 
 
+# Shared reader bounds. Larger stock libraries are not parsed whole; capture the
+# needed symbols first (AGENTEE-110), which then go through this same reader.
+BYTE_LIMIT = 32 * 1024 * 1024
+NODE_LIMIT = 2000000
+DEPTH_LIMIT = 128
+EXTRACTION_ROUTE = 'python -m agent_ee.symbol_capture'
+
+
 class LibraryError(ValueError):
     pass
 
 
 def parse_sexpr(data):
     """Parse one bounded, complete S-expression without a format-specific root."""
-    if not isinstance(data, bytes) or len(data) > 32 * 1024 * 1024:
+    if not isinstance(data, bytes) or len(data) > BYTE_LIMIT:
         raise LibraryError('library must be bytes, at most 32 MiB')
     try:
         text = data.decode('utf-8')
@@ -32,13 +40,14 @@ def parse_sexpr(data):
             pos = len(text) if end < 0 else end + 1
             continue
         nodes += 1
-        if nodes > 2000000:
-            raise LibraryError('library node limit exceeded')
+        if nodes > NODE_LIMIT:
+            raise LibraryError(f'library node limit exceeded ({NODE_LIMIT} nodes); capture the needed '
+                               f'symbols into a subset library with {EXTRACTION_ROUTE}')
         if char == '(':
             node = []
             (stack[-1] if stack else roots).append(node)
             stack.append(node)
-            if len(stack) > 128:
+            if len(stack) > DEPTH_LIMIT:
                 raise LibraryError('library nesting limit exceeded')
             pos += 1
         elif char == ')':
