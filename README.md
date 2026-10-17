@@ -180,9 +180,10 @@ that use the captured baseline, sandbox and coordinator seal; selection binds on
 explicit requirement. They do not authenticate upstream claims or establish
 circuit acceptance. Real upstream catalog qualification remains pending.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
-geometry with native KiCad footprints, including pad numbering. Its owned controls
-are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap
-threshold, so that acceptance example remains unresolved.
+geometry with native KiCad footprints, including pad numbering. It accepts by an
+absolute overlap threshold or by declared variant discrimination. The actual C11702
+pattern fails 0.98 against the 0402 footprint. Under variant discrimination it passes
+against the 0402 footprint and is a defect against the 0603.
 
 [Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
 URLs before offline checks, with byte limits, deadlines and per-part missing

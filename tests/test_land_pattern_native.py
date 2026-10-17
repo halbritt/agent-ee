@@ -2,12 +2,14 @@
 from fractions import Fraction
 import hashlib
 import math
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from agent_ee.footprint_library import canonical
 from agent_ee.land_pattern import board_footprint, board_footprints, library_footprint
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from land_pattern_fixtures import manifest
 from toolchain import require_toolchain
 

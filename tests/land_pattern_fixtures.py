@@ -92,3 +92,9 @@ def chip(pitch_units, w_units, h_units):
 def chip_kicad(pitch_mm, w_mm, h_mm):
     return (f'(pad "1" smd rect (at -{pitch_mm} 0) (size {w_mm} {h_mm}) (layers "F.Cu" "F.Mask")) '
             f'(pad "2" smd rect (at {pitch_mm} 0) (size {w_mm} {h_mm}) (layers "F.Cu" "F.Mask"))')
+
+
+def chip_roundrect_kicad(pitch_mm, w_mm, h_mm, rratio='0.25'):
+    return ''.join(f'(pad "{n}" smd roundrect (at {sign}{pitch_mm} 0) (size {w_mm} {h_mm}) '
+                   f'(layers "F.Cu" "F.Mask" "F.Paste") (roundrect_rratio {rratio})) '
+                   for n, sign in (('1', '-'), ('2', '')))

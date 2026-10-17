@@ -3,17 +3,20 @@ import copy
 from fractions import Fraction
 import hashlib
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_ee.easyeda_footprint import SupplierError, parse_package
 from agent_ee.footprint_library import canonical
 from agent_ee.land_pattern import (PatternError, board_footprint, board_footprints, capability, evaluate,
                                    extract_footprint, main, replay, validate_criteria)
 from agent_ee.symbol_library import parse_sexpr
-from land_pattern_fixtures import (MODEL, SILK, SOT_KICAD, chip, chip_kicad, component, kicad_footprint,
-                                   manifest, pad, provenance, sot_supplier)
+from land_pattern_fixtures import (MODEL, SILK, SOT_KICAD, chip, chip_kicad, chip_roundrect_kicad, component,
+                                   kicad_footprint, manifest, pad, provenance, sot_supplier)
 
 
 def ratio(record):
@@ -248,13 +251,17 @@ class Workspace:
             members[LIB + name + '.kicad_mod'] = data
         self.write('lib/manifest.json', canonical(manifest(members)))
 
-    def require(self, ref, lcsc, binding, native, rotation='0', translation='declared_origin', aliases=None):
-        self.requirements.append(dict(reference=ref, lcsc=lcsc, supplier=binding, native=native,
-                                      registration=dict(translation=translation, rotation=rotation, mirror=False),
-                                      pin_aliases=aliases))
+    def require(self, ref, lcsc, binding, native, rotation='0', translation='declared_origin', aliases=None,
+                acceptance=None):
+        item = dict(reference=ref, lcsc=lcsc, supplier=binding, native=native,
+                    registration=dict(translation=translation, rotation=rotation, mirror=False), pin_aliases=aliases)
+        if acceptance is not None:
+            item['acceptance'] = acceptance
+        self.requirements.append(item)
 
     def criteria(self, **override):
-        value = dict(schema='agent-ee.land-pattern-criteria/1', threshold='0.98', pin_tolerance_nm='100000',
+        version = 2 if any('acceptance' in r for r in self.requirements) else 1
+        value = dict(schema=f'agent-ee.land-pattern-criteria/{version}', threshold='0.98', pin_tolerance_nm='100000',
                      source_tolerance_nm='200', refinement_levels=[2, 4, 8, 16], library_manifest='lib/manifest.json',
                      requirements=copy.deepcopy(self.requirements))
         value.update(override)
@@ -412,6 +419,133 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual((record['execution'], record['mode']), ('unsupported', 'native_missing'))
 
 
+# Published pad dimensions as facts (no supplier or library file is copied): the
+# EasyEDA C11702 land pattern has 2.227 x 2.126 unit RECT pads at +-1.704 units
+# (0.5657 x 0.5400 mm at +-0.4328 mm); KiCad 10 stock R_0201/R_0402/R_0603
+# pads are 0.25-ratio roundrects 0.46 x 0.40 at +-0.32, 0.54 x 0.64 at +-0.51
+# and 0.80 x 0.95 at +-0.825 mm.
+C11702_SHAPES = chip(Fraction('1.704'), '2.227', '2.126')
+VARIANTS = {'R0201': chip_roundrect_kicad('0.32', '0.46', '0.4'),
+            'R0402': chip_roundrect_kicad('0.51', '0.54', '0.64'),
+            'R0603': chip_roundrect_kicad('0.825', '0.8', '0.95')}
+
+
+def sampled_iou(supplier_pad, native_pad, step=0.002):
+    """Independent float control: midpoint sampling of one rect pad against one roundrect pad (mm)."""
+    (sx, sw, sh), (nx, nw, nh, r) = supplier_pad, native_pad
+    def inside_native(x, y):
+        dx, dy = max(abs(x - nx) - (nw / 2 - r), 0), max(abs(y) - (nh / 2 - r), 0)
+        return abs(x - nx) <= nw / 2 and abs(y) <= nh / 2 and dx * dx + dy * dy <= r * r
+    x0, x1 = min(sx - sw / 2, nx - nw / 2), max(sx + sw / 2, nx + nw / 2)
+    y1 = max(sh, nh) / 2
+    inter = union = 0
+    for i in range(int((x1 - x0) / step) + 1):
+        x = x0 + (i + 0.5) * step
+        for j in range(int(2 * y1 / step) + 1):
+            y = -y1 + (j + 0.5) * step
+            a = abs(x - sx) <= sw / 2 and abs(y) <= sh / 2
+            b = inside_native(x, y)
+            inter += a and b
+            union += a or b
+    return inter / union
+
+
+class NearestVariantTests(unittest.TestCase):
+    """Declared variant discrimination (criteria /2); the absolute threshold rule is unchanged."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.ws = Workspace(tmp.name)
+        self.ws.library(dict(VARIANTS, R0402_COPY=VARIANTS['R0402'], SOT=SOT_KICAD))
+        self.binding = self.ws.supplier('R1', 'C11702', C11702_SHAPES)
+
+    @staticmethod
+    def nearest(*names):
+        return dict(rule='nearest_variant', alternatives=[lib(n) for n in names])
+
+    def test_0402_pattern_is_nearest_to_0402_and_bound_0603_is_a_defect(self):
+        self.ws.require('R1', 'C11702', self.binding, lib('R0402'), acceptance=self.nearest('R0201', 'R0603'))
+        self.ws.require('R2', 'C11702', self.binding, lib('R0603'), acceptance=self.nearest('R0201', 'R0402'))
+        self.ws.require('R3', 'C11702', self.binding, lib('R0402'), acceptance=dict(rule='threshold'))
+        report = self.ws.evaluate(pin_tolerance_nm='250000')
+        good, wrong, absolute = report['references']
+        self.assertEqual((good['execution'], good['outcome'], good['modes']), ('ok', 'pass', ['match']))
+        self.assertEqual([(p['native'], p['supplier']) for p in good['pins']['pairs']], [('1', '1'), ('2', '2')])
+        self.assertEqual([(v['lib_id'], v['relation']) for v in good['variants']],
+                         [('Owned:R0201', 'farther'), ('Owned:R0603', 'farther')])
+        self.assertTrue(all(ratio(good['score']['lower']) > ratio(v['score']['upper']) for v in good['variants']))
+        self.assertNotIn('decision', good['copper']['F.Cu'])
+        # The bound IoU is reported and contains an independent float control (about 0.6713).
+        control = sampled_iou((0.4328, 0.5657, 0.54), (0.51, 0.54, 0.64, 0.135))
+        metric = good['copper']['F.Cu']
+        self.assertLess(ratio(metric['lower']), control)
+        self.assertLess(control, ratio(metric['upper']))
+        self.assertAlmostEqual(control, 0.671, delta=0.002)
+        self.assertEqual(good['score']['presented'], metric['presented'])
+        # The same part bound to the 0603 footprint is a defect with both IoUs reported.
+        self.assertEqual((wrong['execution'], wrong['outcome']), ('ok', 'defect'))
+        self.assertEqual(wrong['modes'], ['variant_mismatch', 'pin_mapping_unavailable'])
+        nearer = {v['lib_id']: v for v in wrong['variants']}
+        self.assertEqual(nearer['Owned:R0402']['relation'], 'nearer')
+        self.assertEqual(nearer['Owned:R0402']['score'], good['score'])
+        self.assertLess(ratio(wrong['score']['upper']), Fraction('0.19'))
+        self.assertIn(dict(path=LIB + 'R0402.kicad_mod', sha256=nearer['Owned:R0402']['sha256']),
+                      wrong['witness']['inputs'])
+        # The absolute 0.98 threshold rule on the same pair is unchanged: low accuracy.
+        self.assertEqual((absolute['outcome'], absolute['modes']), ('defect', ['low_accuracy']))
+        self.assertEqual(absolute['copper']['F.Cu']['decision'], 'defect')
+        self.assertEqual((report['execution'], report['outcome'], report['coverage']), ('ok', 'defect', 'complete'))
+        self.assertEqual(report['counts']['passed'], 1)
+        # Byte-identical reruns, replay, and the CLI give the same sealed report.
+        self.assertEqual(canonical(report), canonical(self.ws.evaluate(pin_tolerance_nm='250000')))
+        criteria = self.ws.criteria(pin_tolerance_nm='250000')
+        self.assertTrue(replay(report, criteria, dict(self.ws.files)))
+        tampered = dict(self.ws.files)
+        tampered[LIB + 'R0201.kicad_mod'] += b' '
+        self.assertFalse(replay(report, criteria, tampered))
+        self.ws.write('criteria.json', canonical(criteria))
+        out = self.ws.root / 'out.json'
+        main([str(self.ws.root / 'criteria.json'), '--captures', str(self.ws.root), '--out', str(out)])
+        self.assertEqual(json.loads(out.read_bytes()), report)
+
+    def test_indistinguishable_alternative_is_unknown_never_pass(self):
+        self.ws.require('R1', 'C11702', self.binding, lib('R0402'), acceptance=self.nearest('R0402_COPY', 'R0603'))
+        # Identical geometry never separates; every declared refinement level is spent.
+        report = self.ws.evaluate(pin_tolerance_nm='250000', refinement_levels=[2, 4])
+        record = report['references'][0]
+        self.assertEqual((record['execution'], record['outcome'], record['modes']),
+                         ('ok', 'unknown', ['variant_unresolved']))
+        self.assertEqual([v['relation'] for v in record['variants']], ['unresolved', 'farther'])
+        self.assertEqual(record['refinement'], 4)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'unknown'))
+
+    def test_pin_conflict_stands_even_when_bound_is_nearest(self):
+        binding = self.ws.supplier('U1', 'C900000003', sot_supplier(('2', '1', '3')))
+        self.ws.require('U1', 'C900000003', binding, lib('SOT'), rotation='90', acceptance=self.nearest('R0603'))
+        record = self.ws.evaluate()['references'][0]
+        self.assertEqual((record['outcome'], record['modes']), ('defect', ['pin_conflict']))
+        self.assertEqual(ratio(record['score']['lower']), 1)
+        self.assertEqual(record['variants'][0]['relation'], 'farther')
+        self.ws.requirements[0]['pin_aliases'] = {'1': '2', '2': '1', '3': '3'}
+        self.assertEqual(self.ws.evaluate()['references'][0]['outcome'], 'pass')
+
+    def test_missing_or_unsupported_alternative_never_passes(self):
+        self.ws.require('R1', 'C11702', self.binding, lib('R0402'), acceptance=self.nearest('R0603', 'ABSENT'))
+        report = self.ws.evaluate(pin_tolerance_nm='250000')
+        record = report['references'][0]
+        self.assertEqual((record['execution'], record['outcome'], record['mode']),
+                         ('unsupported', 'unknown', 'native_missing'))
+        self.assertIn('alternative Owned:ABSENT', record['message'])
+        self.assertEqual((report['execution'], report['outcome'], report['coverage']),
+                         ('unsupported', 'unknown', 'incomplete'))
+        self.ws.library(dict(VARIANTS, CUSTOM=VARIANTS['R0603'].replace('(roundrect_rratio 0.25)',
+                                                                          '(roundrect_rratio 0.25) (chamfer top_left)', 1)))
+        self.ws.requirements[0]['acceptance'] = self.nearest('CUSTOM')
+        record = self.ws.evaluate(pin_tolerance_nm='250000')['references'][0]
+        self.assertEqual((record['execution'], record['mode']), ('unsupported', 'unsupported_shape'))
+
+
 class CriteriaTests(unittest.TestCase):
     def criteria(self):
         ws = Workspace('/nonexistent')
@@ -438,6 +572,39 @@ class CriteriaTests(unittest.TestCase):
         ]
         for index, mutate in enumerate(mutations):
             criteria = self.criteria()
+            mutate(criteria)
+            with self.subTest(index=index), self.assertRaises((ValueError, TypeError)):
+                validate_criteria(criteria)
+            report = evaluate(criteria, {})
+            self.assertEqual((report['execution'], report['outcome']), ('malformed', 'unknown'))
+
+    def test_acceptance_rule_is_required_by_v2_and_refused_by_v1(self):
+        def v2():
+            criteria = self.criteria()
+            criteria['schema'] = 'agent-ee.land-pattern-criteria/2'
+            criteria['requirements'][0]['acceptance'] = dict(rule='nearest_variant', alternatives=[lib('ALT')])
+            return criteria
+        validate_criteria(v2())
+        criteria = v2()
+        criteria['requirements'][0]['acceptance'] = dict(rule='threshold')
+        validate_criteria(criteria)
+        mutations = [
+            lambda c: c['requirements'][0].pop('acceptance'),
+            lambda c: c.update(schema='agent-ee.land-pattern-criteria/1'),
+            lambda c: c['requirements'][0].update(acceptance=None),
+            lambda c: c['requirements'][0].update(acceptance=dict(rule='best_of', alternatives=[lib('ALT')])),
+            lambda c: c['requirements'][0].update(acceptance=dict(rule='threshold', alternatives=[])),
+            lambda c: c['requirements'][0]['acceptance'].update(alternatives=[]),
+            lambda c: c['requirements'][0]['acceptance'].update(alternatives=[lib('SOT')]),
+            lambda c: c['requirements'][0]['acceptance'].update(alternatives=[lib('ALT'), lib('ALT')]),
+            lambda c: c['requirements'][0]['acceptance'].update(alternatives=[dict(source='board')]),
+            lambda c: c['requirements'][0]['acceptance'].update(alternatives=[dict(source='library', lib_id='ALT')]),
+            lambda c: c['requirements'][0]['acceptance'].update(alternatives=[lib(str(i)) for i in range(17)]),
+            lambda c: c['requirements'][0]['acceptance'].update(margin='0.1'),
+            lambda c: c.update(library_manifest=None),
+        ]
+        for index, mutate in enumerate(mutations):
+            criteria = v2()
             mutate(criteria)
             with self.subTest(index=index), self.assertRaises((ValueError, TypeError)):
                 validate_criteria(criteria)
@@ -488,7 +655,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'))
         self.assertEqual(report['references'][0]['mode'], 'input_missing')
 
-    def test_adapter_runs_offline_in_the_existing_sandbox(self):
+    def sandboxed(self):
         from toolchain import require_toolchain
         require_toolchain()
         import shutil
@@ -503,11 +670,28 @@ class AdapterTests(unittest.TestCase):
                   time.monotonic() + 120)
         from agent_ee.land_pattern import check_land_pattern
         check_land_pattern(ctx)
-        self.assertEqual((ctx.result['execution'], ctx.result['outcome']), ('ok', 'defect'))
-        self.assertEqual(ctx.result['location'], 'U1:pin_conflict')
         self.assertIn('work/lp/land-pattern.json', ctx.result['evidence'])
         self.assertEqual(ctx.result['details']['report'], evaluate(self.ws.criteria(), dict(self.ws.files)))
         self.assertEqual(ctx.result['details']['tool']['exit_code'], 0)
+        return ctx
+
+    def test_adapter_runs_offline_in_the_existing_sandbox(self):
+        ctx = self.sandboxed()
+        self.assertEqual((ctx.result['execution'], ctx.result['outcome']), ('ok', 'defect'))
+        self.assertEqual(ctx.result['location'], 'U1:pin_conflict')
+
+    def test_nearest_variant_criteria_run_in_the_sandbox(self):
+        self.ws.library(dict(VARIANTS, SOT=SOT_KICAD))
+        self.ws.requirements = []
+        self.ws.require('R1', 'C11702', self.ws.supplier('R1', 'C11702', C11702_SHAPES), lib('R0603'),
+                        acceptance=dict(rule='nearest_variant', alternatives=[lib('R0402')]))
+        self.ws.write('criteria.json', canonical(self.ws.criteria()))
+        files = dict.fromkeys(self.ws.files, 'hash')
+        inputs = capability(dict(criteria='criteria.json'), self.scope, files, self.ws.root, 'lp')['immutable_inputs']
+        self.assertIn(LIB + 'R0402.kicad_mod', inputs)
+        ctx = self.sandboxed()
+        self.assertEqual((ctx.result['execution'], ctx.result['outcome']), ('ok', 'defect'))
+        self.assertEqual(ctx.result['location'], 'R1:variant_mismatch,pin_mapping_unavailable')
 
 
 if __name__ == '__main__':
