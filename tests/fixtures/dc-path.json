@@ -1,0 +1,13 @@
+{
+  "schema": "agent-ee.dc-path-expectations/1",
+  "straight": 0.019702857142857143,
+  "series": 0.019702857142857143,
+  "parallel": 0.009851428571428572,
+  "arc": 0.030949681911873,
+  "narrow": 0.03940571428571429,
+  "long": 0.03940571428571429,
+  "drop_limit_v": 0.03,
+  "rho_ohm_m": 1.724e-8,
+  "thickness_m": 0.000035,
+  "current_a": 1.0
+}
