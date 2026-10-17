@@ -174,8 +174,9 @@ a passing run on a separate schematic cannot qualify the block.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
-captured library pin references. These checks do not yet establish that an
-assignment declaration covers the actual schematic inventory.
+captured library pin references. The [native-bound mode](docs/native-binding.md)
+requires the declaration to match every native board component, its exact
+selection and its captured library pins; declared-only reports remain distinct.
 
 The [placement check](docs/placement.md#placement-check-kind) grades one
 declared criterion per check: native DRC courtyard overlap and footprint

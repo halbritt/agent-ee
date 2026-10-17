@@ -276,8 +276,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = descriptor['predicates']
         elif kind == 'footprint_assignment':
             from .library_checks import capability
-            descriptor = capability(params, files, inputs)
+            descriptor = capability(params, files, inputs, scope, spec['id'])
             captured(params['declaration'])
+            if 'netlist_check' in params:
+                prerequisite(params['netlist_check'], ('netlist',))
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']

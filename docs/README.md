@@ -94,4 +94,6 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
+- [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
+- [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.

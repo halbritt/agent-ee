@@ -4,8 +4,10 @@
 complete pinned footprint membership and the shared symbol resolver's **whole
 device** pin inventory. It does not infer schematic instance binding or select
 packages. Every unconnected pin and every unit participates. The declaration is
-the selected-component authority; checking a schematic requires a separate native
-binding check.
+the selected-component authority in this declared-only mode
+(`footprint:assignment-parity/1`). Adding `netlist_check` selects the
+[native-bound mode](native-binding.md), which binds the declaration to the
+actual native design.
 
 The manifest is JSON with schema `agent-ee.footprint-libraries/1`, `complete: true`,
 and `libraries`, a list of `{name, members}`. Each member is an exact safe relative
