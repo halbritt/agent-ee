@@ -127,3 +127,34 @@ class JudgeTest(unittest.TestCase):
         board['board_sha256'] = ''
         with self.assertRaises(ValueError):
             judge(board)
+
+    def test_off_board_parts_listed_and_reasons_name_the_unknown(self):
+        outline = polygon([(0, 0), (10, 0), (10, 10), (6, 10), (6, 4), (4, 4), (4, 10), (0, 10)])
+        report = judge(capture([part('U1', 2, 6, shape=rectangle(2, 6, 6, 2)), part('C1', 1, 1)], outline))
+        self.assertEqual(report['off_board'], ['U1'])
+        self.assertEqual(judge(capture([part('U1', 2, 2)]))['off_board'], [])
+        for status in ('outline_missing', 'outline_unproven'):
+            board = capture([part('U1', 2, 2)])
+            board['outline'] = {'status': status}
+            self.assertEqual(judge(board)['unknown'], [{'kind': 'outline', 'reason': status}])
+        board = capture([part('U1', 2, 2), part('C1', 8, 8)])
+        board['footprints'][1]['courtyards'] = {}
+        report = judge(board)
+        self.assertEqual(report['unknown'], [{'kind': 'courtyard', 'ref': 'C1', 'reason': 'missing'}])
+        self.assertEqual(report['verdict'], 'unknown')
+
+    def test_connector_edge_advisory_deducts_without_deciding_verdict(self):
+        board = capture([part('J1', 1, 9), part('J2', 9, 9)])
+        policy = {'schema': 'agent-ee.placement-policy/1', 'ground_nets': [], 'ic_refs': [],
+                  'connector_refs': ['J1', 'J2'], 'max_shared_refs': 8, 'capacitors': {},
+                  'connector_edge': {'max_distance_mm': 2, 'deduction': 10}}
+        report = judge(board, policy)
+        self.assertEqual([(a['kind'], a['ref'], a['distance_mm']) for a in report['advisories']],
+                         [('connector_edge_distance', 'J2', 9)])
+        self.assertEqual((report['score'], report['verdict']), (90, 'pass'))
+        board['outline'] = {'status': 'outline_unproven'}
+        report = judge(board, policy)
+        self.assertEqual((report['score'], report['advisories'], report['verdict']), (100, [], 'unknown'))
+        policy['connector_edge'] = {'max_distance_mm': -1, 'deduction': 10}
+        with self.assertRaises(ValueError):
+            judge(board, policy)

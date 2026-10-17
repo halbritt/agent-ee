@@ -14,7 +14,8 @@ full polygons, including concave boundaries, using exact rational intersections.
 Positive-area same-layer courtyard intersection and positive-area courtyard
 outside a proven closed outline produce `verdict=hard_fail`, `outcome=defect`.
 Opposite-side courtyards and boundaries that only touch do not overlap. Findings
-name references, side and intersection/outside area in square millimetres.
+name references, side and intersection/outside area in square millimetres;
+`off_board` lists the references with positive area outside the outline.
 
 A proven contour requires straight, closed, non-self-intersecting geometry.
 Segment endpoints must match exactly and have degree two. Rectangles and simple
@@ -39,11 +40,16 @@ contains `max_distance_mm` and `deduction` for an advisory nearest-outline-edge
 centre distance. Advisories reduce the initial score of 100 down to a minimum
 of zero; they never produce a defect or turn unknown geometry into a pass.
 
-The independent owned two-cap example declares 100 nF at 2.5 mm and 1 µF at
-5 mm, with a deduction of 15 per distant cap, giving score 70. This is **not**
-the upstream Konnect fixture or evidence of its exact numerical acceptance.
-No upstream code or design files were copied. That ticket criterion remains
-unmet pending qualified fixture provenance and publication authorization.
+The owned native SOIC-8 board with two 0402 capacitors
+(`NativeDecouplingScoreTest` in `tests/test_placement_native.py`) declares
+100 nF at 2.5 mm and 1 µF at 5 mm with a deduction of 15 each. Saved by pcbnew
+and probed in the tool sandbox, it scores 70 with only the two decoupling
+advisories, naming C1 and C2, and no hard failure. Moving C1 onto U1's
+courtyard is `hard_fail` whether the score is 70 or, under a lenient policy,
+100. A VBUS capacitor 2.25 mm from its connector is an `interface_filter` with
+no deduction although it also shares VBUS with U1. The footprint geometry is
+written in the test. It is **not** the upstream Konnect fixture: that AGPL design
+file was not copied, so its exact numbers have not been reproduced.
 
 ## Placement check kind
 

@@ -275,8 +275,9 @@ def judge(capture, policy=None):
     failures, unknown = _geometry(capture)
     associations, advisories, score = _advisories(capture, policy)
     verdict = 'hard_fail' if failures else 'unknown' if unknown else 'pass'
+    off_board = sorted({f['ref'] for f in failures if f['kind'] == 'outside_outline'})
     return {'schema': 'agent-ee.placement-judgment/1', 'board_sha256': capture['board_sha256'],
             'verdict': verdict, 'outcome': {'hard_fail': 'defect', 'unknown': 'unknown', 'pass': 'pass'}[verdict],
-            'score': score, 'hard_failures': failures, 'unknown': unknown,
+            'score': score, 'hard_failures': failures, 'off_board': off_board, 'unknown': unknown,
             'associations': associations, 'advisories': advisories, 'policy': policy,
             'authority': 'standalone-unsealed'}
