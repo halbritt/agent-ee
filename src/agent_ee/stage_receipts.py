@@ -6,11 +6,13 @@ are never receipts. A receipt never makes a check pass: acceptance still comes o
 from fresh sealed checks of the captured proposal.
 """
 
+import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import time
 import uuid
 from pathlib import Path, PurePosixPath
@@ -29,8 +31,12 @@ SYSTEM_PREFIXES = ('/usr/', '/bin/', '/sbin/', '/lib/', '/lib64/')
 RESERVED_MOUNTS = ('/candidate', '/work', '/app', '/usr', '/bin', '/sbin', '/lib', '/lib64',
                    '/etc', '/proc', '/dev', '/tmp', '/home', '/run')
 EXECUTOR_FILES = ('stdout.log', 'stderr.log', 'console.log', 'execution.json', 'home')
+RECORD_FILES = ('execution.json', 'stdout.log', 'stderr.log', 'console.log')
 REPORT_LIMIT = 1_000_000
 REPORT_DEPTH = 64
+TREE_DEPTH = 128
+# Every lookup below a run root opens one component at a time and never follows a link.
+NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 VERSION_TIMEOUT_S = 30
 STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'source',
              'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s'}
@@ -153,25 +159,114 @@ def validate_step(spec, *, host=True):
             'adoptable_exits': sorted(exits), 'timeout_s': timeout}
 
 
+def _digest_fd(descriptor):
+    h = hashlib.sha256()
+    with os.fdopen(descriptor, 'rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _lookup(root, rel):
+    """('ok', fd), ('missing', None) or ('unsafe', None) for root/rel.
+
+    Each component is opened relative to its parent without following links, so a link
+    or special entry anywhere below root is never traversed. root itself is coordinator-owned.
+    """
+    try:
+        current = os.open(root, NOFOLLOW | os.O_DIRECTORY)
+    except FileNotFoundError:
+        return 'missing', None
+    except OSError:
+        return 'unsafe', None
+    try:
+        parts = PurePosixPath(rel).parts
+        for part in parts[:-1]:
+            child = os.open(part, NOFOLLOW | os.O_DIRECTORY, dir_fd=current)
+            os.close(current)
+            current = child
+        return 'ok', os.open(parts[-1], NOFOLLOW, dir_fd=current)
+    except FileNotFoundError:
+        return 'missing', None
+    except OSError:
+        return 'unsafe', None
+    finally:
+        os.close(current)
+
+
+def _exists(root, rel):
+    """Whether any entry, of any type, is at root/rel; links are not followed."""
+    state, descriptor = _lookup(root, rel)
+    if descriptor is not None:
+        os.close(descriptor)
+    return state != 'missing'
+
+
+def _regular(root, rel, *, content=False, limit=None):
+    """('file', sha256), ('missing', None) or ('unsafe', None).
+
+    content=True returns the bytes instead, at most limit + 1 of them when limit is given.
+    """
+    state, descriptor = _lookup(root, rel)
+    if state != 'ok':
+        return state, None
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        return 'unsafe', None
+    if not content:
+        return 'file', _digest_fd(descriptor)
+    with os.fdopen(descriptor, 'rb') as stream:
+        return 'file', stream.read(-1 if limit is None else limit + 1)
+
+
+def _scan(descriptor, files, other):
+    """Walk an open directory without following links; consumes descriptor."""
+    try:
+        stack = [(descriptor, '', iter(sorted(os.listdir(descriptor))))]
+    except OSError as exc:
+        os.close(descriptor)
+        raise ValueError('directory cannot be listed') from exc
+    try:
+        while stack:
+            current, prefix, names = stack[-1]
+            name = next(names, None)
+            if name is None:
+                os.close(current)
+                stack.pop()
+                continue
+            rel = prefix + name
+            try:
+                child = os.open(name, NOFOLLOW, dir_fd=current)
+            except OSError:
+                other.append(rel)
+                continue
+            mode = os.fstat(child).st_mode
+            if stat.S_ISREG(mode):
+                files[rel] = _digest_fd(child)
+            elif stat.S_ISDIR(mode) and len(stack) < TREE_DEPTH:
+                try:
+                    entries = iter(sorted(os.listdir(child)))
+                except OSError:
+                    os.close(child)
+                    other.append(rel)
+                    continue
+                stack.append((child, rel + '/', entries))
+            else:
+                os.close(child)
+                other.append(rel)
+    finally:
+        for current, _, _ in stack:
+            os.close(current)
+
+
 def file_tree(root):
     """Regular files by relative path, plus every link or special entry."""
-    root = Path(root)
+    try:
+        descriptor = os.open(root, NOFOLLOW | os.O_DIRECTORY)
+    except OSError as exc:
+        raise ValueError(f'tree root is not a directory: {root}') from exc
     files, other = {}, []
-    if root.is_symlink() or not root.is_dir():
-        raise ValueError(f'tree root is not a directory: {root}')
-    for current, dirs, names in os.walk(root, followlinks=False):
-        base = Path(current)
-        for name in list(dirs):
-            if (base / name).is_symlink():
-                other.append((base / name).relative_to(root).as_posix())
-                dirs.remove(name)
-        for name in names:
-            path = base / name
-            rel = path.relative_to(root).as_posix()
-            if path.is_symlink() or not path.is_file():
-                other.append(rel)
-            else:
-                files[rel] = digest(path)
+    _scan(descriptor, files, other)
     return dict(sorted(files.items())), sorted(other)
 
 
@@ -251,8 +346,13 @@ def _reported_version(spec, record, work):
     if record['execution'] != 'ok' or record['exit_code'] != 0:
         return {'status': 'unknown', 'value': None,
                 'reason': f"version probe {record['execution']} exit {record['exit_code']}"}
+    state, data = _regular(work, 'stdout.log', content=True, limit=REPORT_LIMIT)
+    if state != 'file':
+        return {'status': 'unknown', 'value': None, 'reason': 'version probe output is not a regular file'}
+    if len(data) > REPORT_LIMIT:
+        return {'status': 'unknown', 'value': None, 'reason': 'version probe output too large'}
     try:
-        lines = (Path(work) / 'stdout.log').read_bytes().decode('utf-8').splitlines()
+        lines = data.decode('utf-8').splitlines()
     except UnicodeDecodeError:
         return {'status': 'unknown', 'value': None, 'reason': 'version probe output is not UTF-8'}
     value = lines[0].strip() if lines else ''
@@ -314,13 +414,15 @@ def _backend(spec, run):
     report = spec['backend_report']
     if report is None:
         return {'status': 'not_declared', 'value': None, 'reason': None}
-    path = Path(run) / report['artifact']
-    if path.is_symlink() or not path.is_file():
+    state, data = _regular(run, report['artifact'], content=True, limit=REPORT_LIMIT)
+    if state == 'missing':
         return {'status': 'unknown', 'value': None, 'reason': 'backend report artifact missing'}
-    if path.stat().st_size > REPORT_LIMIT:
+    if state != 'file':
+        return {'status': 'unknown', 'value': None, 'reason': 'backend report artifact is a link or special file'}
+    if len(data) > REPORT_LIMIT:
         return {'status': 'unknown', 'value': None, 'reason': 'backend report artifact too large'}
     try:
-        value = _strict_json(path.read_bytes())
+        value = _strict_json(data)
     except _Unreported as exc:
         return {'status': 'unknown', 'value': None, 'reason': f'backend report artifact {exc}'}
     if not isinstance(value, dict) or report['key'] not in value:
@@ -332,34 +434,50 @@ def _backend(spec, run):
 def _artifacts(spec, run):
     found = {}
     for declared in spec['artifacts']:
-        path = Path(run) / declared
-        if path.is_symlink():
-            found[declared] = None
-        elif path.is_file():
-            found[declared] = digest(path)
-        elif path.is_dir():
-            files, other = file_tree(path)
+        state, descriptor = _lookup(run, declared)
+        mode = os.fstat(descriptor).st_mode if state == 'ok' else None
+        if mode is not None and stat.S_ISREG(mode):
+            found[declared] = _digest_fd(descriptor)
+        elif mode is not None and stat.S_ISDIR(mode):
+            files, other = {}, []
+            try:
+                _scan(descriptor, files, other)
+            except ValueError:
+                found[declared] = None
+                continue
             found.update({f'{declared}/{rel}': sha for rel, sha in files.items()})
             found.update({f'{declared}/{rel}': None for rel in other})
             if not files and not other:
                 found[declared + '/'] = None
         else:
+            # Missing, linked (at any component) or special: recorded, never followed.
+            if descriptor is not None:
+                os.close(descriptor)
             found[declared] = None
     return dict(sorted(found.items()))
 
 
+def _writes(spec, run):
+    """Observed write sources: target -> ('file'|'missing'|'unsafe', sha256 or None)."""
+    return {target: _regular(run, produced) for target, produced in spec['writes'].items()}
+
+
 def _outputs(spec, run):
-    outputs = {}
-    for target, produced in spec['writes'].items():
-        path = Path(run) / produced
-        outputs[target] = digest(path) if path.is_file() and not path.is_symlink() else None
-    return outputs
+    return {target: sha for target, (_, sha) in _writes(spec, run).items()}
 
 
-def _violations(spec, inputs, run, outputs, tool, tool_after):
+def _records(work):
+    """Executor record files: name -> ('file'|'missing'|'unsafe', sha256 or None)."""
+    return {name: _regular(work, name) for name in RECORD_FILES}
+
+
+def _violations(spec, inputs, receipt_dir, tool, tool_after, executions):
     violations = []
-    design = Path(run) / 'design'
-    files, other = file_tree(design) if design.is_dir() and not design.is_symlink() else ({}, ['.'])
+    run = Path(receipt_dir) / 'run'
+    try:
+        files, other = file_tree(run / 'design')
+    except ValueError:
+        files, other = {}, ['.']
     in_place = {t for t, p in spec['writes'].items() if p == 'design/' + t}
     for rel in sorted(set(files) ^ set(inputs) | set(other)):
         if rel not in in_place:
@@ -367,7 +485,21 @@ def _violations(spec, inputs, run, outputs, tool, tool_after):
     for rel in sorted(set(files) & set(inputs)):
         if files[rel] != inputs[rel] and rel not in in_place:
             violations.append('write_outside_scope:' + rel)
-    violations += ['missing_output:' + rel for rel, sha in outputs.items() if sha is None]
+    writes = _writes(spec, run)
+    violations += ['missing_output:' + rel for rel, (state, _) in writes.items() if state == 'missing']
+    violations += ['unsafe_output:' + rel for rel, (state, _) in writes.items() if state == 'unsafe']
+    # A tool can plant a link where the executor later writes its own records, or leave
+    # /work unwritable so that the executor cannot write them at all.
+    for name in ('version', 'run'):
+        work = Path(receipt_dir) / name
+        records = _records(work)
+        for record, (state, _) in records.items():
+            if state == 'unsafe' or (state == 'missing' and executions[name] is not None):
+                violations.append(f'executor_record_unsafe:{name}/{record}')
+        # The executor creates home/ before launch, so its presence shows the step was entered.
+        entered = _exists(work, 'home') or any(st != 'missing' for st, _ in records.values())
+        if executions[name] is None and entered:
+            violations.append(f'executor_record_missing:{name}')
     if tool['executable'] != tool_after['executable'] or tool['executable']['sha256'] is None:
         violations.append('tool_changed')
     for before, after in zip(tool['mounts'], tool_after['mounts']):
@@ -380,7 +512,10 @@ def _violations(spec, inputs, run, outputs, tool, tool_after):
 
 
 def _status(spec, execution, violations):
-    if execution is None or execution['execution'] == 'interrupted':
+    if execution is None:
+        # No trusted executor record: an interrupt before one existed, or records the executor could not keep.
+        return 'refused' if any(v.startswith('executor_record_') for v in violations) else 'cancelled'
+    if execution['execution'] == 'interrupted':
         return 'cancelled'
     if execution['execution'] in ('timeout', 'unavailable'):
         return execution['execution']
@@ -407,7 +542,7 @@ def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=
     started_unix, start = time.time(), time.monotonic()
     receipt = {'schema': RECEIPT_SCHEMA, 'receipt_id': str(uuid.uuid4()), 'binding': binding,
                'spec': spec, 'spec_sha256': identity(spec), 'argv': spec['argv']}
-    interrupted = False
+    interrupted, failure = False, None
     execution = version_record = None
     run = receipt_dir / 'run'
     try:
@@ -430,14 +565,20 @@ def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=
                             timeout=max(.001, timeout - (time.monotonic() - start)), network=False,
                             extra_ro=mounts, cancellation=cancellation)
     except KeyboardInterrupt:
+        # The executor writes its record before re-raising an interrupt. Anything else on disk may
+        # have been planted by the tool, and at most it yields a cancelled, unadoptable receipt.
         interrupted = True
-        if (run / 'execution.json').is_file():
-            execution = read_json(run / 'execution.json')
-        if version_record is None and (receipt_dir / 'version/execution.json').is_file():
-            version_record = read_json(receipt_dir / 'version/execution.json')
+        execution = _interrupted_record(run, spec['argv'])
+        if version_record is None and spec['version_argv'] is not None:
+            version_record = _interrupted_record(receipt_dir / 'version', spec['version_argv'])
+    except Exception as exc:
+        # The executor could not keep its records, for example because the tool left /work
+        # unwritable. No record on disk is trusted; the receipt is kept and the error re-raised.
+        failure = exc
     tool_after = observe_tool(spec)
     outputs = _outputs(spec, run)
-    violations = _violations(spec, inputs, run, outputs, tool, tool_after)
+    violations = _violations(spec, inputs, receipt_dir, tool, tool_after,
+                             {'run': execution, 'version': version_record})
     receipt.update(
         tool={**tool, 'reported_version': _reported_version(spec, version_record, receipt_dir / 'version'),
               'backend': _backend(spec, run)},
@@ -452,14 +593,40 @@ def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=
     write_json(receipt_dir / 'receipt.json', receipt)
     if interrupted:
         raise KeyboardInterrupt
+    if failure is not None:
+        raise failure
     return receipt
+
+
+def _retained_record(work):
+    """The executor's record when it is a regular file reached without links, else None."""
+    state, data = _regular(work, 'execution.json', content=True, limit=REPORT_LIMIT)
+    if state != 'file' or len(data) > REPORT_LIMIT:
+        return None
+    try:
+        return _strict_json(data)
+    except _Unreported:
+        return None
+
+
+def _interrupted_record(work, argv):
+    record = _retained_record(work)
+    if not isinstance(record, dict) or record.get('execution') != 'interrupted':
+        return None
+    try:
+        _execution_record(record, work, argv)
+    except ValueError:
+        return None
+    return record
 
 
 def _execution_record(record, work, argv):
     if record is None:
         return
-    if (not isinstance(record, dict) or record != read_json(Path(work) / 'execution.json') or
-            record.get('argv') != argv):
+    records = _records(work)
+    # A linked or special record file is a recomputed violation; it is never read through.
+    if (not isinstance(record, dict) or record.get('argv') != argv or
+            (records['execution.json'][0] != 'unsafe' and record != _retained_record(work))):
         raise ValueError('stage receipt execution record differs from retained execution')
     sandbox = record.get('sandbox_argv')
     if (not isinstance(sandbox, list) or '--' not in sandbox or sandbox[sandbox.index('--') + 1:] != argv or
@@ -472,7 +639,8 @@ def _execution_record(record, work, argv):
         raise ValueError('stage receipt sandbox lacks read-only candidate or scratch binding')
     for name, key in (('stdout.log', 'stdout_sha256'), ('stderr.log', 'stderr_sha256'),
                       ('console.log', 'console_sha256')):
-        if digest(Path(work) / name) != record.get(key):
+        state, sha = records[name]
+        if state != 'unsafe' and sha != record.get(key):
             raise ValueError('stage receipt execution artifacts changed')
 
 
@@ -532,7 +700,8 @@ def validate_receipt(receipt_dir, *, binding=None):
         raise ValueError('stage receipt artifacts changed')
     if receipt['changed'] != sorted(rel for rel, sha in outputs.items() if sha != receipt['inputs'].get(rel)):
         raise ValueError('stage receipt changed paths mismatch')
-    violations = _violations(spec, receipt['inputs'], run, outputs, observed, after)
+    violations = _violations(spec, receipt['inputs'], receipt_dir, observed, after,
+                             {'run': execution, 'version': version_record})
     if receipt['violations'] != violations:
         raise ValueError('stage receipt violations mismatch')
     if receipt['status'] != _status(spec, execution, violations):
@@ -570,21 +739,47 @@ def applicability(receipts, delivered):
     return results
 
 
+def _write_beneath(root, rel, data):
+    """Write data at root/rel, creating directories, without following any link below root."""
+    current = os.open(root, NOFOLLOW | os.O_DIRECTORY)
+    try:
+        parts = PurePosixPath(rel).parts
+        for part in parts[:-1]:
+            try:
+                child = os.open(part, NOFOLLOW | os.O_DIRECTORY, dir_fd=current)
+            except FileNotFoundError:
+                os.mkdir(part, dir_fd=current)
+                child = os.open(part, NOFOLLOW | os.O_DIRECTORY, dir_fd=current)
+            os.close(current)
+            current = child
+        target = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         0o666, dir_fd=current)
+    finally:
+        os.close(current)
+    with os.fdopen(target, 'wb') as stream:
+        stream.write(data)
+
+
 def adopt(receipt_dir, receipt, design):
     """Copy an adoptable receipt's exact outputs into an unchanged design."""
     spec = receipt['spec']
     if receipt['status'] not in ADOPTABLE:
         raise ValueError(f"stage step {spec['step']} {receipt['status']}; no output adopted or substituted")
+    # Only the retained coordinator receipt, revalidated now, authorizes adoption.
+    if validate_receipt(receipt_dir) != receipt:
+        raise ValueError('stage receipt differs from the retained coordinator receipt')
     design = Path(design)
     if _strict_tree(design) != receipt['inputs']:
         raise ValueError(f"design changed during stage step {spec['step']}")
-    for target, produced in spec['writes'].items():
-        source = Path(receipt_dir) / 'run' / produced
-        if source.is_symlink() or digest(source) != receipt['outputs'][target]:
+    produced = {}
+    for target, source in spec['writes'].items():
+        state, data = _regular(Path(receipt_dir) / 'run', source, content=True)
+        if state != 'file' or hashlib.sha256(data).hexdigest() != receipt['outputs'][target]:
             raise ValueError('stage step output changed before adoption')
-        destination = design / target
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
+        produced[target] = data
+    # The bytes written are the bytes hashed above, whatever happens to the run tree meanwhile.
+    for target, data in produced.items():
+        _write_beneath(design, target, data)
     if _strict_tree(design) != after_tree(receipt):
         raise ValueError('adopted design differs from stage receipt outputs')
 
