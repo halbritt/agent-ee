@@ -99,7 +99,10 @@ a path below the run directory by name.
   links, checks the sha256 of the bytes it read, and writes those same bytes beneath the design, again
   without following links. A replaced output or ancestor is refused even when its bytes match.
 - The executor writes `stdout.log`, `stderr.log`, `console.log` and `execution.json` into `/work`
-  after the tool exits. A tool-planted link there is `executor_record_unsafe` and is never read through.
+  after the tool exits, without following or writing through any planted entry
+  ([security](security.md#candidate-permissions)). An entry the tool created or changed at one of those
+  names is moved aside and listed in the record's `displaced_records`. That, or a record that is later a
+  link or special file, is `executor_record_unsafe` and is never read through.
   If the executor cannot write its records (for example the tool left `/work` unwritable), or an interrupt
   arrives before it does, no record on disk is trusted. The receipt is kept with `execution: null`,
   `executor_record_missing` and status `refused`. A non-interrupt executor error is then re-raised. A
@@ -158,9 +161,6 @@ Campaigns created before this change have no anchors and no index, and they veri
   rung 1 record (AGENTEE-96) still needs real receipts for those three steps.
 - Whether kicad-route exits 1 and 4 should leave the writer's unrouted board as the proposal, rather than
   stopping the repair, is a decision for AGENTEE-93 and AGENTEE-88.
-- A link that a tool plants at an executor record path is written through by `executor.execute` itself,
-  before the receipt code runs. The receipt refuses such a step and never reads through the link,
-  but it cannot prevent that write. The fix belongs in the shared executor.
 - A completed receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.

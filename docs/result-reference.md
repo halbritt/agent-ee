@@ -35,7 +35,9 @@ RUN/
 Some paths do not exist if capture or execution stops early. Each native work
 directory normally has `execution.json`, `stdout.log`, `stderr.log` and combined
 `console.log`. Native programs can also produce configuration/cache files in
-their scratch. The reviewer home is removed after its invocation; credential
+their scratch. If a program left its own entry at one of those four names, the
+executor moves it to `<name>.displaced-<random>` without reading it and lists it
+in `execution.json` under `displaced_records` (`kind` and `moved_to`). The reviewer home is removed after its invocation; credential
 contents are never copied into the retained run.
 
 ## Candidate and run identities

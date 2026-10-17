@@ -515,19 +515,27 @@ class CoordinatorBoundaryTests(StepFixture):
 
     @toolchain_test
     def test_planted_executor_record_links_refuse_the_receipt_and_are_never_read(self):
-        # Targets stay inside the owned run directory: the executor itself writes through such links.
-        plan = {'files': {'design/project/board.txt': 'placed'},
-                'links': {'stdout.log': 'planted-stdout', 'execution.json.tmp': 'planted-record'}}
-        version = {'links': {'stdout.log': 'planted-version'}}
+        # Every record name, and the old fixed temporary name, links to the host-only sentinel.
+        sentinel = str(self.host / 'sentinel')
+        names = ('stdout.log', 'stderr.log', 'console.log', 'execution.json', 'execution.json.tmp')
+        plan = {'files': {'design/project/board.txt': 'placed'}, 'links': {name: sentinel for name in names}}
+        version = {'links': {'stdout.log': sentinel}}
         spec = self.plant(plan, version_argv=['/usr/bin/python3', '/tool/step.py', 'plant', json.dumps(version)])
         path, receipt = self.run_step(spec)
         self.assertEqual(receipt['execution']['exit_code'], 0)
-        for violation in ('executor_record_unsafe:run/stdout.log', 'executor_record_unsafe:run/execution.json',
-                          'executor_record_unsafe:version/stdout.log'):
-            self.assertIn(violation, receipt['violations'])
+        self.assertEqual([v for v in receipt['violations'] if v.startswith('executor_record_')],
+                         ['executor_record_unsafe:version/stdout.log',
+                          *(f'executor_record_unsafe:run/{name}' for name in
+                            ('execution.json', 'stdout.log', 'stderr.log', 'console.log'))])
+        # The executor's own captured output, not anything behind the planted link.
         self.assertEqual(receipt['tool']['reported_version'],
-                         {'status': 'unknown', 'value': None, 'reason': 'version probe output is not a regular file'})
+                         {'status': 'unknown', 'value': None, 'reason': 'version probe printed no version'})
+        for name, moved in receipt['execution']['displaced_records'].items():
+            self.assertEqual(moved['kind'], 'link')
+            self.assertEqual(os.readlink(path / 'run' / moved['moved_to']), sentinel)
+        self.assertEqual(os.readlink(path / 'run/execution.json.tmp'), sentinel)
         self.assert_refused_unadoptable(path, receipt, 'executor_record_unsafe:run/stdout.log')
+        self.assert_host_untouched(path, receipt)
 
     @toolchain_test
     def test_unwritable_work_keeps_a_refused_receipt_without_trusting_planted_records(self):
