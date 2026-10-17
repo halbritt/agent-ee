@@ -41,7 +41,10 @@ establish a well-formed or safe PDF.
 
 Each URL runs in an owned capture subprocess, with a hard elapsed-time deadline
 (default 30 seconds, maximum 60), including startup, DNS, redirects and reads.
-The child also uses the socket timeout. Responses are limited to 20 MiB by default;
+Timeout and catchable cancellation terminate and reap the owned child before
+returning or propagating the original exception. Cleanup targets only that child,
+rechecking its process start time and working directory; an already-exited child
+is reaped without signalling. The child also uses the socket timeout. Responses are limited to 20 MiB by default;
 `--max-bytes` can lower that limit. At most 256 bindings are accepted. The parent
 publishes PDFs and `manifest.json` together after processing all bindings.
 An interrupted or failed write never publishes a completed manifest: ordinary
@@ -72,6 +75,8 @@ manifest does not supply facts or substitute for those checks.
 The focused tests serve original minimal PDFs over local HTTP, deduplicate shared
 URLs, follow and reject redirects, reject HTML/oversize/truncated responses, bound
 slow responses, refuse unsafe/existing outputs, and inject a publication failure.
+Real-child lifecycle regressions cover cancellation, identity-lookup interruption,
+pipe-read failure, an already-exited child, successful retry and timeout reaping.
 An actual native netlist and Poppler citation check consume the captured original
 PDF after the HTTP server shuts down, through checks-only review and public
 verification. Deleting that PDF makes facts and pin-map coverage unknown. No

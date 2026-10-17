@@ -77,21 +77,40 @@ def _bounded_fetch(url, seconds, max_bytes):
     command = [sys.executable, '-m', 'agent_ee.datasheet_capture', '--fetch',
                url, str(seconds), str(max_bytes)]
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
-        owner = _process_identity(child.pid)
+        owner = None
         try:
-            stdout, stderr = child.communicate(timeout=seconds)
-        except subprocess.TimeoutExpired:
-            if child.poll() is None:
-                if _process_identity(child.pid) != owner:
-                    raise RuntimeError('capture child ownership changed; refusing cleanup')
-                child.kill()
-            child.communicate()
-            return {'record': {'url': url, 'final_url': None,
-                    'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
-                    'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None}
-        if child.returncode:
-            raise RuntimeError(f'capture fetch worker failed ({child.returncode}): {stderr.decode(errors="replace")}')
-        return json.loads(stdout)
+            owner = _process_identity(child.pid)
+            try:
+                stdout, stderr = child.communicate(timeout=seconds)
+            except subprocess.TimeoutExpired:
+                _stop_fetch(child, owner)
+                return {'record': {'url': url, 'final_url': None,
+                        'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
+                        'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None}
+            if child.returncode:
+                raise RuntimeError(f'capture fetch worker failed ({child.returncode}): {stderr.decode(errors="replace")}')
+            return json.loads(stdout)
+        except BaseException as exc:
+            try:
+                _stop_fetch(child, owner)
+            except BaseException as cleanup_error:
+                exc.add_note(f'capture child cleanup failed: {cleanup_error!r}')
+            raise
+
+
+def _stop_fetch(child, owner):
+    if child.poll() is None:
+        current = _process_identity(child.pid)
+        if owner is not None and (current[0] != owner[0] or
+                                  current[1] not in (owner[1], None)):
+            raise RuntimeError('capture child ownership changed; refusing cleanup')
+        # If initial identity lookup failed, Popen still owns this unreaped direct
+        # child: its PID cannot have been reused. Recheck the worktree as well.
+        if owner is None and current[1] != os.getcwd():
+            raise RuntimeError('capture child worktree changed; refusing cleanup')
+        child.kill()
+    # Do not communicate again: it may be the operation that was cancelled.
+    child.wait()
 
 
 def _parts(parts):
