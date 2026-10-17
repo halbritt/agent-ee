@@ -8,6 +8,8 @@ from pathlib import Path
 
 from .storage import digest, write_json
 
+LOAD_WITNESS = "agent_ee_tool_load_witness"
+
 
 def node(position, layer):
     return (int(position.x), int(position.y), int(layer))
@@ -67,8 +69,12 @@ def probe_board(path, constraints):
     import pcbnew
     board = pcbnew.LoadBoard(str(path))
     nets = sorted({net for c in constraints for net in c.get('nets', [])})
-    return {'pcbnew_version': pcbnew.Version(), 'board_sha256': digest(path),
-            'routes': {n: route_coverage(board, n) for n in nets}}
+    probe = {'pcbnew_version': pcbnew.Version(), 'board_sha256': digest(path),
+             'routes': {n: route_coverage(board, n) for n in nets}}
+    if any(c.get('kind') == 'fab' for c in constraints):
+        from .fab_profile import native_inventory
+        probe['fabrication'] = native_inventory(path)
+    return probe
 
 
 def stage_board(source, directory, constraint):
@@ -79,17 +85,21 @@ def stage_board(source, directory, constraint):
     project = json.loads(pro.read_text(encoding='utf-8')) if pro.is_file() else {}
     settings = project.setdefault('board', {}).setdefault('design_settings', {})
     settings['drc_exclusions'] = []
+    settings.setdefault('rules', {}).update(constraint.get('project_rules', {}))
     severities = settings.setdefault('rule_severities', {})
-    for kind in constraint['native_types']:
+    for kind in [*constraint['native_types'], 'items_not_allowed']:
         severities[kind] = 'error'
     write_json(target.with_suffix('.kicad_pro'), project)
     original = source.with_suffix('.kicad_dru')
     text = original.read_text(encoding='utf-8') if original.is_file() else '(version 1)\n'
     # Keep captured rules first; generated rule is last and isolated by constraint.
-    if constraint['marker'] in text:
+    if 'agent_ee_' in text or constraint['marker'] == LOAD_WITNESS:
         raise ValueError('captured rules collide with generated rule identity')
     generated = constraint['rules'].split('\n', 1)[1]
-    target.with_suffix('.kicad_dru').write_text(text + '\n' + generated, encoding='utf-8')
+    # KiCad 10 can discard an invalid rules file without an exit/log error.
+    # A deliberate tool-only disallow rule proves the whole file was loaded.
+    witness = f'\n(rule "{LOAD_WITNESS}" (constraint disallow track via pad))\n'
+    target.with_suffix('.kicad_dru').write_text(text + '\n' + generated + witness, encoding='utf-8')
     return target
 
 
@@ -98,6 +108,9 @@ def run_constraint(source, root, constraint, probe):
     record.update(status='not_evaluated', execution='unsupported')
     if constraint['execution'] != 'ready':
         return {**record, 'reason': constraint['reason']}
+    if 'geometry' in constraint:
+        from .fab_profile import evaluate_geometry
+        return evaluate_geometry(constraint, probe['fabrication'])
     directory = root / constraint['id']
     target = stage_board(source, directory, constraint)
     record['rules_sha256'] = digest(target.with_suffix('.kicad_dru'))
@@ -122,7 +135,7 @@ def run_constraint(source, root, constraint, probe):
     if report.get('coordinate_units') != 'mm' or not report.get('kicad_version', '').startswith('10.'):
         return {**record, 'reason': 'only KiCad 10 mm reports qualified'}
     ignored = {c['key'] for c in report['ignored_checks']}
-    if ignored.intersection(constraint['native_types']):
+    if ignored.intersection([*constraint['native_types'], 'items_not_allowed']):
         return {**record, 'reason': 'required native check ignored'}
     console = (proc.stdout + proc.stderr).decode('utf-8', errors='replace')
     if 'error' in console.lower() or any(v['type'] == 'rule_compile_error' for v in report['violations']):
@@ -132,6 +145,10 @@ def run_constraint(source, root, constraint, probe):
         record['route_coverage'] = coverage
         if not all(c['complete'] for c in coverage.values()):
             return {**record, 'reason': 'missing complete pad-to-pad route coverage'}
+    load_witness = [v for v in report['violations'] if f"rule '{LOAD_WITNESS}'" in v['description']]
+    record['tool_load_witness'] = load_witness
+    if not load_witness or any(v['severity'] != 'error' for v in load_witness):
+        return {**record, 'execution': 'malformed', 'reason': 'native custom-rule loading not established'}
     marker = f"rule '{constraint['marker']}'"
     failures = [v for v in report['violations'] if marker in v['description']]
     if any(v['severity'] != 'error' for v in failures):
@@ -151,6 +168,9 @@ def main(argv=None):
     native = root / 'native-rules'
     native.mkdir()
     records = [run_constraint(source, native, c, probe) for c in constraints]
+    if any(c.get('kind') == 'fab' for c in constraints):
+        from .fab_profile import classify_preferred
+        records = classify_preferred(records)
     write_json(root / 'rule-results.json', {'schema': 'agent-ee.native-rules-result/1',
                                            'constraints': records})
     return 0

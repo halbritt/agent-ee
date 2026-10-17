@@ -4,6 +4,7 @@ No solver or design inference: names and physical units are explicit. Each
 constraint gets its own DRC invocation so KiCad's last-rule precedence cannot
 silently discard overlapping acceptance bounds.
 """
+import copy
 import hashlib
 import json
 import math
@@ -11,11 +12,12 @@ import re
 from pathlib import Path, PurePosixPath
 
 from .storage import digest, write_json
+from .hardware_interface import unique_object
 
 ID = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
 NET = re.compile(r"[^'\"\\\x00-\x1f]+\Z")
 RULE_TYPES = {'length': ['length_out_of_range'], 'skew': ['skew_out_of_range'],
-              'via_count': ['via_count'], 'clearance': ['clearance']}
+              'via_count': ['too_many_vias'], 'clearance': ['clearance']}
 
 
 def sha_text(text):
@@ -31,8 +33,8 @@ def number(value, label, *, integer=False):
 
 
 def rule_text(name, condition, constraint):
-    return ('(version 1)\n' + f'(rule "{name}"\n'
-            + f'  (condition {json.dumps(condition)})\n  (constraint {constraint}))\n')
+    predicate = f'  (condition {json.dumps(condition, ensure_ascii=False)})\n' if condition is not None else ''
+    return f'(version 1)\n(rule "{name}"\n{predicate}  (constraint {constraint}))\n'
 
 
 def compile_constraint(spec):
@@ -47,7 +49,7 @@ def compile_constraint(spec):
     kind = spec.get('kind')
     marker = 'agent_ee_' + spec['id']
     base = {'id': spec['id'], 'requirement': spec['requirement'], 'nets': sorted(nets),
-            'kind': kind, 'marker': marker, 'expected': spec}
+            'kind': kind, 'marker': marker, 'expected': copy.deepcopy(spec)}
     allowed = {'id', 'requirement', 'nets', 'kind'}
     if kind == 'impedance':
         allowed |= {'target_ohm', 'tolerance_ohm', 'stackup', 'solver'}
@@ -83,7 +85,8 @@ def compile_constraint(spec):
     condition = ' || '.join(f"A.NetName == '{net}'" for net in sorted(nets))
     rules = rule_text(marker, condition, f'{kind} {bounds}')
     return {**base, 'execution': 'ready', 'rules': rules, 'rules_sha256': sha_text(rules),
-            'native_types': RULE_TYPES[kind]}
+            'project_rules': {'use_height_for_length_calcs': False} if kind in ('length', 'skew') else {},
+            'native_types': list(RULE_TYPES[kind])}
 
 
 def compile_routing(document):
@@ -114,9 +117,23 @@ def captured_file(inputs, files, relative):
     return path
 
 
+def native_rule_inputs(scope, files, inputs):
+    board = captured_file(inputs, files, scope['board'])
+    paths = []
+    for suffix in ('.kicad_pro', '.kicad_dru'):
+        sidecar = board.with_suffix(suffix)
+        relative = sidecar.relative_to(inputs).as_posix()
+        if relative in files or sidecar.exists():
+            captured_file(inputs, files, relative)
+            paths.append(relative)
+    return sorted(paths)
+
+
 def validate_mappings(constraints, scope, files, cid):
     requirements = {r['id']: r for r in scope.get('baseline', {}).get('requirements', [])}
     declared = {c['requirement'] for c in constraints}
+    if len(declared) != 1:
+        raise ValueError('rules require exactly one requirement per check for sealed witness authority')
     mapped = {rid for rid, req in requirements.items() if cid in req['checks']}
     if declared != mapped:
         raise ValueError('rule requirement mappings must exactly match baseline check mappings')
@@ -127,10 +144,12 @@ def validate_mappings(constraints, scope, files, cid):
 
 
 def capability(params, scope, files, inputs, cid=None):
+    if not isinstance(params, dict) or set(params) != {'routing_rules'}:
+        raise ValueError('routing_rules requires only its captured JSON path')
     path = captured_file(inputs, files, params['routing_rules'])
-    compiled = compile_routing(json.loads(path.read_text(encoding='utf-8')))
+    compiled = compile_routing(json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=unique_object))
     validate_mappings(compiled['constraints'], scope, files, cid)
-    return {'compiled': compiled, 'immutable_inputs': [params['routing_rules']],
+    return {'compiled': compiled, 'immutable_inputs': sorted([params['routing_rules'], *native_rule_inputs(scope, files, inputs)]),
             'predicates': ['routing:' + c['id'] for c in compiled['constraints']
                            if c['execution'] == 'ready']}
 
@@ -140,11 +159,7 @@ def run_compiled(ctx, compiled, source):
     from .checks import CheckError
     try:
         board = captured_file(ctx.inputs, ctx.manifest['files'], ctx.scope['board'])
-        project = board.with_suffix('.kicad_pro')
-        custom = board.with_suffix('.kicad_dru')
-        for sidecar in (project, custom):
-            if sidecar.exists():
-                captured_file(ctx.inputs, ctx.manifest['files'], sidecar.relative_to(ctx.inputs).as_posix())
+        native_rule_inputs(ctx.scope, ctx.manifest['files'], ctx.inputs)
         request = {'schema': 'agent-ee.native-rules-request/1', 'board': '/candidate/' + ctx.scope['board'],
                    'compiled': compiled}
         write_json(ctx.work / 'rule-request.json', request)
@@ -162,7 +177,7 @@ def run_compiled(ctx, compiled, source):
             raise CheckError('malformed', 'native rules result coverage mismatch')
     except (ValueError, KeyError, TypeError, OSError, json.JSONDecodeError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
-    complete = all(r['status'] in ('satisfied', 'violation') for r in records)
+    complete = all(r['status'] in ('satisfied', 'violation', 'extra_charge') for r in records)
     violations = [r['id'] for r in records if r['status'] == 'violation']
     write_json(ctx.work / 'rules-evaluation.json', {
         'schema': 'agent-ee.rules-evaluation/1', 'candidate_id': ctx.manifest['candidate_id'],
