@@ -77,3 +77,5 @@ The Mermaid source is embedded in these Markdown pages for repository viewers
 that support it. Captions and tables state the same contracts for text-only readers.
 Historical assessment, evaluation and decision records retain their original
 context; they are not substitutes for the current references above.
+
+- [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.

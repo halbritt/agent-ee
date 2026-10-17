@@ -815,9 +815,10 @@ from .active_spice import check_active_spice
 from .kicad_happy import check_kicad_happy
 from .hardware_interface import check_hardware_interface
 from .passive_corners import check_passive_corners
+from .library_checks import check_footprint_assignment
 
 
-CHECK_FUNCS = {"kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+CHECK_FUNCS = {"footprint_assignment": check_footprint_assignment, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,
