@@ -3,9 +3,7 @@ from pathlib import Path
 
 from .candidate import safe_relative
 from .footprint_library import _members, _object, canonical, validate_declaration, load_document
-
-
-NATIVE_PREDICATE = 'footprint:native-assignment-parity/1'
+from .native_binding import PREDICATE as NATIVE_PREDICATE
 
 
 def capability(params, files, inputs, scope=None, check_id=None):

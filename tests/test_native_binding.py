@@ -238,6 +238,18 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(report['outcome'], 'defect')
         self.assertIn('empty_footprint', self.codes(report, 'R1'))
 
+    def test_declared_exporter_omitted_power_is_excluded_only_with_its_identity(self):
+        decl = declaration()
+        decl['components'].append({'reference': '#PWR01', 'lib_id': 'Owned:GND', 'footprint': '',
+                                   'assembly': 'smd', 'connector': None})
+        report = self.bind(decl)
+        self.assertEqual(report['outcome'], 'pass')
+        self.assertEqual(self.statuses(report)['#PWR01'], 'excluded')
+        component(decl, '#PWR01')['lib_id'] = 'Owned:R'
+        report = self.bind(decl)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(self.codes(report, '#PWR01'), {'lib_id_mismatch'})
+
     def test_malformed_declaration_is_malformed(self):
         decl = declaration()
         decl['components'].append(dict(decl['components'][0]))
