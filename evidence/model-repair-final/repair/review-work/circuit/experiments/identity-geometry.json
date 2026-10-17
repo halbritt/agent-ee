@@ -1,0 +1,310 @@
+{
+  "components": [
+    {
+      "ref": "#PWR02",
+      "value": "GND",
+      "lib_id": "power:GND",
+      "at": [
+        "71.12",
+        "60.96",
+        "0"
+      ],
+      "dnp": "no",
+      "uuid": "05f0738f-fc7b-589d-9ab5-3365ee12aaf5"
+    },
+    {
+      "ref": "C1",
+      "value": "100n",
+      "lib_id": "Device:C",
+      "at": [
+        "101.6",
+        "63.5",
+        "0"
+      ],
+      "dnp": "no",
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8"
+    },
+    {
+      "ref": "#PWR01",
+      "value": "GND",
+      "lib_id": "power:GND",
+      "at": [
+        "101.6",
+        "71.12",
+        "0"
+      ],
+      "dnp": "no",
+      "uuid": "2c592a57-a83b-5444-a605-e8f5bfa36d67"
+    },
+    {
+      "ref": "J1",
+      "value": "Conn_01x03",
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "at": [
+        "60.96",
+        "63.5",
+        "180"
+      ],
+      "dnp": "no",
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2"
+    },
+    {
+      "ref": "#FLG01",
+      "value": "PWR_FLAG",
+      "lib_id": "power:PWR_FLAG",
+      "at": [
+        "109.22",
+        "71.12",
+        "0"
+      ],
+      "dnp": "no",
+      "uuid": "7aeaaf59-ba4c-5188-9293-39b48d5444d2"
+    },
+    {
+      "ref": "R1",
+      "value": "10k",
+      "lib_id": "Device:R",
+      "at": [
+        "86.36",
+        "63.5",
+        "0"
+      ],
+      "dnp": "no",
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78"
+    }
+  ],
+  "nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "export_matches_supplied": true,
+  "board_pad_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "schematic_board_pad_identity_matches": true,
+  "pads": [
+    {
+      "ref": "C1",
+      "pad": "1",
+      "net": "/OUT",
+      "footprint": [
+        "110",
+        "100"
+      ],
+      "local_at": [
+        "-0.95",
+        "0"
+      ],
+      "layers": [
+        "F.Cu",
+        "F.Mask",
+        "F.Paste"
+      ]
+    },
+    {
+      "ref": "C1",
+      "pad": "2",
+      "net": "GND",
+      "footprint": [
+        "110",
+        "100"
+      ],
+      "local_at": [
+        "0.95",
+        "0"
+      ],
+      "layers": [
+        "F.Cu",
+        "F.Mask",
+        "F.Paste"
+      ]
+    },
+    {
+      "ref": "R1",
+      "pad": "1",
+      "net": "/IN",
+      "footprint": [
+        "105",
+        "100"
+      ],
+      "local_at": [
+        "-0.9125",
+        "0"
+      ],
+      "layers": [
+        "F.Cu",
+        "F.Mask",
+        "F.Paste"
+      ]
+    },
+    {
+      "ref": "R1",
+      "pad": "2",
+      "net": "/OUT",
+      "footprint": [
+        "105",
+        "100"
+      ],
+      "local_at": [
+        "0.9125",
+        "0"
+      ],
+      "layers": [
+        "F.Cu",
+        "F.Mask",
+        "F.Paste"
+      ]
+    },
+    {
+      "ref": "J1",
+      "pad": "1",
+      "net": "/IN",
+      "footprint": [
+        "100",
+        "100"
+      ],
+      "local_at": [
+        "0",
+        "0"
+      ],
+      "layers": [
+        "*.Cu",
+        "*.Mask"
+      ]
+    },
+    {
+      "ref": "J1",
+      "pad": "2",
+      "net": "/OUT",
+      "footprint": [
+        "100",
+        "100"
+      ],
+      "local_at": [
+        "0",
+        "2.54"
+      ],
+      "layers": [
+        "*.Cu",
+        "*.Mask"
+      ]
+    },
+    {
+      "ref": "J1",
+      "pad": "3",
+      "net": "GND",
+      "footprint": [
+        "100",
+        "100"
+      ],
+      "local_at": [
+        "0",
+        "5.08"
+      ],
+      "layers": [
+        "*.Cu",
+        "*.Mask"
+      ]
+    }
+  ],
+  "tracks": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "width_mm": 0.25,
+      "start": [
+        "100",
+        "100"
+      ],
+      "end": [
+        "104.0875",
+        "100"
+      ]
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "width_mm": 0.25,
+      "start": [
+        "105.9125",
+        "100"
+      ],
+      "end": [
+        "109.05",
+        "100"
+      ]
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "width_mm": 0.25,
+      "start": [
+        "100",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "102.54"
+      ]
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "width_mm": 0.25,
+      "start": [
+        "107.5",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "100"
+      ]
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "width_mm": 0.25,
+      "start": [
+        "110.95",
+        "100"
+      ],
+      "end": [
+        "113",
+        "100"
+      ]
+    }
+  ],
+  "minimum_width_mm": 0.25,
+  "all_tracks_meet_0p2mm": true,
+  "saved_ground_fill_membership": {
+    "(113, 100)": true,
+    "(100, 105.08)": false,
+    "(100, 104.48)": false,
+    "(100, 105.68)": false,
+    "(99.4, 105.08)": false,
+    "(100.6, 105.08)": false
+  }
+}

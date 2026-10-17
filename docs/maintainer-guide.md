@@ -26,8 +26,8 @@ Use the system interpreter that imports pcbnew:
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
 ```
 
-The recorded release has 63 tests. This is an observation at the recorded
-implementation, not a permanent expected test count. Tests need the installed
+The original recorded release has 63 tests; the subscription-profile release has
+69. This is an observation at the recorded implementation, not a permanent expected test count. Tests need the installed
 native environment for their native/Bubblewrap paths; this repository does not
 install those dependencies automatically.
 
@@ -38,6 +38,7 @@ install those dependencies automatically.
 | [test_execution_failures.py](../tests/test_execution_failures.py) | Unavailable/failed/timeout subprocesses, sandbox boundary and invalid execution/review behavior |
 | [test_reviewer_identity.py](../tests/test_reviewer_identity.py) | Exact role/candidate/run/packet binding and schema constraints |
 | [test_findings.py](../tests/test_findings.py) | Singleton retention, unsupported allegations, evidence/dispositions, duplicate and closure invariants |
+| [test_profiles.py](../tests/test_profiles.py) | Explicit allocation, profile freshness, subscription response handling, native adapter contracts and refusal of profile-only repair closure |
 | [test_cli.py](../tests/test_cli.py) | Required work, outcome projection, interruption/budget preservation and correction behavior |
 
 Avoid tests that only echo generated implementation text. Define the engineering

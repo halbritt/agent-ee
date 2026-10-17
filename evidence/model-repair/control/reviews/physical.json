@@ -1,0 +1,24 @@
+{
+  "candidate_id": "0b0265f2838c37cacd80169482dacd56a05559c05ccf88cb9aba1dd719bb31a7",
+  "coverage": [
+    "Geometry: independently parsed inputs/project/rc_filter.kicad_pcb:667\u2013714; all five tracks are 0.25 mm, satisfying the 0.20 mm requirement in inputs/requirements/fixture-requirements.md:11\u201313. Calculations: review-work/physical/experiments/audit.json, native_segments and minimum_track_width_mm.",
+    "Saved connectivity: verified input/output routing, output T junction, and C1.2 return through the via, bottom pour and J1.3 thermal connections. Native evidence: inputs/project/rc_filter.kicad_pcb:210\u2013224, 587\u2013612 and 667\u2013785. Independent polygon calculations and rendered copper inspection: review-work/physical/experiments/audit.json, saved_ground_fill; review-work/physical/experiments/F_Cu.png; review-work/physical/experiments/B_Cu.png.",
+    "Placement/manufacturing geometry: inspected closed outline, courtyards, pad gaps, drills, annuli and saved pour setback. Measurements are recorded in review-work/physical/experiments/audit.json, geometry_measurements; no process qualification inferred.",
+    "Verification records: inspected work/erc/erc.json and work/drc/drc.json, including ignored checks. Independently reran saved-board DRC with schematic parity; report contains no violations, unconnected items or parity issues: review-work/physical/experiments/drc.json.",
+    "Response: checked native R1=10k and C1=100n in inputs/project/rc_filter.kicad_sch:933\u20131009 and 1252\u20131328 against work/netlist/design.xml and work/rc-step/deck.cir. Independently decoded work/rc-step/result.raw: Vout(1 ms)=0.632120134 V, consistent with the analytical 0.632120559 V and required band. Maximum waveform error against the exact finite-ramp response is below 0.763 microvolt. Calculations: review-work/physical/experiments/audit.json, response.",
+    "Commands, versions, assumptions, outcomes and review limits: review-work/physical/experiments/commands.json and review-work/physical/experiments/notes.md. Candidate hashes remained unchanged: review-work/physical/experiments/render_and_hashes.json."
+  ],
+  "findings": [],
+  "limitations": [
+    "Zone regeneration was omitted; review evaluates saved fill only. Polygon path sampling and native DRC do not establish fabricated-board continuity.",
+    "No hardware response, parasitic extraction, tolerance, temperature, loading, source impedance, ADC sampling or EMI testing.",
+    "No ampacity or thermal qualification: copper thickness, material, component ratings and thermal boundary conditions were not established.",
+    "No process-specific fabrication, solderability, assembly yield, connector mating or mechanical qualification.",
+    "ERC was inspected rather than rerun. Documented ignored ERC/DRC checks remain coverage omissions.",
+    "The 5 ms response measurement has no declared acceptance bounds and provides informational coverage only."
+  ],
+  "packet_sha256": "a1eb5f01de4cc8616623b5e57e56a4cd321541249ad467cada370bcadff9d975",
+  "role": "physical",
+  "run_id": "8bc377ff-66ce-4639-9814-f8772769f1a0",
+  "schema": "agent-ee.review/1"
+}

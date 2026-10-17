@@ -1,0 +1,111 @@
+{
+  "candidate_id": "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4",
+  "coverage": [
+    "Read complete local ERC, DRC, netlist and geometry records and relevant native schematics and saved PCB.",
+    "Independently exported all 10 sheet instances: 139 components and 199 nets. Connectivity matches the supplied netlist; native PCB pad net assignments match.",
+    "Verified the disposable VR sheet alias is byte-identical to the lowercase source.",
+    "Traced CAN2, added lowsides, stepper controls, VR interfaces, ignition connections and ETB disable bias; checked selected component identities and manufacturer limits.",
+    "Reviewed native rule violations without treating successful execution or zero unconnected items as electrical validation. Commands, references, calculations and limitations are recorded in review-work/circuit/experiments/review-notes.md."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "Selecting components for populated U11\u2013U14 and U16\u2013U19 from their native fields.",
+      "evidence": [
+        {
+          "locator": "U11 Value VNL5090 and LCSC C2680415, lines 2541\u20132583; repeated on U12\u2013U14 and the second sheet instance",
+          "path": "inputs/project/Lowside Adder.kicad_sch"
+        },
+        {
+          "locator": "U11 footprint UUID 5160b79e-ac90-4a32-befc-c61fcdad3f06, Value and LCSC properties; corresponding U12\u2013U19 footprints",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "LCSC product identification: MPN VNL5050N3TR-E, stock code C2680415",
+          "path": "review-work/circuit/experiments/vnl-reference-web.txt"
+        }
+      ],
+      "id": "circuit-001",
+      "location": "U11\u2013U14/U16\u2013U19 component identification",
+      "mechanism": "The circuit value identifies VNL5090 while the procurement code identifies VNL5050N3TR-E.",
+      "reasoning": "The conflicting identities exist in both schematic and saved PCB. The [SKU owner identifies C2680415 as VNL5050N3TR-E](https://www.lcsc.com/product-detail/C2680415.html). No alternate-part declaration was located. This is a definite identification defect; electrical incompatibility between those parts is not established here.",
+      "severity": "minor",
+      "title": "Eight lowside switches have conflicting component identities"
+    },
+    {
+      "assessment": "concern",
+      "condition": "Using J2's MCU passthrough controls with 3.3 V GPIO high levels; the exact mated module revision is unspecified.",
+      "evidence": [
+        {
+          "locator": "RN1/RN2 and VNL5090 input wiring; RN3/RN4 in the second sheet instance",
+          "path": "inputs/project/Lowside Adder.kicad_sch"
+        },
+        {
+          "locator": "selected_nets and selected_board_footprints: GPIO controls connect through 1 kohm branches to the eight switch inputs",
+          "path": "review-work/circuit/experiments/audit.json"
+        },
+        {
+          "locator": "Outputs section and J2-equivalent pins 12\u201315, 24\u201327: MCU passthrough controls",
+          "path": "review-work/circuit/experiments/polygonus-readme.md"
+        },
+        {
+          "locator": "Table 8: N3 input doubles as supply; input threshold maximum 3.5 V",
+          "path": "review-work/circuit/experiments/vnl5050-primary-web.txt"
+        },
+        {
+          "locator": "lowside_GPIO_3V3_case and LS9_LS10_GPIO_highZ",
+          "path": "review-work/circuit/experiments/calculations.json"
+        }
+      ],
+      "id": "circuit-002",
+      "location": "Added lowside input drive, U11\u2013U14/U16\u2013U19",
+      "mechanism": "There is no level conversion between the GPIO controls and the SOT-223 switches. A 3.3 V source provides at most 3.3 V before series-resistor drop, below the N3 device's 3.5 V minimum control supply.",
+      "reasoning": "Both possible N3 identities have this limitation; the [manufacturer specifications](https://www.st.com/resource/en/datasheet/vnl5050s5-e.pdf) do not establish guaranteed operation at 3.3 V. R1/R2 also produce an unloaded 2.5 V LS9/10 bias when GPIOs float, leaving reset behavior unverified. Exact module GPIO levels and switch waveforms are absent, so this remains a compatibility concern rather than demonstrated output failure.",
+      "severity": "major",
+      "title": "Added lowside drive lacks demonstrated margin for 3.3 V GPIOs"
+    },
+    {
+      "assessment": "concern",
+      "condition": "Operating the internally connected dual-wideband CAN2 bus with the saved population settings.",
+      "evidence": [
+        {
+          "locator": "Resistor UUID d69380f9-5487-4782-9ce9-0690df62e543: 120 ohm, DNP yes, instances R36/R37",
+          "path": "inputs/project/wbo-can-trans.kicad_sch"
+        },
+        {
+          "locator": "R36 UUID 6924b9c0-bd5f-481d-9f8d-7fc20978c5ab and R37 UUID 7f8c8af6-f455-43aa-9bef-892e252a308e: DNP attributes",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "nets /CAN2+ and /CAN2-: U20/U21, R36/R37, J2.73/74 and J1.15/11",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "can2_direct_resistors and selected_board_footprints.R36/R37",
+          "path": "review-work/circuit/experiments/audit.json"
+        },
+        {
+          "locator": "Table 7, Ri(dif): differential input resistance 19\u201352 kohm",
+          "path": "review-work/circuit/experiments/tja1051.txt"
+        }
+      ],
+      "id": "circuit-003",
+      "location": "Internal CAN2 termination, R36/R37",
+      "mechanism": "Both local termination resistors are omitted. The transceiver input resistances do not provide equivalent termination.",
+      "reasoning": "The saved carrier supplies no populated resistor directly across CAN2. Termination could exist in the mated brain module or external harness, but neither configuration is established. Consequently, adequate termination for internal wideband communication is unresolved; no CAN waveform or communication failure is claimed.",
+      "severity": "major",
+      "title": "Internal CAN2 termination depends on an undocumented external configuration"
+    }
+  ],
+  "limitations": [
+    "No bench measurements or verified dynamic device simulations; no startup, shutdown, reset or brownout waveforms were validated.",
+    "Exact Polygonus/Atlas and wideband module revisions, firmware configuration and harness termination were not established.",
+    "No CAN timing/signal-integrity tests, sensor amplitude/frequency sweeps, exhaustive component-rating checks or load qualification.",
+    "Automotive transients, ignition energy, wideband-loop stability, EMC, thermal qualification and integrated FOME-MC coverage remain omitted.",
+    "Saved copper was not refilled or modified. Original as-received checkout and manufacturing approval are outside this review."
+  ],
+  "packet_sha256": "7443dc72bd7dc0c25527bd0f1550b7d74a74454d412e30e18634608d420b4731",
+  "role": "circuit",
+  "run_id": "bafd7961-39b9-4a34-9b39-b7f108e82f07",
+  "schema": "agent-ee.review/1"
+}

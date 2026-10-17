@@ -1,0 +1,95 @@
+{
+  "candidate_id": "21b0c14a5c2860d4ccecc4fe1758409cf93d368265316a1c5f42d3577cedea7e",
+  "coverage": [
+    "Re-derived J1/R1/C1 pin sheet coordinates from native schematic placement (J1 at 180 deg) and matched them to wires, local labels and power symbols to establish pin-to-net mapping independently of net names",
+    "Independently re-exported the KiCad XML netlist (kicad-cli 10.0.7) and compared against work/netlist/design.xml and connectivity.json \u2014 identical",
+    "Loaded the saved board in pcbnew python: dumped all pad net assignments, all track segments/via, verified schematic/board parity of nets and confirmed GetUnconnectedCount == 0 on the saved file",
+    "Traced copper paths: /IN J1.1->R1.1; /OUT R1.2->C1.1 with J1.2 stub landing mid-span on the same-net segment (valid T junction); GND C1.2 -> F.Cu track -> via (113,100) -> saved B.Cu zone fill -> J1.3 thermal spokes (spokes visible in the filled_polygon of the native .kicad_pcb)",
+    "Checked the saved connectivity against the external connector contract in inputs/requirements.txt (the sole stated criterion)",
+    "Sanity-checked placement vs the 20x12 mm Edge.Cuts outline (all pads, courtyards, via and zone inside); reviewed fresh ERC/DRC/parity outputs and their ignored-check lists"
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The contract in inputs/requirements.txt states J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground. In the saved schematic, J1 pin 1 (sheet position (66.04,66.04) after 180-degree placement) is wired to label 'IN' \u2014 the node entering series resistor R1 pin 1 \u2014 and J1 pin 2 ((66.04,63.50)) is wired to label 'OUT' \u2014 the R1/C1 filtered junction. The saved board matches: J1 pad 1 (100,100) is on net /IN and pad 2 (100,102.54) on net /OUT. Pin 3 = GND is the only pin meeting the contract.",
+      "evidence": [
+        {
+          "locator": "line 1: 'J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground'",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "J1 symbol (uuid 465541a7) at (60.96 63.5 180); wire uuid 6f0b101e (66.04,66.04)->(68.58,66.04) with label 'IN' uuid 7b760986; wire uuid af803d4e (66.04,63.5)->(68.58,63.5) with label 'OUT' uuid 39787aa2; R1 pin1 wire uuid 9b9e16d9 to label 'IN' uuid 4728ac71",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "J1 footprint uuid d529384f: pad 1 (net \"/IN\") uuid 7e93f4b3, pad 2 (net \"/OUT\") uuid d6746591, pad 3 (net \"GND\") uuid ddcb81c6",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "<nets>: net '/IN' nodes J1 pin 1 + R1 pin 1; net '/OUT' nodes C1 pin 1, J1 pin 2, R1 pin 2; net 'GND' nodes C1 pin 2, J1 pin 3",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "nets: /IN=[J1.1,R1.1], /OUT=[C1.1,J1.2,R1.2], GND=[C1.2,J1.3]",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "J1 pads: pad 1 net /IN at (100,100), pad 2 net /OUT at (100,102.54), pad 3 net GND at (100,105.08)",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "sections 1-3: independent netlist re-export, pin-position derivation, pcbnew pad/track dump (unconnected=0)",
+          "path": "review-work/physical/experiments/notes.md"
+        },
+        {
+          "locator": "<nets> block \u2014 independently regenerated, identical to packet netlist",
+          "path": "review-work/physical/experiments/my_netlist.xml"
+        }
+      ],
+      "id": "PHY-001",
+      "location": "inputs/project/rc_filter.kicad_sch (J1 at (60.96,63.5) rot 180; wires/labels at (66.04,66.04)-(68.58,66.04) 'IN' and (66.04,63.5)-(68.58,63.5) 'OUT') and inputs/project/rc_filter.kicad_pcb (J1 pads 1/2)",
+      "mechanism": "Pins 1 and 2 are transposed at the external interface. A harness built per the contract drives the source into the R1/C1 junction (directly loading the source with C1, no defined series element) and takes 'output' from the far end of R1, so the specified input-at-pin-2, filtered-output-at-pin-1 behavior is not delivered; the sole stated acceptance criterion fails. The error is invisible to ERC/DRC/schematic parity because schematic and board are mutually consistent \u2014 net names simply attach the roles to the wrong pins.",
+      "reasoning": "Three independent derivations agree: (1) geometric reconstruction of J1's pin positions under its saved 180-degree rotation maps pin 1 to the wire labeled 'IN' and pin 2 to 'OUT'; (2) a fresh kicad-cli netlist export reproduces /IN=[J1.1,R1.1] and /OUT=[C1.1,J1.2,R1.2]; (3) pcbnew reads the same pad-net assignments from the board, and the copper implements them. Electrically the net on J1.1 is unambiguously the filter input (it reaches only the free end of series R1) and the net on J1.2 is the filtered R-C node, so this is a true role swap at the connector, not a naming quibble. It directly violates the only evaluated criterion, which supports blocking severity; schematic and board agree with each other, so the fix is a design change (reassign J1 pins 1/2), not a layout parity repair.",
+      "severity": "blocking",
+      "title": "J1 input/output pins swapped relative to the external connector contract (pin 1 = input, pin 2 = filtered output as saved)"
+    },
+    {
+      "assessment": "concern",
+      "condition": "ERC reports 0 violations, DRC with --schematic-parity reports 0 violations/0 unconnected/0 parity issues, and the netlist/geometry probes are info-only. None of these checks encodes the external requirement that net roles map to specific J1 pin numbers, so the suite returns clean results on a design whose sole acceptance criterion fails (PHY-001).",
+      "evidence": [
+        {
+          "locator": "'Found 0 violations'",
+          "path": "work/erc/console.log"
+        },
+        {
+          "locator": "'Found 0 violations / 0 unconnected items / 0 schematic parity issues'",
+          "path": "work/drc/console.log"
+        },
+        {
+          "locator": "<nets> block shows J1.1=/IN, J1.2=/OUT \u2014 data sufficient to detect the swap, but no check in the packet asserts on it",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "Conclusion section: self-consistency masks contract violation from ERC/DRC/parity",
+          "path": "review-work/physical/experiments/notes.md"
+        }
+      ],
+      "id": "PHY-002",
+      "location": "packet checks 'erc', 'drc', 'netlist', 'geometry'; work/erc/erc.json, work/drc/drc.json",
+      "mechanism": "ERC/DRC/parity verify internal self-consistency (schematic vs board, copper rules), not requirement-level pin assignments. A pin-role swap propagated consistently through schematic and layout produces zero findings; a successful tool exit is then mistaken for contract compliance unless a dedicated assertion (e.g. expected net name per J1 pad number) is run against the netlist or geometry output.",
+      "reasoning": "This is a verification-coverage observation, not a tool failure: the tools ran correctly and their outputs are reproducible (I re-ran the netlist export with identical results). The gap is that the declared criteria (erc, drc, netlist, geometry) contain no assertion binding net /IN to J1 pad 2 and /OUT to J1 pad 1 per the contract, so green results provide no evidence for the one requirement under review. Flagged as a concern so the harness adds a pin-role assertion; severity minor because the data needed for such a check is already produced by the existing netlist/geometry evidence.",
+      "severity": "minor",
+      "title": "Criteria set cannot detect the connector-contract violation: all native checks pass on an internally consistent but contract-swapped design"
+    }
+  ],
+  "limitations": [
+    "Zone fill evaluated as saved; the read-only candidate forbids a refill pass, so fill correctness is taken from the stored filled_polygon plus DRC/pcbnew connectivity on that stored fill",
+    "No ampacity, thermal, ratings or qualification assessment performed \u2014 explicitly excluded by inputs/requirements.txt; no conclusions drawn from track widths",
+    "No SPICE/transfer-function simulation run; the criterion is connectivity only and J1 is exclude_from_sim in the schematic",
+    "Manufacturing review limited to the native DRC rule set as configured (several checks are in the ignored list, e.g. missing_courtyard, footprint_type_mismatch); no fab-specific rule deck applied"
+  ],
+  "packet_sha256": "6d516b200cf17f43afb1ed53c8ff06a89e32fdeb5001285bf079d743506a9399",
+  "role": "physical",
+  "run_id": "7c0edd5c-e4f4-4823-90d9-cdd624e68f5e",
+  "schema": "agent-ee.review/1"
+}

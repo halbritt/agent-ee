@@ -1,0 +1,21 @@
+{
+  "candidate_id": "57d1859261fc93ec38ba0bf952f35b81117f84e4e1b119bf8be5555251f4606f",
+  "coverage": [
+    "Verified fitted R1: inputs/project/rc_filter.kicad_sch:1253\u20131285 specifies Device:R, 10k, dnp no; inputs/project/rc_filter.kicad_pcb:237\u2013374 agrees with population and /IN-to-/OUT pad assignment.",
+    "Independently traced native F.Cu segments in inputs/project/rc_filter.kicad_pcb:667\u2013698 from J1.1 through fitted R1 to J1.2. Nominal DC resistance is 10,000 ohms, neglecting copper; see review-work/circuit/experiments/dc_path_result.json fields fitted_resistive_IN_to_OUT and nominal_resistance_ohm_ignoring_copper.",
+    "Compared native pad connectivity with work/netlist/design.xml, nets, and inspected work/geometry/geometry.json. Read original check execution records and reports: work/erc/erc.json reports no violations; work/drc/drc.json reports no violations, unconnected items or parity issues.",
+    "Recorded commands, versions, assumptions, calculations and outcomes in review-work/circuit/experiments/review_notes.md; calculation source is review-work/circuit/experiments/dc_path.py."
+  ],
+  "findings": [],
+  "limitations": [
+    "No physical assembly inspection or continuity measurement; conclusions concern the saved assembly definition.",
+    "No SPICE simulation or behavioral measurements. The stated criterion is supported by native population and DC topology.",
+    "Ratings, tolerances, parasitics, loading, frequency response, startup, shutdown, reset, brownout and interface limits were not evaluated; corresponding operating conditions and acceptance bounds were not stated.",
+    "Saved ERC/DRC reports were inspected rather than rerun; categories listed under their ignored_checks remain outside automated coverage.",
+    "No zone refill or independent reconstruction of all board geometry. The reviewed resistive path uses F.Cu and does not depend on the ground zone."
+  ],
+  "packet_sha256": "02bce905e8e8fd7701553d6d8ff434656d12a1a4c44d3825452c84459ab54ae0",
+  "role": "circuit",
+  "run_id": "c89610e1-4fc4-41c8-9a8a-48c6ebc5ad8c",
+  "schema": "agent-ee.review/1"
+}

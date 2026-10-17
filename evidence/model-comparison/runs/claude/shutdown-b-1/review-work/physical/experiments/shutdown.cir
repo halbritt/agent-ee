@@ -1,0 +1,14 @@
+* Shutdown transient of saved RC fixture (values from rc_filter.kicad_sch)
+* /IN grounded at t=0 (node in = 0 via 0V source), no external load.
+R1 in out 100k
+C1 out 0 100n ic=1
+Vin in 0 DC 0
+.tran 10u 6m uic
+.control
+run
+meas tran vout_at_5ms find v(out) at=5m
+print v(out)[500] > /dev/null
+wrdata /work/experiments/shutdown_tran.dat v(out)
+quit
+.endc
+.end

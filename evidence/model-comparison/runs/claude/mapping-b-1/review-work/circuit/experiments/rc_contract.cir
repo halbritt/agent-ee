@@ -1,0 +1,17 @@
+* Saved board: J1.1 -- R1(10k) -- node_out(J1.2) -- C1(100n) -- GND(J1.3)
+* Case A (as-saved orientation: drive pin1, measure pin2)
+* Case B (contract orientation: drive pin2, measure pin1, 1Meg scope load)
+VA inA 0 AC 1
+R1A inA outA 10k
+C1A outA 0 100n
+RLA outA 0 1Meg
+VB inB 0 AC 1
+C1B inB 0 100n
+R1B inB outB 10k
+RLB outB 0 1Meg
+.ac dec 2 10 100k
+.control
+run
+print vdb(outA) vdb(outB)
+.endc
+.end

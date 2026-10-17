@@ -1,0 +1,55 @@
+[
+  {
+    "argv": [
+      "python3",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "Python 3.12.3\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "version"
+    ],
+    "exit_code": 0,
+    "stdout": "10.0.7\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/independent.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-b",
+      "shutdown.cir"
+    ],
+    "exit_code": 0,
+    "stdout": "\nNote: No compatibility mode selected!\n\n\nCircuit: ideal shutdown of native r1=10k and c1=100n\n\nDoing analysis at TEMP = 27.000000 and TNOM = 27.000000\n\nUsing transient initial conditions\n\nNo. of Data Rows : 6011\nvout_5ms            =  6.737944e-03\nt_10mv              =  4.605170e-03\nngspice-42 done\n",
+    "stderr": "Using SPARSE 1.3 as Direct Linear Solver\n"
+  }
+]

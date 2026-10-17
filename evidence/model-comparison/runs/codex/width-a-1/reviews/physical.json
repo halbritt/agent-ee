@@ -1,0 +1,19 @@
+{
+  "candidate_id": "851abfc5517464c4ee2208a5a5125b552af3905075d86462e03839dd5115f8d1",
+  "coverage": [
+    "Independently parsed inputs/project/rc_filter.kicad_pcb:667\u2013706: all five saved track segments are 0.25 mm, exceeding the 0.20 mm requirement by 0.05 mm each; no track arcs exist. Calculations: review-work/physical/experiments/physical_audit.json:tracks.",
+    "Verified PCB pad assignments against work/netlist/connectivity.json:nets and inspected signal routing and the saved GND return through the via and B.Cu zone in inputs/project/rc_filter.kicad_pcb:699 onward.",
+    "Reviewed board outline, placement, courtyards and native project settings. Inspected work/drc/drc.json and work/erc/erc.json: zero reported violations, unconnected items or schematic-parity issues.",
+    "Independently applied the width requirement because checks/geometry.json reports extraction without requirement evaluation. Commands, versions, assumptions and review outcomes are recorded in review-work/physical/experiments/physical_review_notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "Saved zone fill only; no refill, manufacturing-output comparison, fabricated-board measurement or assembly validation.",
+    "Native ERC/DRC ignored checks were reviewed and documented but were not rerun with those checks enabled; see work/drc/drc.json:ignored_checks, work/erc/erc.json:ignored_checks and review-work/physical/experiments/physical_review_notes.md.",
+    "No ampacity, thermal, component-rating, signal-integrity or electrical-response qualification was performed or inferred from width. These are outside the stated geometric exercise."
+  ],
+  "packet_sha256": "40281a011d34429f8f4cde01d6e61861d4f647761999f748a949dfeec49ad1da",
+  "role": "physical",
+  "run_id": "76dba052-e6e0-4810-bb10-f390747c4877",
+  "schema": "agent-ee.review/1"
+}

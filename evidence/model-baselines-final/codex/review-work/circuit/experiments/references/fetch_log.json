@@ -1,0 +1,30 @@
+[
+  {
+    "name": "TJA1051",
+    "url": "https://cache.nxp.com/docs/en/data-sheet/TJA1051.pdf",
+    "bytes": 209490,
+    "sha256": "6637cd500dda3c1c951ce29bed7fe909f11f9a3bef64b096dbb486827add9f11",
+    "pdftotext_returncode": 0,
+    "stderr": ""
+  },
+  {
+    "name": "VNL5090",
+    "url": "https://www.st.com/resource/en/datasheet/vnl5090n3-e.pdf",
+    "error": "The read operation timed out"
+  },
+  {
+    "name": "MAX9924",
+    "url": "https://www.analog.com/media/en/technical-documentation/data-sheets/MAX9924-MAX9927.pdf",
+    "error": "The read operation timed out"
+  },
+  {
+    "name": "MAX9142",
+    "url": "https://www.analog.com/media/en/technical-documentation/data-sheets/MAX9140-MAX9144.pdf",
+    "error": "The read operation timed out"
+  },
+  {
+    "name": "TLE9201",
+    "url": "https://www.infineon.com/dgdl/Infineon-TLE9201SG-DS-v01_05-en.pdf?fileId=db3a30431b3e89eb011ba415a2e24797",
+    "error": "HTTP Error 404: Not Found"
+  }
+]

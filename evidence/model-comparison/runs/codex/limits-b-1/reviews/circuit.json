@@ -1,0 +1,53 @@
+{
+  "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+  "coverage": [
+    "Confirmed native R1 value and /IN-to-/OUT connectivity against the PCB and exported netlist.",
+    "Calculated R1 continuous dissipation under the stated external clamp condition.",
+    "Inspected fresh ERC, DRC, netlist and geometry records; ERC/DRC report zero native violations."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "External equipment maintains /IN at 48 V DC and /OUT at 0 V indefinitely.",
+      "evidence": [
+        {
+          "locator": "Line 1: stated operating condition and R1 continuous limit of 0.1 W",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "R1 symbol, lines 1252\u20131285; Value=\"10k\" at line 1274",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "R1 pads, lines 359\u2013373: pad 1=/IN, pad 2=/OUT",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "components/comp[@ref='R1']; nets/net[@name='/IN'] and nets/net[@name='/OUT']",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "Voltage, current, power and continuous-limit comparison",
+          "path": "review-work/circuit/experiments/r1_power.txt"
+        }
+      ],
+      "id": "circuit-r1-power",
+      "location": "R1, between /IN and /OUT",
+      "mechanism": "The maintained 48 V differential across 10 k\u03a9 produces 4.8 mA and 0.2304 W continuously, exceeding the stipulated 0.1 W limit by a factor of 2.304.",
+      "reasoning": "The external clamp prevents /OUT from charging toward /IN, so resistor dissipation persists indefinitely. C1 does not remove this DC differential. The stated continuous-power criterion is violated; the passing native rule checks do not evaluate resistor dissipation.",
+      "severity": "major",
+      "title": "R1 exceeds its continuous power limit under the stated clamp"
+    }
+  ],
+  "limitations": [
+    "No physical or thermal measurements; component temperature, damage timing and failure mode were not determined.",
+    "Used native nominal resistance and the exercise's explicit power limit; no manufacturer ratings or tolerances were inferred.",
+    "Other components and operating conditions, including startup, shutdown, reset and brownout, were outside the stated scope.",
+    "Native checks were inspected but not rerun; ignored checks and saved zone-fill limitations remain. No detailed geometry audit was performed.",
+    "Commands, assumptions and review limitations are recorded in review-work/circuit/experiments/review_notes.txt; calculation source is review-work/circuit/experiments/r1_power.py."
+  ],
+  "packet_sha256": "043cafe6a72120f493cef855997eba3586bac17dbdc7ab89c17c959e54abe95b",
+  "role": "circuit",
+  "run_id": "d6c462f9-8553-41d4-b19b-71efe6c55239",
+  "schema": "agent-ee.review/1"
+}

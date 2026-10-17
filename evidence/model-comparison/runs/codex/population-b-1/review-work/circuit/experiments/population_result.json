@@ -1,0 +1,201 @@
+{
+  "versions": {
+    "python": "Python 3.12.3",
+    "kicad": "10.0.7"
+  },
+  "native_sha256": {
+    "/candidate/requirements.txt": "6b0143bba42a298b56dce7cb8d790e92edb63389b38a4d640d915e61c2022076",
+    "/candidate/project/rc_filter.kicad_sch": "a058e910b3cb8e23aae6a74ff6011684d70809c30c333130c2cbdd8b5624d449",
+    "/candidate/project/rc_filter.kicad_pcb": "b2c9655cd136794f6e13972112451fb4bece7367c9fe4e1c7db63bbe9b3bb736"
+  },
+  "symbols": {
+    "C1": {
+      "value": "100n",
+      "lib_id": "Device:C",
+      "dnp": false
+    },
+    "J1": {
+      "value": "Conn_01x03",
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "dnp": false
+    },
+    "R1": {
+      "value": "10k",
+      "lib_id": "Device:R",
+      "dnp": true
+    }
+  },
+  "footprints": {
+    "C1": {
+      "dnp": false,
+      "pads": {
+        "1": {
+          "net": "/OUT",
+          "at": [
+            "-0.95",
+            "0"
+          ],
+          "size": [
+            "1",
+            "1.45"
+          ]
+        },
+        "2": {
+          "net": "GND",
+          "at": [
+            "0.95",
+            "0"
+          ],
+          "size": [
+            "1",
+            "1.45"
+          ]
+        }
+      }
+    },
+    "R1": {
+      "dnp": true,
+      "pads": {
+        "1": {
+          "net": "/IN",
+          "at": [
+            "-0.9125",
+            "0"
+          ],
+          "size": [
+            "1.025",
+            "1.4"
+          ]
+        },
+        "2": {
+          "net": "/OUT",
+          "at": [
+            "0.9125",
+            "0"
+          ],
+          "size": [
+            "1.025",
+            "1.4"
+          ]
+        }
+      }
+    },
+    "J1": {
+      "dnp": false,
+      "pads": {
+        "1": {
+          "net": "/IN",
+          "at": [
+            "0",
+            "0"
+          ],
+          "size": [
+            "1.7",
+            "1.7"
+          ]
+        },
+        "2": {
+          "net": "/OUT",
+          "at": [
+            "0",
+            "2.54"
+          ],
+          "size": [
+            "1.7",
+            "1.7"
+          ]
+        },
+        "3": {
+          "net": "GND",
+          "at": [
+            "0",
+            "5.08"
+          ],
+          "size": [
+            "1.7",
+            "1.7"
+          ]
+        }
+      }
+    }
+  },
+  "fresh_export_matches_supplied_population_and_nets": true,
+  "nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "resistors": [
+    {
+      "ref": "R1",
+      "value": "10k",
+      "dnp": true,
+      "nets": [
+        "/IN",
+        "/OUT"
+      ]
+    }
+  ],
+  "fitted_resistor_edges": [],
+  "reachable_dc_resistive_nets_from_IN": [
+    "/IN"
+  ],
+  "fitted_resistive_path_IN_to_OUT": false,
+  "R1_centerline_pad_gap_mm": 0.8,
+  "supplied_erc_violations": 0,
+  "supplied_drc_violations": 0,
+  "supplied_drc_unconnected": 0,
+  "supplied_drc_parity_issues": 0,
+  "supplied_ignored_checks": {
+    "erc": [
+      {
+        "description": "Global label only appears once in the schematic",
+        "key": "single_global_label"
+      },
+      {
+        "description": "Four connection points are joined together",
+        "key": "four_way_junction"
+      },
+      {
+        "description": "SPICE model issue",
+        "key": "simulation_model_issue"
+      },
+      {
+        "description": "Assigned footprint doesn't match footprint filters",
+        "key": "footprint_filter"
+      }
+    ],
+    "drc": [
+      {
+        "description": "Footprint has no courtyard defined",
+        "key": "missing_courtyard"
+      },
+      {
+        "description": "Track endpoint not centered on via",
+        "key": "track_not_centered_on_via"
+      },
+      {
+        "description": "Tuning profile track geometries",
+        "key": "tuning_profile_track_geometries"
+      },
+      {
+        "description": "Footprint doesn't match symbol's footprint filters",
+        "key": "footprint_filters_mismatch"
+      },
+      {
+        "description": "Footprint component type doesn't match footprint pads",
+        "key": "footprint_type_mismatch"
+      }
+    ]
+  }
+}

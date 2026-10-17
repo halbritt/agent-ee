@@ -1,0 +1,80 @@
+{
+  "python_version": "3.12.3",
+  "reproduction_command": "python3 /work/experiments/adjudicate.py",
+  "commands": [
+    {
+      "argv": [
+        "kicad-cli",
+        "--version"
+      ],
+      "returncode": 0,
+      "stdout": "10.0.7\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/experiments/native-netlist.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "assumptions": [
+    "Evaluate only the explicit connector contract and saved connectivity; no component ratings or load specification assumed."
+  ],
+  "limitations": [
+    "No board modification or zone refill; no hardware measurement."
+  ],
+  "native_hashes": {
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/requirements.txt": "b678092773d22d86483df95d009efad7ff756f2eedd1af60c3c2e2b61818ae12"
+  },
+  "requirement": "External connector contract: J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground. Verify saved connectivity.\nOnly the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.\n",
+  "pcb_pad_nets": {
+    "C1.1": "/OUT",
+    "C1.2": "GND",
+    "R1.1": "/IN",
+    "R1.2": "/OUT",
+    "J1.1": "/IN",
+    "J1.2": "/OUT",
+    "J1.3": "GND"
+  },
+  "exported_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "packet_check_results": {
+    "erc": {
+      "sheet_violations": {
+        "/": []
+      }
+    },
+    "drc": {
+      "violations": [],
+      "unconnected_items": [],
+      "schematic_parity": []
+    }
+  },
+  "outcome": "Contract violated: PCB and freshly exported native schematic both connect J1.1 to R1.1 (/IN), J1.2 to R1.2 and C1.1 (/OUT), J1.3 to C1.2 (GND). Required input J1.2 is therefore on the capacitor shunt node; required output J1.1 is across R1 from it. The capacitor is not on the required filtered output node. Clean ERC/DRC checks establish native rule/parity consistency, not compliance with the external connector contract."
+}

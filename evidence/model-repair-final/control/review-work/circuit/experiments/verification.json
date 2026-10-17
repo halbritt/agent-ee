@@ -1,0 +1,318 @@
+{
+  "versions": {
+    "kicad": "10.0.7",
+    "ngspice": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******",
+    "python": "Python 3.12.3"
+  },
+  "candidate_sha256": {
+    "inputs/requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095",
+    "inputs/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "inputs/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "native_instances": [
+    {
+      "lib_id": "power:GND",
+      "uuid": "05f0738f-fc7b-589d-9ab5-3365ee12aaf5",
+      "at": [
+        "71.12",
+        "60.96",
+        "0"
+      ],
+      "properties": {
+        "Reference": "#PWR02",
+        "Value": "GND",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "dnp": "no"
+    },
+    {
+      "lib_id": "Device:C",
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8",
+      "at": [
+        "101.6",
+        "63.5",
+        "0"
+      ],
+      "properties": {
+        "Reference": "C1",
+        "Value": "100n",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "dnp": "no"
+    },
+    {
+      "lib_id": "power:GND",
+      "uuid": "2c592a57-a83b-5444-a605-e8f5bfa36d67",
+      "at": [
+        "101.6",
+        "71.12",
+        "0"
+      ],
+      "properties": {
+        "Reference": "#PWR01",
+        "Value": "GND",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "dnp": "no"
+    },
+    {
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2",
+      "at": [
+        "60.96",
+        "63.5",
+        "180"
+      ],
+      "properties": {
+        "Reference": "J1",
+        "Value": "Conn_01x03",
+        "Footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "dnp": "no"
+    },
+    {
+      "lib_id": "power:PWR_FLAG",
+      "uuid": "7aeaaf59-ba4c-5188-9293-39b48d5444d2",
+      "at": [
+        "109.22",
+        "71.12",
+        "0"
+      ],
+      "properties": {
+        "Reference": "#FLG01",
+        "Value": "PWR_FLAG",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "dnp": "no"
+    },
+    {
+      "lib_id": "Device:R",
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+      "at": [
+        "86.36",
+        "63.5",
+        "0"
+      ],
+      "properties": {
+        "Reference": "R1",
+        "Value": "10k",
+        "Footprint": "Resistor_SMD:R_0805_2012Metric",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "dnp": "no"
+    }
+  ],
+  "native_board_pin_nets": {
+    "C1.1": "/OUT",
+    "C1.2": "GND",
+    "R1.1": "/IN",
+    "R1.2": "/OUT",
+    "J1.1": "/IN",
+    "J1.2": "/OUT",
+    "J1.3": "GND"
+  },
+  "fresh_netlist_matches_supplied": true,
+  "nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "track_segments": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "width_mm": 0.25,
+      "net": "/IN",
+      "start_mm": [
+        "100",
+        "100"
+      ],
+      "end_mm": [
+        "104.0875",
+        "100"
+      ]
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "start_mm": [
+        "105.9125",
+        "100"
+      ],
+      "end_mm": [
+        "109.05",
+        "100"
+      ]
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "start_mm": [
+        "100",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "102.54"
+      ]
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "start_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "100"
+      ]
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "width_mm": 0.25,
+      "net": "GND",
+      "start_mm": [
+        "110.95",
+        "100"
+      ],
+      "end_mm": [
+        "113",
+        "100"
+      ]
+    }
+  ],
+  "tau_s": 0.001,
+  "ideal_step_vout_1ms": 0.6321205588285577,
+  "ideal_step_vout_5ms": 0.9932620530009145,
+  "finite_1ns_rise_vout_1ms": 0.6321203748887758,
+  "retained_raw_analysis": {
+    "header": "Title: * agent-ee rc_transient deck, generated from the native xml netlist\nDate: Fri Oct 16 17:39:45  2026\nPlotname: Transient Analysis\nFlags: real\nNo. Variables: 4\nNo. Points: 1025\nVariables:\n\t0\ttime\ttime\n\t1\tv(in)\tvoltage\n\t2\tv(out)\tvoltage\n\t3\ti(vstep)\tcurrent\n",
+    "initial": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "last": [
+      0.005,
+      1.0,
+      0.993262119728839,
+      -6.737880271160936e-07
+    ],
+    "sample_1ms": [
+      0.001,
+      1.0,
+      0.6321201340170995,
+      -3.678798659829005e-05
+    ],
+    "sample_5ms": [
+      0.005,
+      1.0,
+      0.993262119728839,
+      -6.737880271160936e-07
+    ],
+    "maximum_absolute_vout_error_vs_exact_1ns_ramp_v": 7.626185536402375e-07,
+    "maximum_abs_kcl_error_a": 1.3552527156068805e-20
+  },
+  "independent_measurements": {
+    "vout_1ms": 0.6321204,
+    "vout_5ms": 0.993262
+  },
+  "commands": [
+    {
+      "argv": [
+        "kicad-cli",
+        "version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "version_kicad.stdout",
+      "stderr": "version_kicad.stderr"
+    },
+    {
+      "argv": [
+        "ngspice",
+        "--version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "version_ngspice.stdout",
+      "stderr": "version_ngspice.stderr"
+    },
+    {
+      "argv": [
+        "python3",
+        "--version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "version_python.stdout",
+      "stderr": "version_python.stderr"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/experiments/fresh.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "netlist.stdout",
+      "stderr": "netlist.stderr"
+    },
+    {
+      "argv": [
+        "ngspice",
+        "-n",
+        "-b",
+        "-o",
+        "/work/experiments/independent.log",
+        "/work/experiments/independent.cir"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "simulation.stdout",
+      "stderr": "simulation.stderr"
+    }
+  ],
+  "assumptions": [
+    "Ideal nominal R and C, ideal 0-to-1 V source, no external load, initially settled at 0 V.",
+    "Generic passive symbols only: no manufacturer model or rating is assumed.",
+    "Finite 1 ns source rise is compared against the exact ramp response and the required ideal step."
+  ],
+  "limitations": [
+    "No candidate modification or zone refill.",
+    "Not hardware, tolerance, temperature, loading, ADC, EMI or parasitic verification.",
+    "Native ERC/DRC records inspected separately; not rerun by this script."
+  ]
+}

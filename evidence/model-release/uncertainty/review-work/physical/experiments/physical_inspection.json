@@ -1,0 +1,364 @@
+{
+  "schematic_components": [
+    {
+      "ref": "#PWR02",
+      "value": "GND"
+    },
+    {
+      "ref": "C1",
+      "value": "100n"
+    },
+    {
+      "ref": "#PWR01",
+      "value": "GND"
+    },
+    {
+      "ref": "J1",
+      "value": "Conn_01x03"
+    },
+    {
+      "ref": "#FLG01",
+      "value": "PWR_FLAG"
+    },
+    {
+      "ref": "R1",
+      "value": "10k"
+    }
+  ],
+  "exported_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "export_matches_supplied_netlist": true,
+  "saved_fill": {
+    "net": "GND",
+    "vertices": 187,
+    "via_center_inside": true,
+    "simple_return_polyline": [
+      [
+        113,
+        100
+      ],
+      [
+        113,
+        106.8
+      ],
+      [
+        101.72,
+        106.8
+      ],
+      [
+        100.49497475,
+        105.57497475
+      ]
+    ],
+    "return_polyline_all_1503_samples_inside": true,
+    "ground_header_contact_at_0_7mm_radius": {
+      "0": false,
+      "45": true,
+      "90": false,
+      "135": true,
+      "180": false,
+      "225": true,
+      "270": false,
+      "315": true
+    }
+  },
+  "pads": [
+    {
+      "ref": "C1",
+      "pin": "1",
+      "type": "smd",
+      "shape": "roundrect",
+      "xy_mm": [
+        109.05,
+        100.0
+      ],
+      "size_mm": [
+        1.0,
+        1.45
+      ],
+      "net": "/OUT"
+    },
+    {
+      "ref": "C1",
+      "pin": "2",
+      "type": "smd",
+      "shape": "roundrect",
+      "xy_mm": [
+        110.95,
+        100.0
+      ],
+      "size_mm": [
+        1.0,
+        1.45
+      ],
+      "net": "GND"
+    },
+    {
+      "ref": "R1",
+      "pin": "1",
+      "type": "smd",
+      "shape": "roundrect",
+      "xy_mm": [
+        104.0875,
+        100.0
+      ],
+      "size_mm": [
+        1.025,
+        1.4
+      ],
+      "net": "/IN"
+    },
+    {
+      "ref": "R1",
+      "pin": "2",
+      "type": "smd",
+      "shape": "roundrect",
+      "xy_mm": [
+        105.9125,
+        100.0
+      ],
+      "size_mm": [
+        1.025,
+        1.4
+      ],
+      "net": "/OUT"
+    },
+    {
+      "ref": "J1",
+      "pin": "1",
+      "type": "thru_hole",
+      "shape": "rect",
+      "xy_mm": [
+        100.0,
+        100.0
+      ],
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "net": "/IN",
+      "drill_mm": 1.0
+    },
+    {
+      "ref": "J1",
+      "pin": "2",
+      "type": "thru_hole",
+      "shape": "circle",
+      "xy_mm": [
+        100.0,
+        102.54
+      ],
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "net": "/OUT",
+      "drill_mm": 1.0
+    },
+    {
+      "ref": "J1",
+      "pin": "3",
+      "type": "thru_hole",
+      "shape": "circle",
+      "xy_mm": [
+        100.0,
+        105.08
+      ],
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "net": "GND",
+      "drill_mm": 1.0
+    }
+  ],
+  "courtyards": [
+    {
+      "ref": "C1",
+      "bounds_mm": [
+        [
+          108.3,
+          99.02
+        ],
+        [
+          111.7,
+          100.98
+        ]
+      ]
+    },
+    {
+      "ref": "R1",
+      "bounds_mm": [
+        [
+          103.32,
+          99.05
+        ],
+        [
+          106.68,
+          100.95
+        ]
+      ]
+    },
+    {
+      "ref": "J1",
+      "bounds_mm": [
+        [
+          98.23,
+          98.23
+        ],
+        [
+          101.77,
+          106.85
+        ]
+      ]
+    }
+  ],
+  "tracks": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "start_mm": [
+        100.0,
+        100.0
+      ],
+      "end_mm": [
+        104.0875,
+        100.0
+      ],
+      "length_mm": 4.087500000000006,
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "start_mm": [
+        105.9125,
+        100.0
+      ],
+      "end_mm": [
+        109.05,
+        100.0
+      ],
+      "length_mm": 3.137500000000003,
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "start_mm": [
+        100.0,
+        102.54
+      ],
+      "end_mm": [
+        107.5,
+        102.54
+      ],
+      "length_mm": 7.5,
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "start_mm": [
+        107.5,
+        102.54
+      ],
+      "end_mm": [
+        107.5,
+        100.0
+      ],
+      "length_mm": 2.5400000000000063,
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "start_mm": [
+        110.95,
+        100.0
+      ],
+      "end_mm": [
+        113.0,
+        100.0
+      ],
+      "length_mm": 2.049999999999997,
+      "width_mm": 0.25
+    }
+  ],
+  "via": {
+    "xy_mm": [
+      113.0,
+      100.0
+    ],
+    "diameter_mm": 0.6,
+    "drill_mm": 0.3
+  },
+  "outline": [
+    {
+      "start_mm": [
+        96.0,
+        96.0
+      ],
+      "end_mm": [
+        116.0,
+        96.0
+      ]
+    },
+    {
+      "start_mm": [
+        96.0,
+        108.0
+      ],
+      "end_mm": [
+        96.0,
+        96.0
+      ]
+    },
+    {
+      "start_mm": [
+        116.0,
+        96.0
+      ],
+      "end_mm": [
+        116.0,
+        108.0
+      ]
+    },
+    {
+      "start_mm": [
+        116.0,
+        108.0
+      ],
+      "end_mm": [
+        96.0,
+        108.0
+      ]
+    }
+  ],
+  "outline_all_corners_degree_2": true,
+  "nominal_route_notes": [
+    "IN: J1.1 to R1.1 on F.Cu.",
+    "OUT: R1.2 to C1.1; branch at (107.5,100) to J1.2 on F.Cu.",
+    "GND: C1.2 via 2.05 mm F.Cu trace to via (113,100), saved B.Cu fill to plated J1.3.",
+    "T-junction at (107.5,100) lies on segment 69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5; it is not an unrouted gap."
+  ],
+  "limitations": [
+    "Rounded rectangular pads plotted as rectangles; plot is a topology aid, not a clearance measurement.",
+    "Fill path is sampled, not a rigorous continuous-path proof; saved-board native DRC independently reports no unconnected items.",
+    "No zone refill performed; no process capability or copper thickness/ampacity/thermal qualification inferred.",
+    "No extracted interconnect RLC or external ADC/cable/ground model."
+  ]
+}

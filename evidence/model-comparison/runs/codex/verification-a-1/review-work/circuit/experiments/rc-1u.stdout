@@ -1,0 +1,33 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: ideal unloaded rc step initial-value problem
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using transient initial conditions
+
+No. of Data Rows : 2027
+
+  Measurements for Transient Analysis
+
+vout_1ms            =  6.321206e-01
+vin_1ms             =  1.000000e+00
+vout_1us            =  9.995001e-04
+
+
+Total analysis time (seconds) = 0.003
+
+Total elapsed time (seconds) = 0.005 
+
+Total DRAM available = 128728.297 MB.
+DRAM currently available = 12708.281 MB.
+Maximum ngspice program size =   21.352 MB.
+Current ngspice program size =   12.898 MB.
+
+Shared ngspice pages =   10.895 MB.
+Text (code) pages =    6.156 MB.
+Stack = 0 bytes.
+Library pages =    2.102 MB.
+

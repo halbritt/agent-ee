@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "kicad-cli",
+    "pcb",
+    "export",
+    "drill",
+    "--format",
+    "excellon",
+    "--output",
+    "/work/experiments/drill",
+    "--excellon-separate-th",
+    "--generate-report",
+    "--report-path",
+    "/work/experiments/drill-report.txt",
+    "/candidate/project/Polygonus-Universal-Base.kicad_pcb"
+  ],
+  "exit_code": 0,
+  "duration_s": 1.3015728950267658
+}

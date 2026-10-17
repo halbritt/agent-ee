@@ -1,0 +1,74 @@
+{
+  "at": "2026-10-17T00:38:06.899148+00:00",
+  "decisions": {
+    "candidate_id": "329f916010187406f161061477ccaa609a7cfa22231e8b51f90b321f35ab1028",
+    "decisions": [
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "Requirement 1: ideal unloaded 1 V step must produce 0.62\u20130.65 V at /OUT after 1 ms",
+            "path": "inputs/requirements/fixture-requirements.md"
+          },
+          {
+            "locator": "R1 Value=100k, line 1274; C1 Value=100n, line 955",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "nets /IN, /OUT and GND: R1 connects input to output; C1 connects output to ground",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "Measurements for Transient Analysis: vout_1ms=9.516251e-02 V; initial output=0 V",
+            "path": "work/rc-step/ngspice.log"
+          },
+          {
+            "locator": "Measurements: vout_1ms=9.516254e-02 V; input_1ms=1 V",
+            "path": "review-work/adjudicator/experiments/independent.log"
+          },
+          {
+            "locator": "Reproduction commands, assumptions, outcomes and limitations",
+            "path": "review-work/adjudicator/experiments/notes.md"
+          }
+        ],
+        "finding_id": "check/rc-step",
+        "reason": "Established defect: the saved 100 k\u03a9/100 nF topology has a 10 ms time constant. Its calculated 1 ms output is 0.09516258 V, confirmed by supplied and independent simulations, violating the declared 0.62 V minimum. The executable failure remains accepted and unresolved."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/rc-step",
+        "evidence": [
+          {
+            "locator": "R1 Value=100k, line 1274; C1 Value=100n, line 955",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "tau_s=0.01; ideal_vout_1ms=0.09516258196404043",
+            "path": "review-work/adjudicator/experiments/audit-results.json"
+          }
+        ],
+        "finding_id": "circuit/circuit-001",
+        "reason": "Supported defect with the same stimulus, criterion, component values and slow-charging mechanism as accepted canonical finding check/rc-step."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/rc-step",
+        "evidence": [
+          {
+            "locator": "R1 Value=100k, line 256; C1 Value=100n, line 107; R1 pad nets /IN\u2013/OUT and C1 pad nets /OUT\u2013GND",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "Measurements: vout_1ms=9.516254e-02 V",
+            "path": "review-work/adjudicator/experiments/independent.log"
+          }
+        ],
+        "finding_id": "physical/physical_rc_step",
+        "reason": "Supported defect arising from the same saved RC values and identical 1 ms response violation as accepted canonical finding check/rc-step; no separate physical failure mechanism is alleged."
+      }
+    ],
+    "run_id": "2d02a128-482d-459a-b6ca-047678a963ef",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

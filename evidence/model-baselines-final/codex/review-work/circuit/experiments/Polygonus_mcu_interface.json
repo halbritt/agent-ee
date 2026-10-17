@@ -1,0 +1,251 @@
+[
+  {
+    "net": "/IGN9",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "90",
+        "pinfunction": "PG5_90",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/IGN10",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "89",
+        "pinfunction": "PG4_89",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/IGN11",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "88",
+        "pinfunction": "PG3_88",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/IGN12",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "87",
+        "pinfunction": "PG2_87",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/LS9",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "135",
+        "pinfunction": "PB5_135",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/LS10",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "136",
+        "pinfunction": "PB6_136",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/LS11",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "137",
+        "pinfunction": "PB7_137",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "/LS12",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "139",
+        "pinfunction": "PB8_139",
+        "pintype": "bidirectional",
+        "value": "STM32F767ZITx"
+      }
+    ]
+  },
+  {
+    "net": "+3V3",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "108",
+        "pinfunction": "VDD_108",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "121",
+        "pinfunction": "VDDSDMMC_121",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "131",
+        "pinfunction": "VDD_131",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "144",
+        "pinfunction": "VDD_144",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "17",
+        "pinfunction": "VDD_17",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "30",
+        "pinfunction": "VDD_30",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "39",
+        "pinfunction": "VDD_39",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "52",
+        "pinfunction": "VDD_52",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "62",
+        "pinfunction": "VDD_62",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "72",
+        "pinfunction": "VDD_72",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "84",
+        "pinfunction": "VDD_84",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "95",
+        "pinfunction": "VDDUSB_95",
+        "pintype": "power_in"
+      }
+    ]
+  },
+  {
+    "net": "/VDDA",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "33",
+        "pinfunction": "VDDA_33",
+        "pintype": "power_in"
+      }
+    ]
+  },
+  {
+    "net": "GND",
+    "nodes": [
+      {
+        "ref": "U26",
+        "pin": "107",
+        "pinfunction": "VSS_107",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "120",
+        "pinfunction": "VSS_120",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "130",
+        "pinfunction": "VSS_130",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "16",
+        "pinfunction": "VSS_16",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "31",
+        "pinfunction": "VSSA_31",
+        "pintype": "power_in"
+      },
+      {
+        "ref": "U26",
+        "pin": "38",
+        "pinfunction": "VSS_38",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "51",
+        "pinfunction": "VSS_51",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "61",
+        "pinfunction": "VSS_61",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "83",
+        "pinfunction": "VSS_83",
+        "pintype": "passive"
+      },
+      {
+        "ref": "U26",
+        "pin": "94",
+        "pinfunction": "VSS_94",
+        "pintype": "passive"
+      }
+    ]
+  }
+]

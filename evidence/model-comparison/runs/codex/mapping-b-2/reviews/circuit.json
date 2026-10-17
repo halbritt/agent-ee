@@ -1,0 +1,57 @@
+{
+  "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+  "coverage": [
+    "Independently traced all seven component pins through the native schematic, including J1 rotation and pin numbering.",
+    "Confirmed agreement among native PCB pad assignments, a fresh KiCad netlist export, supplied netlist and supplied geometry.",
+    "Inspected saved copper paths and ERC/DRC records, including schematic parity and ignored checks.",
+    "Recorded commands, versions, hashes, calculations and limitations in review-work/circuit/experiments/."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "External wiring follows the stated contract: drive J1 pin 2, take filtered output from pin 1, and ground pin 3.",
+      "evidence": [
+        {
+          "locator": "Line 1: required J1 connector contract",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Lines 139\u2013195: connector pin definitions; lines 805\u2013854: IN/OUT labels; line 1093: J1 rotation 180 degrees",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "Lines 587\u2013613: J1 pad assignments; lines 210\u2013225: C1 connections; lines 359\u2013374: R1 connections; lines 667\u2013697: signal tracks",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "Lines 163\u2013176: /IN contains J1.1 and R1.1; /OUT contains J1.2, R1.2 and C1.1",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "confirmed_nets, schematic_pins, board_pads and diagnostic_calculation",
+          "path": "review-work/circuit/experiments/connectivity-audit.json"
+        },
+        {
+          "locator": "schematic_parity, unconnected_items and violations are empty",
+          "path": "work/drc/drc.json"
+        }
+      ],
+      "id": "circuit-j1-pin-swap",
+      "location": "J1 pins 1 and 2, in both saved schematic and PCB",
+      "mechanism": "J1.1 connects to R1.1 on /IN, while J1.2 connects to R1.2 and C1.1 on /OUT. Consequently, C1 shunts the contract input rather than the resistor-isolated output.",
+      "reasoning": "The native sources and fresh export independently confirm the reversed connector roles. With ideal components and an unloaded output, the saved topology gives V(J1.1)/V(J1.2)=1, so R1 and C1 do not provide the intended output RC pole. External source impedance could introduce filtering, but none is specified. Clean ERC and schematic parity establish internal consistency, not compliance with this external connector contract.",
+      "severity": "major",
+      "title": "J1 input and filtered-output pins are reversed"
+    }
+  ],
+  "limitations": [
+    "ERC/DRC records were inspected rather than rerun. Their ignored rule categories were not independently audited; see work/erc/erc.json and work/drc/drc.json.",
+    "Saved zone fill was assessed without refill. No fabrication validation, hardware measurements or SPICE simulation was performed.",
+    "No source/load impedances, operating voltages, currents, tolerances or timing limits are stated. Ratings, quantitative frequency/transient performance and startup/shutdown/brownout behavior were therefore not qualified.",
+    "No ECU qualification was evaluated."
+  ],
+  "packet_sha256": "bb53ede160dc09fd0d17a7c64bd8fd3c58cd53ff7e1b0fe8e66741013a0dc243",
+  "role": "circuit",
+  "run_id": "e5c3df45-50fe-491e-b996-faba2b28f975",
+  "schema": "agent-ee.review/1"
+}

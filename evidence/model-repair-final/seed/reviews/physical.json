@@ -1,0 +1,61 @@
+{
+  "candidate_id": "329f916010187406f161061477ccaa609a7cfa22231e8b51f90b321f35ab1028",
+  "coverage": [
+    "Read native schematic, PCB, project settings, requirements and supplied check records.",
+    "Fresh native netlist export confirms /IN: J1.1\u2013R1.1; /OUT: R1.2\u2013C1.1\u2013J1.2; GND: C1.2\u2013J1.3.",
+    "Independently enumerated all five saved track segments: each is 0.25 mm, satisfying the 0.20 mm requirement. See review-work/physical/experiments/native-audit.json, track_width_check.",
+    "Inspected placement, closed 20 \u00d7 12 mm outline, OUT branch junction, capacitor ground trace, via and saved bottom-plane thermal connections. A sampled ground-copper route connects J1.3 to the via. See review-work/physical/experiments/native-audit.json, ground_fill.",
+    "Reran KiCad DRC with schematic parity; report arrays contain zero violations, unconnected items and parity issues. See review-work/physical/experiments/independent-drc.json.",
+    "Independently calculated the RC response and checked the supplied stimulus and measurements. Commands, versions, assumptions and outcomes are recorded in review-work/physical/experiments/README.md and commands.json."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "Apply the required ideal 1 V step at /IN with no external load and an initially discharged capacitor.",
+      "evidence": [
+        {
+          "locator": "Requirement 1: V(/OUT) at 1 ms must be between 0.62 V and 0.65 V",
+          "path": "inputs/requirements/fixture-requirements.md"
+        },
+        {
+          "locator": "Line 1274: R1 Value=\"100k\"; line 955: C1 Value=\"100n\"",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "Line 256: R1 Value=\"100k\"; line 107: C1 Value=\"100n\"; R1/C1 pad net assignments",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "rc_calculation: tau_s=0.01; vout_1ms_V=0.09516258196404043",
+          "path": "review-work/physical/experiments/native-audit.json"
+        },
+        {
+          "locator": "R1 IN OUT 100k; C1 OUT 0 100n; VSTEP PWL(0 0 1n 1)",
+          "path": "work/rc-step/deck.cir"
+        },
+        {
+          "locator": "Measurements for Transient Analysis: vout_1ms=9.516251e-02",
+          "path": "work/rc-step/ngspice.log"
+        }
+      ],
+      "id": "physical-001",
+      "location": "R1 value in the native schematic and PCB",
+      "mechanism": "R1=100 k\u03a9 and C1=100 nF produce RC=10 ms. The unloaded response Vout(t)=1\u2212exp(\u2212t/RC) therefore reaches only approximately 0.09516 V at 1 ms.",
+      "reasoning": "The direct native values and independently confirmed connectivity predict a voltage below the required 0.62 V minimum. The recorded simulation agrees with the calculation. Its 1 ns input rise cannot explain this large discrepancy. Clean ERC and DRC results do not establish compliance with the response requirement.",
+      "severity": "major",
+      "title": "Saved R1 value causes the required 1 ms step response to fail"
+    }
+  ],
+  "limitations": [
+    "Zone fill was inspected as saved; no refill was performed. Sampled copper continuity does not establish resistance or impedance.",
+    "No hardware measurements, parasitic extraction, tolerance, temperature, loading, ADC sampling or EMI evaluation.",
+    "No ampacity or thermal qualification; track width alone was not treated as evidence of either.",
+    "No supplier part-rating verification, fabrication capability approval, production Gerber/drill audit, assembly testing or mechanical mating/enclosure evaluation.",
+    "Ignored ERC/DRC rule classes were recorded but not exhaustively independently verified. The DRC rerun shares the supplied check's KiCad engine.",
+    "The 5 ms response measurement has no declared acceptance bound."
+  ],
+  "packet_sha256": "872337c4728304014ef3dc9571ce3b45f351644ba75d47e1a65d53401a913198",
+  "role": "physical",
+  "run_id": "d49a7f53-6b11-4774-86dd-8799a02e97fd",
+  "schema": "agent-ee.review/1"
+}

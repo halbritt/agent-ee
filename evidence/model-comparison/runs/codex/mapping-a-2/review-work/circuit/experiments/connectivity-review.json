@@ -1,0 +1,261 @@
+{
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "schematic_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "supplied_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "expected_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "pcbnew_version": "10.0.7",
+  "saved_copper_adjacency": {
+    "C1.1": [
+      "C1.1",
+      "J1.2",
+      "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8",
+      "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "R1.2"
+    ],
+    "C1.2": [
+      "C1.2",
+      "J1.3",
+      "PCB_TRACK:7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "PCB_VIA:b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "ZONE:38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+    ],
+    "R1.1": [
+      "J1.1",
+      "PCB_TRACK:ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "R1.1"
+    ],
+    "R1.2": [
+      "C1.1",
+      "J1.2",
+      "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8",
+      "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "R1.2"
+    ],
+    "J1.1": [
+      "J1.1",
+      "PCB_TRACK:ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "R1.1"
+    ],
+    "J1.2": [
+      "C1.1",
+      "J1.2",
+      "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8",
+      "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "R1.2"
+    ],
+    "J1.3": [
+      "C1.2",
+      "J1.3",
+      "PCB_TRACK:7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "PCB_VIA:b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "ZONE:38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+    ],
+    "PCB_TRACK:ae12bf6f-d4ed-46d3-9916-8738850152cc": [
+      "J1.1",
+      "PCB_TRACK:ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "R1.1"
+    ],
+    "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5": [
+      "C1.1",
+      "J1.2",
+      "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8",
+      "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "R1.2"
+    ],
+    "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8": [
+      "C1.1",
+      "J1.2",
+      "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8",
+      "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "R1.2"
+    ],
+    "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82": [
+      "C1.1",
+      "J1.2",
+      "PCB_TRACK:69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "PCB_TRACK:8b528360-109d-4533-a657-35923fd930f8",
+      "PCB_TRACK:a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "R1.2"
+    ],
+    "PCB_TRACK:7deb1fb0-3a34-4321-a0ef-399bdd8439d1": [
+      "C1.2",
+      "J1.3",
+      "PCB_TRACK:7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "PCB_VIA:b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "ZONE:38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+    ],
+    "PCB_VIA:b71a70d7-bbc1-43d1-ae55-5e4d992412a4": [
+      "C1.2",
+      "J1.3",
+      "PCB_TRACK:7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "PCB_VIA:b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "ZONE:38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+    ],
+    "ZONE:38a83012-bcf9-4bb9-b9f4-50d49cd91d90": [
+      "C1.2",
+      "J1.3",
+      "PCB_TRACK:7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "PCB_VIA:b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "ZONE:38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+    ]
+  },
+  "board_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "pads": {
+    "C1.1": {
+      "net": "/OUT",
+      "position_mm": [
+        109.05,
+        100.0
+      ],
+      "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+    },
+    "C1.2": {
+      "net": "GND",
+      "position_mm": [
+        110.95,
+        100.0
+      ],
+      "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+    },
+    "R1.1": {
+      "net": "/IN",
+      "position_mm": [
+        104.0875,
+        100.0
+      ],
+      "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+    },
+    "R1.2": {
+      "net": "/OUT",
+      "position_mm": [
+        105.9125,
+        100.0
+      ],
+      "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+    },
+    "J1.1": {
+      "net": "/IN",
+      "position_mm": [
+        100.0,
+        100.0
+      ],
+      "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+    },
+    "J1.2": {
+      "net": "/OUT",
+      "position_mm": [
+        100.0,
+        102.54
+      ],
+      "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+    },
+    "J1.3": {
+      "net": "GND",
+      "position_mm": [
+        100.0,
+        105.08
+      ],
+      "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+    }
+  },
+  "reachable_pads_from_each_connector_pad": {
+    "J1.1": [
+      "J1.1",
+      "R1.1"
+    ],
+    "J1.2": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "J1.3": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "saved_zone": [
+    {
+      "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+      "net": "GND",
+      "filled": true,
+      "area_mm2": 192.287427932463
+    }
+  ],
+  "analytic_topology_only": {
+    "assumptions": "Ideal R=10k and C=100n, ideal zero-impedance drive, unloaded output; no operating stimulus or acceptance limit assumed.",
+    "transfer": "V(J1.2)/V(J1.1)=1/(1+s*R*C), referenced to J1.3",
+    "tau_seconds": 0.001,
+    "pole_hz": 159.15494309189535
+  },
+  "comparisons": {
+    "native_export_matches_contract": true,
+    "supplied_export_matches_fresh": true,
+    "board_net_assignments_match_contract": true,
+    "physical_reachability_matches_contract": true
+  },
+  "source_sha256": {
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  }
+}

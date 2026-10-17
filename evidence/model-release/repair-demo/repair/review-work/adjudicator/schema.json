@@ -1,0 +1,91 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "enum": [
+        "a3056a0f779d71d1360af66b5419e5d3a8cc024bd5f95a292d1888f36bafff5d"
+      ],
+      "type": "string"
+    },
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "disposition": {
+            "enum": [
+              "accepted",
+              "noted",
+              "dismissed",
+              "deferred",
+              "duplicate"
+            ],
+            "type": "string"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "locator": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "locator"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "finding_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "disposition",
+          "duplicate_of",
+          "reason",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "enum": [
+        "c98786fd-4bbd-4910-afa1-826a0d5f3525"
+      ],
+      "type": "string"
+    },
+    "schema": {
+      "enum": [
+        "agent-ee.decisions/1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "candidate_id",
+    "run_id",
+    "decisions"
+  ],
+  "type": "object"
+}

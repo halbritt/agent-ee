@@ -1,0 +1,66 @@
+{
+  "authored_claims": true,
+  "expected_disposition": "dismissed",
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "Declared external connector contract",
+      "evidence": [
+        {
+          "locator": "J1 pads 1, 2, 3 net assignments",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "declared connector contract",
+          "path": "inputs/requirements.txt"
+        }
+      ],
+      "id": "challenger/one",
+      "location": "J1.3",
+      "mechanism": "J1.3 is not connected to GND.",
+      "reasoning": "An allegation to investigate against the saved pad net, not assume true.",
+      "severity": "major",
+      "status": "unresolved",
+      "title": "Ground disconnected"
+    }
+  ],
+  "reviews": [
+    {
+      "findings": [
+        {
+          "assessment": "defect",
+          "condition": "Declared external connector contract",
+          "evidence": [
+            {
+              "locator": "J1 pads 1, 2, 3 net assignments",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "declared connector contract",
+              "path": "inputs/requirements.txt"
+            }
+          ],
+          "id": "challenger/one",
+          "location": "J1.3",
+          "mechanism": "J1.3 is not connected to GND.",
+          "reasoning": "An allegation to investigate against the saved pad net, not assume true.",
+          "severity": "major",
+          "status": "unresolved",
+          "title": "Ground disconnected"
+        }
+      ],
+      "role": "challenger"
+    },
+    {
+      "conclusion": "Looks acceptable",
+      "findings": [],
+      "role": "optimist-a"
+    },
+    {
+      "conclusion": "No issue found",
+      "findings": [],
+      "role": "optimist-b"
+    }
+  ],
+  "schema": "agent-ee.adjudicator-evaluation/1"
+}

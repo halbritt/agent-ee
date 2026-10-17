@@ -1,0 +1,15 @@
+* RC low-pass step response - netlist per work/netlist/design.xml
+* /IN: J1.1, R1.1 ; /OUT: C1.1, J1.2, R1.2 ; GND: C1.2, J1.3
+R1 in out 10k
+C1 out 0 100n
+* ideal 1 V step at t=0, zero initial charge on C1
+Vin in 0 PWL(0 0 1n 1)
+.ic V(out)=0
+.tran 1u 2m 0 1u uic
+.control
+run
+meas tran vout_at_1ms FIND v(out) AT=1m
+meas tran vout_at_2ms FIND v(out) AT=2m
+wrdata /work/experiments/rc_step_data.txt v(out)
+.endc
+.end

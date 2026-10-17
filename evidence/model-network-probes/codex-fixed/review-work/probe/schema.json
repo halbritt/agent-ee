@@ -1,0 +1,20 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_write_blocked": {
+      "type": "boolean"
+    },
+    "details": {
+      "type": "string"
+    },
+    "fetched": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "fetched",
+    "candidate_write_blocked",
+    "details"
+  ],
+  "type": "object"
+}

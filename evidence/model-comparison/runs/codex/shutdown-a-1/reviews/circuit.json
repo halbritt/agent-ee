@@ -1,0 +1,20 @@
+{
+  "candidate_id": "d36037b672ce46e4cdc6b63b3a62a082e2d3e61c6ef6ee33d20711d15b66b514",
+  "coverage": [
+    "Verified R1=10k, C1=100n and terminal connectivity against inputs/project/rc_filter.kicad_sch (R1 UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; C1 UUID 1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8), inputs/project/rc_filter.kicad_pcb (R1/C1/J1 pad nets), and work/netlist/design.xml (components and nets). Independent export agrees: review-work/circuit/experiments/independent.xml.",
+    "Evaluated inputs/requirements.txt: tau=1 ms; ideal /OUT at 5 ms is 0.006737947 V, meeting the 0.01 V limit. See review-work/circuit/experiments/calculation.json, Vout_at_5ms_V.",
+    "Independent ngspice simulation preserves C1's 1 V initial charge, grounds /IN and adds no output load. Measured /OUT=0.006737944 V at 5 ms; see review-work/circuit/experiments/shutdown.cir, shutdown.log (vout_5ms), and measurement.json.",
+    "Inspected work/erc/erc.json (sheets[].violations), work/drc/drc.json (violations, unconnected_items, schematic_parity), execution records and work/geometry/geometry.json. No native violations reported. Commands, versions, assumptions and verification limitations are recorded in review-work/circuit/experiments/commands.json and notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "ERC/DRC records were inspected, not rerun. Their ignored checks remain unevaluated; exact lists are recorded in review-work/circuit/experiments/notes.md.",
+    "Board connectivity assessed as saved; no zone refill, fabrication validation or physical measurements performed.",
+    "Only the specified ideal shutdown case was evaluated. Tolerances, parasitics, leakage, ratings, real component models, external loads and qualification are outside scope.",
+    "Startup, reset, brownout and other interface conditions were unspecified and not evaluated."
+  ],
+  "packet_sha256": "87e3932f9462dc1141aa01056292b7f51b592194b2b469d0414dc746b8f07919",
+  "role": "circuit",
+  "run_id": "7215c203-f5dd-4e08-9d58-7df783ac53a5",
+  "schema": "agent-ee.review/1"
+}

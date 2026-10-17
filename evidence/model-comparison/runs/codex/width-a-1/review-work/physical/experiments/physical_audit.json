@@ -1,0 +1,166 @@
+{
+  "python_version": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+  "source": "inputs/project/rc_filter.kicad_pcb",
+  "requirement": "inputs/requirements.txt:1; every saved track >= 0.20 mm",
+  "tracks": [
+    {
+      "type": "segment",
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "start_mm": [
+        "100",
+        "100"
+      ],
+      "end_mm": [
+        "104.0875",
+        "100"
+      ],
+      "layer": "F.Cu",
+      "net": "/IN",
+      "width_mm": "0.25",
+      "margin_mm": "0.05",
+      "passes": true
+    },
+    {
+      "type": "segment",
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "start_mm": [
+        "105.9125",
+        "100"
+      ],
+      "end_mm": [
+        "109.05",
+        "100"
+      ],
+      "layer": "F.Cu",
+      "net": "/OUT",
+      "width_mm": "0.25",
+      "margin_mm": "0.05",
+      "passes": true
+    },
+    {
+      "type": "segment",
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "start_mm": [
+        "100",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "layer": "F.Cu",
+      "net": "/OUT",
+      "width_mm": "0.25",
+      "margin_mm": "0.05",
+      "passes": true
+    },
+    {
+      "type": "segment",
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "start_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "100"
+      ],
+      "layer": "F.Cu",
+      "net": "/OUT",
+      "width_mm": "0.25",
+      "margin_mm": "0.05",
+      "passes": true
+    },
+    {
+      "type": "segment",
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "start_mm": [
+        "110.95",
+        "100"
+      ],
+      "end_mm": [
+        "113",
+        "100"
+      ],
+      "layer": "F.Cu",
+      "net": "GND",
+      "width_mm": "0.25",
+      "margin_mm": "0.05",
+      "passes": true
+    }
+  ],
+  "segment_count": 5,
+  "arc_count": 0,
+  "via_count": 1,
+  "minimum_track_width_mm": "0.25",
+  "all_tracks_pass": true,
+  "agrees_with_supplied_geometry": true,
+  "pad_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "agrees_with_exported_netlist": true,
+  "placements": [
+    {
+      "ref": "C1",
+      "position_mm": [
+        "110",
+        "100"
+      ],
+      "has_courtyard": true
+    },
+    {
+      "ref": "R1",
+      "position_mm": [
+        "105",
+        "100"
+      ],
+      "has_courtyard": true
+    },
+    {
+      "ref": "J1",
+      "position_mm": [
+        "100",
+        "100"
+      ],
+      "has_courtyard": true
+    }
+  ],
+  "zones": [
+    {
+      "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+      "net": "GND",
+      "layer": "B.Cu",
+      "saved_filled_polygons": 1
+    }
+  ],
+  "native_drc_violations": 0,
+  "native_drc_unconnected": 0,
+  "native_drc_parity": 0,
+  "native_drc_ignored": [
+    "missing_courtyard",
+    "track_not_centered_on_via",
+    "tuning_profile_track_geometries",
+    "footprint_filters_mismatch",
+    "footprint_type_mismatch"
+  ],
+  "native_erc_violations": 0,
+  "native_erc_ignored": [
+    "single_global_label",
+    "four_way_junction",
+    "simulation_model_issue",
+    "footprint_filter"
+  ]
+}

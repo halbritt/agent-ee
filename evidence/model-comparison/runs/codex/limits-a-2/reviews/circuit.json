@@ -1,0 +1,20 @@
+{
+  "candidate_id": "450a3fbe701ce2de522829b6e4211ca1c472af4be06efae261accced6a72a658",
+  "coverage": [
+    "Verified R1 is fitted, nominally 10 k\u03a9, between /IN and /OUT: inputs/project/rc_filter.kicad_sch:1252\u20131336; inputs/project/rc_filter.kicad_pcb:245\u2013374; corroborated by work/netlist/design.xml, components/comp[@ref='R1'] and nets.",
+    "Under the condition in inputs/requirements.txt:1, R1 carries 12/10000 = 1.2 mA and dissipates 12\u00b2/10000 = 0.0144 W continuously, below the stipulated 0.1 W limit. Reproducible calculation: review-work/circuit/experiments/r1_dc_review.py; results: review-work/circuit/experiments/r1_dc_results.json, calculation.",
+    "Inspected work/erc/erc.json and work/drc/drc.json: no reported violations, unconnected items or parity issues. Reviewed execution records and geometry output; these checks do not establish electrical power compliance.",
+    "Commands, versions, assumptions, outcomes and locators recorded in review-work/circuit/experiments/commands_and_notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "Evaluation covers only R1 under indefinitely maintained /IN=12 V and /OUT=0 V. Startup, shutdown, reset, brownout, transients, other interfaces and other component ratings were not evaluated.",
+    "No physical measurements, temperature prediction, tolerance analysis or manufacturer-specific model; used the native nominal resistance and stipulated continuous power limit.",
+    "ERC/DRC were inspected rather than rerun. Their ignored checks remain outside coverage; saved zone fill was not regenerated.",
+    "work/geometry/console.log contains PROPERTY_ENUM assertions. Extracted R1 data agree with native sources; geometry output was not treated as electrical validation."
+  ],
+  "packet_sha256": "786af277b79bf76993bd94167f77f9effcd3918b43e636020acd324802c15bbb",
+  "role": "circuit",
+  "run_id": "6e7f7a51-f7d6-4683-b6ad-8e26c2b3b26f",
+  "schema": "agent-ee.review/1"
+}

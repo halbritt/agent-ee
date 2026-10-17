@@ -1,0 +1,4 @@
+{"alias_identical": true, "input_hashes_unchanged": true}
+ERC {'error': 5, 'warning': 348} match True
+DRC {'warning': 129, 'error': 13} match True
+Netlist 659 mismatches {}

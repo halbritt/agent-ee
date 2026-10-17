@@ -1,0 +1,1338 @@
+{
+  "zone_uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+  "pad": "J1.3",
+  "pad_center_mm": [
+    100,
+    105.08
+  ],
+  "pad_radius_mm": 0.85,
+  "drill_radius_mm": 0.5,
+  "first_sample_radius_mm": 0.6363961030678928,
+  "explanation": "First sample lies on the copper annulus; later samples run diagonally through thermal spokes into plane. This is a sampled geometry check, not field or manufacturing verification.",
+  "rays": [
+    {
+      "direction": [
+        1,
+        1
+      ],
+      "samples": [
+        {
+          "position_mm": [
+            100.45,
+            105.53
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.46,
+            105.53999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.47,
+            105.55
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.48,
+            105.56
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.49,
+            105.57
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.5,
+            105.58
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.51,
+            105.59
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.52,
+            105.6
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.53,
+            105.61
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.54,
+            105.62
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.55,
+            105.63
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.56,
+            105.64
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.57,
+            105.64999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.58,
+            105.66
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.59,
+            105.67
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.6,
+            105.67999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.61,
+            105.69
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.62,
+            105.7
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.63,
+            105.71
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.64,
+            105.72
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.65,
+            105.73
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.66,
+            105.74
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.67,
+            105.75
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.68,
+            105.76
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.69,
+            105.77
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.7,
+            105.78
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.71,
+            105.78999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.72,
+            105.8
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.73,
+            105.81
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.74,
+            105.82
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.75,
+            105.83
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.76,
+            105.84
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.77,
+            105.85
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.78,
+            105.86
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.79,
+            105.87
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.8,
+            105.88
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.81,
+            105.89
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.82,
+            105.89999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.83,
+            105.91
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.84,
+            105.92
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.85,
+            105.92999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.86,
+            105.94
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.87,
+            105.95
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.88,
+            105.96
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.89,
+            105.97
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.9,
+            105.98
+          ],
+          "in_saved_fill": true
+        }
+      ],
+      "all_in_saved_fill": true
+    },
+    {
+      "direction": [
+        1,
+        -1
+      ],
+      "samples": [
+        {
+          "position_mm": [
+            100.45,
+            104.63
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.46,
+            104.62
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.47,
+            104.61
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.48,
+            104.6
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.49,
+            104.59
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.5,
+            104.58
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.51,
+            104.57
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.52,
+            104.56
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.53,
+            104.55
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.54,
+            104.53999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.55,
+            104.53
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.56,
+            104.52
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.57,
+            104.51
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.58,
+            104.5
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.59,
+            104.49
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.6,
+            104.48
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.61,
+            104.47
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.62,
+            104.46
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.63,
+            104.45
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.64,
+            104.44
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.65,
+            104.42999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.66,
+            104.42
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.67,
+            104.41
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.68,
+            104.39999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.69,
+            104.39
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.7,
+            104.38
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.71,
+            104.37
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.72,
+            104.36
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.73,
+            104.35
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.74,
+            104.34
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.75,
+            104.33
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.76,
+            104.32
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.77,
+            104.31
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.78,
+            104.3
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.79,
+            104.28999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.8,
+            104.28
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.81,
+            104.27
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.82,
+            104.26
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.83,
+            104.25
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.84,
+            104.24
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.85,
+            104.23
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.86,
+            104.22
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.87,
+            104.21
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.88,
+            104.2
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.89,
+            104.19
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            100.9,
+            104.17999999999999
+          ],
+          "in_saved_fill": true
+        }
+      ],
+      "all_in_saved_fill": true
+    },
+    {
+      "direction": [
+        -1,
+        1
+      ],
+      "samples": [
+        {
+          "position_mm": [
+            99.55,
+            105.53
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.54,
+            105.53999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.53,
+            105.55
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.52,
+            105.56
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.51,
+            105.57
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.5,
+            105.58
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.49,
+            105.59
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.48,
+            105.6
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.47,
+            105.61
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.46,
+            105.62
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.45,
+            105.63
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.44,
+            105.64
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.43,
+            105.64999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.42,
+            105.66
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.41,
+            105.67
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.4,
+            105.67999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.39,
+            105.69
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.38,
+            105.7
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.37,
+            105.71
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.36,
+            105.72
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.35,
+            105.73
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.34,
+            105.74
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.33,
+            105.75
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.32,
+            105.76
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.31,
+            105.77
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.3,
+            105.78
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.29,
+            105.78999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.28,
+            105.8
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.27,
+            105.81
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.26,
+            105.82
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.25,
+            105.83
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.24,
+            105.84
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.23,
+            105.85
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.22,
+            105.86
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.21,
+            105.87
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.2,
+            105.88
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.19,
+            105.89
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.18,
+            105.89999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.17,
+            105.91
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.16,
+            105.92
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.15,
+            105.92999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.14,
+            105.94
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.13,
+            105.95
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.12,
+            105.96
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.11,
+            105.97
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.1,
+            105.98
+          ],
+          "in_saved_fill": true
+        }
+      ],
+      "all_in_saved_fill": true
+    },
+    {
+      "direction": [
+        -1,
+        -1
+      ],
+      "samples": [
+        {
+          "position_mm": [
+            99.55,
+            104.63
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.54,
+            104.62
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.53,
+            104.61
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.52,
+            104.6
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.51,
+            104.59
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.5,
+            104.58
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.49,
+            104.57
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.48,
+            104.56
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.47,
+            104.55
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.46,
+            104.53999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.45,
+            104.53
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.44,
+            104.52
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.43,
+            104.51
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.42,
+            104.5
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.41,
+            104.49
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.4,
+            104.48
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.39,
+            104.47
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.38,
+            104.46
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.37,
+            104.45
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.36,
+            104.44
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.35,
+            104.42999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.34,
+            104.42
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.33,
+            104.41
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.32,
+            104.39999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.31,
+            104.39
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.3,
+            104.38
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.29,
+            104.37
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.28,
+            104.36
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.27,
+            104.35
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.26,
+            104.34
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.25,
+            104.33
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.24,
+            104.32
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.23,
+            104.31
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.22,
+            104.3
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.21,
+            104.28999999999999
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.2,
+            104.28
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.19,
+            104.27
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.18,
+            104.26
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.17,
+            104.25
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.16,
+            104.24
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.15,
+            104.23
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.14,
+            104.22
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.13,
+            104.21
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.12,
+            104.2
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.11,
+            104.19
+          ],
+          "in_saved_fill": true
+        },
+        {
+          "position_mm": [
+            99.1,
+            104.17999999999999
+          ],
+          "in_saved_fill": true
+        }
+      ],
+      "all_in_saved_fill": true
+    }
+  ]
+}

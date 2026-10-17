@@ -1,0 +1,32 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: nominal unloaded native rc; no adc model, not a loaded-interface acceptance test
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using transient initial conditions
+
+No. of Data Rows : 11016
+
+  Measurements for Transient Analysis
+
+out_1ms             =  6.321206e-01
+in_1ms              =  1.000000e+00
+
+
+Total analysis time (seconds) = 0.016
+
+Total elapsed time (seconds) = 0.017 
+
+Total DRAM available = 128728.297 MB.
+DRAM currently available = 37061.566 MB.
+Maximum ngspice program size =   21.660 MB.
+Current ngspice program size =   13.223 MB.
+
+Shared ngspice pages =   11.012 MB.
+Text (code) pages =    6.156 MB.
+Stack = 0 bytes.
+Library pages =    2.410 MB.
+

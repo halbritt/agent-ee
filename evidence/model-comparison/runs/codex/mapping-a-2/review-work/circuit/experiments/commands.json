@@ -1,0 +1,78 @@
+[
+  {
+    "name": "python-version",
+    "argv": [
+      "/usr/bin/python3",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "python-version.stdout.txt",
+    "stderr": "python-version.stderr.txt"
+  },
+  {
+    "name": "kicad-version",
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "kicad-version.stdout.txt",
+    "stderr": "kicad-version.stderr.txt"
+  },
+  {
+    "name": "netlist",
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "stdout": "netlist.stdout.txt",
+    "stderr": "netlist.stderr.txt"
+  },
+  {
+    "name": "erc",
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "stdout": "erc.stdout.txt",
+    "stderr": "erc.stderr.txt"
+  },
+  {
+    "name": "drc",
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "stdout": "drc.stdout.txt",
+    "stderr": "drc.stderr.txt"
+  }
+]

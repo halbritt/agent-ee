@@ -1,0 +1,21 @@
+{
+  "candidate_id": "d36037b672ce46e4cdc6b63b3a62a082e2d3e61c6ef6ee33d20711d15b66b514",
+  "coverage": [
+    "Checked saved PCB pads, tracks, placement, outline and ground return: inputs/project/rc_filter.kicad_pcb, footprints and segment/via/filled_polygon sections. A continuous saved-copper path connects C1.2 through the via and ground fill to J1.3; calculations: review-work/physical/experiments/native_audit.json, saved_ground_return_witness.",
+    "Compared native component values and PCB pad membership against work/netlist/design.xml, components and nets: R1=10k, C1=100n; connectivity agrees.",
+    "Read supplied ERC/DRC records and repeated both checks. Zero reported violations, unconnected items or parity issues: review-work/physical/experiments/drc.json and erc.json.",
+    "Independently evaluated shutdown: analytic OUT(5 ms)=6.737947 mV; initialized ngspice transient measures 6.737944 mV, below 10 mV. Evidence: review-work/physical/experiments/native_audit.json, calculation; shutdown_checked.cir; shutdown_checked.log, out_5ms.",
+    "Recorded commands, versions, assumptions, outcomes and limitations in review-work/physical/experiments/commands.json and review-notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "Evaluated saved zone fill only; no refill performed.",
+    "Ignored ERC categories were not re-enabled: single_global_label, four_way_junction, simulation_model_issue, footprint_filter. Ignored DRC categories: missing_courtyard, track_not_centered_on_via, tuning_profile_track_geometries, footprint_filters_mismatch, footprint_type_mismatch.",
+    "No fabrication, assembled-board measurement, manufacturing-output audit, supplier-process validation or mechanical qualification.",
+    "Ideal shutdown scope only: no tolerance, parasitic, ampacity, thermal or ECU qualification. Track width was not treated as proof of current or thermal capability."
+  ],
+  "packet_sha256": "87e3932f9462dc1141aa01056292b7f51b592194b2b469d0414dc746b8f07919",
+  "role": "physical",
+  "run_id": "7215c203-f5dd-4e08-9d58-7df783ac53a5",
+  "schema": "agent-ee.review/1"
+}

@@ -1,0 +1,55 @@
+{
+  "candidate_id": "7a48855eff011bbbb0e59bd670ca885cfd820dde585082a2f1a4afd688b35174",
+  "coverage": [
+    "Read native schematic, PCB, requirements and check records. Independently exported connectivity matches work/netlist/connectivity.json.",
+    "Repeated saved-board DRC with schematic parity: zero violations, unconnected items or parity issues; see review-work/physical/experiments/independent_drc.json.",
+    "Inspected placement, closed outline, OUT junction and C1 ground return through the via, saved back copper and J1.3 thermal spokes; see review-work/physical/experiments/physical_inspection.json.",
+    "Calculated nominal unloaded response and checked it with ngspice: 0.632121 V at 1 ms. Commands, versions, assumptions and outcomes are recorded in review-work/physical/experiments/review_log.md."
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "The required measurement includes a switched ADC whose sampling capacitance, switch resistance, prior charge and sampling timing are unspecified.",
+      "evidence": [
+        {
+          "locator": "line 1: required voltage band and unspecified ADC parameters",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "C1 value at line 955; R1 value at line 1274",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "J1.2 OUT pad at line 596; OUT routing at lines 675\u2013698",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "Vout_V, assumptions and ADC_dependence",
+          "path": "review-work/physical/experiments/response_calculation.json"
+        },
+        {
+          "locator": "Measurements for Transient Analysis: v_at_1ms = 6.321206e-01",
+          "path": "review-work/physical/experiments/ngspice_baseline.log"
+        }
+      ],
+      "id": "physical_adc_coverage",
+      "location": "/OUT at J1.2, R1.2 and C1.1",
+      "mechanism": "ADC sampling exchanges charge with C1 through the output connection. The resulting disturbance and recovery depend on the missing ADC parameters and switching history.",
+      "reasoning": "With ideal nominal 10 k\u03a9 and 100 nF components, an initially discharged capacitor and no load, VOUT(1 ms)=1\u2212exp(\u22121)=0.632121 V, within the specified band. This baseline and the passing native checks do not establish the ADC-connected response. No actual band violation or saved-board connectivity defect was demonstrated.",
+      "severity": "major",
+      "title": "ADC-connected response remains unverified"
+    }
+  ],
+  "limitations": [
+    "No ADC-connected simulation or measurement was possible without defining the missing load and timing parameters.",
+    "No component tolerance, leakage, bias, temperature or selected-part model was evaluated; source impedance, actual rise time and initial filter charge remain unspecified.",
+    "No extracted PCB, connector, cable or return-path impedance model or manufactured-board measurement was evaluated.",
+    "Zone connectivity was examined as saved; no refill or fabrication-export validation was performed. Geometry sampling supplements native DRC but is not a continuous-path proof.",
+    "No fabrication capability, part-specific assembly, ampacity or thermal qualification was established. Track width alone was not used to infer qualification.",
+    "Original ERC was reviewed but not rerun. Ignored checks remain documented in work/erc/erc.json and work/drc/drc.json."
+  ],
+  "packet_sha256": "dd004714f420cef09a367a27134671503e104929e99f5e8ce619a16394c4d4c7",
+  "role": "physical",
+  "run_id": "d460fe18-d4d9-49fc-8947-a43926a68ad4",
+  "schema": "agent-ee.review/1"
+}

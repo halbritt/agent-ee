@@ -1,0 +1,29 @@
+{
+  "codex": {
+    "argv": [
+      "codex",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "codex-cli 0.163.0\n",
+    "stderr": ""
+  },
+  "claude": {
+    "argv": [
+      "claude",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "2.1.302 (Claude Code)\n",
+    "stderr": ""
+  },
+  "agy": {
+    "argv": [
+      "agy",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "1.4.0\n",
+    "stderr": ""
+  }
+}

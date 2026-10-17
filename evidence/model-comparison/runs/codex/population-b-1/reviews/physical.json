@@ -1,0 +1,58 @@
+{
+  "candidate_id": "d2e8d03e4664f78e6c194bca332dda002c8c52024b52e117e6b3e589979ac655",
+  "coverage": [
+    "Independently parsed native schematic population, PCB footprints, pads, segments and zone metadata; traced signal and saved ground-return routing.",
+    "Repeated native netlist export, ERC and schematic-parity DRC using KiCad 10.0.7. Reports contain zero violations, unconnected items or parity issues.",
+    "Compared exported net membership with native PCB pads and calculated the empty R1 footprint gap. Commands, versions, unchanged candidate hashes and assumptions are recorded in review-work/physical/experiments/commands.json and review-work/physical/experiments/review-notes.md.",
+    "Challenged verification coverage: ERC/DRC establish routing and parity under configured rules, while the supplied netlist and geometry checks report population without asserting a fitted resistive path."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The saved assembly population is used without an alternate assembly override.",
+      "evidence": [
+        {
+          "locator": "Line 1: fitted resistive DC path required; unpopulated footprints cannot be credited",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Lines 1252\u20131274: Device:R instance R1, value 10k, with (dnp yes)",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "Line 304: R1 (attr smd dnp); lines 359\u2013373: separate /IN and /OUT pads; lines 667\u2013713: tracks terminate at those pads",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "components/comp[@ref='R1']/property[@name='dnp']; nets /IN and /OUT connect through opposite R1 pins",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "R1_pad_horizontal_copper_gap_mm = 0.8; fitted_resistor_edges = []; required_fitted_resistive_IN_OUT_path = false",
+          "path": "review-work/physical/experiments/native-topology.json"
+        },
+        {
+          "locator": "violations, unconnected_items and schematic_parity are empty; these checks do not assert inter-net conduction through populated components",
+          "path": "work/drc/drc.json"
+        }
+      ],
+      "id": "physical-001",
+      "location": "R1 between /IN and /OUT, PCB position (105, 100) mm",
+      "mechanism": "R1 is the only resistor connecting the two nets, but both native files designate it unpopulated. Copper reaches each land separately; the facing pad edges are separated by 1.825 \u2212 1.025 = 0.800 mm. Neither the empty footprint nor the remaining fitted capacitor and connector supplies the required resistive bridge.",
+      "reasoning": "The saved population therefore leaves the required /IN-to-/OUT DC path open. Independent native parsing and a fresh XML export agree on population and pad nets. Clean ERC and DRC results are compatible with this defect because each distinct net is correctly routed to its assigned pads.",
+      "severity": "major",
+      "title": "DNP resistor leaves the required /IN-to-/OUT DC path open"
+    }
+  ],
+  "limitations": [
+    "No physical assembly or resistance measurement was available. The gap is calculated from saved native geometry.",
+    "No zone refill was performed. ERC/DRC retained the candidate's ignored checks, documented in their reports; those checks were not independently enabled.",
+    "No electrical stimuli, transient/AC simulation or parasitic extraction was performed. The fitted-path conclusion uses native topology and population rather than assumed operating conditions.",
+    "Manufacturing-output audits, part-specific mechanical fit, solder-process validation, ampacity, thermal and environmental qualification were not performed. No qualification is inferred from trace width.",
+    "The supplied geometry console contains PROPERTY_ENUM assertion diagnostics. Relevant population and coordinates were independently cross-checked against native files; successful extraction alone was not treated as electrical proof."
+  ],
+  "packet_sha256": "abf747f43b1f5560fc5a55fc37b47a8eafa2918138621185161442af2f48582a",
+  "role": "physical",
+  "run_id": "e1ba1d6d-cc99-4b33-b937-6f924ac41853",
+  "schema": "agent-ee.review/1"
+}

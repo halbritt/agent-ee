@@ -80,3 +80,19 @@ To reproduce a fresh full engineering demonstration with the same fixed
 requirements, run `python3 scripts/demo.py --out build/my-demo` from the repo.
 It invokes actual native tools and subscription reviewers, performs at most one
 disposable repair, and records actual outcomes without retrying failures into a pass.
+
+## Subscription profiles and tool-enabled follow-up
+
+The [three-harness evaluation](MODEL-SELECTION.md) records actual Claude, Codex
+and Agy calls, separate adjudicator trials, donor attempts and failures. The
+[new donor report](MODEL-BASELINE.md) separates confirmed native/component-identity
+findings from unresolved module, reset, CAN and thermal behavior.
+
+Current release evidence uses core `5d01de9`: [repair demonstration](model-release/repair-demo/),
+[full uncertainty result](model-release/uncertainty/REPORT.md),
+[baseline with assisted adjudication](model-release/baseline/REPORT.md), and
+[69-test log](model-release/tests.log). [Fresh-worktree replay](model-validation/fresh-checkout.json),
+[implementation mismatch refusal](model-validation/old-policy-refusal.json),
+and [source-state check](model-validation/source-state-final.json) distinguish
+historical records from current acceptance. Earlier evidence above retains its
+original implementation identity.

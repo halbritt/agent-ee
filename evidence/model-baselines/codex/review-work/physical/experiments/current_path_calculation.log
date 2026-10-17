@@ -1,0 +1,20 @@
+{
+  "/HeaterNeg": {
+    "series_chain_length_mm": 109.9709,
+    "chain_widths_mm": [
+      0.6
+    ],
+    "estimated_trace_resistance_ohm_20C": 0.09028087219047622,
+    "voltage_drop_V_per_A": 0.09028087219047622,
+    "copper_power_W_per_A_squared": 0.09028087219047622
+  },
+  "/HeaterNeg2": {
+    "series_chain_length_mm": 156.481,
+    "chain_widths_mm": [
+      0.6
+    ],
+    "estimated_trace_resistance_ohm_20C": 0.12846344952380956,
+    "voltage_drop_V_per_A": 0.12846344952380956,
+    "copper_power_W_per_A_squared": 0.12846344952380956
+  }
+}

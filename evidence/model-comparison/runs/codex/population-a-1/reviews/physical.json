@@ -1,0 +1,21 @@
+{
+  "candidate_id": "57d1859261fc93ec38ba0bf952f35b81117f84e4e1b119bf8be5555251f4606f",
+  "coverage": [
+    "Population checked directly: inputs/project/rc_filter.kicad_sch:1252\u20131285 marks R1 as 10k, in_bom yes, on_board yes, dnp no; inputs/project/rc_filter.kicad_pcb:238\u2013375 has matching R1 without a DNP attribute.",
+    "Independently traced saved F.Cu geometry from J1.1 through fitted R1 to J1.2, including the OUT T junction. Native routing: inputs/project/rc_filter.kicad_pcb:667\u2013697. Geometry graph finds continuity with the fitted resistor bridge and none without it; review-work/physical/experiments/physical_results.json, fitted_R1_IN_to_OUT_path and copper_only_IN_to_OUT_path.",
+    "Checked C1 return through the GND via and saved B.Cu fill to J1.3, board outline and placement. Native source: inputs/project/rc_filter.kicad_pcb:699\u2013799; calculations and inspected rendering: review-work/physical/experiments/physical_results.json, saved_zone, and review-work/physical/experiments/saved_geometry.png.",
+    "Read native check records: work/drc/drc.json has empty violations, unconnected_items and schematic_parity arrays; work/erc/erc.json has no sheet violations. work/netlist/design.xml net memberships agree with native PCB pad assignments. Check exits alone were not treated as electrical proof.",
+    "Commands, versions, assumptions, outcomes and analysis source recorded in review-work/physical/experiments/README.md and review-work/physical/experiments/physical_review.py. No evidence-supported defect found."
+  ],
+  "findings": [],
+  "limitations": [
+    "No physical assembly, resistance measurement or electrical stimulus testing; conclusion concerns the saved fitted topology.",
+    "No ampacity, thermal, component-rating, fabrication-capability or reliability qualification. Operating conditions and manufacturing specifications are unspecified; width alone was not used to infer qualification.",
+    "Saved zone fill evaluated without refilling. Independent centerline tracing and sampled fill overlap are fixture-specific, not a general clearance verification.",
+    "Disabled ERC/DRC categories were not re-enabled; exact ignored checks are listed in work/erc/erc.json and work/drc/drc.json. No ECU qualification evaluated."
+  ],
+  "packet_sha256": "02bce905e8e8fd7701553d6d8ff434656d12a1a4c44d3825452c84459ab54ae0",
+  "role": "physical",
+  "run_id": "c89610e1-4fc4-41c8-9a8a-48c6ebc5ad8c",
+  "schema": "agent-ee.review/1"
+}

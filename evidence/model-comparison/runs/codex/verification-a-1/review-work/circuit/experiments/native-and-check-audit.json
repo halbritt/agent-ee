@@ -1,0 +1,286 @@
+{
+  "hashes": {
+    "inputs/requirements.txt": "41dc250aca552c2c22a96db16fe09fda7f755a7902dbbbdd69a60cf1857276db",
+    "inputs/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "inputs/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "native_symbols": {
+    "#PWR02": {
+      "value": "GND",
+      "lib_id": "power:GND",
+      "at": [
+        "71.12",
+        "60.96",
+        "0"
+      ]
+    },
+    "C1": {
+      "value": "100n",
+      "lib_id": "Device:C",
+      "at": [
+        "101.6",
+        "63.5",
+        "0"
+      ]
+    },
+    "#PWR01": {
+      "value": "GND",
+      "lib_id": "power:GND",
+      "at": [
+        "101.6",
+        "71.12",
+        "0"
+      ]
+    },
+    "J1": {
+      "value": "Conn_01x03",
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "at": [
+        "60.96",
+        "63.5",
+        "180"
+      ]
+    },
+    "#FLG01": {
+      "value": "PWR_FLAG",
+      "lib_id": "power:PWR_FLAG",
+      "at": [
+        "109.22",
+        "71.12",
+        "0"
+      ]
+    },
+    "R1": {
+      "value": "10k",
+      "lib_id": "Device:R",
+      "at": [
+        "86.36",
+        "63.5",
+        "0"
+      ]
+    }
+  },
+  "native_board": {
+    "C1": {
+      "value": "100n",
+      "pads": {
+        "1": "/OUT",
+        "2": "GND"
+      }
+    },
+    "R1": {
+      "value": "10k",
+      "pads": {
+        "1": "/IN",
+        "2": "/OUT"
+      }
+    },
+    "J1": {
+      "value": "Conn_01x03",
+      "pads": {
+        "1": "/IN",
+        "2": "/OUT",
+        "3": "GND"
+      }
+    }
+  },
+  "fresh_export_components": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "10k"
+  },
+  "fresh_export_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "export_matches_supplied_connectivity": true,
+  "board_pad_assignments_match_export": true,
+  "checks_read": {
+    "erc": {
+      "outcome": "pass",
+      "details": {
+        "by_severity": {},
+        "by_type": {},
+        "ignored_checks": [
+          "single_global_label",
+          "four_way_junction",
+          "simulation_model_issue",
+          "footprint_filter"
+        ],
+        "kicad_version": "10.0.7",
+        "schematic_files": [
+          "project/rc_filter.kicad_sch"
+        ],
+        "sheets_checked": 1,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "sch",
+            "erc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--units",
+            "mm",
+            "-o",
+            "/work/erc.json",
+            "/candidate/project/rc_filter.kicad_sch"
+          ],
+          "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+          "duration_s": 1.072,
+          "exit_code": 0
+        },
+        "violations": 0
+      },
+      "limitations": [],
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/erc.json",
+        "/candidate/project/rc_filter.kicad_sch"
+      ]
+    },
+    "drc": {
+      "outcome": "pass",
+      "details": {
+        "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+        "by_severity": {},
+        "by_type": {},
+        "ignored_checks": [
+          "missing_courtyard",
+          "track_not_centered_on_via",
+          "tuning_profile_track_geometries",
+          "footprint_filters_mismatch",
+          "footprint_type_mismatch"
+        ],
+        "kicad_version": "10.0.7",
+        "schematic_parity": 0,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--schematic-parity",
+            "--units",
+            "mm",
+            "-o",
+            "/work/drc.json",
+            "/candidate/project/rc_filter.kicad_pcb"
+          ],
+          "console_sha256": "9581d5d3321e3a9ab5e0afec8368bba15c9f7d2b55704e1ac6fddf15d791e2aa",
+          "duration_s": 1.275,
+          "exit_code": 0
+        },
+        "unconnected_items": 0,
+        "violations": 0
+      },
+      "limitations": [
+        "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+      ],
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ]
+    },
+    "netlist": {
+      "outcome": "info",
+      "details": {
+        "components": 3,
+        "dnp_refs": [],
+        "nets": 3,
+        "refs": [
+          "C1",
+          "J1",
+          "R1"
+        ],
+        "schematic_files": [
+          "project/rc_filter.kicad_sch"
+        ],
+        "sheet_instances": 1
+      },
+      "limitations": [],
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/design.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ]
+    },
+    "geometry": {
+      "outcome": "info",
+      "details": {
+        "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+        "dnp_refs": [],
+        "nets": 3,
+        "pads": 7,
+        "pcbnew_version": "10.0.7",
+        "tool": {
+          "argv": [
+            "/usr/bin/python3",
+            "-B",
+            "-m",
+            "agent_ee.geometry_probe",
+            "/candidate/project/rc_filter.kicad_pcb",
+            "-o",
+            "/work/geometry.json"
+          ],
+          "console_sha256": "e44e944d9b554ca8c963c908bb03bb907411562830fb71dd6572188b67025530",
+          "duration_s": 0.223,
+          "exit_code": 0
+        },
+        "track_segments": 5,
+        "unconnected_items": 0,
+        "vias": 1,
+        "zones": 1
+      },
+      "limitations": [
+        "geometry read from the saved board file; zone fill state as saved"
+      ],
+      "argv": [
+        "/usr/bin/python3",
+        "-B",
+        "-m",
+        "agent_ee.geometry_probe",
+        "/candidate/project/rc_filter.kicad_pcb",
+        "-o",
+        "/work/geometry.json"
+      ]
+    }
+  }
+}

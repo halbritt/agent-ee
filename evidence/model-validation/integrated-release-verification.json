@@ -1,0 +1,27 @@
+{
+  "repair-demo/control": {
+    "candidate_id": "0b0265f2838c37cacd80169482dacd56a05559c05ccf88cb9aba1dd719bb31a7",
+    "outcome": "criteria_satisfied",
+    "current_source_verified": true
+  },
+  "repair-demo/seed": {
+    "candidate_id": "329f916010187406f161061477ccaa609a7cfa22231e8b51f90b321f35ab1028",
+    "outcome": "defects_or_unresolved",
+    "current_source_verified": true
+  },
+  "repair-demo/repair": {
+    "candidate_id": "a3056a0f779d71d1360af66b5419e5d3a8cc024bd5f95a292d1888f36bafff5d",
+    "outcome": "criteria_satisfied",
+    "current_source_verified": true
+  },
+  "baseline": {
+    "candidate_id": "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4",
+    "outcome": "defects_or_unresolved",
+    "current_source_verified": true
+  },
+  "uncertainty": {
+    "candidate_id": "7a48855eff011bbbb0e59bd670ca885cfd820dde585082a2f1a4afd688b35174",
+    "outcome": "defects_or_unresolved",
+    "current_source_verified": true
+  }
+}

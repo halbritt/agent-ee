@@ -1,0 +1,397 @@
+{
+  "pcbnew_version": "10.0.7",
+  "board_sha256": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
+  "assumptions": [
+    "Read-only LoadBoard; no SaveBoard and no zone refill. Native saved fills only.",
+    "Pad net comparison checks names and pin numbers, not internal component behavior.",
+    "Annulus calculation uses nominal circular pad and drill diameters; no fabrication tolerances assumed."
+  ],
+  "mechanical_holes": [
+    {
+      "uuid": "e186b75f-4739-4f2e-a723-906e090de7da",
+      "position_mm": [
+        71.95,
+        35.49
+      ],
+      "pad_type": "PTH",
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "nominal_annulus_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788",
+      "position_mm": [
+        75.55,
+        39.34
+      ],
+      "pad_type": "PTH",
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": [
+        2.2,
+        2.2
+      ],
+      "nominal_annulus_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10",
+      "position_mm": [
+        120.0,
+        28.49
+      ],
+      "pad_type": "PTH",
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "nominal_annulus_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "uuid": "233888a2-e331-456b-963a-5ee5605edf83",
+      "position_mm": [
+        199.65,
+        39.34
+      ],
+      "pad_type": "PTH",
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": [
+        2.2,
+        2.2
+      ],
+      "nominal_annulus_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0",
+      "position_mm": [
+        203.25,
+        35.49
+      ],
+      "pad_type": "PTH",
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "nominal_annulus_mm": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "pad_net_comparison": {
+    "pads_compared": 694,
+    "mismatches": []
+  },
+  "can2": {
+    "pads": [
+      {
+        "ref": "J1",
+        "pad": "11",
+        "net": "/CAN2-",
+        "position_mm": [
+          96.7,
+          33.34
+        ],
+        "uuid": "bafefc15-d40a-46a3-aa9c-b6c0b63da473"
+      },
+      {
+        "ref": "J1",
+        "pad": "15",
+        "net": "/CAN2+",
+        "position_mm": [
+          94.2,
+          33.34
+        ],
+        "uuid": "0cd1c40f-8da1-427c-85ac-0d798d7c9caa"
+      },
+      {
+        "ref": "J2",
+        "pad": "73",
+        "net": "/CAN2+",
+        "position_mm": [
+          144.91008,
+          131.026287
+        ],
+        "uuid": "0c61310e-0996-4ac2-a742-b9bef0c337c3"
+      },
+      {
+        "ref": "J2",
+        "pad": "74",
+        "net": "/CAN2-",
+        "position_mm": [
+          142.37008,
+          131.026287
+        ],
+        "uuid": "a5c91f4b-fe5f-47b4-9428-83aecf56faba"
+      },
+      {
+        "ref": "U20",
+        "pad": "6",
+        "net": "/CAN2-",
+        "position_mm": [
+          177.810593,
+          139.938446
+        ],
+        "uuid": "0fe6edee-8cae-43bb-a4dc-f02896b815f2"
+      },
+      {
+        "ref": "U20",
+        "pad": "7",
+        "net": "/CAN2+",
+        "position_mm": [
+          177.810593,
+          141.208446
+        ],
+        "uuid": "bbb3e16c-11ad-41aa-99b7-e252b3068709"
+      },
+      {
+        "ref": "U21",
+        "pad": "6",
+        "net": "/CAN2-",
+        "position_mm": [
+          77.956624,
+          140.906545
+        ],
+        "uuid": "b04e73b3-4add-43b8-962f-c5643dfeefd4"
+      },
+      {
+        "ref": "U21",
+        "pad": "7",
+        "net": "/CAN2+",
+        "position_mm": [
+          77.956624,
+          139.636545
+        ],
+        "uuid": "a4ccd440-8773-4f0c-866a-2641890b3060"
+      },
+      {
+        "ref": "R36",
+        "pad": "1",
+        "net": "/CAN2+",
+        "position_mm": [
+          175.014418,
+          142.12863
+        ],
+        "uuid": "ed50429c-f265-4bd0-89c9-816bdb8e71ad"
+      },
+      {
+        "ref": "R36",
+        "pad": "2",
+        "net": "/CAN2-",
+        "position_mm": [
+          175.014418,
+          139.20363
+        ],
+        "uuid": "d6c18c5a-48c7-4c45-9a50-04acc9f4ee0d"
+      },
+      {
+        "ref": "R37",
+        "pad": "1",
+        "net": "/CAN2+",
+        "position_mm": [
+          80.15525,
+          140.550045
+        ],
+        "uuid": "1a4af480-8652-4b2d-9c85-eaeb4c635932"
+      },
+      {
+        "ref": "R37",
+        "pad": "2",
+        "net": "/CAN2-",
+        "position_mm": [
+          83.08025,
+          140.550045
+        ],
+        "uuid": "2e550948-0290-4d3b-ae85-7d09505f22ae"
+      }
+    ],
+    "track_length_mm_by_net": {},
+    "via_count_by_net": {},
+    "termination_population": {
+      "R36": {
+        "value": "120",
+        "dnp": true
+      },
+      "R37": {
+        "value": "120",
+        "dnp": true
+      }
+    }
+  },
+  "copper_summary": {
+    "/CAN2+": {
+      "segments": 61,
+      "vias": 4,
+      "total_track_length_mm": 252.42812061267614,
+      "track_widths_mm": [
+        0.2,
+        0.25
+      ]
+    },
+    "/CAN2-": {
+      "segments": 53,
+      "vias": 4,
+      "total_track_length_mm": 252.3985398517158,
+      "track_widths_mm": [
+        0.2,
+        0.25
+      ]
+    },
+    "/12V_MR": {
+      "segments": 45,
+      "vias": 34,
+      "total_track_length_mm": 228.40496517783166,
+      "track_widths_mm": [
+        0.5,
+        1.0,
+        1.5
+      ]
+    },
+    "/12V_MR_FUSE": {
+      "segments": 15,
+      "vias": 3,
+      "total_track_length_mm": 32.68508238267813,
+      "track_widths_mm": [
+        0.8,
+        0.9,
+        1.5
+      ]
+    },
+    "GND": {
+      "segments": 111,
+      "vias": 1022,
+      "total_track_length_mm": 94.1022788986013,
+      "track_widths_mm": [
+        0.25,
+        0.5
+      ]
+    },
+    "/HeaterNeg": {
+      "segments": 13,
+      "vias": 0,
+      "total_track_length_mm": 112.51075774600102,
+      "track_widths_mm": [
+        0.25,
+        0.6
+      ]
+    },
+    "/HeaterNeg2": {
+      "segments": 20,
+      "vias": 0,
+      "total_track_length_mm": 159.02121567524324,
+      "track_widths_mm": [
+        0.6
+      ]
+    }
+  },
+  "thermal_native_checks": [
+    {
+      "index": 94,
+      "comment": "",
+      "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+      "excluded": true,
+      "items": [
+        {
+          "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+          "pos": {
+            "x": 203.2,
+            "y": 23.36994
+          },
+          "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+        },
+        {
+          "description": "Pad 2 [GND] of C15 on F.Cu",
+          "pos": {
+            "x": 107.851547,
+            "y": 98.755769
+          },
+          "uuid": "9075962d-febe-4c1a-ab7d-6f8b94d3635c"
+        }
+      ],
+      "severity": "error",
+      "type": "starved_thermal"
+    },
+    {
+      "index": 95,
+      "comment": "",
+      "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+      "excluded": true,
+      "items": [
+        {
+          "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+          "pos": {
+            "x": 203.2,
+            "y": 23.36994
+          },
+          "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+        },
+        {
+          "description": "Pad 4 [GND] of U7 on F.Cu",
+          "pos": {
+            "x": 101.008268,
+            "y": 102.683572
+          },
+          "uuid": "23ac307c-764d-4806-bb29-f4965cb55097"
+        }
+      ],
+      "severity": "error",
+      "type": "starved_thermal"
+    },
+    {
+      "index": 96,
+      "comment": "",
+      "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+      "excluded": true,
+      "items": [
+        {
+          "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+          "pos": {
+            "x": 203.2,
+            "y": 23.36994
+          },
+          "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+        },
+        {
+          "description": "Pad 2 [GND] of C14 on F.Cu",
+          "pos": {
+            "x": 101.591948,
+            "y": 104.291543
+          },
+          "uuid": "f33c422b-548e-40d6-b20d-b67c2305f336"
+        }
+      ],
+      "severity": "error",
+      "type": "starved_thermal"
+    }
+  ]
+}

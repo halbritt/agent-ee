@@ -12,7 +12,7 @@ isolation, troubleshooting, extension and evidence reproduction.
 cd ~/git/agent-ee
 ./scripts/install.sh
 agent-ee doctor
-agent-ee review scopes/donor.json --profile profiles/claude.json --out build/donor-review --max-seconds 1200
+agent-ee review scopes/donor-case-alias.json --profile profiles/codex-baseline.json --out build/donor-review --max-seconds 3600
 agent-ee inspect build/donor-review
 agent-ee verify build/donor-review
 ```
@@ -27,11 +27,15 @@ Clone and authentication prerequisites are in [installation](docs/installation.m
 
 Select every reviewer and the adjudicator explicitly using a
 [versioned profile](docs/reviewer-profiles.md). There is no implicit model default.
+The [actual three-harness evaluation](evidence/MODEL-SELECTION.md) supports a
+provisional Codex starting profile and records timeouts, overclaims and failed
+automatic adjudications. The [tool-enabled donor follow-up](evidence/MODEL-BASELINE.md)
+reports new component-identity and interface findings.
 
 ## Prerequisites and integration
 
 The demonstrated environment is Linux with KiCad 10.0.7, ngspice 42, Bubblewrap
-0.9.0 and Claude Code 2.1.302 authenticated through Claude Max. The CLI uses only
+0.9.0 and native subscription CLIs: Claude Code 2.1.302, Codex 0.163.0 and Agy 1.4.0. The CLI uses only
 explicit Claude, Codex or Agy subscription profiles; an auth/quota error stops that call
 and leaves the review incomplete. It does not fall back to another provider.
 Native prerequisite/version probes are separate from integration proof.

@@ -1,0 +1,6 @@
+{
+  "unloaded_Vout_1ms_V": 0.6321206,
+  "analytic_Vout_1ms_V": 0.6321205588285577,
+  "difference_V": 4.117144236648329e-08,
+  "ADC_connected_test_executed": false
+}

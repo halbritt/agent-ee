@@ -1,0 +1,184 @@
+{
+  "schema": "agent-ee.decisions/1",
+  "candidate_id": "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4",
+  "run_id": "bafd7961-39b9-4a34-9b39-b7f108e82f07",
+  "decisions": [
+    {
+      "finding_id": "check/erc",
+      "disposition": "accepted",
+      "reason": "The declared ERC criterion fails: independent execution reproduces all 353 violations, including five errors. These establish native rule/model-intent defects; they do not independently establish missing physical supplies or shorted independent regulators. Successful execution is not a pass.",
+      "evidence": [
+        {
+          "path": "work/erc/erc.json",
+          "locator": "sheets[0].violations[0:5]; complete report: 5 errors, 348 warnings"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/verification.json",
+          "locator": "erc_sheets_equal = true"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/commands.json",
+          "locator": "commands[0]: independent ERC argv, exit and log"
+        }
+      ]
+    },
+    {
+      "finding_id": "check/drc",
+      "disposition": "accepted",
+      "reason": "The declared DRC criterion fails. Independent execution reproduces 142 violations and 114 parity issues, including 13 excluded error-level violations. Exclusions and zero unconnected items do not resolve those failing geometric rules; no fabrication or functional failure is inferred from field/library warnings.",
+      "evidence": [
+        {
+          "path": "work/drc/drc.json",
+          "locator": "violations[94:97], violations[132:142], schematic_parity and unconnected_items"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/verification.json",
+          "locator": "drc: violations, schematic_parity and unconnected_items all equal fresh evidence"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/commands.json",
+          "locator": "commands[1]: independent DRC argv, exit and log"
+        }
+      ]
+    },
+    {
+      "finding_id": "circuit/circuit-001",
+      "disposition": "noted",
+      "reason": "The field inconsistency is confirmed: all eight switches specify VNL5090 while [LCSC identifies C2680415 as VNL5050N3TR-E](https://www.lcsc.com/product-detail/C2680415.html). Retain this as a minor identification concern. No declared procurement-field consistency criterion or electrical incompatibility establishes a defect under the supplied ERC/DRC/netlist/geometry criteria.",
+      "evidence": [
+        {
+          "path": "inputs/project/Lowside Adder.kicad_sch",
+          "locator": "U11 Value/LCSC at lines 2549/2583; corresponding U12-U14 symbols and U16-U19 instances"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/audit.json",
+          "locator": "board_footprints.U11-U14/U16-U19.properties; native_schematics.Lowside Adder.kicad_sch"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/source-details.json",
+          "locator": "LCSC product page lines 1222-1227: MPN, stock code and SOT-223"
+        }
+      ]
+    },
+    {
+      "finding_id": "circuit/circuit-002",
+      "disposition": "deferred",
+      "reason": "The conditional mechanism is supported: native 1 kohm series drive cannot guarantee the N3 input/supply's 3.5 V minimum from a 3.3 V GPIO. Both [VNL5090](https://www.st.com/resource/en/datasheet/vnl5090n3-e.pdf) and [VNL5050](https://www.st.com/resource/en/datasheet/vnl5050s5-e.pdf) specifications support that bound. The exact mated module's GPIO levels and reset behavior remain unestablished. The unloaded 2.5 V LS9/10 bias does not predict switch state. Preserve this major compatibility uncertainty pending actual module drive evidence.",
+      "evidence": [
+        {
+          "path": "inputs/project/Lowside Adder.kicad_sch",
+          "locator": "RN1/RN2 input pulldown/series networks; second instance RN3/RN4; VNL5090 inputs"
+        },
+        {
+          "path": "work/netlist/connectivity.json",
+          "locator": "/LS9-/LS12, /IGN9-/IGN12, Net-(RN2-R1.2) through Net-(RN4-R4.2)"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/audit.json",
+          "locator": "board_footprints; selected_nets; calculations including conditional assumptions"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/source-details.json",
+          "locator": "ST VNL5090 Tables 6/8; Polygonus README direct-to-MCU outputs"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/source-extra.json",
+          "locator": "ST VNL5050 Tables 6/8: N3 input/supply and 3.5 V bounds"
+        }
+      ]
+    },
+    {
+      "finding_id": "circuit/circuit-003",
+      "disposition": "deferred",
+      "reason": "Both native 120 ohm carrier shunts are DNP, so the carrier contributes no populated resistive termination across CAN2. The [TJA1051 input resistance](https://www.nxp.com/docs/en/data-sheet/TJA1051.pdf) is not equivalent termination. However, J2 and J1 expose this bus to unspecified module/harness loading; no standalone-carrier termination requirement or assembled-bus failure is established. Preserve the major uncertainty until the actual termination configuration and relevant operating behavior are established.",
+      "evidence": [
+        {
+          "path": "inputs/project/wbo-can-trans.kicad_sch",
+          "locator": "resistor UUID d69380f9-5487-4782-9ce9-0690df62e543: Value 120, DNP yes, R36/R37 instances"
+        },
+        {
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+          "locator": "R36 UUID 6924b9c0-bd5f-481d-9f8d-7fc20978c5ab; R37 UUID 7f8c8af6-f455-43aa-9bef-892e252a308e: DNP attributes"
+        },
+        {
+          "path": "work/netlist/connectivity.json",
+          "locator": "nets /CAN2+ and /CAN2-: J2.73/74, J1.15/11, U20/U21 and R36/R37"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/audit.json",
+          "locator": "can2_direct_resistors; board_footprints.R36/R37; calculations"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/source-extra.json",
+          "locator": "NXP TJA1051 Table 7, Ri(dif) = 19-52 kohm"
+        }
+      ]
+    },
+    {
+      "finding_id": "physical/physical-001",
+      "disposition": "accepted",
+      "reason": "Established native padstack/annular-rule defect: all five J1 holes are plated with pad diameter equal to drill diameter, giving 0 mm annulus against the configured 0.1 mm minimum. Independent DRC and separate plated drill export confirm the condition. Existing exclusions do not change the geometry or resolve the failed criterion; connector-fit and fabrication-rejection claims remain unproven.",
+      "evidence": [
+        {
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+          "locator": "lines 21686-21725: five unnumbered thru_hole pads"
+        },
+        {
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pro",
+          "locator": "board.design_settings.rules.min_via_annular_width = 0.1; associated drc_exclusions"
+        },
+        {
+          "path": "work/drc/drc.json",
+          "locator": "violations[132:142]: five padstack and five annular_width errors, excluded=true"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/audit.json",
+          "locator": "j1_holes: native sizes, drills, UUIDs and radial_annulus_mm = 0"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/drills/Polygonus-Universal-Base-PTH.drl",
+          "locator": "T10: (75.55,-39.34), (199.65,-39.34); T12: (71.95,-35.49), (120,-28.49), (203.25,-35.49)"
+        }
+      ]
+    },
+    {
+      "finding_id": "physical/physical-002",
+      "disposition": "accepted",
+      "reason": "Established saved-copper rule defect: C15.2, U7.4 and C14.2 each resolve one thermal spoke against the configured minimum of two. Independent DRC reproduces all three. Exclusions do not alter saved copper or resolve the failed criterion. Routed ground connections limit the conclusion to the spoke-rule violation; no open ground or thermal failure is established.",
+      "evidence": [
+        {
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pro",
+          "locator": "board.design_settings.rules.min_resolved_spokes = 2; exclusions at lines 263-273"
+        },
+        {
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+          "locator": "saved GND zone UUID bc540b8b-3ffa-4b00-b211-3a91191a1f6d and C15.2/U7.4/C14.2 pads"
+        },
+        {
+          "path": "work/drc/drc.json",
+          "locator": "violations[94:97]: starved_thermal, minimum 2, actual 1"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/verification.json",
+          "locator": "drc.violations = true: independent saved-board results equal fresh evidence"
+        }
+      ]
+    },
+    {
+      "finding_id": "physical/physical-003",
+      "disposition": "duplicate",
+      "duplicate_of": "circuit/circuit-003",
+      "reason": "Same R36/R37 DNP population and unknown module/harness termination as the canonical CAN2 concern. Its supported observation and unresolved assembled-bus implications are preserved by circuit/circuit-003's deferred decision.",
+      "evidence": [
+        {
+          "path": "work/netlist/connectivity.json",
+          "locator": "components.R36/R37 and nets /CAN2+, /CAN2-"
+        },
+        {
+          "path": "review-work/adjudicator/experiments/audit.json",
+          "locator": "can2_direct_resistors and board_footprints.R36/R37"
+        }
+      ]
+    }
+  ]
+}

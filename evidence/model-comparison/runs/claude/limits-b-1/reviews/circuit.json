@@ -1,0 +1,58 @@
+{
+  "candidate_id": "b965f04e4f7ec2f0a9e09341f18b450848f9a46b51435020c7d62e188f737a1b",
+  "coverage": [
+    "Verified candidate file integrity: sha256 of inputs/project/rc_filter.kicad_sch and rc_filter.kicad_pcb recomputed from /candidate match packet artifact hashes (review-work/circuit/experiments/hashes.txt)",
+    "Verified circuit topology and component/pin identity from native schematic and exported netlist: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}, GND={C1.2,J1.3}; R1=10k, C1=100n; board pad nets match schematic nets",
+    "Reviewed fresh native check outputs: ERC 0 violations (work/erc/erc.json), DRC with schematic parity 0 violations/0 unconnected/0 parity issues (work/drc/drc.json), geometry probe consistent with board file (work/geometry/geometry.json); no native rule violations found independently",
+    "Evaluated R1 continuous dissipation under the sole stated operating condition (/IN=48 V DC, /OUT clamped to 0 V indefinitely) by hand calculation and ngspice-42 DC operating-point simulation with the clamp modeled as an ideal external 0 V source",
+    "Checked steady-state role of C1 under the clamp (no DC current, does not relieve R1) and sensitivity of the result to R1 tolerance (+10% still >2x limit)"
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The stated exercise operating condition only: external test equipment holds /IN at 48 V DC and clamps /OUT to 0 V indefinitely; fitted R1 has an assumed continuous power limit of 0.1 W (inputs/requirements.txt)",
+      "evidence": [
+        {
+          "locator": "lines 1-2: 48 V on /IN, /OUT clamped to 0 V indefinitely, R1 continuous limit 0.1 W",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "symbol uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78: Device:R, Value \"10k\"; labels IN at pin 1 wire (86.36 57.15) and OUT at pin 2 wire (86.36 69.85)",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "nets: /IN contains R1 pin 1; /OUT contains R1 pin 2; R1 value 10k",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "P = V^2/R = 0.2304 W; ratio = 2.30x vs 0.1 W limit",
+          "path": "review-work/circuit/experiments/r1_power_calc.out"
+        },
+        {
+          "locator": "ngspice .op: v(out)=0, i(vclamp)=4.8e-3 A, p_r1 = 2.304e-01 W",
+          "path": "review-work/circuit/experiments/r1_clamp.out"
+        },
+        {
+          "locator": "Calculation and Simulation cross-check sections; tolerance sensitivity note",
+          "path": "review-work/circuit/experiments/NOTES.md"
+        }
+      ],
+      "id": "CKT-R1-OVERPOWER",
+      "location": "R1 (10k, Resistor_SMD:R_0805_2012Metric), inputs/project/rc_filter.kicad_sch symbol uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78; board footprint uuid 8404a180-a151-464e-8f25-8cf316cdcba5 in inputs/project/rc_filter.kicad_pcb",
+      "mechanism": "R1 connects /IN (pin 1) to /OUT (pin 2) per work/netlist/design.xml. With /OUT clamped to 0 V, the full 48 V appears across the 10 kOhm resistor in steady state; C1 (100n, /OUT to GND) carries zero DC current and cannot relieve it. Dissipation P = V^2/R = 48^2/10000 = 0.2304 W at I = 4.8 mA, sustained indefinitely. This exceeds the stated 0.1 W continuous limit by a factor of 2.30 (margin +0.1304 W). An ngspice-42 DC operating-point simulation with the clamp modeled as an ideal external 0 V source confirms v(out)=0, I(R1)=4.8 mA, P(R1)=0.2304 W. Even if R1 were +10% high (11k), dissipation is 0.209 W, still over 2x the limit, so the conclusion is not tolerance-sensitive.",
+      "reasoning": "This is the single criterion the exercise asks to evaluate, and the design fails it by a wide, tolerance-insensitive margin under a condition explicitly stated to persist indefinitely. The passing ERC/DRC results (work/erc/erc.json, work/drc/drc.json) are connectivity/rule checks and carry no information about dissipation, so they do not contradict this finding. Hand calculation and an independent ngspice operating-point simulation agree exactly at 0.2304 W versus the 0.1 W continuous limit, making this an evidence-supported blocking defect rather than a concern.",
+      "severity": "blocking",
+      "title": "R1 dissipates 0.23 W continuously, 2.3x its 0.1 W limit, under the stated 48 V clamp condition"
+    }
+  ],
+  "limitations": [
+    "Resistor self-heating/derating not modeled; the 0.1 W figure was treated as a hard continuous limit exactly as stated in the exercise assumption",
+    "R1 tolerance and part model are not specified in the design; nominal 10k was used (noted in experiments that even +10% resistance leaves dissipation >2x the limit)",
+    "Per the stated scope, C1 voltage rating, J1 connector ratings, trace current capacity, and any transient/startup behavior were not evaluated; only R1 under the single stated condition",
+    "Zone fill evaluated as saved in the board file (read-only candidate; no refill pass), per the packet's own check limitation"
+  ],
+  "packet_sha256": "515d67c39bac865052476abfd5226ccecd114804ffe8769e2da9d3fad4aa5112",
+  "role": "circuit",
+  "run_id": "6348bf9f-798d-40df-abe5-17f5ed5ca84d",
+  "schema": "agent-ee.review/1"
+}

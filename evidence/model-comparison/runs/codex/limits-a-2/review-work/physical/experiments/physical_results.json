@@ -1,0 +1,219 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "/usr/bin/python3",
+        "--version"
+      ],
+      "exit_code": 0,
+      "log": "python_version.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "--version"
+      ],
+      "exit_code": 0,
+      "log": "kicad_version.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/experiments/fresh_design.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "exit_code": 0,
+      "log": "fresh_netlist.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/experiments/fresh_drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ],
+      "exit_code": 0,
+      "log": "fresh_drc.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/experiments/fresh_erc.json",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "exit_code": 0,
+      "log": "fresh_erc.log"
+    }
+  ],
+  "source_sha256": {
+    "requirements.txt": "e1bdc750a234bbbb3784feac7bd02a588549afd12f2ced668187a2ea750fdc87",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b"
+  },
+  "values": {
+    "C1": "100n",
+    "R1": "10k",
+    "J1": "Conn_01x03"
+  },
+  "pads": {
+    "C1.1": {
+      "net": "/OUT",
+      "xy_mm": [
+        109.05,
+        100.0
+      ]
+    },
+    "C1.2": {
+      "net": "GND",
+      "xy_mm": [
+        110.95,
+        100.0
+      ]
+    },
+    "R1.1": {
+      "net": "/IN",
+      "xy_mm": [
+        104.0875,
+        100.0
+      ]
+    },
+    "R1.2": {
+      "net": "/OUT",
+      "xy_mm": [
+        105.9125,
+        100.0
+      ]
+    },
+    "J1.1": {
+      "net": "/IN",
+      "xy_mm": [
+        100.0,
+        100.0
+      ]
+    },
+    "J1.2": {
+      "net": "/OUT",
+      "xy_mm": [
+        100.0,
+        102.54
+      ]
+    },
+    "J1.3": {
+      "net": "GND",
+      "xy_mm": [
+        100.0,
+        105.08
+      ]
+    }
+  },
+  "physical_routes": [
+    {
+      "from": "J1.1",
+      "to": "R1.1",
+      "net": "/IN",
+      "centerline_length_mm": 4.087500000000006,
+      "points_mm": [
+        [
+          100.0,
+          100.0
+        ],
+        [
+          104.0875,
+          100.0
+        ]
+      ]
+    },
+    {
+      "from": "R1.2",
+      "to": "J1.2",
+      "net": "/OUT",
+      "centerline_length_mm": 11.627500000000012,
+      "points_mm": [
+        [
+          105.9125,
+          100.0
+        ],
+        [
+          107.5,
+          100.0
+        ],
+        [
+          107.5,
+          102.54
+        ],
+        [
+          100.0,
+          102.54
+        ]
+      ]
+    },
+    {
+      "from": "R1.2",
+      "to": "C1.1",
+      "net": "/OUT",
+      "centerline_length_mm": 3.137500000000003,
+      "points_mm": [
+        [
+          105.9125,
+          100.0
+        ],
+        [
+          107.5,
+          100.0
+        ],
+        [
+          109.05,
+          100.0
+        ]
+      ]
+    }
+  ],
+  "calculation": {
+    "condition": "/IN held at 12 V DC; /OUT held at 0 V indefinitely by external equipment",
+    "R1_ohms": 10000.0,
+    "voltage_across_R1_V": 12.0,
+    "current_A": 0.0012,
+    "formula": "P_R1 = (V_IN - V_OUT)^2 / R1",
+    "power_W": 0.0144,
+    "continuous_limit_W": 0.1,
+    "fraction_of_limit": 0.144,
+    "margin_W": 0.08560000000000001,
+    "minimum_resistance_for_limit_ohms": 1440.0,
+    "result": "Below the stated continuous power limit"
+  },
+  "assumptions": [
+    "10k denotes 10000 ohms as saved in schematic and board; no invented tolerance or part model.",
+    "The exercise supplies a 0.1 W continuous limit for the fitted R1; no package-based rating inference.",
+    "Ideal conductors conservatively place the entire applied 12 V across R1; positive series copper/contact resistance reduces R1 power.",
+    "The load current returns through J1.2 to the external clamp, not through C1 or the on-board GND plane.",
+    "At the specified steady DC condition C1 is not a series element or current limiter."
+  ],
+  "limitations": [
+    "No physical temperature, lifetime, thermal-resistance or ampacity qualification; width is not used to infer any of these.",
+    "No zone refill, candidate modification, transient/startup test, component tolerance sweep or out-of-scope qualification.",
+    "No fabrication stackup, solder joint or assembled hardware measurements.",
+    "Native ERC/DRC are rule/connectivity checks and do not test the specified dissipation condition."
+  ]
+}

@@ -1,0 +1,76 @@
+=== All .kicad_sch and key files in FOME-Tech/Polygonus ===
+   Keep_Alive.kicad_sch
+   README.md
+   etb-9201.kicad_sch
+   highside_quad.kicad_sch
+   ign4.kicad_sch
+   knock.kicad_sch
+   lowside_quad.kicad_sch
+   mcu.kicad_sch
+   polygonus-Shortage-Version.kicad_sch
+   psu.kicad_sch
+   quad_analog.kicad_sch
+   quad_analog_pullup.kicad_sch
+   triggers.kicad_sch
+=== All .kicad_sch and key files in mck1117/wideband ===
+   README.md
+   firmware/boards/f0_module
+   firmware/boards/f0_module/board.c
+   firmware/boards/f0_module/board.h
+   firmware/boards/f0_module/board.mk
+   firmware/boards/f0_module/bootloader
+   firmware/boards/f0_module/bootloader/Makefile
+   firmware/boards/f0_module/bootloader/bootloader.cpp
+   firmware/boards/f0_module/bootloader/build_bootloader.sh
+   firmware/boards/f0_module/bootloader/cfg
+   firmware/boards/f0_module/bootloader/cfg/board.c
+   firmware/boards/f0_module/bootloader/cfg/board.h
+   firmware/boards/f0_module/bootloader/cfg/bootloader.ld
+   firmware/boards/f0_module/bootloader/cfg/chconf.h
+   firmware/boards/f0_module/bootloader/cfg/halconf.h
+   firmware/boards/f0_module/bootloader/cfg/mcuconf.h
+   firmware/boards/f0_module/build_wideband.sh
+   firmware/boards/f0_module/chconf.h
+   firmware/boards/f0_module/halconf.h
+   firmware/boards/f0_module/io
+   firmware/boards/f0_module/io/io_pins.h
+   firmware/boards/f0_module/mcuconf.h
+   firmware/boards/f0_module/port.cpp
+   firmware/boards/f0_module/port_shared.cpp
+   firmware/boards/f0_module/readme.md
+   firmware/boards/f0_module/wideband_board_config.h
+   firmware/boards/f0_module/wideband_layout.ld
+   hardware/README.md
+   hardware/archive/README.md
+   hardware/board_carrier/board_carrier.kicad_sch
+   hardware/board_module
+   hardware/board_module/export
+   hardware/board_module/export/rev A
+   hardware/board_module/export/rev A/module_bom.csv
+   hardware/board_module/export/rev A/module_gerber.zip
+   hardware/board_module/export/rev A/module_pos.csv
+   hardware/board_module/export/rev A/module_schematic.pdf
+   hardware/board_module/export/rev B
+   hardware/board_module/export/rev B/BOM-wideband_controller.csv
+   hardware/board_module/export/rev B/CPL-wideband_controller.csv
+   hardware/board_module/export/rev B/GERBER-wideband_controller.zip
+   hardware/board_module/export/rev B/wideband_controller.pdf
+   hardware/board_module/export/rev C
+   hardware/board_module/export/rev C/BOM-wideband_controller.csv
+   hardware/board_module/export/rev C/CPL-wideband_controller.csv
+   hardware/board_module/export/rev C/GERBER-wideband_controller.zip
+   hardware/board_module/export/rev C/wideband_controller.pdf
+   hardware/board_module/fp-lib-table
+   hardware/board_module/jlcpcb
+   hardware/board_module/jlcpcb/.gitignore
+   hardware/board_module/jlcpcb/project.db
+   hardware/board_module/sym-lib-table
+   hardware/board_module/wideband_controller-cache.lib
+   hardware/board_module/wideband_controller-rescue.dcm
+   hardware/board_module/wideband_controller-rescue.lib
+   hardware/board_module/wideband_controller.kicad_pcb
+   hardware/board_module/wideband_controller.kicad_pro
+   hardware/board_module/wideband_controller.kicad_sch
+   hardware/board_module/wideband_module.kicad_sym
+   hardware/board_module/wideband_module.pretty
+   hardware/board_module/wideband_module.pretty/f042_wideband_module.kicad_mod

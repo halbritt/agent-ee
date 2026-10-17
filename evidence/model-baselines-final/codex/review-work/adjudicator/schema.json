@@ -1,0 +1,99 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "enum": [
+        "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4"
+      ],
+      "type": "string"
+    },
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "disposition": {
+            "enum": [
+              "accepted",
+              "noted",
+              "dismissed",
+              "deferred",
+              "duplicate"
+            ],
+            "type": "string"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "locator": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "locator"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "finding_id": {
+            "enum": [
+              "check/erc",
+              "check/drc",
+              "circuit/circuit-001",
+              "circuit/circuit-002",
+              "circuit/circuit-003",
+              "physical/physical-001"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "disposition",
+          "duplicate_of",
+          "reason",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "enum": [
+        "f3c237c2-3a08-4617-aaba-f04c47bbe98f"
+      ],
+      "type": "string"
+    },
+    "schema": {
+      "enum": [
+        "agent-ee.decisions/1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "candidate_id",
+    "run_id",
+    "decisions"
+  ],
+  "type": "object"
+}

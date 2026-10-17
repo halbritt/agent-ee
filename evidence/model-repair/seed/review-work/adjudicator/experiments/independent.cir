@@ -1,0 +1,8 @@
+* Adjudication: saved native RC values, ideal unloaded response
+R1 in out 100k
+C1 out 0 100n
+V1 in 0 PWL(0 0 1u 0 1.001u 1)
+.tran 0.1u 5.001m 0 0.1u
+.meas tran vout_1ms FIND v(out) AT=1.001m
+.meas tran input_1ms FIND v(in) AT=1.001m
+.end

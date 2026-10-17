@@ -1,0 +1,93 @@
+{
+  "track_width_check": {
+    "required_mm": 0.2,
+    "count": 5,
+    "minimum_mm": 0.25,
+    "all_pass": true
+  },
+  "ground_fill": {
+    "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+    "layer": "B.Cu",
+    "saved_polygon_vertices": 187,
+    "J1_3_zone_membership_at_radius_1mm": {
+      "0": false,
+      "45": true,
+      "90": false,
+      "135": true,
+      "180": false,
+      "225": true,
+      "270": false,
+      "315": true
+    },
+    "J1_3_to_via_route": {
+      "waypoints_mm": [
+        [
+          100.42426406871193,
+          105.50426406871193
+        ],
+        [
+          101.13137084989847,
+          106.21137084989847
+        ],
+        [
+          113,
+          106.21137084989847
+        ],
+        [
+          113,
+          100.2
+        ]
+      ],
+      "sample_spacing_max_mm": 0.005,
+      "samples": 3780,
+      "all_on_copper": true,
+      "failed_points": [],
+      "limitation": "Sampled geometric continuity; not thermal/ampacity qualification. Starts and ends on annuli, outside drills."
+    },
+    "via_annulus_in_zone": {
+      "0": true,
+      "45": true,
+      "90": true,
+      "135": true,
+      "180": true,
+      "225": true,
+      "270": true,
+      "315": true
+    }
+  },
+  "fresh_export_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "rc_calculation": {
+    "R_ohm": 100000.0,
+    "C_F": 1e-07,
+    "tau_s": 0.01,
+    "formula": "Vout(t) = 1 V * (1 - exp(-t/(R*C))), initial Vc=0, ideal unloaded step",
+    "vout_1ms_V": 0.09516258196404043,
+    "vout_5ms_V": 0.3934693402873666,
+    "required_vout_1ms_V": [
+      0.62,
+      0.65
+    ],
+    "passes_1ms": false,
+    "allowable_tau_s": [
+      0.0009525423180403353,
+      0.0010335019728090538
+    ],
+    "step_current_initial_A": 1e-05,
+    "resistor_peak_power_W": 1e-05,
+    "stimulus_note": "Supplied PWL rise is 1 ns; maximum error from 0..1 ns step timing uncertainty at 1 ms is below 1e-7 V."
+  }
+}

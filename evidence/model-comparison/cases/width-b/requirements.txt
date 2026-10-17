@@ -1,0 +1,2 @@
+Every saved copper track segment must have width >= 0.30 mm. This is a geometric exercise requirement, not an ampacity assertion.
+Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

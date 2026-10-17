@@ -1,0 +1,2 @@
+Found 608 violations
+Saved ERC Report to /work/experiments/configured-erc.json

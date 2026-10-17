@@ -1,0 +1,9 @@
+* Independent unloaded RC verification, zero-volt initial operating point
+R1 IN OUT 10k
+C1 OUT 0 100n
+VSTEP IN 0 PWL(0 0 1n 1)
+.options reltol=1e-8 abstol=1e-14 vntol=1e-10
+.tran 0.1u 5m 0 0.1u
+.meas tran vout_1ms FIND v(OUT) AT=1m
+.meas tran vout_5ms FIND v(OUT) AT=5m
+.end

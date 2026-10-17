@@ -1,0 +1,58 @@
+{
+  "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+  "coverage": [
+    "Traced all seven pads, five tracks, one via and the saved ground zone; independently checked front copper connectivity without using net names.",
+    "Confirmed C1.2 returns through the via and saved B.Cu zone to J1.3.",
+    "Inspected board outline, footprint placement and native rule settings.",
+    "Repeated ERC, DRC with schematic parity, and schematic netlist export using KiCad 10.0.7; reports contain zero violations. Commands, assumptions and results are recorded in review-work/physical/experiments/."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The connector is used according to the stated contract: J1.2 input, J1.1 filtered output, J1.3 ground.",
+      "evidence": [
+        {
+          "locator": "Line 1: external connector contract",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Lines 587\u2013603: J1.1 assigned /IN and J1.2 assigned /OUT; lines 667\u2013697: actual F.Cu routes",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "J1 symbol UUID 465541a7-d06f-5282-b75f-15b79e4182a2, rotation 180; IN label at (68.58,66.04), OUT label at (68.58,63.5)",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "Lines 164\u2013175: /IN contains J1.1 and R1.1; /OUT contains J1.2, R1.2 and C1.1",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "saved_copper_connectivity; independent_front_centerline_groups_ignoring_net_names; illustrative_ideal_calculation",
+          "path": "review-work/physical/experiments/physical-connectivity.json"
+        },
+        {
+          "locator": "schematic_parity, unconnected_items and violations are empty",
+          "path": "work/drc/drc.json"
+        }
+      ],
+      "id": "physical-001",
+      "location": "inputs/project/rc_filter.kicad_pcb: J1 pads 1 and 2 and their F.Cu routing",
+      "mechanism": "J1.1 connects to R1's series-only side. J1.2 connects directly to R1.2 and C1.1, placing the shunt capacitor on the contractual input instead of the filtered output.",
+      "reasoning": "Both saved copper tracing and the exported schematic establish the reversed connection. With an ideal source driving contractual input J1.2 and an unloaded output at J1.1, resistor current is zero and V(J1.1)/V(J1.2)=1; the intended RC output filtering is absent under those explicit assumptions. Clean ERC/DRC and schematic parity cannot detect this contract mismatch because schematic and PCB share the same reversal.",
+      "severity": "major",
+      "title": "J1 input and filtered-output pins are reversed"
+    }
+  ],
+  "limitations": [
+    "Saved zone fill was inspected without refilling; refill consistency was not evaluated.",
+    "Configured ignored ERC/DRC categories remain outside native check coverage.",
+    "No hardware electrical measurements or simulation were performed; the transfer calculation uses explicitly stated ideal source and unloaded-output assumptions.",
+    "No fabrication, assembly, mating-connector fit, or Gerber/drill-output validation was performed.",
+    "No ampacity, thermal, voltage-rating, parasitic, EMC or ECU qualification was established; operating conditions and specific part ratings were not supplied."
+  ],
+  "packet_sha256": "6c16d282798b94b6e73629b0461b6be186a0befc2d2d001e9bf192612b750d26",
+  "role": "physical",
+  "run_id": "59fb651e-962c-4d7e-80dd-13872dc35eb0",
+  "schema": "agent-ee.review/1"
+}

@@ -1,0 +1,60 @@
+{
+  "candidate_id": "7a48855eff011bbbb0e59bd670ca885cfd820dde585082a2f1a4afd688b35174",
+  "coverage": [
+    "Inspected native schematic, PCB, project configuration and supplied check records; original schematic and PCB hashes match the packet.",
+    "Checked saved signal routing and C1 return path through the ground via, back copper and J1.3 thermal spokes. No established physical connectivity defect found; see review-work/physical/experiments/native_geometry.json.",
+    "Independently reran native DRC with schematic parity: zero violations, unconnected items or parity issues; see review-work/physical/experiments/drc.json. Inspected supplied work/erc/erc.json.",
+    "Independently exported native connectivity and calculated the unloaded nominal response. Ngspice measured 0.6321206 V at 1 ms, agreeing with calculation; assumptions and commands are recorded in review-work/physical/experiments/calculations.json and review-work/physical/experiments/commands.log."
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "The specified evaluation includes a switched ADC, but its sampling capacitance, switch resistance, initial charge and sampling timing are unspecified.",
+      "evidence": [
+        {
+          "locator": "Line 1: ADC-connected criterion and explicitly unspecified sampling parameters",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Lines 955 and 1274: C1=100n and R1=10k; line 1096: J1 excluded from simulation",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "J1 pad 2, lines 596\u2013603; output routing, lines 675\u2013697",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "components and nets: only C1, R1 and J1; /OUT connects C1.1, R1.2 and J1.2",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "assumptions, v_out_at_1ms_V, margins and switched_load_equations",
+          "path": "review-work/physical/experiments/calculations.json"
+        },
+        {
+          "locator": "ngspice baseline command and measured v_out_1ms=6.321206e-01",
+          "path": "review-work/physical/experiments/commands.log"
+        }
+      ],
+      "id": "physical_adc_coverage",
+      "location": "J1.2 /OUT external ADC interface",
+      "mechanism": "ADC sampling can exchange charge with C1 and change the output trajectory. The disturbance and recovery depend on the missing sampling parameters; bare RC connectivity and rule checks do not bound them.",
+      "reasoning": "The unloaded, initially discharged nominal circuit gives 1\u2212exp(\u22121)=0.632120559 V at 1 ms, with 12.12 mV lower-bound margin. That establishes the unloaded baseline only. Even the simplified fast charge-sharing limit depends on ADC capacitance and initial voltage. Neither compliance nor failure while connected to the unspecified ADC is established.",
+      "severity": "major",
+      "title": "Switched-ADC response remains unverified"
+    }
+  ],
+  "limitations": [
+    "No ADC-loaded transient or hardware measurement; no numerical ADC behavior was invented.",
+    "No component tolerance, temperature, leakage or parasitic corner qualification; specific parts and parameters are absent.",
+    "No PCB parasitic extraction, fast-switch return-impedance measurement or thermal qualification. Trace width was not treated as ampacity evidence.",
+    "Saved zone fill only; no refill comparison.",
+    "No fabricator-specific manufacturing, assembly, mating or production-output qualification.",
+    "ERC was inspected from the supplied report rather than independently rerun. Ignored ERC/DRC checks remain outside coverage.",
+    "Detailed commands, tool diagnostics, assumptions and omissions are recorded in review-work/physical/experiments/notes.md."
+  ],
+  "packet_sha256": "4a23740266f405da87b8da6c322a3a2c6518ff669b385dac3fcca9122dbd14a1",
+  "role": "physical",
+  "run_id": "833f2a36-b218-43be-93ec-ee001825e3a7",
+  "schema": "agent-ee.review/1"
+}

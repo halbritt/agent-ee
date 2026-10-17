@@ -1,0 +1,54 @@
+{
+  "candidate_id": "d2e8d03e4664f78e6c194bca332dda002c8c52024b52e117e6b3e589979ac655",
+  "coverage": [
+    "Read native schematic and PCB; verified component identities, pin/net assignments and saved population flags.",
+    "Fresh KiCad 10.0.7 netlist export matches supplied component population and connectivity.",
+    "Calculated fitted-resistor connectivity and R1 pad separation.",
+    "Inspected supplied ERC, DRC, netlist and geometry reports and execution records. ERC/DRC report zero native violations; these results do not establish assembled electrical conduction."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "Assembly follows the saved population, with no alternate assembly override.",
+      "evidence": [
+        {
+          "locator": "Line 1: requires a fitted resistive DC path from /IN to /OUT",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Lines 1252\u20131285: Device:R instance R1, value 10k, has (dnp yes)",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "Line 304: (attr smd dnp); lines 359\u2013374: separate R1 pads assigned /IN and /OUT",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "components/comp[@ref='R1']/property[@name='dnp']; nets/net[@name='/IN'] and nets/net[@name='/OUT']",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "Lines 138\u2013154: only resistor is DNP; fitted_resistor_edges is empty; fitted_resistive_path_IN_to_OUT is false; pad gap is 0.8 mm",
+          "path": "review-work/circuit/experiments/population_result.json"
+        }
+      ],
+      "id": "circuit-001",
+      "location": "R1, between /IN and /OUT",
+      "mechanism": "The only resistor connecting the two nets is excluded from assembly. Its separate PCB pads and terminating tracks do not conduct across the absent component.",
+      "reasoning": "Both native files mark R1 DNP, corroborated by the supplied and freshly exported netlists. The remaining fitted parts are connector J1 and capacitor C1 from /OUT to GND; neither supplies the missing resistive connection. The saved assembly therefore fails the stated DC-path requirement, despite clean ERC and DRC results.",
+      "severity": "major",
+      "title": "DNP R1 removes the required fitted resistive path"
+    }
+  ],
+  "limitations": [
+    "No physical assembly measurements or SPICE simulation performed; the finding follows directly from saved population and topology.",
+    "Voltage, load, ratings, tolerances, startup, shutdown, reset, brownout and interface behavior were not evaluated because corresponding operating conditions are unspecified.",
+    "ERC/DRC were inspected rather than rerun; their listed ignored checks remain untested. Saved zone fill was not regenerated, and no comprehensive independent clearance audit was performed.",
+    "Geometry extraction emitted PROPERTY_ENUM assertions. Relevant population and pad data were independently corroborated from native files.",
+    "Commands, versions, assumptions, calculations and outcomes are recorded in review-work/circuit/experiments/check_population.py, commands.json, supplied_check_records.json and notes.md."
+  ],
+  "packet_sha256": "abf747f43b1f5560fc5a55fc37b47a8eafa2918138621185161442af2f48582a",
+  "role": "circuit",
+  "run_id": "e1ba1d6d-cc99-4b33-b937-6f924ac41853",
+  "schema": "agent-ee.review/1"
+}

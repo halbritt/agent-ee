@@ -1,0 +1,34 @@
+{
+  "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+  "decisions": [
+    {
+      "disposition": "accepted",
+      "evidence": [
+        {
+          "locator": "line 1: required J1.2 input, J1.1 filtered output, J1.3 ground",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "J1 pads 1\u20133; R1 pads 1\u20132; C1 pads 1\u20132 and connecting segments",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "/export/nets: /IN contains J1.1/R1.1; /OUT contains J1.2/R1.2/C1.1; GND contains J1.3/C1.2",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "violations, unconnected_items, schematic_parity: empty arrays",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "commands, native_hashes, pcb_pad_nets, exported_nets, outcome",
+          "path": "review-work/adjudicator/experiments/adjudication.json"
+        }
+      ],
+      "finding_id": "challenger/one",
+      "reason": "Established defect: saved PCB connectivity and an independent native schematic export confirm reversed input/output assignments. The required input J1.2 connects directly to the shunt capacitor, while required filtered output J1.1 connects through R1 to that node. This places the capacitor on the input side of the required interface and violates the explicit connector contract. Clean ERC/DRC and schematic parity do not verify that external contract."
+    }
+  ],
+  "run_id": "40e12072-0847-49cf-9036-8497ab3f4906",
+  "schema": "agent-ee.decisions/1"
+}

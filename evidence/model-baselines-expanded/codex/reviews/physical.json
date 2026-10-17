@@ -1,0 +1,85 @@
+{
+  "candidate_id": "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4",
+  "coverage": [
+    "Read complete native check records and independently inspected saved PCB geometry, stackup, zones, selected power/return paths and CAN2 routing.",
+    "Independent DRC reproduced all 142 supplied violations, zero unconnected items and 114 parity issues without refilling.",
+    "Compared all 659 schematic pin assignments with saved PCB assignments; no discrepancies found.",
+    "Generated separate plated/unplated drill outputs and calculated connector-hole annuli.",
+    "Inspected three excluded ground-thermal violations; direct routed ground connections prevent interpreting these as demonstrated opens."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The saved J1 footprint defines five unnumbered holes as plated through holes, with copper diameter equal to drill diameter.",
+      "evidence": [
+        {
+          "locator": "Lines 21687\u201321725; five thru_hole pad definitions",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "board.design_settings.rules.min_via_annular_width and drc_exclusions",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pro"
+        },
+        {
+          "locator": "violations[132]\u2013[141]: excluded padstack and annular_width errors",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "hole_annuli: all five calculated annuli equal 0 mm",
+          "path": "review-work/physical/experiments/calculations.json"
+        },
+        {
+          "locator": "Plated tool T10: two 2.2 mm holes; T12: three 4 mm holes; zero unplated holes",
+          "path": "review-work/physical/experiments/drill-report.txt"
+        }
+      ],
+      "id": "physical-001",
+      "location": "J1 mechanical holes at (71.95,35.49), (75.55,39.34), (120,28.49), (199.65,39.34), (203.25,35.49) mm",
+      "mechanism": "The nominal drill removes the entire annular land. Drill generation nevertheless classifies these holes as plated.",
+      "reasoning": "This is a confirmed padstack/manufacturing-data violation against the native 0.10 mm annular constraint. All ten corresponding errors are explicitly excluded with blank comments; exclusion does not change the exported geometry. Fabrication impossibility or incorrect connector fit is not established.",
+      "severity": "minor",
+      "title": "Five plated connector holes have zero nominal annular copper"
+    },
+    {
+      "assessment": "concern",
+      "condition": "Both wideband channels use CAN2 with the default assembly, and adequate termination is absent from the attached brain module and harness.",
+      "evidence": [
+        {
+          "locator": "Resistor symbol d69380f9-5487-4782-9ce9-0690df62e543: 120 ohms, DNP; instances R36 and R37",
+          "path": "inputs/project/wbo-can-trans.kicad_sch"
+        },
+        {
+          "locator": "Footprint UUIDs 6924b9c0-bd5f-481d-9f8d-7fc20978c5ab and 7f8c8af6-f455-43aa-9bef-892e252a308e: DNP and excluded from BOM",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "nets /CAN2+ and /CAN2-; components R36 and R37",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "carrier_only_can2_termination",
+          "path": "review-work/physical/experiments/calculations.json"
+        }
+      ],
+      "id": "physical-002",
+      "location": "CAN2 network, R36/R37, U20/U21 and J2.73/74",
+      "mechanism": "Both carrier termination resistors are omitted, leaving termination dependent on external hardware. Without suitable termination, reflections may reduce communication margins.",
+      "reasoning": "Native schematic and PCB assembly flags agree. However, CAN2 also reaches J1 and J2, whose connected hardware could supply termination. No resistance measurement or CAN waveform test establishes the assembled condition, so communication failure is not proven.",
+      "severity": "minor",
+      "title": "Default CAN2 termination depends on unverified external hardware"
+    }
+  ],
+  "limitations": [
+    "Saved copper only; no refill comparison.",
+    "No powered CAN testing, module/harness inspection, bitrate or edge-rate stimulus, impedance extraction or waveform measurement.",
+    "No load/duty/ambient thermal analysis, ampacity qualification, fuse coordination or ignition-energy testing; widths were not treated as ratings.",
+    "No complete 3D clearance, mating-tolerance, stencil or fabrication-capability assessment; native courtyard coverage is partly disabled.",
+    "No automotive transient, EMC, wideband-stability or integrated FOME-MC qualification.",
+    "ERC records inspected but not independently rerun or fully adjudicated electrically.",
+    "Manufacturer-reference retrieval failed DNS; no external tolerance or device model was assumed. Commands, outcomes and assumptions are recorded in review-work/physical/experiments/review-notes.md."
+  ],
+  "packet_sha256": "27bc509c535168f60c1da1cb72311f71819e128790a1b057ba7cb01885f2bf05",
+  "role": "physical",
+  "run_id": "c91cb6bf-3f83-487a-885c-c8f087d4b1af",
+  "schema": "agent-ee.review/1"
+}

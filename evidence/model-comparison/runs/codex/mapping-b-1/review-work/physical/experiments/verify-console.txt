@@ -1,0 +1,57 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+{
+  "connectivity_build": true,
+  "front_groups": {
+    "C1.1": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "C1.2": [
+      "C1.2"
+    ],
+    "J1.1": [
+      "J1.1",
+      "R1.1"
+    ],
+    "J1.2": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "J1.3": [
+      "J1.3"
+    ],
+    "R1.1": [
+      "J1.1",
+      "R1.1"
+    ],
+    "R1.2": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ]
+  },
+  "schematic_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "contract_check": {
+    "J1.2_input_on_series_only_side_of_R1": false,
+    "J1.1_output_on_C1.1_shunt_node": false,
+    "J1.3_ground_connected_to_C1.2_through_saved_zone": true
+  }
+}

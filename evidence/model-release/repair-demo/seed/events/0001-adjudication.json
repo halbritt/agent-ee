@@ -1,0 +1,82 @@
+{
+  "at": "2026-10-17T00:59:05.862641+00:00",
+  "decisions": {
+    "candidate_id": "329f916010187406f161061477ccaa609a7cfa22231e8b51f90b321f35ab1028",
+    "decisions": [
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "Requirement 1, lines 7\u201311: unloaded 1 V step requires 0.62\u20130.65 V at 1 ms",
+            "path": "inputs/requirements/fixture-requirements.md"
+          },
+          {
+            "locator": "C1 Value at line 955: 100n; R1 Value at line 1274: 100k",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "components R1/C1; nets /IN, /OUT and GND",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "Initial Transient Solution: out=0; vout_1ms=9.516251e-02",
+            "path": "work/rc-step/ngspice.log"
+          },
+          {
+            "locator": "tau_s; analytic_ideal_step_V; original_raw_interpolated; fresh_export_matches_supplied_nets",
+            "path": "review-work/adjudicator/experiments/results.json"
+          },
+          {
+            "locator": "Measurements for Transient Analysis: vout_1ms=9.516254e-02",
+            "path": "review-work/adjudicator/experiments/independent.log"
+          }
+        ],
+        "finding_id": "check/rc-step",
+        "reason": "Established defect: saved R1=100 k\u03a9 and C1=100 nF give \u03c4=10 ms and Vout(1 ms)=0.0951626 V, violating the declared 0.62\u20130.65 V interval. Native connectivity, original waveform and independent simulation agree. The 1 ns stimulus ramp cannot explain the miss. The 5 ms measurement has no acceptance bound. No repair or closure is established."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/rc-step",
+        "evidence": [
+          {
+            "locator": "Requirement 1: 1 ms output voltage interval",
+            "path": "inputs/requirements/fixture-requirements.md"
+          },
+          {
+            "locator": "C1 Value at line 955; R1 Value at line 1274",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "tau_s=0.01; analytic_ideal_step_V; original_raw_interpolated",
+            "path": "review-work/adjudicator/experiments/results.json"
+          }
+        ],
+        "finding_id": "circuit/circuit-001",
+        "reason": "Supported defect with the same stimulus, saved component values, slow-response mechanism and violated 1 ms criterion as accepted check/rc-step. Consolidated into that accepted canonical finding."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/rc-step",
+        "evidence": [
+          {
+            "locator": "C1 Value at line 107: 100n; R1 Value at line 256: 100k; R1/C1 pad net assignments",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "schematic_parity=[], unconnected_items=[], violations=[]",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "native_board_values; native_board_pad_nets; fresh_export_nets; original_raw_interpolated",
+            "path": "review-work/adjudicator/experiments/results.json"
+          }
+        ],
+        "finding_id": "physical/physical-001",
+        "reason": "Supported defect describing the same 10 ms RC time constant and failed 1 ms response as accepted check/rc-step. Native board values and pad assignments agree with the simulated topology; this finding identifies no separate physical failure."
+      }
+    ],
+    "run_id": "09798e99-2197-4e50-8731-974e12ae3215",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

@@ -1,0 +1,60 @@
+[
+  {
+    "argv": [
+      "/usr/bin/python3",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "python_version.stdout.log",
+    "stderr": "python_version.stderr.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "kicad_version.stdout.log",
+    "stderr": "kicad_version.stderr.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "ngspice_version.stdout.log",
+    "stderr": "ngspice_version.stderr.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/native.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "native_export.stdout.log",
+    "stderr": "native_export.stderr.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-b",
+      "/work/experiments/unloaded.cir"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "unloaded.stdout.log",
+    "stderr": "unloaded.stderr.log"
+  }
+]

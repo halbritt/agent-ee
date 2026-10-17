@@ -1,0 +1,24 @@
+{
+  "candidate_id": "1b342471005bae6c5d2029e39c033963daf85c8e69e3436446f63daf5b962f05",
+  "coverage": [
+    "Independently parsed all five native track segments: each is 0.25 mm, meeting the declared 0.20 mm minimum. Sources: inputs/project/rc_filter.kicad_pcb:667\u2013705; inputs/requirements/fixture-requirements.md, item 2; review-work/physical/experiments/physical_probe.json, tracks.",
+    "Checked all seven pad assignments against a fresh schematic netlist and independently traced /IN and /OUT connectivity. Sources: inputs/project/rc_filter.kicad_sch, R1/C1/J1 symbols; review-work/physical/experiments/physical_probe.json, net_membership_match and signal_connectivity.",
+    "Verified a continuous saved ground-pour path between the capacitor's ground via and J1.3 through a diagonal thermal spoke. Sources: inputs/project/rc_filter.kicad_pcb:699\u2013785; review-work/physical/experiments/physical_probe.json, saved_ground_return.",
+    "Inspected board outline, placement, courtyards and nominal drill/annular-ring geometry. Fresh KiCad 10.0.7 ERC and DRC reports contain zero violations, unconnected items or schematic-parity issues. Sources: review-work/physical/experiments/physical_probe.json; review-work/physical/experiments/drc.json; review-work/physical/experiments/erc.json.",
+    "Checked the stimulus, initial condition and binary waveform against independent RC equations. Native 10 kohm/100 nF gives tau=1 ms; raw Vout(1 ms)=0.632120134 V, within 0.62\u20130.65 V. Sources: work/rc-step/deck.cir:2\u20137; work/rc-step/ngspice.log:17\u201332; work/rc-step/result.raw; review-work/physical/experiments/physical_probe.json, rc and supplied_raw.",
+    "Recorded commands, versions, assumptions, outcomes and limitations in review-work/physical/experiments/commands.json and review-work/physical/experiments/notes.md. Candidate input hashes remained unchanged."
+  ],
+  "findings": [],
+  "limitations": [
+    "Zone fill was evaluated as saved; no refill was performed.",
+    "No hardware, tolerance, temperature, loading, source-impedance, ADC-sampling, EMI or PCB-parasitic validation.",
+    "No fabrication-output audit, manufacturer capability check, assembly qualification, mechanical mating review or component-specific rating qualification.",
+    "No ampacity, thermal or lifetime qualification is inferred from track width or ideal power calculations.",
+    "Native ERC/DRC ignored categories remain listed in the supplied and fresh reports; those checks were not comprehensively re-enabled.",
+    "No fresh transient simulation was run; supplied measurements and binary samples were independently checked analytically. The unbounded 5 ms measurement is informational."
+  ],
+  "packet_sha256": "8635a23254cbacf03e10a28c3c256b8780877d507ea324002095643ec7c3ad35",
+  "role": "physical",
+  "run_id": "1c24510a-0c7d-4b4b-82e5-6d7aba87f11c",
+  "schema": "agent-ee.review/1"
+}

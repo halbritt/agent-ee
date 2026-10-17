@@ -1,0 +1,267 @@
+OMNIFET III fully protected low-side driver (https://www.st.com/resource/en/datasheet/vnl5050s5-e.pdf)
+citeturn16view0 [wordlim: 200] Crawled: 2 days ago; Content type: application/pdf; Number of pages: 33; Source: open({"ref_id":"https://www.st.com/resource/en/datasheet/vnl5050s5-e.pdf","lineno":null}); Total lines: 1282
+--------------------------------------------------------------------------------
+OMNIFET III fully protected low-side driver (https://www.st.com/resource/en/datasheet/vnl5050s5-e.pdf)
+citeturn16view1 [wordlim: 200] Crawled: 2 days ago; Content type: application/pdf; Number of pages: 33; Source: find({"ref_id":"https://www.st.com/resource/en/datasheet/vnl5050s5-e.pdf","pattern":"Input threshold"}); Total lines: 1282
+L107@P3: Figure 12. Output characteristics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+L108@P3: Figure 13. Normalized on-resistance vs. temperature . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+L109@P3: Figure 14. Normalized input threshold vs. temperature . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+L110@P3: Figure 15. Switching characteristics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+L111@P3: Figure 16. VNL5050N3-E application schematic . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+L112@P3: Figure 17. VNL5050S5-E application schematic . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+L302@P8: Vsupply = VIN = 5 V 100
+L303@P8: VCLAMP Drain-source clamp voltage VIN = 0 V; ID = 2 A 41 46 52 V
+L304@P8: VCLTH
+L305@P8: Drain-source clamp
+L306@P8: threshold voltage VIN = 0 V; ID = 2 mA 36 V
+L307@P8: IDSS OFF-state output current
+L308@P8: VIN = 0 V; VDS = 13 V;
+L309@P8: Tj = 25 °C 03
+L310@P8: µA
+L311@P8: VIN = 0 V; VDS = 13 V;
+L312@P8: Tj = 125 °C 05
+L313@P8: Table 7. Source drain diode
+L314@P8: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L315@P8: VSD Forward on voltage ID = 2 A; VIN = 0 V - 0.8 - V
+L316@P8: Table 8. Input section(1).
+L317@P8: 1. Valid for VNL5050N3-E option (input and supply pins connected together)
+L318@P8: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L319@P8: IISS Supply current from input pin ON-state: Vsupply = VIN = 5 V;
+L320@P8: VDS = 0 V 30 65 µA
+L321@P8: VICL Input clamp voltage
+L322@P8: IS = 1 mA 5.5 7
+L323@P8: V
+L324@P8: IS = -1 mA -0.7
+L325@P8: VINTH Input threshold voltage VDS = VIN; ID = 1 mA 1 3.5 V
+L326@P8: Table 9. Status pin(1)
+L327@P8: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L328@P8: VSTAT Status low output voltage ISTAT = 1 mA 0.5 V
+L329@P8: ILSTAT Status leakage current Normal operation;
+L330@P8: VSTAT = 5 V 10 µA
+L331@P8: CSTAT Status pin input capacitance Normal operation;
+L332@P8-9: VSTAT = 5 V 100 pFElectrical characteristics VNL5050N3-E, VNL5050S5-E
+L333@P9: 10/33 DocID15917 Rev 6
+L334@P9: 
+L335@P9: 
+L336@P9: 
+L337@P9: VSTCL Status clamp voltage
+L338@P9: ISTAT = 1 mA 5.5 7
+L339@P9: V
+L340@P9: ISTAT = -1 mA -0.7
+L341@P9: 1. Valid for VNL5050S5-E option
+L342@P9: Table 10. Logic input(1)
+L343@P9: 1. Valid for VNL5050S5-E option
+L344@P9: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L345@P9: VIL Low-level input voltage — 0.9 V
+L604@P12: 9,1
+L605@P12: 9
+L606@P12: 
+L607@P12: $
+L608@P12: $
+L609@P12: %
+L610@P12: %
+L611@P12: &
+L612@P12: &
+L613@P12: 9'6 9
+L614@P12: 1RWH
+L615@P12: )NPUTANDSUPP LYPINSCONNECTEDTO GETHE R
+L616@P12: $
+L617@P12: 7M & %
+L618@P12: 7M & &
+L619@P12: 7M &
+L620@P12: ("1($'5
+L621@P12: ,'
+L622@P12: P$
+L623@P12: 
+L624@P12: 
+L625@P12: 
+L626@P12: 
+L627@P12: 
+L628@P12: 
+L629@P12: 
+L630@P12: 
+L631@P12: 
+L632@P12: 
+L633@P12: 
+L634@P12: 
+L635@P12:          
+L636@P12:   
+L637@P12: 9,1
+L638@P12: 9
+L639@P12: 
+L640@P12: % $ &
+L641@P12: 9'6 9
+L642@P12: 1RWH
+L643@P12: )NPUTANDSUPP LYPINSCONNECTEDTO GETHE R
+L644@P12: $
+L645@P12: 7M & %
+L646@P12: 7M & &
+L647@P12: 7M &
+L648@P12: ("1($'5
+L649@P12: ,'
+L650@P12: $
+L651@P12: 
+L652@P12: 
+L653@P12: 
+L654@P12: 
+L655@P12: 
+L656@P12: 
+L657@P12: 
+L658@P12: 
+L659@P12: 
+L660@P12: 
+L661@P12:    
+L662@P12:   
+L663@P12:    
+L664@P12:    
+L665@P12: 
+L666@P12: 9'6
+L667@P12: 9
+L668@P12: 
+L669@P12: $
+L670@P12: %
+L671@P12: &
+L672@P12: 1RWH
+L673@P12: )NPUTANDSUPP LYPINSCONNECTEDTO GETHE R
+L674@P12: $
+L675@P12: 7M & %
+L676@P12: 7M & &
+L677@P12: 7M &
+L678@P12: ("1($'5
+L679@P12: 5RQ
+L680@P12: P
+L681@P12: 
+L682@P12: 
+L683@P12: 
+L684@P12: 
+L685@P12: 
+L686@P12: 
+L687@P12: 
+L688@P12: 
+L689@P12: 
+L690@P12: 
+L691@P12: 
+L692@P12: 
+L693@P12: 
+L694@P12:          
+L695@P12: 7M
+L696@P12: &
+L697@P12: 
+L698@P12: ,RXW $
+L699@P12-13: ("1($'5Electrical characteristics VNL5050N3-E, VNL5050S5-E
+L700@P13: 14/33 DocID15917 Rev 6
+L701@P13: 
+L702@P13: Figure 14. Normalized input threshold vs.
+L703@P13: temperature
+L704@P13: 
+L705@P13: 9LQWK
+L706@P13: 9
+L707@P13: 
+L708@P13: 
+L709@P13: 
+L710@P13: 
+L711@P13: 
+L712@P13: 
+L713@P13: 
+L714@P13: 
+L715@P13: 
+L716@P13: 
+L717@P13: 
+L718@P13: 
+L719@P13:           
+L720@P13: 7M
+L721@P13: &
+L722@P13: 
+L723@P13: ,G P$
+L724@P13: 1RWH
+L725@P13: ,QSXWDQGVXSSO\SLQVFRQQHFWHGWRJHWKHU
+L726@P13: ("1($'5
+L727@P13: Table 15. Truth table(1)
+L728@P13: 1. Valid for VNL5050S5-E option
+L729@P13: Conditions INPUT DRAIN STATUS
+L730@P13: Normal operation
+L731@P13: L
+L732@P13: H
+L733@P13: H
+L734@P13: L
+L735@P13: H
+L736@P13: H
+L737@P13: Current limitation L
+L738@P13: H
+L739@P13: H
+L740@P13: X
+L741@P13: H
+L742@P13: H
+L743@P13: Overtemperature L
+L744@P13: H
+L745@P13: H
+L746@P13: H
+L747@P13: H
+L748@P13: L
+L749@P13: Undervoltage
+L750@P13: L
+L751@P13: H
+L752@P13: H
+L753@P13: H
+L754@P13: X
+L755@P13: X
+L756@P13: Output voltage < VOL
+L757@P13: L
+L758@P13: H
+L759@P13: L
+L760@P13: L
+L761@P13: L
+L762@P13-14: HDocID15917 Rev 6 15/33
+L763@P14: VNL5050N3-E, VNL5050S5-E Electrical characteristics
+L764@P14: 32
+L765@P14: Figure 15. Switching characteristics
+L766@P14: Figure 16. VNL5050N3-E application schematic
+L767@P14: 
+L768@P14: 7
+L769@P14: HFO
+L770@P14: *
+L771@P14: %
+L772@P14: U
+L773@P14: S U
+L774@P14: G
+L775@P14: U
+L776@P14: U
+L777@P14: U
+L778@P14: E	PO
+L779@P14:  UE	PGG
+L780@P14: 
+L781@P14: ("1($'5
+L782@P14: 
+L783@P14: 9
+L784@P14: '5$,1
+L785@P14: 6285&(
+L786@P14: 5SURW
+L787@P14: ,1387
+L788@P14: 5/
+L789@P14: 9FF
+L790@P14: 0LFUR&RQWUROOHU
+L1226@P31: Updated Figure 9: Static drain source on-resistance vs. drain current
+L1227@P31: Updated Figure 10: Transfer characteristics
+L1228@P31: Added Figure 11: Transfer characteristics (inside view for VIN = 2 V
+L1229@P31: to 3 V)
+L1230@P31: Updated Figure 14: Normalized input threshold vs. temperature
+L1231@P31: Added Section 3.2: MCU I/O protection
+L1232@P31: 19-Sep-2013 5 Updated Disclaimer.
+L1233@P31: 17-Dec-2013 6
+L1234@P31: Table 4: Absolute maximum ratings:
+L1235@P31: – -ID: updated value
+L1236@P31: Table 8: Input section.:
+L1237@P31: –IISS: updated value
+L1238@P31: Table 12: Supply section:
+L1239@P31: –IS: updated value
+L1240@P31: Updated Figure 16: VNL5050N3-E application schematic and
+L1241@P31: Figure 17: VNL5050S5-E application schematic
+L1242@P31: Updated Section 3.2: MCU I/O protection
+L1243@P31: Table 20. Document revision history (continued)
+L1244@P31-32: Date Revision ChangesDocID15917 Rev 6 33/33
+L1245@P32: VNL5050N3-E, VNL5050S5-E
+L1246@P32: 33
+L1247@P32: 
+L1248@P32: Please Read Carefully:
+L1249@P32: Information in this document is provided solely in connection with ST products. STMicroelectronics NV and its subsidiaries (“ST”) reserve the
+

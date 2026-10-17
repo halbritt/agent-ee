@@ -1,0 +1,179 @@
+{
+  "native_hashes": {
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "fresh_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "board_pad_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "netlist_agrees_with_retained": true,
+  "topology_matches": true,
+  "segment_count": 5,
+  "minimum_width_mm": 0.25,
+  "all_segments_meet_0_20_mm": true,
+  "tau_s": 0.001,
+  "measurements": {
+    "0.001": {
+      "ideal_step_V": 0.6321205588285577,
+      "one_ns_ramp_V": 0.6321203748887758,
+      "retained_waveform_V": 0.6321201340170995
+    },
+    "0.005": {
+      "ideal_step_V": 0.9932620530009145,
+      "one_ns_ramp_V": 0.9932620496319399,
+      "retained_waveform_V": 0.993262119728839
+    }
+  },
+  "waveform": {
+    "variables": [
+      [
+        "time",
+        "time"
+      ],
+      [
+        "v(in)",
+        "voltage"
+      ],
+      [
+        "v(out)",
+        "voltage"
+      ],
+      [
+        "i(vstep)",
+        "current"
+      ]
+    ],
+    "points": 1025,
+    "start_s": 0.0,
+    "stop_s": 0.005,
+    "initial_vout_V": 0.0,
+    "final_input_V": 1.0,
+    "max_abs_error_vs_one_ns_ramp_V": 7.626185536402375e-07
+  },
+  "fresh_native_checks": {
+    "erc": {
+      "$schema": "https://schemas.kicad.org/erc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:29:42",
+      "ignored_checks": [
+        {
+          "description": "Global label only appears once in the schematic",
+          "key": "single_global_label"
+        },
+        {
+          "description": "Four connection points are joined together",
+          "key": "four_way_junction"
+        },
+        {
+          "description": "SPICE model issue",
+          "key": "simulation_model_issue"
+        },
+        {
+          "description": "Assigned footprint doesn't match footprint filters",
+          "key": "footprint_filter"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "sheets": [
+        {
+          "path": "/",
+          "uuid_path": "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb",
+          "violations": []
+        }
+      ],
+      "source": "rc_filter.kicad_sch"
+    },
+    "drc": {
+      "$schema": "https://schemas.kicad.org/drc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:29:42",
+      "ignored_checks": [
+        {
+          "description": "Footprint has no courtyard defined",
+          "key": "missing_courtyard"
+        },
+        {
+          "description": "Track endpoint not centered on via",
+          "key": "track_not_centered_on_via"
+        },
+        {
+          "description": "Tuning profile track geometries",
+          "key": "tuning_profile_track_geometries"
+        },
+        {
+          "description": "Footprint doesn't match symbol's footprint filters",
+          "key": "footprint_filters_mismatch"
+        },
+        {
+          "description": "Footprint component type doesn't match footprint pads",
+          "key": "footprint_type_mismatch"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "schematic_parity": [],
+      "source": "rc_filter.kicad_pcb",
+      "unconnected_items": [],
+      "violations": []
+    }
+  },
+  "captured_outcomes": {
+    "erc": {
+      "execution": "ok",
+      "outcome": "pass"
+    },
+    "drc": {
+      "execution": "ok",
+      "outcome": "pass"
+    },
+    "geometry": {
+      "execution": "ok",
+      "outcome": "pass"
+    },
+    "netlist": {
+      "execution": "ok",
+      "outcome": "info"
+    },
+    "rc-step": {
+      "execution": "ok",
+      "outcome": "pass"
+    }
+  }
+}

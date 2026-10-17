@@ -1,0 +1,81 @@
+{
+  "assumptions": [
+    "Uses the declared population flags; DNP components are open circuits.",
+    "Resistor-only termination calculation; excludes IC input impedances, parasitics and circuits inside J2/U1/U2.",
+    "No harness, bit rate, module revision or termination configuration is specified."
+  ],
+  "CAN2_nodes": {
+    "/CAN2+": [
+      "C29.2",
+      "C33.2",
+      "D10.1",
+      "D11.1",
+      "J1.15",
+      "J2.73",
+      "R36.1",
+      "R37.1",
+      "U20.7",
+      "U21.7"
+    ],
+    "/CAN2-": [
+      "C30.1",
+      "C34.1",
+      "D10.2",
+      "D11.2",
+      "J1.11",
+      "J2.74",
+      "R36.2",
+      "R37.2",
+      "U20.6",
+      "U21.6"
+    ],
+    "/CAN_RX": [
+      "U1.5",
+      "U20.4"
+    ],
+    "/CAN_TX": [
+      "U1.6",
+      "U20.1"
+    ],
+    "/CAN_RX2": [
+      "U2.5",
+      "U21.4"
+    ],
+    "/CAN_TX2": [
+      "U2.6",
+      "U21.1"
+    ]
+  },
+  "direct_resistors": [
+    {
+      "ref": "R36",
+      "value": "120",
+      "dnp": true,
+      "pins": {
+        "1": "/CAN2+",
+        "2": "/CAN2-"
+      }
+    },
+    {
+      "ref": "R37",
+      "value": "120",
+      "dnp": true,
+      "pins": {
+        "1": "/CAN2+",
+        "2": "/CAN2-"
+      }
+    }
+  ],
+  "declared_populated_carrier_termination_conductance_S": 0,
+  "carrier_resistor_equivalent_ohms": "open (zero populated branches)",
+  "hypothetical_both_120_ohm_populated_parallel_ohms": 60.0,
+  "LS9_LS10_DC_bias": {
+    "condition": "J2.24 and J2.25 high impedance; neglect receiver input currents",
+    "Rpullup_ohm": 1000,
+    "Rpulldown_ohm": 1000,
+    "rail_V": 5,
+    "voltage_V": 2.5,
+    "thevenin_ohm": 500.0,
+    "limitation": "Cannot establish a threshold violation or reset behavior without brain/module and receiver limits. Not promoted to a defect."
+  }
+}

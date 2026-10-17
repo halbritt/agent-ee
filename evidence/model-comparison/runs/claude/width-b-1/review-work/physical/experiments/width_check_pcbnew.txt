@@ -1,0 +1,41 @@
+pcbnew version: 10.0.7-10.0.7~ubuntu24.04.1
+[
+ {
+  "cls": "PCB_TRACK",
+  "net": "/IN",
+  "width_mm": 0.25,
+  "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+ },
+ {
+  "cls": "PCB_TRACK",
+  "net": "/OUT",
+  "width_mm": 0.25,
+  "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+ },
+ {
+  "cls": "PCB_TRACK",
+  "net": "/OUT",
+  "width_mm": 0.25,
+  "uuid": "8b528360-109d-4533-a657-35923fd930f8"
+ },
+ {
+  "cls": "PCB_TRACK",
+  "net": "/OUT",
+  "width_mm": 0.25,
+  "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82"
+ },
+ {
+  "cls": "PCB_TRACK",
+  "net": "GND",
+  "width_mm": 0.25,
+  "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1"
+ },
+ {
+  "cls": "PCB_VIA",
+  "net": "GND",
+  "width_mm": 0.6,
+  "uuid": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4"
+ }
+]
+track segments: 5 min width: 0.25
+board min track width setting (mm): 0.2

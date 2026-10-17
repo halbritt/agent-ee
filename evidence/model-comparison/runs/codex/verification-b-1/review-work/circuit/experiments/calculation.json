@@ -1,0 +1,72 @@
+{
+  "native_hashes": {
+    "requirements.txt": "f34808d7f1924e9af83993800cc62f94f650540e7948beda7de5635f5727b998",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "native_schematic_values": {
+    "R1": "10k",
+    "C1": "100n",
+    "J1": "Conn_01x03"
+  },
+  "exported_xml_values": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "10k"
+  },
+  "native_pcb_values": {
+    "C1": "100n",
+    "R1": "10k",
+    "J1": "Conn_01x03"
+  },
+  "xml_and_pcb_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "assumptions": [
+    "Nominal ideal linear R and C; no tolerance or parasitic models supplied.",
+    "Unloaded /OUT only: this calculation does not model the required switched ADC.",
+    "Input is 0 V before rising to 1 V; C1 starts discharged in DC equilibrium.",
+    "Measure /OUT 1 ms after edge midpoint; SPICE approximates ideal step using 1 ns rise."
+  ],
+  "R_ohm": 10000.0,
+  "C_farad": 1.0000000000000001e-07,
+  "tau_s": 0.001,
+  "ideal_unloaded_out_at_1ms_V": 0.6321205588285577,
+  "lower_margin_V": 0.01212055882855767,
+  "upper_margin_V": 0.017879441171442356,
+  "acceptable_tau_s_for_unloaded_zero_state": {
+    "min": 0.0009525423180403353,
+    "max": 0.0010335019728090538
+  },
+  "supplied_check_kinds": [
+    "netlist",
+    "geometry",
+    "erc",
+    "drc"
+  ],
+  "transient_check_supplied": false,
+  "adc_parameters_supplied": false,
+  "general_closed_switch_equations": [
+    "C1*dVout/dt=(Vin-Vout)/R1-(Vout-Vsample)/Rswitch",
+    "Csample*dVsample/dt=(Vout-Vsample)/Rswitch",
+    "For a short charge-sharing event with negligible source charge: Vafter=(C1*Vbefore+Csample*Vsample_before)/(C1+Csample).",
+    "These equations explain parameter dependence only. No numerical ADC capacitance, switch resistance, initial voltage, or sampling schedule was selected."
+  ],
+  "spice_measurements": {
+    "vout_initial": 0.0,
+    "vin_at_1ms": 1.0,
+    "vout_at_1ms": 0.6321206
+  }
+}

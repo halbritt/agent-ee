@@ -1,0 +1,24 @@
+{
+  "native_values": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "10k"
+  },
+  "native_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "matches_fresh_check": true,
+  "requirements": "Evaluate whether /OUT settles between 0.62 and 0.65 V at 1 ms after a 1 V step while connected to a switched ADC input. ADC sampling capacitance, switch resistance, initial charge and sampling timing have not been specified. Separate established defects from missing coverage; do not invent ADC behavior.\nOnly the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.\n"
+}

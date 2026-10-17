@@ -1,0 +1,19 @@
+{
+  "candidate_id": "450a3fbe701ce2de522829b6e4211ca1c472af4be06efae261accced6a72a658",
+  "coverage": [
+    "Verified R1 is 10 k\u03a9 between /IN and /OUT: inputs/project/rc_filter.kicad_sch:1252\u20131321; inputs/project/rc_filter.kicad_pcb:256,359\u2013374; work/netlist/design.xml, R1 component and /IN,/OUT node entries.",
+    "Under inputs/requirements.txt:1, R1 current is 1.2 mA and continuous dissipation is 12\u00b2/10000 = 0.0144 W, below the stipulated 0.1 W limit. Calculation: review-work/circuit/experiments/r1_dc_result.json, calculation.",
+    "Inspected work/erc/erc.json and work/drc/drc.json: no reported violations, unconnected items or parity issues. Electrical conclusion rests on the independent power calculation.",
+    "Commands, versions, assumptions and verification limitations recorded in review-work/circuit/experiments/review_notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "Evaluated only R1 under the stated indefinite DC clamp condition; other components, operating conditions, startup, shutdown, reset, brownout and interface behavior were outside scope.",
+    "Used the native nominal resistance; no tolerance or temperature coefficient was specified. No hardware measurements, thermal modeling or SPICE simulation performed.",
+    "Native checks were inspected without rerunning or refilling zones; configured ignored checks remain untested. Geometry extraction assertions were observed; relevant pad connections were verified directly against the native PCB."
+  ],
+  "packet_sha256": "add0e78f8944a93dc206607b6a9a8746891fa921ba149e729dc81c93823b3545",
+  "role": "circuit",
+  "run_id": "8555b879-177d-468b-b8b2-21dd96a5e2d5",
+  "schema": "agent-ee.review/1"
+}

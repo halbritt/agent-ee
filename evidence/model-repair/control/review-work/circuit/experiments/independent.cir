@@ -1,0 +1,10 @@
+Independent ideal RC step validation from checked native values/topology
+Vinput IN 0 PWL(0 0 100u 0 100.001u 1)
+R1 IN OUT 10k
+C1 OUT 0 100n
+.options reltol=1e-8 abstol=1e-14 vntol=1e-10
+.tran 0.5u 5.100001m 0 0.5u
+.meas tran before_step FIND v(OUT) AT=99u
+.meas tran vout_1ms FIND v(OUT) AT=1.100001m
+.meas tran vout_5ms FIND v(OUT) AT=5.100001m
+.end

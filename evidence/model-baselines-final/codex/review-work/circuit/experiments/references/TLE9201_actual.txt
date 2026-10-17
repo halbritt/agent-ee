@@ -1,0 +1,1355 @@
+TLE9201SG
+6 A H-Bridge with SPI
+
+
+
+
+Data Sheet
+Rev. 1.0, 2014-02-25
+
+
+
+
+Automotive Power
+                                                                                                                                            TLE9201SG
+
+
+                                                                                                                                      Table of Contents
+
+
+Table of Contents
+
+1       Overview . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+2       Pin Configuration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+2.1     Pin Assignment . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+2.2     Pin Definitions and Functions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+2.3     Terms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+3       Block Diagram . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+4       Block Description . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+4.1     Power Supply . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+4.2     Sleep Mode . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+4.3     Output Stages . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+4.4     Protection and Diagnostics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+4.5     Current Limitation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+4.6     Short Circuit Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+4.7     Short Circuit to Battery . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+4.8     Short Circuit over Load . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+4.9     Overtemperature . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+4.10    Undervoltage Shut-Down . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+4.11    Open Load Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+4.12    Serial Peripheral Interface (SPI) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+5       General Product Characteristics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+5.1     Absolute Maximum Ratings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+5.2     Functional Range . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+5.3     Thermal Resistance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+6       Electrical Characteristics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 19
+7       Application Information . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22
+8       Package Outlines . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25
+
+
+
+
+Data Sheet                                                                   2                                                    Rev. 1.0, 2014-02-25
+6 A H-Bridge with SPI                                                                               TLE9201SG
+
+
+
+
+1             Overview
+
+
+Features
+•   RDSon of 100 mΩ per switch typ. at Tj=25 °C
+•   Logic inputs 3.3 V and 5.0 V TTL/CMOS-compatible
+•   Low standby current
+•   Chopper current limitation
+•   Short circuit shut down with latch behavior
+•   Overtemperature shut down with latch behavior
+•   VS undervoltage shutdown                                                            PG-DSO-12-17
+•   Open load detection in ON and OFF state
+•   Detailed SPI diagnosis or simple error flag
+•   Green product (RoHS compliant)
+•   AEC qualified
+
+Description
+The TLE9201SG is a general purpose 6 A H-Bridge, designed for (but not limited to) the control of DC motors or
+other inductive loads in automotive applications. The outputs can be pulse width modulated at frequencies up to
+20kHz. PWM/DIR control reduces the number of PWM capable pins needed on the microcontroler side.
+For load currents above the current limitation threshold (8A typ.) the H-Bridge goes into chopper current limitation
+mode. It is protected against short circuits and overtemperature and provides extensive diagnosis via SPI or basic
+error feedback via error flag. Open load can be detected when the bridge is disabled or during PWM operation of
+inductive loads.
+The robust PG-DSO-12-17 package provides excellent thermal capabilites due to the thick copper heat slug.
+Thanks to the protruding edges of the heatslug the package is well suited for automatic optical solder inspection.
+
+
+
+
+Type                                   Package                                Marking
+TLE9201SG                              PG-DSO-12-17                           TLE9201SG
+
+Data Sheet                                               3                                    Rev. 1.0, 2014-02-25
+                                                                                               TLE9201SG
+
+
+                                                                                           Pin Configuration
+
+
+2               Pin Configuration
+
+
+2.1             Pin Assignment
+
+
+
+
+                                         (top view)
+
+                              DIR            1                        12         PWM
+                            VSO              2                        11         DIS
+                               SO            3                        10         SCK
+                               VS            4                          9        CSN
+                           OUT1              5                          8        SI
+                            GND              6                          7        OUT2
+                                                              heat slug (GND)
+
+
+Figure 1        Pin Assignment TLE9201SG
+
+2.2             Pin Definitions and Functions
+
+
+
+Pin        Symbol         Function
+1          DIR            Direction input to define direction of the motor current
+2          VSO           Supply pin for SO output. Connect to 5V or 3.3V depending on desired logic level
+3          SO             SPI serial output
+4          VS             Supply voltage
+5          OUT1           Output 1
+6          GND           Ground
+7          OUT2           Output 2
+8          SI             SPI serial input
+9          CSN            SPI chip select (low active)
+10         SCK           SPI clock input
+11         DIS           Disable. Disables the outputs (all MOSFETS off)
+12         PWM           Pulse width modulation input
+
+
+
+
+Data Sheet                                               4                               Rev. 1.0, 2014-02-25
+                                                                                                       TLE9201SG
+
+
+                                                                                                    Pin Configuration
+
+
+2.3          Terms
+
+
+
+
+                                                                              IVS
+
+
+                                                I DIS            VS
+                                                        DIS                                   VVS
+                                                IDIR
+                                                        DIR
+                    VDIS                   I PWM
+                                                        PWM
+                           VDIR
+                                  VPWM
+
+
+                                                                                     I OUT1
+                                           I CSN                       OUT1
+                                                        CSN
+                                           I SCK
+                                                        SCK
+                                                I SI
+                                                        SI                          IOUT2
+                                                                       OUT2
+                                            I SO                                              VOUT2
+                                                        SO                                            VOUT1
+                                            IVSO
+                                                        VSO
+             VCSN   VSCK   VSI    VSO    VVSO                    GND
+
+
+
+
+Figure 2     Terms TLE9201SG
+
+
+
+
+Data Sheet                                                   5                                 Rev. 1.0, 2014-02-25
+                                                             TLE9201SG
+
+
+                                                             Block Diagram
+
+
+3            Block Diagram
+
+
+                                                  VS
+
+
+
+
+                     internal     Charge
+                      Supply      Pump
+
+
+
+
+     DIS
+                                Gate Driver
+     DIR
+                     Control
+    PWM               Logic
+                                  Current
+                                                                 OUT1
+                                  Monitor
+     CSN                                                         OUT2
+     SCK
+       SI                       Temperature
+      SO                          Monitor
+
+
+     VSO
+
+
+
+                                                  GND
+
+Figure 3     Block Diagram
+
+
+
+
+Data Sheet                                    6         Rev. 1.0, 2014-02-25
+                                                                                                     TLE9201SG
+
+
+                                                                                                 Block Description
+
+
+4            Block Description
+
+
+4.1          Power Supply
+All internal supply voltages are derived from the pin VS. A charge pump provides the gate voltage for the high side
+switches. The charge pump does not require an external capacitor.
+The output buffer of the digital output SO is supplied by the pin VSO. Therefore the output level at SO can be easily
+configured for 3.3 V or 5 V logic by connecting VSO to the respective voltage.
+
+4.2          Sleep Mode
+In order to minimize current consumption during inactive phases the device can be put into sleep mode by pulling
+the VSO pin to GND. This functionality can also be used to provide a second switch off path for the outputs similar
+to an enable pin, simply by driving VSO directly from a microcontroller output.
+Since VSO is supplying also the output buffer of the SO signal it has to be ensured that the microcontroller output
+can provide sufficient current. Alternatively an external mosfet or a driver stage could be used to switch the VSO
+supply voltage. To account for dynamic switching currents it might be advisable to buffer VSO with a small
+capacitor (see Figure 7 “Application Example VSO as Enable Input” on Page 24).
+Please note that the push pull stage of the SO output provides a current return path to VSO via the bulk diode of
+the highside mosfet. Therefore it has to be ensured that the voltage at SO never exceeds the voltage at VSO by
+more than 0.3V.
+
+
+
+
+                                           -                                                VSO
+                   sleep_mode
+                                          +       v_vso_sleep
+
+
+
+
+                                                                                            SO
+                                          spi_serial_out
+
+
+
+
+Figure 4-1 SO output buffer
+
+
+
+
+Data Sheet                                                 7                                  Rev. 1.0, 2014-02-25
+                                                                                                         TLE9201SG
+
+
+                                                                                                      Block Description
+
+
+4.3             Output Stages
+The output stages consist of four n-channel mosfets in H-bridge configuration. The outputs are protected against
+short circuits and over temperature.
+The bridge is controlled using the inputs PWM and DIR. The signal at DIR is defining the direction of the driven
+DC motor whereas the PWM signal sets the duty cycle.
+The outputs can be set tristate (i.e. high side and low side switches are turned off) by setting DIS to high level.
+
+
+
+                    HS1                            HS2           HS1                               HS2
+                     ON                            OFF            ON                               OFF
+                                       IL                                        IL
+
+                                      M                                               M
+                                                   LS2                                             LS2
+                    LS1                                          LS1
+                                                   ON                                              OFF
+                    OFF                                          OFF
+
+
+
+
+                                 DIR=1, PWM=1                               DIR=1, PWM=0
+
+                                   Forward                             Freewheeling Through HS 2
+                                                                         Body Diode (Forward)
+
+
+
+
+                    HS1                            HS2           HS1                               HS2
+                    OFF                            ON            OFF                               ON
+                                       IL                                             IL
+
+                                      M                                               M
+                                                   LS2                                             LS2
+                     LS1                                         LS1
+                                                   OFF                                             OFF
+                     ON                                          OFF
+
+
+
+
+                               DIR=0, PWM=1                                 DIR=0, PWM=0
+
+                                   Reverse                             Freewheeling Through HS 1
+                                                                         Body Diode (Reverse)
+
+Figure 4-2 Operation Modes
+
+Table 4-1       Output Truth Table
+DIS         PWM            DIR              OUT1         OUT2            Comment
+1           X              X                Z            Z               disabled, outputs tristate
+0           1              1                H            L               forward / clockwise
+0           1              0                L            H               reverse / counterclockwise
+0           0              1                H            Z               freewheeling in HS (forward)
+0           0              0                Z            H               freewheeling in HS (reverse)
+
+
+
+Data Sheet                                                   8                                     Rev. 1.0, 2014-02-25
+                                                                                                     TLE9201SG
+
+
+                                                                                                Block Description
+
+
+4.4              Protection and Diagnostics
+Both output stages of the TLE9201SG are equipped with fault diagnostic functions:
+•      Short to battery voltage (SCB)
+•      Short to ground (SCG)
+•      Open load (OL)
+•      Over-temperature (OT)
+
+4.5              Current Limitation
+To limit the output current a chopper current limitation is integrated. Current measurement for current limitation is
+done in the high side path.
+
+
+                                        ttrans
+                    tb
+                                                                                     HS1                       HS2
+            IL
+                                                                                                    M
+    I OUT
+
+
+
+
+                                                                                      LS1                      LS2
+
+
+
+                                                                   time
+
+Figure 4-3 Chopper Current Limitation
+Figure 4-3 shows the behavior of the current limitation for over current detection in HS1. It applies accordingly
+also for HS2.
+When the current in high-side switch of OUT1 (HS1) exceeds the limit IL longer than the blanking time tb, the low
+side switch of OUT2 (LS2) is switched off, independent of the input signal at PWM. This leads to freewheeling
+through the bulk diode of HS2 and therefore to a decrease of the load current. As soon as the current falls below
+IL, OUT2 is switched back to normal operation, i.e. the outputs follow the inputs according to the truth table. To
+avoid high switching frequencies in case of low inductive loads the minimum time between two transitions is limited
+to ttrans.
+
+
+
+
+Data Sheet                                               9                                    Rev. 1.0, 2014-02-25
+                                                                                                          TLE9201SG
+
+
+                                                                                                     Block Description
+
+
+4.6            Short Circuit Detection
+
+
+
+                                                      short circuit detected
+                                                                                both outputs off
+                               current limitation,
+                               freewheeling in HS
+             current
+
+
+
+
+                       ISC
+
+                                                                                  current tracking
+                       IL
+
+                                             tb                  t< tb
+                                                                         tsdf
+                       I OUT
+              Short                                                                                time
+              PWM
+                  DIR
+              OUT1                                                               tristate
+             OUT2                                    tristate                    tristate
+
+
+
+Figure 4-4 Short to Ground Detection
+
+
+The short circuit to ground detection is activated when the current through one of the high side switches rises over
+the threshold ISC and remains higher than ISC for at least the filter time tsdf within the blanking time tb. Both outputs
+will be switched off and the failure will be reported in the SPI diagnosis register. The outputs can be re-activated
+by disabling and enabling the bridge via the disable signal DIS, pulling VSO to GND or by a reset command via
+SPI.
+
+4.7            Short Circuit to Battery
+A short circuit to battery is detected in the same way as a short circuit to ground, only in the low side switch instead
+of the high side switch.
+
+4.8            Short Circuit over Load
+Short circuit over load will trigger the short circuit detection either of the high side or the low side switch (whichever
+is faster).
+
+4.9            Overtemperature
+In case of high DC-currents, insufficient cooling or high ambient temperature, the chip temperature may rise above
+the thermal shut-down temperature TjSD. In that case, all output transistors are turned off. Overtemperature
+shutdown is latching.
+The outputs can be re-activated as soon as the junction temperature has fallen below the switch-on temperature
+TjSO.
+
+
+
+
+Data Sheet                                                      10                                 Rev. 1.0, 2014-02-25
+                                                                                                     TLE9201SG
+
+
+                                                                                                Block Description
+
+
+4.10         Undervoltage Shut-Down
+If the supply voltage at the VS pins falls below the undervoltage detection threshold VUV_OFF, the outputs are turned
+off. The undervoltage detection is not latching. That means that as soon as VS rises above VUV_ON again, the
+device is returning to normal operation.
+
+4.11         Open Load Detection
+
+
+4.11.1       Open Load Detection in OFF state
+When the bridge is disabled (DIS=high) the open load in OFF detection becomes active. Two diagnostic current
+sources will then be connected to the outputs, a pull up current source at OUT1 and a pull down current source at
+OUT2. The pull down current source is stronger than the pull up current source and therefore will pull down OUT1
+if a load is present. If no load is present OUT1 will be pulled high by the pull up current source. This is detected
+by a comparator and reported in the SPI diagnosis register.
+Please note that capacitors that might be placed at the outputs for EMC reasons first have to be discharged by
+the pull down current source at OUT2 for the open load detection to work properly.
+Also, if current is flowing through the load at the time of disabling the freewheeling current will force the outputs
+towards supply voltage VS. This may lead to an erroneous reporting of open load.
+Therefore the first diagnostic reading after disabling should be discarded and a second reading should be taken
+after the load is deenergized and the output capacitors are discharged completely.
+The open load detection can be disabled by setting the OLDIS bit in the CTRL_REG register. This will disconnect
+the diagnostic current sources and suppress the reporting of open load in the DIA_REG register.
+
+
+
+                                5V int.
+
+
+
+
+                                                       OUT1                         OUT2
+                                                                        M
+
+
+                                                      OL
+                                          +
+                     Vref_OL              -
+
+
+
+Figure 4-5 Open Load Detection in OFF state
+
+4.11.2       Open Load Detection in ON state
+The TLE9201SG contains an open load diagnosis during operation for inductive loads. It evaluates whether
+freewheeling occurs in the switching phase. In order to avoid inadvertent triggering of the open load diagnosis a
+failure counter is implemented. There have to be at least 5 occurances of the internal open load signal (i.e. 5 PWM
+pulses without freewheeling detected) before open load is reported in the SPI diagnosis register.
+Depending on the operation conditions and on external circuitry like the output capacitors it is possible that open
+load is indicated although the load is present. This might be the case for example during a direction change or for
+small load currents respectively small PWM duty cycles. Therefore it is recommended to evaluate the open load
+diagnosis only in known suitable operating conditions and to ignore it otherwise.
+The open load diagnosis is not latching.
+
+Data Sheet                                               11                                   Rev. 1.0, 2014-02-25
+                                                                                                                        TLE9201SG
+
+
+                                                                                                                     Block Description
+
+
+4.12           Serial Peripheral Interface (SPI)
+For diagnosis purposes the TLE9201SG is equipped with a “Serial Peripheral Interface“ (SPI).
+The SPI of several TLE9201SGs can be connected in daisy chain configuration in order to save microcontroller
+interface pins.
+The TLE9201SG is configured as a “slave” device. This means that the µC as the master is providing the chip
+select (CSN) and clock signal (SCK).
+A data transfer on the SPI bus is initiaded with a falling edge on CSN and is terminated by a rising edge on CSN.
+The data on the serial input pin SI is sampled with the falling edge of SCK, the serial data output at SO is
+determined by the rising clock edge. The data is transferred “MSB first”.
+The word length of the SPI is 8 bit. Please note that there is no check for the number of clocks within a SPI frame.
+Any low pulse at CSN will be regarded as one frame.
+
+4.12.1         Error Flag
+Between the falling edge of CSN and the first rising edge of SCK an additional error flag signal is set
+asynchronously at the SO pin. The error flag signal set to high whenever the output stages are shut down (tristate)
+due to a failure or due to disabling of the output stages. Additionally the EF signal is OR’ed with the SI input signal.
+By connecting the SO of one device to the SI of the next device the EF signal can be routed through similar to a
+SPI daisy chain configuration.
+This flag can be used for simple error feedback without SPI communication by connecting SCK and CSN to GND
+permanently (see Figure 5 “Application Example H-Bridge with Error Flag” on Page 22).
+
+
+
+         CSN
+
+                                                     1                                                  3    8
+                     9      2
+         SCK                                                                                                10
+                                     5
+                                                    6             Command n
+
+          SI                        7       6        5       4       3        2       1       0
+
+                                          SI: Data will be accepted on the falling edge of SCK-Signal
+                                4                                                                       7
+                                                             Answer to Command n-1
+
+         SO      Z        EF        7       6        5       4       3        2       1       0                  Z       EF
+
+                                         SO: State will change on the rising edge of SCK-Signal
+
+Figure 4-6 SPI Timing Definition (drawing not to scale)
+
+
+
+
+Data Sheet                                                         12                                            Rev. 1.0, 2014-02-25
+                                                                                              TLE9201SG
+
+
+                                                                                          Block Description
+
+
+4.12.2       SPI Register Description
+
+The TLE9201SG provides detailed diagnosis and the option to control the outputs via SPI. Following commands
+are available (x=don’t care, d=data):
+
+Table 4-2    SPI Command Set
+Command                   Input Byte     Description
+RD_DIA                    000x xxxx      Read Diagnosis Register
+RES_DIA                   100x xxxx      Reset Diagnosis Register
+RD_REV                    001x xxxx      Read Device Revision Number
+RD_CTRL                   011x xxxx      Read Control Register
+WR_CTRL                   111d dddd      Write Control - sets and returns Control Register values
+WR_CTRL_RD_DIA            110d dddd      Write Control and Read Diagnosis- sets Control Register values and
+                                         returns Diagnosis Register values
+
+The first SPI response provided after power up is the device revision number (RD_REV). For any unspecified
+commands the device will respond with the content of the diagnosis register (RD_DIA).
+
+
+The registers are addressed wordwise.
+
+
+
+
+Data Sheet                                          13                                  Rev. 1.0, 2014-02-25
+                                                                                            TLE9201SG
+
+
+                                                                                         Block Description
+
+
+4.12.2.1     Control Register
+
+
+Control Register
+
+
+CTRL_REG                                         Offset                                       Reset Value
+ControlRegister                                   01H                                                    00H
+
+
+        7                       5          4              3            2            1               0
+
+                   CMD                   OLDIS            SIN        SEN          SDIR          SPWM
+
+                   rw                      rw             rw          rw            rw              rw
+
+
+Field                    Bits       Type        Description
+CMD                      7:5        rw          Command
+                                                011: RD_CTRL
+                                                110: WR_CTRL_RD_DIA
+                                                111: WR_CTRL
+OLDIS                    4          rw          Open Load Disconnect
+                                                1: Open load current source disconnected.
+SIN                      3          rw          SPI control
+                                                0: Control outputs via PWM/DIR inputs
+                                                1: Control outputs via SPI
+                                                Note: can only be set if DIS=0 and PWM=0 and DIR=0.
+                                                Any change of the DIS, PWM or DIR signals will reset
+                                                this bit and revert to standard control via PWM/DIR
+SEN                      2          rw          1: Enable outputs in case of SPI control (SIN=1)
+                                                0: Disable outputs in case of SPI control (SIN=1)
+SDIR                     1          rw          DIR Signal in case of SPI control (SIN=1)
+SPWM                     0          rw          PWM Signal in case of SPI control (SIN=1)
+
+
+
+
+Data Sheet                                         14                                Rev. 1.0, 2014-02-25
+                                                                                                       TLE9201SG
+
+
+                                                                                                 Block Description
+
+
+4.12.2.2     Diagnosis Register
+
+
+Diagnosis Register
+
+
+DIA_REG                                                 Offset                                         Reset Value
+Diagnosis Register                                       00H                                                      DFH
+
+
+        7           6               5             4               3             2            1               0
+
+        EN         OT               TV            CL             DIA4          DIA3         DIA2            DIA1
+
+        r            r              r             r               r             r            r               r
+
+
+Field                        Bits          Type        Description
+EN                           7             r           1= outputs enabled by low signal on pin DIS
+                                                       0 = outputs disabled by high signal on pin DIS
+OT                           6             r           0 = overtemperature shutdown
+TV                           5             r           Always 0 - used for transmission validation
+CL                           4             r           0 = current limitation active
+DIA4                         3             r           Diagnosis bit 4
+DIA3                         2             r           Diagnosis bit 3
+DIA2                         1             r           Diagnosis bit 2
+DIA1                         0             r           Diagnosis bit 1
+
+Diagnosis Truth Table
+The short circuit and VS undervoltage diagnosis is coded in the DIA bits according to the following truth table.
+Together with transmission validation bit TV (always 0) it is ensured that there is always at least one 1->0 change
+at SO during a valid transmission. Therefore a “stuck at” failure of the SO pin can be detected.
+
+Table 4-3    Encoding of Diagnosis Bits (sorted by hex value, only listed combinations are valid)
+Type                                                                  DIA4 DIA3 DIA2 DIA1 Hex           Comment
+No failure                                                            1    1        1   1        0xF    -
+Short to GND at OUT1 (SCG1)                                           1    1        1   0        0xE    latched
+Short to Battery at OUT1 (SCB1)                                       1    1        0   1        0xD    latched
+Open Load (OL)                                                        1    1        0   0        0xC    not latched
+Short to GND at OUT2 (SCG2)                                           1    0        1   1        0xB    latched
+Short to GND at OUT1 and OUT2 (SCG1, SCG2)                            1    0        1   0        0xA    latched
+Short to Bat. at OUT1 and short to GND at OUT2 (SCB1, SCG2) 1              0        0   1        0x9    latched
+Short to Battery at OUT2 (SCB2)                                       0    1        1   1        0x7    latched
+Short to GND at OUT1 and short to Bat. at OUT2 (SCG1, SCB2) 0              1        1   0        0x6    latched
+Short to Battery at OUT1 and OUT2 (SCB1, SCB2)                        0    1        0   1        0x5    latched
+VS Undervoltage (VS_UV)                                               0    0        1   1        0x3    not latched
+
+
+Data Sheet                                                15                                 Rev. 1.0, 2014-02-25
+                                                                                                  TLE9201SG
+
+
+                                                                                              Block Description
+
+
+Reset Behavior of Diagnosis Register
+The diagnosis register is reset by the following events
+
+Table 4-4      Diagnosis Reset Types
+Name        Type             Comment
+POR         Power On Reset   Reset due to power up, undervoltage or sleep mode
+ENR         Enable Reset     Reset due to disabling/enabling of the outputs by DIS pin or bit SEN in CTRL_REG
+SPIR        SPI Reset        Reset by sending the RES_DIA command via SPI
+
+A change of the DIR signal will lead to a reset of current limitation (CL) or open load in on (OL) error messages.
+The open load in on failure will also be reset automatically if the open load condition no longer persits, i.e.
+freewheeling is detected for five or more consecutive pulses.
+
+4.12.2.3       Revision Register
+
+The Revision Register contains the device revision corresponding to the mask set.
+
+Revision Register
+
+
+REV_REG                                                Offset                                       Reset Value
+Revision Register                                         01H                                                 00H
+
+
+        7               6            5            4                3                                      0
+
+        0               0            1            0                               REV
+
+        r               r            r            r                                 r
+
+
+Field                         Bits         Type       Description
+0                             7            r          fixed to 0
+0                             6            r          fixed to 0
+1                             5            r          fixed to 1
+0                             4            r          fixed to 0
+REV                           3:0          r          Device Revision corresponding to mask set
+
+
+
+
+Data Sheet                                                16                                Rev. 1.0, 2014-02-25
+                                                                                                  TLE9201SG
+
+
+                                                                              General Product Characteristics
+
+
+5            General Product Characteristics
+
+
+5.1          Absolute Maximum Ratings
+
+
+Table 1      Absolute Maximum Ratings1)
+Tj = -40 °C to 150 °C
+Parameter                    Symbol             Values               Unit     Note /                 Number
+                                        Min.      Typ.        Max.            Test Condition
+
+Junction temperature         Tj         -40       –           150    °C       –                      P_5.1.1
+                                        150                   175             100h cumulative
+Storage temperature          Ts         -55       –           150    °C       –                      P_5.1.2
+Ambient temperature          Ta         -40       –           125    °C       –                      P_5.1.3
+Supply voltage               VVS        -0.3      –           40     V        –                      P_5.1.4
+Supply for logic output      VVSO       -0.3      –           5.5    V        –                      P_5.1.5
+Voltage at logic inputs      VIN        -0.3      –           5.5    V        –                      P_5.1.6
+Voltage at logic output SO   VSO        -0.3      –           VVSO   V        both conditions must P_5.1.7
+                                                              +0.3            be observed
+                                        -0.3      –           5.5
+ESD Susceptibility
+ESD Susceptibility to GND    VESD       -2        –           2      kV       HBM2)                  P_5.1.8
+acc. HBM
+ESD Susceptibility to GND    VESD       -500      –           500    V        CDM3)                  P_5.1.9
+acc. CDM
+ESD Susceptibility to GND    VESD       -750      –           750    V        CDM3), Corner Pins     P_5.1.10
+acc. CDM, Corner Pins
+1) Not subject to production test, specified by design.
+2) ESD susceptibility HBM according to EIA/JESD22-A114-B (1.5kΩ, 100pF)
+3) ESD susceptibility, Charged Device Model “CDM” EIA/JESD22-C101
+
+
+Notes
+1. Stresses above the ones listed here may cause permanent damage to the device. Exposure to absolute
+   maximum rating conditions for extended periods may affect device reliability.
+2. Integrated protection functions are designed to prevent IC destruction under fault conditions described in the
+   data sheet. Fault conditions are considered as “outside” normal operating range. Protection functions are not
+   designed for continuous repetitive operation.
+
+
+
+
+Data Sheet                                               17                                 Rev. 1.0, 2014-02-25
+                                                                                                         TLE9201SG
+
+
+                                                                                     General Product Characteristics
+
+
+5.2           Functional Range
+
+
+Table 2       Functional Range1)
+Parameter                        Symbol                       Values            Unit        Note /               Number
+                                            Min.          Typ.         Max.                 Test Condition
+
+Supply voltage range             VS         VUV_OFF       –            28       V           –                    P_5.2.1
+VS supply voltage slew rate      dVS/dt     -10           –            10       V/µs        –                    P_5.2.2
+SO buffer supply voltage         VSO        2.9           –            5.5      V           –                    P_5.2.3
+Junction Temperature             Tj         -40           –            150      °C          –                    P_5.2.4
+1) Not subject to production test, specified by design.
+
+Note: Within the functional or operating range, the IC operates as described in the circuit description. The electrical
+      characteristics are specified within the conditions given in the Electrical Characteristics table.
+
+5.3           Thermal Resistance
+
+Note: This thermal data was generated in accordance with JEDEC JESD51 standards. For more information, go
+      to www.jedec.org.
+
+Table 3       Thermal Resistance1)
+Parameter                         Symbol                      Values          Unit     Note /                Number
+                                                   Min.       Typ.     Max.            Test Condition
+
+Junction to Case                  RthJC            –          –        2      K/W      –                     P_5.3.1
+                                                                                       2)
+Junction to Ambient               RthJA            –          30       –      K/W                            P_5.3.2
+1) Not subject to production test, specified by design.
+2) Specified RthJA value is according to Jedec JESD51-2,-5,-7 at natural convection on FR4 2s2p board; The Product
+   (Chip+Package) was simulated on a 76.2 × 114.3 × 1.5 mm board with 2 inner copper layers (2 × 70 mm Cu, 2 × 35 mm
+   Cu). Where applicable a thermal via array under the exposed pad contacted the first inner copper layer.
+
+
+
+
+Data Sheet                                                        18                               Rev. 1.0, 2014-02-25
+                                                                                                     TLE9201SG
+
+
+                                                                                          Electrical Characteristics
+
+
+6            Electrical Characteristics
+
+
+Table 4      Electrical Characteristics
+VS = 8 V to 28 V; VVSO = 2.9 V to 5.5 V; Tj = -40 °C to 150 °C
+Parameter                      Symbol              Values             Unit   Note / Test Condition      Number
+                                            Min.   Typ.        Max.
+Supply
+Supply Current                 IVS          –      5           13     mA     fPWM = 2 kHz; IOUT = 0 A; P_6.0.1
+                                                                             VVS = 13.5 V;
+Supply Current Sleep Mode      IVS          –      19          30     µA     VVS = 13.5 V; VVSO = 0 V; P_6.0.2
+25 °C                                                                        VOUTx = 0 V; Tj = 25 °C
+Supply Current Sleep Mode                   –      –           50     µA     VVS = 13.5 V; VVSO = 0 V; P_6.0.3
+150 °C1)                                                                     VOUTx = 0 V; Tj =150 °C
+VSO Sleep Mode Threshold    VVSO_sleep 0.5         –           2.0    V      –                          P_6.0.4
+VSO Input Current, CSN high IVSO       –           –           100    µA     ISO = 0 A; VCSN > 2 V      P_6.0.5
+VSO Input Current, CSN low IVSO        –           –           1.0    mA     ISO = 0 A; VCSN = 0 V      P_6.0.6
+VS Undervoltage
+Undervoltage at VS             VUV OFF      3.5    4.2         5.0    V      Switch Off Threshold       P_6.0.7
+Undervoltage at VS             VUV ON       3.6    4.4         5.2    V      Switch On Threshold        P_6.0.8
+Undervoltage at VS             VUV HY       100    200         500    mV     Hysteresis                 P_6.0.9
+VS Undervoltage Detection      tUV          –      1           –      µs     –                          P_6.0.10
+Filter Time 1)
+Inputs PWM, DIR, SCK, SI
+Low level                      Vinput_L     –      –           0.8    V      –                          P_6.0.11
+High level                     Vinput_H     2.0    –           –      V      –                          P_6.0.12
+Hysteresis                     Vinput_HYS   0.1    0.3         –      V      –                          P_6.0.13
+Pull Down Current              Iin_pd       9      38          85     µA     Vin = 5.5 V                P_6.0.14
+Input Capacity1)               Cin          –      –           15     pF     Vbias = 2 V;               P_6.0.15
+                                                                             Vtest = 20 mVpp;
+                                                                             f = 1 MHz
+Inputs DIS, CSN
+Low level                      Vinput_L     –      –           0.8    V      –                          P_6.0.16
+High level                     Vinput_H     2.0    –           –      V      –                          P_6.0.17
+Hysteresis                     Vinput_HYS   0.1    0.3         –      V      –                          P_6.0.18
+Pull Up Current                Iin_pu       9      38          85     µA     Vin = 0 V                  P_6.0.19
+              1)
+Input Capacity                 Cin          –      –           15     pF     Vbias = 2 V;               P_6.0.20
+                                                                             Vtest = 20 mVpp;
+                                                                             f = 1 MHz
+
+
+
+
+Data Sheet                                                19                                    Rev. 1.0, 2014-02-25
+                                                                                                             TLE9201SG
+
+
+                                                                                               Electrical Characteristics
+
+
+Table 4        Electrical Characteristics
+VS = 8 V to 28 V; VVSO = 2.9 V to 5.5 V; Tj = -40 °C to 150 °C
+Parameter                            Symbol              Values             Unit   Note / Test Condition      Number
+                                                  Min.   Typ.        Max.
+Output SO
+Low level                            VSO_L        0.0    –           0.4    V      ISO = -1 mA                P_6.0.21
+High level                           VSO_H        VVSO- –            VVSO   V      ISO = 1 mA ;               P_6.0.22
+                                                  0.75                             2.9 V < VVSO < 5.5 V
+Tristage Leakage Current             ISO          -5     –           5      µA     0V < VSO < VVSO;           P_6.0.23
+                                                                                   VVSO = 5.5 V
+Output Capacity1)                    CSO          –      –           19     pF     Vbias = 2 V;               P_6.0.24
+                                                                                   Vtest = 20 mVpp;
+                                                                                   f = 1 MHz
+Power Outputs OUT1, OUT2
+On resistance low side               ROUTL        –      100         –      mΩ     IOUT = 2 A; Tj = 25 °C     P_6.0.25
+                                                  –      –           200    mΩ     IOUT = 2 A; Tj = 150 °C
+On resistance high side              ROUTH        –      100         –      mΩ     IOUT = 2 A; Tj = 25 °C     P_6.0.26
+                                                  –      –           200    mΩ     IOUT = 2 A; Tj = 150 °C
+Leakage current                      IOUT1(off)   -25    –           25     µA     VVS = 13.5 V;              P_6.0.27
+                                     IOUT2(off)                                    Outputs off; OLDIS high
+                                                  -100   –           25     µA     VVS = 13.5 V;
+                                                                                   Sleep Mode
+Free-wheel diode forward             UD           –      0.9         1.0    V      ID = 2 A                   P_6.0.28
+voltage
+Output Switching Times 2)
+Rise time HS                         tr (HS)      5      –           40     µs     VVS = 13.5 V;              P_6.0.29
+Fall time HS                         tf (HS)      5      –           40     µs     RLoad = 6.8 Ω              P_6.0.30
+Rise time LS                         tr (LS)      1.0    –           7.0    µs                                P_6.0.31
+Fall time LS                         tf (LS)      1.0    –           7.0    µs                                P_6.0.32
+PWM Frequency1)                      fPWM         0      –           20     kHz    –                          P_6.0.33
+                           2)
+Output Delay Times
+Output on-delay HS                   td_on(HS)    –      –           80     µs     VVS = 13.5 V;              P_6.0.34
+Output off-delay HS                  td_off(HS)   –      –           80     µs     RLoad = 6.8 Ω              P_6.0.35
+Output on-delay LS                   td_on(LS)    –      –           10     µs                                P_6.0.36
+Output off-delay LS                  td_off(LS)   –      –           10     µs                                P_6.0.37
+Disable delay time                   td_dis       –      –           80     µs                                P_6.0.38
+Enable delay time                    td_en        –      –           80     µs                                P_6.0.39
+Disable/Enable filter time1)         tf_en        0.4    –           3      µs                                P_6.0.40
+                      1)
+Wake Up delay time                   twu          –      –           1      ms     VSO high --> OUT high      P_6.0.41
+Chopper Current Limitation
+Current Limit                        IL           6.0    8.0         10.0   A      VVS = 13.5 V               P_6.0.42
+                1)
+Blanking time                        tb           5      8           13     µs     –                          P_6.0.43
+                                1)
+Minimum transition time              ttrans       –      95          –      µs     –                          P_6.0.44
+
+
+
+Data Sheet                                                      20                                   Rev. 1.0, 2014-02-25
+                                                                                                       TLE9201SG
+
+
+                                                                                          Electrical Characteristics
+
+
+Table 4       Electrical Characteristics
+VS = 8 V to 28 V; VVSO = 2.9 V to 5.5 V; Tj = -40 °C to 150 °C
+Parameter                        Symbol              Values             Unit   Note / Test Condition    Number
+                                              Min.   Typ.        Max.
+Short Circuit Detection
+Short circuit detection          ISC_H        8.0    11.5        14.5   A      VVS = 13.5 V             P_6.0.45
+threshold high side switch
+Short circuit detection          ISC_L        8.0    11.5        14.5   A                               P_6.0.46
+threshold low side switch
+Current tracking high side       ISC_H - IL   2.0    4.0         5.2    A                               P_6.0.47
+Current tracking low side        ISC_L - IL   1.8    3.5         5.2    A                               P_6.0.48
+Short Circuit detection filter   tsdf         –      2           –      µs     –                        P_6.0.49
+time1)
+Open Load Detection in OFF State
+Pull up Current at OUT1          IOUT1_OL     60     140         200    µA     VVS = 13.5 V; VOUT1 = 0V P_6.0.50
+Pull down Current at OUT2        IOUT2_OL     200    350         500    µA     VVS = VOUT2 = 13.5 V     P_6.0.51
+Ratio of current sources         Ratio_IOL    1.8    2.5         3.5    –      –                        P_6.0.52
+Open load detection in OFF       tf_OL        40     –           –      µs     –                        P_6.0.53
+filter time1)
+SPI Timing (see Figure 4-6)1)
+Cycle-time (1)                   tcyc         490    –           –      ns     Referred to master       P_6.0.54
+Enable Lead Time (2)             tlead        50     –           –      ns     Referred to master       P_6.0.55
+Enable Lag Time (3)              tlag         150    –           –      ns     Referred to master       P_6.0.56
+                 3)
+Data Valid (4)                   tv           –      –           150    ns     CL = 200 pF              P_6.0.57
+                                              –      –           230           CL = 350 pF
+                                                                               Referred to TLE9201SG
+Data Setup Time (5)              tsu          40     –           –      ns     Referred to master       P_6.0.58
+Data Hold Time (6)               th           40     –           –      ns     Referred to master       P_6.0.59
+Disable Time (7)                 tdis         –      –           100    ns     Referred to TLE9201SG    P_6.0.60
+Transfer Delay (8)               tdt          2      –           –      µs     Referred to master       P_6.0.61
+Disable Lead Time (9)            tdld         250    –           –      ns     Referred to master       P_6.0.62
+Disable Lag Time (10)            tdlg         250    –           –      ns     Referred to master       P_6.0.63
+Thermal Shutdown
+Thermal Shutdown Junction        TjSD         150    175         –      °C     –                        P_6.0.64
+Temperature1)
+Thermal Switch-On Junction TjSO               125    –           –      °C     –                        P_6.0.65
+Temperature1)
+1) Not subject to production test, specified by design.
+2) Output switching times are measured between 20% and 80% of the output swing
+3) VSO timing thresholds are 20% / 80% of VVSO for 4.5V<VVSO<5.5V and 30% / 70% of VVSO for 2.9V<VVSO<4.5V
+
+
+
+
+Data Sheet                                                  21                                 Rev. 1.0, 2014-02-25
+                                                                                                          TLE9201SG
+
+
+                                                                                              Application Information
+
+
+7            Application Information
+
+Note: The following information is given as a hint for the implementation of the device only and shall not be
+      regarded as a description or warranty of a certain functionality, condition or quality of the device. The function
+      of the described circuits must be verified in the real application
+
+              Vbat
+                              Vs<        100uF   100nF
+                              40V
+                                                                    VS
+
+
+
+
+              3.3 or 5V digital supply
+                                                         VSO
+                                                                          OUT1
+
+                                                         DIS                                    M
+                                                         PWM
+                                                                          OUT2
+                                                         DIR
+                        µC                                                         <33 nF   <33 nF
+                                                         CSN
+                                                         SCK
+                                                         SI
+
+                                                         SO
+                                                                GND
+
+
+
+
+Figure 4     Application Example H-Bridge with SPI interface
+
+              Vbat
+                              Vs<        100uF   100nF
+                              40V
+                                                                    VS
+
+
+
+
+              3.3 or 5V digital supply
+                                                         VSO
+                                                                          OUT1
+
+                                                         DIS                                    M
+                                                         PWM
+                                                                          OUT2
+                                                         DIR
+                        µC                                                         <33 nF   <33 nF
+                                                         CSN
+                                                         SCK
+                                                         SI
+
+                                                         SO
+                                                                    GND
+
+
+
+
+Figure 5     Application Example H-Bridge with Error Flag
+
+
+Data Sheet                                                     22                                    Rev. 1.0, 2014-02-25
+                                                                                                   TLE9201SG
+
+
+                                                                                      Application Information
+
+
+
+
+                                                           VS
+
+
+
+
+                                              VSO
+                                                                 OUT1
+
+                                              DIS
+                                                                                              M
+                                              PWM
+                                                                 OUT2
+                                              DIR
+                                                                                 <33 nF   <33 nF
+                                               CSN
+                 µC
+                                              SCK
+                                              SI
+
+                                              SO
+                                                          GND
+
+
+
+
+                                                           VS
+
+
+
+
+                                              VSO
+                                                                 OUT1
+
+                                              DIS
+                                                                                              M
+                                              PWM
+                                                                 OUT2
+                                               DIR
+                                                                                 <33 nF   <33 nF
+                                              CSN
+                                              SCK
+                                              SI
+
+                                              SO
+                                                          GND
+
+
+
+
+Figure 6     SPI Daisy Chain Konfiguration (other signals omitted for clarity)
+
+
+
+
+Data Sheet                                           23                                    Rev. 1.0, 2014-02-25
+                                                                                                                              TLE9201SG
+
+
+                                                                                                                 Application Information
+
+
+
+                  Vbat
+
+                                   Vs<        100uF    100nF
+                                   40V
+                                                                                        VS
+
+
+
+
+                  3.3 or 5V digital supply
+
+
+                                                                          DIS                   OUT1
+
+                                                                          PWM                                            M
+                                                                          DIR
+                                                                                                OUT2
+                                                                          CSN
+                              µC                                                                            <33 nF   <33 nF
+                                                                          SCK
+                                                                          SI
+                                                                          SO
+                                                                          VSO (EN)
+                                                                                     GND
+                                                       1nF
+
+
+
+
+Figure 7     Application Example VSO as Enable Input
+
+               Reverse polarity protection via main relay
+                                                                                                       VS
+
+                                             main
+                                                                                100µF        100nF
+                                                               Vs < 40V
+
+
+
+
+                                             relay
+
+
+                   ignition
+                   switch
+
+                  battery
+
+
+
+
+               Reverse polarity protection using P -FET
+                                                                                                       VS
+
+
+                                                      10V                       100µF        100nF
+                                                               Vs < 40V
+
+
+
+
+                                                      10k
+
+                  battery
+
+
+
+
+Figure 8     Examples for Reverse Polarity Protection
+The TLE9201SG is not protected against reverse polarity. External measures have to be taken to ensure the right
+polarity of the supply voltage.
+
+
+
+
+Data Sheet                                                                     24                                     Rev. 1.0, 2014-02-25
+                                                                                                                                                        TLE9201SG
+
+
+                                                                                                                                              Package Outlines
+
+
+8             Package Outlines
+
+
+
+                                       6.4 ±0.1 1)                                                                          7.5 ±0.1 1)
+
+
+
+
+                                                      0.1 ±0.05 3)
+
+
+
+
+                                                                                                         2.6 MAX.
+                              A                                                                                         B
+
+
+
+
+                                                                                    2.35 ±0.1
+
+
+
+
+                                                                                                                                          0.25 +0.075
+                                       8˚                                                                                   8˚
+
+
+
+
+                                                                                                                                                35
+                                                                                                (1.55)
+                                                                           2)
+
+
+
+
+                                                                                                                                               -0.0
+                                                                           0 +0.1
+
+
+
+
+                                                                                                                                                           5˚ ±3˚
+                                                                     0.8                                            C
+                        0.1       1                          0.1 C 12x                                                                    0.7 ±0.15
+                                                           Seating Plane
+                       5x 1 = 5                                                                                                           (0.2)
+
+                           0.4 +0.13                                                                                             (4.4)
+                                                  0.25 M C A B
+                                                                                                                            10.3 ±0.3
+                                       5.1 ±0.1                                                                                                         0.25 B
+                                                       1.6 ±0.1
+
+
+
+
+                                  12              7
+                                                       (1.8)
+
+
+                                                                                    4.2 ±0.1
+
+
+
+
+      ø0.8 x 0.1 -0.05 Depth 4)
+                                       1      6
+                                       7.8 ±0.1
+                                   (Heatslug)
+
+       1)
+          Does not include plastic or metal protrusion of 0.15 max. per side
+       2)
+          Stand OFF
+       3)
+          Stand OUT
+       4)
+           Pin 1 Index Marking; Polish finish
+           All package corners max. R 0.25
+
+Figure 9      PG-DSO-12-17
+
+Green Product (RoHS compliant)
+To meet the world-wide customer requirements for environmentally friendly products and to be compliant with
+government regulations the device is available as a green product. Green products are RoHS-Compliant (i.e
+Pb-free finish on leads and suitable for Pb-free soldering according to IPC/JEDEC J-STD-020).
+
+
+
+
+For further information on alternative packages, please visit our website:
+http://www.infineon.com/packages.                                                                                                              Dimensions in mm
+
+Data Sheet                                                                          25                                                    Rev. 1.0, 2014-02-25
+Edition 2014-02-25
+Published by
+Infineon Technologies AG
+81726 Munich, Germany
+© 2014 Infineon Technologies AG
+All Rights Reserved.
+
+Legal Disclaimer
+The information given in this document shall in no event be regarded as a guarantee of conditions or
+characteristics. With respect to any examples or hints given herein, any typical values stated herein and/or any
+information regarding the application of the device, Infineon Technologies hereby disclaims any and all warranties
+and liabilities of any kind, including without limitation, warranties of non-infringement of intellectual property rights
+of any third party.
+
+Information
+For further information on technology, delivery terms and conditions and prices, please contact the nearest
+Infineon Technologies Office (www.infineon.com).
+
+Warnings
+Due to technical requirements, components may contain dangerous substances. For information on the types in
+question, please contact the nearest Infineon Technologies Office.
+Infineon Technologies components may be used in life-support devices or systems only with the express written
+approval of Infineon Technologies, if a failure of such components can reasonably be expected to cause the failure
+of that life-support device or system or to affect the safety or effectiveness of that device or system. Life support
+devices or systems are intended to be implanted in the human body or to support and/or maintain and sustain
+and/or protect human life. If they fail, it is reasonable to assume that the health of the user or other persons may
+be endangered.
+

@@ -1,0 +1,67 @@
+{
+  "assumption": "Nominal circular pad annulus=(pad diameter-drill diameter)/2; no fabrication tolerances assumed.",
+  "hole_annuli": [
+    {
+      "uuid": "e186b75f-4739-4f2e-a723-906e090de7da",
+      "position_mm": [
+        71.95,
+        35.49
+      ],
+      "pad_diameter_mm": 4.0,
+      "drill_diameter_mm": 4.0,
+      "annulus_mm": 0.0
+    },
+    {
+      "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788",
+      "position_mm": [
+        75.55,
+        39.34
+      ],
+      "pad_diameter_mm": 2.2,
+      "drill_diameter_mm": 2.2,
+      "annulus_mm": 0.0
+    },
+    {
+      "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10",
+      "position_mm": [
+        120.0,
+        28.49
+      ],
+      "pad_diameter_mm": 4.0,
+      "drill_diameter_mm": 4.0,
+      "annulus_mm": 0.0
+    },
+    {
+      "uuid": "233888a2-e331-456b-963a-5ee5605edf83",
+      "position_mm": [
+        199.65,
+        39.34
+      ],
+      "pad_diameter_mm": 2.2,
+      "drill_diameter_mm": 2.2,
+      "annulus_mm": 0.0
+    },
+    {
+      "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0",
+      "position_mm": [
+        203.25,
+        35.49
+      ],
+      "pad_diameter_mm": 4.0,
+      "drill_diameter_mm": 4.0,
+      "annulus_mm": 0.0
+    }
+  ],
+  "carrier_only_can2_termination": {
+    "R36_ohm": 120,
+    "R37_ohm": 120,
+    "R36_DNP": true,
+    "R37_DNP": true,
+    "fitted_termination_conductance_S": 0,
+    "both_fitted_parallel_ohm": 60.0,
+    "limitation": "Omits any termination inside J2 module or attached harness; no load or waveform claim."
+  },
+  "controlled_drc_reproduces_fresh_violation_multiset": true,
+  "schematic_pins_compared": 659,
+  "native_board_pin_assignment_discrepancies": []
+}

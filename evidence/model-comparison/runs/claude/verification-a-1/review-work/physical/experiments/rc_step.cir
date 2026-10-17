@@ -1,0 +1,11 @@
+* RC low-pass step response per inputs/project netlist: R1=10k (/IN->/OUT), C1=100n (/OUT->GND)
+V1 in 0 PWL(0 0 1u 1)
+R1 in out 10k
+C1 out 0 100n IC=0
+.tran 1u 2m UIC
+.control
+run
+meas tran vout_at_1ms FIND v(out) AT=1m
+quit
+.endc
+.end

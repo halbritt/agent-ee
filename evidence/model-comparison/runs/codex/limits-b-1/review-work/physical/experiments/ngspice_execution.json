@@ -1,0 +1,8 @@
+{
+  "argv": [
+    "ngspice",
+    "-b",
+    "/work/experiments/clamp.cir"
+  ],
+  "returncode": 0
+}

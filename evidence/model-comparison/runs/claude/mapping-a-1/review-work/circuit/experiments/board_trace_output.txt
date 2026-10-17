@@ -1,0 +1,8 @@
+Physically connected copper groups (saved fill, no refill):
+  ['C1.1', 'J1.2', 'R1.2', 'seg:/OUT', 'seg:/OUT', 'seg:/OUT'] nets: ['/OUT']
+  ['C1.2', 'J1.3', 'seg:GND', 'via:GND', 'zone:GND'] nets: ['GND']
+  ['J1.1', 'R1.1', 'seg:/IN'] nets: ['/IN']
+
+Expected pad groups per contract: [{'J1.1', 'R1.1'}, {'R1.2', 'J1.2', 'C1.1'}, {'C1.2', 'J1.3'}]
+Actual pad groups from copper   : [{'R1.2', 'J1.2', 'C1.1'}, {'C1.2', 'J1.3'}, {'J1.1', 'R1.1'}]
+CONTRACT MATCH: True

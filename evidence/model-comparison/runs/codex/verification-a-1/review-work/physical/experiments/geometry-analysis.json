@@ -1,0 +1,399 @@
+{
+  "source_hashes": {
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1"
+  },
+  "footprints": [
+    {
+      "ref": "C1",
+      "value": "100n",
+      "position_mm": [
+        110.0,
+        100.0
+      ]
+    },
+    {
+      "ref": "R1",
+      "value": "10k",
+      "position_mm": [
+        105.0,
+        100.0
+      ]
+    },
+    {
+      "ref": "J1",
+      "value": "Conn_01x03",
+      "position_mm": [
+        100.0,
+        100.0
+      ]
+    }
+  ],
+  "pads": [
+    {
+      "id": "C1.1",
+      "net": "/OUT",
+      "at": [
+        109.05,
+        100.0
+      ],
+      "size": [
+        1.0,
+        1.45
+      ],
+      "kind": "smd",
+      "shape": "roundrect"
+    },
+    {
+      "id": "C1.2",
+      "net": "GND",
+      "at": [
+        110.95,
+        100.0
+      ],
+      "size": [
+        1.0,
+        1.45
+      ],
+      "kind": "smd",
+      "shape": "roundrect"
+    },
+    {
+      "id": "R1.1",
+      "net": "/IN",
+      "at": [
+        104.0875,
+        100.0
+      ],
+      "size": [
+        1.025,
+        1.4
+      ],
+      "kind": "smd",
+      "shape": "roundrect"
+    },
+    {
+      "id": "R1.2",
+      "net": "/OUT",
+      "at": [
+        105.9125,
+        100.0
+      ],
+      "size": [
+        1.025,
+        1.4
+      ],
+      "kind": "smd",
+      "shape": "roundrect"
+    },
+    {
+      "id": "J1.1",
+      "net": "/IN",
+      "at": [
+        100.0,
+        100.0
+      ],
+      "size": [
+        1.7,
+        1.7
+      ],
+      "kind": "thru_hole",
+      "shape": "rect"
+    },
+    {
+      "id": "J1.2",
+      "net": "/OUT",
+      "at": [
+        100.0,
+        102.54
+      ],
+      "size": [
+        1.7,
+        1.7
+      ],
+      "kind": "thru_hole",
+      "shape": "circle"
+    },
+    {
+      "id": "J1.3",
+      "net": "GND",
+      "at": [
+        100.0,
+        105.08
+      ],
+      "size": [
+        1.7,
+        1.7
+      ],
+      "kind": "thru_hole",
+      "shape": "circle"
+    }
+  ],
+  "tracks": [
+    {
+      "id": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "a": [
+        100.0,
+        100.0
+      ],
+      "b": [
+        104.0875,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "layer": "F.Cu"
+    },
+    {
+      "id": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "a": [
+        105.9125,
+        100.0
+      ],
+      "b": [
+        109.05,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "layer": "F.Cu"
+    },
+    {
+      "id": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "a": [
+        100.0,
+        102.54
+      ],
+      "b": [
+        107.5,
+        102.54
+      ],
+      "width_mm": 0.25,
+      "layer": "F.Cu"
+    },
+    {
+      "id": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "a": [
+        107.5,
+        102.54
+      ],
+      "b": [
+        107.5,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "layer": "F.Cu"
+    },
+    {
+      "id": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "a": [
+        110.95,
+        100.0
+      ],
+      "b": [
+        113.0,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "layer": "F.Cu"
+    }
+  ],
+  "vias": [
+    {
+      "id": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "net": "GND",
+      "at": [
+        113.0,
+        100.0
+      ],
+      "diameter_mm": 0.6,
+      "drill_mm": 0.3
+    }
+  ],
+  "pcb_pad_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "schematic_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "pcb_and_schematic_pad_net_equality": true,
+  "track_centerline_attachments": {
+    "C1.1": [
+      "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+    ],
+    "C1.2": [
+      "7deb1fb0-3a34-4321-a0ef-399bdd8439d1"
+    ],
+    "R1.1": [
+      "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+    ],
+    "R1.2": [
+      "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+    ],
+    "J1.1": [
+      "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+    ],
+    "J1.2": [
+      "8b528360-109d-4533-a657-35923fd930f8"
+    ],
+    "J1.3": []
+  },
+  "out_track_T_junction": true,
+  "saved_ground_polygon_vertices": 187,
+  "via_center_inside_saved_fill": true,
+  "saved_ground_thermal_samples": [
+    {
+      "sample_spacing_max_mm": 0.01,
+      "samples": 107,
+      "failed_samples": 0,
+      "first_failures": []
+    },
+    {
+      "sample_spacing_max_mm": 0.01,
+      "samples": 107,
+      "failed_samples": 0,
+      "first_failures": []
+    },
+    {
+      "sample_spacing_max_mm": 0.01,
+      "samples": 107,
+      "failed_samples": 0,
+      "first_failures": []
+    },
+    {
+      "sample_spacing_max_mm": 0.01,
+      "samples": 107,
+      "failed_samples": 0,
+      "first_failures": []
+    }
+  ],
+  "saved_ground_return_path_mm": [
+    [
+      100.3889087296526,
+      105.4689087296526
+    ],
+    [
+      101.5,
+      106.58
+    ],
+    [
+      113,
+      106.58
+    ],
+    [
+      113,
+      100
+    ]
+  ],
+  "saved_ground_return_samples": {
+    "sample_spacing_max_mm": 0.01,
+    "samples": 1969,
+    "failed_samples": 0,
+    "first_failures": []
+  },
+  "outline_edges_mm": [
+    [
+      [
+        96.0,
+        96.0
+      ],
+      [
+        116.0,
+        96.0
+      ]
+    ],
+    [
+      [
+        96.0,
+        108.0
+      ],
+      [
+        96.0,
+        96.0
+      ]
+    ],
+    [
+      [
+        116.0,
+        96.0
+      ],
+      [
+        116.0,
+        108.0
+      ]
+    ],
+    [
+      [
+        116.0,
+        108.0
+      ],
+      [
+        96.0,
+        108.0
+      ]
+    ]
+  ],
+  "board_size_mm": [
+    20,
+    12
+  ],
+  "minimum_pad_copper_to_outline_mm": 2.0700000000000016,
+  "courtyard_rectangles_mm": {
+    "C1": [
+      108.3,
+      99.02,
+      111.7,
+      100.98
+    ],
+    "R1": [
+      103.32,
+      99.05,
+      106.68,
+      100.95
+    ],
+    "J1": [
+      98.23,
+      98.23,
+      101.77,
+      106.85
+    ]
+  },
+  "courtyard_separating_gaps_mm": {
+    "J1-R1": 1.5499999999999972,
+    "R1-C1": 1.6199999999999903,
+    "J1-C1": 6.530000000000001
+  },
+  "limitations": [
+    "No refill; saved polygon tested directly.",
+    "Path sampling at 0.01 mm establishes sampled continuity, not a fabrication or tolerance qualification.",
+    "Centerline tests used only for the simple, unrotated native geometry; native DRC separately checks clearances."
+  ]
+}

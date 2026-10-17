@@ -1,0 +1,353 @@
+=== SHEETS IN DESIGN.XML ===
+Sheet 1: / (tstamps=/) -> Polygonus-Universal-Base.kicad_sch
+Sheet 2: /etb-2/ (tstamps=/eb1c8308-a44a-4a4b-a646-1cfc69b467a3/) -> etb-9201.kicad_sch
+Sheet 3: /VR Module/ (tstamps=/fb009e65-a9a4-468e-a2ae-bdcc6f13b5d3/) -> vr_module_poly.kicad_sch
+Sheet 4: /VR Conditioner/ (tstamps=/76f66c7e-94ea-4f9a-aa2e-a01725934e38/) -> VR Conditioner.kicad_sch
+Sheet 5: /IGBT outputs/ (tstamps=/39654894-3080-4f33-9285-6e0d77694cfd/) -> IGBT outputs.kicad_sch
+Sheet 6: /Lowside Adder/ (tstamps=/de31d6fa-be3a-4a6f-8e1e-8e6b8372a269/) -> Lowside Adder.kicad_sch
+Sheet 7: /etb-1/ (tstamps=/8bc5218e-e3ef-4de7-bea4-c8f4c6a87c8a/) -> etb-9201.kicad_sch
+Sheet 8: /Lowside Adder1/ (tstamps=/2e1028d9-7b0e-4bfd-a0ec-cbc4907c4bcc/) -> Lowside Adder.kicad_sch
+Sheet 9: /WBO-CAN-TRANS/ (tstamps=/2889b04e-b195-449f-8a75-049e865cc173/) -> wbo-can-trans.kicad_sch
+Sheet 10: /WBO-CAN-TRANS1/ (tstamps=/10870bd0-e7b2-41e0-a73b-86c976bc9253/) -> wbo-can-trans.kicad_sch
+
+=== COMPONENTS IN DESIGN.XML ===
+A1     | val=Pololu_Breakout_DRV8825 | part=Driver_Motor:Pololu_Breakout_DRV8825 | fp=Module:Pololu_Breakout-16_15.2x20.3mm         | LCSC=N/A        | dnp=False | sheet=/
+C1     | val=1u                     | part=hellen-one-common:Res                    | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C28323     | dnp=False | sheet=/
+C2     | val=56u                    | part=Device:CP                     | fp=Capacitor_THT:CP_Radial_D8.0mm_P3.50mm        | LCSC=N/A        | dnp=False | sheet=/
+F1     | val=Fuse                   | part=Device:Fuse                   | fp=Fuse:Fuseholder_Blade_Mini_Keystone_3568      | LCSC=C5249699   | dnp=False | sheet=/
+J1     | val=Molex_112_643330100    | part=Simon:Molex_112_643330100    | fp=Simon:Molex_112_643330100                     | LCSC=C293656    | dnp=False | sheet=/
+J2     | val=Polygonus ECU Module   | part=fome_modules:polygonus              | fp=fome_modules:polygonus                        | LCSC=           | dnp=False | sheet=/
+J3     | val=Conn_01x05_Male        | part=Connector:Conn_01x05_Male        | fp=Connector_PinHeader_2.00mm:PinHeader_1x05_P2.00mm_Vertical | LCSC=           | dnp=False | sheet=/
+J4     | val=USB_B                  | part=hellen-one-common:USB_B                  | fp=Simon:BMM-USB                                 | LCSC=C46392     | dnp=False | sheet=/
+J5     | val=Conn_01x07             | part=Connector_Generic:Conn_01x07             | fp=Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical | LCSC=           | dnp=False | sheet=/
+J6     | val=P1x16                  | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C350305    | dnp=False | sheet=/
+J7     | val=P1x16                  | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C350305    | dnp=False | sheet=/
+J8     | val=P1x16                  | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C350305    | dnp=False | sheet=/
+J9     | val=P1x16                  | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C350305    | dnp=False | sheet=/
+J10    | val=P1x16                  | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C350305    | dnp=False | sheet=/
+J11    | val=P1x16                  | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C350305    | dnp=False | sheet=/
+J12    | val=P1x5                   | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C50950     | dnp=False | sheet=/
+J13    | val=P1x5                   | part=Mechanical:Fiducial               | fp=header_placement:header_loc                   | LCSC=C50950     | dnp=False | sheet=/
+P1     | val=Pad                    | part=hellen-one-common:Pad                    | fp=Simon:PAD-TH                                  | LCSC=           | dnp=False | sheet=/
+P2     | val=Pad                    | part=hellen-one-common:Pad                    | fp=Simon:PAD-TH                                  | LCSC=           | dnp=False | sheet=/
+P3     | val=Pad                    | part=hellen-one-common:Pad                    | fp=Simon:PAD-TH                                  | LCSC=           | dnp=False | sheet=/
+P4     | val=Pad                    | part=hellen-one-common:Pad                    | fp=Simon:PAD-TH                                  | LCSC=           | dnp=False | sheet=/
+P5     | val=Pad                    | part=hellen-one-common:Pad                    | fp=Simon:PAD-TH                                  | LCSC=           | dnp=False | sheet=/
+P6     | val=Pad                    | part=hellen-one-common:Pad                    | fp=Simon:PAD-TH                                  | LCSC=           | dnp=False | sheet=/
+R1     | val=1k                     | part=hellen-one-common:Res                    | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17513     | dnp=False | sheet=/
+R2     | val=1k                     | part=hellen-one-common:Res                    | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17513     | dnp=False | sheet=/
+R3     | val=~                      | part=hellen-one-common:Res                    | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=           | dnp=False | sheet=/
+R4     | val=~                      | part=hellen-one-common:Res                    | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=           | dnp=False | sheet=/
+U1     | val=f042_wideband_module   | part=fome_modules:f042_wideband_module   | fp=fome_modules:f042_wideband_module             | LCSC=           | dnp=False | sheet=/
+U2     | val=f042_wideband_module   | part=fome_modules:f042_wideband_module   | fp=fome_modules:f042_wideband_module             | LCSC=           | dnp=False | sheet=/
+C3     | val=10u                    | part=Device:C                      | fp=Capacitor_SMD:C_1206_3216Metric               | LCSC=C13585     | dnp=False | sheet=/etb-2/
+C4     | val=10n                    | part=Device:C_Small                | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C1710      | dnp=False | sheet=/etb-2/
+C5     | val=10n                    | part=Device:C_Small                | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C1710      | dnp=False | sheet=/etb-2/
+R5     | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17414     | dnp=False | sheet=/etb-2/
+U3     | val=TLE9201SG              | part=Simon:TLE9201SG              | fp=Package_SO:Infineon_PG-DSO-12-9               | LCSC=C112633    | dnp=False | sheet=/etb-2/
+C6     | val=1n                     | part=Device:C_Small                | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C1523      | dnp=False | sheet=/VR Module/
+C7     | val=470n                   | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C47339     | dnp=False | sheet=/VR Module/
+C8     | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C1525      | dnp=False | sheet=/VR Module/
+C9     | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C1525      | dnp=False | sheet=/VR Module/
+C10    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+C11    | val=10n                    | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C15195     | dnp=False | sheet=/VR Module/
+C12    | val=10n                    | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C15195     | dnp=False | sheet=/VR Module/
+C13    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+C14    | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C1525      | dnp=False | sheet=/VR Module/
+C15    | val=10n                    | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C15195     | dnp=False | sheet=/VR Module/
+C16    | val=10n                    | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C15195     | dnp=False | sheet=/VR Module/
+C17    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+C18    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+C19    | val=10n                    | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C15195     | dnp=False | sheet=/VR Module/
+C20    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+C21    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+C22    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C52923     | dnp=False | sheet=/VR Module/
+D1     | val=LED                    | part=Device:LED                    | fp=LED_SMD:LED_0603_1608Metric                   | LCSC=C72043     | dnp=False | sheet=/VR Module/
+R6     | val=2.2k                   | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25879     | dnp=False | sheet=/VR Module/
+R7     | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17414     | dnp=False | sheet=/VR Module/
+R8     | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17414     | dnp=False | sheet=/VR Module/
+R9     | val=12k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25752     | dnp=False | sheet=/VR Module/
+R10    | val=100k                   | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25741     | dnp=False | sheet=/VR Module/
+R11    | val=100k                   | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25741     | dnp=False | sheet=/VR Module/
+R12    | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25744     | dnp=False | sheet=/VR Module/
+R13    | val=100k                   | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25741     | dnp=False | sheet=/VR Module/
+R14    | val=100k                   | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25741     | dnp=False | sheet=/VR Module/
+R15    | val=68k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C36871     | dnp=False | sheet=/VR Module/
+R16    | val=10                     | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25077     | dnp=False | sheet=/VR Module/
+R17    | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25744     | dnp=False | sheet=/VR Module/
+R18    | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25744     | dnp=False | sheet=/VR Module/
+R19    | val=10                     | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25077     | dnp=False | sheet=/VR Module/
+R20    | val=1k                     | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C11702     | dnp=False | sheet=/VR Module/
+R21    | val=1k                     | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C11702     | dnp=False | sheet=/VR Module/
+R22    | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25744     | dnp=False | sheet=/VR Module/
+R23    | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25744     | dnp=False | sheet=/VR Module/
+R24    | val=10                     | part=Device:R                      | fp=Resistor_SMD:R_0402_1005Metric                | LCSC=C25077     | dnp=False | sheet=/VR Module/
+U4     | val=SRV05-4                | part=Power_Protection:SRV05-4                | fp=Package_TO_SOT_SMD:SOT-23-6                   | LCSC=C85364     | dnp=False | sheet=/VR Module/
+U5     | val=74HC02                 | part=74xx:74HC02                 | fp=Package_SO:SOIC-14_3.9x8.7mm_P1.27mm          | LCSC=C5588      | dnp=False | sheet=/VR Module/
+U6     | val=MCP6004                | part=Amplifier_Operational:MCP6004                | fp=Package_SO:TSSOP-14_4.4x5mm_P0.65mm           | LCSC=C50282     | dnp=False | sheet=/VR Module/
+U7     | val=MAX9142                | part=Comparator:LM393                  | fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm           | LCSC=C18567     | dnp=False | sheet=/VR Module/
+U8     | val=NC7SB3157P6X           | part=Analog_Switch:NC7SB3157P6X           | fp=Package_TO_SOT_SMD:SOT-363_SC-70-6            | LCSC=C36533657  | dnp=False | sheet=/VR Module/
+U9     | val=NC7SB3157P6X           | part=Analog_Switch:NC7SB3157P6X           | fp=Package_TO_SOT_SMD:SOT-363_SC-70-6            | LCSC=C36533657  | dnp=False | sheet=/VR Module/
+C23    | val=1n                     | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C46653     | dnp=False | sheet=/VR Conditioner/
+C24    | val=1u                     | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C28323     | dnp=False | sheet=/VR Conditioner/
+C25    | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0402_1005Metric               | LCSC=C1525      | dnp=False | sheet=/VR Conditioner/
+JP1    | val=Jumper_3_Bridged12     | part=Jumper:Jumper_3_Bridged12     | fp=Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm | LCSC=N/A        | dnp=False | sheet=/VR Conditioner/
+R25    | val=4.7k                   | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17673     | dnp=False | sheet=/VR Conditioner/
+R26    | val=4.7k                   | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17673     | dnp=False | sheet=/VR Conditioner/
+R27    | val=4.7k                   | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17673     | dnp=False | sheet=/VR Conditioner/
+R28    | val=4.7k                   | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17673     | dnp=False | sheet=/VR Conditioner/
+R29    | val=~                      | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=           | dnp=False | sheet=/VR Conditioner/
+R30    | val=1k                     | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17513     | dnp=False | sheet=/VR Conditioner/
+R31    | val=1k                     | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17513     | dnp=False | sheet=/VR Conditioner/
+R32    | val=DNP                    | part=Simon:DNP                    | fp=Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder | LCSC=DNP        | dnp=False | sheet=/VR Conditioner/
+R33    | val=DNP                    | part=Simon:DNP                    | fp=Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder | LCSC=DNP        | dnp=False | sheet=/VR Conditioner/
+R34    | val=4.7k                   | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17673     | dnp=False | sheet=/VR Conditioner/
+U10    | val=MAX9924                | part=Simon:MAX9924                | fp=Package_SO:MSOP-10_3x3mm_P0.5mm               | LCSC=C143633    | dnp=False | sheet=/VR Conditioner/
+Q1     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q2     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q3     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q4     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q5     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q6     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q7     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+Q8     | val=FGD3040G2-F085         | part=Device:Q_NIGBT_GCE            | fp=Package_TO_SOT_SMD:TO-252-2                   | LCSC=C606124    | dnp=False | sheet=/IGBT outputs/
+D2     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder/
+D3     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder/
+D4     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder/
+D5     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder/
+RN1    | val=1k                     | part=Device:R_Pack04               | fp=Resistor_SMD:R_Array_Convex_4x0603            | LCSC=C20197     | dnp=False | sheet=/Lowside Adder/
+RN2    | val=1k                     | part=Device:R_Pack04               | fp=Resistor_SMD:R_Array_Convex_4x0603            | LCSC=C20197     | dnp=False | sheet=/Lowside Adder/
+U11    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder/
+U12    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder/
+U13    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder/
+U14    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder/
+C26    | val=10u                    | part=Device:C                      | fp=Capacitor_SMD:C_1206_3216Metric               | LCSC=C13585     | dnp=False | sheet=/etb-1/
+C27    | val=10n                    | part=Device:C_Small                | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C1710      | dnp=False | sheet=/etb-1/
+C28    | val=10n                    | part=Device:C_Small                | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C1710      | dnp=False | sheet=/etb-1/
+R35    | val=10k                    | part=Device:R                      | fp=Resistor_SMD:R_0805_2012Metric                | LCSC=C17414     | dnp=False | sheet=/etb-1/
+U15    | val=TLE9201SG              | part=Simon:TLE9201SG              | fp=Package_SO:Infineon_PG-DSO-12-9               | LCSC=C112633    | dnp=False | sheet=/etb-1/
+D6     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder1/
+D7     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder1/
+D8     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder1/
+D9     | val=D_Schottky             | part=Device:D_Schottky             | fp=Diode_SMD:D_SMA                               | LCSC=C8678      | dnp=False | sheet=/Lowside Adder1/
+RN3    | val=1k                     | part=Device:R_Pack04               | fp=Resistor_SMD:R_Array_Convex_4x0603            | LCSC=C20197     | dnp=False | sheet=/Lowside Adder1/
+RN4    | val=1k                     | part=Device:R_Pack04               | fp=Resistor_SMD:R_Array_Convex_4x0603            | LCSC=C20197     | dnp=False | sheet=/Lowside Adder1/
+U16    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder1/
+U17    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder1/
+U18    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder1/
+U19    | val=VNL5090                | part=Simon:VNL5090                | fp=Package_TO_SOT_SMD:SOT-223                    | LCSC=C2680415   | dnp=False | sheet=/Lowside Adder1/
+C29    | val=47p                    | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C14857     | dnp=False | sheet=/WBO-CAN-TRANS/
+C30    | val=47p                    | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C14857     | dnp=False | sheet=/WBO-CAN-TRANS/
+C31    | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C49678     | dnp=False | sheet=/WBO-CAN-TRANS/
+C32    | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C49678     | dnp=False | sheet=/WBO-CAN-TRANS/
+D10    | val=NUP2105L               | part=Power_Protection:NUP2105L               | fp=Package_TO_SOT_SMD:SOT-23                     | LCSC=C284104    | dnp=False | sheet=/WBO-CAN-TRANS/
+R36    | val=120                    | part=Device:R                      | fp=Resistor_SMD:R_1206_3216Metric                | LCSC=C176250    | dnp=False | sheet=/WBO-CAN-TRANS/
+U20    | val=TJA1051T-3             | part=Interface_CAN_LIN:TJA1051T-3             | fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm           | LCSC=C38695     | dnp=False | sheet=/WBO-CAN-TRANS/
+C33    | val=47p                    | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C14857     | dnp=False | sheet=/WBO-CAN-TRANS1/
+C34    | val=47p                    | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C14857     | dnp=False | sheet=/WBO-CAN-TRANS1/
+C35    | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C49678     | dnp=False | sheet=/WBO-CAN-TRANS1/
+C36    | val=100n                   | part=Device:C                      | fp=Capacitor_SMD:C_0805_2012Metric               | LCSC=C49678     | dnp=False | sheet=/WBO-CAN-TRANS1/
+D11    | val=NUP2105L               | part=Power_Protection:NUP2105L               | fp=Package_TO_SOT_SMD:SOT-23                     | LCSC=C284104    | dnp=False | sheet=/WBO-CAN-TRANS1/
+R37    | val=120                    | part=Device:R                      | fp=Resistor_SMD:R_1206_3216Metric                | LCSC=C176250    | dnp=False | sheet=/WBO-CAN-TRANS1/
+U21    | val=TJA1051T-3             | part=Interface_CAN_LIN:TJA1051T-3             | fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm           | LCSC=C38695     | dnp=False | sheet=/WBO-CAN-TRANS1/
+
+=== NETS AND PIN DETAILS ===
++3.3V                           : C32.1(:passive), C36.1(:passive), J2.82(3V3_82:power_out), R34.1(:passive), R35.2(:passive), R5.2(:passive), U15.2(VSO_2:power_in), U20.5(VIO_5:power_in), U21.5(VIO_5:power_in), U3.2(VSO_2:power_in)
++5V                             : A1.13(~{RST}_13:input), A1.14(~{SLP}_14:input), C15.1(:passive), C16.1(:passive), C17.1(:passive), C18.1(:passive), C19.1(:passive), C21.1(:passive), C25.1(:passive), C31.1(:passive), C35.1(:passive), J2.81(5V_81:power_out), J5.2(Pin_2_2:passive), JP1.1(A_1:passive), R1.1(:passive), R2.2(:passive), R22.1(:passive), R30.1(:passive), U1.1(5V_1:power_in), U10.10(VCC_10:power_in), U10.9(INT_THRS_9:input), U2.1(5V_1:power_in), U2.4(SEL_2_4:input), U20.3(VCC_3:power_in), U21.3(VCC_3:power_in), U4.5(VP_5:passive), U5.14(VCC_14:power_in), U6.4(V+_4:power_in), U7.8(V+_8:power_in), U8.5(V+_5:power_in), U9.5(V+_5:power_in)
+/+3V3                           : J2.102(Pin_102_102:passive)
+/12V_KEY                        : J1.45(:passive), J2.90(12V_IGN_90:power_in)
+/12V_MR                         : D2.1(K_1:passive), D3.1(K_1:passive), D4.1(K_1:passive), D5.1(K_1:passive), D6.1(K_1:passive), D7.1(K_1:passive), D8.1(K_1:passive), D9.1(K_1:passive), F1.1(:passive), J1.105(:passive), J1.106(:passive), P1.1(Pin_1_1:passive), P6.1(Pin_1_1:passive)
+/12V_MR_FUSE                    : A1.8(VMOT_8:power_in), C2.1(:passive), C26.2(:passive), C3.2(:passive), F1.2(:passive), J1.73(:passive), J1.74(:passive), J2.3(12V_MR_3:power_in), J2.32(12V_MR_32:power_in), U1.7(VBatt_Sense_7:input), U15.4(VS_4:power_in), U2.7(VBatt_Sense_7:input), U3.4(VS_4:power_in)
+/12V_PROT                       : J2.34(Pin_34_34:passive), J2.35(Pin_35_35:passive)
+/5V_SENSOR_1                    : J1.16(:passive), J1.19(:passive), J1.20(:passive), J2.40(5V_SENSOR_1_40:power_out), J2.41(5V_SENSOR_1_41:power_out)
+/5V_SENSOR_2                    : J1.12(:passive), J1.7(:passive), J1.8(:passive), J2.36(5V_SENSOR_2_36:power_out), J2.37(5V_SENSOR_2_37:passive)
+/AT1                            : J1.53(:passive), J2.51(Pin_51_51:passive)
+/AT2                            : J1.54(:passive), J2.50(Pin_50_50:passive)
+/AT3                            : J1.49(:passive), J2.49(Pin_49_49:passive)
+/AT4                            : J1.50(:passive), J2.48(Pin_48_48:passive)
+/AV1                            : J1.69(:passive), J2.62(Pin_62_62:passive)
+/AV10                           : J1.57(:passive), J2.53(Pin_53_53:passive)
+/AV11                           : J1.58(:passive), J2.52(Pin_52_52:passive)
+/AV2                            : J1.70(:passive), J2.61(Pin_61_61:passive)
+/AV3                            : J1.71(:passive), J2.60(Pin_60_60:passive)
+/AV4                            : J1.65(:passive), J2.59(Pin_59_59:passive)
+/AV5                            : J1.66(:passive), J2.58(Pin_58_58:passive)
+/AV6                            : J1.67(:passive), J2.57(Pin_57_57:passive)
+/AV7                            : J1.61(:passive), J2.56(Pin_56_56:passive)
+/AV8                            : J1.62(:passive), J2.55(Pin_55_55:passive)
+/AV9                            : J1.63(:passive), J2.54(Pin_54_54:passive)
+/CAN+                           : J1.47(:passive), J2.93(CAN+_93:bidirectional)
+/CAN-                           : J1.46(:passive), J2.94(CAN-_94:bidirectional)
+/CAN2+                          : C29.2(:passive), C33.2(:passive), D10.1(K_1:passive), D11.1(K_1:passive), J1.15(:passive), J2.73(CAN2+_73:bidirectional), R36.1(:passive), R37.1(:passive), U20.7(CANH_7:bidirectional), U21.7(CANH_7:bidirectional)
+/CAN2-                          : C30.1(:passive), C34.1(:passive), D10.2(K_2:passive), D11.2(K_2:passive), J1.11(:passive), J2.74(CAN2-_74:bidirectional), R36.2(:passive), R37.2(:passive), U20.6(CANL_6:bidirectional), U21.6(CANL_6:bidirectional)
+/CAN_RX                         : U1.5(CAN_RX_5:input), U20.4(RXD_4:output)
+/CAN_RX2                        : U2.5(CAN_RX_5:input), U21.4(RXD_4:output)
+/CAN_TX                         : U1.6(CAN_TX_6:output), U20.1(TXD_1:input)
+/CAN_TX2                        : U2.6(CAN_TX_6:output), U21.1(TXD_1:input)
+/CRANK +                        : J1.59(:passive), R25.2(:passive)
+/CRANK -                        : J1.55(:passive), R26.2(:passive)
+/DIGITAL_1                      : J1.17(:passive), J2.47(Pin_47_47:passive)
+/DIGITAL_2                      : J1.18(:passive), J2.46(Pin_46_46:passive)
+/DIGITAL_3                      : J1.21(:passive), J2.45(Pin_45_45:passive)
+/DIGITAL_4                      : J1.22(:passive), J2.44(Pin_44_44:passive)
+/DIGITAL_5                      : J1.23(:passive), J2.43(Pin_43_43:passive)
+/DIGITAL_6                      : J1.24(:passive), J2.42(Pin_42_42:passive)
+/ETB1_+                         : C27.2(:passive), J1.77(:passive), U15.5(OUT1_5:power_out)
+/ETB1_-                         : C28.1(:passive), J1.78(:passive), U15.7(OUT2_7:power_out)
+/ETB1_DIR                       : J2.85(ETB1_DIR_85:output), U15.1(DIR_1:input)
+/ETB1_DIS                       : J2.84(ETB1_DIS_84:output), R35.1(:passive), U15.11(DIS_11:input)
+/ETB1_PWM                       : J2.83(ETB1_PWM_83:output), U15.12(PWM_12:input)
+/ETB2_+                         : C4.2(:passive), J1.79(:passive), U3.5(OUT1_5:power_out)
+/ETB2_-                         : C5.1(:passive), J1.80(:passive), U3.7(OUT2_7:power_out)
+/ETB2_DIR                       : J2.88(ETB2_DIR_88:output), U3.1(DIR_1:input)
+/ETB2_DIS                       : J2.87(ETB2_DIS_87:output), R5.1(:passive), U3.11(DIS_11:input)
+/ETB2_PWM                       : J2.86(ETB2_PWM_86:output), U3.12(PWM_12:input)
+/EXT_SPI_CS                     : J2.103(Pin_103_103:passive)
+/EXT_SPI_MISO                   : J2.105(Pin_105_105:passive)
+/EXT_SPI_MOSI                   : J2.106(Pin_106_106:passive)
+/EXT_SPI_SCK                    : J2.104(Pin_104_104:passive)
+/ExtraLSA                       : D6.2(A_2:passive), J1.32(:passive), P2.1(Pin_1_1:passive), U16.4(Drain_4:output)
+/ExtraLSB                       : D7.2(A_2:passive), J1.31(:passive), P3.1(Pin_1_1:passive), U17.4(Drain_4:output)
+/ExtraLSC                       : D8.2(A_2:passive), J1.30(:passive), U19.4(Drain_4:output)
+/ExtraLSD                       : D9.2(A_2:passive), J1.29(:passive), U18.4(Drain_4:output)
+/HS1                            : J1.28(:passive), J2.65(Pin_65_65:passive)
+/HS2                            : J1.27(:passive), J2.66(Pin_66_66:passive)
+/HS3                            : J1.25(:passive), J2.67(Pin_67_67:passive)
+/HS4                            : J1.26(:passive), J2.68(Pin_68_68:passive)
+/HeaterNeg                      : J1.108(:passive), U1.11(HEATER-_11:power_out), U1.12(HEATER-_12:power_out)
+/HeaterNeg2                     : J1.76(:passive), U2.11(HEATER-_11:power_out), U2.12(HEATER-_12:power_out)
+/IGBT1                          : J1.81(:passive), Q1.2(C_2:passive)
+/IGBT2                          : J1.82(:passive), Q5.2(C_2:passive)
+/IGBT3                          : J1.83(:passive), Q2.2(C_2:passive)
+/IGBT4                          : J1.84(:passive), Q6.2(C_2:passive)
+/IGBT5                          : J1.36(:passive), Q3.2(C_2:passive)
+/IGBT6                          : J1.35(:passive), Q7.2(C_2:passive)
+/IGBT7                          : J1.34(:passive), Q4.2(C_2:passive)
+/IGBT8                          : J1.33(:passive), Q8.2(C_2:passive)
+/IGN1                           : J1.90(:passive), J2.23(Pin_23_23:passive), Q1.1(G_1:input)
+/IGN10                          : J2.14(IGN10_14:output), RN3.7(R2.2_7:passive), RN4.3(R3.1_3:passive)
+/IGN11                          : J2.13(IGN11_13:output), RN3.6(R3.2_6:passive), RN4.2(R2.1_2:passive)
+/IGN12                          : J2.12(IGN12_12:output), RN3.5(R4.2_5:passive), RN4.1(R1.1_1:passive)
+/IGN2                           : J1.86(:passive), J2.22(Pin_22_22:passive), Q5.1(G_1:input)
+/IGN3                           : J1.87(:passive), J2.21(Pin_21_21:passive), Q2.1(G_1:input)
+/IGN4                           : J1.91(:passive), J2.20(Pin_20_20:passive), Q6.1(G_1:input)
+/IGN5                           : J1.43(:passive), J2.19(Pin_19_19:passive), Q3.1(G_1:input)
+/IGN6                           : J1.39(:passive), J2.18(Pin_18_18:passive), Q7.1(G_1:input)
+/IGN7                           : J1.38(:passive), J2.17(Pin_17_17:passive), Q4.1(G_1:input)
+/IGN8                           : J1.42(:passive), J2.16(Pin_16_16:passive), Q8.1(G_1:input)
+/IGN9                           : J2.15(Pin_15_15:passive), RN3.8(R1.2_8:passive), RN4.4(R4.1_4:passive)
+/KNOCK_1                        : J1.13(:passive), J2.63(Knock_1_63:input)
+/KNOCK_2                        : J1.14(:passive), J2.64(Knock_2_64:input)
+/LS1                            : J1.41(:passive), J2.4(LS1_4:output)
+/LS10                           : A1.16(DIR_16:input), J2.25(Pin_25_25:passive), R1.2(:passive), RN1.7(R2.2_7:passive), RN2.3(R3.1_3:passive)
+/LS10ADD                        : D3.2(A_2:passive), J1.110(:passive), U12.4(Drain_4:output)
+/LS11                           : J2.26(Pin_26_26:passive), RN1.6(R3.2_6:passive), RN2.2(R2.1_2:passive)
+/LS11ADD                        : D4.2(A_2:passive), J1.111(:passive), U14.4(Drain_4:output)
+/LS12                           : J2.27(Pin_27_27:passive), J5.5(Pin_5_5:passive), R9.1(:passive), RN1.5(R4.2_5:passive), RN2.1(R1.1_1:passive)
+/LS12ADD                        : D5.2(A_2:passive), J1.112(:passive), P5.1(Pin_1_1:passive), U13.4(Drain_4:output)
+/LS13                           : J1.101(:passive), J2.28(Pin_28_28:passive)
+/LS14                           : J1.102(:passive), J2.29(Pin_29_29:passive)
+/LS15                           : J1.97(:passive), J2.30(Pin_30_30:passive)
+/LS16                           : J1.98(:passive), J2.31(Pin_31_31:passive)
+/LS2                            : J1.37(:passive), J2.5(LS2_5:output)
+/LS3                            : J1.85(:passive), J2.6(LS3_6:output)
+/LS4                            : J1.95(:passive), J2.7(LS4_7:output)
+/LS5                            : J1.99(:passive), J2.8(LS5_8:output)
+/LS6                            : J1.93(:passive), J2.9(LS6_9:output)
+/LS7                            : J1.94(:passive), J2.10(LS7_10:output)
+/LS8                            : J1.89(:passive), J2.11(LS8_11:output)
+/LS9                            : A1.15(STEP_15:input), J2.24(Pin_24_24:passive), R2.1(:passive), RN1.8(R1.2_8:passive), RN2.4(R4.1_4:passive)
+/LS9ADD                         : D2.2(A_2:passive), J1.109(:passive), P4.1(Pin_1_1:passive), U11.4(Drain_4:output)
+/LSU_Ip                         : J1.100(:passive), U1.13(LSU_ip_13:bidirectional)
+/LSU_Ip2                        : J1.60(:passive), U2.13(LSU_ip_13:bidirectional)
+/LSU_Rtrim                      : J1.92(:passive), U1.15(LSU_rtrim_15:bidirectional)
+/LSU_Rtrim2                     : J1.68(:passive), U2.15(LSU_rtrim_15:bidirectional)
+/LSU_Un                         : J1.88(:passive), U1.16(LSU_un_16:bidirectional)
+/LSU_Un2                        : J1.72(:passive), U2.16(LSU_un_16:bidirectional)
+/LSU_Vm                         : J1.96(:passive), U1.14(LSU_vm_14:bidirectional)
+/LSU_Vm2                        : J1.64(:passive), U2.14(LSU_vm_14:bidirectional)
+/Perm_Live                      : J1.104(:passive), J2.77(Pin_77_77:passive)
+/RC1                            : J2.75(RC1_75:bidirectional), R3.2(:passive)
+/RC2                            : J2.76(RC2_76:passive), R4.2(:passive)
+/STEPA1                         : A1.4(A1_4:output), J1.44(:passive)
+/STEPA2                         : A1.3(A2_3:output), J1.40(:passive)
+/STEPB1                         : A1.5(B1_5:output), J1.48(:passive)
+/STEPB2                         : A1.6(B2_6:output), J1.52(:passive)
+/Scope                          : J2.78(Pin_78_78:passive), J5.4(Pin_4_4:passive), R14.1(:passive), U6.7(:output), U7.3(+_3:input), U7.6(-_6:input)
+/USB+                           : J2.99(USB_D+_99:bidirectional), J3.2(Pin_2_2:passive), J4.3(D+_3:bidirectional)
+/USB-                           : J2.100(USB_D-_100:bidirectional), J3.3(Pin_3_3:passive), J4.2(D-_2:bidirectional)
+/USB_GND                        : J2.98(USB_GND_98:power_in), J3.1(Pin_1_1:passive), J3.4(Pin_4_4:passive), J4.4(GND_4:power_out)
+/USB_SHIELD                     : J2.97(USB_SHIELD_97:passive), J4.5(Shield_5:passive)
+/VBUS                           : J2.101(USB_VBUS_101:power_in), J3.5(Pin_5_5:passive), J4.1(VBUS_1:power_out)
+/VR+D                           : J1.3(:passive), J5.7(Pin_7_7:passive), R8.2(:passive)
+/VR-D                           : J1.4(:passive), J5.6(Pin_6_6:passive), R7.1(:passive)
+/VR1+                           : J2.96(VR1_96:input), R33.1(:passive), R34.2(:passive), U10.7(COUT_7:output)
+GND                             : A1.1(GND_1:power_in), A1.10(M0_10:input), A1.11(M1_11:input), A1.12(M2_12:input), A1.7(GND_7:power_in), A1.9(~{EN}_9:input), C1.2(:passive), C10.2(:passive), C13.2(:passive), C14.2(:passive), C15.2(:passive), C16.2(:passive), C17.2(:passive), C18.2(:passive), C19.2(:passive), C2.2(:passive), C20.2(:passive), C21.2(:passive), C22.2(:passive), C24.2(:passive), C25.2(:passive), C26.1(:passive), C27.1(:passive), C28.2(:passive), C29.1(:passive), C3.1(:passive), C30.2(:passive), C31.2(:passive), C32.2(:passive), C33.1(:passive), C34.2(:passive), C35.2(:passive), C36.2(:passive), C4.1(:passive), C5.2(:passive), C7.2(:passive), C8.2(:passive), C9.1(:passive), D10.3(A_3:passive), D11.3(A_3:passive), J1.1(:passive), J1.10(:passive), J1.103(:passive), J1.107(:passive), J1.2(:passive), J1.5(:passive), J1.51(:passive), J1.56(:passive), J1.6(:passive), J1.75(:passive), J1.9(:passive), J2.1(GND_1:power_in), J2.2(GND_2:power_in), J2.33(GND_33:power_in), J2.69(GND_69:power_in), J2.70(GND_70:power_in), J2.71(GND_71:power_in), J2.72(GND_72:power_in), J2.89(GND_89:power_in), J2.91(GND_91:power_in), J2.92(GND_92:power_in), J5.1(Pin_1_1:passive), JP1.3(B_3:passive), Q1.3(E_3:passive), Q2.3(E_3:passive), Q3.3(E_3:passive), Q4.3(E_3:passive), Q5.3(E_3:passive), Q6.3(E_3:passive), Q7.3(E_3:passive), Q8.3(E_3:passive), R15.2(:passive), R20.1(:passive), R21.1(:passive), R23.2(:passive), R31.1(:passive), R6.1(:passive), RN1.1(R1.1_1:passive), RN1.2(R2.1_2:passive), RN1.3(R3.1_3:passive), RN1.4(R4.1_4:passive), RN3.1(R1.1_1:passive), RN3.2(R2.1_2:passive), RN3.3(R3.1_3:passive), RN3.4(R4.1_4:passive), U1.10(HEAT_GND2_10:power_in), U1.2(GND_2:power_in), U1.3(SEL_1_3:input), U1.9(HEAT_GND_9:power_in), U10.5(GND_5:power_in), U11.3(Source_3:input), U12.3(Source_3:input), U13.3(Source_3:input), U14.3(Source_3:input), U15.13(GND_13:power_in), U15.6(GND_6:power_in), U16.3(Source_3:input), U17.3(Source_3:input), U18.3(Source_3:input), U19.3(Source_3:input), U2.10(HEAT_GND2_10:power_in), U2.2(GND_2:power_in), U2.9(HEAT_GND_9:power_in), U20.2(GND_2:power_in), U20.8(S_8:input), U21.2(GND_2:power_in), U21.8(S_8:input), U3.13(GND_13:power_in), U3.6(GND_6:power_in), U4.2(VN_2:passive), U5.11(:input), U5.12(:input), U5.7(GND_7:power_in), U5.8(:input), U5.9(:input), U6.11(V-_11:power_in), U7.4(V-_4:power_in), U8.2(GND_2:power_in), U9.2(GND_2:power_in)
+Net-(C1-Pad1)                   : C1.1(:passive), R3.1(:passive), R4.1(:passive)
+Net-(C11-Pad1)                  : C11.1(:passive), R20.2(:passive), U5.2(:input)
+Net-(C11-Pad2)                  : C11.2(:passive), U7.1(:open_collector), U8.6(:input)
+Net-(C12-Pad1)                  : C12.1(:passive), R21.2(:passive), U5.6(:input)
+Net-(C12-Pad2)                  : C12.2(:passive), U7.7(:open_collector), U9.6(:input)
+Net-(C7-Pad1)                   : C7.1(:passive), R12.2(:passive), R9.2(:passive)
+Net-(D1-K)                      : D1.1(K_1:passive), R6.2(:passive)
+Net-(JP1-C)                     : JP1.2(C_2:input), U10.6(ZERO_EN_6:input)
+Net-(R18-Pad1)                  : R18.1(:passive), R19.1(:passive), U6.14(:output)
+Net-(R25-Pad1)                  : R25.1(:passive), R27.2(:passive)
+Net-(R26-Pad1)                  : R26.1(:passive), R28.2(:passive)
+Net-(RN2-R1.2)                  : RN2.8(R1.2_8:passive), U13.1(Input_1:input)
+Net-(RN2-R2.2)                  : RN2.7(R2.2_7:passive), U14.1(Input_1:input)
+Net-(RN2-R3.2)                  : RN2.6(R3.2_6:passive), U12.1(Input_1:input)
+Net-(RN2-R4.2)                  : RN2.5(R4.2_5:passive), U11.1(Input_1:input)
+Net-(RN4-R1.2)                  : RN4.8(R1.2_8:passive), U18.1(Input_1:input)
+Net-(RN4-R2.2)                  : RN4.7(R2.2_7:passive), U19.1(Input_1:input)
+Net-(RN4-R3.2)                  : RN4.6(R3.2_6:passive), U17.1(Input_1:input)
+Net-(RN4-R4.2)                  : RN4.5(R4.2_5:passive), U16.1(Input_1:input)
+Net-(U10-BIAS)                  : C24.1(:passive), R30.2(:passive), R31.2(:passive), R32.2(:passive), U10.4(BIAS_4:input)
+Net-(U10-EXT)                   : R32.1(:passive), R33.2(:passive), U10.8(EXT_8:input)
+Net-(U10-IN+)                   : C23.2(:passive), R28.1(:passive), R29.1(:passive), U10.1(IN+_1:input)
+Net-(U10-IN-)                   : C23.1(:passive), R27.1(:passive), R29.2(:passive), U10.2(IN-_2:input)
+Net-(U4-IO1)                    : C6.1(:passive), R10.2(:passive), R7.2(:passive), U4.1(IO1_1:passive), U4.6(IO4_6:passive)
+Net-(U4-IO2)                    : C6.2(:passive), R11.1(:passive), R8.1(:passive), U4.3(IO2_3:passive), U4.4(IO3_4:passive)
+Net-(U5-Pad3)                   : U5.3(:input), U5.4(:output)
+Net-(U6A-+)                     : C14.1(:passive), R22.2(:passive), R23.1(:passive), U6.3(+_3:input)
+Net-(U6A--)                     : R24.1(:passive), U6.1(:output), U6.2(-_2:input)
+Net-(U6B-+)                     : R11.2(:passive), R13.1(:passive), U6.5(+_5:input)
+Net-(U6B--)                     : R10.1(:passive), R14.2(:passive), U6.6(-_6:input)
+Net-(U6C-+)                     : C8.1(:passive), R12.1(:passive), R15.1(:passive), U6.10(+_10:input)
+Net-(U6C--)                     : R16.1(:passive), R17.2(:passive), U6.8(:output), U6.9(-_9:input)
+Net-(U6D--)                     : R17.1(:passive), R18.2(:passive), U6.13(-_13:input)
+Net-(U7A--)                     : U7.2(-_2:input), U8.4(:passive)
+Net-(U7B-+)                     : U7.5(+_5:input), U9.4(:passive)
+Vref                            : C20.1(:passive), C22.1(:passive), C9.2(:passive), R13.2(:passive), R24.2(:passive), U6.12(+_12:input), U8.3(:passive), U9.3(:passive)
+output                          : D1.2(A_2:passive), J2.95(VR2_95:input), J5.3(Pin_3_3:passive), U5.1(:output), U5.5(:input)
+thresh_high                     : C13.1(:passive), R19.2(:passive), U9.1(:passive)
+thresh_low                      : C10.1(:passive), R16.2(:passive), U8.1(:passive)
+unconnected-(A1-~{FLT}-Pad2)    : A1.2(~{FLT}_2:output)
+unconnected-(J2-Pad38)          : J2.38(:no_connect)
+unconnected-(J2-Pad39)          : J2.39(:no_connect)
+unconnected-(J2-Pad79)          : J2.79(:no_connect)
+unconnected-(J2-Pad80)          : J2.80(:no_connect)
+unconnected-(J2-Pin_107-Pad107) : J2.107(Pin_107_107:passive+no_connect)
+unconnected-(U1-Boot0-Pad8)     : U1.8(Boot0_8:input+no_connect)
+unconnected-(U1-SEL_2-Pad4)     : U1.4(SEL_2_4:input+no_connect)
+unconnected-(U10-Pad3)          : U10.3(:no_connect)
+unconnected-(U11-Drain-Pad2)    : U11.2(Drain_2:input+no_connect)
+unconnected-(U12-Drain-Pad2)    : U12.2(Drain_2:input+no_connect)
+unconnected-(U13-Drain-Pad2)    : U13.2(Drain_2:input+no_connect)
+unconnected-(U14-Drain-Pad2)    : U14.2(Drain_2:input+no_connect)
+unconnected-(U15-CSN-Pad9)      : U15.9(CSN_9:input+no_connect)
+unconnected-(U15-SCK-Pad10)     : U15.10(SCK_10:input+no_connect)
+unconnected-(U15-SI-Pad8)       : U15.8(SI_8:input+no_connect)
+unconnected-(U15-SO-Pad3)       : U15.3(SO_3:output+no_connect)
+unconnected-(U16-Drain-Pad2)    : U16.2(Drain_2:input+no_connect)
+unconnected-(U17-Drain-Pad2)    : U17.2(Drain_2:input+no_connect)
+unconnected-(U18-Drain-Pad2)    : U18.2(Drain_2:input+no_connect)
+unconnected-(U19-Drain-Pad2)    : U19.2(Drain_2:input+no_connect)
+unconnected-(U2-Boot0-Pad8)     : U2.8(Boot0_8:input+no_connect)
+unconnected-(U2-SEL_1-Pad3)     : U2.3(SEL_1_3:input+no_connect)
+unconnected-(U3-CSN-Pad9)       : U3.9(CSN_9:input+no_connect)
+unconnected-(U3-SCK-Pad10)      : U3.10(SCK_10:input+no_connect)
+unconnected-(U3-SI-Pad8)        : U3.8(SI_8:input+no_connect)
+unconnected-(U3-SO-Pad3)        : U3.3(SO_3:output+no_connect)
+unconnected-(U5-Pad10)          : U5.10(:output+no_connect)
+unconnected-(U5-Pad13)          : U5.13(:output+no_connect)

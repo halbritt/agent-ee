@@ -1,0 +1,12 @@
+* RC low-pass per extracted netlist: J1.1=/IN, R1 /IN->/OUT 10k, C1 /OUT->GND 100n, J1.2=/OUT
+VIN in 0 AC 1
+R1 in out 10k
+C1 out 0 100n
+.control
+ac dec 10 1 100k
+let mag = vdb(out)
+meas ac f3db WHEN vdb(out)=-3
+print vdb(out)[0] > /dev/null
+echo done
+.endc
+.end

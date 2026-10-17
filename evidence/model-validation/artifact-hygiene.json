@@ -1,0 +1,7 @@
+{
+  "scope": "Current local subscription token strings and credential filenames in new evidence groups; excludes captured inputs from content scan and files >30MB. Not a general secret audit.",
+  "files_scanned": 14139,
+  "credential_filename_hits": [],
+  "credential_content_hit_paths": [],
+  "credential_values_printed": false
+}

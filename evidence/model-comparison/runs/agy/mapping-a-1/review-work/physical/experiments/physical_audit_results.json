@@ -1,0 +1,661 @@
+{
+  "pcbnew_version": "10.0.7",
+  "board_thickness_mm": 1.6,
+  "footprints": [
+    {
+      "ref": "C1",
+      "value": "100n",
+      "fpid": "Capacitor_SMD:C_0805_2012Metric",
+      "pos_mm": [
+        110.0,
+        100.0
+      ],
+      "orientation_deg": 0.0,
+      "layer": "F.Cu",
+      "attributes": 2,
+      "pads": [
+        {
+          "ref": "C1",
+          "pad": "1",
+          "net": "/OUT",
+          "pos_mm": [
+            109.05,
+            100.0
+          ],
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "annular_ring_mm": null,
+          "shape": 4,
+          "attribute": 1,
+          "bbox_mm": {
+            "min_x": 108.55,
+            "max_x": 109.55,
+            "min_y": 99.275,
+            "max_y": 100.725
+          }
+        },
+        {
+          "ref": "C1",
+          "pad": "2",
+          "net": "GND",
+          "pos_mm": [
+            110.95,
+            100.0
+          ],
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "annular_ring_mm": null,
+          "shape": 4,
+          "attribute": 1,
+          "bbox_mm": {
+            "min_x": 110.45,
+            "max_x": 111.45,
+            "min_y": 99.275,
+            "max_y": 100.725
+          }
+        }
+      ],
+      "courtyard_exact_mm": {
+        "min_x": 108.3,
+        "max_x": 111.7,
+        "min_y": 99.02,
+        "max_y": 100.98,
+        "stroke_width_mm": 0.05
+      }
+    },
+    {
+      "ref": "R1",
+      "value": "10k",
+      "fpid": "Resistor_SMD:R_0805_2012Metric",
+      "pos_mm": [
+        105.0,
+        100.0
+      ],
+      "orientation_deg": 0.0,
+      "layer": "F.Cu",
+      "attributes": 2,
+      "pads": [
+        {
+          "ref": "R1",
+          "pad": "1",
+          "net": "/IN",
+          "pos_mm": [
+            104.0875,
+            100.0
+          ],
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "annular_ring_mm": null,
+          "shape": 4,
+          "attribute": 1,
+          "bbox_mm": {
+            "min_x": 103.575,
+            "max_x": 104.6,
+            "min_y": 99.3,
+            "max_y": 100.7
+          }
+        },
+        {
+          "ref": "R1",
+          "pad": "2",
+          "net": "/OUT",
+          "pos_mm": [
+            105.9125,
+            100.0
+          ],
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "annular_ring_mm": null,
+          "shape": 4,
+          "attribute": 1,
+          "bbox_mm": {
+            "min_x": 105.4,
+            "max_x": 106.425,
+            "min_y": 99.3,
+            "max_y": 100.7
+          }
+        }
+      ],
+      "courtyard_exact_mm": {
+        "min_x": 103.32,
+        "max_x": 106.68,
+        "min_y": 99.05,
+        "max_y": 100.95,
+        "stroke_width_mm": 0.05
+      }
+    },
+    {
+      "ref": "J1",
+      "value": "Conn_01x03",
+      "fpid": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+      "pos_mm": [
+        100.0,
+        100.0
+      ],
+      "orientation_deg": 0.0,
+      "layer": "F.Cu",
+      "attributes": 1,
+      "pads": [
+        {
+          "ref": "J1",
+          "pad": "1",
+          "net": "/IN",
+          "pos_mm": [
+            100.0,
+            100.0
+          ],
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "annular_ring_mm": 0.35,
+          "shape": 1,
+          "attribute": 0,
+          "bbox_mm": {
+            "min_x": 99.15,
+            "max_x": 100.85,
+            "min_y": 99.15,
+            "max_y": 100.85
+          }
+        },
+        {
+          "ref": "J1",
+          "pad": "2",
+          "net": "/OUT",
+          "pos_mm": [
+            100.0,
+            102.54
+          ],
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "annular_ring_mm": 0.35,
+          "shape": 0,
+          "attribute": 0,
+          "bbox_mm": {
+            "min_x": 99.15,
+            "max_x": 100.85,
+            "min_y": 101.69,
+            "max_y": 103.39
+          }
+        },
+        {
+          "ref": "J1",
+          "pad": "3",
+          "net": "GND",
+          "pos_mm": [
+            100.0,
+            105.08
+          ],
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "annular_ring_mm": 0.35,
+          "shape": 0,
+          "attribute": 0,
+          "bbox_mm": {
+            "min_x": 99.15,
+            "max_x": 100.85,
+            "min_y": 104.23,
+            "max_y": 105.93
+          }
+        }
+      ],
+      "courtyard_exact_mm": {
+        "min_x": 98.23,
+        "max_x": 101.77,
+        "min_y": 98.23,
+        "max_y": 106.85,
+        "stroke_width_mm": 0.05
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "start_mm": [
+        100.0,
+        100.0
+      ],
+      "end_mm": [
+        104.0875,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "length_mm": 4.0875,
+      "layer": "F.Cu",
+      "net": "/IN"
+    },
+    {
+      "start_mm": [
+        105.9125,
+        100.0
+      ],
+      "end_mm": [
+        109.05,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "length_mm": 3.1375,
+      "layer": "F.Cu",
+      "net": "/OUT"
+    },
+    {
+      "start_mm": [
+        100.0,
+        102.54
+      ],
+      "end_mm": [
+        107.5,
+        102.54
+      ],
+      "width_mm": 0.25,
+      "length_mm": 7.5,
+      "layer": "F.Cu",
+      "net": "/OUT"
+    },
+    {
+      "start_mm": [
+        107.5,
+        102.54
+      ],
+      "end_mm": [
+        107.5,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "length_mm": 2.54,
+      "layer": "F.Cu",
+      "net": "/OUT"
+    },
+    {
+      "start_mm": [
+        110.95,
+        100.0
+      ],
+      "end_mm": [
+        113.0,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "length_mm": 2.05,
+      "layer": "F.Cu",
+      "net": "GND"
+    }
+  ],
+  "vias": [
+    {
+      "pos_mm": [
+        113.0,
+        100.0
+      ],
+      "size_mm": 0.6,
+      "drill_mm": 0.3,
+      "net": "GND",
+      "annular_ring_mm": 0.15
+    }
+  ],
+  "zones": [
+    {
+      "net": "GND",
+      "layers": [
+        "B.Cu"
+      ],
+      "is_filled": true,
+      "min_thickness_mm": 0.25,
+      "local_clearance_mm": 0.5,
+      "thermal_gap_mm": 0.5,
+      "thermal_bridge_width_mm": 0.5,
+      "num_outline_contours": 1,
+      "edge_to_zone_outline_clearance_mm": 0.5,
+      "filled_contours_B.Cu": 1,
+      "filled_holes_B.Cu": 0,
+      "filled_area_mm2_B.Cu": 192.287428
+    }
+  ],
+  "edge_cuts_bbox_mm": {
+    "min_x": 96.0,
+    "max_x": 116.0,
+    "min_y": 96.0,
+    "max_y": 108.0,
+    "width_mm": 20.0,
+    "height_mm": 12.0
+  },
+  "clearances": {
+    "courtyard_pairs": {
+      "C1_J1": {
+        "dx_mm": 6.53,
+        "dy_mm": 0.0,
+        "min_dist_mm": 6.53,
+        "overlap": false
+      },
+      "C1_R1": {
+        "dx_mm": 1.62,
+        "dy_mm": 0.0,
+        "min_dist_mm": 1.62,
+        "overlap": false
+      },
+      "J1_R1": {
+        "dx_mm": 1.55,
+        "dy_mm": 0.0,
+        "min_dist_mm": 1.55,
+        "overlap": false
+      }
+    },
+    "courtyard_to_edge_mm": {
+      "C1": {
+        "left_mm": 12.3,
+        "right_mm": 4.3,
+        "top_mm": 3.02,
+        "bottom_mm": 7.02
+      },
+      "R1": {
+        "left_mm": 7.32,
+        "right_mm": 9.32,
+        "top_mm": 3.05,
+        "bottom_mm": 7.05
+      },
+      "J1": {
+        "left_mm": 2.23,
+        "right_mm": 14.23,
+        "top_mm": 2.23,
+        "bottom_mm": 1.15
+      }
+    },
+    "pad_pairs": [
+      {
+        "pair": "C1.1_to_C1.2",
+        "nets": [
+          "/OUT",
+          "GND"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 0.9
+      },
+      {
+        "pair": "C1.1_to_R1.1",
+        "nets": [
+          "/OUT",
+          "/IN"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 3.95
+      },
+      {
+        "pair": "C1.1_to_R1.2",
+        "nets": [
+          "/OUT",
+          "/OUT"
+        ],
+        "same_net": true,
+        "edge_to_edge_mm": 2.125
+      },
+      {
+        "pair": "C1.1_to_J1.1",
+        "nets": [
+          "/OUT",
+          "/IN"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 7.7
+      },
+      {
+        "pair": "C1.1_to_J1.2",
+        "nets": [
+          "/OUT",
+          "/OUT"
+        ],
+        "same_net": true,
+        "edge_to_edge_mm": 7.760234
+      },
+      {
+        "pair": "C1.1_to_J1.3",
+        "nets": [
+          "/OUT",
+          "GND"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 8.460202
+      },
+      {
+        "pair": "C1.2_to_R1.1",
+        "nets": [
+          "GND",
+          "/IN"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 5.85
+      },
+      {
+        "pair": "C1.2_to_R1.2",
+        "nets": [
+          "GND",
+          "/OUT"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 4.025
+      },
+      {
+        "pair": "C1.2_to_J1.1",
+        "nets": [
+          "GND",
+          "/IN"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 9.6
+      },
+      {
+        "pair": "C1.2_to_J1.2",
+        "nets": [
+          "GND",
+          "/OUT"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 9.648379
+      },
+      {
+        "pair": "C1.2_to_J1.3",
+        "nets": [
+          "GND",
+          "GND"
+        ],
+        "same_net": true,
+        "edge_to_edge_mm": 10.219835
+      },
+      {
+        "pair": "R1.1_to_R1.2",
+        "nets": [
+          "/IN",
+          "/OUT"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 0.8
+      },
+      {
+        "pair": "R1.1_to_J1.1",
+        "nets": [
+          "/IN",
+          "/IN"
+        ],
+        "same_net": true,
+        "edge_to_edge_mm": 2.725
+      },
+      {
+        "pair": "R1.1_to_J1.2",
+        "nets": [
+          "/IN",
+          "/OUT"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 2.899263
+      },
+      {
+        "pair": "R1.1_to_J1.3",
+        "nets": [
+          "/IN",
+          "GND"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 4.459431
+      },
+      {
+        "pair": "R1.2_to_J1.1",
+        "nets": [
+          "/OUT",
+          "/IN"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 4.55
+      },
+      {
+        "pair": "R1.2_to_J1.2",
+        "nets": [
+          "/OUT",
+          "/OUT"
+        ],
+        "same_net": true,
+        "edge_to_edge_mm": 4.656458
+      },
+      {
+        "pair": "R1.2_to_J1.3",
+        "nets": [
+          "/OUT",
+          "GND"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 5.758767
+      },
+      {
+        "pair": "J1.1_to_J1.2",
+        "nets": [
+          "/IN",
+          "/OUT"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 0.84
+      },
+      {
+        "pair": "J1.1_to_J1.3",
+        "nets": [
+          "/IN",
+          "GND"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 3.38
+      },
+      {
+        "pair": "J1.2_to_J1.3",
+        "nets": [
+          "/OUT",
+          "GND"
+        ],
+        "same_net": false,
+        "edge_to_edge_mm": 0.84
+      }
+    ]
+  },
+  "ignored_checks_audit": {
+    "missing_courtyard": [],
+    "track_not_centered_on_via": [],
+    "footprint_filters_mismatch": {
+      "C1": {
+        "symbol_filter": "C_*",
+        "footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "matches": true
+      },
+      "R1": {
+        "symbol_filter": "R_*",
+        "footprint": "Resistor_SMD:R_0805_2012Metric",
+        "matches": true
+      },
+      "J1": {
+        "symbol_filter": "Connector*:*_1x??_*",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+        "matches": true
+      }
+    },
+    "footprint_type_mismatch": {
+      "C1": {
+        "attr": "smd",
+        "pad_attrs": [
+          "SMD",
+          "SMD"
+        ],
+        "matches": true
+      },
+      "R1": {
+        "attr": "smd",
+        "pad_attrs": [
+          "SMD",
+          "SMD"
+        ],
+        "matches": true
+      },
+      "J1": {
+        "attr": "through_hole",
+        "pad_attrs": [
+          "PTH",
+          "PTH",
+          "PTH"
+        ],
+        "matches": true
+      }
+    }
+  },
+  "connectivity_check": {
+    "unconnected_count": 0
+  },
+  "return_path_metrics": {
+    "in_trace_length_mm": 4.0875,
+    "r1_to_c1_trace_length_mm": 3.1375,
+    "out_tap_to_j1_2_length_mm": 10.04,
+    "c1_2_to_gnd_via_fcu_length_mm": 2.05,
+    "gnd_via_to_j1_3_euclidean_bcu_mm": 13.957306,
+    "dc_sheet_resistance_1oz_cu_ohm_per_sq": 0.0005,
+    "in_trace_squares": 16.35,
+    "in_trace_dc_resistance_mohm_at_1oz": 8.175,
+    "out_main_plus_tap_dc_resistance_mohm_at_1oz": 23.255
+  },
+  "zone_refill_comparison": {
+    "saved_filled_area_mm2": 192.287428,
+    "refilled_area_mm2": 192.287428,
+    "area_diff_mm2": 0.0
+  }
+}

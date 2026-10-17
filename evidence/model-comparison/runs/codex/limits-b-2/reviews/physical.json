@@ -1,0 +1,53 @@
+{
+  "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+  "coverage": [
+    "Read original schematic, PCB and requirements; confirmed their hashes match the packet.",
+    "Freshly exported native schematic connectivity using KiCad 10.0.7 and independently traced saved front copper from J1.1 through R1 to J1.2, including the /OUT T junction.",
+    "Inspected placement, outline, tracks, via and saved ground zone; reviewed native ERC/DRC reports, ignored checks and geometry records.",
+    "Calculated R1 continuous dissipation with the specified external source and clamp. Structural checks contain no stimulus or power assessment for this condition."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "/IN held at 48 V DC and /OUT externally clamped to 0 V indefinitely.",
+      "evidence": [
+        {
+          "locator": "Line 1: external voltage/clamp condition and fitted R1 continuous limit of 0.1 W",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "R1 instance, UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; lines 1261\u20131285: fitted, value 10k",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "R1 pads, lines 359\u2013373; J1 pads, lines 587\u2013613; saved /IN and /OUT copper, lines 667\u2013697",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "nets /IN and /OUT: R1.1 connects to J1.1; R1.2 connects to J1.2",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "verified_routes and calculation: R1_current_A=0.0048, R1_power_W=0.2304, limit_ratio=2.304",
+          "path": "review-work/physical/experiments/physical-results.json"
+        }
+      ],
+      "id": "physical-001",
+      "location": "R1, saved PCB position (105, 100) mm, between /IN and /OUT",
+      "mechanism": "The maintained voltage across the nominal 10 k\u03a9 resistor produces continuous dissipation P=(48\u22120)\u00b2/10000=0.2304 W, exceeding its stated 0.1 W continuous limit by 0.1304 W.",
+      "reasoning": "Saved copper provides the input path to R1.1 and the return from R1.2 through J1.2 to the external clamp. The clamp prevents /OUT from charging toward /IN, so this dissipation persists. R1 operates at 2.304 times the specified continuous limit. The capacitor and ground pour do not remove the maintained resistor voltage. This establishes a power-limit violation without assuming a package rating, operating temperature or failure time.",
+      "severity": "major",
+      "title": "R1 dissipates 0.2304 W against its 0.1 W continuous limit"
+    }
+  ],
+  "limitations": [
+    "No hardware measurements, thermal simulation, temperature or failure-time prediction, or copper ampacity qualification were performed.",
+    "Saved zone fill was inspected without refilling. Ignored ERC/DRC categories were not independently rerun; no fabrication capability audit or assembly inspection was performed.",
+    "Analysis uses native nominal resistance and the stipulated external holding/clamping condition. Other operating conditions, component ratings, tolerances and ECU qualification were outside scope.",
+    "Commands, versions, assumptions and outcomes are recorded in review-work/physical/experiments/README.md and commands.json."
+  ],
+  "packet_sha256": "2e7bae6999033e125901d43722e04b851be590cc6ea1dab4a734f7e44ac6237a",
+  "role": "physical",
+  "run_id": "b016daf9-1004-4fab-9e04-8df3be3a541b",
+  "schema": "agent-ee.review/1"
+}

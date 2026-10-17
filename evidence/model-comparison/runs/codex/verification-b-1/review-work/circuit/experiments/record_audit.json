@@ -1,0 +1,84 @@
+{
+  "erc": {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "console_hash_matches": true,
+    "console": "Found 0 violations\nSaved ERC Report to /work/erc.json\n",
+    "ignored_checks": [
+      "single_global_label",
+      "four_way_junction",
+      "simulation_model_issue",
+      "footprint_filter"
+    ]
+  },
+  "drc": {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "console_hash_matches": true,
+    "console": "Found 0 violations\nFound 0 unconnected items\nFound 0 schematic parity issues\nSaved DRC Report to /work/drc.json\n",
+    "ignored_checks": [
+      "missing_courtyard",
+      "track_not_centered_on_via",
+      "tuning_profile_track_geometries",
+      "footprint_filters_mismatch",
+      "footprint_type_mismatch"
+    ]
+  },
+  "netlist": {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "console_hash_matches": true,
+    "console": ""
+  },
+  "geometry": {
+    "argv": [
+      "/usr/bin/python3",
+      "-B",
+      "-m",
+      "agent_ee.geometry_probe",
+      "/candidate/project/rc_filter.kicad_pcb",
+      "-o",
+      "/work/geometry.json"
+    ],
+    "exit_code": 0,
+    "console_hash_matches": true,
+    "console": "geometry: 3 footprint(s), 6 track item(s), 1 zone(s)\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n",
+    "warning_assessment": "Three PROPERTY_ENUM assertion diagnostics coexist with populated geometry output. Native pad/net counts agree with separately parsed board; these diagnostics do not establish a circuit defect. Geometry is not a transient measurement."
+  },
+  "scope": "All four supplied checks are static/native. None supplies ADC models, switching stimuli, or 1 ms electrical voltage measurements."
+}

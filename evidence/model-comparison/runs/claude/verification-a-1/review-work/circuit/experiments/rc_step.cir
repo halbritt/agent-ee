@@ -1,0 +1,15 @@
+* RC low-pass step response - mirrors work/netlist/connectivity.json
+* /IN: J1.1, R1.1 ; /OUT: C1.1, J1.2, R1.2 ; GND: C1.2, J1.3
+* Ideal passives per inputs/requirements.txt; 1 V step at /IN, C initially discharged, /OUT unloaded.
+V1 in 0 PWL(0 0 1n 1)
+R1 in out 10k
+C1 out 0 100n IC=0
+.tran 1u 2m uic
+.control
+run
+meas tran vout_1ms FIND v(out) AT=1m
+meas tran vout_1ms_exact FIND v(out) AT=1.000000m
+print v(out)[995] v(out)[1000] v(out)[1005] > /dev/null
+wrdata /work/experiments/rc_step_out.txt v(out)
+.endc
+.end

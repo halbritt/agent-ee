@@ -1,0 +1,9 @@
+SCH #PWR02 power:GND value= GND dnp= no in_bom= no
+SCH C1 Device:C value= 100n dnp= no in_bom= yes
+SCH #PWR01 power:GND value= GND dnp= no in_bom= no
+SCH J1 Connector_Generic:Conn_01x03 value= Conn_01x03 dnp= no in_bom= yes
+SCH #FLG01 power:PWR_FLAG value= PWR_FLAG dnp= no in_bom= no
+SCH R1 Device:R value= 10k dnp= no in_bom= yes
+PCB C1 Capacitor_SMD:C_0805_2012Metric attrs= ['smd'] pads= [('1', '/OUT'), ('2', 'GND')]
+PCB R1 Resistor_SMD:R_0805_2012Metric attrs= ['smd'] pads= [('1', '/IN'), ('2', '/OUT')]
+PCB J1 Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical attrs= ['through_hole'] pads= [('1', '/IN'), ('2', '/OUT'), ('3', 'GND')]

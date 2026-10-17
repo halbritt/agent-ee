@@ -1,0 +1,12 @@
+Nominal native RC; deliberately unloaded, no ADC emulation
+* Values and topology verified against XML and native PCB/schematic.
+* Step midpoint = 1.0005 us. Measure exactly 1 ms later.
+VSTEP in 0 PULSE(0 1 1u 1n 1n 10m 20m)
+R1 in out 10k
+C1 out 0 100n
+.options reltol=1e-8 abstol=1e-13 vntol=1e-10
+.tran 0.1u 2m 0 0.1u
+.meas tran vout_initial FIND v(out) AT=0.5u
+.meas tran vin_at_1ms FIND v(in) AT=1.0010005m
+.meas tran vout_at_1ms FIND v(out) AT=1.0010005m
+.end

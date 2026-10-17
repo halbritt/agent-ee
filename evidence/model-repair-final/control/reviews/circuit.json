@@ -1,0 +1,22 @@
+{
+  "candidate_id": "0b0265f2838c37cacd80169482dacd56a05559c05ccf88cb9aba1dd719bb31a7",
+  "coverage": [
+    "Checked native component identities, values and pin connectivity. Fresh netlist matches the supplied export and board pad assignments: inputs/project/rc_filter.kicad_sch (C1, R1, J1); work/netlist/design.xml (components, nets); review-work/circuit/experiments/verification.json (native_instances, nets).",
+    "Independently calculated tau=1 ms and Vout(1 ms)=0.63212056 V, within the required 0.62\u20130.65 V: inputs/requirements/fixture-requirements.md requirement 1; inputs/project/rc_filter.kicad_sch lines 955 and 1274; review-work/circuit/experiments/verification.json (tau_s, ideal_step_vout_1ms).",
+    "Verified simulation topology, initially zero output, stimulus and measurements; decoded the retained waveform and ran a finer-step simulation. Results agree with the analytical response: work/rc-step/deck.cir lines 2\u20137; work/rc-step/ngspice.log lines 17\u201332; work/rc-step/result.raw; review-work/circuit/experiments/verification.json (retained_raw_analysis, independent_measurements).",
+    "Directly checked all five native track segments: each is 0.25 mm, meeting the 0.20 mm requirement. Inspected native ERC/DRC reports, including connectivity and schematic parity: inputs/project/rc_filter.kicad_pcb lines 667\u2013705; work/erc/erc.json; work/drc/drc.json.",
+    "Commands, versions, assumptions, outcomes and coverage omissions recorded in review-work/circuit/experiments/review-notes.md and review-work/circuit/experiments/verify_circuit.py. No evidence-supported circuit defect found."
+  ],
+  "findings": [],
+  "limitations": [
+    "Only the nominal ideal unloaded step from an initially settled zero-volt state was verified. Tolerance, temperature, loading, source impedance, parasitics, ADC sampling, EMI and hardware behavior remain untested.",
+    "Manufacturer-specific ratings and performance cannot be established from the generic R/C/connector identities. Additional startup, shutdown, precharge and interruption conditions were not specified or tested; active reset/brownout circuitry is absent.",
+    "Zone fill was evaluated as saved without refill. Fabrication and assembly performance were not verified.",
+    "Native ERC/DRC records were inspected, not rerun. Their ignored checks remain coverage omissions: ERC single_global_label, four_way_junction, simulation_model_issue, footprint_filter; DRC missing_courtyard, track_not_centered_on_via, tuning_profile_track_geometries, footprint_filters_mismatch, footprint_type_mismatch.",
+    "The 5 ms voltage was checked for analytical consistency; no acceptance bound was declared at that time."
+  ],
+  "packet_sha256": "bff5025d723034a5658474cb39c562567424b720c505af42b3dffcdddc066403",
+  "role": "circuit",
+  "run_id": "be95470d-1098-4730-ba36-4968f4a89eee",
+  "schema": "agent-ee.review/1"
+}

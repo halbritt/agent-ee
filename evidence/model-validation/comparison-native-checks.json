@@ -1,0 +1,691 @@
+{
+  "runs": [
+    {
+      "run": "evidence/model-comparison/runs/claude/mapping-a-2",
+      "candidate_id": "cdad5524c5b0c2ec7876e544b63e1d732463c5d9ad0318bbf368af0c6d9cd32e",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/verification-a-1",
+      "candidate_id": "8b789ee9fb178a244a3bb6b4e03ae2c3101c1cf6f3acec2384417f56dc4e9dbd",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/limits-a-1",
+      "candidate_id": "8bf9586bb3e305e86eb17c8c61cd81b2c3193e54e3f76799481a1cec3535cc1b",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/mapping-b-1",
+      "candidate_id": "21b0c14a5c2860d4ccecc4fe1758409cf93d368265316a1c5f42d3577cedea7e",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/verification-b-1",
+      "candidate_id": "be9e1198666fdbed1f5da7d557ecad0172be0563b7d381d1cb2bbf562e3b2559",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/width-b-1",
+      "candidate_id": "ebdc7eb98f9c46e83dc32f726988383f51821b241969ce6b1a2fd5fa4e1cb406",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/mapping-a-1",
+      "candidate_id": "cdad5524c5b0c2ec7876e544b63e1d732463c5d9ad0318bbf368af0c6d9cd32e",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/shutdown-b-1",
+      "candidate_id": "8b95511e5bcfb4686cc3451fb9db204b5ba18af4b04d84ce0181236046bd3b4b",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/width-a-1",
+      "candidate_id": "d5e4026cfa1ed8135c82a9c9ccceaa1baba952eb83d0762938108020747389aa",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/shutdown-a-1",
+      "candidate_id": "bd8ff0ea2d31a613361ffad6f6f714c2f520a374e8bfdca795336382490b5cd0",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/population-b-1",
+      "candidate_id": "555bbd89290261c9238a3605ca2d04b718beeda00d2251287caead8a370469d7",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/limits-b-1",
+      "candidate_id": "b965f04e4f7ec2f0a9e09341f18b450848f9a46b51435020c7d62e188f737a1b",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/claude/population-a-1",
+      "candidate_id": "41d2c1a70e1eaf823a8b3da1e42ae566bc4478bed8166cc14ff9974a4f8ce456",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/agy/mapping-a-1",
+      "candidate_id": "db1f9144c619ac0ea0328987a95e76ea066bf01fab0d674869f19ebd0859a094",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/mapping-a-2",
+      "candidate_id": "ba425dde3d5b5c2a4d83f96acbcaca3dff792b3c000ec9101309b32a820f24ac",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/verification-a-1",
+      "candidate_id": "048e061c9f5ad6238611bf5f0923f46a239053ee39b21ef9699f83c720bb9cd7",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/limits-a-1",
+      "candidate_id": "450a3fbe701ce2de522829b6e4211ca1c472af4be06efae261accced6a72a658",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/mapping-b-1",
+      "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/verification-b-1",
+      "candidate_id": "7a48855eff011bbbb0e59bd670ca885cfd820dde585082a2f1a4afd688b35174",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/width-b-1",
+      "candidate_id": "de5c5855e29e9a86af4e2f4589025065369d6a3826b22e6385c1badbab087a75",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/limits-b-2",
+      "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/limits-a-2",
+      "candidate_id": "450a3fbe701ce2de522829b6e4211ca1c472af4be06efae261accced6a72a658",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/mapping-b-2",
+      "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/mapping-a-1",
+      "candidate_id": "ba425dde3d5b5c2a4d83f96acbcaca3dff792b3c000ec9101309b32a820f24ac",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/shutdown-b-1",
+      "candidate_id": "c8dafb912adfc1846973bcf6e535916a69f208ba0393da7aee57e50555c23027",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/width-a-1",
+      "candidate_id": "851abfc5517464c4ee2208a5a5125b552af3905075d86462e03839dd5115f8d1",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/shutdown-a-1",
+      "candidate_id": "d36037b672ce46e4cdc6b63b3a62a082e2d3e61c6ef6ee33d20711d15b66b514",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/population-b-1",
+      "candidate_id": "d2e8d03e4664f78e6c194bca332dda002c8c52024b52e117e6b3e589979ac655",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/limits-b-1",
+      "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    },
+    {
+      "run": "evidence/model-comparison/runs/codex/population-a-1",
+      "candidate_id": "57d1859261fc93ec38ba0bf952f35b81117f84e4e1b119bf8be5555251f4606f",
+      "checks": {
+        "erc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "drc": {
+          "execution": "ok",
+          "outcome": "pass"
+        },
+        "netlist": {
+          "execution": "ok",
+          "outcome": "info"
+        },
+        "geometry": {
+          "execution": "ok",
+          "outcome": "info"
+        }
+      }
+    }
+  ],
+  "repeated_candidate_identity": [
+    {
+      "harness": "claude",
+      "case": "mapping-a",
+      "same_candidate": true
+    },
+    {
+      "harness": "codex",
+      "case": "mapping-a",
+      "same_candidate": true
+    },
+    {
+      "harness": "codex",
+      "case": "mapping-b",
+      "same_candidate": true
+    },
+    {
+      "harness": "codex",
+      "case": "limits-a",
+      "same_candidate": true
+    },
+    {
+      "harness": "codex",
+      "case": "limits-b",
+      "same_candidate": true
+    }
+  ]
+}

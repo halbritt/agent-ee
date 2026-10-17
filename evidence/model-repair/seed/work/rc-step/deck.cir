@@ -1,0 +1,8 @@
+* agent-ee rc_transient deck, generated from the native XML netlist
+C1 OUT 0 100n
+R1 IN OUT 100k
+VSTEP IN 0 PWL(0 0 1n 1)
+.tran 0.005m 5m
+.meas tran vout_1ms FIND v(OUT) AT=1m
+.meas tran vout_5ms FIND v(OUT) AT=5m
+.end

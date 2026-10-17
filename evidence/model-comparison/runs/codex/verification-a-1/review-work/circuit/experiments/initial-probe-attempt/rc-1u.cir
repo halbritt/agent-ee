@@ -1,0 +1,10 @@
+Ideal unloaded RC step initial-value problem
+Vstep IN 0 DC 1
+R1 IN OUT 10k
+C1 OUT 0 100n IC=0
+.options reltol=1e-9 abstol=1e-14 vntol=1e-11
+.tran 1u 2m 0 1u uic
+.measure tran vout_1ms FIND v(OUT) AT=1m
+.measure tran vin_1ms FIND v(IN) AT=1m
+.measure tran vout_1ns FIND v(OUT) AT=1n
+.end

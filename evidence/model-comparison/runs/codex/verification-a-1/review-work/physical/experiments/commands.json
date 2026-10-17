@@ -1,0 +1,110 @@
+[
+  {
+    "name": "kicad_version",
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "kicad_version.stdout.txt",
+    "stderr": "kicad_version.stderr.txt"
+  },
+  {
+    "name": "ngspice_version",
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "ngspice_version.stdout.txt",
+    "stderr": "ngspice_version.stderr.txt"
+  },
+  {
+    "name": "drc",
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "stdout": "drc.stdout.txt",
+    "stderr": "drc.stderr.txt"
+  },
+  {
+    "name": "erc",
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "stdout": "erc.stdout.txt",
+    "stderr": "erc.stderr.txt"
+  },
+  {
+    "name": "netlist",
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "stdout": "netlist.stdout.txt",
+    "stderr": "netlist.stderr.txt"
+  },
+  {
+    "name": "board_plot",
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "export",
+      "svg",
+      "--layers",
+      "F.Cu,B.Cu,Edge.Cuts,F.CrtYd",
+      "--mode-single",
+      "--page-size-mode",
+      "2",
+      "--exclude-drawing-sheet",
+      "-o",
+      "/work/experiments/saved-board.svg",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "stdout": "board_plot.stdout.txt",
+    "stderr": "board_plot.stderr.txt"
+  },
+  {
+    "name": "step",
+    "argv": [
+      "ngspice",
+      "-b",
+      "/work/experiments/step.cir"
+    ],
+    "exit_code": 0,
+    "stdout": "step.stdout.txt",
+    "stderr": "step.stderr.txt"
+  }
+]

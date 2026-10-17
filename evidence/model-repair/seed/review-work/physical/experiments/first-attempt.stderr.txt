@@ -1,0 +1,9 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+Traceback (most recent call last):
+  File "/work/experiments/physical_review.py", line 102, in <module>
+    unconnected_count=c.GetUnconnectedCount(),
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: CONNECTIVITY_DATA.GetUnconnectedCount() missing 1 required positional argument: 'aVisibileOnly'

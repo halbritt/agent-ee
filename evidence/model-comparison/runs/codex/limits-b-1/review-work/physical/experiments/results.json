@@ -1,0 +1,342 @@
+{
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "native_sha256": {
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b"
+  },
+  "R1_schematic_value": "10k",
+  "R1_board_value": "10k",
+  "native_pads": {
+    "C1.1": {
+      "net": "/OUT",
+      "xy_mm": [
+        109.05,
+        100.0
+      ]
+    },
+    "C1.2": {
+      "net": "GND",
+      "xy_mm": [
+        110.95,
+        100.0
+      ]
+    },
+    "R1.1": {
+      "net": "/IN",
+      "xy_mm": [
+        104.0875,
+        100.0
+      ]
+    },
+    "R1.2": {
+      "net": "/OUT",
+      "xy_mm": [
+        105.9125,
+        100.0
+      ]
+    },
+    "J1.1": {
+      "net": "/IN",
+      "xy_mm": [
+        100.0,
+        100.0
+      ]
+    },
+    "J1.2": {
+      "net": "/OUT",
+      "xy_mm": [
+        100.0,
+        102.54
+      ]
+    },
+    "J1.3": {
+      "net": "GND",
+      "xy_mm": [
+        100.0,
+        105.08
+      ]
+    }
+  },
+  "native_segments": [
+    {
+      "start": [
+        100.0,
+        100.0
+      ],
+      "end": [
+        104.0875,
+        100.0
+      ],
+      "net": "/IN",
+      "layer": "F.Cu",
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+    },
+    {
+      "start": [
+        105.9125,
+        100.0
+      ],
+      "end": [
+        109.05,
+        100.0
+      ],
+      "net": "/OUT",
+      "layer": "F.Cu",
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+    },
+    {
+      "start": [
+        100.0,
+        102.54
+      ],
+      "end": [
+        107.5,
+        102.54
+      ],
+      "net": "/OUT",
+      "layer": "F.Cu",
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8"
+    },
+    {
+      "start": [
+        107.5,
+        102.54
+      ],
+      "end": [
+        107.5,
+        100.0
+      ],
+      "net": "/OUT",
+      "layer": "F.Cu",
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82"
+    },
+    {
+      "start": [
+        110.95,
+        100.0
+      ],
+      "end": [
+        113.0,
+        100.0
+      ],
+      "net": "GND",
+      "layer": "F.Cu",
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1"
+    }
+  ],
+  "centerline_connectivity": {
+    "J1.1_to_R1.1": true,
+    "R1.2_to_J1.2": true
+  },
+  "exported_xml_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "assumptions": [
+    "Specified external equipment fixes IN=48 V and OUT=0 V indefinitely.",
+    "Use native nominal R1=10 kilohm and the supplied continuous limit=0.1 W.",
+    "Ideal copper connectivity; no invented copper thickness, thermal resistance or part model.",
+    "Saved F.Cu centerlines establish the R1 supply/clamp path, including the OUT T-junction.",
+    "External clamp carries steady DC current; C1 is not a steady DC current limiter."
+  ],
+  "calculation": {
+    "voltage_V": 48.0,
+    "resistance_ohm": 10000.0,
+    "current_A": 0.0048,
+    "power_W": 0.2304,
+    "limit_W": 0.1,
+    "power_to_limit": 2.304,
+    "power_excess_W": 0.1304,
+    "minimum_resistance_at_48V_ohm": 23040.0,
+    "maximum_voltage_at_10k_V": 31.622776601683793
+  },
+  "checked_records": {
+    "drc": {
+      "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+      "details": {
+        "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+        "by_severity": {},
+        "by_type": {},
+        "ignored_checks": [
+          "missing_courtyard",
+          "track_not_centered_on_via",
+          "tuning_profile_track_geometries",
+          "footprint_filters_mismatch",
+          "footprint_type_mismatch"
+        ],
+        "kicad_version": "10.0.7",
+        "schematic_parity": 0,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--schematic-parity",
+            "--units",
+            "mm",
+            "-o",
+            "/work/drc.json",
+            "/candidate/project/rc_filter.kicad_pcb"
+          ],
+          "console_sha256": "9581d5d3321e3a9ab5e0afec8368bba15c9f7d2b55704e1ac6fddf15d791e2aa",
+          "duration_s": 1.281,
+          "exit_code": 0
+        },
+        "unconnected_items": 0,
+        "violations": 0
+      },
+      "evidence": [
+        "work/drc/execution.json",
+        "work/drc/console.log",
+        "work/drc/drc.json"
+      ],
+      "execution": "ok",
+      "id": "drc",
+      "kind": "drc",
+      "limitations": [
+        "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+      ],
+      "outcome": "pass",
+      "summary": "DRC with schematic parity reported zero issues on the saved board"
+    },
+    "erc": {
+      "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+      "details": {
+        "by_severity": {},
+        "by_type": {},
+        "ignored_checks": [
+          "single_global_label",
+          "four_way_junction",
+          "simulation_model_issue",
+          "footprint_filter"
+        ],
+        "kicad_version": "10.0.7",
+        "schematic_files": [
+          "project/rc_filter.kicad_sch"
+        ],
+        "sheets_checked": 1,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "sch",
+            "erc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--units",
+            "mm",
+            "-o",
+            "/work/erc.json",
+            "/candidate/project/rc_filter.kicad_sch"
+          ],
+          "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+          "duration_s": 1.528,
+          "exit_code": 0
+        },
+        "violations": 0
+      },
+      "evidence": [
+        "work/erc/execution.json",
+        "work/erc/console.log",
+        "work/erc/erc.json"
+      ],
+      "execution": "ok",
+      "id": "erc",
+      "kind": "erc",
+      "limitations": [],
+      "outcome": "pass",
+      "summary": "ERC ran on 1 sheet instance(s) with zero violations"
+    },
+    "geometry": {
+      "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+      "details": {
+        "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+        "dnp_refs": [],
+        "nets": 3,
+        "pads": 7,
+        "pcbnew_version": "10.0.7",
+        "tool": {
+          "argv": [
+            "/usr/bin/python3",
+            "-B",
+            "-m",
+            "agent_ee.geometry_probe",
+            "/candidate/project/rc_filter.kicad_pcb",
+            "-o",
+            "/work/geometry.json"
+          ],
+          "console_sha256": "e44e944d9b554ca8c963c908bb03bb907411562830fb71dd6572188b67025530",
+          "duration_s": 0.389,
+          "exit_code": 0
+        },
+        "track_segments": 5,
+        "unconnected_items": 0,
+        "vias": 1,
+        "zones": 1
+      },
+      "evidence": [
+        "work/geometry/execution.json",
+        "work/geometry/console.log",
+        "work/geometry/geometry.json"
+      ],
+      "execution": "ok",
+      "id": "geometry",
+      "kind": "geometry",
+      "limitations": [
+        "geometry read from the saved board file; zone fill state as saved"
+      ],
+      "outcome": "info",
+      "summary": "saved-board geometry extracted (no declared geometric requirement applied)"
+    },
+    "netlist": {
+      "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+      "details": {
+        "components": 3,
+        "dnp_refs": [],
+        "nets": 3,
+        "refs": [
+          "C1",
+          "J1",
+          "R1"
+        ],
+        "schematic_files": [
+          "project/rc_filter.kicad_sch"
+        ],
+        "sheet_instances": 1
+      },
+      "evidence": [
+        "work/netlist/execution.json",
+        "work/netlist/console.log",
+        "work/netlist/design.xml",
+        "work/netlist/connectivity.json"
+      ],
+      "execution": "ok",
+      "id": "netlist",
+      "kind": "netlist",
+      "limitations": [],
+      "outcome": "info",
+      "summary": "native XML netlist exported from a complete 1-instance hierarchy: 3 component(s), 3 net(s), 0 DNP"
+    }
+  },
+  "limitations": [
+    "No physical temperature or failure-time measurement.",
+    "No tolerance, voltage rating, thermal derating, or material assumptions added.",
+    "No ampacity or thermal qualification inferred from track width.",
+    "Saved GND fill reviewed without refill; it is not required for the external clamp DC path.",
+    "Existing ERC/DRC records reviewed, not rerun; their ignored checks remain coverage omissions."
+  ]
+}

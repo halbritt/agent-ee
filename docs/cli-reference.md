@@ -51,7 +51,8 @@ limit or a CPU/token quota.
 Checks run in declared order. A check with less than five seconds remaining
 does not begin. Native command timeouts are capped by the remaining deadline.
 Every reviewer and the adjudicator has an explicit profile timeout; supplied
-evaluation profiles use 300 seconds. Calls run sequentially. No automatic
+small evaluation profiles use 300 seconds and donor profiles use 900 seconds.
+Calls run sequentially. No automatic
 retry occurs. See the [check reference](check-reference.md) for native ceilings.
 
 SIGINT attempts to preserve validated checks/reviews, unknown placeholders for

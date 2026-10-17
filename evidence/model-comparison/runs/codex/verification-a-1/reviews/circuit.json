@@ -1,0 +1,21 @@
+{
+  "candidate_id": "048e061c9f5ad6238611bf5f0923f46a239053ee39b21ef9699f83c720bb9cd7",
+  "coverage": [
+    "Verified native R1=10k and C1=100n in inputs/project/rc_filter.kicad_sch:955,1274. Fresh native export confirms R1 between /IN and /OUT, C1 between /OUT and GND, and J1 pins 1/2/3 as IN/OUT/GND; see review-work/circuit/experiments/native-export.xml, nets/net.",
+    "Checked original PCB pad assignments against schematic connectivity: inputs/project/rc_filter.kicad_pcb:210,218,359,367,587,596,605; results in review-work/circuit/experiments/native-and-check-audit.json.",
+    "Calculated unloaded response with initially discharged C1: RC=1 ms; Vout(1 ms)=1-exp(-1)=0.6321205588 V, within 0.62\u20130.65 V. Independent ngspice runs with 1 us and 100 ns maximum steps both measured 0.6321206 V. Models, initial conditions and measurements are recorded in review-work/circuit/experiments/response-results.json and rc-1u.cir.",
+    "Inspected execution records and native reports: work/erc/erc.json reports zero violations; work/drc/drc.json reports zero violations, unconnected items and parity issues. Reviewed work/geometry/geometry.json and console.log. Commands, versions, outcomes and limitations are recorded in review-work/circuit/experiments/commands.json, versions.json and notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "ERC/DRC were inspected, not rerun. Disabled ERC checks were single_global_label, four_way_junction, simulation_model_issue and footprint_filter; disabled DRC checks were missing_courtyard, track_not_centered_on_via, tuning_profile_track_geometries, footprint_filters_mismatch and footprint_type_mismatch.",
+    "Geometry was not independently regenerated; saved zone fill was not refreshed. work/geometry/console.log contains PROPERTY_ENUM assertions. No additional geometric requirement was stated.",
+    "No hardware measurements, tolerances, parasitics, component ratings, qualification, finite loading or source impedance were assessed; these are outside the stated ideal unloaded scope.",
+    "Shutdown, reset, brownout and other input waveforms were not assessed because no corresponding operating conditions or requirements were supplied.",
+    "An initial optional 1 ns simulation probe was outside the retained time interval; its failed measurement is preserved under review-work/circuit/experiments/initial-probe-attempt/. Final runs successfully measured at 1 us and 1 ms."
+  ],
+  "packet_sha256": "2a805f7433862b0fece55908db50b850c58d260ac14c71f18924773b377fa35c",
+  "role": "circuit",
+  "run_id": "1e1f60d7-cd8c-44c7-81bc-a5c2a4ec3e03",
+  "schema": "agent-ee.review/1"
+}

@@ -43,4 +43,4 @@ The current command parser and validators are the final authority if a historica
 agreement differs. The manual references their actual behavior and names limits
 that remain unenforced or outside the demonstrated scope.
 
-Reviewer routing and comparison: [Profiles](reviewer-profiles.md), [evaluation plan](model-evaluation-plan.md).
+Reviewer routing and comparison: [Profiles](reviewer-profiles.md), [evaluation plan](model-evaluation-plan.md), [observed results and provisional allocation](../evidence/MODEL-SELECTION.md), and [donor follow-up](../evidence/MODEL-BASELINE.md).

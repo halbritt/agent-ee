@@ -1,0 +1,30 @@
+[
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "export",
+      "drill",
+      "--format",
+      "excellon",
+      "--excellon-separate-th",
+      "--generate-report",
+      "--report-path",
+      "/work/experiments/drill-report.txt",
+      "--output",
+      "/work/experiments/drill/",
+      "/candidate/project/Polygonus-Universal-Base.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "log": "drill-export.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-b",
+      "/work/experiments/reset_bias.cir"
+    ],
+    "exit_code": 0,
+    "log": "reset_bias.log"
+  }
+]

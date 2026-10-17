@@ -1,0 +1,15 @@
+{
+  "reason": "Independent check of supplemental Claude verification-b circuit calculations; does not supply missing actual ADC parameters.",
+  "assumptions": "Ideal 10k/100n, initially discharged, 1V step at t=0; constant current or resistive load present from t=0, each analyzed separately. No active ADC model.",
+  "constant_current_formula": "Vout(t)=(1-Iload*R)*(1-exp(-t/(R*C)))",
+  "constant_current_threshold_A": 1.9174441741017566e-06,
+  "resistive_load_formula": "Vout(t)=RL/(R+RL)*(1-exp(-t/((R||RL)*C)))",
+  "resistive_load_threshold_ohms": 214962.2330743227,
+  "method": "100 bisection iterations over RL 1..1e8 ohms, threshold Vout(1ms)=0.62V",
+  "interpretation": "Reviewer correctly identifies uncertainty, but quoted supplemental margin-erasure bounds are inaccurate. Actual ADC compliance remains unresolved.",
+  "physical_review_counterexample": {
+    "Rload_ohms": 20000,
+    "Vout_at_1ms": 0.5179132265677134,
+    "reason": "Load is above the cited 16.3k asymptotic bound yet fails at 1 ms; the claim of robustness within those bounds is unsupported. A single charge-share event also cannot guarantee behavior for unspecified repeated switching."
+  }
+}

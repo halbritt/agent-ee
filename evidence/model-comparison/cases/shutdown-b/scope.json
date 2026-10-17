@@ -1,0 +1,68 @@
+{
+  "board": "project/rc_filter.kicad_pcb",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry",
+      "params": {}
+    }
+  ],
+  "inputs": [
+    {
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ],
+      "path": "/usr/share/kicad/symbols"
+    },
+    {
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ],
+      "path": "/usr/share/kicad/footprints"
+    },
+    {
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ],
+      "path": "/usr/share/kicad/template"
+    },
+    {
+      "at": "project",
+      "path": "native"
+    },
+    {
+      "at": "requirements.txt",
+      "path": "requirements.txt"
+    }
+  ],
+  "limitations": [
+    "Artificial exercise requirements; no ECU qualification."
+  ],
+  "name": "Engineering comparison shutdown-b",
+  "requirements": [
+    "requirements.txt"
+  ],
+  "schema": "agent-ee.scope/1",
+  "schematic": "project/rc_filter.kicad_sch",
+  "scope": "Ideal shutdown: C1 initially charged to 1 V, /IN grounded at t=0, no external load. Require /OUT <= 0.01 V at 5 ms. Evaluate saved component values and connectivity. Ideal passive components only."
+}

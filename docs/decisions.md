@@ -72,8 +72,9 @@ retained so failures can be assessed rather than hidden.
 
 ## Bounded runs and conservative rerun
 
-The default wall-clock work budget is 1,200 seconds; individual reviewer calls
-are capped at 300 seconds. A run has a finite declared check/reviewer list, no
+The default wall-clock work budget is 1,200 seconds; individual reviewer limits
+come from the explicit profile (300 seconds in small evaluation profiles, 900 in
+donor profiles). The run deadline further bounds every call. A run has a finite declared check/reviewer list, no
 automatic provider fallback/retry and no autonomous source repair. Completed
 records are saved immediately. A crash, interruption, invalid output or exhausted
 budget leaves incomplete coverage.
@@ -98,3 +99,23 @@ deferred. Unsupported allegations and defects cannot be converted to notes, and
 duplicate links cannot hide defects behind notes. This is a general disposition
 rule; the fixture, its electrical limits and its geometry requirements did not
 change. The observed failure and subsequent fresh runs are retained separately.
+
+## Profile evaluation and provisional allocation
+
+[Observed comparison and baseline results](../evidence/MODEL-SELECTION.md) support
+a provisional Codex/high starting configuration. Selection is explicit and
+versioned, including role, harness, model, effort and deadline. No model family
+is treated as independent proof. Agy timeouts leave a comparison gap; Claude and
+Codex donor adjudications exposed protocol failures despite passing the simple
+adjudicator trials. Preserve those failures and separate assisted recovery from
+automatic completion.
+
+Ordinary system tools and network access remain available. Codex initially had
+a redundant inner workspace sandbox that broke DNS despite the outer workspace
+allowing networking; the native Codex investigation call now uses full access
+inside the existing read-only candidate boundary. A real HTTP and write-refusal
+probe verified the behavior. No hermetic runtime or provider fallback was added.
+
+Correction closure now requires changed captured input bytes in addition to a
+new candidate identity, fresh passing evidence and unchanged criteria. Changing
+only reviewer allocation cannot be represented as a saved-design repair.

@@ -1,0 +1,281 @@
+{
+  "symbols": {
+    "#PWR02": {
+      "properties": {
+        "Reference": "#PWR02",
+        "Value": "GND",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "uuid": "05f0738f-fc7b-589d-9ab5-3365ee12aaf5",
+      "library": "power:GND",
+      "position_rotation": [
+        "71.12",
+        "60.96",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    "C1": {
+      "properties": {
+        "Reference": "C1",
+        "Value": "100n",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8",
+      "library": "Device:C",
+      "position_rotation": [
+        "101.6",
+        "63.5",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    "#PWR01": {
+      "properties": {
+        "Reference": "#PWR01",
+        "Value": "GND",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "uuid": "2c592a57-a83b-5444-a605-e8f5bfa36d67",
+      "library": "power:GND",
+      "position_rotation": [
+        "101.6",
+        "71.12",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    "J1": {
+      "properties": {
+        "Reference": "J1",
+        "Value": "Conn_01x03",
+        "Footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2",
+      "library": "Connector_Generic:Conn_01x03",
+      "position_rotation": [
+        "60.96",
+        "63.5",
+        "180"
+      ],
+      "dnp": "no"
+    },
+    "#FLG01": {
+      "properties": {
+        "Reference": "#FLG01",
+        "Value": "PWR_FLAG",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "uuid": "7aeaaf59-ba4c-5188-9293-39b48d5444d2",
+      "library": "power:PWR_FLAG",
+      "position_rotation": [
+        "109.22",
+        "71.12",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    "R1": {
+      "properties": {
+        "Reference": "R1",
+        "Value": "10k",
+        "Footprint": "Resistor_SMD:R_0805_2012Metric",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+      "library": "Device:R",
+      "position_rotation": [
+        "86.36",
+        "63.5",
+        "0"
+      ],
+      "dnp": "no"
+    }
+  },
+  "footprints": {
+    "C1": {
+      "properties": {
+        "Reference": "C1",
+        "Value": "100n",
+        "Datasheet": "",
+        "Description": "",
+        "KiLib_Generator": "SMD_2terminal_chip_molded"
+      },
+      "library": "Capacitor_SMD:C_0805_2012Metric",
+      "at": [
+        "110",
+        "100"
+      ],
+      "pads": [
+        {
+          "number": "1",
+          "at": [
+            "-0.95",
+            "0"
+          ],
+          "net": "/OUT"
+        },
+        {
+          "number": "2",
+          "at": [
+            "0.95",
+            "0"
+          ],
+          "net": "GND"
+        }
+      ]
+    },
+    "R1": {
+      "properties": {
+        "Reference": "R1",
+        "Value": "10k",
+        "Datasheet": "",
+        "Description": "",
+        "KiLib_Generator": "SMD_2terminal_chip_molded"
+      },
+      "library": "Resistor_SMD:R_0805_2012Metric",
+      "at": [
+        "105",
+        "100"
+      ],
+      "pads": [
+        {
+          "number": "1",
+          "at": [
+            "-0.9125",
+            "0"
+          ],
+          "net": "/IN"
+        },
+        {
+          "number": "2",
+          "at": [
+            "0.9125",
+            "0"
+          ],
+          "net": "/OUT"
+        }
+      ]
+    },
+    "J1": {
+      "properties": {
+        "Reference": "J1",
+        "Value": "Conn_01x03",
+        "Datasheet": "",
+        "Description": "",
+        "KiLib_Generator": "connector/pin_header_socket"
+      },
+      "library": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+      "at": [
+        "100",
+        "100"
+      ],
+      "pads": [
+        {
+          "number": "1",
+          "at": [
+            "0",
+            "0"
+          ],
+          "net": "/IN"
+        },
+        {
+          "number": "2",
+          "at": [
+            "0",
+            "2.54"
+          ],
+          "net": "/OUT"
+        },
+        {
+          "number": "3",
+          "at": [
+            "0",
+            "5.08"
+          ],
+          "net": "GND"
+        }
+      ]
+    }
+  },
+  "segments": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "start_mm": [
+        "100",
+        "100"
+      ],
+      "end_mm": [
+        "104.0875",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "start_mm": [
+        "105.9125",
+        "100"
+      ],
+      "end_mm": [
+        "109.05",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "start_mm": [
+        "100",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "start_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "start_mm": [
+        "110.95",
+        "100"
+      ],
+      "end_mm": [
+        "113",
+        "100"
+      ],
+      "width_mm": 0.25
+    }
+  ],
+  "via_count": 1,
+  "zone_count": 1
+}

@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "curl",
+    "--location",
+    "--fail",
+    "--max-time",
+    "25",
+    "--output",
+    "/work/experiments/molex_643330100_sd.pdf",
+    "https://www.molex.com/pdm_docs/sd/643330100_sd.pdf"
+  ],
+  "returncode": 6,
+  "stdout": "",
+  "stderr": "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n                                 Dload  Upload   Total   Spent    Left  Speed\n\n  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0curl: (6) Could not resolve host: www.molex.com\n",
+  "purpose": "Seek primary mechanical drawing for connector hole plating; no drawing requirement inferred if retrieval fails."
+}

@@ -1,0 +1,102 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+{
+  "width_pass": true,
+  "analytic_rc": {
+    "R_ohm": 100000.0,
+    "C_farad": 1e-07,
+    "tau_ms": 10.0,
+    "formula": "Vout(t)=1-exp(-t/(R*C))",
+    "vout_1ms_V": 0.09516258196404043,
+    "vout_5ms_V": 0.3934693402873666,
+    "requirement_1ms_V": [
+      0.62,
+      0.65
+    ],
+    "allowed_tau_ms": [
+      0.9525423180403352,
+      1.0335019728090538
+    ]
+  },
+  "raw_waveform": {
+    "header": "Title: * agent-ee rc_transient deck, generated from the native xml netlist\nDate: Fri Oct 16 17:54:41  2026\nPlotname: Transient Analysis\nFlags: real\nNo. Variables: 4\nNo. Points: 1025\nVariables:\n\t0\ttime\ttime\n\t1\tv(in)\tvoltage\n\t2\tv(out)\tvoltage\n\t3\ti(vstep)\tcurrent\n",
+    "binary_format_assumption": "little-endian real IEEE754 doubles",
+    "points_read": 1025,
+    "initial_row": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_row": [
+      0.005,
+      1.0,
+      0.39346931627674697,
+      -6.065306837232531e-06
+    ],
+    "vout_1ms_interpolated_V": 0.09516251391206769,
+    "vout_5ms_interpolated_V": 0.39346931627674697,
+    "vin_1ms_V": 1.0,
+    "max_error_against_ideal_step_V": 4.9989996737760124e-08
+  },
+  "saved_fill": [
+    {
+      "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+      "net": "GND",
+      "outline_count": 1,
+      "area_mm2": 192.287427932463,
+      "point_samples": [
+        {
+          "xy_mm": [
+            113,
+            100
+          ],
+          "inside_saved_fill": true
+        },
+        {
+          "xy_mm": [
+            100.5,
+            105.58
+          ],
+          "inside_saved_fill": true
+        },
+        {
+          "xy_mm": [
+            101,
+            106.08
+          ],
+          "inside_saved_fill": true
+        },
+        {
+          "xy_mm": [
+            101.5,
+            106.58
+          ],
+          "inside_saved_fill": true
+        },
+        {
+          "xy_mm": [
+            99.5,
+            104.58
+          ],
+          "inside_saved_fill": true
+        },
+        {
+          "xy_mm": [
+            99,
+            104.08
+          ],
+          "inside_saved_fill": true
+        },
+        {
+          "xy_mm": [
+            98.5,
+            103.58
+          ],
+          "inside_saved_fill": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+# Physical review: saved Universal 112 carrier
+
+## Inputs, versions and scope
+
+Read-only candidate `/candidate/project/Polygonus-Universal-Base.kicad_pcb`, SHA256 `4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53`; checked unchanged at end. Native WBO schematic SHA256 `5e75becb7daf61bc96791532041bde633539f961cbf2a06bfb3601e991b81826` matches packet. KiCad CLI and pcbnew 10.0.7. Full supplied DRC, ERC, geometry and connectivity records read as JSON. Board geometry and pad assignments independently loaded from native PCB. No fill/save operation performed and no candidate modified.
+
+## Reproducible commands and results
+
+- `/usr/bin/python3 /work/experiments/native_audit.py > /work/experiments/native_audit.log 2>&1`: exit 0. Native dimensions, saved zone inventory, direct track connections and pin assignments in `native_audit.json`. No discrepancies across all 659 schematic pins; duplicate copper/paste pads do not count as separate schematic pins. This compares assignments, not measured electrical behavior. `GetConnectedItems` is transitive and is therefore retained only as item-type counts; `GetConnectedTracks` gives the local track evidence. The script was subsequently trimmed to avoid dumping transitive connectivity lists; its essential measurements did not change.
+- `/usr/bin/python3 /work/experiments/plot_native.py > /work/experiments/plot-native.log 2>&1`: exit 0. `thermal-details.png` and `can2-layout.png` render native saved data. Thermal plot is a schematic XY visualization with rectangular pad approximations; native dimensions and DRC, rather than pixel measurements, establish results.
+- `kicad-cli pcb export drill --output /work/experiments/drill --excellon-separate-th --generate-report --report-path /work/experiments/drill-report.txt /candidate/project/Polygonus-Universal-Base.kicad_pcb > /work/experiments/drill-export.log 2>&1`: exit 0. PTH file includes both 2.2 mm holes (T10) and all three 4 mm holes (T12). NPTH count is zero. Native source has `thru_hole`, not `np_thru_hole`, with circular copper diameter equal to drill.
+- Initial independent DRC used `KICAD10_FOOTPRINT_DIR=/candidate/stock/footprints KICAD10_SYMBOL_DIR=/candidate/stock/symbols kicad-cli pcb drc --format json --severity-all --all-track-errors --schematic-parity --units mm --output /work/experiments/independent-drc.json /candidate/project/Polygonus-Universal-Base.kicad_pcb > /work/experiments/independent-drc.log 2>&1`: exit 0. 156 violations; the different library-warning inventory comes from absent global library tables. All 13 native error entries reproduce and remain excluded. This environment-dependent warning difference is not a design finding.
+- Copied only the stock template `fp-lib-table` and `sym-lib-table` into `/work/experiments/kicad-config/10.0/`, then ran `KICAD_CONFIG_HOME=/work/experiments/kicad-config KICAD10_FOOTPRINT_DIR=/candidate/stock/footprints KICAD10_SYMBOL_DIR=/candidate/stock/symbols kicad-cli pcb drc --format json --severity-all --all-track-errors --schematic-parity --units mm --output /work/experiments/controlled-drc.json /candidate/project/Polygonus-Universal-Base.kicad_pcb > /work/experiments/controlled-drc.log 2>&1`: exit 0. 142 violations, zero unconnected, 114 parity items. Violation multiset (type, text, item UUIDs, severity, exclusion) exactly matches fresh `work/drc/drc.json`. No refill or save flag used. Static check success is not an electrical test.
+- `curl -L --fail --max-time 30 -o /work/experiments/TJA1051.pdf https://www.nxp.com/docs/en/data-sheet/TJA1051.pdf > /work/experiments/TJA1051-fetch.log 2>&1`: exit 6, DNS failure. No manufacturer reference obtained or relied upon.
+- Python arithmetic recorded in `calculations.json`: nominal annulus `(Dpad-Ddrill)/2 = 0 mm` for each of five J1 mechanical holes, versus native 0.1 mm annular minimum. Both carrier CAN2 120 ohm resistors DNP gives zero fitted termination conductance from those resistors; fitting both would give 60 ohms parallel. These are component-topology calculations, not waveforms or an assertion about termination inside the brain module/harness.
+
+## Physical interpretation
+
+Five J1 hole padstacks export as plated with zero nominal annular copper. Native DRC has five padstack and five annular errors, all explicitly excluded with empty comments in the project. Excluding the findings does not alter the exported drill class or pad dimensions. This supports a limited manufacturing-data finding; it does not establish fabrication impossibility, a wrong finished-hole tolerance, or a requirement to use NPTH.
+
+Three ground thermals (C15.2, U7.4, C14.2) have actual one spoke versus native minimum two, also explicitly excluded with empty comments. Each also has routed 0.25 mm ground copper leading toward a nearby ground via. Saved geometry does not support claiming an open ground or thermal/current failure. No separate electrical defect assigned to these exceptions.
+
+R36/R37 are the carrier's only resistor components directly across `/CAN2+` and `/CAN2-`; both native schematic instances and native PCB footprints mark them DNP/excluded from BOM. `/CAN2+/-` also reaches J1.15/11 and J2.73/74, so system termination could exist in the attached module or harness. Supplied checks contain no termination resistance measurement or CAN waveform stimulus. CAN2 route segment totals are 252.428120 mm and 252.398538 mm, across four copper layers with four vias each; these totals include branches and are not point-to-point propagation lengths. Short PCB routing does not by itself prove either failure or adequate signal margins. Termination is therefore a conditional concern, not a proven communication defect.
+
+Selected power/heater/ETB/ground route dimensions and saved zones were inspected and inventoried. No load current, duty cycle, copper tolerance, allowable temperature rise, fuse rating or fabrication qualification was inferred. GND is saved on F.Cu/B.Cu/In2 and the fused supply uses In1; zone areas do not establish return impedance or thermal performance.
+
+## Coverage omissions
+
+- No refilled-board comparison (candidate must remain as saved).
+- No module/harness termination inspection, powered CAN test, bitrate/edge-rate stimulus, or oscilloscope/field-solver measurement.
+- No load/duty/ambient thermal model, current-sharing/fuse-coordination assessment, heater/ignition energy test, or ampacity qualification.
+- No full mechanical envelope/3D stack-height, mating connector tolerance, production stencil or fab capability approval. Native DRC ignores missing courtyards and PTH/NPTH inside courtyards.
+- No automotive transient, EMC, wideband stability or integrated FOME-MC coverage; carrier-only review.
+- ERC records were inspected, not independently rerun or electrically adjudicated; only native PCB DRC and drill generation were repeated. No SPICE simulation was claimed.

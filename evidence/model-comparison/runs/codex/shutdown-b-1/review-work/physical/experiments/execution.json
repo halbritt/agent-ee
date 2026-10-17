@@ -1,0 +1,63 @@
+{
+  "driver_argv": [
+    "/work/experiments/physical_review.py"
+  ],
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "commands": [
+    {
+      "argv": [
+        "/usr/bin/python3",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "Python 3.12.3\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "version"
+      ],
+      "exit_code": 0,
+      "stdout": "10.0.7\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ngspice",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ngspice",
+        "-b",
+        "-o",
+        "/work/experiments/shutdown.log",
+        "/work/experiments/shutdown.cir"
+      ],
+      "exit_code": 0,
+      "stdout": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******\n\nBatch mode\n\nComments and warnings go to log-file: /work/experiments/shutdown.log\n\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ngspice",
+        "-b",
+        "-o",
+        "/work/experiments/shutdown_fine.log",
+        "/work/experiments/shutdown_fine.cir"
+      ],
+      "exit_code": 0,
+      "stdout": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******\n\nBatch mode\n\nComments and warnings go to log-file: /work/experiments/shutdown_fine.log\n\n",
+      "stderr": ""
+    }
+  ],
+  "input_sha256": {
+    "/candidate/project/rc_filter.kicad_pcb": "69ab00b2c31dfa93c0dcb9371ff24111af233ef2ee233a2b7edd83dd48bc2c87",
+    "/candidate/project/rc_filter.kicad_sch": "ac819f42ead77072a9d070fabbad53640bf97ef0d6ce0331d3f6597921a27337"
+  }
+}

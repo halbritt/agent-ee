@@ -1,0 +1,26 @@
+{
+  "source": "design.xml, components R1/C1 and nets /IN,/OUT,GND",
+  "R_ohm": 10000.0,
+  "C_farad": 1e-07,
+  "assumptions": [
+    "Ideal 1 V step at t=0 relative to GND",
+    "C1 initially discharged",
+    "No output load; ideal R,C and interconnect"
+  ],
+  "equation": "Vout(t)=1-exp(-t/(R*C))",
+  "tau_s": 0.001,
+  "time_s": 0.001,
+  "Vout_volt": 0.6321205588285577,
+  "permitted_volt": [
+    0.62,
+    0.65
+  ],
+  "passes": true,
+  "required_tau_interval_s": [
+    0.0009525423180403353,
+    0.0010335019728090538
+  ],
+  "initial_current_amp": 0.0001,
+  "initial_resistor_power_watt": 0.0001,
+  "final_capacitor_energy_joule": 5e-08
+}

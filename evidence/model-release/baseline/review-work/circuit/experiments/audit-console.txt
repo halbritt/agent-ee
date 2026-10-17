@@ -1,0 +1,21 @@
+{
+  "board_sha256": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
+  "alias_byte_identical": true,
+  "sheet_instances": 10,
+  "component_count": 139,
+  "net_count": 199,
+  "reference_netlist_identical": true,
+  "native_board_pad_net_mismatches": [],
+  "can2_direct_resistors": [
+    {
+      "ref": "R36",
+      "value": "120",
+      "dnp": true
+    },
+    {
+      "ref": "R37",
+      "value": "120",
+      "dnp": true
+    }
+  ]
+}

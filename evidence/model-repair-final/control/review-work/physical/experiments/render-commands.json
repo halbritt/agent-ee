@@ -1,0 +1,68 @@
+[
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "export",
+      "pdf",
+      "--layers",
+      "F.Cu,F.SilkS,F.CrtYd,Edge.Cuts",
+      "--mode-single",
+      "--scale",
+      "8",
+      "--output",
+      "/work/experiments/front.pdf",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "stdout": "Plotted to '/work/experiments/front.pdf'.\nDone.\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "pdftoppm",
+      "-scale-to",
+      "1600",
+      "-png",
+      "-singlefile",
+      "/work/experiments/front.pdf",
+      "/work/experiments/front"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "export",
+      "pdf",
+      "--layers",
+      "B.Cu,Edge.Cuts",
+      "--mode-single",
+      "--scale",
+      "8",
+      "--output",
+      "/work/experiments/back.pdf",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "stdout": "Plotted to '/work/experiments/back.pdf'.\nDone.\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "pdftoppm",
+      "-scale-to",
+      "1600",
+      "-png",
+      "-singlefile",
+      "/work/experiments/back.pdf",
+      "/work/experiments/back"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

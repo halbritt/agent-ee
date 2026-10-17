@@ -1,0 +1,653 @@
+{
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "kicad_version": "10.0.7",
+  "erc": {
+    "identical_records": {
+      "sheets": true
+    },
+    "counts": {
+      "error": 5,
+      "warning": 348
+    },
+    "errors": [
+      {
+        "description": "Input Power pin not driven by any Output Power pins",
+        "items": [
+          {
+            "description": "Symbol #PWR01 Hidden pin 1 [GND, Power input, Line]",
+            "pos": {
+              "x": 36.83,
+              "y": 78.74
+            },
+            "uuid": "ad746bdd-0707-4a48-896d-17738721a9e8"
+          }
+        ],
+        "severity": "error",
+        "type": "power_pin_not_driven"
+      },
+      {
+        "description": "Pin not connected",
+        "items": [
+          {
+            "description": "Symbol A1 Pin 2 [~{FLT}, Output, Line]",
+            "pos": {
+              "x": 38.1,
+              "y": 224.79
+            },
+            "uuid": "a25f94e0-cd48-48aa-9b62-40d59568d2dd"
+          }
+        ],
+        "severity": "error",
+        "type": "pin_not_connected"
+      },
+      {
+        "description": "Input Power pin not driven by any Output Power pins",
+        "items": [
+          {
+            "description": "Symbol A1 Pin 8 [VMOT, Power input, Line]",
+            "pos": {
+              "x": 48.26,
+              "y": 219.71
+            },
+            "uuid": "acdd6b6d-8e25-409a-ad93-dbfe1e531cbc"
+          }
+        ],
+        "severity": "error",
+        "type": "power_pin_not_driven"
+      },
+      {
+        "description": "Pins of type Power output and Power output are connected",
+        "items": [
+          {
+            "description": "Symbol J2 Pin 40 [5V_SENSOR_1, Power output, Line]",
+            "pos": {
+              "x": 262.89,
+              "y": 128.27
+            },
+            "uuid": "2f453565-0a9c-4d84-acb3-c188de3f22c6"
+          },
+          {
+            "description": "Symbol J2 Pin 41 [5V_SENSOR_1, Power output, Line]",
+            "pos": {
+              "x": 262.89,
+              "y": 130.81
+            },
+            "uuid": "b5fc1cf2-1c0e-41a8-aaee-756bb08b3bda"
+          }
+        ],
+        "severity": "error",
+        "type": "pin_to_pin"
+      },
+      {
+        "description": "Input Power pin not driven by any Output Power pins",
+        "items": [
+          {
+            "description": "Symbol J2 Pin 90 [12V_IGN, Power input, Line]",
+            "pos": {
+              "x": 293.37,
+              "y": 173.99
+            },
+            "uuid": "3d2dd476-ab8f-4919-8110-8a3bf66c9cf0"
+          }
+        ],
+        "severity": "error",
+        "type": "power_pin_not_driven"
+      }
+    ]
+  },
+  "drc": {
+    "identical_records": {
+      "violations": true,
+      "unconnected_items": true,
+      "schematic_parity": true
+    },
+    "counts": {
+      "warning": 129,
+      "error": 13
+    },
+    "errors": [
+      {
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 2 [GND] of C15 on F.Cu",
+            "pos": {
+              "x": 107.851547,
+              "y": 98.755769
+            },
+            "uuid": "9075962d-febe-4c1a-ab7d-6f8b94d3635c"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 4 [GND] of U7 on F.Cu",
+            "pos": {
+              "x": 101.008268,
+              "y": 102.683572
+            },
+            "uuid": "23ac307c-764d-4806-bb29-f4965cb55097"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 2 [GND] of C14 on F.Cu",
+            "pos": {
+              "x": 101.591948,
+              "y": 104.291543
+            },
+            "uuid": "f33c422b-548e-40d6-b20d-b67c2305f336"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 71.95,
+              "y": 35.49
+            },
+            "uuid": "e186b75f-4739-4f2e-a723-906e090de7da"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 75.55,
+              "y": 39.34
+            },
+            "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 120.0,
+              "y": 28.49
+            },
+            "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 199.65,
+              "y": 39.34
+            },
+            "uuid": "233888a2-e331-456b-963a-5ee5605edf83"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 203.25,
+              "y": 35.49
+            },
+            "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 71.95,
+              "y": 35.49
+            },
+            "uuid": "e186b75f-4739-4f2e-a723-906e090de7da"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 75.55,
+              "y": 39.34
+            },
+            "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 120.0,
+              "y": 28.49
+            },
+            "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 199.65,
+              "y": 39.34
+            },
+            "uuid": "233888a2-e331-456b-963a-5ee5605edf83"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 203.25,
+              "y": 35.49
+            },
+            "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      }
+    ]
+  },
+  "netlist": {
+    "sheets": 10,
+    "components": 139,
+    "nets": 199,
+    "identical_connectivity": true
+  },
+  "native_erc_declarations": {
+    "J2": {
+      "lib_id": "fome_modules:polygonus",
+      "at": [
+        "264.16",
+        "146.05",
+        "0"
+      ],
+      "pins": [
+        {
+          "number": "40",
+          "type": "power_out",
+          "name": "5V_SENSOR_1"
+        },
+        {
+          "number": "41",
+          "type": "power_out",
+          "name": "5V_SENSOR_1"
+        },
+        {
+          "number": "90",
+          "type": "power_in",
+          "name": "12V_IGN"
+        }
+      ]
+    },
+    "A1": {
+      "lib_id": "Driver_Motor:Pololu_Breakout_DRV8825",
+      "at": [
+        "48.26",
+        "234.95",
+        "0"
+      ],
+      "pins": [
+        {
+          "number": "2",
+          "type": "output",
+          "name": "~{FLT}"
+        },
+        {
+          "number": "8",
+          "type": "power_in",
+          "name": "VMOT"
+        }
+      ]
+    },
+    "#PWR01": {
+      "lib_id": "power:GND",
+      "at": [
+        "36.83",
+        "78.74",
+        "0"
+      ],
+      "pins": [
+        {
+          "number": "1",
+          "type": "power_in",
+          "name": "GND"
+        }
+      ]
+    }
+  },
+  "alias_identical": true,
+  "board_sha256": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
+  "holes": [
+    {
+      "type": "thru_hole",
+      "uuid": "e186b75f-4739-4f2e-a723-906e090de7da",
+      "local_at": [
+        "-61.25",
+        "-7.85",
+        "270"
+      ],
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": 4.0,
+      "annulus_mm": 0.0
+    },
+    {
+      "type": "thru_hole",
+      "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788",
+      "local_at": [
+        "-57.65",
+        "-4",
+        "270"
+      ],
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": 2.2,
+      "annulus_mm": 0.0
+    },
+    {
+      "type": "thru_hole",
+      "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10",
+      "local_at": [
+        "-13.2",
+        "-14.85",
+        "270"
+      ],
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": 4.0,
+      "annulus_mm": 0.0
+    },
+    {
+      "type": "thru_hole",
+      "uuid": "233888a2-e331-456b-963a-5ee5605edf83",
+      "local_at": [
+        "66.45",
+        "-4",
+        "270"
+      ],
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": 2.2,
+      "annulus_mm": 0.0
+    },
+    {
+      "type": "thru_hole",
+      "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0",
+      "local_at": [
+        "70.05",
+        "-7.85",
+        "270"
+      ],
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": 4.0,
+      "annulus_mm": 0.0
+    }
+  ],
+  "annular_rule_mm": 0.1,
+  "can2": {
+    "nets": {
+      "/CAN2+": [
+        "C29.2",
+        "C33.2",
+        "D10.1",
+        "D11.1",
+        "J1.15",
+        "J2.73",
+        "R36.1",
+        "R37.1",
+        "U20.7",
+        "U21.7"
+      ],
+      "/CAN2-": [
+        "C30.1",
+        "C34.1",
+        "D10.2",
+        "D11.2",
+        "J1.11",
+        "J2.74",
+        "R36.2",
+        "R37.2",
+        "U20.6",
+        "U21.6"
+      ]
+    },
+    "resistors": {
+      "R36": {
+        "board_attributes": [
+          "smd",
+          "exclude_from_pos_files",
+          "exclude_from_bom",
+          "dnp"
+        ],
+        "board_value": "120",
+        "netlist": {
+          "dnp": true,
+          "footprint": "Resistor_SMD:R_1206_3216Metric",
+          "libsource": {
+            "lib": "Device",
+            "part": "R"
+          },
+          "sheet": "/WBO-CAN-TRANS/",
+          "sheet_uuid": "/2889b04e-b195-449f-8a75-049e865cc173/",
+          "uuid": "d69380f9-5487-4782-9ce9-0690df62e543",
+          "value": "120"
+        }
+      },
+      "R37": {
+        "board_attributes": [
+          "smd",
+          "exclude_from_pos_files",
+          "exclude_from_bom",
+          "dnp"
+        ],
+        "board_value": "120",
+        "netlist": {
+          "dnp": true,
+          "footprint": "Resistor_SMD:R_1206_3216Metric",
+          "libsource": {
+            "lib": "Device",
+            "part": "R"
+          },
+          "sheet": "/WBO-CAN-TRANS1/",
+          "sheet_uuid": "/10870bd0-e7b2-41e0-a73b-86c976bc9253/",
+          "uuid": "d69380f9-5487-4782-9ce9-0690df62e543",
+          "value": "120"
+        }
+      }
+    },
+    "direct_resistors": [
+      {
+        "ref": "R36",
+        "value": "120",
+        "dnp": true
+      },
+      {
+        "ref": "R37",
+        "value": "120",
+        "dnp": true
+      }
+    ],
+    "populated_carrier_direct_conductance_S": 0
+  },
+  "commands": [
+    {
+      "argv": [
+        "kicad-cli",
+        "--version"
+      ],
+      "exit_code": 0,
+      "duration_s": 0.10881975200027227,
+      "log": "version.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/experiments/erc.json",
+        "/candidate/project/Polygonus-Universal-Base.kicad_sch"
+      ],
+      "exit_code": 0,
+      "duration_s": 1.7945798110449687,
+      "log": "erc.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/experiments/drc.json",
+        "/candidate/project/Polygonus-Universal-Base.kicad_pcb"
+      ],
+      "exit_code": 0,
+      "duration_s": 5.144239980960265,
+      "log": "drc.log"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/experiments/netlist.xml",
+        "/candidate/project/Polygonus-Universal-Base.kicad_sch"
+      ],
+      "exit_code": 0,
+      "duration_s": 0.3028458229964599,
+      "log": "netlist.log"
+    }
+  ]
+}

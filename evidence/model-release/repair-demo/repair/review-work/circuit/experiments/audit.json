@@ -1,0 +1,154 @@
+{
+  "native_sha256": {
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "native_component_values": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "10k"
+  },
+  "native_identities": {
+    "C1": {
+      "lib_id": "Device:C",
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8",
+      "dnp": "no"
+    },
+    "J1": {
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2",
+      "dnp": "no"
+    },
+    "R1": {
+      "lib_id": "Device:R",
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+      "dnp": "no"
+    }
+  },
+  "native_schematic_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "fresh_and_check_xml_match_native": true,
+  "board_pad_nets_match_native": true,
+  "board_values_match_schematic": true,
+  "tracks": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "start": [
+        "100",
+        "100"
+      ],
+      "end": [
+        "104.0875",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "start": [
+        "105.9125",
+        "100"
+      ],
+      "end": [
+        "109.05",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "start": [
+        "100",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "102.54"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "start": [
+        "107.5",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "start": [
+        "110.95",
+        "100"
+      ],
+      "end": [
+        "113",
+        "100"
+      ],
+      "width_mm": 0.25
+    }
+  ],
+  "minimum_track_width_mm": 0.25,
+  "R_ohm": 10000.0,
+  "C_farad": 1e-07,
+  "tau_seconds": 0.001,
+  "analytic_zero_rise_response_v": {
+    "0.001": 0.6321205588285577,
+    "0.005": 0.9932620530009145
+  },
+  "check_trace_header": "Title: * agent-ee rc_transient deck, generated from the native xml netlist\nDate: Fri Oct 16 17:59:12  2026\nPlotname: Transient Analysis\nFlags: real\nNo. Variables: 4\nNo. Points: 1025\nVariables:\n\t0\ttime\ttime\n\t1\tv(in)\tvoltage\n\t2\tv(out)\tvoltage\n\t3\ti(vstep)\tcurrent\n",
+  "check_trace_first_point": {
+    "time": 0.0,
+    "v(in)": 0.0,
+    "v(out)": 0.0,
+    "i(vstep)": 0.0
+  },
+  "check_trace_last_point": {
+    "time": 0.005,
+    "v(in)": 1.0,
+    "v(out)": 0.993262119728839,
+    "i(vstep)": -6.737880271160936e-07
+  },
+  "check_trace_interpolated_measurements_v": {
+    "0.001": 0.6321201340170995,
+    "0.005": 0.993262119728839
+  },
+  "check_trace_vs_analytic_error_v": {
+    "0.001": -4.2481145812178767e-07,
+    "0.005": 6.67279245192276e-08
+  },
+  "independent_ngspice_measurements": "\nNote: No compatibility mode selected!\n\n\nCircuit: * independent native-value rc verification, initial steady 0 v\n\nDoing analysis at TEMP = 27.000000 and TNOM = 27.000000\n\nUsing SPARSE 1.3 as Direct Linear Solver\n\nInitial Transient Solution\n--------------------------\n\nNode                                   Voltage\n----                                   -------\nin                                           0\nout                                          0\nv1#branch                                    0\n\n\nNo. of Data Rows : 10225\n\n  Measurements for Transient Analysis\n\nout_1ms             =  6.321204e-01\nout_5ms             =  9.932621e-01\n\n\nTotal analysis time (seconds) = 0.013\n\nTotal elapsed time (seconds) = 0.014 \n\nTotal DRAM available = 128728.297 MB.\nDRAM currently available = 37442.621 MB.\nMaximum ngspice program size =   21.488 MB.\nCurrent ngspice program size =   13.090 MB.\n\nShared ngspice pages =   10.973 MB.\nText (code) pages =    6.156 MB.\nStack = 0 bytes.\nLibrary pages =    2.238 MB.\n\n",
+  "assumptions": [
+    "Zero initial capacitor voltage; ideal source; unloaded output; ideal nominal R and C only.",
+    "Check stimulus is a 1 ns linear rise at t=0; its negligible difference from a mathematical step is covered by numeric comparison.",
+    "Independent deck delays the same step by 100 us; measurements are shifted by the same 100 us.",
+    "Native board text checks pad net identities and track widths, not geometric copper connectivity; saved-board DRC is the connectivity evidence."
+  ],
+  "limitations": [
+    "No candidate edits or zone refill.",
+    "No tolerance, temperature, parasitic, loading, ADC, EMI or hardware verification.",
+    "No specified physical part models/ratings, reset/brownout logic or active devices exist to verify in this fixture."
+  ]
+}

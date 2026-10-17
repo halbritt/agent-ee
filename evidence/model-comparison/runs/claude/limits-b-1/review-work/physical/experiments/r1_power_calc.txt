@@ -1,0 +1,6 @@
+V across R1 = 48.0 V (IN=48V, OUT clamped 0V externally)
+I = V/R = 4.800 mA
+P = V^2/R = 230.4 mW
+Stated continuous limit = 100 mW
+Ratio P/Plim = 2.304  -> exceeds limit by 130%
+Max R for 0.1W at 48V = V^2/Plim = 23.0 kOhm (need >= 23.04k)

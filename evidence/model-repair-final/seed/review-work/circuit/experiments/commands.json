@@ -1,0 +1,53 @@
+[
+  {
+    "argv": [
+      "python3",
+      "--version"
+    ],
+    "exit_code": 0,
+    "console": "python-version.console.txt"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "exit_code": 0,
+    "console": "kicad-version.console.txt"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "exit_code": 0,
+    "console": "ngspice-version.console.txt"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/independent-netlist.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "console": "netlist-export.console.txt"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-n",
+      "-b",
+      "-o",
+      "/work/experiments/independent.log",
+      "/work/experiments/independent.cir"
+    ],
+    "exit_code": 0,
+    "console": "independent-spice.console.txt"
+  }
+]

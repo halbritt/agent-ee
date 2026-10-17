@@ -1,0 +1,25 @@
+{
+  "candidate_id": "8b789ee9fb178a244a3bb6b4e03ae2c3101c1cf6f3acec2384417f56dc4e9dbd",
+  "coverage": [
+    "Verified candidate file hashes against packet values (rc_filter.kicad_pcb f8264d95..., rc_filter.kicad_sch ecc56a68...).",
+    "Reviewed packet ERC/DRC/netlist/geometry artifacts (work/erc/erc.json, work/drc/drc.json, work/netlist/design.xml, work/geometry/geometry.json) and cross-checked net membership (/IN: J1.1,R1.1; /OUT: C1.1,J1.2,R1.2; GND: C1.2,J1.3) against pad nets in inputs/project/rc_filter.kicad_pcb.",
+    "Independent pad/track endpoint coincidence arithmetic for all 7 pads and 5 segments, including the mid-segment T-junction at (107.5,100) on the R1.2->C1.1 /OUT track (review-work/physical/experiments/geom_check.py, geom_check_output.txt).",
+    "Point-in-polygon analysis of the saved B.Cu GND filled_polygon (186 vertices): GND via (113,100) inside fill; J1.3 connected by 4 diagonal thermal spokes; single filled polygon implies one connected copper region, so the GND return path C1.2 -> F.Cu track -> via -> B.Cu zone -> J1.3 is intact as saved (review-work/physical/experiments/zone_check.py, zone_check_output.txt).",
+    "Board outline containment: all pads/tracks/via inside Edge.Cuts rectangle (96..116, 96..108) per inputs/project/rc_filter.kicad_pcb; zone outline inset 0.5 mm from edge.",
+    "Electrical criterion checked two ways: analytic v(1ms)=1-exp(-1)=0.63212 V with tau=RC=1.000 ms (window equivalent tau 0.9525..1.0335 ms), and ngspice-42 transient giving 0.6319 V at 1 ms (review-work/physical/experiments/rc_step.cir, rc_step_ngspice.log, geom_check_output.txt). Both inside the required 0.62..0.65 V window.",
+    "Schematic label/wire placement sanity-checked against the exported netlist in inputs/project/rc_filter.kicad_sch (IN/OUT/GND label geometry consistent with net membership)."
+  ],
+  "findings": [],
+  "limitations": [
+    "Zone fill evaluated exactly as saved in the candidate board file; no refill pass was possible (candidate read-only), matching the packet's declared limitation.",
+    "ngspice stimulus used a 1 us PWL ramp approximating the ideal step; the analytic closed form was used as the primary pass/fail evidence.",
+    "No current-carrying or thermal qualification performed: signal current is ~100 uA at 1 V through 10 kOhm and the scope forbids imposing unstated ratings; track widths were not treated as evidence of ampacity.",
+    "Via drill 0.3 mm with 0.15 mm annular ring and 0.25 mm zone min thickness were not checked against any specific fabricator capability since none is declared in the packet.",
+    "Solder mask, paste, silkscreen and assembly aspects reviewed only via the packet's KiCad DRC result (0 violations); no gerber-level plot inspection performed.",
+    "Component tolerance sensitivity not analyzed: scope specifies ideal passive components (nominal 0.632 V has margin 0.012 V to the lower bound and 0.018 V to the upper bound)."
+  ],
+  "packet_sha256": "8f8dc358b4dee7de4d2582a71ed8a0151fbf27c1374160fa33bbadc0ad1e883d",
+  "role": "physical",
+  "run_id": "269ebb6e-a47d-4eb8-8648-bf9bb27fa2ec",
+  "schema": "agent-ee.review/1"
+}

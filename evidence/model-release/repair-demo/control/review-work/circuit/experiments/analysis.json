@@ -1,0 +1,302 @@
+{
+  "native_hashes_before": {
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "/candidate/project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "/candidate/requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "native_hashes_after": {
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "/candidate/project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "/candidate/requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "native_unchanged": true,
+  "schematic_components": [
+    {
+      "lib_id": "power:GND",
+      "uuid": "05f0738f-fc7b-589d-9ab5-3365ee12aaf5",
+      "properties": {
+        "Reference": "#PWR02",
+        "Value": "GND",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "at": [
+        "71.12",
+        "60.96",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    {
+      "lib_id": "Device:C",
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8",
+      "properties": {
+        "Reference": "C1",
+        "Value": "100n",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "at": [
+        "101.6",
+        "63.5",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    {
+      "lib_id": "power:GND",
+      "uuid": "2c592a57-a83b-5444-a605-e8f5bfa36d67",
+      "properties": {
+        "Reference": "#PWR01",
+        "Value": "GND",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "at": [
+        "101.6",
+        "71.12",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    {
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2",
+      "properties": {
+        "Reference": "J1",
+        "Value": "Conn_01x03",
+        "Footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "at": [
+        "60.96",
+        "63.5",
+        "180"
+      ],
+      "dnp": "no"
+    },
+    {
+      "lib_id": "power:PWR_FLAG",
+      "uuid": "7aeaaf59-ba4c-5188-9293-39b48d5444d2",
+      "properties": {
+        "Reference": "#FLG01",
+        "Value": "PWR_FLAG",
+        "Footprint": "",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "at": [
+        "109.22",
+        "71.12",
+        "0"
+      ],
+      "dnp": "no"
+    },
+    {
+      "lib_id": "Device:R",
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+      "properties": {
+        "Reference": "R1",
+        "Value": "10k",
+        "Footprint": "Resistor_SMD:R_0805_2012Metric",
+        "Datasheet": "",
+        "Description": ""
+      },
+      "at": [
+        "86.36",
+        "63.5",
+        "0"
+      ],
+      "dnp": "no"
+    }
+  ],
+  "fresh_netlist": {
+    "components": {
+      "C1": {
+        "value": "100n",
+        "libsource": {
+          "lib": "Device",
+          "part": "C",
+          "description": "Unpolarized capacitor"
+        },
+        "footprint": "Capacitor_SMD:C_0805_2012Metric"
+      },
+      "J1": {
+        "value": "Conn_01x03",
+        "libsource": {
+          "lib": "Connector_Generic",
+          "part": "Conn_01x03",
+          "description": "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)"
+        },
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+      },
+      "R1": {
+        "value": "10k",
+        "libsource": {
+          "lib": "Device",
+          "part": "R",
+          "description": "Resistor"
+        },
+        "footprint": "Resistor_SMD:R_0805_2012Metric"
+      }
+    },
+    "nets": {
+      "/IN": [
+        "J1.1",
+        "R1.1"
+      ],
+      "/OUT": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "GND": [
+        "C1.2",
+        "J1.3"
+      ]
+    }
+  },
+  "fresh_matches_supplied": true,
+  "pcb_pads": {
+    "C1": {
+      "1": "/OUT",
+      "2": "GND"
+    },
+    "R1": {
+      "1": "/IN",
+      "2": "/OUT"
+    },
+    "J1": {
+      "1": "/IN",
+      "2": "/OUT",
+      "3": "GND"
+    }
+  },
+  "pcb_matches_netlist": true,
+  "segments": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "start_mm": [
+        "100",
+        "100"
+      ],
+      "end_mm": [
+        "104.0875",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "start_mm": [
+        "105.9125",
+        "100"
+      ],
+      "end_mm": [
+        "109.05",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "start_mm": [
+        "100",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "start_mm": [
+        "107.5",
+        "102.54"
+      ],
+      "end_mm": [
+        "107.5",
+        "100"
+      ],
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "start_mm": [
+        "110.95",
+        "100"
+      ],
+      "end_mm": [
+        "113",
+        "100"
+      ],
+      "width_mm": 0.25
+    }
+  ],
+  "segment_count": 5,
+  "minimum_width_mm": 0.25,
+  "geometry_pass": true,
+  "tau_seconds": 0.001,
+  "analytical_ideal_step_v": {
+    "0.001": 0.6321205588285577,
+    "0.005": 0.9932620530009145
+  },
+  "analytical_1ns_ramp_v": {
+    "0.001": 0.6321203748887758,
+    "0.005": 0.9932620496319399
+  },
+  "ramp_vs_ideal_difference_v": {
+    "0.001": -1.8393978185038407e-07,
+    "0.005": -3.3689746548049015e-09
+  },
+  "supplied_waveform": {
+    "variables": [
+      "time",
+      "v(in)",
+      "v(out)",
+      "i(vstep)"
+    ],
+    "points": 1025,
+    "first": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "last": [
+      0.005,
+      1.0,
+      0.993262119728839,
+      -6.737880271160936e-07
+    ],
+    "interpolated_measurements": {
+      "0.001": 0.6321201340170995,
+      "0.005": 0.993262119728839
+    },
+    "input_range": [
+      0.0,
+      1.0
+    ],
+    "maximum_error_from_ramp_after_edge": 7.626185536402375e-07
+  },
+  "assumptions": [
+    "Ideal linear passive R and C; 1 V input and no external load, as declared.",
+    "Initially discharged C, verified in original raw first row and log.",
+    "Generic symbols have no specified manufacturer ratings or parasitics; none invented.",
+    "Native ERC/DRC reruns do not refill zones or save candidate.",
+    "Binary raw decoded as host-native IEEE double real rows, validated by header, byte length, monotonic times and final time."
+  ]
+}

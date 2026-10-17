@@ -1,0 +1,137 @@
+{
+  "hashes": {
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "schematic_native_pin_positions_mm": {
+    "#PWR02.1": [
+      71.12,
+      60.96
+    ],
+    "C1.1": [
+      101.6,
+      59.69
+    ],
+    "C1.2": [
+      101.6,
+      67.31
+    ],
+    "#PWR01.1": [
+      101.6,
+      71.12
+    ],
+    "J1.1": [
+      66.04,
+      66.04
+    ],
+    "J1.2": [
+      66.04,
+      63.5
+    ],
+    "J1.3": [
+      66.04,
+      60.96
+    ],
+    "#FLG01.1": [
+      109.22,
+      71.12
+    ],
+    "R1.1": [
+      86.36,
+      59.69
+    ],
+    "R1.2": [
+      86.36,
+      67.31
+    ]
+  },
+  "schematic_native_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "fresh_export_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "pcb_native_pad_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "pcb_native_pad_positions_mm": {
+    "C1.1": [
+      109.05,
+      100.0
+    ],
+    "C1.2": [
+      110.95,
+      100.0
+    ],
+    "R1.1": [
+      104.0875,
+      100.0
+    ],
+    "R1.2": [
+      105.9125,
+      100.0
+    ],
+    "J1.1": [
+      100.0,
+      100.0
+    ],
+    "J1.2": [
+      100.0,
+      102.54
+    ],
+    "J1.3": [
+      100.0,
+      105.08
+    ]
+  },
+  "connector_contract_and_supplied_netlist_agree": true,
+  "ideal_topology_calculation": {
+    "assumptions": "Ideal R and C; unloaded output; zero source impedance. Illustrative topology calculation, not specified operating conditions or a performance requirement.",
+    "R_ohm": 10000,
+    "C_F": 1e-07,
+    "tau_seconds": 0.001,
+    "fc_Hz": 159.15494309189535,
+    "transfer": "Vout/Vin = 1/(1+s*R*C)"
+  },
+  "limits": [
+    "Single-sheet fixture only; parser explicitly checks observed rotations and endpoint-only schematic contacts.",
+    "PCB audit compares pad identities/net assignments; physical continuity uses saved native copper inspection and fresh DRC without refill.",
+    "No electrical simulation, hardware measurements, part ratings, tolerances, source/load range, or environmental qualification."
+  ]
+}

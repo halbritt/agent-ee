@@ -1,0 +1,174 @@
+{
+  "native_sha256": {
+    "kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "schematic_components": [
+    {
+      "ref": "#PWR02",
+      "value": "GND",
+      "lib_id": "power:GND",
+      "uuid": "05f0738f-fc7b-589d-9ab5-3365ee12aaf5",
+      "dnp": "no"
+    },
+    {
+      "ref": "C1",
+      "value": "100n",
+      "lib_id": "Device:C",
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8",
+      "dnp": "no"
+    },
+    {
+      "ref": "#PWR01",
+      "value": "GND",
+      "lib_id": "power:GND",
+      "uuid": "2c592a57-a83b-5444-a605-e8f5bfa36d67",
+      "dnp": "no"
+    },
+    {
+      "ref": "J1",
+      "value": "Conn_01x03",
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2",
+      "dnp": "no"
+    },
+    {
+      "ref": "#FLG01",
+      "value": "PWR_FLAG",
+      "lib_id": "power:PWR_FLAG",
+      "uuid": "7aeaaf59-ba4c-5188-9293-39b48d5444d2",
+      "dnp": "no"
+    },
+    {
+      "ref": "R1",
+      "value": "10k",
+      "lib_id": "Device:R",
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+      "dnp": "no"
+    }
+  ],
+  "values": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "10k"
+  },
+  "nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "board_pad_nets": {
+    "C1.1": "/OUT",
+    "C1.2": "GND",
+    "R1.1": "/IN",
+    "R1.2": "/OUT",
+    "J1.1": "/IN",
+    "J1.2": "/OUT",
+    "J1.3": "GND"
+  },
+  "track_segments": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "width_mm": 0.25,
+      "net": "/IN",
+      "start": [
+        "100",
+        "100"
+      ],
+      "end": [
+        "104.0875",
+        "100"
+      ]
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "start": [
+        "105.9125",
+        "100"
+      ],
+      "end": [
+        "109.05",
+        "100"
+      ]
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "start": [
+        "100",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "102.54"
+      ]
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "start": [
+        "107.5",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "100"
+      ]
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "width_mm": 0.25,
+      "net": "GND",
+      "start": [
+        "110.95",
+        "100"
+      ],
+      "end": [
+        "113",
+        "100"
+      ]
+    }
+  ],
+  "tau_s": 0.001,
+  "raw_header": "Title: * agent-ee rc_transient deck, generated from the native xml netlist\nDate: Fri Oct 16 17:38:15  2026\nPlotname: Transient Analysis\nFlags: real\nNo. Variables: 4\nNo. Points: 1025\nVariables:\n\t0\ttime\ttime\n\t1\tv(in)\tvoltage\n\t2\tv(out)\tvoltage\n\t3\ti(vstep)\tcurrent\n",
+  "raw_samples_and_calculation": {
+    "0.001": {
+      "raw_interpolated_vout_V": 0.6321201340170995,
+      "ideal_step_V": 0.6321205588285577,
+      "exact_1ns_ramp_V": 0.6321203748887758,
+      "raw_minus_ramp_V": -2.408716762714036e-07
+    },
+    "0.005": {
+      "raw_interpolated_vout_V": 0.993262119728839,
+      "ideal_step_V": 0.9932620530009145,
+      "exact_1ns_ramp_V": 0.9932620496319399,
+      "raw_minus_ramp_V": 7.00968991740325e-08
+    }
+  },
+  "assumptions": [
+    "Ideal nominal linear R and C, zero initial capacitor voltage, ideal source, no external load.",
+    "Retained raw file uses ngspice real little-endian float64 format; header and byte length validated.",
+    "Original PWL rises in 1 ns, with 0 V DC initialization. Difference from ideal step evaluated analytically."
+  ],
+  "outcome": "Native values, pin/net mapping, track widths and captured response agree with stated fixture requirements.",
+  "limitations": [
+    "No tolerance, temperature, parasitics, component ratings, loading, ADC, EMI or hardware verification.",
+    "No zone refill; relied on saved fill and supplied DRC for complete copper continuity.",
+    "No new full ERC/DRC run; original reports inspected including ignored checks.",
+    "No active power/reset/brownout circuitry in this passive fixture; no such operating criteria supplied."
+  ]
+}

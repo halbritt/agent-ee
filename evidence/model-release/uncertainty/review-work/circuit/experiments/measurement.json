@@ -1,0 +1,8 @@
+{
+  "Vout_1ms_volt": 0.6321206,
+  "analytic_Vout_volt": 0.6321205588285577,
+  "difference_volt": 4.117144236648329e-08,
+  "acceptance": "Unloaded nominal baseline only; not switched ADC verification.",
+  "initialization": "UIC and C1 IC=0. DC 1 V input is applied from the transient start; avoids an operating point that precharges C1 to 1 V.",
+  "maximum_step_second": 1e-07
+}

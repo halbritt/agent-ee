@@ -1,0 +1,66 @@
+{
+  "authored_claims": true,
+  "expected_disposition": "accepted",
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "/IN=48 V and /OUT=0 V indefinitely",
+      "evidence": [
+        {
+          "locator": "R1 Value 10k and connectivity",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "48 V, clamp and 0.1 W limit",
+          "path": "inputs/requirements.txt"
+        }
+      ],
+      "id": "challenger/one",
+      "location": "R1",
+      "mechanism": "48^2/10000=0.2304 W exceeds the declared 0.1 W continuous limit.",
+      "reasoning": "Use saved 10k value and captured exercise assumptions.",
+      "severity": "major",
+      "status": "unresolved",
+      "title": "R1 continuous power exceeds exercise limit"
+    }
+  ],
+  "reviews": [
+    {
+      "findings": [
+        {
+          "assessment": "defect",
+          "condition": "/IN=48 V and /OUT=0 V indefinitely",
+          "evidence": [
+            {
+              "locator": "R1 Value 10k and connectivity",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "48 V, clamp and 0.1 W limit",
+              "path": "inputs/requirements.txt"
+            }
+          ],
+          "id": "challenger/one",
+          "location": "R1",
+          "mechanism": "48^2/10000=0.2304 W exceeds the declared 0.1 W continuous limit.",
+          "reasoning": "Use saved 10k value and captured exercise assumptions.",
+          "severity": "major",
+          "status": "unresolved",
+          "title": "R1 continuous power exceeds exercise limit"
+        }
+      ],
+      "role": "challenger"
+    },
+    {
+      "conclusion": "I calculate 0.002304 W and dismiss the allegation.",
+      "findings": [],
+      "role": "optimist-a"
+    },
+    {
+      "conclusion": "No issue found",
+      "findings": [],
+      "role": "optimist-b"
+    }
+  ],
+  "schema": "agent-ee.adjudicator-evaluation/1"
+}

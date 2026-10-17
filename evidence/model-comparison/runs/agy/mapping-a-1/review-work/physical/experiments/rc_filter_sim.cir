@@ -1,0 +1,43 @@
+* Independent SPICE verification of candidate RC low-pass filter (J1.1=IN, J1.2=OUT, J1.3=GND)
+* Including ideal schematic topology and extracted PCB trace/via/return parasitics (1 oz Cu estimate)
+
+V1 IN_EXT GND_EXT DC 1.0 AC 1.0 PULSE(0 1 0 1n 1n 10m 20m)
+
+* Extracted F.Cu trace from J1.1 (100,100) to R1.1 (104.0875,100): 4.0875 mm, w=0.25 mm
+R_trace_in IN_EXT R1_1 8.175m
+L_trace_in R1_1 R1_1_int 3.27n
+
+* R1 = 10 kOhm (0805)
+R1 R1_1_int R1_2_int 10k
+
+* Extracted F.Cu trace from R1.2 (105.9125,100) to T-junction (107.5,100): 1.5875 mm, w=0.25 mm
+R_out_a R1_2_int NODE_T 3.175m
+L_out_a NODE_T NODE_T_L 1.27n
+
+* Extracted F.Cu trace from T-junction (107.5,100) to C1.1 (109.05,100): 1.55 mm, w=0.25 mm
+R_out_b NODE_T_L C1_1_int 3.10m
+L_out_b C1_1_int C1_1_pad 1.24n
+
+* T-tap to J1.2 (10.04 mm of 0.25 mm trace on F.Cu)
+R_tap_out NODE_T_L OUT_EXT 20.08m
+L_tap_out OUT_EXT J1_2 8.03n
+
+* Filter capacitor C1 = 100nF (0805)
+C1 C1_1_pad C1_2 100n
+
+* Return path from C1.2 -> Via (113,100) -> B.Cu GND plane -> J1.3 (100,105.08)
+R_ret C1_2 GND_EXT 10m
+L_ret GND_EXT 0 11.2n
+
+.control
+op
+print v(J1_2)
+ac dec 200 1 100Meg
+meas ac fc_hz WHEN vmag(J1_2)=0.70710678
+meas ac gain_159hz FIND vdb(J1_2) AT=159.15494
+meas ac gain_10khz FIND vdb(J1_2) AT=10k
+tran 10u 5m
+meas tran v_1ms FIND v(J1_2) AT=1m
+quit
+.endc
+.end

@@ -1,0 +1,116 @@
+{
+  "candidate_id": "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4",
+  "coverage": [
+    "Read full native PCB, relevant schematic sources, project rules, and supplied DRC/ERC/netlist/geometry records.",
+    "Reproduced configured DRC: 142 violations, 114 parity issues, zero unconnected items; all 13 error-level results are excluded.",
+    "Independently compared 659 schematic pin-to-net assignments against PCB pads: no missing pins or net-name mismatches.",
+    "Measured connector hole annuli and exported separate plated/unplated drill files.",
+    "Inspected saved ground copper and routed connections at all three starved thermals.",
+    "Checked CAN2 termination population, connectivity, and ideal resistance calculations; sampled power, heater, and ground routing geometry."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "Five unnumbered J1 holes are declared plated through holes with copper diameter equal to drill diameter: three at 4.0 mm and two at 2.2 mm.",
+      "evidence": [
+        {
+          "locator": "Lines 21686\u201321725; five unnumbered thru_hole pads",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "board.design_settings.rules.min_via_annular_width = 0.1; drc_exclusions contains these holes",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pro"
+        },
+        {
+          "locator": "violations[132:142]: padstack and annular_width, excluded=true",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "j1_mechanical_holes; radial_annulus_mm = 0 for all five",
+          "path": "review-work/physical/experiments/physical-measurements.json"
+        },
+        {
+          "locator": "Lines 1564\u20131573; T10 and T12 emit all five holes as plated",
+          "path": "review-work/physical/experiments/drills/Polygonus-Universal-Base-PTH.drl"
+        }
+      ],
+      "id": "physical-001",
+      "location": "J1 unnumbered holes at (71.95,35.49), (75.55,39.34), (120,28.49), (199.65,39.34), and (203.25,35.49) mm",
+      "mechanism": "Annulus = (pad diameter \u2212 drill diameter)/2 = 0 mm, below the configured 0.1 mm minimum. Drill export preserves their plated classification.",
+      "reasoning": "This is a reproducible native padstack/rule violation, despite its exclusion. Whether these were intended as unplated locating holes remains unresolved; the evidence does not establish connector fit failure or fabrication rejection.",
+      "severity": "minor",
+      "title": "Five plated J1 holes have zero annular copper"
+    },
+    {
+      "assessment": "defect",
+      "condition": "Saved F.Cu ground reliefs at C15.2, U7.4, and C14.2 each resolve one spoke against a configured minimum of two.",
+      "evidence": [
+        {
+          "locator": "GND zone UUID bc540b8b-3ffa-4b00-b211-3a91191a1f6d, line 69477 onward; saved filled polygons",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "Lines 263\u2013273: exclusions; board.design_settings.rules.min_resolved_spokes = 2",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pro"
+        },
+        {
+          "locator": "violations[94:97]: starved_thermal, actual 1, minimum 2, excluded=true",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "thermal_pads: pad coordinates, connected 0.25 mm traces, and nearby ground vias",
+          "path": "review-work/physical/experiments/physical-measurements.json"
+        },
+        {
+          "locator": "Three saved F.Cu detail panels",
+          "path": "review-work/physical/experiments/saved-thermal-copper.png"
+        }
+      ],
+      "id": "physical-002",
+      "location": "C15.2 (107.851547,98.755769), U7.4 (101.008268,102.683572), C14.2 (101.591948,104.291543) mm",
+      "mechanism": "The saved zone connections do not satisfy the native minimum spoke count; exclusions suppress disposition without changing copper.",
+      "reasoning": "Independent DRC reproduces all three violations. Each pad also has a routed ground connection toward a nearby via, so these findings establish a geometric rule violation, not an open ground or demonstrated thermal failure.",
+      "severity": "minor",
+      "title": "Three saved ground reliefs violate the spoke minimum"
+    },
+    {
+      "assessment": "concern",
+      "condition": "Both carrier CAN2 termination options, R36 and R37, are 120 ohms but DNP and excluded from assembly outputs.",
+      "evidence": [
+        {
+          "locator": "Lines 2665\u20132675; resistor UUID d69380f9-5487-4782-9ce9-0690df62e543; R36/R37 instances",
+          "path": "inputs/project/wbo-can-trans.kicad_sch"
+        },
+        {
+          "locator": "R36 at lines 14742\u201314810; R37 at lines 18665\u201318733; DNP attributes",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "nets /CAN2+ and /CAN2-; components R36 and R37",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "CAN2_carrier_termination_cases and stated exclusions",
+          "path": "review-work/physical/experiments/termination-calculation.json"
+        }
+      ],
+      "id": "physical-003",
+      "location": "Internal dual-wideband CAN2 network, R36/R37 and J2.73/J2.74",
+      "mechanism": "The saved carrier population contributes no resistive termination. Host-module or harness termination therefore determines the assembled bus loading.",
+      "reasoning": "The native population is clear, but host/harness termination and electrical behavior are unverified. Ideal carrier-only alternatives are 120 ohms with one resistor and 60 ohms with both. Continuity checks cannot establish appropriate loading or waveform quality, so a communication failure is not asserted.",
+      "severity": "minor",
+      "title": "Internal CAN2 termination remains unestablished"
+    }
+  ],
+  "limitations": [
+    "Saved copper only; no refill or candidate modification. Commands, versions, configuration differences, assumptions, and outcomes are recorded in review-work/physical/experiments/review-notes.md.",
+    "No hardware resistance, CAN traffic, waveform, cable, rise-time, bus-rate, or host-module population testing.",
+    "No component pinout audit, 3D fit, module standoff clearance, fabrication-tolerance qualification, or manufacturing approval.",
+    "No ampacity, simultaneous-load, fuse-coordination, thermal, automotive-transient, ignition-energy, wideband-stability, or EMC qualification; widths and via counts do not establish these.",
+    "Ignored courtyard checks and the configured zero copper-edge minimum limit mechanical and clearance coverage. Integrated FOME-MC and the separate original as-received checkout were not reviewed."
+  ],
+  "packet_sha256": "7443dc72bd7dc0c25527bd0f1550b7d74a74454d412e30e18634608d420b4731",
+  "role": "physical",
+  "run_id": "bafd7961-39b9-4a34-9b39-b7f108e82f07",
+  "schema": "agent-ee.review/1"
+}

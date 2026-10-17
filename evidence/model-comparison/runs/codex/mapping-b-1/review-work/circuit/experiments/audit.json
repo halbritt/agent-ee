@@ -1,0 +1,281 @@
+{
+  "hashes": {
+    "/candidate/requirements.txt": "b678092773d22d86483df95d009efad7ff756f2eedd1af60c3c2e2b61818ae12",
+    "/candidate/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "/candidate/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "fresh_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "board_nets": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "fresh_matches_supplied": true,
+  "board_matches_fresh": true,
+  "j1_native_sheet_pin_positions_mm": {
+    "1": [
+      66.04,
+      66.04
+    ],
+    "2": [
+      66.04,
+      63.5
+    ],
+    "3": [
+      66.04,
+      60.96
+    ]
+  },
+  "pads": [
+    {
+      "ref": "C1",
+      "pin": "1",
+      "net": "/OUT",
+      "local_at": [
+        "-0.95",
+        "0"
+      ],
+      "footprint_at": [
+        "110",
+        "100"
+      ],
+      "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+    },
+    {
+      "ref": "C1",
+      "pin": "2",
+      "net": "GND",
+      "local_at": [
+        "0.95",
+        "0"
+      ],
+      "footprint_at": [
+        "110",
+        "100"
+      ],
+      "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+    },
+    {
+      "ref": "R1",
+      "pin": "1",
+      "net": "/IN",
+      "local_at": [
+        "-0.9125",
+        "0"
+      ],
+      "footprint_at": [
+        "105",
+        "100"
+      ],
+      "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+    },
+    {
+      "ref": "R1",
+      "pin": "2",
+      "net": "/OUT",
+      "local_at": [
+        "0.9125",
+        "0"
+      ],
+      "footprint_at": [
+        "105",
+        "100"
+      ],
+      "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+    },
+    {
+      "ref": "J1",
+      "pin": "1",
+      "net": "/IN",
+      "local_at": [
+        "0",
+        "0"
+      ],
+      "footprint_at": [
+        "100",
+        "100"
+      ],
+      "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+    },
+    {
+      "ref": "J1",
+      "pin": "2",
+      "net": "/OUT",
+      "local_at": [
+        "0",
+        "2.54"
+      ],
+      "footprint_at": [
+        "100",
+        "100"
+      ],
+      "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+    },
+    {
+      "ref": "J1",
+      "pin": "3",
+      "net": "GND",
+      "local_at": [
+        "0",
+        "5.08"
+      ],
+      "footprint_at": [
+        "100",
+        "100"
+      ],
+      "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+    }
+  ],
+  "tracks": [
+    {
+      "start": [
+        "100",
+        "100"
+      ],
+      "end": [
+        "104.0875",
+        "100"
+      ],
+      "net": "/IN",
+      "layer": "F.Cu",
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+    },
+    {
+      "start": [
+        "105.9125",
+        "100"
+      ],
+      "end": [
+        "109.05",
+        "100"
+      ],
+      "net": "/OUT",
+      "layer": "F.Cu",
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+    },
+    {
+      "start": [
+        "100",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "102.54"
+      ],
+      "net": "/OUT",
+      "layer": "F.Cu",
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8"
+    },
+    {
+      "start": [
+        "107.5",
+        "102.54"
+      ],
+      "end": [
+        "107.5",
+        "100"
+      ],
+      "net": "/OUT",
+      "layer": "F.Cu",
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82"
+    },
+    {
+      "start": [
+        "110.95",
+        "100"
+      ],
+      "end": [
+        "113",
+        "100"
+      ],
+      "net": "GND",
+      "layer": "F.Cu",
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1"
+    }
+  ],
+  "native_checks": {
+    "erc": {
+      "version": "10.0.7",
+      "ignored_checks": [
+        {
+          "description": "Global label only appears once in the schematic",
+          "key": "single_global_label"
+        },
+        {
+          "description": "Four connection points are joined together",
+          "key": "four_way_junction"
+        },
+        {
+          "description": "SPICE model issue",
+          "key": "simulation_model_issue"
+        },
+        {
+          "description": "Assigned footprint doesn't match footprint filters",
+          "key": "footprint_filter"
+        }
+      ],
+      "violations": [],
+      "schematic_parity": null,
+      "unconnected_items": null
+    },
+    "drc": {
+      "version": "10.0.7",
+      "ignored_checks": [
+        {
+          "description": "Footprint has no courtyard defined",
+          "key": "missing_courtyard"
+        },
+        {
+          "description": "Track endpoint not centered on via",
+          "key": "track_not_centered_on_via"
+        },
+        {
+          "description": "Tuning profile track geometries",
+          "key": "tuning_profile_track_geometries"
+        },
+        {
+          "description": "Footprint doesn't match symbol's footprint filters",
+          "key": "footprint_filters_mismatch"
+        },
+        {
+          "description": "Footprint component type doesn't match footprint pads",
+          "key": "footprint_type_mismatch"
+        }
+      ],
+      "violations": [],
+      "schematic_parity": [],
+      "unconnected_items": []
+    }
+  },
+  "symbolic_analysis": {
+    "contract": "Drive J1.2, observe J1.1 relative to J1.3.",
+    "saved_topology": "R1=10k between J1.1 and J1.2; C1=100n between J1.2 and J1.3.",
+    "general_port_relation": "(V1-V2)/R1 + Yload(s)*V1 = 0, hence V1/V2 = 1/(1+R1*Yload(s)).",
+    "consequence": "C1 shunts the contracted input, not the output; it does not supply the output-side RC pole in V1/V2.",
+    "limitations": "Ideal nominal passive topology only. No source/load impedances, waveform, amplitude, tolerance, parasitics or component ratings assumed. No numerical operating-point or transient claim."
+  }
+}

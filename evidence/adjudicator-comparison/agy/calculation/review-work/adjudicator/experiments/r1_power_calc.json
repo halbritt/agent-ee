@@ -1,0 +1,33 @@
+{
+  "python_version": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "component": "R1",
+  "schematic_value": "10k",
+  "footprint": "Resistor_SMD:R_0805_2012Metric",
+  "net_connections": {
+    "R1.1": [
+      "/IN"
+    ],
+    "R1.2": [
+      "/OUT"
+    ]
+  },
+  "assumptions": {
+    "V_IN_V": 48.0,
+    "V_OUT_V": 0.0,
+    "R1_ohm": 10000.0,
+    "P_limit_W": 0.1,
+    "condition": "External test equipment holds /IN at 48 V DC and clamps /OUT to 0 V indefinitely."
+  },
+  "calculations": {
+    "V_R1_V": 48.0,
+    "I_R1_A": 0.0048,
+    "P_R1_W": 0.2304,
+    "P_R1_mW": 230.4,
+    "margin_W": -0.1304,
+    "exceeds_limit": true,
+    "ratio_to_limit": 2.304
+  },
+  "limitations": [
+    "Evaluated under stated DC steady-state exercise assumption only; thermal/derating and tolerance effects not added per requirements.txt instruction not to impose unstated ratings."
+  ]
+}

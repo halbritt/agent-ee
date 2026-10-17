@@ -1,0 +1,169 @@
+{
+  "command": "python3 /work/experiments/r1_dc_review.py",
+  "versions": {
+    "python": "3.12.3",
+    "kicad-cli": "10.0.7"
+  },
+  "native_sha256": {
+    "inputs/project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "inputs/project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "R1": {
+    "schematic_value": "10k",
+    "schematic_pin_nets": {
+      "1": "/IN",
+      "2": "/OUT"
+    },
+    "pcb_pad_nets": {
+      "1": "/IN",
+      "2": "/OUT"
+    },
+    "exported_pin_nets": {
+      "1": "/IN",
+      "2": "/OUT"
+    }
+  },
+  "calculation": {
+    "voltage_V": 12.0,
+    "resistance_ohm": 10000.0,
+    "current_A": 0.0012,
+    "power_W": 0.0144,
+    "stated_continuous_limit_W": 0.1,
+    "limit_fraction": 0.144,
+    "margin_W": 0.08560000000000001,
+    "formula": "I=(VIN-VOUT)/R; P=(VIN-VOUT)^2/R",
+    "passes_stated_power_criterion": true
+  },
+  "records_inspected": {
+    "erc": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/erc.json",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "exit_code": 0,
+      "outcome": "pass",
+      "limitations": [],
+      "violations": 0,
+      "ignored_checks": [
+        {
+          "description": "Global label only appears once in the schematic",
+          "key": "single_global_label"
+        },
+        {
+          "description": "Four connection points are joined together",
+          "key": "four_way_junction"
+        },
+        {
+          "description": "SPICE model issue",
+          "key": "simulation_model_issue"
+        },
+        {
+          "description": "Assigned footprint doesn't match footprint filters",
+          "key": "footprint_filter"
+        }
+      ]
+    },
+    "drc": {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ],
+      "exit_code": 0,
+      "outcome": "pass",
+      "limitations": [
+        "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+      ],
+      "violations": [],
+      "unconnected_items": [],
+      "schematic_parity": [],
+      "ignored_checks": [
+        {
+          "description": "Footprint has no courtyard defined",
+          "key": "missing_courtyard"
+        },
+        {
+          "description": "Track endpoint not centered on via",
+          "key": "track_not_centered_on_via"
+        },
+        {
+          "description": "Tuning profile track geometries",
+          "key": "tuning_profile_track_geometries"
+        },
+        {
+          "description": "Footprint doesn't match symbol's footprint filters",
+          "key": "footprint_filters_mismatch"
+        },
+        {
+          "description": "Footprint component type doesn't match footprint pads",
+          "key": "footprint_type_mismatch"
+        }
+      ]
+    },
+    "netlist": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/design.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "exit_code": 0,
+      "outcome": "info",
+      "limitations": []
+    },
+    "geometry": {
+      "argv": [
+        "/usr/bin/python3",
+        "-B",
+        "-m",
+        "agent_ee.geometry_probe",
+        "/candidate/project/rc_filter.kicad_pcb",
+        "-o",
+        "/work/geometry.json"
+      ],
+      "exit_code": 0,
+      "outcome": "info",
+      "limitations": [
+        "geometry read from the saved board file; zone fill state as saved"
+      ],
+      "console": "geometry: 3 footprint(s), 6 track item(s), 1 zone(s)\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n"
+    }
+  },
+  "assumptions": [
+    "Only the stated indefinitely held /IN=12 V, /OUT=0 V condition.",
+    "Use native nominal 10k resistance and stipulated 0.1 W continuous limit.",
+    "External equipment enforces both voltages; no board clamp is required.",
+    "No SPICE model is needed for this fixed-voltage resistor calculation."
+  ],
+  "limitations": [
+    "No physical measurements or temperature prediction.",
+    "No invented tolerance, ambient, part voltage rating or derating model.",
+    "No startup, shutdown, brownout, reset, transient or other operating-condition assessment.",
+    "No ERC/DRC rerun or saved-zone refill; inspected supplied native reports, execution records and source.",
+    "Ignored ERC/DRC checks are listed above; zero reported violations is not an electrical power test.",
+    "Geometry console contains three PROPERTY_ENUM assertions; R1 data agree with native files. Geometry output is not electrical validation."
+  ]
+}

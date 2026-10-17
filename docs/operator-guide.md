@@ -7,7 +7,7 @@ Run from the installed checkout with the prerequisites in
 
 ```sh
 agent-ee doctor
-agent-ee review --profile profiles/claude.json fixtures/rc/control.scope.json \
+agent-ee review --profile profiles/codex.json fixtures/rc/control.scope.json \
   --out build/operator-control --max-seconds 1200
 agent-ee inspect build/operator-control
 agent-ee verify build/operator-control
@@ -23,7 +23,7 @@ width, not automotive or manufacturing qualification.
 For a native integration check without inference, use a different fresh path:
 
 ```sh
-agent-ee review --profile profiles/claude.json fixtures/rc/control.scope.json \
+agent-ee review --profile profiles/codex.json fixtures/rc/control.scope.json \
   --out build/operator-native --max-seconds 120 --checks-only
 ```
 
@@ -49,14 +49,20 @@ RC limits into an unrelated circuit.
 For this workstation's real donor, the supplied command is:
 
 ```sh
-agent-ee review --profile profiles/claude.json scopes/donor.json --out build/operator-donor --max-seconds 1200
+agent-ee review --profile profiles/codex-baseline.json scopes/donor-case-alias.json \
+  --out build/operator-donor --max-seconds 3600
 ```
 
-That scope intentionally retains the as-received hierarchy problem. The
-case-alias experiment is a separately identified candidate, invoked with
-`scopes/donor-case-alias.json`. Read the [baseline explanation](../evidence/BASELINE.md)
-before treating its alias as an original project correction. Both scopes need
-path edits when used on another machine.
+This case-alias scope adds a byte-identical uppercase sheet filename only inside
+the disposable capture. The original `scopes/donor.json` intentionally retains
+the as-received hierarchy problem. Read the [original baseline](../evidence/BASELINE.md)
+and [tool-enabled follow-up](../evidence/MODEL-BASELINE.md); the alias is not a
+source-project repair. Both scopes need path edits on another machine.
+
+Codex is a [provisional starting profile](../evidence/MODEL-SELECTION.md), not an
+implicit default. Claude and Agy remain explicit options. The donor has known
+defects and unknowns, and observed automatic adjudications needed assisted
+reconciliation; inspect the actual outcome and preserve failed attempts.
 
 ## Inspect progress and final evidence
 
@@ -158,7 +164,7 @@ and explicitly link its closure too; no text matching silently closes it.
 The actual complete defect-and-repair exercise can be rerun with:
 
 ```sh
-python3 scripts/demo.py --profile profiles/claude.json --out build/operator-demonstration --seconds-per-run 1200
+python3 scripts/demo.py --profile profiles/codex.json --out build/operator-demonstration --seconds-per-run 1200
 ```
 
 It performs real control/seed reviews, at most one disposable value repair and a

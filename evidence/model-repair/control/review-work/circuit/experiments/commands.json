@@ -1,0 +1,121 @@
+{
+  "launch": [
+    "python3",
+    "/work/experiments/review.py"
+  ],
+  "environment_overrides": {
+    "KICAD_CONFIG_HOME": "/work/experiments/kicad-config",
+    "KICAD10_SYMBOL_DIR": "/candidate/stock/symbols",
+    "KICAD10_FOOTPRINT_DIR": "/candidate/stock/footprints",
+    "KICAD10_TEMPLATE_DIR": "/candidate/stock/template"
+  },
+  "commands": [
+    {
+      "name": "kicad-version",
+      "argv": [
+        "kicad-cli",
+        "version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "kicad-version.stdout",
+      "stderr": "kicad-version.stderr"
+    },
+    {
+      "name": "ngspice-version",
+      "argv": [
+        "ngspice",
+        "--version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "ngspice-version.stdout",
+      "stderr": "ngspice-version.stderr"
+    },
+    {
+      "name": "python-version",
+      "argv": [
+        "/usr/bin/python3",
+        "--version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "python-version.stdout",
+      "stderr": "python-version.stderr"
+    },
+    {
+      "name": "netlist",
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/experiments/design.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "netlist.stdout",
+      "stderr": "netlist.stderr"
+    },
+    {
+      "name": "drc",
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/experiments/drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "drc.stdout",
+      "stderr": "drc.stderr"
+    },
+    {
+      "name": "erc",
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/experiments/erc.json",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "erc.stdout",
+      "stderr": "erc.stderr"
+    },
+    {
+      "name": "independent-spice",
+      "argv": [
+        "ngspice",
+        "-n",
+        "-b",
+        "-o",
+        "/work/experiments/independent-spice.log",
+        "/work/experiments/independent.cir"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "independent-spice.stdout",
+      "stderr": "independent-spice.stderr"
+    }
+  ]
+}

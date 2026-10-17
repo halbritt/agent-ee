@@ -1,0 +1,36 @@
+{
+  "schema": "agent-ee.probe-assessment/1",
+  "observations": [
+    {
+      "run": "probes/claude",
+      "command_observed": true,
+      "structured_answer_correct": true,
+      "interpretation": "Native Bash call executed python3 and returned 4."
+    },
+    {
+      "run": "probes/codex",
+      "command_observed": false,
+      "structured_answer_correct": true,
+      "interpretation": "Not a passing tool integration probe: answer 4 arrived without a command event. Disabled tool host discovered and corrected."
+    },
+    {
+      "run": "probes/codex-tools",
+      "command_observed": false,
+      "structured_answer_correct": false,
+      "interpretation": "Bubblewrap mount failed. No inference or successful integration claimed."
+    },
+    {
+      "run": "probes/codex-tools-2",
+      "command_observed": true,
+      "structured_answer_correct": true,
+      "interpretation": "Native command_execution records python3, output 4 and exit 0 after tool-host mount correction."
+    },
+    {
+      "run": "probes/agy",
+      "command_observed": true,
+      "structured_answer_correct": false,
+      "interpretation": "Native run_command executed python3 and returned 4; initial adapter parsed wrapper instead of terminal structured_output. Corrected before engineering comparison. The first actual circuit review subsequently passed identity/schema validation."
+    }
+  ],
+  "limitation": "Probes were implementation experiments, not electrical review or model-quality evidence. Their failed attempts are retained."
+}

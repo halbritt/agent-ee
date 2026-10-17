@@ -1,0 +1,573 @@
+==================================================
+FILE: IGBT outputs.kicad_sch
+  [hierarchical_label] 'IGBT_1' @ ['171.45', '41.91', '180']
+  [hierarchical_label] 'IGBT_8' @ ['212.09', '129.54', '180']
+  [hierarchical_label] 'IGN_3' @ ['186.69', '76.2', '0']
+  [hierarchical_label] 'IGBT_4' @ ['212.09', '71.12', '180']
+  [hierarchical_label] 'IGBT_7' @ ['171.45', '129.54', '180']
+  [hierarchical_label] 'IGBT_5' @ ['171.45', '100.33', '180']
+  [hierarchical_label] 'IGN_2' @ ['227.33', '46.99', '0']
+  [hierarchical_label] 'IGN_8' @ ['227.33', '134.62', '0']
+  [hierarchical_label] 'IGN_5' @ ['186.69', '105.41', '0']
+  [hierarchical_label] 'IGN_1' @ ['186.69', '46.99', '0']
+  [hierarchical_label] 'IGN_4' @ ['227.33', '76.2', '0']
+  [hierarchical_label] 'IGN_7' @ ['186.69', '134.62', '0']
+  [hierarchical_label] 'IGBT_3' @ ['171.45', '71.12', '180']
+  [hierarchical_label] 'IGBT_6' @ ['212.09', '100.33', '180']
+  [hierarchical_label] 'IGN_6' @ ['227.33', '105.41', '0']
+  [hierarchical_label] 'IGBT_2' @ ['212.09', '41.91', '180']
+  [symbol] Q4     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['181.61', '134.62', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q6     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['222.25', '76.2', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q1     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['181.61', '46.99', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q3     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['181.61', '105.41', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q2     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['181.61', '76.2', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q7     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['222.25', '105.41', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q5     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['222.25', '46.99', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+  [symbol] Q8     val=FGD3040G2-F085       lib=Device:Q_NIGBT_GCE at=['222.25', '134.62', '0'] dnp=no fp=Package_TO_SOT_SMD:TO-252-2 LCSC=C606124 PN=None
+==================================================
+FILE: Key Power Relay.kicad_sch
+  [hierarchical_label] '12V_KEY' @ ['215.9', '81.28', '0']
+  [hierarchical_label] '12V_RAW' @ ['191.77', '81.28', '180']
+==================================================
+FILE: Lowside Adder.kicad_sch
+  [hierarchical_label] 'OUT4' @ ['163.83', '109.855', '0']
+  [hierarchical_label] 'IN2' @ ['90.17', '83.82', '180']
+  [hierarchical_label] 'IN4' @ ['90.17', '88.9', '180']
+  [hierarchical_label] 'OUT3' @ ['164.465', '95.25', '0']
+  [hierarchical_label] 'IN3' @ ['90.17', '86.36', '180']
+  [hierarchical_label] 'IN1' @ ['90.17', '81.28', '180']
+  [hierarchical_label] 'DIODE_CLAMP' @ ['161.925', '39.37', '0']
+  [hierarchical_label] 'OUT2' @ ['163.195', '67.945', '0']
+  [hierarchical_label] 'OUT1' @ ['161.925', '53.34', '0']
+  [symbol] U12    val=VNL5090              lib=Simon:VNL5090 at=['135.89', '65.405', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-223 LCSC=C2680415 PN=None
+  [symbol] U14    val=VNL5090              lib=Simon:VNL5090 at=['137.16', '92.71', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-223 LCSC=C2680415 PN=None
+  [symbol] D3     val=D_Schottky           lib=Device:D_Schottky at=['157.48', '62.865', '270'] dnp=no fp=Diode_SMD:D_SMA LCSC=C8678 PN=None
+  [symbol] D5     val=D_Schottky           lib=Device:D_Schottky at=['157.48', '104.775', '270'] dnp=no fp=Diode_SMD:D_SMA LCSC=C8678 PN=None
+  [symbol] D4     val=D_Schottky           lib=Device:D_Schottky at=['157.48', '90.17', '270'] dnp=no fp=Diode_SMD:D_SMA LCSC=C8678 PN=None
+  [symbol] RN2    val=1k                   lib=Device:R_Pack04 at=['109.22', '83.82', '270'] dnp=no fp=Resistor_SMD:R_Array_Convex_4x0603 LCSC=C20197 PN=
+  [symbol] U11    val=VNL5090              lib=Simon:VNL5090 at=['134.62', '50.8', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-223 LCSC=C2680415 PN=None
+  [symbol] D2     val=D_Schottky           lib=Device:D_Schottky at=['157.48', '48.26', '270'] dnp=no fp=Diode_SMD:D_SMA LCSC=C8678 PN=None
+  [symbol] U13    val=VNL5090              lib=Simon:VNL5090 at=['136.525', '107.315', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-223 LCSC=C2680415 PN=None
+  [symbol] RN1    val=1k                   lib=Device:R_Pack04 at=['99.06', '96.52', '0'] dnp=no fp=Resistor_SMD:R_Array_Convex_4x0603 LCSC=C20197 PN=
+==================================================
+FILE: Polygonus-Universal-Base.kicad_sch
+  [text] '16p header\nplacement markers' @ ['230.505', '197.485', '0']
+  [text] 'PIN FUNCTIONS\n\n12V_KEY - Connect to ignition switch. Powers internal ECU logic.\n12V_MR - Power input from the ECU-controlled main relay.\n12V_MR_FUSE - Internally-fused 12V power output for sensors etc\nPERM_LIVE - 12v permanent battery connection, keeps clock running while powered off.\n5V_SENSOR - 5V supply output for ECU sensors\n\nLS1-8, LS13-16 - Medium power low-side outputs, no diode (injectors, relays, etc)\nLS9-12, A-D - High power low-side outputs with freewheel diode (VVT, Idle, PWM solenoids, etc)\nHS1-4 - Medium power high side outputs' @ ['300.99', '241.3', '0']
+  [text] '5p header\nplacement markers' @ ['261.62', '197.485', '0']
+  [label] 'EXT_SPI_CS' @ ['317.5', '168.91', '180']
+  [label] 'VR+D' @ ['41.91', '80.01', '270']
+  [label] 'STEPB1' @ ['60.96', '240.03', '0']
+  [label] 'AT3' @ ['161.29', '78.74', '270']
+  [label] 'CAN2+' @ ['72.39', '78.74', '270']
+  [label] 'CAN_RX' @ ['96.52', '267.97', '180']
+  [label] 'CAN_TX' @ ['96.52', '261.62', '180']
+  [label] 'ETB1_-' @ ['162.56', '159.385', '0']
+  [label] 'AT2' @ ['173.99', '78.74', '270']
+  [label] 'LSU_Un' @ ['129.54', '236.22', '0']
+  [label] 'LS14' @ ['224.79', '181.61', '180']
+  [label] 'IGBT3' @ ['251.46', '78.74', '270']
+  [label] 'Perm_Live' @ ['313.69', '139.7', '180']
+  [label] 'LSU_Ip' @ ['129.54', '228.6', '0']
+  [label] 'CAN+' @ ['293.37', '181.61', '180']
+  [label] 'IGBT4' @ ['254', '78.74', '270']
+  [label] 'LS2' @ ['130.81', '78.74', '270']
+  [label] 'AV10' @ ['262.89', '161.29', '180']
+  [label] '+5V' @ ['378.46', '170.18', '180']
+  [label] 'IGN9' @ ['224.79', '146.05', '180']
+  [label] 'AV2' @ ['262.89', '181.61', '180']
+  [label] 'HeaterNeg' @ ['129.54', '223.52', '0']
+  [label] 'ETB2_-' @ ['162.56', '132.715', '0']
+  [label] 'LSU_Rtrim2' @ ['193.04', '233.68', '0']
+  [label] 'IGN2' @ ['259.08', '78.74', '270']
+  [label] 'HS3' @ ['313.69', '114.3', '180']
+  [label] 'Scope' @ ['378.46', '175.26', '180']
+  [label] 'LS7' @ ['224.79', '133.35', '180']
+  [label] 'STEPB1' @ ['158.75', '78.74', '270']
+  [label] 'HS1' @ ['105.41', '78.74', '270']
+  [label] 'LS16' @ ['224.79', '186.69', '180']
+  [label] 'STEPA2' @ ['60.96', '234.95', '0']
+  [label] 'LSU_Un2' @ ['219.71', '78.74', '270']
+  [label] 'AV5' @ ['204.47', '78.74', '270']
+  [label] 'IGN12' @ ['57.785', '199.39', '180']
+  [label] 'ETB2_-' @ ['240.03', '78.74', '270']
+  [label] 'HS2' @ ['102.87', '78.74', '270']
+  [label] 'USB_GND' @ ['341.63', '120.65', '0']
+  [label] 'USB_GND' @ ['357.505', '143.51', '180']
+  [label] 'CAN_TX2' @ ['160.02', '261.5873', '180']
+  [label] 'IGBT6' @ ['125.73', '78.74', '270']
+  [label] 'LS3' @ ['256.54', '78.74', '270']
+  [label] 'LS11' @ ['58.42', '175.26', '180']
+  [label] 'VBUS' @ ['346.71', '146.05', '0']
+  [label] 'LS12' @ ['370.84', '196.85', '180']
+  [label] 'DIGITAL_4' @ ['90.17', '78.74', '270']
+  [label] 'ExtraLSB' @ ['78.74', '195.58', '0']
+  [label] 'LSU_Ip' @ ['294.64', '78.74', '270']
+  [label] 'IGBT2' @ ['269.24', '246.38', '0']
+  [label] 'LSU_Rtrim' @ ['129.54', '233.68', '0']
+  [label] 'IGN7' @ ['133.35', '78.74', '270']
+  [label] 'IGBT2' @ ['248.92', '78.74', '270']
+  [label] 'ETB2_DIR' @ ['137.16', '130.81', '180']
+  [label] 'CRANK +' @ ['186.69', '78.74', '270']
+  [label] 'USB_SHIELD' @ ['341.63', '117.475', '0']
+  [label] 'DIGITAL_1' @ ['77.47', '78.74', '270']
+  [label] 'USB+' @ ['371.475', '103.505', '180']
+  [label] 'LS15' @ ['224.79', '184.15', '180']
+  [label] 'AV6' @ ['262.89', '171.45', '180']
+  [label] 'VR2+' @ ['378.46', '172.72', '180']
+  [label] 'AV4' @ ['201.93', '78.74', '270']
+  [label] 'ETB1_PWM' @ ['137.16', '159.385', '180']
+  [label] '5V_SENSOR_1' @ ['82.55', '78.74', '270']
+  [label] 'CRANK +' @ ['83.185', '140.97', '0']
+  [label] 'CAN-' @ ['293.37', '184.15', '180']
+  [label] 'ETB1_+' @ ['232.41', '78.74', '270']
+  [label] 'VR+D' @ ['378.46', '182.88', '180']
+  [label] 'ExtraLSB' @ ['113.03', '78.74', '270']
+  [label] '5V_SENSOR_1' @ ['85.09', '78.74', '270']
+  [label] 'LS9' @ ['224.79', '168.91', '180']
+  [label] 'LS7' @ ['279.4', '78.74', '270']
+  [label] 'RC2' @ ['161.29', '195.58', '180']
+  [label] 'ETB2_+' @ ['162.56', '124.46', '0']
+  [label] 'CAN2-' @ ['128.27', '267.97', '0']
+  [label] '12V_MR' @ ['110.49', '199.39', '180']
+  [label] 'HeaterNeg2' @ ['193.04', '223.52', '0']
+  [label] 'LS15' @ ['287.02', '78.74', '270']
+  [label] '12V_MR_FUSE' @ ['222.25', '78.74', '270']
+  [label] 'IGN8' @ ['224.79', '148.59', '180']
+  [label] '12V_MR_FUSE' @ ['137.16', '124.46', '180']
+  [label] 'DIGITAL_6' @ ['95.25', '78.74', '270']
+  [label] 'LS10' @ ['38.1', '240.03', '180']
+  [label] 'USB-' @ ['371.475', '106.045', '180']
+  [label] 'LS6' @ ['224.79', '130.81', '180']
+  [label] 'AV11' @ ['262.89', '158.75', '180']
+  [label] '5V_SENSOR_2' @ ['54.61', '78.74', '270']
+  [label] 'LS1' @ ['140.97', '78.74', '270']
+  [label] 'IGBT7' @ ['269.24', '259.08', '0']
+  [label] 'ETB1_DIS' @ ['293.37', '158.75', '180']
+  [label] '12V_KEY' @ ['293.37', '173.99', '180']
+  [label] 'AT1' @ ['262.89', '156.21', '180']
+  [label] 'ExtraLSC' @ ['110.49', '78.74', '270']
+  [label] 'AT3' @ ['262.89', '151.13', '180']
+  [label] 'LS13' @ ['224.79', '179.07', '180']
+  [label] 'LSU_12v' @ ['99.06', '238.76', '180']
+  [label] 'LS4' @ ['224.79', '125.73', '180']
+  [label] 'CAN+' @ ['156.21', '78.74', '270']
+  [label] 'HS4' @ ['100.33', '78.74', '270']
+  [label] 'CAN2+' @ ['313.69', '129.54', '180']
+  [label] 'ETB1_DIR' @ ['137.16', '157.48', '180']
+  [label] 'LS11' @ ['224.79', '173.99', '180']
+  [label] 'VBUS' @ ['371.475', '98.425', '180']
+  [label] 'HS2' @ ['313.69', '111.76', '180']
+  [label] 'IGN5' @ ['146.05', '78.74', '270']
+  [label] '12V_PROT' @ ['262.89', '113.03', '180']
+  [label] 'IGN2' @ ['224.79', '163.83', '180']
+  [label] 'ETB2_DIS' @ ['137.16', '128.905', '180']
+  [label] 'LS10' @ ['224.79', '171.45', '180']
+  [label] 'AV11' @ ['184.15', '78.74', '270']
+  [label] '+5V' @ ['38.1', '227.33', '180']
+  [label] 'KNOCK_2' @ ['262.89', '189.23', '180']
+  [label] 'LSU_Un2' @ ['193.04', '236.22', '0']
+  [label] 'IGBT3' @ ['269.24', '248.92', '0']
+  [label] 'CAN2-' @ ['191.77', '267.9373', '0']
+  [label] 'IGN3' @ ['231.14', '248.92', '180']
+  [label] 'CAN_RX2' @ ['162.56', '223.52', '180']
+  [label] 'ETB1_DIS' @ ['137.16', '155.575', '180']
+  [label] 'VR-D' @ ['44.45', '80.01', '270']
+  [label] 'CAN_RX2' @ ['160.02', '267.9373', '180']
+  [label] 'LS16' @ ['289.56', '78.74', '270']
+  [label] 'IGN1' @ ['269.24', '78.74', '270']
+  [label] 'IGBT6' @ ['269.24', '256.54', '0']
+  [label] 'VR1+' @ ['293.37', '189.23', '180']
+  [label] 'STEPA2' @ ['138.43', '78.74', '270']
+  [label] 'CAN-' @ ['153.67', '78.74', '270']
+  [label] 'IGN2' @ ['231.14', '246.38', '180']
+  [label] '+3V3' @ ['317.5', '166.37', '180']
+  [label] 'AV6' @ ['207.01', '78.74', '270']
+  [label] '5V_SENSOR_1' @ ['74.93', '78.74', '270']
+  [label] '12V_PROT' @ ['262.89', '115.57', '180']
+  [label] 'IGN8' @ ['231.14', '261.62', '180']
+  [label] 'LS9' @ ['38.1', '237.49', '180']
+  [label] '12V_MR_FUSE' @ ['137.16', '151.13', '180']
+  [label] 'LS10ADD' @ ['78.105', '173.355', '0']
+  [label] 'LSU_Vm2' @ ['193.04', '231.14', '0']
+  [label] 'DIGITAL_3' @ ['262.89', '140.97', '180']
+  [label] 'AV3' @ ['217.17', '78.74', '270']
+  [label] 'LS10ADD' @ ['320.04', '78.74', '270']
+  [label] 'AV10' @ ['181.61', '78.74', '270']
+  [label] 'HS3' @ ['97.79', '78.74', '270']
+  [label] 'IGN5' @ ['224.79', '156.21', '180']
+  [label] 'USB_GND' @ ['293.37', '104.14', '180']
+  [label] 'EXT_SPI_MISO' @ ['317.5', '173.99', '180']
+  [label] 'KNOCK_1' @ ['67.31', '78.74', '270']
+  [label] 'LSU_Un' @ ['264.16', '78.74', '270']
+  [label] 'AV9' @ ['196.85', '78.74', '270']
+  [label] 'IGN4' @ ['224.79', '158.75', '180']
+  [label] 'USB+' @ ['346.71', '138.43', '0']
+  [label] 'ETB2_PWM' @ ['137.16', '132.715', '180']
+  [label] '12V_MR_FUSE' @ ['224.79', '115.57', '180']
+  [label] 'LS12' @ ['58.42', '177.165', '180']
+  [label] 'IGN7' @ ['224.79', '151.13', '180']
+  [label] 'LS1' @ ['224.79', '118.11', '180']
+  [label] 'LS12' @ ['224.79', '176.53', '180']
+  [label] '12V_MR_FUSE' @ ['224.79', '189.23', '180']
+  [label] 'IGN6' @ ['231.14', '256.54', '180']
+  [label] 'AV1' @ ['262.89', '184.15', '180']
+  [label] 'CAN_RX' @ ['99.06', '223.52', '180']
+  [label] 'LSU_12v' @ ['162.56', '238.76', '180']
+  [label] 'IGN11' @ ['224.79', '140.97', '180']
+  [label] 'IGN4' @ ['231.14', '251.46', '180']
+  [label] 'AT1' @ ['171.45', '78.74', '270']
+  [label] 'RC1' @ ['161.29', '189.23', '180']
+  [label] '5V_SENSOR_2' @ ['262.89', '118.11', '180']
+  [label] 'USB+' @ ['288.29', '115.57', '180']
+  [label] 'USB_GND' @ ['357.505', '135.89', '180']
+  [label] 'ETB1_+' @ ['162.56', '151.13', '0']
+  [label] '5V_SENSOR_2' @ ['262.89', '120.65', '180']
+  [label] 'LSU_Rtrim2' @ ['209.55', '78.74', '270']
+  [label] 'IGN1' @ ['231.14', '243.84', '180']
+  [label] 'LS8' @ ['224.79', '135.89', '180']
+  [label] 'STEPB2' @ ['60.96', '242.57', '0']
+  [label] 'LS9ADD' @ ['80.01', '171.45', '0']
+  [label] 'ETB1_PWM' @ ['293.37', '156.21', '180']
+  [label] 'VR+D' @ ['370.84', '201.93', '180']
+  [label] '5V_SENSOR_2' @ ['52.07', '78.74', '270']
+  [label] 'DIGITAL_1' @ ['262.89', '146.05', '180']
+  [label] 'RC1' @ ['313.69', '134.62', '180']
+  [label] 'IGN8' @ ['143.51', '78.74', '270']
+  [label] 'DIGITAL_2' @ ['262.89', '143.51', '180']
+  [label] 'CAN_TX' @ ['99.06', '226.06', '180']
+  [label] 'IGBT7' @ ['123.19', '78.74', '270']
+  [label] 'USB-' @ ['346.71', '140.97', '0']
+  [label] 'EXT_SPI_SCK' @ ['317.5', '171.45', '180']
+  [label] 'ETB2_DIR' @ ['293.37', '168.91', '180']
+  [label] 'IGN1' @ ['224.79', '166.37', '180']
+  [label] 'LSU_Vm' @ ['129.54', '231.14', '0']
+  [label] 'AV5' @ ['262.89', '173.99', '180']
+  [label] 'IGN3' @ ['224.79', '161.29', '180']
+  [label] 'CAN2+' @ ['128.27', '261.62', '0']
+  [label] 'HeaterNeg2' @ ['229.87', '78.74', '270']
+  [label] '5V_SENSOR_2' @ ['64.77', '78.74', '270']
+  [label] 'IGN3' @ ['261.62', '78.74', '270']
+  [label] 'Perm_Live' @ ['304.8', '78.74', '270']
+  [label] 'CRANK -' @ ['176.53', '78.74', '270']
+  [label] 'LS11ADD' @ ['78.105', '175.26', '0']
+  [label] 'IGBT8' @ ['269.24', '261.62', '0']
+  [label] 'IGBT5' @ ['269.24', '254', '0']
+  [label] 'STEPB2' @ ['168.91', '78.74', '270']
+  [label] 'LSU_Vm' @ ['284.48', '78.74', '270']
+  [label] 'AV8' @ ['194.31', '78.74', '270']
+  [label] 'LSU_Rtrim' @ ['274.32', '78.74', '270']
+  [label] 'DIGITAL_6' @ ['262.89', '133.35', '180']
+  [label] '12V_KEY' @ ['151.13', '78.74', '270']
+  [label] 'LS12ADD' @ ['80.01', '177.8', '0']
+  [label] '12V_MR' @ ['80.01', '180.34', '0']
+  [label] 'AV8' @ ['262.89', '166.37', '180']
+  [label] 'ETB1_-' @ ['234.95', '78.74', '270']
+  [label] 'DIGITAL_5' @ ['92.71', '78.74', '270']
+  [label] 'IGBT1' @ ['246.38', '78.74', '270']
+  [label] 'IGN6' @ ['224.79', '153.67', '180']
+  [label] 'ETB1_DIR' @ ['293.37', '161.29', '180']
+  [label] '12V_MR_FUSE' @ ['224.79', '78.74', '270']
+  [label] 'CRANK -' @ ['83.185', '146.685', '0']
+  [label] 'LS6' @ ['276.86', '78.74', '270']
+  [label] 'LS9ADD' @ ['317.5', '78.74', '270']
+  [label] 'LSU_Vm2' @ ['199.39', '78.74', '270']
+  [label] 'VR2+' @ ['370.84', '207.01', '180']
+  [label] 'LS9' @ ['58.42', '171.45', '180']
+  [label] 'CAN2-' @ ['313.69', '132.08', '180']
+  [label] 'LS3' @ ['224.79', '123.19', '180']
+  [label] 'LSU_Ip2' @ ['193.04', '228.6', '0']
+  [label] 'IGBT4' @ ['269.24', '251.46', '0']
+  [label] 'USB-' @ ['288.29', '118.11', '180']
+  [label] 'LS13' @ ['297.18', '78.74', '270']
+  [label] 'ExtraLSD' @ ['77.47', '199.39', '0']
+  [label] 'CAN_TX2' @ ['162.56', '226.06', '180']
+  [label] 'LS5' @ ['224.79', '128.27', '180']
+  [label] 'VR-D' @ ['370.84', '199.39', '180']
+  [label] 'HS4' @ ['313.69', '116.84', '180']
+  [label] '+5V' @ ['38.1', '229.87', '180']
+  [label] '12V_MR_FUSE' @ ['121.92', '191.77', '0']
+  [label] '+5V' @ ['370.84', '209.55', '180']
+  [label] 'LS12ADD' @ ['325.12', '78.74', '270']
+  [label] 'AV3' @ ['262.89', '179.07', '180']
+  [label] 'LS10' @ ['58.42', '173.355', '180']
+  [label] 'LSU_Ip2' @ ['189.23', '78.74', '270']
+  [label] 'EXT_SPI_MOSI' @ ['317.5', '176.53', '180']
+  [label] 'KNOCK_1' @ ['262.89', '186.69', '180']
+  [label] 'ETB2_DIS' @ ['293.37', '166.37', '180']
+  [label] 'Scope' @ ['313.69', '142.24', '180']
+  [label] '5V_SENSOR_1' @ ['262.89', '130.81', '180']
+  [label] 'IGBT1' @ ['269.24', '243.84', '0']
+  [label] 'CAN2+' @ ['191.77', '261.5873', '0']
+  [label] 'ExtraLSA' @ ['115.57', '78.74', '270']
+  [label] 'STEPA1' @ ['148.59', '78.74', '270']
+  [label] 'AV7' @ ['262.89', '168.91', '180']
+  [label] 'LS14' @ ['299.72', '78.74', '270']
+  [label] 'KNOCK_2' @ ['69.85', '78.74', '270']
+  [label] 'ExtraLSC' @ ['77.47', '197.485', '0']
+  [label] 'IGN10' @ ['57.785', '195.58', '180']
+  [label] 'IGN6' @ ['135.89', '78.74', '270']
+  [label] 'HS1' @ ['313.69', '109.22', '180']
+  [label] 'IGN7' @ ['231.14', '259.08', '180']
+  [label] 'ETB2_+' @ ['237.49', '78.74', '270']
+  [label] 'AV7' @ ['191.77', '78.74', '270']
+  [label] 'LS2' @ ['224.79', '120.65', '180']
+  [label] 'Scope' @ ['370.84', '204.47', '180']
+  [label] 'IGN9' @ ['57.785', '193.675', '180']
+  [label] 'LS11ADD' @ ['322.58', '78.74', '270']
+  [label] 'LSU_12v' @ ['127', '199.39', '0']
+  [label] 'IGN10' @ ['224.79', '143.51', '180']
+  [label] 'IGBT8' @ ['120.65', '78.74', '270']
+  [label] '12V_MR' @ ['78.74', '201.93', '0']
+  [label] 'IGN11' @ ['57.785', '197.485', '180']
+  [label] 'VBUS' @ ['288.29', '120.65', '180']
+  [label] 'DIGITAL_4' @ ['262.89', '138.43', '180']
+  [label] 'AV9' @ ['262.89', '163.83', '180']
+  [label] 'ExtraLSA' @ ['78.74', '193.04', '0']
+  [label] 'IGBT5' @ ['128.27', '78.74', '270']
+  [label] '+5V' @ ['22.86', '233.68', '180']
+  [label] 'IGN12' @ ['224.79', '138.43', '180']
+  [label] '12V_MR_FUSE' @ ['186.69', '191.77', '180']
+  [label] 'ETB2_PWM' @ ['293.37', '163.83', '180']
+  [label] '+5V' @ ['22.86', '242.57', '180']
+  [label] 'ExtraLSD' @ ['107.95', '78.74', '270']
+  [label] 'VR-D' @ ['378.46', '180.34', '180']
+  [label] 'LS8' @ ['266.7', '78.74', '270']
+  [label] 'DIGITAL_2' @ ['80.01', '78.74', '270']
+  [label] 'AT4' @ ['163.83', '78.74', '270']
+  [label] 'HeaterNeg' @ ['314.96', '78.74', '270']
+  [label] 'IGN5' @ ['231.14', '254', '180']
+  [label] 'VR2+' @ ['293.37', '186.69', '180']
+  [label] '12V_MR_FUSE' @ ['48.26', '219.71', '180']
+  [label] 'VR1+' @ ['53.975', '142.24', '180']
+  [label] 'AT4' @ ['262.89', '148.59', '180']
+  [label] '5V_SENSOR_1' @ ['262.89', '128.27', '180']
+  [label] 'AT2' @ ['262.89', '153.67', '180']
+  [label] 'IGN4' @ ['271.78', '78.74', '270']
+  [label] '12V_MR' @ ['307.34', '78.74', '270']
+  [label] 'LS12' @ ['378.46', '177.8', '180']
+  [label] 'LS5' @ ['292.1', '78.74', '270']
+  [label] 'DIGITAL_3' @ ['87.63', '78.74', '270']
+  [label] 'LS4' @ ['281.94', '78.74', '270']
+  [label] 'DIGITAL_5' @ ['262.89', '135.89', '180']
+  [label] 'STEPA1' @ ['60.96', '232.41', '0']
+  [label] 'AV4' @ ['262.89', '176.53', '180']
+  [label] '12V_MR' @ ['309.88', '78.74', '270']
+  [label] 'AV1' @ ['212.09', '78.74', '270']
+  [label] 'AV2' @ ['214.63', '78.74', '270']
+  [label] 'CAN2-' @ ['62.23', '78.74', '270']
+  [label] 'RC2' @ ['313.69', '137.16', '180']
+  [label] 'USB_SHIELD' @ ['293.37', '107.315', '180']
+  [symbol] P6     val=Pad                  lib=hellen-one-common:Pad at=['91.44', '180.34', '0'] dnp=no fp=Simon:PAD-TH LCSC=None PN=None
+  [symbol] J5     val=Conn_01x07           lib=Connector_Generic:Conn_01x07 at=['383.54', '175.26', '0'] dnp=yes fp=Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical LCSC=None PN=None
+  [symbol] P3     val=Pad                  lib=hellen-one-common:Pad at=['92.71', '195.58', '0'] dnp=no fp=Simon:PAD-TH LCSC=None PN=None
+  [symbol] R3     val=~                    lib=hellen-one-common:Res at=['171.45', '189.23', '0'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric LCSC= PN=None
+  [symbol] P2     val=Pad                  lib=hellen-one-common:Pad at=['99.06', '193.04', '0'] dnp=no fp=Simon:PAD-TH LCSC=None PN=None
+  [symbol] P4     val=Pad                  lib=hellen-one-common:Pad at=['92.71', '171.45', '0'] dnp=no fp=Simon:PAD-TH LCSC=None PN=None
+  [symbol] C1     val=1u                   lib=hellen-one-common:Res at=['171.45', '195.58', '90'] dnp=yes fp=Capacitor_SMD:C_0805_2012Metric LCSC=C28323 PN=None
+  [symbol] J8     val=P1x16                lib=Mechanical:Fiducial at=['220.98', '213.36', '0'] dnp=no fp=header_placement:header_loc LCSC=C350305 PN=None
+  [symbol] J11    val=P1x16                lib=Mechanical:Fiducial at=['233.68', '213.36', '0'] dnp=no fp=header_placement:header_loc LCSC=C350305 PN=None
+  [symbol] J10    val=P1x16                lib=Mechanical:Fiducial at=['233.68', '208.28', '0'] dnp=no fp=header_placement:header_loc LCSC=C350305 PN=None
+  [symbol] J9     val=P1x16                lib=Mechanical:Fiducial at=['233.68', '203.2', '0'] dnp=no fp=header_placement:header_loc LCSC=C350305 PN=None
+  [symbol] J1     val=Molex_112_643330100  lib=Simon:Molex_112_643330100 at=['34.29', '63.5', '90'] dnp=no fp=Simon:Molex_112_643330100 LCSC=C293656 PN=None
+  [symbol] U2     val=f042_wideband_module lib=fome_modules:f042_wideband_module at=['177.8', '232.41', '0'] dnp=no fp=fome_modules:f042_wideband_module LCSC=None PN=None
+  [symbol] J12    val=P1x5                 lib=Mechanical:Fiducial at=['252.095', '203.2', '0'] dnp=no fp=header_placement:header_loc LCSC=C50950 PN=None
+  [symbol] J13    val=P1x5                 lib=Mechanical:Fiducial at=['264.795', '203.2', '0'] dnp=no fp=header_placement:header_loc LCSC=C50950 PN=None
+  [symbol] J6     val=P1x16                lib=Mechanical:Fiducial at=['220.98', '203.2', '0'] dnp=no fp=header_placement:header_loc LCSC=C350305 PN=None
+  [symbol] U1     val=f042_wideband_module lib=fome_modules:f042_wideband_module at=['114.3', '232.41', '0'] dnp=no fp=fome_modules:f042_wideband_module LCSC=None PN=None
+  [symbol] J2     val=Polygonus ECU Module lib=fome_modules:polygonus at=['264.16', '146.05', '0'] dnp=no fp=fome_modules:polygonus LCSC=None PN=None
+  [symbol] C2     val=56u                  lib=Device:CP at=['186.69', '195.58', '0'] dnp=no fp=Capacitor_THT:CP_Radial_D8.0mm_P3.50mm LCSC=N/A PN=EEH-AZF1H560B
+  [symbol] F1     val=Fuse                 lib=Device:Fuse at=['114.3', '199.39', '90'] dnp=no fp=Fuse:Fuseholder_Blade_Mini_Keystone_3568 LCSC=C5249699 PN=None
+  [symbol] A1     val=Pololu_Breakout_DRV8825 lib=Driver_Motor:Pololu_Breakout_DRV8825 at=['48.26', '234.95', '0'] dnp=no fp=Module:Pololu_Breakout-16_15.2x20.3mm LCSC=N/A PN=None
+  [symbol] J3     val=Conn_01x05_Male      lib=Connector:Conn_01x05_Male at=['341.63', '140.97', '0'] dnp=yes fp=Connector_PinHeader_2.00mm:PinHeader_1x05_P2.00mm_Vertical LCSC=None PN=None
+  [symbol] P5     val=Pad                  lib=hellen-one-common:Pad at=['95.25', '177.8', '0'] dnp=no fp=Simon:PAD-TH LCSC=None PN=None
+  [symbol] R2     val=1k                   lib=hellen-one-common:Res at=['33.02', '233.68', '0'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17513 PN=None
+  [symbol] P1     val=Pad                  lib=hellen-one-common:Pad at=['88.9', '203.2', '0'] dnp=no fp=Simon:PAD-TH LCSC=None PN=None
+  [symbol] R4     val=~                    lib=hellen-one-common:Res at=['171.45', '195.58', '0'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric LCSC= PN=None
+  [symbol] R1     val=1k                   lib=hellen-one-common:Res at=['22.86', '242.57', '0'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17513 PN=None
+  [symbol] J7     val=P1x16                lib=Mechanical:Fiducial at=['220.98', '208.28', '0'] dnp=no fp=header_placement:header_loc LCSC=C350305 PN=None
+  [symbol] J4     val=USB_B                lib=hellen-one-common:USB_B at=['356.87', '103.505', '0'] dnp=no fp=Simon:BMM-USB LCSC=C46392 PN=None
+  [sheet] 'WBO-CAN-TRANS1' -> 'wbo-can-trans.kicad_sch' @ ['160.02', '257.7773'] pins=['CAN_TX(input)', 'CAN_RX(input)', 'CAN2+(input)', 'CAN2-(input)']
+  [sheet] 'WBO-CAN-TRANS' -> 'wbo-can-trans.kicad_sch' @ ['96.52', '257.81'] pins=['CAN_TX(input)', 'CAN_RX(input)', 'CAN2+(input)', 'CAN2-(input)']
+  [sheet] 'Lowside Adder1' -> 'Lowside Adder.kicad_sch' @ ['57.785', '191.77'] pins=['OUT1(output)', 'OUT2(output)', 'IN1(input)', 'IN2(input)', 'OUT3(output)', 'OUT4(output)', 'IN3(input)', 'IN4(input)', 'DIODE_CLAMP(bidirectional)']
+  [sheet] 'IGBT outputs' -> 'IGBT outputs.kicad_sch' @ ['231.14', '241.3'] pins=['IGN_3(input)', 'IGBT_1(input)', 'IGBT_3(input)', 'IGN_1(input)', 'IGBT_4(input)', 'IGN_4(input)', 'IGBT_2(input)', 'IGBT_6(input)', 'IGN_6(input)', 'IGBT_5(input)', 'IGN_5(input)', 'IGBT_8(input)', 'IGBT_7(input)', 'IGN_2(input)', 'IGN_8(input)', 'IGN_7(input)']
+  [sheet] 'VR Conditioner' -> 'VR Conditioner.kicad_sch' @ ['53.975', '136.525'] pins=['VR1+(input)', 'VR1-(input)', 'VR1_OUT(output)']
+  [sheet] 'etb-1' -> 'etb-9201.kicad_sch' @ ['137.16', '147.955'] pins=['12V_SUPPLY(input)', 'OUT+(output)', 'OUT-(output)', 'DIS(input)', 'DIR(input)', 'PWM(input)']
+  [sheet] 'Lowside Adder' -> 'Lowside Adder.kicad_sch' @ ['58.42', '169.545'] pins=['OUT1(output)', 'OUT2(output)', 'IN1(input)', 'IN2(input)', 'OUT3(output)', 'OUT4(output)', 'IN3(input)', 'IN4(input)', 'DIODE_CLAMP(bidirectional)']
+  [sheet] 'etb-2' -> 'etb-9201.kicad_sch' @ ['137.16', '121.285'] pins=['12V_SUPPLY(input)', 'OUT+(output)', 'OUT-(output)', 'DIS(input)', 'DIR(input)', 'PWM(input)']
+  [sheet] 'VR Module' -> 'vr_module_poly.kicad_sch' @ ['370.84', '191.77'] pins=['thresh_input(input)', 'VR-(input)', 'VR+(input)', 'analog_out(input)', 'output(output)', '+5V(input)']
+==================================================
+FILE: VR Conditioner.kicad_sch
+  [text] 'Optional setting in Mode C for no adaptive threshold timeout - See MAX9924 Datasheet\nComponents as specified put chip in mode A1.  Flip jumper and install R1219+R2020 for mode C.' @ ['101.6', '121.92', '0']
+  [text] 'Yes, we know that the polarity is flipped going in to the VR interface chips.\nWhile originally on accident, it’s no big deal since they invert anyway:\nWhen VR+ transitions to a higher voltage than VR-, VR_OUT will output a rising edge.\n\nSee issue https://github.com/mck1117/proteus/issues/57 for more detail' @ ['96.52', '69.85', '0']
+  [hierarchical_label] 'VR1_OUT' @ ['170.18', '85.09', '0']
+  [hierarchical_label] 'VR1-' @ ['96.52', '90.17', '180']
+  [hierarchical_label] 'VR1+' @ ['96.52', '80.01', '180']
+  [symbol] R25    val=4.7k                 lib=Device:R at=['103.505', '80.01', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] C23    val=1n                   lib=Device:C at=['118.11', '85.09', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C46653 PN=None
+  [symbol] JP1    val=Jumper_3_Bridged12   lib=Jumper:Jumper_3_Bridged12 at=['173.355', '100.33', '270'] dnp=no fp=Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm LCSC=N/A PN=None
+  [symbol] R28    val=4.7k                 lib=Device:R at=['113.03', '90.17', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R29    val=~                    lib=Device:R at=['125.73', '85.09', '180'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric LCSC= PN=603-RC0402FR-075KL
+  [symbol] R32    val=DNP                  lib=Simon:DNP at=['140.335', '114.3', '270'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder LCSC=DNP PN=None
+  [symbol] U10    val=MAX9924              lib=Simon:MAX9924 at=['149.86', '90.17', '0'] dnp=no fp=Package_SO:MSOP-10_3x3mm_P0.5mm LCSC=C143633 PN=None
+  [symbol] R30    val=1k                   lib=Device:R at=['127', '97.79', '90'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17513 PN=None
+  [symbol] R34    val=4.7k                 lib=Device:R at=['165.735', '79.375', '0'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=None
+  [symbol] C24    val=1u                   lib=Device:C at=['127', '109.855', '270'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C28323 PN=None
+  [symbol] C25    val=100n                 lib=Device:C at=['188.595', '103.505', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C1525 PN=None
+  [symbol] R26    val=4.7k                 lib=Device:R at=['103.505', '90.17', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R31    val=1k                   lib=Device:R at=['127', '103.505', '90'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17513 PN=None
+  [symbol] R27    val=4.7k                 lib=Device:R at=['113.03', '80.01', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R33    val=DNP                  lib=Simon:DNP at=['156.21', '114.3', '270'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder LCSC=DNP PN=None
+==================================================
+FILE: VR conditioner.kicad_sch
+  [text] 'Optional setting in Mode C for no adaptive threshold timeout - See MAX9924 Datasheet\nComponents as specified put chip in mode A1.  Flip jumper and install R1219+R2020 for mode C.' @ ['101.6', '121.92', '0']
+  [text] 'Yes, we know that the polarity is flipped going in to the VR interface chips.\nWhile originally on accident, it’s no big deal since they invert anyway:\nWhen VR+ transitions to a higher voltage than VR-, VR_OUT will output a rising edge.\n\nSee issue https://github.com/mck1117/proteus/issues/57 for more detail' @ ['96.52', '69.85', '0']
+  [hierarchical_label] 'VR1_OUT' @ ['170.18', '85.09', '0']
+  [hierarchical_label] 'VR1-' @ ['96.52', '90.17', '180']
+  [hierarchical_label] 'VR1+' @ ['96.52', '80.01', '180']
+  [symbol] R25    val=4.7k                 lib=Device:R at=['103.505', '80.01', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] C23    val=1n                   lib=Device:C at=['118.11', '85.09', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C46653 PN=None
+  [symbol] JP1    val=Jumper_3_Bridged12   lib=Jumper:Jumper_3_Bridged12 at=['173.355', '100.33', '270'] dnp=no fp=Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm LCSC=N/A PN=None
+  [symbol] R28    val=4.7k                 lib=Device:R at=['113.03', '90.17', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R29    val=~                    lib=Device:R at=['125.73', '85.09', '180'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric LCSC= PN=603-RC0402FR-075KL
+  [symbol] R32    val=DNP                  lib=Simon:DNP at=['140.335', '114.3', '270'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder LCSC=DNP PN=None
+  [symbol] U10    val=MAX9924              lib=Simon:MAX9924 at=['149.86', '90.17', '0'] dnp=no fp=Package_SO:MSOP-10_3x3mm_P0.5mm LCSC=C143633 PN=None
+  [symbol] R30    val=1k                   lib=Device:R at=['127', '97.79', '90'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17513 PN=None
+  [symbol] R34    val=4.7k                 lib=Device:R at=['165.735', '79.375', '0'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=None
+  [symbol] C24    val=1u                   lib=Device:C at=['127', '109.855', '270'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C28323 PN=None
+  [symbol] C25    val=100n                 lib=Device:C at=['188.595', '103.505', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C1525 PN=None
+  [symbol] R26    val=4.7k                 lib=Device:R at=['103.505', '90.17', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R31    val=1k                   lib=Device:R at=['127', '103.505', '90'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17513 PN=None
+  [symbol] R27    val=4.7k                 lib=Device:R at=['113.03', '80.01', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R33    val=DNP                  lib=Simon:DNP at=['156.21', '114.3', '270'] dnp=yes fp=Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder LCSC=DNP PN=None
+==================================================
+FILE: etb-9201.kicad_sch
+  [text] 'IFX9201 also acceptable' @ ['86.36', '80.01', '0']
+  [hierarchical_label] 'OUT+' @ ['118.745', '53.34', '0']
+  [hierarchical_label] 'PWM' @ ['78.105', '66.04', '180']
+  [hierarchical_label] 'DIR' @ ['78.105', '63.5', '180']
+  [hierarchical_label] '12V_SUPPLY' @ ['54.61', '48.26', '180']
+  [hierarchical_label] 'DIS' @ ['77.47', '60.96', '180']
+  [hierarchical_label] 'OUT-' @ ['118.745', '55.88', '0']
+  [symbol] R5     val=10k                  lib=Device:R at=['68.58', '57.15', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17414 PN=None
+  [symbol] U3     val=TLE9201SG            lib=Simon:TLE9201SG at=['97.79', '63.5', '0'] dnp=no fp=Package_SO:Infineon_PG-DSO-12-9 LCSC=C112633 PN=TLE9201SG
+  [symbol] C5     val=10n                  lib=Device:C_Small at=['114.3', '60.325', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C1710 PN=
+  [symbol] C3     val=10u                  lib=Device:C at=['80.645', '46.99', '0'] dnp=no fp=Capacitor_SMD:C_1206_3216Metric LCSC=C13585 PN=None
+  [symbol] C4     val=10n                  lib=Device:C_Small at=['114.3', '48.895', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C1710 PN=
+==================================================
+FILE: triggers.kicad_sch
+  [text] 'Optional setting in Mode C for no adaptive threshold timeout - See MAX9924 Datasheet\nComponents as specified put chip in mode A1.  Flip jumper and install R1219+R2020 for mode C.' @ ['105.41', '115.57', '0']
+  [text] 'Yes, we know that the polarity is flipped going in to the VR interface chips.\nWhile originally on accident, it’s no big deal since they invert anyway:\nWhen VR+ transitions to a higher voltage than VR-, VR_OUT will output a rising edge.\n\nSee issue https://github.com/mck1117/proteus/issues/57 for more detail' @ ['100.33', '63.5', '0']
+  [hierarchical_label] '+5V' @ ['100.33', '97.79', '180']
+  [hierarchical_label] '+3.3V' @ ['170.815', '70.485', '180']
+  [hierarchical_label] 'VR1+' @ ['101.6', '74.93', '180']
+  [hierarchical_label] 'VR1_OUT' @ ['175.26', '80.01', '0']
+  [hierarchical_label] 'VR1-' @ ['101.6', '85.09', '180']
+  [symbol] R2     val=4.7k                 lib=Device:R at=['108.585', '85.09', '270'] dnp= fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] C2     val=1u                   lib=Device:C at=['132.2845', '106.7956', '270'] dnp= fp=Capacitor_SMD:C_0603_1608Metric LCSC=C15849 PN=None
+  [symbol] JP1    val=Jumper_3_Bridged12   lib=Jumper:Jumper_3_Bridged12 at=['178.435', '95.25', '270'] dnp= fp=Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm LCSC=N/A PN=None
+  [symbol] R1     val=4.7k                 lib=Device:R at=['108.585', '74.93', '270'] dnp= fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R7     val=1k                   lib=Device:R at=['132.08', '100.8213', '90'] dnp= fp=Resistor_SMD:R_0402_1005Metric LCSC=C11702 PN=None
+  [symbol] R8     val=DNP                  lib=Simon:DNP at=['145.415', '109.22', '270'] dnp= fp=Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder LCSC=DNP PN=None
+  [symbol] R3     val=4.7k                 lib=Device:R at=['118.11', '74.93', '270'] dnp= fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R10    val=4.7k                 lib=Device:R at=['170.815', '74.295', '0'] dnp= fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=None
+  [symbol] C1     val=1n                   lib=Device:C at=['123.19', '80.01', '0'] dnp= fp=Capacitor_SMD:C_0603_1608Metric LCSC=C1588 PN=None
+  [symbol] U3     val=MAX9924              lib=Simon:MAX9924 at=['154.94', '85.09', '0'] dnp= fp=Package_SO:MSOP-10_3x3mm_P0.5mm LCSC=N/A PN=None
+  [symbol] R6     val=1k                   lib=Device:R at=['132.08', '92.71', '90'] dnp= fp=Resistor_SMD:R_0402_1005Metric LCSC=C11702 PN=None
+  [symbol] C3     val=100n                 lib=Device:C at=['193.675', '98.425', '0'] dnp= fp=Capacitor_SMD:C_0603_1608Metric LCSC=C14663 PN=None
+  [symbol] R9     val=DNP                  lib=Simon:DNP at=['161.29', '109.22', '270'] dnp= fp=Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder LCSC=DNP PN=None
+  [symbol] R4     val=4.7k                 lib=Device:R at=['118.11', '85.09', '270'] dnp= fp=Resistor_SMD:R_0805_2012Metric LCSC=C17673 PN=
+  [symbol] R5     val=DNP                  lib=Device:R at=['130.81', '80.01', '180'] dnp= fp=Resistor_SMD:R_0805_2012Metric LCSC=DNP PN=603-RC0402FR-075KL
+==================================================
+FILE: vr_module_poly.kicad_sch
+  [text] 'RS Latch\nTracks which edge happened last' @ ['193.04', '59.69', '0']
+  [text] 'Unused gates' @ ['99.06', '20.32', '0']
+  [text] 'Threshold generation' @ ['66.675', '156.21', '0']
+  [text] 'Differential to single ended conversion' @ ['88.9', '54.61', '0']
+  [text] 'Outputs a pulse on rising edge' @ ['134.62', '26.67', '0']
+  [text] 'Vref generation' @ ['264.16', '132.08', '0']
+  [text] 'Outputs a pulse on falling edge' @ ['134.62', '116.84', '0']
+  [global_label] 'Vref' @ ['97.79', '88.9', '180']
+  [global_label] 'Vref' @ ['273.685', '147.32', '0']
+  [global_label] 'output' @ ['26.035', '118.745', '180']
+  [global_label] 'thresh_high' @ ['188.595', '146.685', '0']
+  [global_label] 'thresh_low' @ ['173.99', '40.64', '0']
+  [global_label] 'Vref' @ ['153.035', '149.225', '180']
+  [global_label] 'thresh_high' @ ['173.99', '100.33', '0']
+  [global_label] 'Vref' @ ['173.99', '105.41', '0']
+  [global_label] 'Vref' @ ['173.99', '35.56', '0']
+  [global_label] 'thresh_low' @ ['132.715', '148.59', '0']
+  [hierarchical_label] 'analog_out' @ ['120.65', '73.66', '270']
+  [hierarchical_label] '+5V' @ ['33.02', '81.28', '180']
+  [hierarchical_label] 'VR+' @ ['33.655', '72.39', '180']
+  [hierarchical_label] 'VR-' @ ['33.655', '67.31', '180']
+  [hierarchical_label] 'thresh_input' @ ['75.565', '133.985', '180']
+  [hierarchical_label] 'output' @ ['217.17', '64.77', '0']
+  [symbol] C11    val=10n                  lib=Device:C at=['172.72', '62.23', '270'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C15195 PN=None
+  [symbol] R20    val=1k                   lib=Device:R at=['181.61', '54.61', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C11702 PN=None
+  [symbol] C12    val=10n                  lib=Device:C at=['172.72', '78.74', '270'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C15195 PN=None
+  [symbol] R21    val=1k                   lib=Device:R at=['181.61', '86.36', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C11702 PN=None
+  [symbol] U7     val=MAX9142              lib=Comparator:LM393 at=['152.4', '62.23', '0'] dnp=no fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm LCSC=C18567 PN=None
+  [symbol] U7     val=MAX9142              lib=Comparator:LM393 at=['152.4', '78.74', '0'] dnp=no fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm LCSC=C18567 PN=None
+  [symbol] U7     val=MAX9142              lib=Comparator:LM393 at=['258.445', '33.655', '0'] dnp=no fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm LCSC=C18567 PN=None
+  [symbol] U8     val=NC7SB3157P6X         lib=Analog_Switch:NC7SB3157P6X at=['163.83', '35.56', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-363_SC-70-6 LCSC=C36533657 PN=None
+  [symbol] U8     val=NC7SB3157P6X         lib=Analog_Switch:NC7SB3157P6X at=['199.39', '33.02', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-363_SC-70-6 LCSC=C36533657 PN=None
+  [symbol] U9     val=NC7SB3157P6X         lib=Analog_Switch:NC7SB3157P6X at=['163.83', '105.41', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-363_SC-70-6 LCSC=C36533657 PN=None
+  [symbol] U9     val=NC7SB3157P6X         lib=Analog_Switch:NC7SB3157P6X at=['213.36', '33.02', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-363_SC-70-6 LCSC=C36533657 PN=None
+  [symbol] U6     val=MCP6004              lib=Amplifier_Operational:MCP6004 at=['241.935', '147.32', '0'] dnp=no fp=Package_SO:TSSOP-14_4.4x5mm_P0.65mm LCSC=C50282 PN=None
+  [symbol] U6     val=MCP6004              lib=Amplifier_Operational:MCP6004 at=['110.49', '69.85', '0'] dnp=no fp=Package_SO:TSSOP-14_4.4x5mm_P0.65mm LCSC=C50282 PN=None
+  [symbol] U6     val=MCP6004              lib=Amplifier_Operational:MCP6004 at=['128.905', '136.525', '0'] dnp=no fp=Package_SO:TSSOP-14_4.4x5mm_P0.65mm LCSC=C50282 PN=None
+  [symbol] U6     val=MCP6004              lib=Amplifier_Operational:MCP6004 at=['164.465', '146.685', '0'] dnp=no fp=Package_SO:TSSOP-14_4.4x5mm_P0.65mm LCSC=C50282 PN=None
+  [symbol] U6     val=MCP6004              lib=Amplifier_Operational:MCP6004 at=['250.825', '33.655', '0'] dnp=no fp=Package_SO:TSSOP-14_4.4x5mm_P0.65mm LCSC=C50282 PN=None
+  [symbol] U4     val=SRV05-4              lib=Power_Protection:SRV05-4 at=['67.945', '40.64', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-23-6 LCSC=C85364 PN=None
+  [symbol] R14    val=100k                 lib=Device:R at=['110.49', '59.69', '270'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25741 PN=None
+  [symbol] R13    val=100k                 lib=Device:R at=['100.33', '82.55', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25741 PN=None
+  [symbol] R11    val=100k                 lib=Device:R at=['93.98', '72.39', '90'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25741 PN=None
+  [symbol] R10    val=100k                 lib=Device:R at=['93.98', '67.31', '270'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25741 PN=None
+  [symbol] R7     val=10k                  lib=Device:R at=['43.815', '67.31', '90'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17414 PN=None
+  [symbol] R8     val=10k                  lib=Device:R at=['43.815', '72.39', '270'] dnp=no fp=Resistor_SMD:R_0805_2012Metric LCSC=C17414 PN=None
+  [symbol] R12    val=10k                  lib=Device:R at=['95.25', '133.985', '270'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25744 PN=None
+  [symbol] R15    val=68k                  lib=Device:R at=['111.76', '140.335', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C36871 PN=None
+  [symbol] R17    val=10k                  lib=Device:R at=['147.955', '136.525', '270'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25744 PN=None
+  [symbol] R18    val=10k                  lib=Device:R at=['164.465', '136.525', '270'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25744 PN=None
+  [symbol] R23    val=10k                  lib=Device:R at=['221.615', '149.86', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25744 PN=None
+  [symbol] R22    val=10k                  lib=Device:R at=['221.615', '139.7', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25744 PN=None
+  [symbol] C8     val=100n                 lib=Device:C at=['101.6', '140.335', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C1525 PN=None
+  [symbol] C14    val=100n                 lib=Device:C at=['211.455', '149.86', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C1525 PN=None
+  [symbol] R16    val=10                   lib=Device:R at=['125.095', '148.59', '90'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25077 PN=None
+  [symbol] C10    val=1u                   lib=Device:C at=['130.81', '154.305', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] C6     val=1n                   lib=Device:C_Small at=['72.39', '69.85', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C1523 PN=None
+  [symbol] R19    val=10                   lib=Device:R at=['180.975', '146.685', '90'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25077 PN=None
+  [symbol] C13    val=1u                   lib=Device:C at=['186.69', '152.4', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] R24    val=10                   lib=Device:R at=['257.175', '147.32', '90'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25077 PN=None
+  [symbol] C20    val=1u                   lib=Device:C at=['262.89', '153.035', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] C22    val=1u                   lib=Device:C at=['271.145', '153.035', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] C9     val=100n                 lib=Device:C at=['104.14', '88.9', '270'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C1525 PN=None
+  [symbol] U5     val=74HC02               lib=74xx:74HC02 at=['201.93', '64.77', '0'] dnp=no fp=Package_SO:SOIC-14_3.9x8.7mm_P1.27mm LCSC=C5588 PN=None
+  [symbol] U5     val=74HC02               lib=74xx:74HC02 at=['201.93', '76.2', '0'] dnp=no fp=Package_SO:SOIC-14_3.9x8.7mm_P1.27mm LCSC=C5588 PN=None
+  [symbol] U5     val=74HC02               lib=74xx:74HC02 at=['109.22', '26.67', '0'] dnp=no fp=Package_SO:SOIC-14_3.9x8.7mm_P1.27mm LCSC=C5588 PN=None
+  [symbol] U5     val=74HC02               lib=74xx:74HC02 at=['109.22', '38.1', '0'] dnp=no fp=Package_SO:SOIC-14_3.9x8.7mm_P1.27mm LCSC=C5588 PN=None
+  [symbol] U5     val=74HC02               lib=74xx:74HC02 at=['229.235', '33.02', '0'] dnp=no fp=Package_SO:SOIC-14_3.9x8.7mm_P1.27mm LCSC=C5588 PN=None
+  [symbol] C16    val=10n                  lib=Device:C at=['236.22', '83.82', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C15195 PN=None
+  [symbol] C18    val=1u                   lib=Device:C at=['246.38', '83.82', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] R9     val=12k                  lib=Device:R at=['81.915', '133.985', '90'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25752 PN=None
+  [symbol] C7     val=470n                 lib=Device:C at=['88.265', '140.335', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C47339 PN=None
+  [symbol] C15    val=10n                  lib=Device:C at=['236.22', '63.5', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C15195 PN=None
+  [symbol] C17    val=1u                   lib=Device:C at=['246.38', '63.5', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] C19    val=10n                  lib=Device:C at=['259.715', '74.295', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C15195 PN=None
+  [symbol] C21    val=1u                   lib=Device:C at=['269.875', '74.295', '0'] dnp=no fp=Capacitor_SMD:C_0402_1005Metric LCSC=C52923 PN=None
+  [symbol] D1     val=LED                  lib=Device:LED at=['28.575', '125.095', '90'] dnp=no fp=LED_SMD:LED_0603_1608Metric LCSC=C72043 PN=None
+  [symbol] R6     val=2.2k                 lib=Device:R at=['28.575', '132.715', '0'] dnp=no fp=Resistor_SMD:R_0402_1005Metric LCSC=C25879 PN=None
+==================================================
+FILE: wbo-can-trans.kicad_sch
+  [text] 'n.p.' @ ['113.03', '76.2', '0']
+  [hierarchical_label] 'CAN_RX' @ ['204.47', '83.82', '0']
+  [hierarchical_label] 'CAN2-' @ ['96.52', '88.9', '180']
+  [hierarchical_label] 'CAN2+' @ ['96.52', '83.82', '180']
+  [hierarchical_label] 'CAN_TX' @ ['204.47', '81.28', '0']
+  [symbol] D10    val=NUP2105L             lib=Power_Protection:NUP2105L at=['146.05', '96.52', '0'] dnp=no fp=Package_TO_SOT_SMD:SOT-23 LCSC=C284104 PN=None
+  [symbol] C29    val=47p                  lib=Device:C at=['105.41', '77.47', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C14857 PN=None
+  [symbol] C30    val=47p                  lib=Device:C at=['105.41', '95.25', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C14857 PN=None
+  [symbol] C31    val=100n                 lib=Device:C at=['190.5', '93.98', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C49678 PN=None
+  [symbol] C32    val=100n                 lib=Device:C at=['200.66', '93.98', '0'] dnp=no fp=Capacitor_SMD:C_0805_2012Metric LCSC=C49678 PN=None
+  [symbol] U20    val=TJA1051T-3           lib=Interface_CAN_LIN:TJA1051T-3 at=['166.37', '86.36', '0'] dnp=no fp=Package_SO:SOIC-8_3.9x4.9mm_P1.27mm LCSC=C38695 PN=None
+  [symbol] R36    val=120                  lib=Device:R at=['115.57', '86.36', '90'] dnp=yes fp=Resistor_SMD:R_1206_3216Metric LCSC=C176250 PN=None

@@ -1,0 +1,10 @@
+nominal V(1ms) = 0.63212 V (band 0.62 .. 0.65)
+tau must lie in [0.9525, 1.0335] ms
+=> combined RC tolerance window: -4.75% .. +3.35%
+ +/- 1.0% RC: V in [0.6285,0.6358]  PASS
+ +/- 2.0% RC: V in [0.6248,0.6396]  PASS
+ +/- 3.4% RC: V in [0.6200,0.6447]  PASS
+ +/- 5.0% RC: V in [0.6142,0.6510]  FAIL
+ +/-10.0% RC: V in [0.5971,0.6708]  FAIL
+ADC charge-share bound: zero-charged Cs must exceed 1.95 nF to pull 0.632 V below 0.620 V at the sampling instant
+DC-load bound: continuous load resistance below 16.3 kOhm makes even the final value < 0.62 V

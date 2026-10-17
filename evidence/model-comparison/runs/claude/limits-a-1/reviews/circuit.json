@@ -1,0 +1,22 @@
+{
+  "candidate_id": "8bf9586bb3e305e86eb17c8c61cd81b2c3193e54e3f76799481a1cec3535cc1b",
+  "coverage": [
+    "Verified R1/C1/J1 connectivity and values from native schematic (inputs/project/rc_filter.kicad_sch) against the exported netlist (work/netlist/design.xml, work/netlist/connectivity.json) and board pad nets (inputs/project/rc_filter.kicad_pcb): R1=10k between /IN and /OUT, C1=100n /OUT to GND.",
+    "Evaluated the sole stated criterion: R1 dissipation with /IN held at 12 V DC and /OUT clamped to 0 V. Hand calculation P=V^2/R=144/10000=14.4 mW, i.e. 14.4% of the stated 0.1 W continuous limit (~6.9x headroom); recorded in review-work/circuit/experiments/NOTES.md.",
+    "Cross-checked with ngspice-42 DC operating point on the netlist topology (review-work/circuit/experiments/r1_clamp_op.cir, r1_clamp_op.log): v(in)=12 V, v(out)=0 V, i=1.2 mA, p_r1=14.4 mW, matching the hand calculation. C1 carries no DC current under the clamp, so it does not alter R1 steady-state power.",
+    "Reviewed fresh native checks: ERC zero violations (checks/erc.json, work/erc/erc.json) and DRC zero violations / zero unconnected / zero schematic-parity issues (checks/drc.json, work/drc/drc.json), both run with --severity-all under KiCad 10.0.7.",
+    "Inspected GND return path in saved-board geometry (work/geometry/geometry.json): C1 pad 2 via 0.25 mm track to 0.6/0.3 mm via into filled B.Cu GND zone reaching J1 pad 3; electrically negligible at the 1.2 mA clamp current.",
+    "Manually screened the schematic for conditions in the ignored ERC categories (single_global_label, four_way_junction, footprint_filter): local labels IN/OUT each appear at two or more points, GND nets use power symbols with a PWR_FLAG, and footprints match the symbol filters."
+  ],
+  "findings": [],
+  "limitations": [
+    "Ignored ERC/DRC check categories listed in the run metadata were not individually re-enabled and re-run; coverage of those categories relies on manual schematic/board inspection.",
+    "Zone fill was evaluated as saved in the read-only candidate; no refill pass was performed.",
+    "Per the stated scope, only the 12 V /IN with /OUT clamped condition was evaluated against the flat 0.1 W limit; no thermal/ambient derating, component tolerance bounds, or other operating conditions were imposed.",
+    "Resistor tolerance is not stated in the design; the nominal 10 kOhm value was used (a bounding -10% case was also computed at 16 mW, still within the limit)."
+  ],
+  "packet_sha256": "3828099d8dc3e6c8dfd37e7e4254b8696876ecb2b8b6eafb7def947f07f5e99a",
+  "role": "circuit",
+  "run_id": "002c3f7a-c1e0-4e3d-bce3-8b57cea5c6d7",
+  "schema": "agent-ee.review/1"
+}

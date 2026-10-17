@@ -1,0 +1,232 @@
+DS8791_REV10_MAR02.pdf (https://www.st.com/resource/en/datasheet/vnl5090n3-e.pdf)
+citeturn10view0 [wordlim: 200] Crawled: today; Content type: application/pdf; Number of pages: 31; Source: open({"ref_id":"https://www.st.com/resource/en/datasheet/vnl5090n3-e.pdf","lineno":263}); Total lines: 776
+L228@P7: Tj Junction operating temperature -40 to 150 °C
+L229@P7: Tstg Storage temperature -55 to 150 °C
+L230@P7: EAS
+L231@P7: Single pulse avalanche energy
+L232@P7-8: (L = 1.1 mH, Tj = 150°C, RL = 0, IOUT = IlimL) 50 mJDS8791 Rev 10 13/35
+L233@P8: VNL5090N3-E, VNL5090S5-E Electrical specifications
+L234@P8: 34
+L235@P8: 2.2 Thermal data
+L236@P8: 
+L237@P8: 2.3 Electrical characteristics
+L238@P8: Values specified in this section are for Vsupply = VIN = 4.5 V to 5.5 V, -40°C < Tj < 150°C,
+L239@P8: unless otherwise stated.
+L240@P8: 
+L241@P8: 
+L242@P8: Table 5. Thermal resistance
+L243@P8: Symbol Parameter
+L244@P8: Typ.
+L245@P8: Unit
+L246@P8: SOT-223 SO-8
+L247@P8: RthJ-Lead Junction to lead 8(1)
+L248@P8: 1. TLead temperature measured with a thermocouple soldered on pin 2 according to Jedec JESD51-8.
+L249@P8: 21.5(2)
+L250@P8: 2. TLead temperature measured using a thermocouple on pin 8 according to JESD51-8.
+L251@P8: °C/W
+L252@P8: ѰJ-Top
+L253@P8: Thermal characterization parameter
+L254@P8: Junction to top 1.4(3)
+L255@P8: 3. Package temperature measured at the top center surface using an infrared thermal camera according to
+L256@P8: JESD51-2.
+L257@P8: 6.8(3) °C/W
+L258@P8: Rthj-amb
+L259@P8: Junction to ambient on PCB 2 layers See Figure 14(4)
+L260@P8: 4. Measured in still air condition according to JedecJESD51-1, JESD51-2.
+L261@P8: See Figure 21(4) °C/W
+L262@P8: Junction to ambient on PCB 4 layers 24.6(4) 47(4) °C/W
+L263@P8: Table 6. PowerMOS section
+L264@P8: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L265@P8: Vsupply Operating supply voltage 3.5 5 5.5 V
+L266@P8: RON ON-state resistance
+L267@P8: ID = 1.6 A; Tj = 25°C;
+L268@P8: Vsupply = VIN = 5 V 90
+L269@P8: m ID = 1.6 A; Tj = 150°C;
+L270@P8: Vsupply = VIN = 5 V 180
+L271@P8: ID = 1.6 A; Tj = 150°C;
+L272@P8: Vsupply = VIN = 4.5 V(1)
+L273@P8: 1. Valid only for VNL5090N3-E.
+L274@P8: 190
+L275@P8: VCLAMP Drain-source clamp voltage VIN = 0 V; ID = 1.6 A 41 46 52 V
+L276@P8: VCLTH
+L277@P8: Drain-source clamp
+L278@P8: threshold voltage VIN = 0 V; ID = 2 mA 36 V
+L279@P8: IDSS OFF-state output current
+L280@P8: VIN = 0 V; VDS = 13 V;
+L281@P8: Tj = 25°C 0 3
+L282@P8: µA
+L283@P8: VIN = 0 V; VDS = 13 V;
+L284@P8: Tj = 125°C 0 5
+L285@P8: Table 7. Source drain diode
+L286@P8: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L287@P8-9: VSD Forward on voltage ID = 1.6 A; VIN = 0 V — 0.8 — VElectrical specifications VNL5090N3-E, VNL5090S5-E
+L288@P9: 14/35 DS8791 Rev 10
+L289@P9: Table 8. Input section (VNL5090N3-E only)
+L290@P9: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L291@P9: IISS Supply current from input pin ON-state: Vsupply = VIN = 5 V;
+L292@P9: VDS = 0 V 30 65 µA
+L293@P9: VICL Input clamp voltage
+L294@P9: IS = 1 mA 5.5 7
+L295@P9: V
+L296@P9: IS = -1 mA -0.7
+L297@P9: VINTH Input threshold voltage VDS = VIN; ID = 1 mA 1 3.5 V
+L298@P9: Table 9. Status pin (VNL5090S5-E only)
+L299@P9: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L300@P9: VSTAT Status low output voltage ISTAT = 1 mA 0.5 V
+L301@P9: ILSTAT Status leakage current Normal operation,
+L302@P9: VSTAT = 5 V 10 µA
+L303@P9: CSTAT Status pin input capacitance Normal operation,
+L304@P9: VSTAT = 5 V 100 pF
+L305@P9: VSTCL Status clamp voltage
+L306@P9: ISTAT = 1 mA 5.5 7
+L307@P9: V
+L308@P9: ISTAT = -1 mA -0.7
+L309@P9: Table 10. Logic input (VNL5090S5-E only)
+L310@P9: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L311@P9: VIL Low-level input voltage 0.9 V
+L312@P9: IIL Low-level input current VIN = 0.9 V 1 µA
+L313@P9: VIH High-level input voltage 2.1 V
+L314@P9: IIH High-level input current VIN = 2.1 V 10 µA
+L315@P9: VI(hyst) Input hysteresis voltage 0.13 V
+L316@P9: VICL Input clamp voltage
+L317@P9: IIN = 1 mA 5.5 7
+L318@P9: V
+L319@P9: IIN = -1 mA -0.7
+L320@P9: Table 11. Openload detection (VNL5090S5-E only)
+L321@P9: Symbol Parameter Test conditions Min. Typ. Max. Unit
+L322@P9: VOl
+L323@P9: Openload OFF-state voltage
+L324@P9: detection threshold VIN = 0 V 0.6 1.2 1.7 V
+L325@P9: td(oloff)
+L326@P9: Delay between INPUT falling
+L327@P9: edge and STATUS falling edge
+L328@P9: in openload condition
+L329@P9-10: IOUT = 0 A 45 425 1100 µsDS8791 Rev 10 15/35
+L330@P10: VNL5090N3-E, VNL5090S5-E Electrical specifications
+L331@P10: 34
+L332@P10:  Table 12. Supply section (VNL5090S5-E only)
+L333@P10: Symbol Parameter Test conditions Min. Typ. Max. Unit
+--------------------------------------------------------------------------------
+VNL5050N3TR-E | Power Distribution Switches, Load Drivers | ST | LCSC (https://www.lcsc.com/product-detail/C2680415.html)
+citeturn10view1 [wordlim: 200] Crawled: today; Content type: text/html; Source: find({"ref_id":"https://www.lcsc.com/product-detail/C2680415.html","pattern":"MPN"}); Total lines: 1482
+L1140:     * cite529†Power Supplies - External/Internal (Off-Board) L1141: 
+L1142:       * cite530†AC DC Configurable Power Supply Modules L1143: 
+L1144:       * cite531†AC DC Converters (Off-Board) L1145: 
+L1146:       * cite532†AC DC Desktop, Wall Power Adapters L1147: 
+L1148:       * cite533†DC DC Converters (Off-Board) L1149: 
+L1150:       * cite534†External/Internal Power Supply Accessories L1151: 
+L1152:       * cite535†Industrial, DIN Rail Power Supplies L1153: 
+L1154:       * cite536†LED Drivers (Off-Board) L1155: 
+L1156:       * cite537†Power over Ethernet (PoE) L1157: 
+L1158:       * cite529†View All L1159: 
+L1160:     * cite527†View All L1161: 
+L1162:   * cite538†Relays L1163:     * cite539†Accessories L1164: 
+L1165:     * cite540†Automotive Relays L1166: 
+L1167:     * cite541†Contactors (Electromechanical) L1168: 
+L1169:     * cite542†Contactors (Solid State) L1170: 
+L1171:     * cite543†High Frequency (RF) Relays L1172: 
+L1173:     * cite544†I/O Relay Module Racks L1174: 
+L1175:     * cite545†I/O Relay Modules L1176: 
+L1177:     * cite546†Industrial Relays L1178: 
+L1179:     * cite547†Power Relays, Over 2 Amps L1180: 
+L1181:     * cite548†Reed Relays L1182: 
+L1183:     * cite549†Relay Sockets L1184: 
+L1185:     * cite550†Relays Accessories L1186: 
+L1187:     * cite551†Safety Relays L1188: 
+L1189:     * cite552†Signal Relays, Up to 2 Amps L1190: 
+L1191:     * cite553†Solid State Relays (SSR) L1192:     * cite538†View All L1193: 
+L1194:   * cite554†Deals L1195: 
+L1196:   * cite1†View All L1197: 
+L1198: cite1†Products L1199: 
+L1200: cite555†Manufacturers L1201: 
+L1202: cite556†RFQ/BOM L1203: 
+L1204: cite557†Deals L1205: 
+L1206: cite207†Custom Cables†lcsccable.com L1207: 
+L1208: Solutions
+L1209: 
+L1210: Resources
+L1211: 
+L1212: [Input: Part # / Keyword]
+L1213: 
+L1214:   * cite558†Image: VNL5050N3TR-E thumbnail 1†assets.lcsc.com L1215:   * cite559†Image: VNL5050N3TR-E thumbnail 2†assets.lcsc.com L1216:   * cite560†Image: VNL5050N3TR-E thumbnail 3†assets.lcsc.com L1217:   * Pinout
+L1218: 
+L1219:   * Footprint
+L1220: 
+L1221: Images for reference only
+L1222: # ST VNL5050N3TR-E
+L1223: 
+L1224: Manufacturer  | cite561†ST L1225: MPN  | VNL5050N3TR-E
+L1226: LCSC Part #  | C2680415
+L1227: Packaging  | SOT-223
+L1228: Customer #  | [Input: Customer Number]
+L1229: Key Attributes  | fully protected low-side driver
+L1230: Datasheet  | cite562†ST VNL5050N3TR-E L1231: RoHS Compliance  | 3 documents available
+L1232: ## Products Specifications
+L1233: 
+L1234: All[Input]
+L1235: Type  | Description  |
+L1236: --- | --- | ---
+L1237: Category  | cite415†Integrated Circuits (ICs)/Power Management (PMIC)/Power Distribution Switches, Load Drivers | [Input]
+L1238: Manufacturer  | cite561†ST | [Input]
+L1239: Packaging  | SOT-223  | [Input]
+L1240: Operating Temperature  | -40℃~+150℃  | [Input]
+L1241: Features  | Overcurrent Protection;Short-Circuit Protection;Over temperature protection;Overvoltage protection  | [Input]
+L1242: number of channels  | 1  | [Input]
+L1243: Control Input Logic  | Active High  | [Input]
+L1244: Maximum Continuous Current  | 19A  | [Input]
+L1245: RDS(on)  | 50mΩ  | [Input]
+L1246: Operating Voltage  | 3.5V~5.5V  | [Input]
+L1247: Type  | Low Side Switch  | [Input]
+L1248: Type  | Description  |
+L1249: --- | --- | ---
+L1250: Category  | cite415†Integrated Circuits (ICs)/Power Management (PMIC)/Power Distribution Switches, Load Drivers | [Input]
+L1251: Manufacturer  | cite561†ST | [Input]
+L1252: Packaging  | SOT-223  | [Input]
+L1253: Operating Temperature  | -40℃~+150℃  | [Input]
+L1254: Features  | Overcurrent Protection;Short-Circuit Protection;Over temperature protection;Overvoltage protection  | [Input]
+L1255: number of channels  | 1  | [Input]
+L1256: Type  | Description  |
+L1257: --- | --- | ---
+L1258: Control Input Logic  | Active High  | [Input]
+L1259: Maximum Continuous Current  | 19A  | [Input]
+L1260: RDS(on)  | 50mΩ  | [Input]
+L1261: Operating Voltage  | 3.5V~5.5V  | [Input]
+L1262: Type  | Low Side Switch  | [Input]
+L1263: 
+L1264: Help & Feedbackcite415†Show similar products (0) > L1265: ## Introduction
+L1266: 
+L1267: AI Translation
+L1268: The VNL5050N3-E and VNL5050S5-E are monolithic devices made using VIPower Technology, intended for driving resistive or inductive loads with one side connected to the battery. Built-in thermal shutdown protects the chip from overtemperature and short-circuit. Output current limitation protects the devices in an overload condition. In case of long duration overload, the devices limit the dissipated power to a safe level up to thermal shutdown intervention.
+L1269: Thermal shutdown, with automatic restart, allows the devices to recover normal operation as soon as a fault condition disappears. Fast demagnetization of inductive loads is achieved at turn-off.
+L1270: ## Features
+L1271: 
+L1272: AI Translation
+L1273: 
+L1274:   * Automotive qualified
+L1275:   * Drain current: 19 A
+L1276:   * ESD protection
+L1277:   * Overvoltage clamp
+L1278:   * Thermal shutdown
+L1279:   * Current and power limitation
+L1280:   * Very low standby current
+L1281:   * Very low electromagnetic susceptibility
+L1282:   * Compliant with European directive 2002/95/EC
+L1283:   * Open drain status output (VNL5050S5-E only)
+L1284: 
+L1285: Every Order Guarantee
+L1286: 
+L1287: 100% Authentic · 30-Day Return or Replacement
+L1288: 
+L1289: Out of Stock
+L1290: 
+L1291: Notify Me
+L1292: 
+L1293: Minimum: 1 Multiple: 1 Sales Unit: Piece
+L1294: 
+L1295: [Input]
+L1296: 
+L1297: Add to Cart
+--------------------------------------------------------------------------------
+Internal Error ()
+citeturn10view2 [wordlim: 200] Unable to resolve screenshot call because content type is not application/pdf and web screenshot is not enabled
+

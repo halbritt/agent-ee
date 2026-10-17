@@ -1,0 +1,10 @@
+* RC low-pass fixture per inputs/project/rc_filter.kicad_sch: R1 10k IN-OUT, C1 100n OUT-GND
+VIN in 0 DC 1
+R1 in out 10k
+C1 out 0 100n
+.op
+.control
+op
+print v(out) v(in) i(vin)
+.endc
+.end

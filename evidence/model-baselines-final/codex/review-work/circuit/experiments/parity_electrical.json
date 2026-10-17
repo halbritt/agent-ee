@@ -1,0 +1,5 @@
+{
+  "method": "Compare each numbered saved-board pad net name to exported native schematic component.pin net; no copper geometry/resistance inference",
+  "checked_numbered_pads": 694,
+  "mismatches": []
+}

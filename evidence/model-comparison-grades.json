@@ -1,0 +1,292 @@
+{
+  "agy/mapping-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation.",
+    "review_sha256": "2f5eae7beb7855fd6cbdaeca06c6078fb9cc7321b81811e2425d5aaf519f332f"
+  },
+  "claude/limits-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation.",
+    "review_sha256": "8bf1a028608f4affad12ede90822f7a3fe0f62fb5902aef5d88d2d4680944a1e"
+  },
+  "claude/limits-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation.",
+    "review_sha256": "1d487179ac1ebf3fc15ac6a25a6fde6d0979914ad440b565819ba30c4a3d2c2d"
+  },
+  "claude/limits-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements.",
+    "review_sha256": "9b6d3d1b16ee7695c00b0f99a48e6d8fba6a03240c6210bed6858857a749e8c8"
+  },
+  "claude/limits-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements.",
+    "review_sha256": "f181c7cd43ff012f11bc66ef8b9a3e93ed7974d9d3be022659238ccf0f214c05"
+  },
+  "claude/mapping-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles.",
+    "review_sha256": "abfaf510d699dceddab610d9d07932f2ff050e5ebb4434aa486a3dede3e0a7c0"
+  },
+  "claude/mapping-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles.",
+    "review_sha256": "1d616de0de5355b682cd669379aca38304ea6dbf347029256d7820e01e296738"
+  },
+  "claude/mapping-a-2/circuit": {
+    "grade": "correct_control",
+    "reason": "Fresh native netlist and saved-board connectivity confirm J1.1 input, J1.2 output, J1.3 ground. Supplemental AC sweep supports the expected low-pass topology. No defect allegation.",
+    "review_sha256": "356104df83d603a84e0501c12b464f3db5ef2b47045a313a1c8c043661d79be2"
+  },
+  "claude/mapping-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error.",
+    "review_sha256": "30db072fbf3b94a0bf19a343484b1e8a02b5aafb6fd4fb472ff749cb2e7e058a"
+  },
+  "claude/mapping-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error.",
+    "review_sha256": "b2c9315bf56260741ba0aa4a32440dfdb225d337ed159116b02388df00b56316"
+  },
+  "claude/population-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Saved R1 is fitted in schematic and PCB and is the only required resistive /IN-to-/OUT bridge. Native nets and independently parsed population support the clean conclusion.",
+    "review_sha256": "b5aecb5a83dc1eccfbe32c5530e974355e126afe1098018623b338e2c75ca9ed"
+  },
+  "claude/population-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Both native representations mark R1 fitted; direct geometry, pcbnew and explicit connectivity support the resistive bridge. No extra defects alleged.",
+    "review_sha256": "61fbd63004bbb2728b819595e7ebb0dc8eca8b3b64b9e85bc0267fe70a44f9c2"
+  },
+  "claude/population-b-1/circuit": {
+    "grade": "supported_defect_with_noise",
+    "reason": "R1 DNP in both native representations removes the only resistive bridge; explicit sense-load SPICE experiment is supplemental. Extra info about ERC/DRC is accurate. Calling DNP plus BOM/placement inclusion internally inconsistent overstates orthogonal metadata; retained only as minor process concern, with no generated-output defect established.",
+    "review_sha256": "729f4da61f216e1f8b596ca68ddd09f03e0fbb078b9fbc9a0cd560d85aeb4638"
+  },
+  "claude/population-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "Native DNP flags and fitted connectivity analysis leave a measured 0.8 mm gap with no resistive bridge. Verification gap is a separate minor concern, not an extra proven design defect.",
+    "review_sha256": "a82071c896e7a576791a40c4482cc519f4d56c56b5bd26eeff270598a2900eb5"
+  },
+  "claude/shutdown-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements.",
+    "review_sha256": "0f19a4f5dd07daf3aac439cf157f82c334934ebf39819d6b96740c714499f076"
+  },
+  "claude/shutdown-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements.",
+    "review_sha256": "107d34e76b387d9aefa856fc96b3e35b5e7f28b3499ef797ce6beb7066cfb611"
+  },
+  "claude/shutdown-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements.",
+    "review_sha256": "b4d29bc31e15b6358c1cc53297fbcbb185824e4b26ec33dfdec9c85426cd1559"
+  },
+  "claude/shutdown-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements.",
+    "review_sha256": "c8f32dede307eea9d2dafe71b170a019e78e478d089498f9b38c8cb371ef8234"
+  },
+  "claude/verification-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Native R=10k,C=100n with ideal unloaded step gives 0.632121 V at 1 ms; independent ngspice result agrees. Info observation about supplied checks is explicitly closed by this verification, not a blocking design defect.",
+    "review_sha256": "f681a02074523e6385e400bae220ba80ec63b08db49bbfb917866a3bec93b973"
+  },
+  "claude/verification-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Native R/C and saved connectivity support the analytic 0.63212 V at 1 ms; the documented finite-step transient remains inside the 0.62\u20130.65 V window. No defect allegation.",
+    "review_sha256": "10ceeadd602d355ea8319270c287ac2a3f2ff080d3089d624aa4709fac277885"
+  },
+  "claude/verification-b-1/circuit": {
+    "grade": "correct_uncertainty_with_calculation_error",
+    "reason": "Correct major deferral for missing ADC load/timing, without confirmed circuit defect. Quantitative overclaim: 1.21 uA steady drop and RL=320k do not erase the entire margin at 1 ms (own RL result 0.6239 V remains above 0.62). Exact ideal constant-current threshold is 1.91744 uA; resistive threshold about 214.96k. Extra tolerance/common-part concerns exceed supplied part evidence. Measurement citations name the input deck rather than output logs.",
+    "review_sha256": "291c087f151c4f6acfb03b0ddaff44dcac30deb5ab889da65bc27b37a5cbb4f2"
+  },
+  "claude/verification-b-1/physical": {
+    "grade": "uncertainty_with_overclaim",
+    "reason": "Recognizes missing ADC parameters, but calls this minor and asserts robustness within necessary-only illustrative bounds. RL>16.3k ensures only asymptotic voltage, not the 1 ms window: RL=20k yields about 0.5179 V at 1 ms and fails despite being within its claimed bound. Arbitrary switching sequences also cannot be bounded by one isolated charge-share example. Additional major tolerance concern and info single-via note are not established circuit defects.",
+    "review_sha256": "1378ebef9158c7d9bb842920f847cb730771a17f49db6cd62fc8efaeb78571c8"
+  },
+  "claude/width-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "All five saved segments are 0.25 mm >= 0.20 mm. Explicitly nonblocking observation about packaged threshold automation; reviewer measured compliance.",
+    "review_sha256": "edcde2e073634789cc0f34a1dc7ab5e021ce5a805f19db5b9b898bfbd30072b7"
+  },
+  "claude/width-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Native text and pcbnew agree: five segments >= 0.20 mm. Packaged automation concern is info only; no false blocking defect.",
+    "review_sha256": "911e5a16666ea9532fab447e745f8e447ffa02ad21c4969b1ebe62a5218cb4b1"
+  },
+  "claude/width-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "Five saved 0.25 mm segments violate the explicit 0.30 mm threshold; no ampacity inference. Extra check-coverage concern remains nondefect.",
+    "review_sha256": "bba46aed85c6d3834fc7a442a89cf223319117f437431f56cfcc58402c0ed2d6"
+  },
+  "claude/width-b-1/physical": {
+    "grade": "supported_defect_with_overclaim",
+    "reason": "Correctly detects five 0.25 mm segments below 0.30 mm. Secondary major verification-defect allegation overstates the evidence: geometry output is explicitly info and human/agent application of the requirement is allowed; no requirement mandates automated thresholding. Zone observation correctly out of scope.",
+    "review_sha256": "82e1c3815118fea3244ccbad128201173e4ded943988b4dfa9c31508e31da335"
+  },
+  "codex/limits-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation.",
+    "review_sha256": "2b714b189c8f955a5247a38804f11ebaa13c9609ca935646d1c593b52a0669aa"
+  },
+  "codex/limits-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation.",
+    "review_sha256": "c27bd0cb4705ac05f29d9bbfe07745451b049ce16b245e00f18864e275f69d63"
+  },
+  "codex/limits-a-2/circuit": {
+    "grade": "correct_control",
+    "reason": "Nominal 12^2/10000 = 0.0144 W meets explicit 0.1 W exercise limit; no commercial-part rating invented.",
+    "review_sha256": "62ad1134821ed483e6872538668adc6b8abe19845a085ea26c2d2a88aefea046"
+  },
+  "codex/limits-a-2/physical": {
+    "grade": "correct_control",
+    "reason": "Saved R1=10k and native source-to-clamp geometry support 12^2/10000=0.0144 W below the declared 0.1 W. No unsupported physical rating inference.",
+    "review_sha256": "01d82e7f8780c5e43e94d8adf86de043aad6a58c56adfaf1c93f186c54eb7bde"
+  },
+  "codex/limits-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements.",
+    "review_sha256": "1750074348cc7f7081757f83556cb35e6224099202a4cadcd5faa1d01499971a"
+  },
+  "codex/limits-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements.",
+    "review_sha256": "9a66edeb7bf7df546016144e97a32424790a642a345a6b99a4443dea98cceee8"
+  },
+  "codex/limits-b-2/circuit": {
+    "grade": "supported_defect",
+    "reason": "Native R1=10k under the stated 48 V / 0 V clamp dissipates 0.2304 W, 2.304 times the 0.1 W exercise limit. No footprint-derived rating or failure temperature invented.",
+    "review_sha256": "8df4da5097bb7279dcacb2aae4cf7f99b2a37bb4d48e189275fd9ec5a0517762"
+  },
+  "codex/limits-b-2/physical": {
+    "grade": "supported_defect",
+    "reason": "Native copper connects R1 across the maintained 48 V difference; 0.2304 W exceeds the stated 0.1 W. No invented package limit or failure-time prediction.",
+    "review_sha256": "723eb12256ae839af1fcda8ebc31ee5bd79e02f1e6948ff0a35dd9ac2d2268e9"
+  },
+  "codex/mapping-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles.",
+    "review_sha256": "387b7ba8165f3370bb70fb66a3bdd58621440ed2283efa386f6edb95a23f5c99"
+  },
+  "codex/mapping-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles.",
+    "review_sha256": "6a68cef7c4a8dbd88c5afc2c7951f3627582905838bb0e55ee4bd444df31e430"
+  },
+  "codex/mapping-a-2/circuit": {
+    "grade": "correct_control",
+    "reason": "Native connector assignments meet the stated contract; no defect allegation.",
+    "review_sha256": "abb186538a3e9fbc4a78fa51fbac815db08c242dbdbaab73208e19c601344a32"
+  },
+  "codex/mapping-a-2/physical": {
+    "grade": "correct_control",
+    "reason": "Native connector assignments meet the stated contract; no defect allegation.",
+    "review_sha256": "9d1bdb3460b94305a38440ea755e4588741b45e4e68da14bcae1cd458351429c"
+  },
+  "codex/mapping-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error.",
+    "review_sha256": "a3caf921783e8f01c67ad5ed5a770183894fda9cf799f23f2a3803438b57ccac"
+  },
+  "codex/mapping-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error.",
+    "review_sha256": "3c5b274608819ae07c2449da6ff1aa89b83a72a55aebb8e976f5ce9270726013"
+  },
+  "codex/mapping-b-2/circuit": {
+    "grade": "supported_defect",
+    "reason": "Native J1.1 input and J1.2 output contradict reversed external contract. Unloaded output on resistor far end follows ideal input without the intended RC pole; source impedance not invented.",
+    "review_sha256": "ac4f75338aae3623b0653cdf4453da15d655f989eba7eb90d49d8571e0f3ce5a"
+  },
+  "codex/mapping-b-2/physical": {
+    "grade": "supported_defect",
+    "reason": "Saved numbered pads contradict the external connector contract; independent native geometry and fresh netlist support the reversed roles. Unloaded transfer consequence is explicitly a conditional calculation.",
+    "review_sha256": "34902fe68c328ba61d935860cb8075c973944133015df659b62e984f58bbcebe"
+  },
+  "codex/population-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed.",
+    "review_sha256": "1016c50ff7291eadd53cddbb63e677c0a95494fa27dfaffa2f1b19790ce977a1"
+  },
+  "codex/population-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed.",
+    "review_sha256": "81350af11eabbe6eee360d4ee8e50d20a8ee30bdc00727619536d70b7eb20007"
+  },
+  "codex/population-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed.",
+    "review_sha256": "3f32057353503517846c11e23a3d839847624586f0cd5f538576dca04cc711ac"
+  },
+  "codex/population-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed.",
+    "review_sha256": "c53e4cf1a35998b65267f4f42c6159da11ff8409d9fcdad63dd24516c440fecc"
+  },
+  "codex/shutdown-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "The ideal 1 ms time constant gives exp(-5)=0.006738 V at 5 ms, meeting 0.01 V. No defect allegation.",
+    "review_sha256": "667c3c14c2373d0c07d6af576ed7ca0caa4dd0134f0b0067df320ee9dd6964a0"
+  },
+  "codex/shutdown-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "The ideal 1 ms time constant gives exp(-5)=0.006738 V at 5 ms, meeting 0.01 V. No defect allegation.",
+    "review_sha256": "ec04feeb3cde3a89e2ede4381612b533a972014127f9b111a08a59a1a989f1c9"
+  },
+  "codex/shutdown-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "Saved 100k/100n gives tau=10 ms and 0.60653066 V at 5 ms. Inspected physical reviewer ngspice decks use IC=1 and UIC; both time steps give 0.6065307 V.",
+    "review_sha256": "013ce00841b08a3d69b3d2f3c3d51bb8be17483d87ef1835c2577c3670ae9de6"
+  },
+  "codex/shutdown-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "Saved 100k/100n gives tau=10 ms and 0.60653066 V at 5 ms. Inspected physical reviewer ngspice decks use IC=1 and UIC; both time steps give 0.6065307 V.",
+    "review_sha256": "b414e5f4cce5035bddeddd2d9ddea4832ce264fb632ded6f28c742e0d221ad26"
+  },
+  "codex/verification-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Ideal unloaded response 1-exp(-1)=0.63212056 lies within 0.62\u20130.65 V; no defect allegation.",
+    "review_sha256": "40d32dcd37cd01954e8630a8b9592089e3c87d5790fd3c9848c4d16951a9a3fd"
+  },
+  "codex/verification-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Ideal unloaded response agrees with the stated limits; no unsupported loading or thermal claim.",
+    "review_sha256": "f0abb0602747359f31fcd172f805fefdef546146e044248b40ecc820a615690c"
+  },
+  "codex/verification-b-1/circuit": {
+    "grade": "correct_uncertainty_weak_severity",
+    "reason": "Correctly refuses ADC compliance or failure without loading/timing; info severity understates material missing criterion evidence. Full two-role uncertainty run confirms major canonical deferral.",
+    "review_sha256": "9da89813a8317e06af1987e87e0b8dc950b481155d8cf678428af96a327c9312"
+  },
+  "codex/verification-b-1/physical": {
+    "grade": "correct_uncertainty",
+    "reason": "ADC capacitance, resistance, initial charge and timing are unspecified. Ideal unloaded simulation is explicitly insufficient; major concern preserves unresolved criterion.",
+    "review_sha256": "27c09f1602b6b236a0774bdb6cdc37169adbc36eac77c15d30d12883e642253d"
+  },
+  "codex/width-a-1/circuit": {
+    "grade": "correct_control",
+    "reason": "Saved five copper track segments at 0.25 mm exceed the 0.20 mm exercise minimum. No defect allegation.",
+    "review_sha256": "8831495edc0d4034367e074511db4d7ea2796643e8f432d75b83ae9c2023ad63"
+  },
+  "codex/width-a-1/physical": {
+    "grade": "correct_control",
+    "reason": "Saved five copper track segments at 0.25 mm exceed the 0.20 mm exercise minimum. No defect allegation.",
+    "review_sha256": "7c66a5c275f97d0521ee49df6a49e47769c0d2b18fd970165c3a027dd3463b8f"
+  },
+  "codex/width-b-1/circuit": {
+    "grade": "supported_defect",
+    "reason": "Five saved copper track segments at 0.25 mm fall below the 0.30 mm exercise minimum. Findings correctly avoid ampacity claims.",
+    "review_sha256": "fe9ba58ea9dc1bc3fb9e09659a2f19f36d81488d60bc8a2e58ab71224f456a32"
+  },
+  "codex/width-b-1/physical": {
+    "grade": "supported_defect",
+    "reason": "Five saved copper track segments at 0.25 mm fall below the 0.30 mm exercise minimum. Findings correctly avoid ampacity claims.",
+    "review_sha256": "a1d515401a581a74f973e97b06d478819ef67ba36eeb620228a2b0f60553d108"
+  }
+}

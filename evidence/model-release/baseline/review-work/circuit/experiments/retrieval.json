@@ -1,0 +1,33 @@
+[
+  {
+    "url": "https://www.analog.com/media/en/technical-documentation/data-sheets/MAX9924-MAX9927.pdf",
+    "file": "max9924.pdf",
+    "error": "The read operation timed out"
+  },
+  {
+    "url": "https://www.infineon.com/assets/row/public/documents/10/49/infineon-tle9201sg-ds-en.pdf",
+    "file": "tle9201.pdf",
+    "bytes": 1494473,
+    "pdftotext_exit": 0,
+    "stderr": ""
+  },
+  {
+    "url": "https://www.nxp.com/docs/en/data-sheet/TJA1051.pdf",
+    "file": "tja1051.pdf",
+    "bytes": 209490,
+    "pdftotext_exit": 0,
+    "stderr": ""
+  },
+  {
+    "url": "https://www.st.com/resource/en/datasheet/vnl5090n3-e.pdf",
+    "file": "vnl5090.pdf",
+    "error": "The read operation timed out"
+  },
+  {
+    "url": "https://www.ti.com/lit/ds/symlink/drv8825.pdf",
+    "file": "drv8825.pdf",
+    "bytes": 1440248,
+    "pdftotext_exit": 0,
+    "stderr": ""
+  }
+]

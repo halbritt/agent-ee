@@ -1,0 +1,21 @@
+{
+  "candidate_id": "ba425dde3d5b5c2a4d83f96acbcaca3dff792b3c000ec9101309b32a820f24ac",
+  "coverage": [
+    "Verified J1.1 input, J1.2 filtered output and J1.3 ground from embedded pin definitions, rotation, wires and labels: inputs/project/rc_filter.kicad_sch:142\u2013196,805\u2013853,1091 onward; independent reconstruction in review-work/circuit/experiments/connectivity-audit.json.",
+    "Verified board pad identities and saved routing: inputs/project/rc_filter.kicad_pcb:587\u2013613,667\u2013785. Native schematic, board assignments, fresh export and work/netlist/connectivity.json agree.",
+    "Inspected supplied check records and reran ERC, DRC with schematic parity, and netlist export using KiCad 10.0.7. Reports contain zero violations, unconnected items or parity issues: work/erc/erc.json; work/drc/drc.json; review-work/circuit/experiments/erc.json and drc.json.",
+    "Confirmed series 10 kohm resistance and shunt 100 nF capacitance form the intended low-pass topology. Ideal unloaded calculation gives tau=1 ms and fc=159.15 Hz; assumptions, commands, outcomes and inspection notes are preserved in review-work/circuit/experiments/connectivity-audit.json, commands.json and review-notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "No simulation or hardware measurements performed; no verification models, stimulus or electrical measurements were supplied.",
+    "Ratings, tolerance, loading, input range and environmental qualification were not evaluated because corresponding parts and operating conditions were unstated.",
+    "Zone refill omitted; conclusions apply to saved copper.",
+    "Configured ignored ERC/DRC checks were not independently enabled; exact lists are recorded in review-work/circuit/experiments/review-notes.md.",
+    "No fabrication, assembly or mechanical qualification performed. Active startup, shutdown, reset and brownout checks are inapplicable to this passive fixture."
+  ],
+  "packet_sha256": "d70280f65977ae067f60d614e5ca081755d4a90bd90562d2927a361c6f336fcf",
+  "role": "circuit",
+  "run_id": "201b2263-4017-4a95-bef6-1961a01cb75e",
+  "schema": "agent-ee.review/1"
+}

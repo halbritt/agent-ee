@@ -1,0 +1,98 @@
+[
+  {
+    "assessment": "defect",
+    "candidate_id": "db1f9144c619ac0ea0328987a95e76ea066bf01fab0d674869f19ebd0859a094",
+    "condition": "Declared external connector contract",
+    "decision": {
+      "candidate_id": "db1f9144c619ac0ea0328987a95e76ea066bf01fab0d674869f19ebd0859a094",
+      "disposition": "dismissed",
+      "evidence": [
+        {
+          "locator": "lines 587-613 (J1 pads 1=/IN, 2=/OUT, 3=GND) and lines 699-786 (GND track, via, and filled B.Cu zone connecting J1.3 to C1.2)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "nets.GND = [C1.2, J1.3]",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "unconnected_items: [], schematic_parity: [], violations: []",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "footprints[ref=J1].pads[pad=3].net = GND, unconnected_items = 0",
+          "path": "work/geometry/geometry.json"
+        }
+      ],
+      "reason": "Counter-evidence refutes the claim that J1.3 is disconnected from GND. In the schematic netlist (work/netlist/connectivity.json, work/netlist/design.xml), J1.3 and C1.2 share net GND. In the saved PCB (inputs/project/rc_filter.kicad_pcb lines 605-613 and 699-786; work/geometry/geometry.json), through-hole pad J1.3 at (100.0, 105.08) mm is assigned to net GND and physically connected via thermal spokes on B.Cu to the saved filled GND copper zone, which connects through the GND via at (113.0, 100.0) mm and F.Cu segment to C1.2. Native DRC with schematic parity (work/drc/drc.json) confirms 0 unconnected items, 0 schematic parity issues, and 0 violations.",
+      "run_id": "a8bb62e4-33ac-4fa6-b75d-4cfbbc1d7536",
+      "seq": 1
+    },
+    "decision_evidence": [
+      {
+        "locator": "lines 587-613 (J1 pads 1=/IN, 2=/OUT, 3=GND) and lines 699-786 (GND track, via, and filled B.Cu zone connecting J1.3 to C1.2)",
+        "path": "inputs/project/rc_filter.kicad_pcb"
+      },
+      {
+        "locator": "nets.GND = [C1.2, J1.3]",
+        "path": "work/netlist/connectivity.json"
+      },
+      {
+        "locator": "unconnected_items: [], schematic_parity: [], violations: []",
+        "path": "work/drc/drc.json"
+      },
+      {
+        "locator": "footprints[ref=J1].pads[pad=3].net = GND, unconnected_items = 0",
+        "path": "work/geometry/geometry.json"
+      }
+    ],
+    "disposition": "dismissed",
+    "disposition_reason": "Counter-evidence refutes the claim that J1.3 is disconnected from GND. In the schematic netlist (work/netlist/connectivity.json, work/netlist/design.xml), J1.3 and C1.2 share net GND. In the saved PCB (inputs/project/rc_filter.kicad_pcb lines 605-613 and 699-786; work/geometry/geometry.json), through-hole pad J1.3 at (100.0, 105.08) mm is assigned to net GND and physically connected via thermal spokes on B.Cu to the saved filled GND copper zone, which connects through the GND via at (113.0, 100.0) mm and F.Cu segment to C1.2. Native DRC with schematic parity (work/drc/drc.json) confirms 0 unconnected items, 0 schematic parity issues, and 0 violations.",
+    "events": [
+      {
+        "candidate_id": "db1f9144c619ac0ea0328987a95e76ea066bf01fab0d674869f19ebd0859a094",
+        "disposition": "dismissed",
+        "evidence": [
+          {
+            "locator": "lines 587-613 (J1 pads 1=/IN, 2=/OUT, 3=GND) and lines 699-786 (GND track, via, and filled B.Cu zone connecting J1.3 to C1.2)",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "nets.GND = [C1.2, J1.3]",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "unconnected_items: [], schematic_parity: [], violations: []",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "footprints[ref=J1].pads[pad=3].net = GND, unconnected_items = 0",
+            "path": "work/geometry/geometry.json"
+          }
+        ],
+        "reason": "Counter-evidence refutes the claim that J1.3 is disconnected from GND. In the schematic netlist (work/netlist/connectivity.json, work/netlist/design.xml), J1.3 and C1.2 share net GND. In the saved PCB (inputs/project/rc_filter.kicad_pcb lines 605-613 and 699-786; work/geometry/geometry.json), through-hole pad J1.3 at (100.0, 105.08) mm is assigned to net GND and physically connected via thermal spokes on B.Cu to the saved filled GND copper zone, which connects through the GND via at (113.0, 100.0) mm and F.Cu segment to C1.2. Native DRC with schematic parity (work/drc/drc.json) confirms 0 unconnected items, 0 schematic parity issues, and 0 violations.",
+        "run_id": "a8bb62e4-33ac-4fa6-b75d-4cfbbc1d7536",
+        "seq": 1
+      }
+    ],
+    "evidence": [
+      {
+        "locator": "J1 pads 1, 2, 3 net assignments",
+        "path": "inputs/project/rc_filter.kicad_pcb"
+      },
+      {
+        "locator": "declared connector contract",
+        "path": "inputs/requirements.txt"
+      }
+    ],
+    "id": "challenger/one",
+    "location": "J1.3",
+    "mechanism": "J1.3 is not connected to GND.",
+    "reason": "Counter-evidence refutes the claim that J1.3 is disconnected from GND. In the schematic netlist (work/netlist/connectivity.json, work/netlist/design.xml), J1.3 and C1.2 share net GND. In the saved PCB (inputs/project/rc_filter.kicad_pcb lines 605-613 and 699-786; work/geometry/geometry.json), through-hole pad J1.3 at (100.0, 105.08) mm is assigned to net GND and physically connected via thermal spokes on B.Cu to the saved filled GND copper zone, which connects through the GND via at (113.0, 100.0) mm and F.Cu segment to C1.2. Native DRC with schematic parity (work/drc/drc.json) confirms 0 unconnected items, 0 schematic parity issues, and 0 violations.",
+    "reasoning": "An allegation to investigate against the saved pad net, not assume true.",
+    "run_id": "a8bb62e4-33ac-4fa6-b75d-4cfbbc1d7536",
+    "severity": "major",
+    "status": "dismissed",
+    "title": "Ground disconnected"
+  }
+]

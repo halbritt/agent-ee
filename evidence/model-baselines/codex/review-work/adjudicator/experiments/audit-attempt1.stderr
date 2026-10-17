@@ -1,0 +1,8 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+Traceback (most recent call last):
+  File "/work/experiments/adjudicate.py", line 95, in <module>
+    audit['ground_zone'] = [dict(uuid=z.m_Uuid.AsString(), net=z.GetNetname(), min_spokes=z.GetMinResolvedSpokes(),
+                                                                                          ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ZONE' object has no attribute 'GetMinResolvedSpokes'

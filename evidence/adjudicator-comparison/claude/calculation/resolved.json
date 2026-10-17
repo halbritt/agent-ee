@@ -1,0 +1,110 @@
+[
+  {
+    "assessment": "defect",
+    "candidate_id": "b965f04e4f7ec2f0a9e09341f18b450848f9a46b51435020c7d62e188f737a1b",
+    "condition": "/IN=48 V and /OUT=0 V indefinitely",
+    "decision": {
+      "candidate_id": "b965f04e4f7ec2f0a9e09341f18b450848f9a46b51435020c7d62e188f737a1b",
+      "disposition": "accepted",
+      "evidence": [
+        {
+          "locator": "0.1 W continuous limit; /IN=48 V, /OUT clamped to 0 V indefinitely",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "symbol R1 uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78, property Value \"10k\"",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "nets: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "P = 0.2304 W, ratio 2.304x limit",
+          "path": "review-work/adjudicator/experiments/r1_power_calc.txt"
+        },
+        {
+          "locator": "condition/mechanism check and optimist counter-claim rebuttal",
+          "path": "review-work/adjudicator/experiments/notes.md"
+        }
+      ],
+      "reason": "Confirmed defect. Netlist evidence places R1 (10k, per saved schematic value) directly between /IN and /OUT; with /IN held at 48 V and /OUT externally clamped to 0 V, R1 dissipates 48^2/10000 = 0.2304 W continuously, 2.304x the declared 0.1 W continuous limit in inputs/requirements.txt. C1 carries no DC current and does not reduce R1 dissipation. The optimist-a counter-figure of 0.002304 W equals 48^2/1e6 (a 1 Mohm assumption or 100x arithmetic error) and contradicts the saved 10k value, so it is rejected.",
+      "run_id": "cf4460f6-7635-4512-ab7f-ed11e6cc17eb",
+      "seq": 1
+    },
+    "decision_evidence": [
+      {
+        "locator": "0.1 W continuous limit; /IN=48 V, /OUT clamped to 0 V indefinitely",
+        "path": "inputs/requirements.txt"
+      },
+      {
+        "locator": "symbol R1 uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78, property Value \"10k\"",
+        "path": "inputs/project/rc_filter.kicad_sch"
+      },
+      {
+        "locator": "nets: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}",
+        "path": "work/netlist/design.xml"
+      },
+      {
+        "locator": "P = 0.2304 W, ratio 2.304x limit",
+        "path": "review-work/adjudicator/experiments/r1_power_calc.txt"
+      },
+      {
+        "locator": "condition/mechanism check and optimist counter-claim rebuttal",
+        "path": "review-work/adjudicator/experiments/notes.md"
+      }
+    ],
+    "disposition": "accepted",
+    "disposition_reason": "Confirmed defect. Netlist evidence places R1 (10k, per saved schematic value) directly between /IN and /OUT; with /IN held at 48 V and /OUT externally clamped to 0 V, R1 dissipates 48^2/10000 = 0.2304 W continuously, 2.304x the declared 0.1 W continuous limit in inputs/requirements.txt. C1 carries no DC current and does not reduce R1 dissipation. The optimist-a counter-figure of 0.002304 W equals 48^2/1e6 (a 1 Mohm assumption or 100x arithmetic error) and contradicts the saved 10k value, so it is rejected.",
+    "events": [
+      {
+        "candidate_id": "b965f04e4f7ec2f0a9e09341f18b450848f9a46b51435020c7d62e188f737a1b",
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "0.1 W continuous limit; /IN=48 V, /OUT clamped to 0 V indefinitely",
+            "path": "inputs/requirements.txt"
+          },
+          {
+            "locator": "symbol R1 uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78, property Value \"10k\"",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "nets: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "P = 0.2304 W, ratio 2.304x limit",
+            "path": "review-work/adjudicator/experiments/r1_power_calc.txt"
+          },
+          {
+            "locator": "condition/mechanism check and optimist counter-claim rebuttal",
+            "path": "review-work/adjudicator/experiments/notes.md"
+          }
+        ],
+        "reason": "Confirmed defect. Netlist evidence places R1 (10k, per saved schematic value) directly between /IN and /OUT; with /IN held at 48 V and /OUT externally clamped to 0 V, R1 dissipates 48^2/10000 = 0.2304 W continuously, 2.304x the declared 0.1 W continuous limit in inputs/requirements.txt. C1 carries no DC current and does not reduce R1 dissipation. The optimist-a counter-figure of 0.002304 W equals 48^2/1e6 (a 1 Mohm assumption or 100x arithmetic error) and contradicts the saved 10k value, so it is rejected.",
+        "run_id": "cf4460f6-7635-4512-ab7f-ed11e6cc17eb",
+        "seq": 1
+      }
+    ],
+    "evidence": [
+      {
+        "locator": "R1 Value 10k and connectivity",
+        "path": "inputs/project/rc_filter.kicad_sch"
+      },
+      {
+        "locator": "48 V, clamp and 0.1 W limit",
+        "path": "inputs/requirements.txt"
+      }
+    ],
+    "id": "challenger/one",
+    "location": "R1",
+    "mechanism": "48^2/10000=0.2304 W exceeds the declared 0.1 W continuous limit.",
+    "reason": "Confirmed defect. Netlist evidence places R1 (10k, per saved schematic value) directly between /IN and /OUT; with /IN held at 48 V and /OUT externally clamped to 0 V, R1 dissipates 48^2/10000 = 0.2304 W continuously, 2.304x the declared 0.1 W continuous limit in inputs/requirements.txt. C1 carries no DC current and does not reduce R1 dissipation. The optimist-a counter-figure of 0.002304 W equals 48^2/1e6 (a 1 Mohm assumption or 100x arithmetic error) and contradicts the saved 10k value, so it is rejected.",
+    "reasoning": "Use saved 10k value and captured exercise assumptions.",
+    "run_id": "cf4460f6-7635-4512-ab7f-ed11e6cc17eb",
+    "severity": "major",
+    "status": "accepted",
+    "title": "R1 continuous power exceeds exercise limit"
+  }
+]

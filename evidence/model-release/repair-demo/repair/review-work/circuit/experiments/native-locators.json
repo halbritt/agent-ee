@@ -1,0 +1,122 @@
+{
+  "inputs/project/rc_filter.kicad_sch": [
+    {
+      "line": 944,
+      "text": "(property \"Reference\" \"C1\""
+    },
+    {
+      "line": 955,
+      "text": "(property \"Value\" \"100n\""
+    },
+    {
+      "line": 1102,
+      "text": "(property \"Reference\" \"J1\""
+    },
+    {
+      "line": 1263,
+      "text": "(property \"Reference\" \"R1\""
+    },
+    {
+      "line": 1274,
+      "text": "(property \"Value\" \"10k\""
+    }
+  ],
+  "inputs/project/rc_filter.kicad_pcb": [
+    {
+      "line": 96,
+      "text": "(property \"Reference\" \"C1\""
+    },
+    {
+      "line": 107,
+      "text": "(property \"Value\" \"100n\""
+    },
+    {
+      "line": 210,
+      "text": "(pad \"1\" smd roundrect"
+    },
+    {
+      "line": 218,
+      "text": "(pad \"2\" smd roundrect"
+    },
+    {
+      "line": 245,
+      "text": "(property \"Reference\" \"R1\""
+    },
+    {
+      "line": 256,
+      "text": "(property \"Value\" \"10k\""
+    },
+    {
+      "line": 359,
+      "text": "(pad \"1\" smd roundrect"
+    },
+    {
+      "line": 367,
+      "text": "(pad \"2\" smd roundrect"
+    },
+    {
+      "line": 394,
+      "text": "(property \"Reference\" \"J1\""
+    },
+    {
+      "line": 587,
+      "text": "(pad \"1\" thru_hole rect"
+    },
+    {
+      "line": 596,
+      "text": "(pad \"2\" thru_hole circle"
+    },
+    {
+      "line": 605,
+      "text": "(pad \"3\" thru_hole circle"
+    },
+    {
+      "line": 667,
+      "text": "(segment"
+    },
+    {
+      "line": 670,
+      "text": "(width 0.25)"
+    },
+    {
+      "line": 675,
+      "text": "(segment"
+    },
+    {
+      "line": 678,
+      "text": "(width 0.25)"
+    },
+    {
+      "line": 683,
+      "text": "(segment"
+    },
+    {
+      "line": 686,
+      "text": "(width 0.25)"
+    },
+    {
+      "line": 691,
+      "text": "(segment"
+    },
+    {
+      "line": 694,
+      "text": "(width 0.25)"
+    },
+    {
+      "line": 699,
+      "text": "(segment"
+    },
+    {
+      "line": 702,
+      "text": "(width 0.25)"
+    },
+    {
+      "line": 707,
+      "text": "(via"
+    },
+    {
+      "line": 715,
+      "text": "(zone"
+    }
+  ]
+}

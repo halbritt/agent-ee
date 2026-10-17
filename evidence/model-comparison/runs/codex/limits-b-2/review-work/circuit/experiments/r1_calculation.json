@@ -1,0 +1,11 @@
+{
+  "method": "Ohm law and resistor dissipation; steady DC with both terminal voltages imposed externally",
+  "R1_ohm": "10000",
+  "R1_voltage_V": "48",
+  "R1_current_A": "0.0048",
+  "R1_power_W": "0.2304",
+  "continuous_limit_W": "0.1",
+  "power_to_limit_ratio": "2.304",
+  "excess_power_W": "0.1304",
+  "outcome": "FAIL: R1 exceeds the stated continuous power limit"
+}

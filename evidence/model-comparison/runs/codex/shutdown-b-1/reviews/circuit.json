@@ -1,0 +1,61 @@
+{
+  "candidate_id": "c8dafb912adfc1846973bcf6e535916a69f208ba0393da7aee57e50555c23027",
+  "coverage": [
+    "Read native schematic and PCB values/connectivity; independently exported the schematic netlist and confirmed agreement with work/netlist/connectivity.json.",
+    "Inspected native ERC/DRC reports and execution records: zero reported violations, unconnected items or schematic parity issues within configured coverage.",
+    "Evaluated the specified ideal shutdown analytically and with ngspice 42; verified initial charge, grounded input, unloaded output and measured voltage.",
+    "Recorded commands, versions, assumptions and results in review-work/circuit/experiments/REVIEW.md and commands.json."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "C1 initially charged to 1 V, /IN grounded at t=0, no external load, ideal passive components.",
+      "evidence": [
+        {
+          "locator": "Line 1: /OUT must be <= 0.01 V at 5 ms",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "C1 value 100n at line 955; R1 value 100k at line 1274",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "C1 pads at lines 209\u2013225; R1 pads at lines 358\u2013374; matching saved values at lines 107 and 256",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "Lines 163\u2013176: R1 between /IN and /OUT; C1 between /OUT and GND",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "tau_s, analytic_Vout_at_5ms_V, analytic_time_to_10mV_s",
+          "path": "review-work/circuit/experiments/shutdown-calculation.json"
+        },
+        {
+          "locator": "R1/C1 values, grounded input source, IC=1 and transient UIC",
+          "path": "review-work/circuit/experiments/shutdown.cir"
+        },
+        {
+          "locator": "vout_5ms = 6.065306e-01; time_to_10mv = 4.605170e-02",
+          "path": "review-work/circuit/experiments/shutdown.log"
+        }
+      ],
+      "id": "circuit-001",
+      "location": "R1/C1 discharge network on /OUT",
+      "mechanism": "The only discharge path is through R1=100 k\u03a9 into grounded /IN. With C1=100 nF, the time constant is 10 ms.",
+      "reasoning": "Vout(t)=1 V \u00d7 exp(-t/(R1*C1)), giving 0.60653066 V at 5 ms, approximately 60.7 times the permitted voltage. The output reaches 0.01 V only after 46.05 ms. An independent transient simulation preserving the initial capacitor charge confirms both values. Passing ERC/DRC does not establish this timing behavior.",
+      "severity": "major",
+      "title": "Saved RC values fail the 5 ms shutdown voltage requirement"
+    }
+  ],
+  "limitations": [
+    "No hardware measurements or nonideal component analysis; tolerances, leakage, ESR, parasitics, ratings and qualification are outside the stated ideal scope.",
+    "Startup, reset, brownout and interface behavior beyond the specified shutdown condition were not evaluated.",
+    "Native ERC/DRC were inspected rather than rerun; configured ignored checks were not re-enabled.",
+    "No zone refill, fabrication review or exhaustive independent geometry analysis; board checks describe the saved fill state."
+  ],
+  "packet_sha256": "65a0b7e8184cf1833bd1685c228e6c92f7c7a5c99e8d6c9be8d54d291a8be7d0",
+  "role": "circuit",
+  "run_id": "7c5910c3-61c7-4072-8e04-de2815e72490",
+  "schema": "agent-ee.review/1"
+}

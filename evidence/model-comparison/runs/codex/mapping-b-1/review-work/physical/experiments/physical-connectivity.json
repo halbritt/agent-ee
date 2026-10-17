@@ -1,0 +1,321 @@
+{
+  "python_version": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "pcbnew_version": "10.0.7",
+  "candidate_sha256": {
+    "rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b"
+  },
+  "connectivity_build_return": true,
+  "saved_copper_connectivity": {
+    "C1.1": {
+      "net": "/OUT",
+      "position_mm": [
+        109.05,
+        100.0
+      ],
+      "copper_connected_pads": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "PAD",
+          "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "8b528360-109d-4533-a657-35923fd930f8"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82"
+        },
+        {
+          "class": "PAD",
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        },
+        {
+          "class": "PAD",
+          "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+        }
+      ]
+    },
+    "C1.2": {
+      "net": "GND",
+      "position_mm": [
+        110.95,
+        100.0
+      ],
+      "copper_connected_pads": [
+        "C1.2",
+        "J1.3"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "ZONE",
+          "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1"
+        },
+        {
+          "class": "PAD",
+          "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+        },
+        {
+          "class": "PCB_VIA",
+          "uuid": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4"
+        },
+        {
+          "class": "PAD",
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ]
+    },
+    "J1.1": {
+      "net": "/IN",
+      "position_mm": [
+        100.0,
+        100.0
+      ],
+      "copper_connected_pads": [
+        "J1.1",
+        "R1.1"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "PAD",
+          "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+        },
+        {
+          "class": "PAD",
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+        }
+      ]
+    },
+    "J1.2": {
+      "net": "/OUT",
+      "position_mm": [
+        100.0,
+        102.54
+      ],
+      "copper_connected_pads": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "PAD",
+          "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "8b528360-109d-4533-a657-35923fd930f8"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82"
+        },
+        {
+          "class": "PAD",
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        },
+        {
+          "class": "PAD",
+          "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+        }
+      ]
+    },
+    "J1.3": {
+      "net": "GND",
+      "position_mm": [
+        100.0,
+        105.08
+      ],
+      "copper_connected_pads": [
+        "C1.2",
+        "J1.3"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "ZONE",
+          "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1"
+        },
+        {
+          "class": "PAD",
+          "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+        },
+        {
+          "class": "PCB_VIA",
+          "uuid": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4"
+        },
+        {
+          "class": "PAD",
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ]
+    },
+    "R1.1": {
+      "net": "/IN",
+      "position_mm": [
+        104.0875,
+        100.0
+      ],
+      "copper_connected_pads": [
+        "J1.1",
+        "R1.1"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "PAD",
+          "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+        },
+        {
+          "class": "PAD",
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+        }
+      ]
+    },
+    "R1.2": {
+      "net": "/OUT",
+      "position_mm": [
+        105.9125,
+        100.0
+      ],
+      "copper_connected_pads": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "copper_connected_items": [
+        {
+          "class": "PAD",
+          "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "8b528360-109d-4533-a657-35923fd930f8"
+        },
+        {
+          "class": "PCB_TRACK",
+          "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82"
+        },
+        {
+          "class": "PAD",
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        },
+        {
+          "class": "PAD",
+          "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+        }
+      ]
+    }
+  },
+  "independent_front_centerline_groups_ignoring_net_names": {
+    "C1.1": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "C1.2": [
+      "C1.2"
+    ],
+    "J1.1": [
+      "J1.1",
+      "R1.1"
+    ],
+    "J1.2": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "J1.3": [
+      "J1.3"
+    ],
+    "R1.1": [
+      "J1.1",
+      "R1.1"
+    ],
+    "R1.2": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ]
+  },
+  "schematic_exported_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "track_lengths_mm": {
+    "ae12bf6f-d4ed-46d3-9916-8738850152cc": 4.0875,
+    "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5": 3.1375,
+    "8b528360-109d-4533-a657-35923fd930f8": 7.5,
+    "a6dab0b4-e4e6-4317-973b-5d185e509a82": 2.54,
+    "7deb1fb0-3a34-4321-a0ef-399bdd8439d1": 2.05
+  },
+  "manual_path_lengths_mm": {
+    "J1.1_to_R1.1": 4.0875,
+    "J1.2_to_C1.1": 11.589999999999996,
+    "C1.2_to_ground_via": 2.05
+  },
+  "contract_check": {
+    "J1.2_input_on_series_only_side_of_R1": false,
+    "J1.1_output_on_C1.1_shunt_node": false,
+    "J1.3_ground_connected_to_C1.2_through_saved_zone": true
+  },
+  "illustrative_ideal_calculation": {
+    "assumptions": [
+      "R1=10 kohm, C1=100 nF from native values",
+      "Zero-impedance AC source at contractual input J1.2",
+      "Open-circuit measurement at contractual output J1.1",
+      "Ignore parasitics; illustrative only, not a specified load"
+    ],
+    "equation": "I_R1=0, so V(J1.1)=V(J1.2); C1 shunts the driven input",
+    "external_voltage_transfer": "1 (0 dB), independent of frequency in this ideal model",
+    "RC_product_s": 0.001,
+    "RC_corner_if_driven_from_the_series_only_side_Hz": 159.15494309189535
+  },
+  "limitations": [
+    "Centerline graph checks this exact front routing only; it is not a general clearance or finite-pad intersection engine.",
+    "Ground plane connectivity uses KiCad saved-fill connectivity, corroborated by native polygon inspection; no refill.",
+    "No fabrication, assembly, electrical, or thermal hardware measurements."
+  ]
+}

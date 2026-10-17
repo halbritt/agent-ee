@@ -1,0 +1,50 @@
+{
+  "candidate_id": "cdad5524c5b0c2ec7876e544b63e1d732463c5d9ad0318bbf368af0c6d9cd32e",
+  "coverage": [
+    "Verified candidate file sha256 hashes against packet artifact hashes (schematic and board).",
+    "Re-ran kicad-cli 10.0.7 sch erc --severity-all independently: 0 violations (review-work/circuit/experiments/my_erc.json).",
+    "Re-ran kicad-cli pcb drc --severity-all --schematic-parity independently: 0 violations, 0 unconnected, 0 parity issues (review-work/circuit/experiments/my_drc.json).",
+    "Re-exported KiCad XML netlist and checked net membership against the J1 contract: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}, GND={C1.2,J1.3} (review-work/circuit/experiments/my_design.xml).",
+    "Independent schematic geometry check: applied KiCad rotation-180 pin mapping to J1 library pin offsets and matched each pin endpoint to its wire and label/power symbol, confirming pin1=IN, pin2=OUT, pin3=GND without relying on the netlist resolver (review-work/circuit/experiments/sch_geometry_check.txt).",
+    "Independent physical copper trace of the saved board: parsed pads, F.Cu segments, GND via, and the saved B.Cu filled_polygon (point-in-polygon, no refill); union-find produced exactly the three contract pad groups with no net mixing, including confirmation that thermal spokes of the saved fill enter J1 pad 3 and that the /OUT stub at (107.5,100) lands on the R1.2-C1.1 track (review-work/circuit/experiments/board_trace.py, board_trace_output.txt).",
+    "ngspice-42 AC sweep of the extracted topology confirms |V(OUT)|=0.7072 at 159.155 Hz, the expected -3 dB point of a 10k/100n low-pass, so J1 pin 2 is genuinely the filtered node (review-work/circuit/experiments/rc_filter.cir, rc_ac.txt).",
+    "Cross-checked packet check outputs (work/erc/erc.json, work/drc/drc.json, work/netlist/design.xml, work/geometry/geometry.json) for consistency with my independent runs; all consistent."
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "On the saved board there is no direct trace between J1 pad 3 and C1 pad 2; the only GND path is J1.3 thermal spokes into the B.Cu zone fill, across the zone, up the single 0.6 mm/0.3 mm-drill via at (113,100), and along a 0.25 mm F.Cu track to C1.2.",
+      "evidence": [
+        {
+          "locator": "via b71a70d7-bbc1-43d1-ae55-5e4d992412a4 (size 0.6, drill 0.3, net GND); zone 38a83012 filled_polygon with thermal spokes around J1 pad 3 at (100,105.08)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "GND group: ['C1.2', 'J1.3', 'seg:GND', 'via:GND', 'zone:GND'], nets ['GND']",
+          "path": "review-work/circuit/experiments/board_trace_output.txt"
+        },
+        {
+          "locator": "zones[0] filled:true net GND on B.Cu; tracks[] single GND segment 110.95,100 to 113,100",
+          "path": "work/geometry/geometry.json"
+        }
+      ],
+      "id": "gnd-return-single-path",
+      "location": "inputs/project/rc_filter.kicad_pcb (via uuid b71a70d7 at 113,100; zone uuid 38a83012 on B.Cu; J1 pad 3 uuid ddcb81c6)",
+      "mechanism": "The ground return is a single-path chain: loss or alteration of any element (zone refill with different thermal settings, via fabrication defect) would open the GND net, since there is no redundant copper. As saved, the path is verified continuous and net-consistent.",
+      "reasoning": "This is an observation, not a rule or contract violation: DRC and my independent saved-fill trace both confirm the GND net is continuous as saved, and the stated criteria impose no redundancy or current-capacity requirement. Reported at info level because the connectivity that satisfies the contract depends entirely on the saved zone fill state, which the check limitations already flag as evaluated as-saved.",
+      "severity": "info",
+      "title": "J1.3-to-C1.2 ground return relies solely on zone fill and one 0.3 mm-drill via"
+    }
+  ],
+  "limitations": [
+    "Zone fill evaluated exactly as saved in the board file; the read-only candidate forbids a refill pass, so connectivity after a future refill with changed settings was not evaluated (though the saved thermal settings are those that produced the verified spokes).",
+    "Per inputs/requirements.txt, only the connector-contract connectivity criterion was evaluated; no current-capacity, voltage-rating, tolerance, or qualification assessment was performed and none was implied by stated operating conditions (none were stated).",
+    "ngspice sanity simulation used ideal R and C; parasitics and component tolerances were not modeled.",
+    "Footprint pad numbering and positions were taken from the candidate board file itself; the bundled stock libraries were not diffed against upstream KiCad libraries.",
+    "The packet geometry probe console (work/geometry/console.log) contains three pcbnew PROPERTY_ENUM wx assert messages; these are tool-side warnings with exit code 0 and complete output, not candidate violations, and were not investigated further."
+  ],
+  "packet_sha256": "4535457ac143bb325be48e331af043a0a29948e870325acacf3c186d95bf7d5c",
+  "role": "circuit",
+  "run_id": "abaf0d3f-c66d-47d5-b1d0-a83918c8db04",
+  "schema": "agent-ee.review/1"
+}

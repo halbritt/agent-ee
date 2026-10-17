@@ -1,0 +1,53 @@
+{
+  "candidate_id": "de5c5855e29e9a86af4e2f4589025065369d6a3826b22e6385c1badbab087a75",
+  "coverage": [
+    "Measured all five saved track segments directly from native source and independently through KiCad 10.0.7; both agree with supplied geometry.",
+    "Reviewed schematic/netlist connectivity, track junctions, ground via and saved return-plane geometry.",
+    "Reran native DRC with schematic parity: zero violations, unconnected items or parity issues.",
+    "Reviewed supplied ERC and verification coverage; recorded commands, versions, assumptions and outcomes in review-work/physical/experiments/README.md."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "All five saved F.Cu track segments are 0.25 mm wide; the requirement is at least 0.30 mm for every segment.",
+      "evidence": [
+        {
+          "locator": "Line 1: minimum saved track width requirement",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Segment blocks at lines 667, 675, 683, 691 and 699; width declarations at lines 670, 678, 686, 694 and 702",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "measurements[0..4], pcbnew_tracks, failing_count=5; native/API/supplied geometry agreement",
+          "path": "review-work/physical/experiments/width-measurements.json"
+        },
+        {
+          "locator": "summary: saved-board geometry extracted (no declared geometric requirement applied)",
+          "path": "checks/geometry.json"
+        },
+        {
+          "locator": "violations=[], unconnected_items=[], schematic_parity=[]",
+          "path": "review-work/physical/experiments/drc.json"
+        }
+      ],
+      "id": "physical-001",
+      "location": "inputs/project/rc_filter.kicad_pcb:667\u2013706; all five saved track segments",
+      "mechanism": "Each saved width is 0.05 mm below the required minimum, affecting /IN, /OUT and GND routing.",
+      "reasoning": "Direct native measurements and KiCad's API independently confirm that five of five segments fail the explicit geometric criterion. Native DRC passes, but the supplied geometry check applies no requirement, so those results do not establish compliance. This finding makes no ampacity or thermal assertion.",
+      "severity": "major",
+      "title": "Every saved track segment violates the 0.30 mm minimum"
+    }
+  ],
+  "limitations": [
+    "Zone connectivity was evaluated using saved fill; no refill was performed.",
+    "ERC and netlist records were inspected but not independently regenerated. Ignored ERC/DRC checks remain coverage omissions.",
+    "No electrical simulation, bench measurements, ampacity, thermal, EMI, fabrication-tolerance, assembly or mechanical qualification was performed; width alone establishes none of these.",
+    "KiCad emitted PROPERTY_ENUM diagnostics during API loading; measurements were corroborated independently from native text. Diagnostics are preserved in review-work/physical/experiments/measurement-console.log."
+  ],
+  "packet_sha256": "d800c309cc61b29a7f0e1e302001ee1a25925d1d2a07f121d2652fd0c8144d70",
+  "role": "physical",
+  "run_id": "1f5975c1-2d24-4d55-a157-8fa4721964ba",
+  "schema": "agent-ee.review/1"
+}

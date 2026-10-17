@@ -1,0 +1,7 @@
+tau = R*C = 10.000 ms
+V(/OUT) at t=5 ms = 0.606531 V  (requirement <= 0.01 V)
+pass: False
+margin factor over limit: 60.7x
+tau needed for 0.01 V at 5 ms: 1.0857 ms
+=> with C=100n, R1 would need <= 10.857 kOhm
+time for saved values to reach 0.01 V: 46.05 ms

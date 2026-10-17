@@ -1,0 +1,36 @@
+[
+  {
+    "argv": [
+      "python3",
+      "--version"
+    ],
+    "exit_code": 0,
+    "stdout": "Python 3.12.3\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "version"
+    ],
+    "exit_code": 0,
+    "stdout": "10.0.7\n",
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/fresh.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

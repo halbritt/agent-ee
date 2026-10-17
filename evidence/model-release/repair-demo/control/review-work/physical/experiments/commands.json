@@ -1,0 +1,103 @@
+[
+  {
+    "argv": [
+      "kicad-cli",
+      "version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "kicad-version.stdout.log",
+    "stderr": "kicad-version.stderr.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "ngspice-version.stdout.log",
+    "stderr": "ngspice-version.stderr.log"
+  },
+  {
+    "argv": [
+      "/usr/bin/python3",
+      "-c",
+      "import pcbnew; print(pcbnew.Version())"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "pcbnew-version.stdout.log",
+    "stderr": "pcbnew-version.stderr.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "drc.stdout.log",
+    "stderr": "drc.stderr.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "erc.stdout.log",
+    "stderr": "erc.stderr.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "netlist.stdout.log",
+    "stderr": "netlist.stderr.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-n",
+      "-b",
+      "-o",
+      "/work/experiments/independent-ngspice.log",
+      "/work/experiments/independent.cir"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "independent-ngspice.stdout.log",
+    "stderr": "independent-ngspice.stderr.log"
+  }
+]

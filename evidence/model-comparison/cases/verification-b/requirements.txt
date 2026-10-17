@@ -1,0 +1,2 @@
+Evaluate whether /OUT settles between 0.62 and 0.65 V at 1 ms after a 1 V step while connected to a switched ADC input. ADC sampling capacitance, switch resistance, initial charge and sampling timing have not been specified. Separate established defects from missing coverage; do not invent ADC behavior.
+Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

@@ -1,0 +1,431 @@
+{
+  "board": "/candidate/project/rc_filter.kicad_pcb",
+  "footprints": [
+    {
+      "dnp": false,
+      "layer": "F.Cu",
+      "pads": [
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/OUT",
+          "pad": "1",
+          "position_mm": [
+            109.05,
+            100.0
+          ],
+          "ref": "C1",
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "GND",
+          "pad": "2",
+          "position_mm": [
+            110.95,
+            100.0
+          ],
+          "ref": "C1",
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+        }
+      ],
+      "position_mm": [
+        110.0,
+        100.0
+      ],
+      "ref": "C1",
+      "uuid": "7e69886f-9bbf-4607-a40e-520cfd05e452",
+      "value": "100n"
+    },
+    {
+      "dnp": false,
+      "layer": "F.Cu",
+      "pads": [
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/IN",
+          "pad": "1",
+          "position_mm": [
+            104.0875,
+            100.0
+          ],
+          "ref": "R1",
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/OUT",
+          "pad": "2",
+          "position_mm": [
+            105.9125,
+            100.0
+          ],
+          "ref": "R1",
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+        }
+      ],
+      "position_mm": [
+        105.0,
+        100.0
+      ],
+      "ref": "R1",
+      "uuid": "8404a180-a151-464e-8f25-8cf316cdcba5",
+      "value": "10k"
+    },
+    {
+      "dnp": false,
+      "layer": "F.Cu",
+      "pads": [
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "/IN",
+          "pad": "1",
+          "position_mm": [
+            100.0,
+            100.0
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "/OUT",
+          "pad": "2",
+          "position_mm": [
+            100.0,
+            102.54
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "GND",
+          "pad": "3",
+          "position_mm": [
+            100.0,
+            105.08
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ],
+      "position_mm": [
+        100.0,
+        100.0
+      ],
+      "ref": "J1",
+      "uuid": "d529384f-9eec-4053-a911-4a9c09283aa0",
+      "value": "Conn_01x03"
+    }
+  ],
+  "nets": {
+    "/IN": 2,
+    "/OUT": 3,
+    "GND": 2
+  },
+  "pads": [
+    {
+      "attribute": "SMD",
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "net": "/OUT",
+      "pad": "1",
+      "position_mm": [
+        109.05,
+        100.0
+      ],
+      "ref": "C1",
+      "size_mm": [
+        1.0,
+        1.45
+      ],
+      "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+    },
+    {
+      "attribute": "SMD",
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "net": "GND",
+      "pad": "2",
+      "position_mm": [
+        110.95,
+        100.0
+      ],
+      "ref": "C1",
+      "size_mm": [
+        1.0,
+        1.45
+      ],
+      "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+    },
+    {
+      "attribute": "SMD",
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "net": "/IN",
+      "pad": "1",
+      "position_mm": [
+        104.0875,
+        100.0
+      ],
+      "ref": "R1",
+      "size_mm": [
+        1.025,
+        1.4
+      ],
+      "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+    },
+    {
+      "attribute": "SMD",
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "net": "/OUT",
+      "pad": "2",
+      "position_mm": [
+        105.9125,
+        100.0
+      ],
+      "ref": "R1",
+      "size_mm": [
+        1.025,
+        1.4
+      ],
+      "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+    },
+    {
+      "attribute": "PTH",
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "net": "/IN",
+      "pad": "1",
+      "position_mm": [
+        100.0,
+        100.0
+      ],
+      "ref": "J1",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+    },
+    {
+      "attribute": "PTH",
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "net": "/OUT",
+      "pad": "2",
+      "position_mm": [
+        100.0,
+        102.54
+      ],
+      "ref": "J1",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+    },
+    {
+      "attribute": "PTH",
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "net": "GND",
+      "pad": "3",
+      "position_mm": [
+        100.0,
+        105.08
+      ],
+      "ref": "J1",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+    }
+  ],
+  "pcbnew_version": "10.0.7",
+  "tracks": [
+    {
+      "end_mm": [
+        104.0875,
+        100.0
+      ],
+      "layer": "F.Cu",
+      "length_mm": 4.0875,
+      "net": "/IN",
+      "start_mm": [
+        100.0,
+        100.0
+      ],
+      "type": "track",
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "width_mm": 0.25
+    },
+    {
+      "end_mm": [
+        109.05,
+        100.0
+      ],
+      "layer": "F.Cu",
+      "length_mm": 3.1375,
+      "net": "/OUT",
+      "start_mm": [
+        105.9125,
+        100.0
+      ],
+      "type": "track",
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "width_mm": 0.25
+    },
+    {
+      "end_mm": [
+        107.5,
+        102.54
+      ],
+      "layer": "F.Cu",
+      "length_mm": 7.5,
+      "net": "/OUT",
+      "start_mm": [
+        100.0,
+        102.54
+      ],
+      "type": "track",
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "width_mm": 0.25
+    },
+    {
+      "end_mm": [
+        107.5,
+        100.0
+      ],
+      "layer": "F.Cu",
+      "length_mm": 2.54,
+      "net": "/OUT",
+      "start_mm": [
+        107.5,
+        102.54
+      ],
+      "type": "track",
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "width_mm": 0.25
+    },
+    {
+      "end_mm": [
+        113.0,
+        100.0
+      ],
+      "layer": "F.Cu",
+      "length_mm": 2.05,
+      "net": "GND",
+      "start_mm": [
+        110.95,
+        100.0
+      ],
+      "type": "track",
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "width_mm": 0.25
+    },
+    {
+      "drill_mm": 0.3,
+      "end_mm": [
+        113.0,
+        100.0
+      ],
+      "layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "net": "GND",
+      "start_mm": [
+        113.0,
+        100.0
+      ],
+      "type": "via",
+      "uuid": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+      "width_mm": 0.6
+    }
+  ],
+  "unconnected_items": 0,
+  "zones": [
+    {
+      "filled": true,
+      "layers": [
+        "B.Cu"
+      ],
+      "min_thickness_mm": 0.25,
+      "net": "GND",
+      "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+    }
+  ]
+}

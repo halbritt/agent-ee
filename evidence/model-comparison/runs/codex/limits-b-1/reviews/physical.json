@@ -1,0 +1,57 @@
+{
+  "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+  "coverage": [
+    "Read native schematic and PCB; independently checked R1 value, pad assignments and saved F.Cu connectivity from J1.1 through R1 to J1.2.",
+    "Reviewed supplied ERC, DRC/parity, netlist and geometry records, including ignored checks and saved-zone limitations.",
+    "Calculated continuous R1 dissipation for the specified external clamp and corroborated it with an ideal ngspice operating point. Commands, assumptions and results are recorded in review-work/physical/experiments/."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "External equipment holds /IN at 48 V DC and /OUT at 0 V indefinitely, with R1's stipulated continuous power limit of 0.1 W.",
+      "evidence": [
+        {
+          "locator": "line 1: imposed voltages, indefinite duration and 0.1 W continuous limit",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "R1 symbol UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; lines 1263\u20131274 identify R1 and its 10k value",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "R1 value at line 256; pads 1 and 2 at lines 359\u2013374; F.Cu segments at lines 667\u2013697 connect J1.1\u2013R1.1 and R1.2\u2013J1.2",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "nets /IN and /OUT connect R1.1 to J1.1 and R1.2 to J1.2",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "centerline_connectivity and calculation: current_A=0.0048, power_W=0.2304, power_to_limit=2.304",
+          "path": "review-work/physical/experiments/results.json"
+        },
+        {
+          "locator": "operating-point vectors: v(in)=48 V, v(out)=0 V, r1_current=4.8 mA, r1_power=0.2304 W",
+          "path": "review-work/physical/experiments/ngspice.log"
+        }
+      ],
+      "id": "physical-r1-power",
+      "location": "inputs/project/rc_filter.kicad_pcb: R1 at (105, 100) mm, between /IN and /OUT",
+      "mechanism": "The maintained voltage across the 10 k\u03a9 resistor produces continuous resistive dissipation above its stipulated limit.",
+      "reasoning": "The saved copper provides a complete path through R1 to the external clamp. Thus I=48/10000=4.8 mA and P=48\u00b2/10000=0.2304 W, exceeding 0.1 W by 0.1304 W, or a factor of 2.304. C1 does not interrupt this DC path. The supplied clean ERC/DRC results do not evaluate this stimulus or resistor power.",
+      "severity": "major",
+      "title": "R1 exceeds its continuous power limit under the specified clamp"
+    }
+  ],
+  "limitations": [
+    "No hardware temperature, damage threshold or failure-time measurement; the finding establishes violation of the supplied continuous power limit.",
+    "No manufacturer-specific tolerance, voltage-rating or thermal-derating assessment. No ampacity or thermal qualification inferred from footprint or track width.",
+    "Saved zone fill was inspected without refill. Existing native check records were reviewed rather than rerun.",
+    "Ignored ERC checks remain unverified: single_global_label, four_way_junction, simulation_model_issue and footprint_filter. Ignored DRC checks remain unverified: missing_courtyard, track_not_centered_on_via, tuning_profile_track_geometries, footprint_filters_mismatch and footprint_type_mismatch.",
+    "Fabrication-process qualification, other operating conditions and ECU qualification were outside the stated scope."
+  ],
+  "packet_sha256": "043cafe6a72120f493cef855997eba3586bac17dbdc7ab89c17c959e54abe95b",
+  "role": "physical",
+  "run_id": "d6c462f9-8553-41d4-b19b-71efe6c55239",
+  "schema": "agent-ee.review/1"
+}

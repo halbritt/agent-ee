@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "case": "singleton",
+      "error": null,
+      "execution": "ok",
+      "expected": "accepted",
+      "passed": true,
+      "run": "/home/halbritt/git/agent-ee/evidence/adjudicator-comparison/codex/singleton"
+    },
+    {
+      "case": "unsupported",
+      "error": null,
+      "execution": "ok",
+      "expected": "dismissed",
+      "passed": true,
+      "run": "/home/halbritt/git/agent-ee/evidence/adjudicator-comparison/codex/unsupported"
+    },
+    {
+      "case": "calculation",
+      "error": null,
+      "execution": "ok",
+      "expected": "accepted",
+      "passed": true,
+      "run": "/home/halbritt/git/agent-ee/evidence/adjudicator-comparison/codex/calculation"
+    },
+    {
+      "case": "stale-repair",
+      "error": null,
+      "execution": "ok",
+      "expected": "accepted",
+      "passed": true,
+      "run": "/home/halbritt/git/agent-ee/evidence/adjudicator-comparison/codex/stale-repair"
+    }
+  ],
+  "state": "complete"
+}

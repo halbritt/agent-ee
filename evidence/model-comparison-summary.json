@@ -1,0 +1,3013 @@
+{
+  "schema": "agent-ee.comparison-summary/1",
+  "expectations_sha256": "f12741180214e4241a635fcd4d1990fc4b0fc4d69aba062fd87951ee9fceff76",
+  "interpretation": "Execution counts and explicit manually checked grades; no automatic engineering oracle or model ranking.",
+  "models": {
+    "claude": {
+      "planned_judgments": 32,
+      "executions": {
+        "not_run": 6,
+        "ok": 25,
+        "timeout": 1
+      },
+      "grades": {
+        "correct_control": 13,
+        "correct_uncertainty_with_calculation_error": 1,
+        "supported_defect": 8,
+        "supported_defect_with_noise": 1,
+        "supported_defect_with_overclaim": 1,
+        "uncertainty_with_overclaim": 1,
+        "ungraded": 7
+      },
+      "median_duration_s": 171.0475,
+      "sum_duration_s": 4499.467
+    },
+    "codex": {
+      "planned_judgments": 32,
+      "executions": {
+        "ok": 32
+      },
+      "grades": {
+        "correct_control": 16,
+        "correct_uncertainty": 1,
+        "correct_uncertainty_weak_severity": 1,
+        "supported_defect": 14
+      },
+      "median_duration_s": 88.5275,
+      "sum_duration_s": 2937.903
+    },
+    "agy": {
+      "planned_judgments": 32,
+      "executions": {
+        "not_run": 30,
+        "ok": 1,
+        "timeout": 1
+      },
+      "grades": {
+        "correct_control": 1,
+        "ungraded": 31
+      },
+      "median_duration_s": 221.172,
+      "sum_duration_s": 442.344
+    }
+  },
+  "judgments": [
+    {
+      "key": "claude/mapping-a-1/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 228.157,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 85302,
+          "cacheReadInputTokens": 620664,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 3.189484,
+          "inputTokens": 18,
+          "maxOutputTokens": 64000,
+          "outputTokens": 17252,
+          "provider": "firstParty",
+          "thinkingTokens": 7876,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "abfaf510d699dceddab610d9d07932f2ff050e5ebb4434aa486a3dede3e0a7c0",
+      "findings": [
+        {
+          "id": "gnd-return-single-path",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "J1.3-to-C1.2 ground return relies solely on zone fill and one 0.3 mm-drill via",
+          "evidence": [
+            {
+              "locator": "via b71a70d7-bbc1-43d1-ae55-5e4d992412a4 (size 0.6, drill 0.3, net GND); zone 38a83012 filled_polygon with thermal spokes around J1 pad 3 at (100,105.08)",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "GND group: ['C1.2', 'J1.3', 'seg:GND', 'via:GND', 'zone:GND'], nets ['GND']",
+              "path": "review-work/circuit/experiments/board_trace_output.txt"
+            },
+            {
+              "locator": "zones[0] filled:true net GND on B.Cu; tracks[] single GND segment 110.95,100 to 113,100",
+              "path": "work/geometry/geometry.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles."
+    },
+    {
+      "key": "claude/mapping-a-1/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 262.347,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 91157,
+          "cacheReadInputTokens": 721732,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 3.5009220000000005,
+          "inputTokens": 20,
+          "maxOutputTokens": 64000,
+          "outputTokens": 19117,
+          "provider": "firstParty",
+          "thinkingTokens": 10584,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "1d616de0de5355b682cd669379aca38304ea6dbf347029256d7820e01e296738",
+      "findings": [
+        {
+          "id": "PHY-001",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "GND return between C1 and J1.3 is a single-path chain through one 0.3 mm-drill via and zone thermal spokes",
+          "evidence": [
+            {
+              "locator": "sections 2-3: pcbnew unconnected=0 with saved fill; point-in-polygon results (via inside fill >2.2 mm margin; spokes at 45/135/225/315 deg r=0.7 mm inside fill; N/E/S/W gap samples outside)",
+              "path": "review-work/physical/experiments/NOTES.md"
+            },
+            {
+              "locator": "segment uuid 7deb1fb0 (110.95,100)->(113,100) net GND; via at (113,100) size 0.6 drill 0.3; zone connect_pads clearance 0.5, thermal_bridge_width 0.5",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "tracks[]: GND track length 2.05 mm and via entry; zones[0] filled=true net GND",
+              "path": "work/geometry/geometry.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles."
+    },
+    {
+      "key": "claude/mapping-a-2/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 201.474,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 83194,
+          "cacheReadInputTokens": 456843,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.839913,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 14381,
+          "provider": "firstParty",
+          "thinkingTokens": 8885,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "356104df83d603a84e0501c12b464f3db5ef2b47045a313a1c8c043661d79be2",
+      "findings": [],
+      "grade_reason": "Fresh native netlist and saved-board connectivity confirm J1.1 input, J1.2 output, J1.3 ground. Supplemental AC sweep supports the expected low-pass topology. No defect allegation."
+    },
+    {
+      "key": "claude/mapping-a-2/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "timeout",
+      "duration_s": 300.025,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/mapping-b-1/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 153.304,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 77791,
+          "cacheReadInputTokens": 289379,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.418649,
+          "inputTokens": 10,
+          "maxOutputTokens": 64000,
+          "outputTokens": 11467,
+          "provider": "firstParty",
+          "thinkingTokens": 4694,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "30db072fbf3b94a0bf19a343484b1e8a02b5aafb6fd4fb472ff749cb2e7e058a",
+      "findings": [
+        {
+          "id": "CIRC-01",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "J1 pins 1 and 2 are swapped relative to the stated connector contract (input and filtered output inverted)",
+          "evidence": [
+            {
+              "locator": "symbol J1 (uuid 465541a7-d06f-5282-b75f-15b79e4182a2) at (60.96 63.5 180); wires at (66.04,66.04)->(68.58,66.04) with label IN (uuid 7b760986) and (66.04,63.5)->(68.58,63.5) with label OUT (uuid 39787aa2)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "nets: /IN = J1 pin 1 + R1 pin 1; /OUT = C1 pin 1 + J1 pin 2 + R1 pin 2; GND = C1 pin 2 + J1 pin 3",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "footprint J1 (uuid d529384f-9eec-4053-a911-4a9c09283aa0): pad 1 net /IN, pad 2 net /OUT, pad 3 net GND",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "pads: J1.1 (100,100) net /IN, J1.2 (100,102.54) net /OUT, J1.3 (100,105.08) net GND",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "line 1: J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "independent kicad-cli 10.0.7 netlist re-export, identical net membership",
+              "path": "review-work/circuit/experiments/netlist_summary.txt"
+            },
+            {
+              "locator": "geometric derivation: pin 1 -> (66.04,66.04)=IN wire, pin 2 -> (66.04,63.50)=OUT wire, pin 3 -> (66.04,60.96)=GND wire",
+              "path": "review-work/circuit/experiments/pin_mapping.txt"
+            },
+            {
+              "locator": "AC sweep: as-saved orientation vdb(outA) -16.07 dB at 1 kHz (low-pass); contract orientation vdb(outB) -0.086 dB flat 10 Hz..100 kHz (no filtering)",
+              "path": "review-work/circuit/experiments/ngspice_out.txt"
+            },
+            {
+              "locator": "sections 1-4: commands, versions, transform derivation, simulation assumptions",
+              "path": "review-work/circuit/experiments/NOTES.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error."
+    },
+    {
+      "key": "claude/mapping-b-1/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 206.925,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 82384,
+          "cacheReadInputTokens": 443743,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.8943630000000007,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 16056,
+          "provider": "firstParty",
+          "thinkingTokens": 6084,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "b2c9315bf56260741ba0aa4a32440dfdb225d337ed159116b02388df00b56316",
+      "findings": [
+        {
+          "id": "PHY-001",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "J1 input/output pins swapped relative to the external connector contract (pin 1 = input, pin 2 = filtered output as saved)",
+          "evidence": [
+            {
+              "locator": "line 1: 'J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground'",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "J1 symbol (uuid 465541a7) at (60.96 63.5 180); wire uuid 6f0b101e (66.04,66.04)->(68.58,66.04) with label 'IN' uuid 7b760986; wire uuid af803d4e (66.04,63.5)->(68.58,63.5) with label 'OUT' uuid 39787aa2; R1 pin1 wire uuid 9b9e16d9 to label 'IN' uuid 4728ac71",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "J1 footprint uuid d529384f: pad 1 (net \"/IN\") uuid 7e93f4b3, pad 2 (net \"/OUT\") uuid d6746591, pad 3 (net \"GND\") uuid ddcb81c6",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "<nets>: net '/IN' nodes J1 pin 1 + R1 pin 1; net '/OUT' nodes C1 pin 1, J1 pin 2, R1 pin 2; net 'GND' nodes C1 pin 2, J1 pin 3",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "nets: /IN=[J1.1,R1.1], /OUT=[C1.1,J1.2,R1.2], GND=[C1.2,J1.3]",
+              "path": "work/netlist/connectivity.json"
+            },
+            {
+              "locator": "J1 pads: pad 1 net /IN at (100,100), pad 2 net /OUT at (100,102.54), pad 3 net GND at (100,105.08)",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "sections 1-3: independent netlist re-export, pin-position derivation, pcbnew pad/track dump (unconnected=0)",
+              "path": "review-work/physical/experiments/notes.md"
+            },
+            {
+              "locator": "<nets> block \u2014 independently regenerated, identical to packet netlist",
+              "path": "review-work/physical/experiments/my_netlist.xml"
+            }
+          ]
+        },
+        {
+          "id": "PHY-002",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "Criteria set cannot detect the connector-contract violation: all native checks pass on an internally consistent but contract-swapped design",
+          "evidence": [
+            {
+              "locator": "'Found 0 violations'",
+              "path": "work/erc/console.log"
+            },
+            {
+              "locator": "'Found 0 violations / 0 unconnected items / 0 schematic parity issues'",
+              "path": "work/drc/console.log"
+            },
+            {
+              "locator": "<nets> block shows J1.1=/IN, J1.2=/OUT \u2014 data sufficient to detect the swap, but no check in the packet asserts on it",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "Conclusion section: self-consistency masks contract violation from ERC/DRC/parity",
+              "path": "review-work/physical/experiments/notes.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error."
+    },
+    {
+      "key": "claude/mapping-b-2/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/mapping-b-2/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/limits-a-1/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 99.605,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 74904,
+          "cacheReadInputTokens": 572791,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.390851,
+          "inputTokens": 18,
+          "maxOutputTokens": 64000,
+          "outputTokens": 6396,
+          "provider": "firstParty",
+          "thinkingTokens": 2151,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "8bf1a028608f4affad12ede90822f7a3fe0f62fb5902aef5d88d2d4680944a1e",
+      "findings": [],
+      "grade_reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation."
+    },
+    {
+      "key": "claude/limits-a-1/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 111.453,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 76500,
+          "cacheReadInputTokens": 364180,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.27935,
+          "inputTokens": 12,
+          "maxOutputTokens": 64000,
+          "outputTokens": 7701,
+          "provider": "firstParty",
+          "thinkingTokens": 2632,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "1d487179ac1ebf3fc15ac6a25a6fde6d0979914ad440b565819ba30c4a3d2c2d",
+      "findings": [],
+      "grade_reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation."
+    },
+    {
+      "key": "claude/limits-a-2/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/limits-a-2/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/limits-b-1/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 86.746,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 73034,
+          "cacheReadInputTokens": 352927,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.116127,
+          "inputTokens": 12,
+          "maxOutputTokens": 64000,
+          "outputTokens": 6048,
+          "provider": "firstParty",
+          "thinkingTokens": 1389,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "9b6d3d1b16ee7695c00b0f99a48e6d8fba6a03240c6210bed6858857a749e8c8",
+      "findings": [
+        {
+          "id": "CKT-R1-OVERPOWER",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "R1 dissipates 0.23 W continuously, 2.3x its 0.1 W limit, under the stated 48 V clamp condition",
+          "evidence": [
+            {
+              "locator": "lines 1-2: 48 V on /IN, /OUT clamped to 0 V indefinitely, R1 continuous limit 0.1 W",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "symbol uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78: Device:R, Value \"10k\"; labels IN at pin 1 wire (86.36 57.15) and OUT at pin 2 wire (86.36 69.85)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "nets: /IN contains R1 pin 1; /OUT contains R1 pin 2; R1 value 10k",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "P = V^2/R = 0.2304 W; ratio = 2.30x vs 0.1 W limit",
+              "path": "review-work/circuit/experiments/r1_power_calc.out"
+            },
+            {
+              "locator": "ngspice .op: v(out)=0, i(vclamp)=4.8e-3 A, p_r1 = 2.304e-01 W",
+              "path": "review-work/circuit/experiments/r1_clamp.out"
+            },
+            {
+              "locator": "Calculation and Simulation cross-check sections; tolerance sensitivity note",
+              "path": "review-work/circuit/experiments/NOTES.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements."
+    },
+    {
+      "key": "claude/limits-b-1/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 155.151,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 77060,
+          "cacheReadInputTokens": 362525,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.443895,
+          "inputTokens": 12,
+          "maxOutputTokens": 64000,
+          "outputTokens": 10801,
+          "provider": "firstParty",
+          "thinkingTokens": 4866,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "f181c7cd43ff012f11bc66ef8b9a3e93ed7974d9d3be022659238ccf0f214c05",
+      "findings": [
+        {
+          "id": "PHY-1",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "R1 dissipates 230.4 mW continuously under the specified 48 V / clamped-output condition, 2.3x its stated 0.1 W limit",
+          "evidence": [
+            {
+              "locator": "lines 1-2 (48 V on /IN, /OUT clamped to 0 V indefinitely, R1 continuous limit 0.1 W)",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "symbol Device:R uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78, property Value \"10k\"; labels IN/OUT on R1 pins",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "<nets>: net /IN node R1 pin 1; net /OUT node R1 pin 2",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "whole file (P = 230.4 mW, ratio 2.304, R_min 23.04k)",
+              "path": "review-work/physical/experiments/r1_power_calc.txt"
+            },
+            {
+              "locator": "op results: i = 0.0048 A, p = 0.2304 W",
+              "path": "review-work/physical/experiments/r1_power_ngspice.log"
+            },
+            {
+              "locator": "pad nets R1.1=/IN, R1.2=/OUT; J1.1=/IN, J1.2=/OUT; 0 unconnected",
+              "path": "review-work/physical/experiments/board_connectivity.txt"
+            }
+          ]
+        },
+        {
+          "id": "PHY-2",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Packet verification suite does not exercise the stated electrical criterion; all-pass toolchain results must not be read as electrical qualification",
+          "evidence": [
+            {
+              "locator": "violations: [] (rule checks only)",
+              "path": "work/erc/erc.json"
+            },
+            {
+              "locator": "Found 0 violations / 0 unconnected / 0 parity issues",
+              "path": "work/drc/console.log"
+            },
+            {
+              "locator": "connectivity/geometry extraction only; no electrical stimulus",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "section 1 (power criterion verified only by review-side calculation/simulation, not by any packet check)",
+              "path": "review-work/physical/experiments/README.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements."
+    },
+    {
+      "key": "claude/limits-b-2/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/limits-b-2/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "claude/shutdown-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 130.865,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 77953,
+          "cacheReadInputTokens": 292014,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.336074,
+          "inputTokens": 10,
+          "maxOutputTokens": 64000,
+          "outputTokens": 9698,
+          "provider": "firstParty",
+          "thinkingTokens": 5120,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "0f19a4f5dd07daf3aac439cf157f82c334934ebf39819d6b96740c714499f076",
+      "findings": [],
+      "grade_reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements."
+    },
+    {
+      "key": "claude/shutdown-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 217.921,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 83900,
+          "cacheReadInputTokens": 452385,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.920525,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 15800,
+          "provider": "firstParty",
+          "thinkingTokens": 8305,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "107d34e76b387d9aefa856fc96b3e35b5e7f28b3499ef797ce6beb7066cfb611",
+      "findings": [
+        {
+          "id": "phys-01",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Shutdown discharge meets 10 mV @ 5 ms with only 7.9% timing margin (4.605 tau required, 5 tau provided)",
+          "evidence": [
+            {
+              "locator": "V(5ms) analytical = 6.7379 mV; time to reach 10 mV = 4.6052 ms; margin 0.3948 ms (7.9%)",
+              "path": "review-work/physical/experiments/analytical_calc.txt"
+            },
+            {
+              "locator": "meas vout5ms = 6.737944e-03",
+              "path": "review-work/physical/experiments/shutdown_discharge_output.txt"
+            },
+            {
+              "locator": "line 1: Require /OUT <= 0.01 V at 5 ms; Ideal passive components only",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "nets /IN, /OUT, GND; C1=100n, R1=10k",
+              "path": "work/netlist/design.xml"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements."
+    },
+    {
+      "key": "claude/shutdown-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 121.433,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 75401,
+          "cacheReadInputTokens": 503196,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.421426,
+          "inputTokens": 16,
+          "maxOutputTokens": 64000,
+          "outputTokens": 8201,
+          "provider": "firstParty",
+          "thinkingTokens": 2628,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "b4d29bc31e15b6358c1cc53297fbcbb185824e4b26ec33dfdec9c85426cd1559",
+      "findings": [
+        {
+          "id": "CIRC-01",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "R1*C1 discharge time constant ~9.2x too large: /OUT is 0.607 V at 5 ms, violating the 0.01 V shutdown requirement",
+          "evidence": [
+            {
+              "locator": "line 1: 'Require /OUT <= 0.01 V at 5 ms' with C1 at 1 V and /IN grounded",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "R1 property Value \"100k\" (symbol at 86.36,63.5); C1 property Value \"100n\" (symbol at 101.6,63.5)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "nets: /IN=[J1.1,R1.1], /OUT=[C1.1,J1.2,R1.2], GND=[C1.2,J1.3] \u2014 R1 is the sole discharge path for C1 when /IN is grounded",
+              "path": "work/netlist/connectivity.json"
+            },
+            {
+              "locator": "ngspice deck: R1 0 OUT 100k; C1 OUT 0 100n ic=1; .tran 1u 6m uic",
+              "path": "review-work/circuit/experiments/shutdown_discharge.cir"
+            },
+            {
+              "locator": "meas result 'vout_at_5ms = 6.065307e-01' (ngspice-42)",
+              "path": "review-work/circuit/experiments/shutdown_discharge.log"
+            },
+            {
+              "locator": "section 'Shutdown criterion check': tau=10 ms, required tau <= 1.0857 ms, time to 0.01 V = 46.05 ms",
+              "path": "review-work/circuit/experiments/notes.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements."
+    },
+    {
+      "key": "claude/shutdown-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 172.777,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 78524,
+          "cacheReadInputTokens": 509909,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.675099000000001,
+          "inputTokens": 16,
+          "maxOutputTokens": 64000,
+          "outputTokens": 11891,
+          "provider": "firstParty",
+          "thinkingTokens": 4937,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "c8f32dede307eea9d2dafe71b170a019e78e478d089498f9b38c8cb371ef8234",
+      "findings": [
+        {
+          "id": "PHY-01",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "Saved R1/C1 values fail the shutdown requirement: /OUT = 0.607 V at 5 ms vs required <= 0.01 V",
+          "evidence": [
+            {
+              "locator": "line 1: \"Require /OUT <= 0.01 V at 5 ms\"",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "R1 property Value \"100k\"; C1 property Value \"100n\"",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "<nets>: /IN {J1.1, R1.1}, /OUT {C1.1, J1.2, R1.2}, GND {C1.2, J1.3} and <comp> values 100k/100n",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "V(/OUT) at t=5 ms = 0.606531 V, pass: False, margin 60.7x, R1 needed <= 10.857 kOhm",
+              "path": "review-work/physical/experiments/discharge_analytic.out"
+            },
+            {
+              "locator": "meas vout_at_5ms = 6.065306e-01",
+              "path": "review-work/physical/experiments/shutdown_ngspice.log"
+            },
+            {
+              "locator": "SPICE deck: R1 in out 100k; C1 out 0 100n ic=1; Vin in 0 DC 0; .tran 10u 6m uic",
+              "path": "review-work/physical/experiments/shutdown.cir"
+            }
+          ]
+        },
+        {
+          "id": "PHY-02",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "GND return between C1 and J1 depends on a single 0.3 mm-drill via and the saved B.Cu zone fill (verified continuous as saved)",
+          "evidence": [
+            {
+              "locator": "segment uuid 7deb1fb0 (110.95,100)->(113,100) net GND; via uuid b71a70d7 size 0.6 drill 0.3; zone uuid 38a83012 net GND layer B.Cu with filled_polygon",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "unconnected (ratsnest) count: 0; GND PTH pad J1.3 touches B.Cu fill: True; via at (113000000,100000000) touches B.Cu fill: True",
+              "path": "review-work/physical/experiments/board_connectivity.out"
+            },
+            {
+              "locator": "tracks[4] GND segment, tracks[5] via; zones[0] net GND filled true",
+              "path": "work/geometry/geometry.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated ideal RC initial condition gives 0.0067379 V for 10k or 0.606531 V for 100k at 5 ms. Both reviews use the saved values and correct discharge topology. The control physical reviewer reports a nonblocking nominal timing-margin observation without imposing tolerance requirements."
+    },
+    {
+      "key": "claude/width-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 196.634,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 84213,
+          "cacheReadInputTokens": 460765,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.883365,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 14764,
+          "provider": "firstParty",
+          "thinkingTokens": 6838,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "edcde2e073634789cc0f34a1dc7ab5e021ce5a805f19db5b9b898bfbd30072b7",
+      "findings": [
+        {
+          "id": "circuit-01",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Geometry criterion was not machine-adjudicated in supplied evidence (independent check confirms compliance)",
+          "evidence": [
+            {
+              "locator": "tracks[] width_mm fields; file contains no requirement/threshold evaluation",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "segment_count=5, all width_mm=0.25, violations=[], all_pass=true",
+              "path": "review-work/circuit/experiments/track_width_check.out"
+            },
+            {
+              "locator": "five (segment ... (width 0.25) ...) entries, uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "All five saved segments are 0.25 mm >= 0.20 mm. Explicitly nonblocking observation about packaged threshold automation; reviewer measured compliance."
+    },
+    {
+      "key": "claude/width-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 178.331,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 82632,
+          "cacheReadInputTokens": 377661,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.6935710000000004,
+          "inputTokens": 12,
+          "maxOutputTokens": 64000,
+          "outputTokens": 13263,
+          "provider": "firstParty",
+          "thinkingTokens": 6830,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "911e5a16666ea9532fab447e745f8e447ffa02ad21c4969b1ebe62a5218cb4b1",
+      "findings": [
+        {
+          "id": "PHY-01",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Packet geometry check did not machine-apply the stated 0.20 mm width criterion (independently verified compliant)",
+          "evidence": [
+            {
+              "locator": "tracks[] entries: 5 objects with type 'track', each width_mm 0.25; via width_mm 0.6",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "segment_count 5, arc_count 0, min_width_mm 0.25, all_ge_0.20 true (text parse of native board)",
+              "path": "review-work/physical/experiments/width_check_result.json"
+            },
+            {
+              "locator": "track_segments 5, min_seg_width_mm 0.25, unconnected_items 0 (pcbnew 10.0.7 API)",
+              "path": "review-work/physical/experiments/pcbnew_probe_result.json"
+            },
+            {
+              "locator": "five (segment ...) blocks, uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0, each '(width 0.25)'",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Native text and pcbnew agree: five segments >= 0.20 mm. Packaged automation concern is info only; no false blocking defect."
+    },
+    {
+      "key": "claude/width-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 105.428,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 74211,
+          "cacheReadInputTokens": 213051,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.071701,
+          "inputTokens": 8,
+          "maxOutputTokens": 64000,
+          "outputTokens": 7487,
+          "provider": "firstParty",
+          "thinkingTokens": 3139,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "bba46aed85c6d3834fc7a442a89cf223319117f437431f56cfcc58402c0ed2d6",
+      "findings": [
+        {
+          "id": "track-width-below-0p30",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "All 5 saved copper track segments are 0.25 mm wide, violating the >= 0.30 mm exercise requirement",
+          "evidence": [
+            {
+              "locator": "five (segment ...) blocks near end of file, each containing (width 0.25), e.g. segment uuid ae12bf6f-d4ed-46d3-9916-8738850152cc net /IN (100,100)->(104.0875,100)",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "line 1: 'Every saved copper track segment must have width >= 0.30 mm.'",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "tracks[] entries type=track: all five report width_mm: 0.25",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "parse output: 'segments failing >=0.30mm requirement: 5/5' plus method/context notes",
+              "path": "review-work/circuit/experiments/segment_widths.txt"
+            }
+          ]
+        },
+        {
+          "id": "requirement-not-encoded-in-checks",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "No automated check in the packet actually evaluated the 0.30 mm width criterion, so the all-green check suite masks the failure",
+          "evidence": [
+            {
+              "locator": "tracks[] width_mm values present but no threshold evaluation; packet geometry check summary: 'no declared geometric requirement applied'",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "violations: [] despite 0.25 mm tracks; no track-width rule in effect beyond KiCad defaults",
+              "path": "work/drc/drc.json"
+            },
+            {
+              "locator": "notes: rc_filter.kicad_pro has empty 'rules' {} and 'track_widths' [], default min track width 0.2 mm",
+              "path": "review-work/circuit/experiments/segment_widths.txt"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Five saved 0.25 mm segments violate the explicit 0.30 mm threshold; no ampacity inference. Extra check-coverage concern remains nondefect."
+    },
+    {
+      "key": "claude/width-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 159.155,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 77735,
+          "cacheReadInputTokens": 440691,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.5619810000000003,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 11329,
+          "provider": "firstParty",
+          "thinkingTokens": 3938,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect_with_overclaim",
+      "review_sha256": "82e1c3815118fea3244ccbad128201173e4ded943988b4dfa9c31508e31da335",
+      "findings": [
+        {
+          "id": "PHY-1",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "All five saved track segments are 0.25 mm wide, below the required 0.30 mm minimum",
+          "evidence": [
+            {
+              "locator": "lines 667-705: five (segment ...) blocks each with (width 0.25)",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "line 1: 'Every saved copper track segment must have width >= 0.30 mm'",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "tracks[] array: five entries with type 'track' and width_mm 0.25",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "raw S-expression parse: 'segments: 5 failing(<0.30mm): 5'",
+              "path": "review-work/physical/experiments/width_check_raw.txt"
+            },
+            {
+              "locator": "pcbnew 10.0.7 extraction: 'track segments: 5 min width: 0.25'",
+              "path": "review-work/physical/experiments/width_check_pcbnew.txt"
+            }
+          ]
+        },
+        {
+          "id": "PHY-2",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "Check suite cannot detect the 0.30 mm requirement: geometry criterion was never applied and DRC enforces only the board's 0.2 mm rule",
+          "evidence": [
+            {
+              "locator": "tracks[] width_mm 0.25 recorded but no pass/fail evaluation; packet geometry check outcome 'info', summary 'no declared geometric requirement applied'",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "'Found 0 violations' despite 0.25 mm tracks",
+              "path": "work/drc/console.log"
+            },
+            {
+              "locator": "'board min track width setting (mm): 0.2' from pcbnew design settings",
+              "path": "review-work/physical/experiments/width_check_pcbnew.txt"
+            },
+            {
+              "locator": "section 'width_check_pcbnew.py': rc_filter.kicad_pro defines no custom track_widths/netclass minima",
+              "path": "review-work/physical/experiments/NOTES.md"
+            }
+          ]
+        },
+        {
+          "id": "PHY-3",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "B.Cu GND zone minimum fill thickness is also 0.25 mm (out of scope as written, flagged for intent)",
+          "evidence": [
+            {
+              "locator": "zone block: (min_thickness 0.25), (thermal_bridge_width 0.5), net GND, layer B.Cu",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "zones[0]: min_thickness_mm 0.25, filled true, net GND",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "'fill identical to saved: True'; 'unconnected count after refill: 0'",
+              "path": "review-work/physical/experiments/connectivity_zone_check.txt"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Correctly detects five 0.25 mm segments below 0.30 mm. Secondary major verification-defect allegation overstates the evidence: geometry output is explicitly info and human/agent application of the requirement is allowed; no requirement mandates automated thresholding. Zone observation correctly out of scope."
+    },
+    {
+      "key": "claude/population-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 127.637,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 77108,
+          "cacheReadInputTokens": 361611,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.361441,
+          "inputTokens": 12,
+          "maxOutputTokens": 64000,
+          "outputTokens": 9151,
+          "provider": "firstParty",
+          "thinkingTokens": 3658,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "b5aecb5a83dc1eccfbe32c5530e974355e126afe1098018623b338e2c75ca9ed",
+      "findings": [],
+      "grade_reason": "Saved R1 is fitted in schematic and PCB and is the only required resistive /IN-to-/OUT bridge. Native nets and independently parsed population support the clean conclusion."
+    },
+    {
+      "key": "claude/population-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 205.928,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 85296,
+          "cacheReadInputTokens": 619022,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 3.044122,
+          "inputTokens": 18,
+          "maxOutputTokens": 64000,
+          "outputTokens": 14380,
+          "provider": "firstParty",
+          "thinkingTokens": 7257,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "61fbd63004bbb2728b819595e7ebb0dc8eca8b3b64b9e85bc0267fe70a44f9c2",
+      "findings": [],
+      "grade_reason": "Both native representations mark R1 fitted; direct geometry, pcbnew and explicit connectivity support the resistive bridge. No extra defects alleged."
+    },
+    {
+      "key": "claude/population-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 163.892,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 77645,
+          "cacheReadInputTokens": 651363,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.7570629999999996,
+          "inputTokens": 20,
+          "maxOutputTokens": 64000,
+          "outputTokens": 11052,
+          "provider": "firstParty",
+          "thinkingTokens": 3315,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect_with_noise",
+      "review_sha256": "729f4da61f216e1f8b596ca68ddd09f03e0fbb078b9fbc9a0cd560d85aeb4638",
+      "findings": [
+        {
+          "id": "CIRC-01",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "R1 is DNP in the saved assembly: no fitted resistive DC path connects /IN to /OUT",
+          "evidence": [
+            {
+              "locator": "line 1261 '(dnp yes)' within symbol R1 instance uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "line 304 '(attr smd dnp)' within footprint Resistor_SMD:R_0805_2012Metric uuid 8404a180-a151-464e-8f25-8cf316cdcba5; pad 1 net \"/IN\", pad 2 net \"/OUT\"",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components.R1.dnp = true; nets \"/IN\": [J1.1, R1.1], \"/OUT\": [C1.1, J1.2, R1.2]",
+              "path": "work/netlist/connectivity.json"
+            },
+            {
+              "locator": "footprints[1] ref R1 dnp=true with pads on /IN and /OUT; tracks array shows all 6 copper items single-net",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "RESULT line: 'fitted resistive DC path /IN -> /OUT exists: False'; fitted bridges list contains only C1 (/OUT-GND, DC open)",
+              "path": "review-work/circuit/experiments/populated_connectivity.out"
+            },
+            {
+              "locator": "operating point: in = 1.000000e+00, out = 0.000000e+00, vin#branch = 0, i_load = 0",
+              "path": "review-work/circuit/experiments/populated_dc.out"
+            },
+            {
+              "locator": "Experiments 1 and 2, commands, tool versions (pcbnew 10.0.7, ngspice-42) and assumptions",
+              "path": "review-work/circuit/experiments/notes.md"
+            }
+          ]
+        },
+        {
+          "id": "CIRC-02",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Passing ERC/DRC/parity checks do not verify the assembly-population criterion",
+          "evidence": [
+            {
+              "locator": "sheets[0].violations = [] with included_severities error/warning/exclusion; no population/DNP rule present",
+              "path": "work/erc/erc.json"
+            },
+            {
+              "locator": "violations = [], unconnected_items = [], schematic_parity = []; ignored_checks list contains no DNP-related rule",
+              "path": "work/drc/drc.json"
+            },
+            {
+              "locator": "same board passing DRC shows 'fitted resistive DC path /IN -> /OUT exists: False'",
+              "path": "review-work/circuit/experiments/populated_connectivity.out"
+            }
+          ]
+        },
+        {
+          "id": "CIRC-03",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "R1 population metadata is internally inconsistent: DNP yet still in BOM and placement files",
+          "evidence": [
+            {
+              "locator": "lines 1258-1261: '(in_bom yes)', '(in_pos_files yes)', '(dnp yes)' on symbol R1",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "comp ref=\"R1\" includes <property name=\"dnp\"/> while remaining a full BOM component entry",
+              "path": "work/netlist/design.xml"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "R1 DNP in both native representations removes the only resistive bridge; explicit sense-load SPICE experiment is supplemental. Extra info about ERC/DRC is accurate. Calling DNP plus BOM/placement inclusion internally inconsistent overstates orthogonal metadata; retained only as minor process concern, with no generated-output defect established."
+    },
+    {
+      "key": "claude/population-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 190.35,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 80789,
+          "cacheReadInputTokens": 592653,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.9121129999999993,
+          "inputTokens": 18,
+          "maxOutputTokens": 64000,
+          "outputTokens": 14070,
+          "provider": "firstParty",
+          "thinkingTokens": 4920,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "supported_defect",
+      "review_sha256": "a82071c896e7a576791a40c4482cc519f4d56c56b5bd26eeff270598a2900eb5",
+      "findings": [
+        {
+          "id": "PHY-1",
+          "assessment": "defect",
+          "severity": "blocking",
+          "title": "No fitted resistive DC path from /IN to /OUT: series resistor R1 is DNP, leaving an open circuit in the saved assembly",
+          "evidence": [
+            {
+              "locator": "line 1261: (dnp yes) on symbol R1 (uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "line 304: (attr smd dnp) on footprint R1 (uuid 8404a180-a151-464e-8f25-8cf316cdcba5); R1 pads at (104.0875,100) net /IN and (105.9125,100) net /OUT",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components.R1.dnp = true; nets./IN = [J1.1, R1.1]; nets./OUT = [C1.1, J1.2, R1.2]",
+              "path": "work/netlist/connectivity.json"
+            },
+            {
+              "locator": "footprints[1] ref R1 dnp=true; tracks list shows /IN copper ends at R1 pad 1 (104.0875,100) with no other /IN-to-/OUT conductor",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "fitted_path_IN_to_OUT = false; islands list; r1_pad_gap_mm = 0.8",
+              "path": "review-work/physical/experiments/fitted_connectivity.json"
+            },
+            {
+              "locator": "section 'Independent fitted-assembly DC connectivity check'",
+              "path": "review-work/physical/experiments/notes.md"
+            },
+            {
+              "locator": "line 1: fitted resistive DC path must connect /IN to /OUT; do not assume an unpopulated footprint conducts",
+              "path": "inputs/requirements.txt"
+            }
+          ]
+        },
+        {
+          "id": "PHY-2",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "Verification coverage gap: all packet checks pass while the sole functional criterion fails, because no check is assembly-population-aware",
+          "evidence": [
+            {
+              "locator": "sheets[0].violations = [] (0 violations)",
+              "path": "work/erc/erc.json"
+            },
+            {
+              "locator": "violations = [], unconnected_items = [], schematic_parity = []",
+              "path": "work/drc/drc.json"
+            },
+            {
+              "locator": "unconnected_items = 0 despite R1 dnp=true isolating the /IN island when unpopulated",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "section 'Why the packet checks still pass'",
+              "path": "review-work/physical/experiments/notes.md"
+            },
+            {
+              "locator": "fitted_path_IN_to_OUT = false while all packet checks report zero issues",
+              "path": "review-work/physical/experiments/fitted_connectivity.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Native DNP flags and fitted connectivity analysis leave a measured 0.8 mm gap with no resistive bridge. Verification gap is a separate minor concern, not an extra proven design defect."
+    },
+    {
+      "key": "claude/verification-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 121.32,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 75111,
+          "cacheReadInputTokens": 356625,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.282815,
+          "inputTokens": 12,
+          "maxOutputTokens": 64000,
+          "outputTokens": 8477,
+          "provider": "firstParty",
+          "thinkingTokens": 3244,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "f681a02074523e6385e400bae220ba80ec63b08db49bbfb917866a3bec93b973",
+      "findings": [
+        {
+          "id": "CIR-01",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Packet check set contains no electrical measurement of the sole stated electrical requirement (independent simulation shows the circuit passes)",
+          "evidence": [
+            {
+              "locator": "lines 1-2 (0.62-0.65 V at 1 ms requirement)",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "symbol R1 Value \"10k\" (at 86.36 63.5); symbol C1 Value \"100n\" (at 101.6 63.5)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "nets: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}, GND={C1.2,J1.3}",
+              "path": "work/netlist/connectivity.json"
+            },
+            {
+              "locator": "meas result vout_1ms = 6.321204e-01",
+              "path": "review-work/circuit/experiments/rc_step_console.log"
+            },
+            {
+              "locator": "v(out) at 1 ms = 0.632121 V; margins +0.012121 / +0.017879 V",
+              "path": "review-work/circuit/experiments/analytic_calc.txt"
+            },
+            {
+              "locator": "section 'Electrical verification'",
+              "path": "review-work/circuit/experiments/NOTES.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Native R=10k,C=100n with ideal unloaded step gives 0.632121 V at 1 ms; independent ngspice result agrees. Info observation about supplied checks is explicitly closed by this verification, not a blocking design defect."
+    },
+    {
+      "key": "claude/verification-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 184.132,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 81323,
+          "cacheReadInputTokens": 440449,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.7195990000000005,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 13051,
+          "provider": "firstParty",
+          "thinkingTokens": 7226,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_control",
+      "review_sha256": "10ceeadd602d355ea8319270c287ac2a3f2ff080d3089d624aa4709fac277885",
+      "findings": [],
+      "grade_reason": "Native R/C and saved connectivity support the analytic 0.63212 V at 1 ms; the documented finite-step transient remains inside the 0.62\u20130.65 V window. No defect allegation."
+    },
+    {
+      "key": "claude/verification-b-1/circuit",
+      "expected": "uncertain",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 169.318,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 78614,
+          "cacheReadInputTokens": 217547,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.419657,
+          "inputTokens": 8,
+          "maxOutputTokens": 64000,
+          "outputTokens": 12595,
+          "provider": "firstParty",
+          "thinkingTokens": 5527,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "correct_uncertainty_with_calculation_error",
+      "review_sha256": "291c087f151c4f6acfb03b0ddaff44dcac30deb5ab889da65bc27b37a5cbb4f2",
+      "findings": [
+        {
+          "id": "CIR-1",
+          "assessment": "concern",
+          "severity": "major",
+          "title": "Settling criterion under switched ADC load is unverifiable; margins are narrow",
+          "evidence": [
+            {
+              "locator": "vout_at_1ms = 6.321204e-01 V, vout_at_2ms = 8.646647e-01 V (ngspice-42 batch run)",
+              "path": "review-work/circuit/experiments/rc_step.cir"
+            },
+            {
+              "locator": "margins 12.12/17.88 mV; RL=320k -> 0.6239 V; leakage threshold 1.21 uA; Cs=2 nF -> dV=12.4 mV; dV/dt=0.368 mV/us; time window 0.9676-1.0498 ms",
+              "path": "review-work/circuit/experiments/window_sensitivity.txt"
+            },
+            {
+              "locator": "lines 1-2: ADC parameters 'have not been specified'; 'do not invent ADC behavior'",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "net /OUT: C1.1, J1.2, R1.2",
+              "path": "work/netlist/design.xml"
+            }
+          ]
+        },
+        {
+          "id": "CIR-2",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "No component tolerances stated; criterion window allows only -4.75%/+3.35% RC deviation",
+          "evidence": [
+            {
+              "locator": "RC product must lie in [0.9525, 1.0335] ms => -4.75% .. +3.35% allowed deviation",
+              "path": "review-work/circuit/experiments/window_sensitivity.txt"
+            },
+            {
+              "locator": "C1 property Value \"100n\" (symbol uuid 1dcaf7b4...), R1 property Value \"10k\" (symbol uuid c5c38e1a...); no tolerance properties present",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            }
+          ]
+        },
+        {
+          "id": "CIR-3",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "Output transits the window rather than settling; 'settles at 1 ms' is only an instantaneous sample",
+          "evidence": [
+            {
+              "locator": "vout_at_1ms=0.6321 V, vout_at_2ms=0.8647 V",
+              "path": "review-work/circuit/experiments/rc_step.cir"
+            },
+            {
+              "locator": "in-band time interval 0.9676-1.0498 ms; slope 0.368 mV/us at 1 ms",
+              "path": "review-work/circuit/experiments/window_sensitivity.txt"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Correct major deferral for missing ADC load/timing, without confirmed circuit defect. Quantitative overclaim: 1.21 uA steady drop and RL=320k do not erase the entire margin at 1 ms (own RL result 0.6239 V remains above 0.62). Exact ideal constant-current threshold is 1.91744 uA; resistive threshold about 214.96k. Extra tolerance/common-part concerns exceed supplied part evidence. Measurement citations name the input deck rather than output logs."
+    },
+    {
+      "key": "claude/verification-b-1/physical",
+      "expected": "uncertain",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 249.159,
+      "usage": {
+        "claude-fable-5": {
+          "cacheCreationInputTokens": 82922,
+          "cacheReadInputTokens": 456779,
+          "canonicalModel": "claude-fable-5",
+          "contextWindow": 1000000,
+          "costBasis": "list",
+          "costUSD": 2.9990590000000004,
+          "inputTokens": 14,
+          "maxOutputTokens": 64000,
+          "outputTokens": 17674,
+          "provider": "firstParty",
+          "thinkingTokens": 8789,
+          "webSearchRequests": 0
+        }
+      },
+      "grade": "uncertainty_with_overclaim",
+      "review_sha256": "1378ebef9158c7d9bb842920f847cb730771a17f49db6cd62fc8efaeb78571c8",
+      "findings": [
+        {
+          "id": "PHY-01",
+          "assessment": "concern",
+          "severity": "major",
+          "title": "0.62-0.65 V @ 1 ms band leaves only -4.75%/+3.35% combined RC margin and no tolerances are specified",
+          "evidence": [
+            {
+              "locator": "tau window and +/-tolerance PASS/FAIL table",
+              "path": "review-work/physical/experiments/tolerance_and_loading.out"
+            },
+            {
+              "locator": "vout_1ms = 6.321204e-01",
+              "path": "review-work/physical/experiments/rc_step.log"
+            },
+            {
+              "locator": "symbol R1 property Value '10k'; symbol C1 property Value '100n' (no tolerance fields)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            }
+          ]
+        },
+        {
+          "id": "PHY-02",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "Packet checks never exercise the settling criterion; nominal electrical behavior verified only by this review",
+          "evidence": [
+            {
+              "locator": "violations: [] (structural only)",
+              "path": "work/erc/erc.json"
+            },
+            {
+              "locator": "violations: [], unconnected_items: [] (structural only)",
+              "path": "work/drc/drc.json"
+            },
+            {
+              "locator": "ngspice transient deck, netlist-derived",
+              "path": "review-work/physical/experiments/rc_step.cir"
+            },
+            {
+              "locator": "vout_1ms = 6.321204e-01, vout_2ms = 8.646647e-01",
+              "path": "review-work/physical/experiments/rc_step.log"
+            }
+          ]
+        },
+        {
+          "id": "PHY-03",
+          "assessment": "concern",
+          "severity": "minor",
+          "title": "Criterion verified only with /OUT unloaded; switched-ADC interaction unbounded by the packet but bounded here",
+          "evidence": [
+            {
+              "locator": "ADC charge-share bound 1.95 nF; DC-load bound 16.3 kOhm",
+              "path": "review-work/physical/experiments/tolerance_and_loading.out"
+            },
+            {
+              "locator": "'ADC sampling capacitance, switch resistance, initial charge and sampling timing have not been specified'",
+              "path": "inputs/requirements.txt"
+            }
+          ]
+        },
+        {
+          "id": "PHY-04",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "GND continuity between C1 and connector relies on a single 0.6/0.3 mm via plus zone thermal spokes (verified connected as saved)",
+          "evidence": [
+            {
+              "locator": "zone.contains_via_center_113_100: true; zone.spoke_hits: 12/24; unconnected_count: 0",
+              "path": "review-work/physical/experiments/connectivity_probe.out.json"
+            },
+            {
+              "locator": "via at (113,100) drill 0.3 net GND; GND track C1.2->(113,100)",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "zone (net GND) (layer B.Cu) connect_pads clearance 0.5, thermal_bridge_width 0.5",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Recognizes missing ADC parameters, but calls this minor and asserts robustness within necessary-only illustrative bounds. RL>16.3k ensures only asymptotic voltage, not the 1 ms window: RL=20k yields about 0.5179 V at 1 ms and fails despite being within its claimed bound. Arbitrary switching sequences also cannot be bounded by one isolated charge-share example. Additional major tolerance concern and info single-via note are not established circuit defects."
+    },
+    {
+      "key": "codex/mapping-a-1/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 91.843,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 403200,
+        "input_tokens": 473544,
+        "output_tokens": 5333,
+        "reasoning_output_tokens": 685
+      },
+      "grade": "correct_control",
+      "review_sha256": "387b7ba8165f3370bb70fb66a3bdd58621440ed2283efa386f6edb95a23f5c99",
+      "findings": [],
+      "grade_reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles."
+    },
+    {
+      "key": "codex/mapping-a-1/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 173.133,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 411648,
+        "input_tokens": 485509,
+        "output_tokens": 10488,
+        "reasoning_output_tokens": 2339
+      },
+      "grade": "correct_control",
+      "review_sha256": "6a68cef7c4a8dbd88c5afc2c7951f3627582905838bb0e55ee4bd444df31e430",
+      "findings": [],
+      "grade_reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation. Claude records two nonblocking single-path-ground observations across roles."
+    },
+    {
+      "key": "codex/mapping-a-2/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 93.187,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 412928,
+        "input_tokens": 486165,
+        "output_tokens": 5571,
+        "reasoning_output_tokens": 718
+      },
+      "grade": "correct_control",
+      "review_sha256": "abb186538a3e9fbc4a78fa51fbac815db08c242dbdbaab73208e19c601344a32",
+      "findings": [],
+      "grade_reason": "Native connector assignments meet the stated contract; no defect allegation."
+    },
+    {
+      "key": "codex/mapping-a-2/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 99.765,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 403584,
+        "input_tokens": 480172,
+        "output_tokens": 5941,
+        "reasoning_output_tokens": 1204
+      },
+      "grade": "correct_control",
+      "review_sha256": "9d1bdb3460b94305a38440ea755e4588741b45e4e68da14bcae1cd458351429c",
+      "findings": [],
+      "grade_reason": "Native connector assignments meet the stated contract; no defect allegation."
+    },
+    {
+      "key": "codex/mapping-b-1/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 87.05,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 347904,
+        "input_tokens": 420582,
+        "output_tokens": 5170,
+        "reasoning_output_tokens": 624
+      },
+      "grade": "supported_defect",
+      "review_sha256": "a3caf921783e8f01c67ad5ed5a770183894fda9cf799f23f2a3803438b57ccac",
+      "findings": [
+        {
+          "id": "circuit-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "J1 input and filtered-output connections are reversed",
+          "evidence": [
+            {
+              "locator": "Line 1: external connector contract",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "J1 instance at (60.96,63.5), rotation 180\u00b0, lines 1091\u20131102; connector wires and IN/OUT labels, lines 765\u2013843",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "J1 pad 1 /IN and pad 2 /OUT, lines 587\u2013603; connecting traces, lines 667\u2013697",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "/export/nets: /IN contains J1.1 and R1.1; /OUT contains J1.2, R1.2 and C1.1",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "fresh_nets, board_nets, j1_native_sheet_pin_positions_mm and symbolic_analysis",
+              "path": "review-work/circuit/experiments/audit.json"
+            },
+            {
+              "locator": "violations, unconnected_items and schematic_parity are empty",
+              "path": "work/drc/drc.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error."
+    },
+    {
+      "key": "codex/mapping-b-1/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 88.85,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 394496,
+        "input_tokens": 464698,
+        "output_tokens": 5992,
+        "reasoning_output_tokens": 910
+      },
+      "grade": "supported_defect",
+      "review_sha256": "3c5b274608819ae07c2449da6ff1aa89b83a72a55aebb8e976f5ce9270726013",
+      "findings": [
+        {
+          "id": "physical-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "J1 input and filtered-output pins are reversed",
+          "evidence": [
+            {
+              "locator": "Line 1: external connector contract",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Lines 587\u2013603: J1.1 assigned /IN and J1.2 assigned /OUT; lines 667\u2013697: actual F.Cu routes",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "J1 symbol UUID 465541a7-d06f-5282-b75f-15b79e4182a2, rotation 180; IN label at (68.58,66.04), OUT label at (68.58,63.5)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "Lines 164\u2013175: /IN contains J1.1 and R1.1; /OUT contains J1.2, R1.2 and C1.1",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "saved_copper_connectivity; independent_front_centerline_groups_ignoring_net_names; illustrative_ideal_calculation",
+              "path": "review-work/physical/experiments/physical-connectivity.json"
+            },
+            {
+              "locator": "schematic_parity, unconnected_items and violations are empty",
+              "path": "work/drc/drc.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved J1 assignments contradict required reversed mapping; both native files agree, so ordinary ERC/DRC do not detect the contract error."
+    },
+    {
+      "key": "codex/mapping-b-2/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 106.949,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 266496,
+        "input_tokens": 330687,
+        "output_tokens": 6656,
+        "reasoning_output_tokens": 1465
+      },
+      "grade": "supported_defect",
+      "review_sha256": "ac4f75338aae3623b0653cdf4453da15d655f989eba7eb90d49d8571e0f3ce5a",
+      "findings": [
+        {
+          "id": "circuit-j1-pin-swap",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "J1 input and filtered-output pins are reversed",
+          "evidence": [
+            {
+              "locator": "Line 1: required J1 connector contract",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Lines 139\u2013195: connector pin definitions; lines 805\u2013854: IN/OUT labels; line 1093: J1 rotation 180 degrees",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "Lines 587\u2013613: J1 pad assignments; lines 210\u2013225: C1 connections; lines 359\u2013374: R1 connections; lines 667\u2013697: signal tracks",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "Lines 163\u2013176: /IN contains J1.1 and R1.1; /OUT contains J1.2, R1.2 and C1.1",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "confirmed_nets, schematic_pins, board_pads and diagnostic_calculation",
+              "path": "review-work/circuit/experiments/connectivity-audit.json"
+            },
+            {
+              "locator": "schematic_parity, unconnected_items and violations are empty",
+              "path": "work/drc/drc.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Native J1.1 input and J1.2 output contradict reversed external contract. Unloaded output on resistor far end follows ideal input without the intended RC pole; source impedance not invented."
+    },
+    {
+      "key": "codex/mapping-b-2/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 114.134,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 338944,
+        "input_tokens": 409931,
+        "output_tokens": 6909,
+        "reasoning_output_tokens": 1606
+      },
+      "grade": "supported_defect",
+      "review_sha256": "34902fe68c328ba61d935860cb8075c973944133015df659b62e984f58bbcebe",
+      "findings": [
+        {
+          "id": "physical-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "J1 input and filtered-output pins are reversed",
+          "evidence": [
+            {
+              "locator": "Line 1: external connector contract",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Lines 587\u2013603: J1 pads 1 and 2; lines 667\u2013698: copper routing; C1 pad 1 at line 210",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "J1 instance at line 1093, rotation 180 degrees; IN/OUT labels at lines 805\u2013846",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "Lines 164\u2013175: /IN, /OUT and GND memberships",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "copper_components_from_connector, contract_checks and fresh_equals_supplied_nets",
+              "path": "review-work/physical/experiments/crosscheck.json"
+            },
+            {
+              "locator": "schematic_parity, unconnected_items and violations are empty",
+              "path": "work/drc/drc.json"
+            },
+            {
+              "locator": "Findings supported by original geometry; conditional electrical consequence",
+              "path": "review-work/physical/experiments/notes.md"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved numbered pads contradict the external connector contract; independent native geometry and fresh netlist support the reversed roles. Unloaded transfer consequence is explicitly a conditional calculation."
+    },
+    {
+      "key": "codex/limits-a-1/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 72.71,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 218496,
+        "input_tokens": 283542,
+        "output_tokens": 4172,
+        "reasoning_output_tokens": 425
+      },
+      "grade": "correct_control",
+      "review_sha256": "2b714b189c8f955a5247a38804f11ebaa13c9609ca935646d1c593b52a0669aa",
+      "findings": [],
+      "grade_reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation."
+    },
+    {
+      "key": "codex/limits-a-1/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 89.632,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 311424,
+        "input_tokens": 370506,
+        "output_tokens": 5376,
+        "reasoning_output_tokens": 787
+      },
+      "grade": "correct_control",
+      "review_sha256": "c27bd0cb4705ac05f29d9bbfe07745451b049ce16b245e00f18864e275f69d63",
+      "findings": [],
+      "grade_reason": "The stated clamp yields 12^2/10000=0.0144 W, below 0.1 W. No defect allegation."
+    },
+    {
+      "key": "codex/limits-a-2/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 60.414,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 151808,
+        "input_tokens": 208444,
+        "output_tokens": 3898,
+        "reasoning_output_tokens": 367
+      },
+      "grade": "correct_control",
+      "review_sha256": "62ad1134821ed483e6872538668adc6b8abe19845a085ea26c2d2a88aefea046",
+      "findings": [],
+      "grade_reason": "Nominal 12^2/10000 = 0.0144 W meets explicit 0.1 W exercise limit; no commercial-part rating invented."
+    },
+    {
+      "key": "codex/limits-a-2/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 73.737,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 269440,
+        "input_tokens": 332272,
+        "output_tokens": 5406,
+        "reasoning_output_tokens": 572
+      },
+      "grade": "correct_control",
+      "review_sha256": "01d82e7f8780c5e43e94d8adf86de043aad6a58c56adfaf1c93f186c54eb7bde",
+      "findings": [],
+      "grade_reason": "Saved R1=10k and native source-to-clamp geometry support 12^2/10000=0.0144 W below the declared 0.1 W. No unsupported physical rating inference."
+    },
+    {
+      "key": "codex/limits-b-1/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 52.458,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 322432,
+        "input_tokens": 382913,
+        "output_tokens": 3046,
+        "reasoning_output_tokens": 269
+      },
+      "grade": "supported_defect",
+      "review_sha256": "1750074348cc7f7081757f83556cb35e6224099202a4cadcd5faa1d01499971a",
+      "findings": [
+        {
+          "id": "circuit-r1-power",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "R1 exceeds its continuous power limit under the stated clamp",
+          "evidence": [
+            {
+              "locator": "Line 1: stated operating condition and R1 continuous limit of 0.1 W",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "R1 symbol, lines 1252\u20131285; Value=\"10k\" at line 1274",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "R1 pads, lines 359\u2013373: pad 1=/IN, pad 2=/OUT",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components/comp[@ref='R1']; nets/net[@name='/IN'] and nets/net[@name='/OUT']",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "Voltage, current, power and continuous-limit comparison",
+              "path": "review-work/circuit/experiments/r1_power.txt"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements."
+    },
+    {
+      "key": "codex/limits-b-1/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 78.971,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 267776,
+        "input_tokens": 331952,
+        "output_tokens": 5219,
+        "reasoning_output_tokens": 835
+      },
+      "grade": "supported_defect",
+      "review_sha256": "9a66edeb7bf7df546016144e97a32424790a642a345a6b99a4443dea98cceee8",
+      "findings": [
+        {
+          "id": "physical-r1-power",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "R1 exceeds its continuous power limit under the specified clamp",
+          "evidence": [
+            {
+              "locator": "line 1: imposed voltages, indefinite duration and 0.1 W continuous limit",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "R1 symbol UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; lines 1263\u20131274 identify R1 and its 10k value",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "R1 value at line 256; pads 1 and 2 at lines 359\u2013374; F.Cu segments at lines 667\u2013697 connect J1.1\u2013R1.1 and R1.2\u2013J1.2",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "nets /IN and /OUT connect R1.1 to J1.1 and R1.2 to J1.2",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "centerline_connectivity and calculation: current_A=0.0048, power_W=0.2304, power_to_limit=2.304",
+              "path": "review-work/physical/experiments/results.json"
+            },
+            {
+              "locator": "operating-point vectors: v(in)=48 V, v(out)=0 V, r1_current=4.8 mA, r1_power=0.2304 W",
+              "path": "review-work/physical/experiments/ngspice.log"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "The stated clamp yields 48^2/10000=0.2304 W, above 0.1 W; mechanisms and conditions match captured requirements."
+    },
+    {
+      "key": "codex/limits-b-2/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 92.729,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 261376,
+        "input_tokens": 320672,
+        "output_tokens": 3717,
+        "reasoning_output_tokens": 364
+      },
+      "grade": "supported_defect",
+      "review_sha256": "8df4da5097bb7279dcacb2aae4cf7f99b2a37bb4d48e189275fd9ec5a0517762",
+      "findings": [
+        {
+          "id": "circuit-r1-power",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "R1 exceeds its continuous power limit under the specified clamp condition",
+          "evidence": [
+            {
+              "locator": "line 1: imposed voltages, indefinite duration and 0.1 W continuous limit",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "R1 instance UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; lines 1263\u20131285: reference, 10k value and footprint",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "R1 footprint: value at line 256; pad 1 /IN and pad 2 /OUT at lines 358\u2013374",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components/comp[@ref='R1']/value and nets/net[@name='/IN' or @name='/OUT']/node",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "R1_voltage_V, R1_current_A, R1_power_W and power_to_limit_ratio",
+              "path": "review-work/circuit/experiments/r1_calculation.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Native R1=10k under the stated 48 V / 0 V clamp dissipates 0.2304 W, 2.304 times the 0.1 W exercise limit. No footprint-derived rating or failure temperature invented."
+    },
+    {
+      "key": "codex/limits-b-2/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 82.506,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 318464,
+        "input_tokens": 379566,
+        "output_tokens": 5578,
+        "reasoning_output_tokens": 714
+      },
+      "grade": "supported_defect",
+      "review_sha256": "723eb12256ae839af1fcda8ebc31ee5bd79e02f1e6948ff0a35dd9ac2d2268e9",
+      "findings": [
+        {
+          "id": "physical-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "R1 dissipates 0.2304 W against its 0.1 W continuous limit",
+          "evidence": [
+            {
+              "locator": "Line 1: external voltage/clamp condition and fitted R1 continuous limit of 0.1 W",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "R1 instance, UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; lines 1261\u20131285: fitted, value 10k",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "R1 pads, lines 359\u2013373; J1 pads, lines 587\u2013613; saved /IN and /OUT copper, lines 667\u2013697",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "nets /IN and /OUT: R1.1 connects to J1.1; R1.2 connects to J1.2",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "verified_routes and calculation: R1_current_A=0.0048, R1_power_W=0.2304, limit_ratio=2.304",
+              "path": "review-work/physical/experiments/physical-results.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Native copper connects R1 across the maintained 48 V difference; 0.2304 W exceeds the stated 0.1 W. No invented package limit or failure-time prediction."
+    },
+    {
+      "key": "codex/shutdown-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 75.041,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 205568,
+        "input_tokens": 263051,
+        "output_tokens": 4829,
+        "reasoning_output_tokens": 574
+      },
+      "grade": "correct_control",
+      "review_sha256": "667c3c14c2373d0c07d6af576ed7ca0caa4dd0134f0b0067df320ee9dd6964a0",
+      "findings": [],
+      "grade_reason": "The ideal 1 ms time constant gives exp(-5)=0.006738 V at 5 ms, meeting 0.01 V. No defect allegation."
+    },
+    {
+      "key": "codex/shutdown-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 123.123,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 500864,
+        "input_tokens": 566582,
+        "output_tokens": 7642,
+        "reasoning_output_tokens": 1653
+      },
+      "grade": "correct_control",
+      "review_sha256": "ec04feeb3cde3a89e2ede4381612b533a972014127f9b111a08a59a1a989f1c9",
+      "findings": [],
+      "grade_reason": "The ideal 1 ms time constant gives exp(-5)=0.006738 V at 5 ms, meeting 0.01 V. No defect allegation."
+    },
+    {
+      "key": "codex/shutdown-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 81.602,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 206848,
+        "input_tokens": 266979,
+        "output_tokens": 5087,
+        "reasoning_output_tokens": 968
+      },
+      "grade": "supported_defect",
+      "review_sha256": "013ce00841b08a3d69b3d2f3c3d51bb8be17483d87ef1835c2577c3670ae9de6",
+      "findings": [
+        {
+          "id": "circuit-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "Saved RC values fail the 5 ms shutdown voltage requirement",
+          "evidence": [
+            {
+              "locator": "Line 1: /OUT must be <= 0.01 V at 5 ms",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "C1 value 100n at line 955; R1 value 100k at line 1274",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "C1 pads at lines 209\u2013225; R1 pads at lines 358\u2013374; matching saved values at lines 107 and 256",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "Lines 163\u2013176: R1 between /IN and /OUT; C1 between /OUT and GND",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "tau_s, analytic_Vout_at_5ms_V, analytic_time_to_10mV_s",
+              "path": "review-work/circuit/experiments/shutdown-calculation.json"
+            },
+            {
+              "locator": "R1/C1 values, grounded input source, IC=1 and transient UIC",
+              "path": "review-work/circuit/experiments/shutdown.cir"
+            },
+            {
+              "locator": "vout_5ms = 6.065306e-01; time_to_10mv = 4.605170e-02",
+              "path": "review-work/circuit/experiments/shutdown.log"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved 100k/100n gives tau=10 ms and 0.60653066 V at 5 ms. Inspected physical reviewer ngspice decks use IC=1 and UIC; both time steps give 0.6065307 V."
+    },
+    {
+      "key": "codex/shutdown-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 106.652,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 512896,
+        "input_tokens": 581679,
+        "output_tokens": 6397,
+        "reasoning_output_tokens": 513
+      },
+      "grade": "supported_defect",
+      "review_sha256": "b414e5f4cce5035bddeddd2d9ddea4832ce264fb632ded6f28c742e0d221ad26",
+      "findings": [
+        {
+          "id": "physical-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "Saved RC values fail the 5 ms shutdown requirement",
+          "evidence": [
+            {
+              "locator": "Line 1: /OUT must be <= 0.01 V at 5 ms",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "C1 Value=\"100n\" at line 955; R1 Value=\"100k\" at line 1274; IN/OUT labels and ground wiring",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "C1 pads at lines 210\u2013225; R1 pads at lines 359\u2013374; tracks, via and saved ground zone beginning at line 667",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components C1/R1 and nets /IN, /OUT, GND",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "saved_copper_groups: C1.1, C1.2 and R1.1",
+              "path": "review-work/physical/experiments/copper_groups.json"
+            },
+            {
+              "locator": "tau_s, vout_at_deadline_V and time_to_limit_s",
+              "path": "review-work/physical/experiments/shutdown_calculation.json"
+            },
+            {
+              "locator": "C1 IC=1; grounded IN; .tran with UIC; voltage and crossing measurements",
+              "path": "review-work/physical/experiments/shutdown.cir"
+            },
+            {
+              "locator": "Transient measurements: vout_5ms=6.065307e-01; t_to_10mv=4.60517e-02",
+              "path": "review-work/physical/experiments/shutdown_fine.log"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved 100k/100n gives tau=10 ms and 0.60653066 V at 5 ms. Inspected physical reviewer ngspice decks use IC=1 and UIC; both time steps give 0.6065307 V."
+    },
+    {
+      "key": "codex/width-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 55.484,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 214400,
+        "input_tokens": 276613,
+        "output_tokens": 4274,
+        "reasoning_output_tokens": 345
+      },
+      "grade": "correct_control",
+      "review_sha256": "8831495edc0d4034367e074511db4d7ea2796643e8f432d75b83ae9c2023ad63",
+      "findings": [],
+      "grade_reason": "Saved five copper track segments at 0.25 mm exceed the 0.20 mm exercise minimum. No defect allegation."
+    },
+    {
+      "key": "codex/width-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 77.729,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 273920,
+        "input_tokens": 339678,
+        "output_tokens": 5010,
+        "reasoning_output_tokens": 873
+      },
+      "grade": "correct_control",
+      "review_sha256": "7c66a5c275f97d0521ee49df6a49e47769c0d2b18fd970165c3a027dd3463b8f",
+      "findings": [],
+      "grade_reason": "Saved five copper track segments at 0.25 mm exceed the 0.20 mm exercise minimum. No defect allegation."
+    },
+    {
+      "key": "codex/width-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 62.28,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 210176,
+        "input_tokens": 270344,
+        "output_tokens": 4556,
+        "reasoning_output_tokens": 642
+      },
+      "grade": "supported_defect",
+      "review_sha256": "fe9ba58ea9dc1bc3fb9e09659a2f19f36d81488d60bc8a2e58ab71224f456a32",
+      "findings": [
+        {
+          "id": "circuit-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "All five saved track segments violate the minimum width requirement",
+          "evidence": [
+            {
+              "locator": "Line 1: every saved copper track segment must have width >= 0.30 mm",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Segment blocks beginning at lines 667, 675, 683, 691 and 699; each specifies (width 0.25)",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "tracks entries with type=track: all five width_mm values are 0.25",
+              "path": "work/geometry/geometry.json"
+            },
+            {
+              "locator": "segments, violating_segments=5 and three_way_width_agreement=true",
+              "path": "review-work/circuit/experiments/measurements.json"
+            },
+            {
+              "locator": "summary: no declared geometric requirement applied",
+              "path": "checks/geometry.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Five saved copper track segments at 0.25 mm fall below the 0.30 mm exercise minimum. Findings correctly avoid ampacity claims."
+    },
+    {
+      "key": "codex/width-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 70.526,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 214016,
+        "input_tokens": 277257,
+        "output_tokens": 4322,
+        "reasoning_output_tokens": 527
+      },
+      "grade": "supported_defect",
+      "review_sha256": "a1d515401a581a74f973e97b06d478819ef67ba36eeb620228a2b0f60553d108",
+      "findings": [
+        {
+          "id": "physical-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "Every saved track segment violates the 0.30 mm minimum",
+          "evidence": [
+            {
+              "locator": "Line 1: minimum saved track width requirement",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Segment blocks at lines 667, 675, 683, 691 and 699; width declarations at lines 670, 678, 686, 694 and 702",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "measurements[0..4], pcbnew_tracks, failing_count=5; native/API/supplied geometry agreement",
+              "path": "review-work/physical/experiments/width-measurements.json"
+            },
+            {
+              "locator": "summary: saved-board geometry extracted (no declared geometric requirement applied)",
+              "path": "checks/geometry.json"
+            },
+            {
+              "locator": "violations=[], unconnected_items=[], schematic_parity=[]",
+              "path": "review-work/physical/experiments/drc.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Five saved copper track segments at 0.25 mm fall below the 0.30 mm exercise minimum. Findings correctly avoid ampacity claims."
+    },
+    {
+      "key": "codex/population-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 66.808,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 214272,
+        "input_tokens": 276216,
+        "output_tokens": 5248,
+        "reasoning_output_tokens": 497
+      },
+      "grade": "correct_control",
+      "review_sha256": "1016c50ff7291eadd53cddbb63e677c0a95494fa27dfaffa2f1b19790ce977a1",
+      "findings": [],
+      "grade_reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed."
+    },
+    {
+      "key": "codex/population-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 101.485,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 393600,
+        "input_tokens": 463215,
+        "output_tokens": 6552,
+        "reasoning_output_tokens": 690
+      },
+      "grade": "correct_control",
+      "review_sha256": "81350af11eabbe6eee360d4ee8e50d20a8ee30bdc00727619536d70b7eb20007",
+      "findings": [],
+      "grade_reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed."
+    },
+    {
+      "key": "codex/population-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 88.205,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 392192,
+        "input_tokens": 457406,
+        "output_tokens": 5188,
+        "reasoning_output_tokens": 858
+      },
+      "grade": "supported_defect",
+      "review_sha256": "3f32057353503517846c11e23a3d839847624586f0cd5f538576dca04cc711ac",
+      "findings": [
+        {
+          "id": "circuit-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "DNP R1 removes the required fitted resistive path",
+          "evidence": [
+            {
+              "locator": "Line 1: requires a fitted resistive DC path from /IN to /OUT",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Lines 1252\u20131285: Device:R instance R1, value 10k, has (dnp yes)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "Line 304: (attr smd dnp); lines 359\u2013374: separate R1 pads assigned /IN and /OUT",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components/comp[@ref='R1']/property[@name='dnp']; nets/net[@name='/IN'] and nets/net[@name='/OUT']",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "Lines 138\u2013154: only resistor is DNP; fitted_resistor_edges is empty; fitted_resistive_path_IN_to_OUT is false; pad gap is 0.8 mm",
+              "path": "review-work/circuit/experiments/population_result.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed."
+    },
+    {
+      "key": "codex/population-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 98.008,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 349568,
+        "input_tokens": 429083,
+        "output_tokens": 5999,
+        "reasoning_output_tokens": 779
+      },
+      "grade": "supported_defect",
+      "review_sha256": "c53e4cf1a35998b65267f4f42c6159da11ff8409d9fcdad63dd24516c440fecc",
+      "findings": [
+        {
+          "id": "physical-001",
+          "assessment": "defect",
+          "severity": "major",
+          "title": "DNP resistor leaves the required /IN-to-/OUT DC path open",
+          "evidence": [
+            {
+              "locator": "Line 1: fitted resistive DC path required; unpopulated footprints cannot be credited",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Lines 1252\u20131274: Device:R instance R1, value 10k, with (dnp yes)",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "Line 304: R1 (attr smd dnp); lines 359\u2013373: separate /IN and /OUT pads; lines 667\u2013713: tracks terminate at those pads",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components/comp[@ref='R1']/property[@name='dnp']; nets /IN and /OUT connect through opposite R1 pins",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "R1_pad_horizontal_copper_gap_mm = 0.8; fitted_resistor_edges = []; required_fitted_resistive_IN_OUT_path = false",
+              "path": "review-work/physical/experiments/native-topology.json"
+            },
+            {
+              "locator": "violations, unconnected_items and schematic_parity are empty; these checks do not assert inter-net conduction through populated components",
+              "path": "work/drc/drc.json"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Saved population and native /IN-to-/OUT topology were inspected. R1 is the sole resistive bridge; DNP in both native files removes it, while the fitted control satisfies the requirement. No unstated leakage or ADC assumptions needed."
+    },
+    {
+      "key": "codex/verification-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 87.76,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 454656,
+        "input_tokens": 522751,
+        "output_tokens": 6556,
+        "reasoning_output_tokens": 827
+      },
+      "grade": "correct_control",
+      "review_sha256": "40d32dcd37cd01954e8630a8b9592089e3c87d5790fd3c9848c4d16951a9a3fd",
+      "findings": [],
+      "grade_reason": "Ideal unloaded response 1-exp(-1)=0.63212056 lies within 0.62\u20130.65 V; no defect allegation."
+    },
+    {
+      "key": "codex/verification-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 139.788,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 531840,
+        "input_tokens": 604349,
+        "output_tokens": 8227,
+        "reasoning_output_tokens": 1488
+      },
+      "grade": "correct_control",
+      "review_sha256": "f0abb0602747359f31fcd172f805fefdef546146e044248b40ecc820a615690c",
+      "findings": [],
+      "grade_reason": "Ideal unloaded response agrees with the stated limits; no unsupported loading or thermal claim."
+    },
+    {
+      "key": "codex/verification-b-1/circuit",
+      "expected": "uncertain",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 104.005,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 280448,
+        "input_tokens": 348426,
+        "output_tokens": 7549,
+        "reasoning_output_tokens": 1777
+      },
+      "grade": "correct_uncertainty_weak_severity",
+      "review_sha256": "9da89813a8317e06af1987e87e0b8dc950b481155d8cf678428af96a327c9312",
+      "findings": [
+        {
+          "id": "circuit_adc_coverage",
+          "assessment": "concern",
+          "severity": "info",
+          "title": "ADC-connected 1 ms response remains indeterminate",
+          "evidence": [
+            {
+              "locator": "Line 1: ADC capacitance, switch resistance, initial charge and sampling timing explicitly unspecified",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "C1 value at line 955; R1 value at line 1274; J1 instance begins at line 1090",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "Lines 163\u2013177: complete exported connectivity",
+              "path": "work/netlist/design.xml"
+            },
+            {
+              "locator": "ideal_unloaded_out_at_1ms_V, assumptions and general_closed_switch_equations",
+              "path": "review-work/circuit/experiments/calculation.json"
+            },
+            {
+              "locator": "Lines 4\u201311: source, unloaded model and measurement timing",
+              "path": "review-work/circuit/experiments/nominal.cir"
+            },
+            {
+              "locator": "Lines 25\u201327: initial voltage, input voltage and measured output",
+              "path": "review-work/circuit/experiments/nominal.log"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "Correctly refuses ADC compliance or failure without loading/timing; info severity understates material missing criterion evidence. Full two-role uncertainty run confirms major canonical deferral."
+    },
+    {
+      "key": "codex/verification-b-1/physical",
+      "expected": "uncertain",
+      "split": "held-out",
+      "execution": "ok",
+      "duration_s": 141.339,
+      "usage": {
+        "cache_write_input_tokens": 0,
+        "cached_input_tokens": 702976,
+        "input_tokens": 788320,
+        "output_tokens": 9483,
+        "reasoning_output_tokens": 2282
+      },
+      "grade": "correct_uncertainty",
+      "review_sha256": "27c09f1602b6b236a0774bdb6cdc37169adbc36eac77c15d30d12883e642253d",
+      "findings": [
+        {
+          "id": "physical_adc_coverage",
+          "assessment": "concern",
+          "severity": "major",
+          "title": "Switched-ADC response remains unverified",
+          "evidence": [
+            {
+              "locator": "Line 1: ADC-connected criterion and explicitly unspecified sampling parameters",
+              "path": "inputs/requirements.txt"
+            },
+            {
+              "locator": "Lines 955 and 1274: C1=100n and R1=10k; line 1096: J1 excluded from simulation",
+              "path": "inputs/project/rc_filter.kicad_sch"
+            },
+            {
+              "locator": "J1 pad 2, lines 596\u2013603; output routing, lines 675\u2013697",
+              "path": "inputs/project/rc_filter.kicad_pcb"
+            },
+            {
+              "locator": "components and nets: only C1, R1 and J1; /OUT connects C1.1, R1.2 and J1.2",
+              "path": "work/netlist/connectivity.json"
+            },
+            {
+              "locator": "assumptions, v_out_at_1ms_V, margins and switched_load_equations",
+              "path": "review-work/physical/experiments/calculations.json"
+            },
+            {
+              "locator": "ngspice baseline command and measured v_out_1ms=6.321206e-01",
+              "path": "review-work/physical/experiments/commands.log"
+            }
+          ]
+        }
+      ],
+      "grade_reason": "ADC capacitance, resistance, initial charge and timing are unspecified. Ideal unloaded simulation is explicitly insufficient; major concern preserves unresolved criterion."
+    },
+    {
+      "key": "agy/mapping-a-1/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "ok",
+      "duration_s": 142.32,
+      "usage": {
+        "cache_read_tokens": 416247,
+        "input_tokens": 84338,
+        "output_tokens": 9199,
+        "thinking_tokens": 5555,
+        "total_tokens": 93537
+      },
+      "grade": "correct_control",
+      "review_sha256": "2f5eae7beb7855fd6cbdaeca06c6078fb9cc7321b81811e2425d5aaf519f332f",
+      "findings": [],
+      "grade_reason": "Saved J1.1=/IN, J1.2=/OUT and J1.3=GND meet the stated contract; no defect allegation."
+    },
+    {
+      "key": "agy/mapping-a-1/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "timeout",
+      "duration_s": 300.024,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/mapping-a-2/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/mapping-a-2/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/mapping-b-1/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/mapping-b-1/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/mapping-b-2/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/mapping-b-2/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-a-1/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-a-1/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-a-2/circuit",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-a-2/physical",
+      "expected": "control",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-b-1/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-b-1/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-b-2/circuit",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/limits-b-2/physical",
+      "expected": "defect",
+      "split": "development",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/shutdown-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/shutdown-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/shutdown-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/shutdown-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/width-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/width-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/width-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/width-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/population-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/population-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/population-b-1/circuit",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/population-b-1/physical",
+      "expected": "defect",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/verification-a-1/circuit",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/verification-a-1/physical",
+      "expected": "control",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/verification-b-1/circuit",
+      "expected": "uncertain",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    },
+    {
+      "key": "agy/verification-b-1/physical",
+      "expected": "uncertain",
+      "split": "held-out",
+      "execution": "not_run",
+      "duration_s": null,
+      "usage": null,
+      "grade": "ungraded"
+    }
+  ]
+}

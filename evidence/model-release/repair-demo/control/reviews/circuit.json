@@ -1,0 +1,21 @@
+{
+  "candidate_id": "0b0265f2838c37cacd80169482dacd56a05559c05ccf88cb9aba1dd719bb31a7",
+  "coverage": [
+    "Verified native component identities, values and connectivity: R1=10k between /IN and /OUT; C1=100n between /OUT and GND; J1 pins 1/2/3 expose IN/OUT/GND. Sources: inputs/project/rc_filter.kicad_sch:934,1092,1253; work/netlist/design.xml:/export/nets. Fresh export and PCB pad mappings agree; review-work/circuit/experiments/analysis.json:fresh_matches_supplied,pcb_matches_netlist.",
+    "Checked stimulus, initial state, model exclusions and measurements in work/rc-step/deck.cir:2\u20137, control.sp and ngspice.log. Directly decoded work/rc-step/result.raw: initially IN=OUT=0; VOUT(1ms)=0.632120134 V and VOUT(5ms)=0.993262120 V. See review-work/circuit/experiments/analysis.json:supplied_waveform.",
+    "Independently calculated tau=1ms and ideal VOUT(1ms)=0.632120559 V, within 0.62\u20130.65 V. The original 1ns input rise changes the analytical result by only 0.184 microvolt. Finer-step ngspice simulation agrees: review-work/circuit/experiments/analysis.json and independent.log:Measurements for Transient Analysis.",
+    "Independently parsed all five native track segments: each is 0.25mm, satisfying the 0.20mm minimum. Sources: inputs/project/rc_filter.kicad_pcb:667\u2013706; work/geometry/geometry.json:tracks; review-work/circuit/experiments/analysis.json:segments.",
+    "Read original ERC/DRC reports and reran both using KiCad 10.0.7: zero enabled-check violations, unconnected items or schematic-parity issues. Sources: work/erc/erc.json; work/drc/drc.json; review-work/circuit/experiments/erc.json,drc.json. Commands, versions, assumptions and outcomes are recorded in review-work/circuit/experiments/commands.json and notes.md; native hashes remained unchanged."
+  ],
+  "findings": [],
+  "limitations": [
+    "Only the stated ideal unloaded step from an initially discharged capacitor was evaluated. Tolerance, temperature dependence, parasitics, loading, ADC sampling, EMI and hardware behavior remain untested.",
+    "No manufacturer parts or ratings are specified; physical component limits and derating were not established. Shutdown, reset, brownout and arbitrary initial-charge behavior were not tested; no corresponding requirements were stated.",
+    "Zone connectivity was evaluated using saved fill only; no refill performed. ERC/DRC coverage excludes the ignored checks listed in work/erc/erc.json and work/drc/drc.json and reproduced in review-work/circuit/experiments/notes.md.",
+    "The 5ms measurement has no declared acceptance bounds; it was checked for consistency only."
+  ],
+  "packet_sha256": "3291cf04b0b1f15f96e4e2392fdcfb333f420989da37bf4adae198722c861264",
+  "role": "circuit",
+  "run_id": "bfe705bc-7279-48a4-982c-d686d27a147e",
+  "schema": "agent-ee.review/1"
+}

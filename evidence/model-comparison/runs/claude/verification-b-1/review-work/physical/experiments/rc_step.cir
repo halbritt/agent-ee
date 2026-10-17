@@ -1,0 +1,14 @@
+* RC low-pass from netlist: R1=10k (IN->OUT), C1=100n (OUT->GND)
+* 1 V ideal step at t=0 on /IN; /OUT unloaded (ADC not specified by packet)
+V1 in 0 PWL(0 0 1n 1)
+R1 in out 10k
+C1 out 0 100n
+.tran 1u 2m 0 1u
+.control
+run
+meas tran vout_1ms FIND v(out) AT=1m
+meas tran vout_2ms FIND v(out) AT=2m
+wrdata /work/experiments/rc_step.dat v(out)
+quit
+.endc
+.end

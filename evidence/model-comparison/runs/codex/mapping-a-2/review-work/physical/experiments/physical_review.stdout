@@ -1,0 +1,35 @@
+{
+  "physical_groups": [
+    [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    [
+      "C1.2",
+      "J1.3"
+    ],
+    [
+      "J1.1",
+      "R1.1"
+    ]
+  ],
+  "physical_groups_match_contract": true,
+  "schematic_groups_match_contract": true,
+  "cross_net_contacts": [],
+  "zones": [
+    {
+      "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+      "net": "GND",
+      "layers": {
+        "B.Cu": {
+          "outlines": 1,
+          "holes": [
+            0
+          ],
+          "vertices": 187
+        }
+      }
+    }
+  ]
+}

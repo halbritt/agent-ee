@@ -1,0 +1,81 @@
+{
+  "condition": "/IN held at 12 V DC; /OUT held at 0 V indefinitely by external equipment",
+  "R1_ohms": 10000.0,
+  "voltage_across_R1_V": 12.0,
+  "current_A": 0.0012,
+  "formula": "P_R1 = (V_IN - V_OUT)^2 / R1",
+  "power_W": 0.0144,
+  "continuous_limit_W": 0.1,
+  "fraction_of_limit": 0.144,
+  "margin_W": 0.08560000000000001,
+  "minimum_resistance_for_limit_ohms": 1440.0,
+  "result": "Below the stated continuous power limit"
+}
+[
+  {
+    "argv": [
+      "/usr/bin/python3",
+      "--version"
+    ],
+    "exit_code": 0,
+    "log": "python_version.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "exit_code": 0,
+    "log": "kicad_version.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/fresh_design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "log": "fresh_netlist.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/fresh_drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "log": "fresh_drc.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/fresh_erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "log": "fresh_erc.log"
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "routes": {
+    "J1.1_to_R1.1": true,
+    "R1.2_to_J1.2": true
+  },
+  "calculation": {
+    "voltage_V": 48.0,
+    "resistance_ohm": 10000.0,
+    "current_A": 0.0048,
+    "power_W": 0.2304,
+    "limit_W": 0.1,
+    "power_to_limit": 2.304,
+    "power_excess_W": 0.1304,
+    "minimum_resistance_at_48V_ohm": 23040.0,
+    "maximum_voltage_at_10k_V": 31.622776601683793
+  }
+}

@@ -1,0 +1,5 @@
+Using SPARSE 1.3 as Direct Linear Solver
+
+Error: measure  vout_1ns  find(AT) : out of interval
+ .measure tran vout_1ns find v(out) at=1n failed!
+

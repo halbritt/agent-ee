@@ -1,0 +1,86 @@
+{
+  "calculation": {
+    "vin_V": 12.0,
+    "vout_V": 0.0,
+    "R1_ohm": 10000.0,
+    "I_A": 0.0012,
+    "P_W": 0.0144,
+    "continuous_limit_W": 0.1,
+    "fraction_of_limit": 0.144,
+    "margin_W": 0.08560000000000001,
+    "minimum_resistance_to_meet_limit_ohm": 1440.0,
+    "equations": "I=(VIN-VOUT)/R1; P=(VIN-VOUT)^2/R1"
+  },
+  "routes": [
+    {
+      "from": "J1.1",
+      "to": "R1.1",
+      "points_mm": [
+        [
+          100.0,
+          100.0
+        ],
+        [
+          104.0875,
+          100.0
+        ]
+      ],
+      "segments": [
+        "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+      ],
+      "length_mm": 4.087500000000006
+    },
+    {
+      "from": "R1.2",
+      "to": "J1.2",
+      "points_mm": [
+        [
+          105.9125,
+          100.0
+        ],
+        [
+          107.5,
+          100.0
+        ],
+        [
+          107.5,
+          102.54
+        ],
+        [
+          100.0,
+          102.54
+        ]
+      ],
+      "segments": [
+        "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+        "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+        "8b528360-109d-4533-a657-35923fd930f8"
+      ],
+      "length_mm": 11.627500000000012
+    },
+    {
+      "from": "R1.2",
+      "to": "C1.1",
+      "points_mm": [
+        [
+          105.9125,
+          100.0
+        ],
+        [
+          107.5,
+          100.0
+        ],
+        [
+          109.05,
+          100.0
+        ]
+      ],
+      "segments": [
+        "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+        "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5"
+      ],
+      "length_mm": 3.137500000000003
+    }
+  ],
+  "outcome": "R1 dissipates 0.0144 W, below 0.1 W; no supported power-limit defect."
+}

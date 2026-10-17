@@ -1,0 +1,8 @@
+Independent ideal RC step, native R=10k and C=100n
+V1 IN 0 DC 1
+R1 IN OUT 10k
+C1 OUT 0 100n IC=0
+.tran 1u 5m 0 1u UIC
+.meas tran vout_1ms FIND v(OUT) AT=1m
+.meas tran vout_5ms FIND v(OUT) AT=5m
+.end

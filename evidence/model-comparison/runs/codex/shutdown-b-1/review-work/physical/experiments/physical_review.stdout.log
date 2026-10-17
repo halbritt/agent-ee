@@ -1,0 +1,21 @@
+{
+  "R_ohm": 100000.0,
+  "C_F": 1.0000000000000001e-07,
+  "initial_V": 1.0,
+  "deadline_s": 0.005,
+  "limit_V": 0.01,
+  "tau_s": 0.01,
+  "equation": "Vout(t)=1*exp(-t/(R*C))",
+  "vout_at_deadline_V": 0.6065306597126334,
+  "time_to_limit_s": 0.04605170185988092,
+  "max_tau_s": 0.0010857362047581294,
+  "initial_current_A": 1e-05,
+  "initial_resistor_power_W": 1e-05,
+  "initial_energy_J": 5.0000000000000004e-08,
+  "assumptions": [
+    "Ideal passive R and C; no tolerance, leakage, ESR, trace resistance or inductance.",
+    "IN shorted to the same reference as C1.2 at t=0, no external OUT load.",
+    "Only saved resistor provides an ideal DC discharge path; PWR_FLAG is not an electrical component."
+  ]
+}
+Saved probes, simulations and execution record to /work/experiments

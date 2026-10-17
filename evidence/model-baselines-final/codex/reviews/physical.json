@@ -1,0 +1,60 @@
+{
+  "candidate_id": "69119fab9d25319b3bf376eca634b13104ba76b7417416b85a2a64a4e78a6ab4",
+  "coverage": [
+    "Read complete native DRC, ERC, netlist and geometry records; inspected saved PCB and project constraints/exclusions.",
+    "Independently reran DRC without refilling copper: reproduced the 13 excluded error entries and zero unconnected items.",
+    "Compared 694 numbered PCB pad instances against native XML net assignments; found no mismatches.",
+    "Measured J1 mounting holes and generated separate plated/unplated drill files.",
+    "Inspected three flagged ground reliefs and their additional trace connections; checked CAN2 connectivity, DNP termination population and selected power/return geometry. Commands, versions and results are recorded in review-work/physical/experiments/README.md."
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "Direct drill export of the saved PCB places five anonymous J1 mounting holes in the plated-through-hole file.",
+      "evidence": [
+        {
+          "locator": "Lines 21687\u201321726: five anonymous thru_hole pads; UUIDs e186b75f-4739-4f2e-a723-906e090de7da, d33d29a3-4924-49dd-a841-0d17124fc788, e5984f98-dc19-4bdf-ab93-d568639f9b10, 233888a2-e331-456b-963a-5ee5605edf83, 0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+        },
+        {
+          "locator": "board.design_settings.rules.min_via_annular_width = 0.1; corresponding annular_width and padstack exclusions",
+          "path": "inputs/project/Polygonus-Universal-Base.kicad_pro"
+        },
+        {
+          "locator": "/violations/132 through /violations/141: five padstack and five annular_width entries, all excluded=true",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "mechanical_holes: positions, diameters and nominal_annulus_mm calculations",
+          "path": "review-work/physical/experiments/board-measurements.json"
+        },
+        {
+          "locator": "T10 and T12 drill hits: two 2.2 mm holes and three 4.0 mm holes",
+          "path": "review-work/physical/experiments/drill/Polygonus-Universal-Base-PTH.drl"
+        },
+        {
+          "locator": "Plated hole tool counts; total unplated holes count 0",
+          "path": "review-work/physical/experiments/drill-report.txt"
+        }
+      ],
+      "id": "physical-001",
+      "location": "J1 mounting holes at (71.95,35.49), (75.55,39.34), (120.00,28.49), (199.65,39.34), (203.25,35.49) mm",
+      "mechanism": "Each circular pad diameter equals its drill diameter: 4.0/4.0 mm or 2.2/2.2 mm. Nominal annulus (pad minus drill diameter)/2 is therefore zero, despite the plated drill classification.",
+      "reasoning": "Native geometry, DRC and independent drill export agree on the zero-annulus PTH representation. The saved exclusions acknowledge these violations but provide no rationale. Plating intent and finished-hole fit remain unverified. These are no-net mounting holes; electrical failure or fabrication rejection is not established.",
+      "severity": "minor",
+      "title": "J1 mounting holes retain zero-annulus PTH geometry"
+    }
+  ],
+  "limitations": [
+    "Saved fills only; no refill comparison, fabricated-board continuity test, powered measurement or behavioral simulation.",
+    "R36 and R37 are both 120-ohm DNP. Module/harness termination, assembled CAN2 resistance and dynamic CAN operation were not established.",
+    "No ampacity, load simultaneity, fault coordination, temperature-rise, junction-temperature or cooling qualification; width alone was not treated as qualification.",
+    "Connector drawings, fabrication tolerances, finished-hole fit, complete land-pattern validation and 3D module/enclosure clearances were not verified.",
+    "The independent DRC environment had different library resolution; geometric error entries reproduced, while library-warning counts differed.",
+    "Not every ERC warning received component-specific adjudication. Automotive transients, ignition energy, wideband stability, EMC and integrated FOME-MC coverage remain omitted."
+  ],
+  "packet_sha256": "c2f38615ec9fb1bb4b8e95f9e23e73f328ff00f06c4539ca8b66926e0890d4e7",
+  "role": "physical",
+  "run_id": "f3c237c2-3a08-4617-aaba-f04c47bbe98f",
+  "schema": "agent-ee.review/1"
+}

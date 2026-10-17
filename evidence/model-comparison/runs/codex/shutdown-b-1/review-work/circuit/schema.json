@@ -1,0 +1,131 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "enum": [
+        "c8dafb912adfc1846973bcf6e535916a69f208ba0393da7aee57e50555c23027"
+      ],
+      "type": "string"
+    },
+    "coverage": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assessment": {
+            "enum": [
+              "defect",
+              "concern"
+            ],
+            "type": "string"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "locator": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "locator"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "mechanism": {
+            "type": "string"
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocking",
+              "major",
+              "minor",
+              "info"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "location",
+          "condition",
+          "mechanism",
+          "reasoning",
+          "severity",
+          "assessment",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "packet_sha256": {
+      "enum": [
+        "65a0b7e8184cf1833bd1685c228e6c92f7c7a5c99e8d6c9be8d54d291a8be7d0"
+      ],
+      "type": "string"
+    },
+    "role": {
+      "enum": [
+        "circuit"
+      ],
+      "type": "string"
+    },
+    "run_id": {
+      "enum": [
+        "7c5910c3-61c7-4072-8e04-de2815e72490"
+      ],
+      "type": "string"
+    },
+    "schema": {
+      "enum": [
+        "agent-ee.review/1"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "candidate_id",
+    "run_id",
+    "packet_sha256",
+    "role",
+    "coverage",
+    "limitations",
+    "findings"
+  ],
+  "type": "object"
+}

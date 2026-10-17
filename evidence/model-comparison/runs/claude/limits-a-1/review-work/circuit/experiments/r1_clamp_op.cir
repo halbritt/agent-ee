@@ -1,0 +1,13 @@
+* R1 dissipation check: /IN held at 12 V DC, /OUT clamped to 0 V by external equipment
+* Topology from inputs/project netlist: R1 (10k) between /IN and /OUT, C1 (100n) /OUT->GND
+VIN in 0 DC 12
+VCLAMP out 0 DC 0
+R1 in out 10k
+C1 out 0 100n
+.op
+.control
+op
+let p_r1 = (v(in)-v(out))*(v(in)-v(out))/10e3
+print v(in) v(out) i(VIN) p_r1
+.endc
+.end

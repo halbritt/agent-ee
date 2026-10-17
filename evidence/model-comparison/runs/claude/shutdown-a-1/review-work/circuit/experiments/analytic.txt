@@ -1,0 +1,4 @@
+tau = 1.000 ms
+V(/OUT) at 5 ms = 6.7379 mV (limit 10 mV)
+margin factor = 1.484
+time to 10 mV = 4.6052 ms

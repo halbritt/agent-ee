@@ -50,7 +50,7 @@ files. Their exact bytes are in these versioned archives. Readable check/log/
 review records remain directly visible in the repository. Do not assume that a
 fresh clone without restoration contains a complete hash-verifiable run tree.
 
-The final records use Python policy from commit `30b2256`; later documentation
+The original final records use Python policy from commit `30b2256`; later documentation
 commits preserve those module bytes. In the demonstrated runtime, these commands
 check retained candidate/evidence consistency without consulting the old source
 locations:
@@ -81,7 +81,7 @@ With native prerequisites, stock resources at the fixture's declared paths and
 working subscription authentication:
 
 ```sh
-python3 scripts/demo.py --profile profiles/claude.json --out build/repeated-demo --seconds-per-run 1200
+python3 scripts/demo.py --profile profiles/codex.json --out build/repeated-demo --seconds-per-run 1200
 ```
 
 The output directory must be new. The script records the evaluation-plan hash,
@@ -151,3 +151,41 @@ The recorded test, interruption, archive round-trip, malformed-review, policy
 refusal and live freshness evidence is linked from the acceptance index.
 Replaying deterministic tests supplements, and does not replace, the actual
 engineering-tool and subscription-review demonstrations.
+
+## Subscription profile evaluation archives
+
+The [follow-up index](../evidence/MODEL-SELECTION.md) maps each new group to its
+implementation commit. `model-release` uses `5d01de9`. To check the archived
+release independently of newer code:
+
+```sh
+python3 scripts/evidence_archive.py restore model-release
+git worktree add --detach build/replay-release 5d01de9
+PYTHONPATH=build/replay-release/src python3 -m agent_ee.cli verify \
+  evidence/model-release/repair-demo/control --snapshot-only
+PYTHONPATH=build/replay-release/src python3 -m agent_ee.cli verify \
+  evidence/model-release/baseline --snapshot-only
+```
+
+The worktree supplies matching policy code; archive restoration supplies recorded
+inputs. Current machine runtime fingerprints must also match. The documented
+[separate-worktree replay](../evidence/model-validation/fresh-checkout.json)
+verified all five release results. The [freshness mutation](../evidence/model-validation/freshness-mutation.json)
+changed both native files on the disposable repair and confirmed refusal, then
+restored their original bytes and verified again.
+
+To produce and grade a new comparison:
+
+```sh
+python3 scripts/compare_reviewers.py --out build/comparison-new
+python3 scripts/comparison_summary.py build/comparison-new \
+  --grades /path/to/manually-reviewed-grades.json --out build/comparison-summary.json
+python3 scripts/compare_adjudicators.py --candidates build/comparison-new \
+  --out build/adjudicators-new
+```
+
+Do not reuse the recorded grade ledger for different review bytes. It deliberately
+rejects stale hashes. Without `--grades`, the summary reports execution and
+findings as ungraded. All comparison reviews remain incomplete as acceptance
+runs because they intentionally omit adjudication. The score report separately
+identifies execution failures, unrun cases and engineering overclaims.

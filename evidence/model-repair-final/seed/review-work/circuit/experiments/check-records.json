@@ -1,0 +1,94 @@
+{
+  "erc": {
+    "execution": "ok",
+    "outcome": "pass",
+    "summary": "ERC ran on 1 sheet instance(s) with zero violations",
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0
+  },
+  "drc": {
+    "execution": "ok",
+    "outcome": "pass",
+    "summary": "DRC with schematic parity reported zero issues on the saved board",
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0
+  },
+  "netlist": {
+    "execution": "ok",
+    "outcome": "info",
+    "summary": "native XML netlist exported from a complete 1-instance hierarchy: 3 component(s), 3 net(s), 0 DNP",
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0
+  },
+  "geometry": {
+    "execution": "ok",
+    "outcome": "pass",
+    "summary": "all 5 checked track segment(s) meet the declared 0.2 mm minimum width (narrowest 0.25 mm)",
+    "argv": [
+      "/usr/bin/python3",
+      "-B",
+      "-m",
+      "agent_ee.geometry_probe",
+      "/candidate/project/rc_filter.kicad_pcb",
+      "-o",
+      "/work/geometry.json"
+    ],
+    "exit_code": 0
+  },
+  "rc-step": {
+    "execution": "ok",
+    "outcome": "defect",
+    "summary": "transient response violates declared limits: vout_1ms=0.0951625 outside [0.62, 0.65]",
+    "argv": [
+      "ngspice",
+      "-n",
+      "-b",
+      "-o",
+      "/work/ngspice.log",
+      "/work/control.sp"
+    ],
+    "exit_code": 0
+  },
+  "geometry_observations": {
+    "tracks": 5,
+    "widths_mm": [
+      0.25
+    ],
+    "unconnected_items": 0
+  }
+}

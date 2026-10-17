@@ -1,0 +1,54 @@
+{
+  "candidate_id": "bd8ff0ea2d31a613361ffad6f6f714c2f520a374e8bfdca795336382490b5cd0",
+  "coverage": [
+    "Verified sha256 of inputs/project/rc_filter.kicad_sch, inputs/project/rc_filter.kicad_pcb and inputs/requirements.txt against packet hashes (review-work/physical/experiments/input_hashes.txt)",
+    "Shutdown criterion evaluated analytically and with an independent ngspice 42 transient simulation (tau = R1*C1 = 1.000 ms; V(/OUT) at 5 ms = 6.738 mV <= 10 mV) (review-work/physical/experiments/analytical_calc.txt, shutdown_discharge.cir, shutdown_discharge_output.txt)",
+    "Schematic topology cross-checked against work/netlist/design.xml and work/netlist/connectivity.json: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}, GND={C1.2,J1.3}",
+    "Saved-board connectivity probed with pcbnew 10.0.7 without refilling the candidate: pad nets, single filled B.Cu GND zone (192.29 mm2, one outline), via (113,100) inside fill, GetUnconnectedCount=0 (review-work/physical/experiments/board_connectivity_probe.py/.json)",
+    "J1 pad 3 thermal-spoke continuity verified by point-in-polygon sampling of the saved fill: fill present inside the pad annulus (r=0.7 mm) and across the clearance gap (r=1.1 mm) at 45/135/225/315 degrees; /OUT pad 2 ring fully isolated (review-work/physical/experiments/spoke_probe.py, spoke_probe_output.txt)",
+    "Zone fill staleness checked by refilling a scratch copy: refilled area and vertex count identical to saved fill (192.287427 mm2, 187 vertices); candidate unmodified (review-work/physical/experiments/refill_compare.py, refill_compare_output.txt)",
+    "F.Cu routing continuity reviewed including the collinear T-junction at (107.5,100) on /OUT; all copper inside the Edge.Cuts outline (inputs/project/rc_filter.kicad_pcb segments; work/geometry/geometry.json tracks)",
+    "Packet ERC/DRC/netlist/geometry evidence reviewed for consistency (work/erc/erc.json, work/drc/drc.json, work/geometry/geometry.json)"
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "With nominal values the discharge time constant is exactly 1.000 ms, so /OUT reaches 6.738 mV at 5 ms against the 10 mV limit; the 10 mV threshold is crossed at 4.605 ms, leaving 0.395 ms (7.9% of the 5 ms window) of margin. Any combined increase of about 8.6% in the R1*C1 product would breach the limit.",
+      "evidence": [
+        {
+          "locator": "V(5ms) analytical = 6.7379 mV; time to reach 10 mV = 4.6052 ms; margin 0.3948 ms (7.9%)",
+          "path": "review-work/physical/experiments/analytical_calc.txt"
+        },
+        {
+          "locator": "meas vout5ms = 6.737944e-03",
+          "path": "review-work/physical/experiments/shutdown_discharge_output.txt"
+        },
+        {
+          "locator": "line 1: Require /OUT <= 0.01 V at 5 ms; Ideal passive components only",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "nets /IN, /OUT, GND; C1=100n, R1=10k",
+          "path": "work/netlist/design.xml"
+        }
+      ],
+      "id": "phys-01",
+      "location": "inputs/project/rc_filter.kicad_sch (C1 value \"100n\" at symbol uuid 1dcaf7b4, R1 value \"10k\" at symbol uuid c5c38e1a); inputs/requirements.txt line 1",
+      "mechanism": "V(t) = 1 V * exp(-t/(R1*C1)); exp(-5) = 6.7379e-3. Confirmed by ngspice transient (.tran 1u 6m uic, meas vout5ms = 6.737944e-3 V). Under the stated ideal-component rule the criterion passes; the finding records that verification at nominal values only leaves a thin margin that standard E-series tolerances (not in scope) would consume.",
+      "reasoning": "Not a defect: the stated criterion is met with ideal components and the requirements explicitly forbid imposing unstated ratings or tolerance qualification. Logged as an info concern because the design sits at 5 tau against a 4.605 tau requirement, so the pass is sensitive to any real-world deviation of the R*C product; adjudicators should know the margin is 0.395 ms, not comfortable.",
+      "severity": "info",
+      "title": "Shutdown discharge meets 10 mV @ 5 ms with only 7.9% timing margin (4.605 tau required, 5 tau provided)"
+    }
+  ],
+  "limitations": [
+    "Zone/spoke continuity was shown by point-in-polygon sampling of the saved single-outline fill polygon plus KiCad native connectivity counts; no gerber/plot-level copper extraction was performed",
+    "No tolerance, parasitic (ESR, leakage, dielectric absorption) or temperature analysis: requirements mandate ideal passive components, so only nominal values were evaluated",
+    "No ampacity or thermal qualification was assessed or inferred (peak exercise current is 100 uA; no current/thermal requirement is stated)",
+    "The four ERC checks and five DRC checks listed as ignored in work/erc/erc.json and work/drc/drc.json (e.g. single_global_label, track_not_centered_on_via) were not re-enabled or re-run",
+    "External grounding of /IN at J1 pin 1 is assumed ideal (zero impedance) per the stated scenario; connector contact resistance not modeled"
+  ],
+  "packet_sha256": "dea9de63ecf6fd84114e0e4fefb0d04d7e5c2e248c6a2830cd74603e0d58e66e",
+  "role": "physical",
+  "run_id": "f2b2dfbb-1d19-4ab7-b561-b489158fc5a4",
+  "schema": "agent-ee.review/1"
+}

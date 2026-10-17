@@ -1,0 +1,12 @@
+# Circuit review experiment
+
+Command: `python3 /work/experiments/check_population.py` (script and all outputs in this directory).
+Initial discovery used `rg --files /candidate /evidence`, `ls -la` on those roots, `wc -l`, `rg -n -C 10` for R1/DNP, and `sha256sum` on the requirements, schematic and PCB. Native hashes match the packet. No credential files or prior reviewer experiments were read.
+
+The script records Python/KiCad versions and exact subprocess argv, stdout, stderr and exit status in commands.json. It exports a fresh native XML netlist, compares component identity, DNP and pin/net membership with the supplied XML, and independently parses schematic instance DNP and PCB footprint attributes. It then constructs a graph containing only fitted resistor edges. Connector pins are separate terminals, not internal shorts; C1 is a capacitor from OUT to GND and supplies no resistive IN-to-OUT edge. No external circuit or assembly override is assumed. These are topology calculations, not physical resistance measurements or SPICE simulation.
+
+Outcome: fresh and supplied netlists agree. R1 (10k), the only resistor, is DNP in schematic, PCB, and netlist. Fitted resistor edge count is zero; OUT is unreachable from IN. R1's two unbridged pads have a 0.8 mm centerline edge gap, calculated as 1.825 - 1.025 mm. Native PCB segments terminate on the separate pads; only GND has a back-copper zone. An unpopulated footprint cannot supply the missing component edge. No candidate files were changed.
+
+Supplied ERC/DRC report zero native violations and zero DRC unconnected/parity issues. These check pad-to-net routing and native rules, not whether a DNP resistor is assembled. Supplied geometry contains KiCad PROPERTY_ENUM assertion messages despite producing populated geometry JSON; DNP and pad/net data used here are independently verified from native files, not inferred from its exit status. No electrical model, stimulus or electrical measurement is present in the supplied checks.
+
+Limitations/omissions: no physical assembly measurements; no SPICE run needed for this absent fitted path. No voltage, load, ratings, timing, startup/shutdown/reset/brownout, tolerances or ECU qualification criteria are specified, so those are not evaluated. ERC/DRC were inspected, not rerun; their ignored checks remain untested. Saved zone fill was not regenerated. Native centerline pad-gap calculation is not a comprehensive independent PCB clearance audit. Graph result is the ideal intended resistive topology, not a prediction of parasitic leakage.

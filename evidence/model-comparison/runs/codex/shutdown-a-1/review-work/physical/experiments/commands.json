@@ -1,0 +1,87 @@
+[
+  {
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "kicad-version.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "ngspice-version.log"
+  },
+  {
+    "argv": [
+      "/usr/bin/python3",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "python-version.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "drc.log"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "erc.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-b",
+      "shutdown.cir"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "shutdown.log"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-b",
+      "shutdown_checked.cir"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "log": "shutdown_checked.log",
+    "reason": "First diagnostic at 1 ns lay before the first stored transient time; use 1 us, retain initial run."
+  }
+]

@@ -1,0 +1,61 @@
+[
+  {
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "exit_code": 0,
+    "log": "command-0.log",
+    "time_utc": "2026-10-17T00:52:11.501107+00:00"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "exit_code": 0,
+    "log": "command-1.log",
+    "time_utc": "2026-10-17T00:52:11.506392+00:00"
+  },
+  {
+    "argv": [
+      "pdftotext",
+      "-v"
+    ],
+    "exit_code": 0,
+    "log": "command-2.log",
+    "time_utc": "2026-10-17T00:52:11.517073+00:00"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/fresh.xml",
+      "/candidate/project/Polygonus-Universal-Base.kicad_sch"
+    ],
+    "exit_code": 0,
+    "log": "command-3.log",
+    "time_utc": "2026-10-17T00:52:12.728193+00:00"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "export",
+      "drill",
+      "--format",
+      "excellon",
+      "--output",
+      "/work/experiments/drill/",
+      "/candidate/project/Polygonus-Universal-Base.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "log": "command-4.log",
+    "time_utc": "2026-10-17T00:52:14.965998+00:00"
+  }
+]

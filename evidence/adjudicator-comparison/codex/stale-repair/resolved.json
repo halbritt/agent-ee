@@ -1,0 +1,110 @@
+[
+  {
+    "assessment": "defect",
+    "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+    "condition": "Declared external connector contract",
+    "decision": {
+      "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+      "disposition": "accepted",
+      "evidence": [
+        {
+          "locator": "line 1: J1.2 input, J1.1 filtered output, J1.3 ground",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "J1 pads 1\u20133, lines 587\u2013613; R1 pads, lines 359\u2013374; C1 pads, lines 210\u2013225",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "/export/nets: /IN connects J1.1\u2013R1.1; /OUT connects J1.2\u2013R1.2\u2013C1.1; GND connects C1.2\u2013J1.3",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "violations, unconnected_items, schematic_parity: empty arrays",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "sha256, native_pcb_pad_nets, topology, outcome, limitations",
+          "path": "review-work/adjudicator/experiments/connector_verification.json"
+        }
+      ],
+      "reason": "Established defect: saved J1.1 is the resistor input side, while J1.2 connects directly to the shunt capacitor, reversing the declared input/output contract. Driving contractual input J1.2 places C1 at the input instead of the filtered output J1.1. The saved board and exported schematic agree; passing ERC/DRC does not establish compliance with the external contract. The claimed repair is contradicted by the current native connectivity.",
+      "run_id": "42b5cb8b-8ba3-4f41-aa6f-9c438af4ed1b",
+      "seq": 1
+    },
+    "decision_evidence": [
+      {
+        "locator": "line 1: J1.2 input, J1.1 filtered output, J1.3 ground",
+        "path": "inputs/requirements.txt"
+      },
+      {
+        "locator": "J1 pads 1\u20133, lines 587\u2013613; R1 pads, lines 359\u2013374; C1 pads, lines 210\u2013225",
+        "path": "inputs/project/rc_filter.kicad_pcb"
+      },
+      {
+        "locator": "/export/nets: /IN connects J1.1\u2013R1.1; /OUT connects J1.2\u2013R1.2\u2013C1.1; GND connects C1.2\u2013J1.3",
+        "path": "work/netlist/design.xml"
+      },
+      {
+        "locator": "violations, unconnected_items, schematic_parity: empty arrays",
+        "path": "work/drc/drc.json"
+      },
+      {
+        "locator": "sha256, native_pcb_pad_nets, topology, outcome, limitations",
+        "path": "review-work/adjudicator/experiments/connector_verification.json"
+      }
+    ],
+    "disposition": "accepted",
+    "disposition_reason": "Established defect: saved J1.1 is the resistor input side, while J1.2 connects directly to the shunt capacitor, reversing the declared input/output contract. Driving contractual input J1.2 places C1 at the input instead of the filtered output J1.1. The saved board and exported schematic agree; passing ERC/DRC does not establish compliance with the external contract. The claimed repair is contradicted by the current native connectivity.",
+    "events": [
+      {
+        "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "line 1: J1.2 input, J1.1 filtered output, J1.3 ground",
+            "path": "inputs/requirements.txt"
+          },
+          {
+            "locator": "J1 pads 1\u20133, lines 587\u2013613; R1 pads, lines 359\u2013374; C1 pads, lines 210\u2013225",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "/export/nets: /IN connects J1.1\u2013R1.1; /OUT connects J1.2\u2013R1.2\u2013C1.1; GND connects C1.2\u2013J1.3",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "violations, unconnected_items, schematic_parity: empty arrays",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "sha256, native_pcb_pad_nets, topology, outcome, limitations",
+            "path": "review-work/adjudicator/experiments/connector_verification.json"
+          }
+        ],
+        "reason": "Established defect: saved J1.1 is the resistor input side, while J1.2 connects directly to the shunt capacitor, reversing the declared input/output contract. Driving contractual input J1.2 places C1 at the input instead of the filtered output J1.1. The saved board and exported schematic agree; passing ERC/DRC does not establish compliance with the external contract. The claimed repair is contradicted by the current native connectivity.",
+        "run_id": "42b5cb8b-8ba3-4f41-aa6f-9c438af4ed1b",
+        "seq": 1
+      }
+    ],
+    "evidence": [
+      {
+        "locator": "J1 pads 1, 2, 3 net assignments",
+        "path": "inputs/project/rc_filter.kicad_pcb"
+      },
+      {
+        "locator": "declared connector contract",
+        "path": "inputs/requirements.txt"
+      }
+    ],
+    "id": "challenger/one",
+    "location": "J1.1/J1.2",
+    "mechanism": "J1.1 is /IN and J1.2 is /OUT, contrary to required reversed assignment.",
+    "reason": "Established defect: saved J1.1 is the resistor input side, while J1.2 connects directly to the shunt capacitor, reversing the declared input/output contract. Driving contractual input J1.2 places C1 at the input instead of the filtered output J1.1. The saved board and exported schematic agree; passing ERC/DRC does not establish compliance with the external contract. The claimed repair is contradicted by the current native connectivity.",
+    "reasoning": "Compare saved pad nets to captured connector requirement.",
+    "run_id": "42b5cb8b-8ba3-4f41-aa6f-9c438af4ed1b",
+    "severity": "major",
+    "status": "accepted",
+    "title": "Connector contract mismatch"
+  }
+]

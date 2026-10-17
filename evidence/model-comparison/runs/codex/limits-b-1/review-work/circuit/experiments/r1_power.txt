@@ -1,0 +1,31 @@
+Command: python3 /work/experiments/r1_power.py
+Python: 3.12.3
+SHA256 inputs/requirements.txt 459b1c6ae69288bce5fd646e3a27c598f38f3eb6274699277927b254f3153d1c
+SHA256 inputs/project/rc_filter.kicad_sch ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b
+SHA256 inputs/project/rc_filter.kicad_pcb f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de
+Exported R1 value: 10k ; pins: {'1': '/IN', '2': '/OUT'}
+Check: erc outcome: pass exit: 0
+Native check command: ['kicad-cli', 'sch', 'erc', '--format', 'json', '--severity-all', '--units', 'mm', '-o', '/work/erc.json', '/candidate/project/rc_filter.kicad_sch']
+Declared check limitations: []
+Check: drc outcome: pass exit: 0
+Native check command: ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all', '--schematic-parity', '--units', 'mm', '-o', '/work/drc.json', '/candidate/project/rc_filter.kicad_pcb']
+Declared check limitations: ['zone fill evaluated as saved; the read-only candidate forbids a refill pass']
+Check: netlist outcome: info exit: 0
+Native check command: ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/project/rc_filter.kicad_sch']
+Declared check limitations: []
+Check: geometry outcome: info exit: 0
+Native check command: ['/usr/bin/python3', '-B', '-m', 'agent_ee.geometry_probe', '/candidate/project/rc_filter.kicad_pcb', '-o', '/work/geometry.json']
+Declared check limitations: ['geometry read from the saved board file; zone fill state as saved']
+Assumptions: stated external equipment maintains IN=48 V, OUT=0 V indefinitely;
+R1 uses its native nominal value 10 kohm and the stipulated 0.1 W continuous limit.
+Voltage across R1 [V]: 48.0
+I = (48-0)/10000 [A]: 0.0048
+P = (48-0)^2/10000 [W]: 0.2304
+Continuous limit [W]: 0.1
+P / limit: 2.304
+Excess over limit [W]: 0.1304
+Outcome: FAIL; nominal continuous dissipation exceeds the stated limit.
+Model: Ohmic DC calculation, no vendor or thermal model; no physical measurement.
+The external clamp prevents OUT charging toward IN, so this is sustained power,
+not a finite capacitor-charging pulse. C1 is not in series with R1.
+No predicted temperature, damage timing, tolerance or failure mode is asserted.

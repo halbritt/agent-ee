@@ -1,0 +1,122 @@
+{
+  "at": "2026-10-17T00:29:58.686197+00:00",
+  "decisions": {
+    "candidate_id": "d5b8384d1b2948621e1c1b2dc675affa4fc13959286eea50af3e9df6c5dcd0d8",
+    "decisions": [
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "sheets[0].violations[0] through [4]; complete 10-instance report",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "erc.exact_violation_match; erc.errors",
+            "path": "review-work/adjudicator/experiments/audit.json"
+          }
+        ],
+        "finding_id": "check/erc",
+        "reason": "Established native ERC criterion failure: independent execution exactly reproduces 353 violations, including five errors concerning power-drive declarations, A1.2 connectivity and J2.40/.41 pin types. Successful command execution does not mean ERC passed. These findings establish rule defects without proving absent hardware power or regulator contention."
+      },
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "violations; schematic_parity; unconnected_items",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "drc.exact_violation_match; drc.exact_parity_match; drc.errors",
+            "path": "review-work/adjudicator/experiments/audit.json"
+          },
+          {
+            "locator": "Commands, outcomes and verification limits",
+            "path": "review-work/adjudicator/experiments/REVIEW_NOTES.md"
+          }
+        ],
+        "finding_id": "check/drc",
+        "reason": "Established native DRC criterion failure: independent execution exactly reproduces 142 violations and 114 parity issues, with zero unconnected items. All 13 error entries are saved exclusions with empty comments; the underlying geometry violations remain. Saved copper was evaluated without refilling. Manufacturing rejection and functional electrical failure are not established."
+      },
+      {
+        "disposition": "noted",
+        "evidence": [
+          {
+            "locator": "Symbol d69380f9-5487-4782-9ce9-0690df62e543: value 120, dnp yes, in_bom no; instance references R36 and R37",
+            "path": "inputs/project/wbo-can-trans.kicad_sch"
+          },
+          {
+            "locator": "can_board; can_schematic; netlist.can_nets; can_calculation",
+            "path": "review-work/adjudicator/experiments/audit.json"
+          }
+        ],
+        "finding_id": "circuit/circuit-can2-termination",
+        "reason": "Supported minor configuration concern: schematic and saved PCB both omit R36/R37, contributing zero populated carrier termination conductance across CAN2. Module and harness termination remain unverified. No declared termination requirement, bitrate or measured signaling failure establishes a defect, so the concern retains its non-defect classification."
+      },
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "Lines 21686\u201321725: five unnumbered J1 thru_hole pads with size equal to drill",
+            "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+          },
+          {
+            "locator": "board.design_settings.rules.min_via_annular_width = 0.1; corresponding drc_exclusions",
+            "path": "inputs/project/Polygonus-Universal-Base.kicad_pro"
+          },
+          {
+            "locator": "violations[132] through [141]: five padstack and five annular_width errors",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "Plated PTH header; T10C2.200 and T12C4.000; selected_hits contains all five coordinates",
+            "path": "review-work/adjudicator/experiments/drill-audit.json"
+          }
+        ],
+        "finding_id": "physical/PHY001",
+        "reason": "Established saved geometry defect: all five holes are plated, and their nominal annular ring is zero, below the saved 0.1 mm constraint. Native extraction, independent DRC and drill export agree. Saved exclusions do not change the geometry or limit. Electrical opens, mechanical failure and fabricator rejection remain unproven."
+      },
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "Ground zone bc540b8b-3ffa-4b00-b211-3a91191a1f6d; C15.2, U7.4 and C14.2",
+            "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb"
+          },
+          {
+            "locator": "board.design_settings.rules.min_resolved_spokes = 2; corresponding starved_thermal exclusions",
+            "path": "inputs/project/Polygonus-Universal-Base.kicad_pro"
+          },
+          {
+            "locator": "violations[94], [95], [96]: minimum two spokes, actual one",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "drc.exact_violation_match; ground_pads; ground_zone",
+            "path": "review-work/adjudicator/experiments/audit.json"
+          }
+        ],
+        "finding_id": "physical/PHY002",
+        "reason": "Established saved thermal-rule defect: independent DRC confirms one resolved F.Cu spoke at each cited ground pad against the configured minimum of two. The saved exclusions and zero unconnected count do not establish compliance. No refill, open-circuit, ampacity or temperature conclusion is implied."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "circuit/circuit-can2-termination",
+        "evidence": [
+          {
+            "locator": "components.R36; components.R37; nets./CAN2+; nets./CAN2-",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "can_board; can_calculation",
+            "path": "review-work/adjudicator/experiments/audit.json"
+          }
+        ],
+        "finding_id": "physical/PHY003",
+        "reason": "Same minor CAN2 population and external-termination dependency as the surviving circuit finding. Both describe the same DNP resistors, shared bus and unverified module/harness configuration."
+      }
+    ],
+    "run_id": "8bf132e9-a698-44e0-878f-52cc0c3c103b",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

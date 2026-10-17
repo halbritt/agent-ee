@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-17T00:43:57.483685+00:00",
+  "decisions": {
+    "candidate_id": "0b0265f2838c37cacd80169482dacd56a05559c05ccf88cb9aba1dd719bb31a7",
+    "decisions": [],
+    "run_id": "be95470d-1098-4730-ba36-4968f4a89eee",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

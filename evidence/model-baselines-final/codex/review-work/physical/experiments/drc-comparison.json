@@ -1,0 +1,548 @@
+{
+  "/evidence/work/drc/drc.json": {
+    "violations": 142,
+    "unconnected_items": 0,
+    "schematic_parity": 114,
+    "by_type_and_exclusion": {
+      "silk_over_copper; excluded=False": 14,
+      "lib_footprint_mismatch; excluded=False": 71,
+      "lib_footprint_issues; excluded=False": 9,
+      "starved_thermal; excluded=True": 3,
+      "lib_footprint_mismatch; excluded=True": 35,
+      "padstack; excluded=True": 5,
+      "annular_width; excluded=True": 5
+    },
+    "error_entries": [
+      {
+        "index": 94,
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 2 [GND] of C15 on F.Cu",
+            "pos": {
+              "x": 107.851547,
+              "y": 98.755769
+            },
+            "uuid": "9075962d-febe-4c1a-ab7d-6f8b94d3635c"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "index": 95,
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 4 [GND] of U7 on F.Cu",
+            "pos": {
+              "x": 101.008268,
+              "y": 102.683572
+            },
+            "uuid": "23ac307c-764d-4806-bb29-f4965cb55097"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "index": 96,
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 2 [GND] of C14 on F.Cu",
+            "pos": {
+              "x": 101.591948,
+              "y": 104.291543
+            },
+            "uuid": "f33c422b-548e-40d6-b20d-b67c2305f336"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "index": 132,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 71.95,
+              "y": 35.49
+            },
+            "uuid": "e186b75f-4739-4f2e-a723-906e090de7da"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 133,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 75.55,
+              "y": 39.34
+            },
+            "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 134,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 120.0,
+              "y": 28.49
+            },
+            "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 135,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 199.65,
+              "y": 39.34
+            },
+            "uuid": "233888a2-e331-456b-963a-5ee5605edf83"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 136,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 203.25,
+              "y": 35.49
+            },
+            "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 137,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 71.95,
+              "y": 35.49
+            },
+            "uuid": "e186b75f-4739-4f2e-a723-906e090de7da"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 138,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 75.55,
+              "y": 39.34
+            },
+            "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 139,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 120.0,
+              "y": 28.49
+            },
+            "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 140,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 199.65,
+              "y": 39.34
+            },
+            "uuid": "233888a2-e331-456b-963a-5ee5605edf83"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 141,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 203.25,
+              "y": 35.49
+            },
+            "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      }
+    ]
+  },
+  "/work/experiments/independent-drc.json": {
+    "violations": 156,
+    "unconnected_items": 0,
+    "schematic_parity": 114,
+    "by_type_and_exclusion": {
+      "silk_over_copper; excluded=False": 14,
+      "lib_footprint_issues; excluded=False": 129,
+      "starved_thermal; excluded=True": 3,
+      "padstack; excluded=True": 5,
+      "annular_width; excluded=True": 5
+    },
+    "error_entries": [
+      {
+        "index": 143,
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 2 [GND] of C15 on F.Cu",
+            "pos": {
+              "x": 107.851547,
+              "y": 98.755769
+            },
+            "uuid": "9075962d-febe-4c1a-ab7d-6f8b94d3635c"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "index": 144,
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 4 [GND] of U7 on F.Cu",
+            "pos": {
+              "x": 101.008268,
+              "y": 102.683572
+            },
+            "uuid": "23ac307c-764d-4806-bb29-f4965cb55097"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "index": 145,
+        "comment": "",
+        "description": "Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0",
+            "pos": {
+              "x": 203.2,
+              "y": 23.36994
+            },
+            "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d"
+          },
+          {
+            "description": "Pad 2 [GND] of C14 on F.Cu",
+            "pos": {
+              "x": 101.591948,
+              "y": 104.291543
+            },
+            "uuid": "f33c422b-548e-40d6-b20d-b67c2305f336"
+          }
+        ],
+        "severity": "error",
+        "type": "starved_thermal"
+      },
+      {
+        "index": 146,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 71.95,
+              "y": 35.49
+            },
+            "uuid": "e186b75f-4739-4f2e-a723-906e090de7da"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 147,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 75.55,
+              "y": 39.34
+            },
+            "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 148,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 120.0,
+              "y": 28.49
+            },
+            "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 149,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 199.65,
+              "y": 39.34
+            },
+            "uuid": "233888a2-e331-456b-963a-5ee5605edf83"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 150,
+        "comment": "",
+        "description": "Padstack is questionable (PTH pad hole leaves no copper)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 203.25,
+              "y": 35.49
+            },
+            "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0"
+          }
+        ],
+        "severity": "error",
+        "type": "padstack"
+      },
+      {
+        "index": 151,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 71.95,
+              "y": 35.49
+            },
+            "uuid": "e186b75f-4739-4f2e-a723-906e090de7da"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 152,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 75.55,
+              "y": 39.34
+            },
+            "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 153,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 120.0,
+              "y": 28.49
+            },
+            "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 154,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 199.65,
+              "y": 39.34
+            },
+            "uuid": "233888a2-e331-456b-963a-5ee5605edf83"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      },
+      {
+        "index": 155,
+        "comment": "",
+        "description": "Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)",
+        "excluded": true,
+        "items": [
+          {
+            "description": "PTH pad [<no net>] of J1",
+            "pos": {
+              "x": 203.25,
+              "y": 35.49
+            },
+            "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0"
+          }
+        ],
+        "severity": "error",
+        "type": "annular_width"
+      }
+    ]
+  }
+}

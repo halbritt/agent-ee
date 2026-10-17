@@ -1,0 +1,1337 @@
+1: (kicad_sch
+2: 	(version 20260306)
+3: 	(generator "eeschema")
+4: 	(generator_version "10.0")
+5: 	(uuid "dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb")
+6: 	(paper "A5")
+7: 	(title_block
+8: 		(title "Toolchain fixture: RC low-pass (not ECU design)")
+9: 		(rev "1")
+10: 	)
+11: 	(lib_symbols
+12: 		(symbol "Connector_Generic:Conn_01x03"
+13: 			(pin_names
+14: 				(offset 1.016)
+15: 				(hide yes)
+16: 			)
+17: 			(exclude_from_sim no)
+18: 			(in_bom yes)
+19: 			(on_board yes)
+20: 			(in_pos_files yes)
+21: 			(duplicate_pin_numbers_are_jumpers no)
+22: 			(property "Reference" "J"
+23: 				(at 0 5.08 0)
+24: 				(show_name no)
+25: 				(do_not_autoplace no)
+26: 				(effects
+27: 					(font
+28: 						(size 1.27 1.27)
+29: 					)
+30: 				)
+31: 			)
+32: 			(property "Value" "Conn_01x03"
+33: 				(at 0 -5.08 0)
+34: 				(show_name no)
+35: 				(do_not_autoplace no)
+36: 				(effects
+37: 					(font
+38: 						(size 1.27 1.27)
+39: 					)
+40: 				)
+41: 			)
+42: 			(property "Footprint" ""
+43: 				(at 0 0 0)
+44: 				(show_name no)
+45: 				(do_not_autoplace no)
+46: 				(hide yes)
+47: 				(effects
+48: 					(font
+49: 						(size 1.27 1.27)
+50: 					)
+51: 				)
+52: 			)
+53: 			(property "Datasheet" ""
+54: 				(at 0 0 0)
+55: 				(show_name no)
+56: 				(do_not_autoplace no)
+57: 				(hide yes)
+58: 				(effects
+59: 					(font
+60: 						(size 1.27 1.27)
+61: 					)
+62: 				)
+63: 			)
+64: 			(property "Description" "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)"
+65: 				(at 0 0 0)
+66: 				(show_name no)
+67: 				(do_not_autoplace no)
+68: 				(hide yes)
+69: 				(effects
+70: 					(font
+71: 						(size 1.27 1.27)
+72: 					)
+73: 				)
+74: 			)
+75: 			(property "ki_keywords" "connector"
+76: 				(at 0 0 0)
+77: 				(show_name no)
+78: 				(do_not_autoplace no)
+79: 				(hide yes)
+80: 				(effects
+81: 					(font
+82: 						(size 1.27 1.27)
+83: 					)
+84: 				)
+85: 			)
+86: 			(property "ki_fp_filters" "Connector*:*_1x??_*"
+87: 				(at 0 0 0)
+88: 				(show_name no)
+89: 				(do_not_autoplace no)
+90: 				(hide yes)
+91: 				(effects
+92: 					(font
+93: 						(size 1.27 1.27)
+94: 					)
+95: 				)
+96: 			)
+97: 			(symbol "Conn_01x03_1_1"
+98: 				(rectangle
+99: 					(start -1.27 3.81)
+100: 					(end 1.27 -3.81)
+101: 					(stroke
+102: 						(width 0.254)
+103: 						(type default)
+104: 					)
+105: 					(fill
+106: 						(type background)
+107: 					)
+108: 				)
+109: 				(rectangle
+110: 					(start -1.27 2.667)
+111: 					(end 0 2.413)
+112: 					(stroke
+113: 						(width 0.1524)
+114: 						(type default)
+115: 					)
+116: 					(fill
+117: 						(type none)
+118: 					)
+119: 				)
+120: 				(rectangle
+121: 					(start -1.27 0.127)
+122: 					(end 0 -0.127)
+123: 					(stroke
+124: 						(width 0.1524)
+125: 						(type default)
+126: 					)
+127: 					(fill
+128: 						(type none)
+129: 					)
+130: 				)
+131: 				(rectangle
+132: 					(start -1.27 -2.413)
+133: 					(end 0 -2.667)
+134: 					(stroke
+135: 						(width 0.1524)
+136: 						(type default)
+137: 					)
+138: 					(fill
+139: 						(type none)
+140: 					)
+141: 				)
+142: 				(pin passive line
+143: 					(at -5.08 2.54 0)
+144: 					(length 3.81)
+145: 					(name "Pin_1"
+146: 						(effects
+147: 							(font
+148: 								(size 1.27 1.27)
+149: 							)
+150: 						)
+151: 					)
+152: 					(number "1"
+153: 						(effects
+154: 							(font
+155: 								(size 1.27 1.27)
+156: 							)
+157: 						)
+158: 					)
+159: 				)
+160: 				(pin passive line
+161: 					(at -5.08 0 0)
+162: 					(length 3.81)
+163: 					(name "Pin_2"
+164: 						(effects
+165: 							(font
+166: 								(size 1.27 1.27)
+167: 							)
+168: 						)
+169: 					)
+170: 					(number "2"
+171: 						(effects
+172: 							(font
+173: 								(size 1.27 1.27)
+174: 							)
+175: 						)
+176: 					)
+177: 				)
+178: 				(pin passive line
+179: 					(at -5.08 -2.54 0)
+180: 					(length 3.81)
+181: 					(name "Pin_3"
+182: 						(effects
+183: 							(font
+184: 								(size 1.27 1.27)
+185: 							)
+186: 						)
+187: 					)
+188: 					(number "3"
+189: 						(effects
+190: 							(font
+191: 								(size 1.27 1.27)
+192: 							)
+193: 						)
+194: 					)
+195: 				)
+196: 			)
+197: 			(embedded_fonts no)
+198: 		)
+199: 		(symbol "Device:C"
+200: 			(pin_numbers
+201: 				(hide yes)
+202: 			)
+203: 			(pin_names
+204: 				(offset 0.254)
+205: 			)
+206: 			(exclude_from_sim no)
+207: 			(in_bom yes)
+208: 			(on_board yes)
+209: 			(in_pos_files yes)
+210: 			(duplicate_pin_numbers_are_jumpers no)
+211: 			(property "Reference" "C"
+212: 				(at 0.635 2.54 0)
+213: 				(show_name no)
+214: 				(do_not_autoplace no)
+215: 				(effects
+216: 					(font
+217: 						(size 1.27 1.27)
+218: 					)
+219: 					(justify left)
+220: 				)
+221: 			)
+222: 			(property "Value" "C"
+223: 				(at 0.635 -2.54 0)
+224: 				(show_name no)
+225: 				(do_not_autoplace no)
+226: 				(effects
+227: 					(font
+228: 						(size 1.27 1.27)
+229: 					)
+230: 					(justify left)
+231: 				)
+232: 			)
+233: 			(property "Footprint" ""
+234: 				(at 0.9652 -3.81 0)
+235: 				(show_name no)
+236: 				(do_not_autoplace no)
+237: 				(hide yes)
+238: 				(effects
+239: 					(font
+240: 						(size 1.27 1.27)
+241: 					)
+242: 				)
+243: 			)
+244: 			(property "Datasheet" ""
+245: 				(at 0 0 0)
+246: 				(show_name no)
+247: 				(do_not_autoplace no)
+248: 				(hide yes)
+249: 				(effects
+250: 					(font
+251: 						(size 1.27 1.27)
+252: 					)
+253: 				)
+254: 			)
+255: 			(property "Description" "Unpolarized capacitor"
+256: 				(at 0 0 0)
+257: 				(show_name no)
+258: 				(do_not_autoplace no)
+259: 				(hide yes)
+260: 				(effects
+261: 					(font
+262: 						(size 1.27 1.27)
+263: 					)
+264: 				)
+265: 			)
+266: 			(property "ki_keywords" "cap capacitor"
+267: 				(at 0 0 0)
+268: 				(show_name no)
+269: 				(do_not_autoplace no)
+270: 				(hide yes)
+271: 				(effects
+272: 					(font
+273: 						(size 1.27 1.27)
+274: 					)
+275: 				)
+276: 			)
+277: 			(property "ki_fp_filters" "C_*"
+278: 				(at 0 0 0)
+279: 				(show_name no)
+280: 				(do_not_autoplace no)
+281: 				(hide yes)
+282: 				(effects
+283: 					(font
+284: 						(size 1.27 1.27)
+285: 					)
+286: 				)
+287: 			)
+288: 			(symbol "C_0_1"
+289: 				(polyline
+290: 					(pts
+291: 						(xy -2.032 0.762) (xy 2.032 0.762)
+292: 					)
+293: 					(stroke
+294: 						(width 0.508)
+295: 						(type default)
+296: 					)
+297: 					(fill
+298: 						(type none)
+299: 					)
+300: 				)
+301: 				(polyline
+302: 					(pts
+303: 						(xy -2.032 -0.762) (xy 2.032 -0.762)
+304: 					)
+305: 					(stroke
+306: 						(width 0.508)
+307: 						(type default)
+308: 					)
+309: 					(fill
+310: 						(type none)
+311: 					)
+312: 				)
+313: 			)
+314: 			(symbol "C_1_1"
+315: 				(pin passive line
+316: 					(at 0 3.81 270)
+317: 					(length 2.794)
+318: 					(name ""
+319: 						(effects
+320: 							(font
+321: 								(size 1.27 1.27)
+322: 							)
+323: 						)
+324: 					)
+325: 					(number "1"
+326: 						(effects
+327: 							(font
+328: 								(size 1.27 1.27)
+329: 							)
+330: 						)
+331: 					)
+332: 				)
+333: 				(pin passive line
+334: 					(at 0 -3.81 90)
+335: 					(length 2.794)
+336: 					(name ""
+337: 						(effects
+338: 							(font
+339: 								(size 1.27 1.27)
+340: 							)
+341: 						)
+342: 					)
+343: 					(number "2"
+344: 						(effects
+345: 							(font
+346: 								(size 1.27 1.27)
+347: 							)
+348: 						)
+349: 					)
+350: 				)
+351: 			)
+352: 			(embedded_fonts no)
+353: 		)
+354: 		(symbol "Device:R"
+355: 			(pin_numbers
+356: 				(hide yes)
+357: 			)
+358: 			(pin_names
+359: 				(offset 0)
+360: 			)
+361: 			(exclude_from_sim no)
+362: 			(in_bom yes)
+363: 			(on_board yes)
+364: 			(in_pos_files yes)
+365: 			(duplicate_pin_numbers_are_jumpers no)
+366: 			(property "Reference" "R"
+367: 				(at 2.032 0 90)
+368: 				(show_name no)
+369: 				(do_not_autoplace no)
+370: 				(effects
+371: 					(font
+372: 						(size 1.27 1.27)
+373: 					)
+374: 				)
+375: 			)
+376: 			(property "Value" "R"
+377: 				(at 0 0 90)
+378: 				(show_name no)
+379: 				(do_not_autoplace no)
+380: 				(effects
+381: 					(font
+382: 						(size 1.27 1.27)
+383: 					)
+384: 				)
+385: 			)
+386: 			(property "Footprint" ""
+387: 				(at -1.778 0 90)
+388: 				(show_name no)
+389: 				(do_not_autoplace no)
+390: 				(hide yes)
+391: 				(effects
+392: 					(font
+393: 						(size 1.27 1.27)
+394: 					)
+395: 				)
+396: 			)
+397: 			(property "Datasheet" ""
+398: 				(at 0 0 0)
+399: 				(show_name no)
+400: 				(do_not_autoplace no)
+401: 				(hide yes)
+402: 				(effects
+403: 					(font
+404: 						(size 1.27 1.27)
+405: 					)
+406: 				)
+407: 			)
+408: 			(property "Description" "Resistor"
+409: 				(at 0 0 0)
+410: 				(show_name no)
+411: 				(do_not_autoplace no)
+412: 				(hide yes)
+413: 				(effects
+414: 					(font
+415: 						(size 1.27 1.27)
+416: 					)
+417: 				)
+418: 			)
+419: 			(property "ki_keywords" "R res resistor"
+420: 				(at 0 0 0)
+421: 				(show_name no)
+422: 				(do_not_autoplace no)
+423: 				(hide yes)
+424: 				(effects
+425: 					(font
+426: 						(size 1.27 1.27)
+427: 					)
+428: 				)
+429: 			)
+430: 			(property "ki_fp_filters" "R_*"
+431: 				(at 0 0 0)
+432: 				(show_name no)
+433: 				(do_not_autoplace no)
+434: 				(hide yes)
+435: 				(effects
+436: 					(font
+437: 						(size 1.27 1.27)
+438: 					)
+439: 				)
+440: 			)
+441: 			(symbol "R_0_1"
+442: 				(rectangle
+443: 					(start -1.016 -2.54)
+444: 					(end 1.016 2.54)
+445: 					(stroke
+446: 						(width 0.254)
+447: 						(type default)
+448: 					)
+449: 					(fill
+450: 						(type none)
+451: 					)
+452: 				)
+453: 			)
+454: 			(symbol "R_1_1"
+455: 				(pin passive line
+456: 					(at 0 3.81 270)
+457: 					(length 1.27)
+458: 					(name ""
+459: 						(effects
+460: 							(font
+461: 								(size 1.27 1.27)
+462: 							)
+463: 						)
+464: 					)
+465: 					(number "1"
+466: 						(effects
+467: 							(font
+468: 								(size 1.27 1.27)
+469: 							)
+470: 						)
+471: 					)
+472: 				)
+473: 				(pin passive line
+474: 					(at 0 -3.81 90)
+475: 					(length 1.27)
+476: 					(name ""
+477: 						(effects
+478: 							(font
+479: 								(size 1.27 1.27)
+480: 							)
+481: 						)
+482: 					)
+483: 					(number "2"
+484: 						(effects
+485: 							(font
+486: 								(size 1.27 1.27)
+487: 							)
+488: 						)
+489: 					)
+490: 				)
+491: 			)
+492: 			(embedded_fonts no)
+493: 		)
+494: 		(symbol "power:GND"
+495: 			(power global)
+496: 			(pin_numbers
+497: 				(hide yes)
+498: 			)
+499: 			(pin_names
+500: 				(offset 0)
+501: 				(hide yes)
+502: 			)
+503: 			(exclude_from_sim no)
+504: 			(in_bom yes)
+505: 			(on_board yes)
+506: 			(in_pos_files yes)
+507: 			(duplicate_pin_numbers_are_jumpers no)
+508: 			(property "Reference" "#PWR"
+509: 				(at 0 -6.35 0)
+510: 				(show_name no)
+511: 				(do_not_autoplace no)
+512: 				(hide yes)
+513: 				(effects
+514: 					(font
+515: 						(size 1.27 1.27)
+516: 					)
+517: 				)
+518: 			)
+519: 			(property "Value" "GND"
+520: 				(at 0 -3.81 0)
+521: 				(show_name no)
+522: 				(do_not_autoplace no)
+523: 				(effects
+524: 					(font
+525: 						(size 1.27 1.27)
+526: 					)
+527: 				)
+528: 			)
+529: 			(property "Footprint" ""
+530: 				(at 0 0 0)
+531: 				(show_name no)
+532: 				(do_not_autoplace no)
+533: 				(hide yes)
+534: 				(effects
+535: 					(font
+536: 						(size 1.27 1.27)
+537: 					)
+538: 				)
+539: 			)
+540: 			(property "Datasheet" ""
+541: 				(at 0 0 0)
+542: 				(show_name no)
+543: 				(do_not_autoplace no)
+544: 				(hide yes)
+545: 				(effects
+546: 					(font
+547: 						(size 1.27 1.27)
+548: 					)
+549: 				)
+550: 			)
+551: 			(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+552: 				(at 0 0 0)
+553: 				(show_name no)
+554: 				(do_not_autoplace no)
+555: 				(hide yes)
+556: 				(effects
+557: 					(font
+558: 						(size 1.27 1.27)
+559: 					)
+560: 				)
+561: 			)
+562: 			(property "ki_keywords" "global power"
+563: 				(at 0 0 0)
+564: 				(show_name no)
+565: 				(do_not_autoplace no)
+566: 				(hide yes)
+567: 				(effects
+568: 					(font
+569: 						(size 1.27 1.27)
+570: 					)
+571: 				)
+572: 			)
+573: 			(symbol "GND_0_1"
+574: 				(polyline
+575: 					(pts
+576: 						(xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27)
+577: 					)
+578: 					(stroke
+579: 						(width 0)
+580: 						(type default)
+581: 					)
+582: 					(fill
+583: 						(type none)
+584: 					)
+585: 				)
+586: 			)
+587: 			(symbol "GND_1_1"
+588: 				(pin power_in line
+589: 					(at 0 0 270)
+590: 					(length 0)
+591: 					(name ""
+592: 						(effects
+593: 							(font
+594: 								(size 1.27 1.27)
+595: 							)
+596: 						)
+597: 					)
+598: 					(number "1"
+599: 						(effects
+600: 							(font
+601: 								(size 1.27 1.27)
+602: 							)
+603: 						)
+604: 					)
+605: 				)
+606: 			)
+607: 			(embedded_fonts no)
+608: 		)
+609: 		(symbol "power:PWR_FLAG"
+610: 			(power global)
+611: 			(pin_numbers
+612: 				(hide yes)
+613: 			)
+614: 			(pin_names
+615: 				(offset 0)
+616: 				(hide yes)
+617: 			)
+618: 			(exclude_from_sim no)
+619: 			(in_bom yes)
+620: 			(on_board yes)
+621: 			(in_pos_files yes)
+622: 			(duplicate_pin_numbers_are_jumpers no)
+623: 			(property "Reference" "#FLG"
+624: 				(at 0 1.905 0)
+625: 				(show_name no)
+626: 				(do_not_autoplace no)
+627: 				(hide yes)
+628: 				(effects
+629: 					(font
+630: 						(size 1.27 1.27)
+631: 					)
+632: 				)
+633: 			)
+634: 			(property "Value" "PWR_FLAG"
+635: 				(at 0 3.81 0)
+636: 				(show_name no)
+637: 				(do_not_autoplace no)
+638: 				(effects
+639: 					(font
+640: 						(size 1.27 1.27)
+641: 					)
+642: 				)
+643: 			)
+644: 			(property "Footprint" ""
+645: 				(at 0 0 0)
+646: 				(show_name no)
+647: 				(do_not_autoplace no)
+648: 				(hide yes)
+649: 				(effects
+650: 					(font
+651: 						(size 1.27 1.27)
+652: 					)
+653: 				)
+654: 			)
+655: 			(property "Datasheet" ""
+656: 				(at 0 0 0)
+657: 				(show_name no)
+658: 				(do_not_autoplace no)
+659: 				(hide yes)
+660: 				(effects
+661: 					(font
+662: 						(size 1.27 1.27)
+663: 					)
+664: 				)
+665: 			)
+666: 			(property "Description" "Special symbol for telling ERC where power comes from"
+667: 				(at 0 0 0)
+668: 				(show_name no)
+669: 				(do_not_autoplace no)
+670: 				(hide yes)
+671: 				(effects
+672: 					(font
+673: 						(size 1.27 1.27)
+674: 					)
+675: 				)
+676: 			)
+677: 			(property "ki_keywords" "flag power"
+678: 				(at 0 0 0)
+679: 				(show_name no)
+680: 				(do_not_autoplace no)
+681: 				(hide yes)
+682: 				(effects
+683: 					(font
+684: 						(size 1.27 1.27)
+685: 					)
+686: 				)
+687: 			)
+688: 			(symbol "PWR_FLAG_0_0"
+689: 				(pin power_out line
+690: 					(at 0 0 90)
+691: 					(length 0)
+692: 					(name ""
+693: 						(effects
+694: 							(font
+695: 								(size 1.27 1.27)
+696: 							)
+697: 						)
+698: 					)
+699: 					(number "1"
+700: 						(effects
+701: 							(font
+702: 								(size 1.27 1.27)
+703: 							)
+704: 						)
+705: 					)
+706: 				)
+707: 			)
+708: 			(symbol "PWR_FLAG_0_1"
+709: 				(polyline
+710: 					(pts
+711: 						(xy 0 0) (xy 0 1.27) (xy -1.016 1.905) (xy 0 2.54) (xy 1.016 1.905) (xy 0 1.27)
+712: 					)
+713: 					(stroke
+714: 						(width 0)
+715: 						(type default)
+716: 					)
+717: 					(fill
+718: 						(type none)
+719: 					)
+720: 				)
+721: 			)
+722: 			(embedded_fonts no)
+723: 		)
+724: 	)
+725: 	(wire
+726: 		(pts
+727: 			(xy 86.36 67.31) (xy 86.36 69.85)
+728: 		)
+729: 		(stroke
+730: 			(width 0)
+731: 			(type default)
+732: 		)
+733: 		(uuid "029995d9-27ba-57ea-a677-9c00ab391c14")
+734: 	)
+735: 	(wire
+736: 		(pts
+737: 			(xy 66.04 60.96) (xy 71.12 60.96)
+738: 		)
+739: 		(stroke
+740: 			(width 0)
+741: 			(type default)
+742: 		)
+743: 		(uuid "0be8145c-844d-5152-bcb2-f518d3a90d8c")
+744: 	)
+745: 	(wire
+746: 		(pts
+747: 			(xy 101.6 71.12) (xy 109.22 71.12)
+748: 		)
+749: 		(stroke
+750: 			(width 0)
+751: 			(type default)
+752: 		)
+753: 		(uuid "42ca8455-9abf-539a-b8f9-1efb52c19d6c")
+754: 	)
+755: 	(wire
+756: 		(pts
+757: 			(xy 101.6 59.69) (xy 101.6 57.15)
+758: 		)
+759: 		(stroke
+760: 			(width 0)
+761: 			(type default)
+762: 		)
+763: 		(uuid "678f3b47-142e-51f5-a779-9c5fabd40a95")
+764: 	)
+765: 	(wire
+766: 		(pts
+767: 			(xy 66.04 66.04) (xy 68.58 66.04)
+768: 		)
+769: 		(stroke
+770: 			(width 0)
+771: 			(type default)
+772: 		)
+773: 		(uuid "6f0b101e-c28e-5ce3-8fab-a3404b53cc12")
+774: 	)
+775: 	(wire
+776: 		(pts
+777: 			(xy 86.36 59.69) (xy 86.36 57.15)
+778: 		)
+779: 		(stroke
+780: 			(width 0)
+781: 			(type default)
+782: 		)
+783: 		(uuid "9b9e16d9-ab4b-5903-a6ad-e9d574b8433e")
+784: 	)
+785: 	(wire
+786: 		(pts
+787: 			(xy 66.04 63.5) (xy 68.58 63.5)
+788: 		)
+789: 		(stroke
+790: 			(width 0)
+791: 			(type default)
+792: 		)
+793: 		(uuid "af803d4e-05dd-5356-a5fe-55c8e9f3a9f2")
+794: 	)
+795: 	(wire
+796: 		(pts
+797: 			(xy 101.6 67.31) (xy 101.6 71.12)
+798: 		)
+799: 		(stroke
+800: 			(width 0)
+801: 			(type default)
+802: 		)
+803: 		(uuid "c8e21989-b932-52b4-adfd-ff14971b813c")
+804: 	)
+805: 	(label "OUT"
+806: 		(at 68.58 63.5 0)
+807: 		(effects
+808: 			(font
+809: 				(size 1.27 1.27)
+810: 			)
+811: 			(justify left bottom)
+812: 		)
+813: 		(uuid "39787aa2-68bc-5fca-bdf8-e10114e83b92")
+814: 	)
+815: 	(label "IN"
+816: 		(at 86.36 57.15 0)
+817: 		(effects
+818: 			(font
+819: 				(size 1.27 1.27)
+820: 			)
+821: 			(justify left bottom)
+822: 		)
+823: 		(uuid "4728ac71-b768-518b-8f0f-8da2db61e6f9")
+824: 	)
+825: 	(label "OUT"
+826: 		(at 101.6 57.15 0)
+827: 		(effects
+828: 			(font
+829: 				(size 1.27 1.27)
+830: 			)
+831: 			(justify left bottom)
+832: 		)
+833: 		(uuid "5fde7f1b-d41c-5a19-a4d7-d5cc4d404b98")
+834: 	)
+835: 	(label "IN"
+836: 		(at 68.58 66.04 0)
+837: 		(effects
+838: 			(font
+839: 				(size 1.27 1.27)
+840: 			)
+841: 			(justify left bottom)
+842: 		)
+843: 		(uuid "7b760986-294b-5e70-b5f8-0f147cc59ef2")
+844: 	)
+845: 	(label "OUT"
+846: 		(at 86.36 69.85 0)
+847: 		(effects
+848: 			(font
+849: 				(size 1.27 1.27)
+850: 			)
+851: 			(justify left bottom)
+852: 		)
+853: 		(uuid "d27cd79b-9eb0-5530-969d-282d07da27ec")
+854: 	)
+855: 	(symbol
+856: 		(lib_id "power:GND")
+857: 		(at 71.12 60.96 0)
+858: 		(unit 1)
+859: 		(body_style 1)
+860: 		(exclude_from_sim no)
+861: 		(in_bom no)
+862: 		(on_board no)
+863: 		(in_pos_files yes)
+864: 		(dnp no)
+865: 		(uuid "05f0738f-fc7b-589d-9ab5-3365ee12aaf5")
+866: 		(property "Reference" "#PWR02"
+867: 			(at 73.66 59.69 0)
+868: 			(hide yes)
+869: 			(show_name no)
+870: 			(do_not_autoplace no)
+871: 			(effects
+872: 				(font
+873: 					(size 1.27 1.27)
+874: 				)
+875: 				(justify left)
+876: 			)
+877: 		)
+878: 		(property "Value" "GND"
+879: 			(at 73.66 62.23 0)
+880: 			(show_name no)
+881: 			(do_not_autoplace no)
+882: 			(effects
+883: 				(font
+884: 					(size 1.27 1.27)
+885: 				)
+886: 				(justify left)
+887: 			)
+888: 		)
+889: 		(property "Footprint" ""
+890: 			(at 71.12 60.96 0)
+891: 			(hide yes)
+892: 			(show_name no)
+893: 			(do_not_autoplace no)
+894: 			(effects
+895: 				(font
+896: 					(size 1.27 1.27)
+897: 				)
+898: 			)
+899: 		)
+900: 		(property "Datasheet" ""
+901: 			(at 71.12 60.96 0)
+902: 			(hide yes)
+903: 			(show_name no)
+904: 			(do_not_autoplace no)
+905: 			(effects
+906: 				(font
+907: 					(size 1.27 1.27)
+908: 				)
+909: 			)
+910: 		)
+911: 		(property "Description" ""
+912: 			(at 71.12 60.96 0)
+913: 			(show_name no)
+914: 			(do_not_autoplace no)
+915: 			(effects
+916: 				(font
+917: 					(size 1.27 1.27)
+918: 				)
+919: 			)
+920: 		)
+921: 		(pin "1"
+922: 			(uuid "84ef8b0c-c2d5-5edf-9cf5-f99cdb854a98")
+923: 		)
+924: 		(instances
+925: 			(project "rc_filter"
+926: 				(path "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb"
+927: 					(reference "#PWR02")
+928: 					(unit 1)
+929: 				)
+930: 			)
+931: 		)
+932: 	)
+933: 	(symbol
+934: 		(lib_id "Device:C")
+935: 		(at 101.6 63.5 0)
+936: 		(unit 1)
+937: 		(body_style 1)
+938: 		(exclude_from_sim no)
+939: 		(in_bom yes)
+940: 		(on_board yes)
+941: 		(in_pos_files yes)
+942: 		(dnp no)
+943: 		(uuid "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8")
+944: 		(property "Reference" "C1"
+945: 			(at 104.14 62.23 0)
+946: 			(show_name no)
+947: 			(do_not_autoplace no)
+948: 			(effects
+949: 				(font
+950: 					(size 1.27 1.27)
+951: 				)
+952: 				(justify left)
+953: 			)
+954: 		)
+955: 		(property "Value" "100n"
+956: 			(at 104.14 64.77 0)
+957: 			(show_name no)
+958: 			(do_not_autoplace no)
+959: 			(effects
+960: 				(font
+961: 					(size 1.27 1.27)
+962: 				)
+963: 				(justify left)
+964: 			)
+965: 		)
+966: 		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+967: 			(at 101.6 63.5 0)
+968: 			(hide yes)
+969: 			(show_name no)
+970: 			(do_not_autoplace no)
+971: 			(effects
+972: 				(font
+973: 					(size 1.27 1.27)
+974: 				)
+975: 			)
+976: 		)
+977: 		(property "Datasheet" ""
+978: 			(at 101.6 63.5 0)
+979: 			(hide yes)
+980: 			(show_name no)
+981: 			(do_not_autoplace no)
+982: 			(effects
+983: 				(font
+984: 					(size 1.27 1.27)
+985: 				)
+986: 			)
+987: 		)
+988: 		(property "Description" ""
+989: 			(at 101.6 63.5 0)
+990: 			(show_name no)
+991: 			(do_not_autoplace no)
+992: 			(effects
+993: 				(font
+994: 					(size 1.27 1.27)
+995: 				)
+996: 			)
+997: 		)
+998: 		(pin "1"
+999: 			(uuid "f57e2d95-fb77-5172-a4dd-733531c1a947")
+1000: 		)
+1001: 		(pin "2"
+1002: 			(uuid "119ef413-5fd0-5bab-b2d2-571ed16c4dcb")
+1003: 		)
+1004: 		(instances
+1005: 			(project "rc_filter"
+1006: 				(path "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb"
+1007: 					(reference "C1")
+1008: 					(unit 1)
+1009: 				)
+1010: 			)
+1011: 		)
+1012: 	)
+1013: 	(symbol
+1014: 		(lib_id "power:GND")
+1015: 		(at 101.6 71.12 0)
+1016: 		(unit 1)
+1017: 		(body_style 1)
+1018: 		(exclude_from_sim no)
+1019: 		(in_bom no)
+1020: 		(on_board no)
+1021: 		(in_pos_files yes)
+1022: 		(dnp no)
+1023: 		(uuid "2c592a57-a83b-5444-a605-e8f5bfa36d67")
+1024: 		(property "Reference" "#PWR01"
+1025: 			(at 104.14 69.85 0)
+1026: 			(hide yes)
+1027: 			(show_name no)
+1028: 			(do_not_autoplace no)
+1029: 			(effects
+1030: 				(font
+1031: 					(size 1.27 1.27)
+1032: 				)
+1033: 				(justify left)
+1034: 			)
+1035: 		)
+1036: 		(property "Value" "GND"
+1037: 			(at 104.14 72.39 0)
+1038: 			(show_name no)
+1039: 			(do_not_autoplace no)
+1040: 			(effects
+1041: 				(font
+1042: 					(size 1.27 1.27)
+1043: 				)
+1044: 				(justify left)
+1045: 			)
+1046: 		)
+1047: 		(property "Footprint" ""
+1048: 			(at 101.6 71.12 0)
+1049: 			(hide yes)
+1050: 			(show_name no)
+1051: 			(do_not_autoplace no)
+1052: 			(effects
+1053: 				(font
+1054: 					(size 1.27 1.27)
+1055: 				)
+1056: 			)
+1057: 		)
+1058: 		(property "Datasheet" ""
+1059: 			(at 101.6 71.12 0)
+1060: 			(hide yes)
+1061: 			(show_name no)
+1062: 			(do_not_autoplace no)
+1063: 			(effects
+1064: 				(font
+1065: 					(size 1.27 1.27)
+1066: 				)
+1067: 			)
+1068: 		)
+1069: 		(property "Description" ""
+1070: 			(at 101.6 71.12 0)
+1071: 			(show_name no)
+1072: 			(do_not_autoplace no)
+1073: 			(effects
+1074: 				(font
+1075: 					(size 1.27 1.27)
+1076: 				)
+1077: 			)
+1078: 		)
+1079: 		(pin "1"
+1080: 			(uuid "e4a82acc-c975-59e0-89e8-c16fe8ba3dcb")
+1081: 		)
+1082: 		(instances
+1083: 			(project "rc_filter"
+1084: 				(path "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb"
+1085: 					(reference "#PWR01")
+1086: 					(unit 1)
+1087: 				)
+1088: 			)
+1089: 		)
+1090: 	)
+1091: 	(symbol
+1092: 		(lib_id "Connector_Generic:Conn_01x03")
+1093: 		(at 60.96 63.5 180)
+1094: 		(unit 1)
+1095: 		(body_style 1)
+1096: 		(exclude_from_sim yes)
+1097: 		(in_bom yes)
+1098: 		(on_board yes)
+1099: 		(in_pos_files yes)
+1100: 		(dnp no)
+1101: 		(uuid "465541a7-d06f-5282-b75f-15b79e4182a2")
+1102: 		(property "Reference" "J1"
+1103: 			(at 63.5 62.23 0)
+1104: 			(show_name no)
+1105: 			(do_not_autoplace no)
+1106: 			(effects
+1107: 				(font
+1108: 					(size 1.27 1.27)
+1109: 				)
+1110: 				(justify left)
+1111: 			)
+1112: 		)
+1113: 		(property "Value" "Conn_01x03"
+1114: 			(at 63.5 64.77 0)
+1115: 			(show_name no)
+1116: 			(do_not_autoplace no)
+1117: 			(effects
+1118: 				(font
+1119: 					(size 1.27 1.27)
+1120: 				)
+1121: 				(justify left)
+1122: 			)
+1123: 		)
+1124: 		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+1125: 			(at 60.96 63.5 0)
+1126: 			(hide yes)
+1127: 			(show_name no)
+1128: 			(do_not_autoplace no)
+1129: 			(effects
+1130: 				(font
+1131: 					(size 1.27 1.27)
+1132: 				)
+1133: 			)
+1134: 		)
+1135: 		(property "Datasheet" ""
+1136: 			(at 60.96 63.5 0)
+1137: 			(hide yes)
+1138: 			(show_name no)
+1139: 			(do_not_autoplace no)
+1140: 			(effects
+1141: 				(font
+1142: 					(size 1.27 1.27)
+1143: 				)
+1144: 			)
+1145: 		)
+1146: 		(property "Description" ""
+1147: 			(at 60.96 63.5 0)
+1148: 			(show_name no)
+1149: 			(do_not_autoplace no)
+1150: 			(effects
+1151: 				(font
+1152: 					(size 1.27 1.27)
+1153: 				)
+1154: 			)
+1155: 		)
+1156: 		(pin "1"
+1157: 			(uuid "c19d01e0-8064-5b31-85a5-98961a48be53")
+1158: 		)
+1159: 		(pin "2"
+1160: 			(uuid "50fc7179-8ce1-566d-b532-0fe930e73733")
+1161: 		)
+1162: 		(pin "3"
+1163: 			(uuid "a6d1ee24-32bd-5110-97af-408d10ac4c34")
+1164: 		)
+1165: 		(instances
+1166: 			(project "rc_filter"
+1167: 				(path "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb"
+1168: 					(reference "J1")
+1169: 					(unit 1)
+1170: 				)
+1171: 			)
+1172: 		)
+1173: 	)
+1174: 	(symbol
+1175: 		(lib_id "power:PWR_FLAG")
+1176: 		(at 109.22 71.12 0)
+1177: 		(unit 1)
+1178: 		(body_style 1)
+1179: 		(exclude_from_sim no)
+1180: 		(in_bom no)
+1181: 		(on_board no)
+1182: 		(in_pos_files yes)
+1183: 		(dnp no)
+1184: 		(uuid "7aeaaf59-ba4c-5188-9293-39b48d5444d2")
+1185: 		(property "Reference" "#FLG01"
+1186: 			(at 111.76 69.85 0)
+1187: 			(hide yes)
+1188: 			(show_name no)
+1189: 			(do_not_autoplace no)
+1190: 			(effects
+1191: 				(font
+1192: 					(size 1.27 1.27)
+1193: 				)
+1194: 				(justify left)
+1195: 			)
+1196: 		)
+1197: 		(property "Value" "PWR_FLAG"
+1198: 			(at 111.76 72.39 0)
+1199: 			(show_name no)
+1200: 			(do_not_autoplace no)
+1201: 			(effects
+1202: 				(font
+1203: 					(size 1.27 1.27)
+1204: 				)
+1205: 				(justify left)
+1206: 			)
+1207: 		)
+1208: 		(property "Footprint" ""
+1209: 			(at 109.22 71.12 0)
+1210: 			(hide yes)
+1211: 			(show_name no)
+1212: 			(do_not_autoplace no)
+1213: 			(effects
+1214: 				(font
+1215: 					(size 1.27 1.27)
+1216: 				)
+1217: 			)
+1218: 		)
+1219: 		(property "Datasheet" ""
+1220: 			(at 109.22 71.12 0)
+1221: 			(hide yes)
+1222: 			(show_name no)
+1223: 			(do_not_autoplace no)
+1224: 			(effects
+1225: 				(font
+1226: 					(size 1.27 1.27)
+1227: 				)
+1228: 			)
+1229: 		)
+1230: 		(property "Description" ""
+1231: 			(at 109.22 71.12 0)
+1232: 			(show_name no)
+1233: 			(do_not_autoplace no)
+1234: 			(effects
+1235: 				(font
+1236: 					(size 1.27 1.27)
+1237: 				)
+1238: 			)
+1239: 		)
+1240: 		(pin "1"
+1241: 			(uuid "d53117cc-0319-5fd1-8dc1-5215b7ea80a0")
+1242: 		)
+1243: 		(instances
+1244: 			(project "rc_filter"
+1245: 				(path "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb"
+1246: 					(reference "#FLG01")
+1247: 					(unit 1)
+1248: 				)
+1249: 			)
+1250: 		)
+1251: 	)
+1252: 	(symbol
+1253: 		(lib_id "Device:R")
+1254: 		(at 86.36 63.5 0)
+1255: 		(unit 1)
+1256: 		(body_style 1)
+1257: 		(exclude_from_sim no)
+1258: 		(in_bom yes)
+1259: 		(on_board yes)
+1260: 		(in_pos_files yes)
+1261: 		(dnp no)
+1262: 		(uuid "c5c38e1a-7593-5c99-b971-2f9d2e7bef78")
+1263: 		(property "Reference" "R1"
+1264: 			(at 88.9 62.23 0)
+1265: 			(show_name no)
+1266: 			(do_not_autoplace no)
+1267: 			(effects
+1268: 				(font
+1269: 					(size 1.27 1.27)
+1270: 				)
+1271: 				(justify left)
+1272: 			)
+1273: 		)
+1274: 		(property "Value" "10k"
+1275: 			(at 88.9 64.77 0)
+1276: 			(show_name no)
+1277: 			(do_not_autoplace no)
+1278: 			(effects
+1279: 				(font
+1280: 					(size 1.27 1.27)
+1281: 				)
+1282: 				(justify left)
+1283: 			)
+1284: 		)
+1285: 		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+1286: 			(at 86.36 63.5 0)
+1287: 			(hide yes)
+1288: 			(show_name no)
+1289: 			(do_not_autoplace no)
+1290: 			(effects
+1291: 				(font
+1292: 					(size 1.27 1.27)
+1293: 				)
+1294: 			)
+1295: 		)
+1296: 		(property "Datasheet" ""
+1297: 			(at 86.36 63.5 0)
+1298: 			(hide yes)
+1299: 			(show_name no)
+1300: 			(do_not_autoplace no)
+1301: 			(effects
+1302: 				(font
+1303: 					(size 1.27 1.27)
+1304: 				)
+1305: 			)
+1306: 		)
+1307: 		(property "Description" ""
+1308: 			(at 86.36 63.5 0)
+1309: 			(show_name no)
+1310: 			(do_not_autoplace no)
+1311: 			(effects
+1312: 				(font
+1313: 					(size 1.27 1.27)
+1314: 				)
+1315: 			)
+1316: 		)
+1317: 		(pin "1"
+1318: 			(uuid "f67a4178-2117-5937-815e-42d5e10f0af5")
+1319: 		)
+1320: 		(pin "2"
+1321: 			(uuid "a3138adf-8912-5f47-a475-a0d0cffd968f")
+1322: 		)
+1323: 		(instances
+1324: 			(project "rc_filter"
+1325: 				(path "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb"
+1326: 					(reference "R1")
+1327: 					(unit 1)
+1328: 				)
+1329: 			)
+1330: 		)
+1331: 	)
+1332: 	(sheet_instances
+1333: 		(path "/"
+1334: 			(page "1")
+1335: 		)
+1336: 	)
+1337: )

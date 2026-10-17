@@ -1,0 +1,2 @@
+zone layers: ['B.Cu']
+fill layers with polys: ['B.Cu']

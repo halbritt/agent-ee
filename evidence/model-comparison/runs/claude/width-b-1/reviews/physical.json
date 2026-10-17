@@ -1,0 +1,108 @@
+{
+  "candidate_id": "ebdc7eb98f9c46e83dc32f726988383f51821b241969ce6b1a2fd5fa4e1cb406",
+  "coverage": [
+    "Verified candidate file sha256 hashes against packet values",
+    "Extracted all saved track segment widths two independent ways: raw S-expression parse and pcbnew 10.0.7 API (review-work/physical/experiments/width_check_raw.txt, width_check_pcbnew.txt)",
+    "Checked board design-rule minimum track width and .kicad_pro netclass settings to explain DRC outcome",
+    "Cross-checked schematic netlist (work/netlist/design.xml, connectivity.json) against PCB pad nets for parity (J1.1=/IN, J1.2=/OUT, J1.3=GND)",
+    "Zone fill staleness test on a scratch copy: ZONE_FILLER refill produced a bit-identical B.Cu GND polygon; ratsnest unconnected count 0 (review-work/physical/experiments/connectivity_zone_check.txt)",
+    "Reviewed GND return path: J1.3 PTH -> B.Cu zone -> via (113,100) -> F.Cu track -> C1 pad 2",
+    "Reviewed supplied ERC/DRC/geometry artifacts for consistency with my own extractions"
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The packet scope and inputs/requirements.txt require every saved copper track segment to have width >= 0.30 mm. The saved board contains exactly 5 track segments (nets /IN, /OUT x3, GND), and every one is saved with (width 0.25), i.e. 0.25 mm.",
+      "evidence": [
+        {
+          "locator": "lines 667-705: five (segment ...) blocks each with (width 0.25)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "line 1: 'Every saved copper track segment must have width >= 0.30 mm'",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "tracks[] array: five entries with type 'track' and width_mm 0.25",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "raw S-expression parse: 'segments: 5 failing(<0.30mm): 5'",
+          "path": "review-work/physical/experiments/width_check_raw.txt"
+        },
+        {
+          "locator": "pcbnew 10.0.7 extraction: 'track segments: 5 min width: 0.25'",
+          "path": "review-work/physical/experiments/width_check_pcbnew.txt"
+        }
+      ],
+      "id": "PHY-1",
+      "location": "inputs/project/rc_filter.kicad_pcb, segment blocks at lines 667-705 (uuids ae12bf6f-d4ed-46d3-9916-8738850152cc, 69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5, 8b528360-109d-4533-a657-35923fd930f8, a6dab0b4-e4e6-4317-973b-5d185e509a82, 7deb1fb0-3a34-4321-a0ef-399bdd8439d1)",
+      "mechanism": "Each segment's width attribute is 0.05 mm (17%) below the stated minimum, so the sole declared exercise criterion is violated by 100% of the track segments. This is a geometric requirement failure as defined by the scope, independent of any ampacity consideration.",
+      "reasoning": "Two independent extraction methods (raw file parse and pcbnew API) agree with the packet's own geometry probe: every saved segment is 0.25 mm. The requirement text is unambiguous and quantitative, and the via (0.6 mm) and zone fill are not 'track segments' so they do not rescue compliance. The requirement explicitly disclaims ampacity, so this is reported purely as the stated geometric criterion, which the board fails completely.",
+      "severity": "blocking",
+      "title": "All five saved track segments are 0.25 mm wide, below the required 0.30 mm minimum"
+    },
+    {
+      "assessment": "defect",
+      "condition": "The packet declares a 'geometry' criterion, but the geometry check ran with empty params and its summary states 'no declared geometric requirement applied (outcome: info)'. DRC passed with 0 violations because the saved board's own design rule minimum track width is 0.2 mm (pcbnew m_TrackMinWidth = 0.2 mm; rc_filter.kicad_pro defines no stricter netclass), below the 0.25 mm tracks.",
+      "evidence": [
+        {
+          "locator": "tracks[] width_mm 0.25 recorded but no pass/fail evaluation; packet geometry check outcome 'info', summary 'no declared geometric requirement applied'",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "'Found 0 violations' despite 0.25 mm tracks",
+          "path": "work/drc/console.log"
+        },
+        {
+          "locator": "'board min track width setting (mm): 0.2' from pcbnew design settings",
+          "path": "review-work/physical/experiments/width_check_pcbnew.txt"
+        },
+        {
+          "locator": "section 'width_check_pcbnew.py': rc_filter.kicad_pro defines no custom track_widths/netclass minima",
+          "path": "review-work/physical/experiments/NOTES.md"
+        }
+      ],
+      "id": "PHY-2",
+      "location": "work/geometry/geometry.json and work/drc/drc.json vs. packet criteria id 'geometry'",
+      "mechanism": "kicad-cli DRC validates only the board's embedded design rules, and the geometry probe only extracted data without evaluating the 0.30 mm threshold. The result is an all-pass/info check record for a board in which 100% of track segments violate the sole stated requirement; a reader trusting the green checks would wrongly conclude compliance. A successful tool exit was treated as coverage it does not provide.",
+      "reasoning": "This is a verification-coverage defect distinct from PHY-1: the declared geometry criterion exists in the packet but was not evaluated against the stated threshold, and DRC's pass is vacuous because the board's internal rule (0.2 mm) is looser than the exercise requirement (0.30 mm). Either the geometry check should apply the 0.30 mm parameter or the board's minimum-track-width design rule should be set to 0.30 mm so native DRC catches the violation.",
+      "severity": "major",
+      "title": "Check suite cannot detect the 0.30 mm requirement: geometry criterion was never applied and DRC enforces only the board's 0.2 mm rule"
+    },
+    {
+      "assessment": "concern",
+      "condition": "The GND zone on B.Cu is saved with min_thickness 0.25 mm, below 0.30 mm. The stated requirement scopes only 'track segments', so the zone does not violate it as written.",
+      "evidence": [
+        {
+          "locator": "zone block: (min_thickness 0.25), (thermal_bridge_width 0.5), net GND, layer B.Cu",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "zones[0]: min_thickness_mm 0.25, filled true, net GND",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "'fill identical to saved: True'; 'unconnected count after refill: 0'",
+          "path": "review-work/physical/experiments/connectivity_zone_check.txt"
+        }
+      ],
+      "id": "PHY-3",
+      "location": "inputs/project/rc_filter.kicad_pcb, zone 38a83012-bcf9-4bb9-b9f4-50d49cd91d90 (min_thickness 0.25)",
+      "mechanism": "If the exercise intent were a minimum width for all copper features rather than only track segments, the zone fill's 0.25 mm minimum web width would also fail; thermal spokes around J1.3 are drawn at thermal_bridge_width 0.5 mm, which would pass. No electrical defect: a scratch-copy refill reproduced the saved fill bit-identically and connectivity shows 0 unconnected items, so the GND return path through the zone and the 0.6 mm via is intact.",
+      "reasoning": "Reported only as a scoping observation, not a violation: the requirement text limits itself to track segments, and I do not invent broader requirements. Included so an adjudicator can see the zone parameter if the intended scope was all copper geometry. The zone-fill staleness and connectivity checks came back clean, so there is no connectivity defect here.",
+      "severity": "info",
+      "title": "B.Cu GND zone minimum fill thickness is also 0.25 mm (out of scope as written, flagged for intent)"
+    }
+  ],
+  "limitations": [
+    "No fabrication outputs (gerbers/drill) were generated or reviewed; conclusions are based on the saved board file",
+    "No thermal or current-capacity analysis performed; the stated requirement is explicitly geometric and ampacity is out of scope per inputs/requirements.txt",
+    "Bundled stock symbol/footprint libraries were not audited beyond what ERC/DRC exercised",
+    "pcbnew GetLayerName() on the zone object returned a misleading value in my script (API quirk); zone layer B.Cu was confirmed from the native file and geometry probe instead"
+  ],
+  "packet_sha256": "470ca36eb559163093d3268839e09c9436a6c5369c465cdb9ef48705e8756b4b",
+  "role": "physical",
+  "run_id": "606e4450-b65f-4c23-a1af-621bd8f08300",
+  "schema": "agent-ee.review/1"
+}

@@ -1,0 +1,10 @@
+IN  track start in J1.1 pad: True
+IN  track end   in R1.1 pad: True
+OUT track start in R1.2 pad: True
+OUT track end   in C1.1 pad: True
+OUT track3 start in J1.2 pad: True
+OUT track3 end == track4 start: True
+OUT track4 end overlaps track2 copper (T-junction): True
+GND track5 start in C1.2 pad: True
+GND track5 end at via (113,100): True
+R1 fitted 10k bridges nets: /IN -> /OUT

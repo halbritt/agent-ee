@@ -1,0 +1,68 @@
+{
+  "board": "project/rc_filter.kicad_pcb",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry",
+      "params": {}
+    }
+  ],
+  "inputs": [
+    {
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ],
+      "path": "/usr/share/kicad/symbols"
+    },
+    {
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ],
+      "path": "/usr/share/kicad/footprints"
+    },
+    {
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ],
+      "path": "/usr/share/kicad/template"
+    },
+    {
+      "at": "project",
+      "path": "native"
+    },
+    {
+      "at": "requirements.txt",
+      "path": "requirements.txt"
+    }
+  ],
+  "limitations": [
+    "Artificial exercise requirements; no ECU qualification."
+  ],
+  "name": "Engineering comparison mapping-a",
+  "requirements": [
+    "requirements.txt"
+  ],
+  "schema": "agent-ee.scope/1",
+  "schematic": "project/rc_filter.kicad_sch",
+  "scope": "External connector contract: J1 pin 1 is the input, pin 2 the filtered output, pin 3 ground. Verify saved connectivity."
+}

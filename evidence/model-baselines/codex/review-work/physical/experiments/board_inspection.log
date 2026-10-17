@@ -1,0 +1,467 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+{
+  "pcbnew_version": "10.0.7",
+  "board_sha256": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
+  "zones": [
+    {
+      "uuid": "57ea5c6f-8169-45be-8341-ed64320021c7",
+      "net": "/12V_MR",
+      "layers": [
+        "F.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": true
+    },
+    {
+      "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d",
+      "net": "GND",
+      "layers": [
+        "F.Cu",
+        "B.Cu",
+        "In2.Gnd.Cu"
+      ],
+      "thermal_gap_mm": 0.3,
+      "thermal_spoke_mm": 0.4,
+      "filled": true
+    },
+    {
+      "uuid": "068418de-6b06-46f8-a42a-f6e7af9942f0",
+      "net": "/IGBT4",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "127cf2fa-1812-461a-a187-dfb7e967cba1",
+      "net": "/IGBT5",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "3579728e-ee2e-4344-a291-cc863816ab5e",
+      "net": "",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": false
+    },
+    {
+      "uuid": "37aa73ff-cce7-4081-b03f-58d8207d2103",
+      "net": "/IGBT1",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "50659ba9-9228-44fb-b2d4-86a20c725a79",
+      "net": "/12V_MR",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.3,
+      "thermal_spoke_mm": 1.0,
+      "filled": true
+    },
+    {
+      "uuid": "6a5433ee-b187-4be9-8a27-92e9e208ccb9",
+      "net": "/IGBT3",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "7495946e-c00c-4a14-baf6-cc5203c3826e",
+      "net": "/IGBT2",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "9163dc16-5cde-4b12-8026-7223b919a6d1",
+      "net": "/IGBT6",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "f7b82b8e-356c-40e6-bb0d-0caff89bb922",
+      "net": "/IGBT8",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "fef8d15a-1a0b-4c07-a285-17350fd24159",
+      "net": "/IGBT7",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "thermal_spoke_mm": 0.508,
+      "filled": true
+    },
+    {
+      "uuid": "40688da3-b3be-4697-b9c1-aaa23d011d79",
+      "net": "",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": false
+    },
+    {
+      "uuid": "67fbb0df-c8d2-436d-8e48-ae24f97f6741",
+      "net": "/VBUS",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": true
+    },
+    {
+      "uuid": "6b78f1cd-3900-41b6-95cc-001b58f1f77f",
+      "net": "/12V_MR_FUSE",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.3,
+      "thermal_spoke_mm": 0.7,
+      "filled": true
+    },
+    {
+      "uuid": "9074955f-8a17-4745-bdf4-6d11013968bf",
+      "net": "/USB_GND",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": true
+    },
+    {
+      "uuid": "d5ee7818-027c-43cf-a8b2-e7f7cf655728",
+      "net": "/USB_SHIELD",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": true
+    },
+    {
+      "uuid": "d755c13d-743a-48e4-9126-65e88b0de783",
+      "net": "/12V_MR",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "thermal_spoke_mm": 0.5,
+      "filled": true
+    }
+  ]
+}
+J1 {
+  "lib": "Molex_112_643330100",
+  "position": [
+    133.2,
+    43.34
+  ],
+  "orientation_deg": 0.0,
+  "dnp": false,
+  "pads": [
+    {
+      "number": "",
+      "uuid": "e186b75f-4739-4f2e-a723-906e090de7da",
+      "net": "",
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "position_mm": [
+        71.95,
+        35.49
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111",
+      "annular_simple_mm": 0.0
+    },
+    {
+      "number": "",
+      "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788",
+      "net": "",
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": [
+        2.2,
+        2.2
+      ],
+      "position_mm": [
+        75.55,
+        39.34
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111",
+      "annular_simple_mm": 0.0
+    },
+    {
+      "number": "",
+      "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10",
+      "net": "",
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "position_mm": [
+        120.0,
+        28.49
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111",
+      "annular_simple_mm": 0.0
+    },
+    {
+      "number": "",
+      "uuid": "233888a2-e331-456b-963a-5ee5605edf83",
+      "net": "",
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": [
+        2.2,
+        2.2
+      ],
+      "position_mm": [
+        199.65,
+        39.34
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|000
+J2 {
+  "lib": "Polygonus-With-USB-SWD",
+  "position": [
+    136.565871,
+    99.211522
+  ],
+  "orientation_deg": 180.0,
+  "dnp": false,
+  "pads": [
+    {
+      "number": "1",
+      "uuid": "554529d2-be29-4d7d-9f1f-abad1f06cbbd",
+      "net": "GND",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "position_mm": [
+        181.672763,
+        132.012059
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_1111",
+      "annular_simple_mm": 0.35
+    },
+    {
+      "number": "2",
+      "uuid": "cea608f2-3dbf-48c8-b471-fa3ff1387265",
+      "net": "GND",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "position_mm": [
+        181.672763,
+        129.472059
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_1111",
+      "annular_simple_mm": 0.35
+    },
+    {
+      "number": "3",
+      "uuid": "baadba98-e198-4ea3-b7e6-7664f13ddd64",
+      "net": "/12V_MR_FUSE",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "position_mm": [
+        181.672763,
+        126.932059
+      ],
+      "attribute": 0,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_1111",
+      "annular_simple_mm": 0.35
+    },
+    {
+      "number": "4",
+      "uuid": "296a8e30-adf9-4588-88de-c7bb6b8dc0ba",
+      "net": "/LS1",
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "drill_mm": [
+        1.0,
+        1.0
+      ],
+      "position_mm": [
+        181.672763,
+        124.392059
+      ],
+      "att
+R36 {
+  "lib": "R_1206_3216Metric",
+  "position": [
+    175.014418,
+    140.66613
+  ],
+  "orientation_deg": 90.0,
+  "dnp": true,
+  "pads": [
+    {
+      "number": "1",
+      "uuid": "ed50429c-f265-4bd0-89c9-816bdb8e71ad",
+      "net": "/CAN2+",
+      "size_mm": [
+        1.125,
+        1.75
+      ],
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "position_mm": [
+        175.014418,
+        142.12863
+      ],
+      "attribute": 1,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0010_0000|0000_0011",
+      "annular_simple_mm": null
+    },
+    {
+      "number": "2",
+      "uuid": "d6c18c5a-48c7-4c45-9a50-04acc9f4ee0d",
+      "net": "/CAN2-",
+      "size_mm": [
+        1.125,
+        1.75
+      ],
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "position_mm": [
+        175.014418,
+        139.20363
+      ],
+      "attribute": 1,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0010_0000|0000_0011",
+      "annular_simple_mm": null
+    }
+  ]
+}
+R37 {
+  "lib": "R_1206_3216Metric",
+  "position": [
+    81.61775,
+    140.550045
+  ],
+  "orientation_deg": 0.0,
+  "dnp": true,
+  "pads": [
+    {
+      "number": "1",
+      "uuid": "1a4af480-8652-4b2d-9c85-eaeb4c635932",
+      "net": "/CAN2+",
+      "size_mm": [
+        1.125,
+        1.75
+      ],
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "position_mm": [
+        80.15525,
+        140.550045
+      ],
+      "attribute": 1,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0010_0000|0000_0011",
+      "annular_simple_mm": null
+    },
+    {
+      "number": "2",
+      "uuid": "2e550948-0290-4d3b-ae85-7d09505f22ae",
+      "net": "/CAN2-",
+      "size_mm": [
+        1.125,
+        1.75
+      ],
+      "drill_mm": [
+        0.0,
+        0.0
+      ],
+      "position_mm": [
+        83.08025,
+        140.550045
+      ],
+      "attribute": 1,
+      "layers": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0010_0000|0000_0011",
+      "annular_simple_mm": null
+    }
+  ]
+}
+J2_DELTA_FIRST [{'pad': '1', 'saved': [-45.106892, -32.800537], 'library': [-50.732683, -22.854905], 'delta': [5.6257909999999995, -9.945632]}, {'pad': '2', 'saved': [-45.106892, -30.260537], 'library': [-50.732683, -20.314905], 'delta': [5.6257909999999995, -9.945632]}, {'pad': '3', 'saved': [-45.106892, -27.720537], 'library': [-50.732683, -17.774905], 'delta': [5.6257909999999995, -9.945632]}, {'pad': '4', 'saved': [-45.106892, -25.180537], 'library': [-50.732683, -15.234905], 'delta': [5.6257909999999995, -9.945632000000002]}, {'pad': '5', 'saved': [-45.106892, -22.640537], 'library': [-50.732683, -12.694905], 'delta': [5.6257909999999995, -9.945631999999998]}, {'pad': '6', 'saved': [-45.106892, -20.100537], 'library': [-50.732683, -10.154905], 'delta': [5.6257909999999995, -9.945632]}, {'pad': '7', 'saved': [-45.106892, -17.560537], 'library': [-50.732683, -7.614905], 'delta': [5.6257909999999995, -9.945632]}, {'pad': '8', 'saved': [-45.106892, -15.020537], 'library': [-50.732683, -5.074905], 'delta': [5.6257909999999995, -9.945632]}]

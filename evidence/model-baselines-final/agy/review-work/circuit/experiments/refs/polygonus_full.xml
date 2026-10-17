@@ -1,0 +1,1052 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export version="E">
+  <design>
+    <source>/work/experiments/refs/polygonus-Shortage-Version.kicad_sch</source>
+    <date>2026-10-16T17:52:57</date>
+    <tool>Eeschema 10.0.7-10.0.7~ubuntu24.04.1</tool>
+    <sheet number="1" name="/" tstamps="/">
+      <title_block>
+        <title>Polygonus</title>
+        <company/>
+        <rev>v1.6.1</rev>
+        <date>2024-11-14</date>
+        <source>polygonus-Shortage-Version.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="2" name="/psu/" tstamps="/00000000-0000-0000-0000-00005da72eff/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>psu.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="3" name="/knock/" tstamps="/00000000-0000-0000-0000-00005e814213/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>knock.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="4" name="/triggers/" tstamps="/00000000-0000-0000-0000-00005dd8090b/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>triggers.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="5" name="/quad_analog_temp/" tstamps="/00000000-0000-0000-0000-00005dcc02d0/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>quad_analog_pullup.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="6" name="/quad_analog1/" tstamps="/00000000-0000-0000-0000-00005d9a3845/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>quad_analog.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="7" name="/quad_analog2/" tstamps="/00000000-0000-0000-0000-00005da6c1ea/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>quad_analog.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="8" name="/quad_analog3/" tstamps="/00000000-0000-0000-0000-00005da6c714/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>quad_analog.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="9" name="/mcu/" tstamps="/00000000-0000-0000-0000-00005d99e6ee/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>mcu.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="10" name="/lowside_quad1/" tstamps="/00000000-0000-0000-0000-00005d98a146/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>lowside_quad.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="11" name="/lowside_quad2/" tstamps="/00000000-0000-0000-0000-00005d99f107/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>lowside_quad.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="12" name="/Keep_Alive/" tstamps="/46495fed-359e-4c30-808a-9217af090de7/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>Keep_Alive.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="13" name="/lowside_quad4/" tstamps="/00000000-0000-0000-0000-00005d99f54c/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>lowside_quad.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="14" name="/highside_quad/" tstamps="/00000000-0000-0000-0000-00005dd5b2e0/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>highside_quad.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="15" name="/ign1/" tstamps="/00000000-0000-0000-0000-00005d975f3c/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>ign4.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+    <sheet number="16" name="/ign2/" tstamps="/00000000-0000-0000-0000-00005d98f734/">
+      <title_block>
+        <title/>
+        <company/>
+        <rev/>
+        <date/>
+        <source>ign4.kicad_sch</source>
+        <comment number="1" value=""/>
+        <comment number="2" value=""/>
+        <comment number="3" value=""/>
+        <comment number="4" value=""/>
+        <comment number="5" value=""/>
+        <comment number="6" value=""/>
+        <comment number="7" value=""/>
+        <comment number="8" value=""/>
+        <comment number="9" value=""/>
+      </title_block>
+    </sheet>
+  </design>
+  <components>
+    <comp ref="C1">
+      <value>56u</value>
+      <footprint>Capacitor_THT:CP_Radial_D8.0mm_P3.50mm</footprint>
+      <fields>
+        <field name="LCSC">N/A</field>
+        <field name="PN">EEH-AZF1H560B</field>
+        <field name="Footprint">Capacitor_THT:CP_Radial_D8.0mm_P3.50mm</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Device" part="CP" description=""/>
+      <property name="LCSC" value="N/A"/>
+      <property name="PN" value="EEH-AZF1H560B"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_fp_filters" value="CP_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>00000000-0000-0000-0000-00005f1fca08</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="F1">
+      <value>Polyfuse</value>
+      <footprint>Resistor_SMD:R_1206_3216Metric</footprint>
+      <fields>
+        <field name="PN">1206L012WR</field>
+        <field name="LCSC">C207035</field>
+        <field name="LCSC_ext">1</field>
+        <field name="Footprint">Resistor_SMD:R_1206_3216Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Device" part="Polyfuse" description="Resettable fuse, polymeric positive temperature coefficient"/>
+      <property name="PN" value="1206L012WR"/>
+      <property name="LCSC" value="C207035"/>
+      <property name="LCSC_ext" value="1"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="resettable fuse PTC PPTC polyfuse polyswitch"/>
+      <property name="ki_fp_filters" value="*polyfuse* *PTC*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>00000000-0000-0000-0000-00005dd6d3fc</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="F2">
+      <value>Polyfuse</value>
+      <footprint>Resistor_SMD:R_1206_3216Metric</footprint>
+      <fields>
+        <field name="PN">1206L012WR</field>
+        <field name="LCSC">C207035</field>
+        <field name="LCSC_ext">1</field>
+        <field name="Footprint">Resistor_SMD:R_1206_3216Metric</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Device" part="Polyfuse" description="Resettable fuse, polymeric positive temperature coefficient"/>
+      <property name="PN" value="1206L012WR"/>
+      <property name="LCSC" value="C207035"/>
+      <property name="LCSC_ext" value="1"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="resettable fuse PTC PPTC polyfuse polyswitch"/>
+      <property name="ki_fp_filters" value="*polyfuse* *PTC*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>00000000-0000-0000-0000-00005dd6b950</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J1">
+      <value>Conn_01x01</value>
+      <footprint>TestPoint:TestPoint_Pad_D3.0mm</footprint>
+      <fields>
+        <field name="LCSC">N/A</field>
+        <field name="Footprint">TestPoint:TestPoint_Pad_D3.0mm</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x01" description="Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="LCSC" value="N/A"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>00000000-0000-0000-0000-00005de887f5</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J2">
+      <value>Conn_01x01</value>
+      <footprint>TestPoint:TestPoint_Pad_D3.0mm</footprint>
+      <fields>
+        <field name="LCSC">N/A</field>
+        <field name="Footprint">TestPoint:TestPoint_Pad_D3.0mm</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x01" description="Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="LCSC" value="N/A"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>00000000-0000-0000-0000-00005de89191</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J3">
+      <value>Conn_01x01</value>
+      <footprint>TestPoint:TestPoint_Pad_D3.0mm</footprint>
+      <fields>
+        <field name="LCSC">N/A</field>
+        <field name="Footprint">TestPoint:TestPoint_Pad_D3.0mm</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x01" description="Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="LCSC" value="N/A"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>00000000-0000-0000-0000-00005de896c2</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J4">
+      <value>Conn_01x32</value>
+      <footprint>Connector_PinHeader_2.54mm:PinHeader_1x32_P2.54mm_Vertical</footprint>
+      <fields>
+        <field name="Footprint">Connector_PinHeader_2.54mm:PinHeader_1x32_P2.54mm_Vertical</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x32" description="Generic connector, single row, 01x32, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>80000a89-87b5-4e6a-92e9-64ba20dbcc58</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="3"/>
+            <pin num="4"/>
+            <pin num="5"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="8"/>
+            <pin num="9"/>
+            <pin num="10"/>
+            <pin num="11"/>
+            <pin num="12"/>
+            <pin num="13"/>
+            <pin num="14"/>
+            <pin num="15"/>
+            <pin num="16"/>
+            <pin num="17"/>
+            <pin num="18"/>
+            <pin num="19"/>
+            <pin num="20"/>
+            <pin num="21"/>
+            <pin num="22"/>
+            <pin num="23"/>
+            <pin num="24"/>
+            <pin num="25"/>
+            <pin num="26"/>
+            <pin num="27"/>
+            <pin num="28"/>
+            <pin num="29"/>
+            <pin num="30"/>
+            <pin num="31"/>
+            <pin num="32"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J5">
+      <value>Conn_01x32</value>
+      <footprint>Connector_PinHeader_2.54mm:PinHeader_1x32_P2.54mm_Vertical</footprint>
+      <fields>
+        <field name="Footprint">Connector_PinHeader_2.54mm:PinHeader_1x32_P2.54mm_Vertical</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x32" description="Generic connector, single row, 01x32, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>942a8486-fbcf-4ef2-b335-e812292683e0</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="3"/>
+            <pin num="4"/>
+            <pin num="5"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="8"/>
+            <pin num="9"/>
+            <pin num="10"/>
+            <pin num="11"/>
+            <pin num="12"/>
+            <pin num="13"/>
+            <pin num="14"/>
+            <pin num="15"/>
+            <pin num="16"/>
+            <pin num="17"/>
+            <pin num="18"/>
+            <pin num="19"/>
+            <pin num="20"/>
+            <pin num="21"/>
+            <pin num="22"/>
+            <pin num="23"/>
+            <pin num="24"/>
+            <pin num="25"/>
+            <pin num="26"/>
+            <pin num="27"/>
+            <pin num="28"/>
+            <pin num="29"/>
+            <pin num="30"/>
+            <pin num="31"/>
+            <pin num="32"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J6">
+      <value>Conn_01x16</value>
+      <footprint>Connector_PinHeader_2.54mm:PinHeader_1x16_P2.54mm_Vertical</footprint>
+      <fields>
+        <field name="Footprint">Connector_PinHeader_2.54mm:PinHeader_1x16_P2.54mm_Vertical</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x16" description="Generic connector, single row, 01x16, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>f0131d10-9594-40d0-8ec0-d502eb74fb21</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="3"/>
+            <pin num="4"/>
+            <pin num="5"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="8"/>
+            <pin num="9"/>
+            <pin num="10"/>
+            <pin num="11"/>
+            <pin num="12"/>
+            <pin num="13"/>
+            <pin num="14"/>
+            <pin num="15"/>
+            <pin num="16"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+    <comp ref="J7">
+      <value>Conn_01x16</value>
+      <footprint>Connector_PinHeader_2.54mm:PinHeader_1x16_P2.54mm_Vertical</footprint>
+      <fields>
+        <field name="Footprint">Connector_PinHeader_2.54mm:PinHeader_1x16_P2.54mm_Vertical</field>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <libsource lib="Connector_Generic" part="Conn_01x16" description="Generic connector, single row, 01x16, script generated (kicad-library-utils/schlib/autogen/connector/)"/>
+      <property name="Sheetname" value="Root"/>
+      <property name="Sheetfile" value="experiments/refs/polygonus-Shortage-Version.kicad_sch"/>
+      <property name="ki_keywords" value="connector"/>
+      <property name="ki_fp_filters" value="Connector*:*_1x??_*"/>
+      <sheetpath names="/" tstamps="/"/>
+      <tstamps>979e7dc1-d53c-45eb-90c5-e82606942ae8</tstamps>
+      <units>
+        <unit name="A">
+          <pins>
+            <pin num="1"/>
+            <pin num="2"/>
+            <pin num="3"/>
+            <pin num="4"/>
+            <pin num="5"/>
+            <pin num="6"/>
+            <pin num="7"/>
+            <pin num="8"/>
+            <pin num="9"/>
+            <pin num="10"/>
+            <pin num="11"/>
+            <pin num="12"/>
+            <pin num="13"/>
+            <pin num="14"/>
+            <pin num="15"/>
+            <pin num="16"/>
+          </pins>
+        </unit>
+      </units>
+    </comp>
+  </components>
+  <libparts>
+    <libpart lib="Connector_Generic" part="Conn_01x01">
+      <description>Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
+      <footprints>
+        <fp>Connector*:*_1x??_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Conn_01x01</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description">Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)</field>
+      </fields>
+      <pins>
+        <pin num="1" name="Pin_1" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Connector_Generic" part="Conn_01x16">
+      <description>Generic connector, single row, 01x16, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
+      <footprints>
+        <fp>Connector*:*_1x??_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Conn_01x16</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description">Generic connector, single row, 01x16, script generated (kicad-library-utils/schlib/autogen/connector/)</field>
+      </fields>
+      <pins>
+        <pin num="1" name="Pin_1" type="passive"/>
+        <pin num="2" name="Pin_2" type="passive"/>
+        <pin num="3" name="Pin_3" type="passive"/>
+        <pin num="4" name="Pin_4" type="passive"/>
+        <pin num="5" name="Pin_5" type="passive"/>
+        <pin num="6" name="Pin_6" type="passive"/>
+        <pin num="7" name="Pin_7" type="passive"/>
+        <pin num="8" name="Pin_8" type="passive"/>
+        <pin num="9" name="Pin_9" type="passive"/>
+        <pin num="10" name="Pin_10" type="passive"/>
+        <pin num="11" name="Pin_11" type="passive"/>
+        <pin num="12" name="Pin_12" type="passive"/>
+        <pin num="13" name="Pin_13" type="passive"/>
+        <pin num="14" name="Pin_14" type="passive"/>
+        <pin num="15" name="Pin_15" type="passive"/>
+        <pin num="16" name="Pin_16" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Connector_Generic" part="Conn_01x32">
+      <description>Generic connector, single row, 01x32, script generated (kicad-library-utils/schlib/autogen/connector/)</description>
+      <footprints>
+        <fp>Connector*:*_1x??_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">J</field>
+        <field name="Value">Conn_01x32</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description">Generic connector, single row, 01x32, script generated (kicad-library-utils/schlib/autogen/connector/)</field>
+      </fields>
+      <pins>
+        <pin num="1" name="Pin_1" type="passive"/>
+        <pin num="2" name="Pin_2" type="passive"/>
+        <pin num="3" name="Pin_3" type="passive"/>
+        <pin num="4" name="Pin_4" type="passive"/>
+        <pin num="5" name="Pin_5" type="passive"/>
+        <pin num="6" name="Pin_6" type="passive"/>
+        <pin num="7" name="Pin_7" type="passive"/>
+        <pin num="8" name="Pin_8" type="passive"/>
+        <pin num="9" name="Pin_9" type="passive"/>
+        <pin num="10" name="Pin_10" type="passive"/>
+        <pin num="11" name="Pin_11" type="passive"/>
+        <pin num="12" name="Pin_12" type="passive"/>
+        <pin num="13" name="Pin_13" type="passive"/>
+        <pin num="14" name="Pin_14" type="passive"/>
+        <pin num="15" name="Pin_15" type="passive"/>
+        <pin num="16" name="Pin_16" type="passive"/>
+        <pin num="17" name="Pin_17" type="passive"/>
+        <pin num="18" name="Pin_18" type="passive"/>
+        <pin num="19" name="Pin_19" type="passive"/>
+        <pin num="20" name="Pin_20" type="passive"/>
+        <pin num="21" name="Pin_21" type="passive"/>
+        <pin num="22" name="Pin_22" type="passive"/>
+        <pin num="23" name="Pin_23" type="passive"/>
+        <pin num="24" name="Pin_24" type="passive"/>
+        <pin num="25" name="Pin_25" type="passive"/>
+        <pin num="26" name="Pin_26" type="passive"/>
+        <pin num="27" name="Pin_27" type="passive"/>
+        <pin num="28" name="Pin_28" type="passive"/>
+        <pin num="29" name="Pin_29" type="passive"/>
+        <pin num="30" name="Pin_30" type="passive"/>
+        <pin num="31" name="Pin_31" type="passive"/>
+        <pin num="32" name="Pin_32" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Device" part="CP">
+      <footprints>
+        <fp>CP_*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">C</field>
+        <field name="Value">Device_CP</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description"/>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+    <libpart lib="Device" part="Polyfuse">
+      <description>Resettable fuse, polymeric positive temperature coefficient</description>
+      <footprints>
+        <fp>*polyfuse*</fp>
+        <fp>*PTC*</fp>
+      </footprints>
+      <fields>
+        <field name="Reference">F</field>
+        <field name="Value">Polyfuse</field>
+        <field name="Footprint"/>
+        <field name="Datasheet"/>
+        <field name="Description">Resettable fuse, polymeric positive temperature coefficient</field>
+      </fields>
+      <pins>
+        <pin num="1" name="" type="passive"/>
+        <pin num="2" name="" type="passive"/>
+      </pins>
+    </libpart>
+  </libparts>
+  <libraries/>
+  <nets>
+    <net code="1" name="+3V3" class="Default">
+      <node ref="J3" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+      <node ref="J6" pin="2" pinfunction="Pin_2_2" pintype="passive"/>
+    </net>
+    <net code="2" name="+5V" class="Default">
+      <node ref="J2" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+      <node ref="J6" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+    </net>
+    <net code="3" name="/5V_SENSOR_1" class="Default">
+      <node ref="J5" pin="8" pinfunction="Pin_8_8" pintype="passive"/>
+      <node ref="J5" pin="9" pinfunction="Pin_9_9" pintype="passive"/>
+    </net>
+    <net code="5" name="/5V_SENSOR_2" class="Default">
+      <node ref="J5" pin="4" pinfunction="Pin_4_4" pintype="passive"/>
+      <node ref="J5" pin="5" pinfunction="Pin_5_5" pintype="passive"/>
+    </net>
+    <net code="7" name="/12V_MR" class="Default">
+      <node ref="C1" pin="1" pintype="passive"/>
+      <node ref="J4" pin="3" pinfunction="Pin_3_3" pintype="passive"/>
+      <node ref="J4" pin="32" pinfunction="Pin_32_32" pintype="passive"/>
+    </net>
+    <net code="8" name="/12V_PROT" class="Default">
+      <node ref="F1" pin="1" pintype="passive"/>
+      <node ref="F2" pin="2" pintype="passive"/>
+    </net>
+    <net code="9" name="/12V_RAW" class="Default">
+      <node ref="J6" pin="10" pinfunction="Pin_10_10" pintype="passive"/>
+    </net>
+    <net code="10" name="/AT1" class="Default">
+      <node ref="J5" pin="19" pinfunction="Pin_19_19" pintype="passive"/>
+    </net>
+    <net code="11" name="/AT2" class="Default">
+      <node ref="J5" pin="18" pinfunction="Pin_18_18" pintype="passive"/>
+    </net>
+    <net code="12" name="/AT3" class="Default">
+      <node ref="J5" pin="17" pinfunction="Pin_17_17" pintype="passive"/>
+    </net>
+    <net code="13" name="/AT4" class="Default">
+      <node ref="J5" pin="16" pinfunction="Pin_16_16" pintype="passive"/>
+    </net>
+    <net code="14" name="/AV1" class="Default">
+      <node ref="J5" pin="30" pinfunction="Pin_30_30" pintype="passive"/>
+    </net>
+    <net code="15" name="/AV2" class="Default">
+      <node ref="J5" pin="29" pinfunction="Pin_29_29" pintype="passive"/>
+    </net>
+    <net code="16" name="/AV3" class="Default">
+      <node ref="J5" pin="28" pinfunction="Pin_28_28" pintype="passive"/>
+    </net>
+    <net code="17" name="/AV4" class="Default">
+      <node ref="J5" pin="27" pinfunction="Pin_27_27" pintype="passive"/>
+    </net>
+    <net code="18" name="/AV5" class="Default">
+      <node ref="J5" pin="26" pinfunction="Pin_26_26" pintype="passive"/>
+    </net>
+    <net code="19" name="/AV6" class="Default">
+      <node ref="J5" pin="25" pinfunction="Pin_25_25" pintype="passive"/>
+    </net>
+    <net code="20" name="/AV7" class="Default">
+      <node ref="J5" pin="24" pinfunction="Pin_24_24" pintype="passive"/>
+    </net>
+    <net code="21" name="/AV8" class="Default">
+      <node ref="J5" pin="23" pinfunction="Pin_23_23" pintype="passive"/>
+    </net>
+    <net code="22" name="/AV9" class="Default">
+      <node ref="J5" pin="22" pinfunction="Pin_22_22" pintype="passive"/>
+    </net>
+    <net code="23" name="/AV10" class="Default">
+      <node ref="J5" pin="21" pinfunction="Pin_21_21" pintype="passive"/>
+    </net>
+    <net code="24" name="/AV11" class="Default">
+      <node ref="J5" pin="20" pinfunction="Pin_20_20" pintype="passive"/>
+    </net>
+    <net code="25" name="/CAN+" class="Default">
+      <node ref="J6" pin="13" pinfunction="Pin_13_13" pintype="passive"/>
+    </net>
+    <net code="26" name="/CAN-" class="Default">
+      <node ref="J6" pin="14" pinfunction="Pin_14_14" pintype="passive"/>
+    </net>
+    <net code="27" name="/CAN2+" class="Default">
+      <node ref="J7" pin="9" pinfunction="Pin_9_9" pintype="passive"/>
+    </net>
+    <net code="28" name="/CAN2-" class="Default">
+      <node ref="J7" pin="10" pinfunction="Pin_10_10" pintype="passive"/>
+    </net>
+    <net code="31" name="/DIGITAL_1" class="Default">
+      <node ref="J5" pin="15" pinfunction="Pin_15_15" pintype="passive"/>
+    </net>
+    <net code="32" name="/DIGITAL_2" class="Default">
+      <node ref="J5" pin="14" pinfunction="Pin_14_14" pintype="passive"/>
+    </net>
+    <net code="33" name="/DIGITAL_3" class="Default">
+      <node ref="J5" pin="13" pinfunction="Pin_13_13" pintype="passive"/>
+    </net>
+    <net code="34" name="/DIGITAL_4" class="Default">
+      <node ref="J5" pin="12" pinfunction="Pin_12_12" pintype="passive"/>
+    </net>
+    <net code="35" name="/DIGITAL_5" class="Default">
+      <node ref="J5" pin="11" pinfunction="Pin_11_11" pintype="passive"/>
+    </net>
+    <net code="36" name="/DIGITAL_6" class="Default">
+      <node ref="J5" pin="10" pinfunction="Pin_10_10" pintype="passive"/>
+    </net>
+    <net code="37" name="/ETB1_DIR" class="Default">
+      <node ref="J6" pin="5" pinfunction="Pin_5_5" pintype="passive"/>
+    </net>
+    <net code="38" name="/ETB1_DIS" class="Default">
+      <node ref="J6" pin="4" pinfunction="Pin_4_4" pintype="passive"/>
+    </net>
+    <net code="39" name="/ETB1_PWM" class="Default">
+      <node ref="J6" pin="3" pinfunction="Pin_3_3" pintype="passive"/>
+    </net>
+    <net code="40" name="/ETB2_DIR" class="Default">
+      <node ref="J6" pin="8" pinfunction="Pin_8_8" pintype="passive"/>
+    </net>
+    <net code="41" name="/ETB2_DIS" class="Default">
+      <node ref="J6" pin="7" pinfunction="Pin_7_7" pintype="passive"/>
+    </net>
+    <net code="42" name="/ETB2_PWM" class="Default">
+      <node ref="J6" pin="6" pinfunction="Pin_6_6" pintype="passive"/>
+    </net>
+    <net code="51" name="/HS1" class="Default">
+      <node ref="J7" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+    </net>
+    <net code="53" name="/HS2" class="Default">
+      <node ref="J7" pin="2" pinfunction="Pin_2_2" pintype="passive"/>
+    </net>
+    <net code="55" name="/HS3" class="Default">
+      <node ref="J7" pin="3" pinfunction="Pin_3_3" pintype="passive"/>
+    </net>
+    <net code="57" name="/HS4" class="Default">
+      <node ref="J7" pin="4" pinfunction="Pin_4_4" pintype="passive"/>
+    </net>
+    <net code="59" name="/IGN1" class="Default">
+      <node ref="J4" pin="23" pinfunction="Pin_23_23" pintype="passive"/>
+    </net>
+    <net code="61" name="/IGN2" class="Default">
+      <node ref="J4" pin="22" pinfunction="Pin_22_22" pintype="passive"/>
+    </net>
+    <net code="63" name="/IGN3" class="Default">
+      <node ref="J4" pin="21" pinfunction="Pin_21_21" pintype="passive"/>
+    </net>
+    <net code="65" name="/IGN4" class="Default">
+      <node ref="J4" pin="20" pinfunction="Pin_20_20" pintype="passive"/>
+    </net>
+    <net code="67" name="/IGN5" class="Default">
+      <node ref="J4" pin="19" pinfunction="Pin_19_19" pintype="passive"/>
+    </net>
+    <net code="69" name="/IGN6" class="Default">
+      <node ref="J4" pin="18" pinfunction="Pin_18_18" pintype="passive"/>
+    </net>
+    <net code="71" name="/IGN7" class="Default">
+      <node ref="J4" pin="17" pinfunction="Pin_17_17" pintype="passive"/>
+    </net>
+    <net code="73" name="/IGN8" class="Default">
+      <node ref="J4" pin="16" pinfunction="Pin_16_16" pintype="passive"/>
+    </net>
+    <net code="75" name="/IGN9" class="Default">
+      <node ref="J4" pin="15" pinfunction="Pin_15_15" pintype="passive"/>
+    </net>
+    <net code="76" name="/IGN10" class="Default">
+      <node ref="J4" pin="14" pinfunction="Pin_14_14" pintype="passive"/>
+    </net>
+    <net code="77" name="/IGN11" class="Default">
+      <node ref="J4" pin="13" pinfunction="Pin_13_13" pintype="passive"/>
+    </net>
+    <net code="78" name="/IGN12" class="Default">
+      <node ref="J4" pin="12" pinfunction="Pin_12_12" pintype="passive"/>
+    </net>
+    <net code="80" name="/KNOCK_1" class="Default">
+      <node ref="J5" pin="31" pinfunction="Pin_31_31" pintype="passive"/>
+    </net>
+    <net code="81" name="/KNOCK_2" class="Default">
+      <node ref="J5" pin="32" pinfunction="Pin_32_32" pintype="passive"/>
+    </net>
+    <net code="83" name="/LS1" class="Default">
+      <node ref="J4" pin="4" pinfunction="Pin_4_4" pintype="passive"/>
+    </net>
+    <net code="85" name="/LS2" class="Default">
+      <node ref="J4" pin="5" pinfunction="Pin_5_5" pintype="passive"/>
+    </net>
+    <net code="87" name="/LS3" class="Default">
+      <node ref="J4" pin="6" pinfunction="Pin_6_6" pintype="passive"/>
+    </net>
+    <net code="89" name="/LS4" class="Default">
+      <node ref="J4" pin="7" pinfunction="Pin_7_7" pintype="passive"/>
+    </net>
+    <net code="91" name="/LS5" class="Default">
+      <node ref="J4" pin="8" pinfunction="Pin_8_8" pintype="passive"/>
+    </net>
+    <net code="93" name="/LS6" class="Default">
+      <node ref="J4" pin="9" pinfunction="Pin_9_9" pintype="passive"/>
+    </net>
+    <net code="95" name="/LS7" class="Default">
+      <node ref="J4" pin="10" pinfunction="Pin_10_10" pintype="passive"/>
+    </net>
+    <net code="97" name="/LS8" class="Default">
+      <node ref="J4" pin="11" pinfunction="Pin_11_11" pintype="passive"/>
+    </net>
+    <net code="99" name="/LS9" class="Default">
+      <node ref="J4" pin="24" pinfunction="Pin_24_24" pintype="passive"/>
+    </net>
+    <net code="100" name="/LS10" class="Default">
+      <node ref="J4" pin="25" pinfunction="Pin_25_25" pintype="passive"/>
+    </net>
+    <net code="101" name="/LS11" class="Default">
+      <node ref="J4" pin="26" pinfunction="Pin_26_26" pintype="passive"/>
+    </net>
+    <net code="102" name="/LS12" class="Default">
+      <node ref="J4" pin="27" pinfunction="Pin_27_27" pintype="passive"/>
+    </net>
+    <net code="103" name="/LS13" class="Default">
+      <node ref="J4" pin="28" pinfunction="Pin_28_28" pintype="passive"/>
+    </net>
+    <net code="105" name="/LS14" class="Default">
+      <node ref="J4" pin="29" pinfunction="Pin_29_29" pintype="passive"/>
+    </net>
+    <net code="107" name="/LS15" class="Default">
+      <node ref="J4" pin="30" pinfunction="Pin_30_30" pintype="passive"/>
+    </net>
+    <net code="109" name="/LS16" class="Default">
+      <node ref="J4" pin="31" pinfunction="Pin_31_31" pintype="passive"/>
+    </net>
+    <net code="127" name="/Perm_Live" class="Default">
+      <node ref="J7" pin="13" pinfunction="Pin_13_13" pintype="passive"/>
+    </net>
+    <net code="128" name="/RC1" class="Default">
+      <node ref="J7" pin="11" pinfunction="Pin_11_11" pintype="passive"/>
+    </net>
+    <net code="129" name="/RC2" class="Default">
+      <node ref="J7" pin="12" pinfunction="Pin_12_12" pintype="passive"/>
+    </net>
+    <net code="132" name="/Trig_Scope" class="Default">
+      <node ref="J7" pin="14" pinfunction="Pin_14_14" pintype="passive"/>
+    </net>
+    <net code="136" name="/VR1+" class="Default">
+      <node ref="J6" pin="16" pinfunction="Pin_16_16" pintype="passive"/>
+    </net>
+    <net code="138" name="/VR2+" class="Default">
+      <node ref="J6" pin="15" pinfunction="Pin_15_15" pintype="passive"/>
+    </net>
+    <net code="140" name="GND" class="Default">
+      <node ref="C1" pin="2" pintype="passive"/>
+      <node ref="J1" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+      <node ref="J4" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+      <node ref="J4" pin="2" pinfunction="Pin_2_2" pintype="passive"/>
+      <node ref="J5" pin="1" pinfunction="Pin_1_1" pintype="passive"/>
+      <node ref="J6" pin="11" pinfunction="Pin_11_11" pintype="passive"/>
+      <node ref="J6" pin="12" pinfunction="Pin_12_12" pintype="passive"/>
+      <node ref="J6" pin="9" pinfunction="Pin_9_9" pintype="passive"/>
+      <node ref="J7" pin="5" pinfunction="Pin_5_5" pintype="passive"/>
+      <node ref="J7" pin="6" pinfunction="Pin_6_6" pintype="passive"/>
+      <node ref="J7" pin="7" pinfunction="Pin_7_7" pintype="passive"/>
+      <node ref="J7" pin="8" pinfunction="Pin_8_8" pintype="passive"/>
+    </net>
+    <net code="141" name="Net-(J5-Pin_2)" class="Default">
+      <node ref="F2" pin="1" pintype="passive"/>
+      <node ref="J5" pin="2" pinfunction="Pin_2_2" pintype="passive"/>
+    </net>
+    <net code="142" name="Net-(J5-Pin_3)" class="Default">
+      <node ref="F1" pin="2" pintype="passive"/>
+      <node ref="J5" pin="3" pinfunction="Pin_3_3" pintype="passive"/>
+    </net>
+    <net code="143" name="unconnected-(J5-Pin_6-Pad6)" class="Default">
+      <node ref="J5" pin="6" pinfunction="Pin_6_6" pintype="passive+no_connect"/>
+    </net>
+    <net code="144" name="unconnected-(J5-Pin_7-Pad7)" class="Default">
+      <node ref="J5" pin="7" pinfunction="Pin_7_7" pintype="passive+no_connect"/>
+    </net>
+    <net code="145" name="unconnected-(J7-Pin_15-Pad15)" class="Default">
+      <node ref="J7" pin="15" pinfunction="Pin_15_15" pintype="passive+no_connect"/>
+    </net>
+    <net code="146" name="unconnected-(J7-Pin_16-Pad16)" class="Default">
+      <node ref="J7" pin="16" pinfunction="Pin_16_16" pintype="passive+no_connect"/>
+    </net>
+  </nets>
+</export>

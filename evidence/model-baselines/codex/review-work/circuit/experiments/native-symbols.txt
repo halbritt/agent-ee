@@ -1,0 +1,724 @@
+
+FILE /candidate/project/vr_module_poly.kicad_sch
+LIB 74xx:74HC02 {"Reference": "U", "Value": "74HC02", "Footprint": "", "Datasheet": "http://www.ti.com/lit/gpn/sn74hc02", "Description": "quad 2-input NOR gate", "ki_locked": "", "ki_keywords": "HCMOS Nor2", "ki_fp_filters": "SO14* DIP*W7.62mm*"}
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '14', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VCC', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Amplifier_Operational:MCP6004 {"Reference": "U", "Value": "MCP6004", "Footprint": "", "Datasheet": "http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf", "Description": "1MHz, Low-Power Op Amp, DIP-14/SOIC-14/TSSOP-14", "ki_locked": "", "ki_keywords": "quad opamp", "ki_fp_filters": "SOIC*3.9x8.7mm*P1.27mm* DIP*W7.62mm* TSSOP*4.4x5mm*P0.65mm* SSOP*5.3x6.2mm*P0.65mm* MSOP*3x3mm*P0.5mm*"}
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '14', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'V+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'V-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Analog_Switch:NC7SB3157P6X {"Reference": "U", "Value": "NC7SB3157P6X", "Footprint": "Package_TO_SOT_SMD:SOT-363_SC-70-6", "Datasheet": "https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF", "Description": "Single SPDT Low-Voltage Analog Switch or 2:1 Multiplexer/De-Multiplexer Bus Switch, 10Ohm Ron, SC-70-6", "ki_keywords": "CMOS Analog Switch", "ki_fp_filters": "*SC?70*"}
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'V+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Comparator:LM393 {"Reference": "U", "Value": "LM393", "Footprint": "", "Datasheet": "http://www.ti.com/lit/ds/symlink/lm393.pdf", "Description": "Low-Power, Low-Offset Voltage, Dual Comparators, DIP-8/SOIC-8/TO-99-8", "ki_locked": "", "ki_keywords": "cmp open collector", "ki_fp_filters": "SOIC*3.9x4.9mm*P1.27mm* DIP*W7.62mm* SOP*5.28x5.23mm*P1.27mm* VSSOP*3.0x3.0mm*P0.65mm* TSSOP*4.4x3mm*P0.65mm*"}
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'open_collector')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'open_collector')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'V+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'V-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Device:C {"Reference": "C", "Value": "C", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor", "ki_keywords": "cap capacitor", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:C_Small {"Reference": "C", "Value": "C_Small", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor, small symbol", "ki_keywords": "capacitor cap", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:LED {"Reference": "D", "Value": "LED", "Footprint": "", "Datasheet": "~", "Description": "Light emitting diode", "ki_keywords": "LED diode", "ki_fp_filters": "LED* LED_SMD:* LED_THT:*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'K', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R {"Reference": "R", "Value": "R", "Footprint": "", "Datasheet": "~", "Description": "Resistor", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Power_Protection:SRV05-4 {"Reference": "U", "Value": "SRV05-4", "Footprint": "Package_TO_SOT_SMD:SOT-23-6", "Datasheet": "http://www.onsemi.com/pub/Collateral/SRV05-4-D.PDF", "Description": "ESD Protection Diodes with Low Clamping Voltage, SOT-23-6", "ki_keywords": "ESD protection diodes", "ki_fp_filters": "SOT?23*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IO1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IO2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VP', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VN', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IO3', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IO4', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB power:+5V {"Reference": "#PWR", "Value": "+5V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+5V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:GND {"Reference": "#PWR", "Value": "GND", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+INSTANCE {"props": {"Reference": "C11", "Value": "10n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C15195"}, "at": ["at", "172.72", "62.23", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff2e82e"]}
+INSTANCE {"props": {"Reference": "R20", "Value": "1k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C11702"}, "at": ["at", "181.61", "54.61", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff2fffa"]}
+INSTANCE {"props": {"Reference": "C12", "Value": "10n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C15195"}, "at": ["at", "172.72", "78.74", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff34503"]}
+INSTANCE {"props": {"Reference": "R21", "Value": "1k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C11702"}, "at": ["at", "181.61", "86.36", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff3450a"]}
+INSTANCE {"props": {"Reference": "U7", "Value": "MAX9142", "Footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/ds/symlink/lm393.pdf", "Description": "", "LCSC": "C18567"}, "at": ["at", "152.4", "62.23", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Comparator:LM393"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff7ca5e"]}
+INSTANCE {"props": {"Reference": "U7", "Value": "MAX9142", "Footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/ds/symlink/lm393.pdf", "Description": "", "LCSC": "C18567"}, "at": ["at", "152.4", "78.74", "0"], "unit": ["unit", "2"], "lib_id": ["lib_id", "Comparator:LM393"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff885e6"]}
+INSTANCE {"props": {"Reference": "U7", "Value": "MAX9142", "Footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/ds/symlink/lm393.pdf", "Description": "", "LCSC": "C18567"}, "at": ["at", "258.445", "33.655", "0"], "unit": ["unit", "3"], "lib_id": ["lib_id", "Comparator:LM393"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff8949e"]}
+INSTANCE {"props": {"Reference": "U8", "Value": "NC7SB3157P6X", "Footprint": "Package_TO_SOT_SMD:SOT-363_SC-70-6", "Datasheet": "https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF", "Description": "", "LCSC": "C36533657"}, "at": ["at", "163.83", "35.56", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Analog_Switch:NC7SB3157P6X"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff8a354"]}
+INSTANCE {"props": {"Reference": "U8", "Value": "NC7SB3157P6X", "Footprint": "Package_TO_SOT_SMD:SOT-363_SC-70-6", "Datasheet": "https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF", "Description": "", "LCSC": "C36533657"}, "at": ["at", "199.39", "33.02", "0"], "unit": ["unit", "2"], "lib_id": ["lib_id", "Analog_Switch:NC7SB3157P6X"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff8b772"]}
+INSTANCE {"props": {"Reference": "U9", "Value": "NC7SB3157P6X", "Footprint": "Package_TO_SOT_SMD:SOT-363_SC-70-6", "Datasheet": "https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF", "Description": "", "LCSC": "C36533657"}, "at": ["at", "163.83", "105.41", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Analog_Switch:NC7SB3157P6X"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff8d127"]}
+INSTANCE {"props": {"Reference": "U9", "Value": "NC7SB3157P6X", "Footprint": "Package_TO_SOT_SMD:SOT-363_SC-70-6", "Datasheet": "https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF", "Description": "", "LCSC": "C36533657"}, "at": ["at", "213.36", "33.02", "0"], "unit": ["unit", "2"], "lib_id": ["lib_id", "Analog_Switch:NC7SB3157P6X"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00005ff8fbdb"]}
+INSTANCE {"props": {"Reference": "U6", "Value": "MCP6004", "Footprint": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", "Datasheet": "http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf", "Description": "", "LCSC": "C50282"}, "at": ["at", "241.935", "147.32", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Amplifier_Operational:MCP6004"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006003328c"]}
+INSTANCE {"props": {"Reference": "U6", "Value": "MCP6004", "Footprint": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", "Datasheet": "http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf", "Description": "", "LCSC": "C50282"}, "at": ["at", "110.49", "69.85", "0"], "unit": ["unit", "2"], "lib_id": ["lib_id", "Amplifier_Operational:MCP6004"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060037039"]}
+INSTANCE {"props": {"Reference": "U6", "Value": "MCP6004", "Footprint": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", "Datasheet": "http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf", "Description": "", "LCSC": "C50282"}, "at": ["at", "128.905", "136.525", "0"], "unit": ["unit", "3"], "lib_id": ["lib_id", "Amplifier_Operational:MCP6004"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060039068"]}
+INSTANCE {"props": {"Reference": "U6", "Value": "MCP6004", "Footprint": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", "Datasheet": "http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf", "Description": "", "LCSC": "C50282"}, "at": ["at", "164.465", "146.685", "0"], "unit": ["unit", "4"], "lib_id": ["lib_id", "Amplifier_Operational:MCP6004"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060039ea7"]}
+INSTANCE {"props": {"Reference": "U6", "Value": "MCP6004", "Footprint": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm", "Datasheet": "http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf", "Description": "", "LCSC": "C50282"}, "at": ["at", "250.825", "33.655", "0"], "unit": ["unit", "5"], "lib_id": ["lib_id", "Amplifier_Operational:MCP6004"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006003c6ee"]}
+INSTANCE {"props": {"Reference": "U4", "Value": "SRV05-4", "Footprint": "Package_TO_SOT_SMD:SOT-23-6", "Datasheet": "http://www.onsemi.com/pub/Collateral/SRV05-4-D.PDF", "Description": "", "LCSC": "C85364"}, "at": ["at", "67.945", "40.64", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Power_Protection:SRV05-4"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006003eb6f"]}
+INSTANCE {"props": {"Reference": "R14", "Value": "100k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25741"}, "at": ["at", "110.49", "59.69", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006004a8a7"]}
+INSTANCE {"props": {"Reference": "R13", "Value": "100k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25741"}, "at": ["at", "100.33", "82.55", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006004da34"]}
+INSTANCE {"props": {"Reference": "R11", "Value": "100k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25741"}, "at": ["at", "93.98", "72.39", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006004ebce"]}
+INSTANCE {"props": {"Reference": "R10", "Value": "100k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25741"}, "at": ["at", "93.98", "67.31", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006004f419"]}
+INSTANCE {"props": {"Reference": "R7", "Value": "10k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17414"}, "at": ["at", "43.815", "67.31", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006009dd54"]}
+INSTANCE {"props": {"Reference": "R8", "Value": "10k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17414"}, "at": ["at", "43.815", "72.39", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000600a0780"]}
+INSTANCE {"props": {"Reference": "R12", "Value": "10k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25744"}, "at": ["at", "95.25", "133.985", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000600de66a"]}
+INSTANCE {"props": {"Reference": "R15", "Value": "68k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C36871"}, "at": ["at", "111.76", "140.335", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000600df2ee"]}
+INSTANCE {"props": {"Reference": "R17", "Value": "10k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25744"}, "at": ["at", "147.955", "136.525", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000600f5040"]}
+INSTANCE {"props": {"Reference": "R18", "Value": "10k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25744"}, "at": ["at", "164.465", "136.525", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000600f8206"]}
+INSTANCE {"props": {"Reference": "R23", "Value": "10k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25744"}, "at": ["at", "221.615", "149.86", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060151f59"]}
+INSTANCE {"props": {"Reference": "R22", "Value": "10k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25744"}, "at": ["at", "221.615", "139.7", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006015342d"]}
+INSTANCE {"props": {"Reference": "C8", "Value": "100n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C1525"}, "at": ["at", "101.6", "140.335", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006016bde4"]}
+INSTANCE {"props": {"Reference": "C14", "Value": "100n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C1525"}, "at": ["at", "211.455", "149.86", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060172dab"]}
+INSTANCE {"props": {"Reference": "R16", "Value": "10", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25077"}, "at": ["at", "125.095", "148.59", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601d6acb"]}
+INSTANCE {"props": {"Reference": "C10", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "130.81", "154.305", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601d70cc"]}
+INSTANCE {"props": {"Reference": "C6", "Value": "1n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C1523"}, "at": ["at", "72.39", "69.85", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C_Small"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601e5556"]}
+INSTANCE {"props": {"Reference": "R19", "Value": "10", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25077"}, "at": ["at", "180.975", "146.685", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601f0f6d"]}
+INSTANCE {"props": {"Reference": "C13", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "186.69", "152.4", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601f0f74"]}
+INSTANCE {"props": {"Reference": "R24", "Value": "10", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25077"}, "at": ["at", "257.175", "147.32", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601ff1c9"]}
+INSTANCE {"props": {"Reference": "C20", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "262.89", "153.035", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000601ff1d0"]}
+INSTANCE {"props": {"Reference": "C22", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "271.145", "153.035", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060210e23"]}
+INSTANCE {"props": {"Reference": "C9", "Value": "100n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C1525"}, "at": ["at", "104.14", "88.9", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060259ae1"]}
+INSTANCE {"props": {"Reference": "U5", "Value": "74HC02", "Footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/gpn/sn74hc02", "Description": "", "LCSC": "C5588"}, "at": ["at", "201.93", "64.77", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "74xx:74HC02"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000602739cf"]}
+INSTANCE {"props": {"Reference": "U5", "Value": "74HC02", "Footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/gpn/sn74hc02", "Description": "", "LCSC": "C5588"}, "at": ["at", "201.93", "76.2", "0"], "unit": ["unit", "2"], "lib_id": ["lib_id", "74xx:74HC02"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060275633"]}
+INSTANCE {"props": {"Reference": "U5", "Value": "74HC02", "Footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/gpn/sn74hc02", "Description": "", "LCSC": "C5588"}, "at": ["at", "109.22", "26.67", "0"], "unit": ["unit", "3"], "lib_id": ["lib_id", "74xx:74HC02"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006027697b"]}
+INSTANCE {"props": {"Reference": "U5", "Value": "74HC02", "Footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/gpn/sn74hc02", "Description": "", "LCSC": "C5588"}, "at": ["at", "109.22", "38.1", "0"], "unit": ["unit", "4"], "lib_id": ["lib_id", "74xx:74HC02"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060277de5"]}
+INSTANCE {"props": {"Reference": "U5", "Value": "74HC02", "Footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "Datasheet": "http://www.ti.com/lit/gpn/sn74hc02", "Description": "", "LCSC": "C5588"}, "at": ["at", "229.235", "33.02", "0"], "unit": ["unit", "5"], "lib_id": ["lib_id", "74xx:74HC02"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-000060278f7a"]}
+INSTANCE {"props": {"Reference": "C16", "Value": "10n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C15195"}, "at": ["at", "236.22", "83.82", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000602bf9f0"]}
+INSTANCE {"props": {"Reference": "C18", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "246.38", "83.82", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000602d4c2d"]}
+INSTANCE {"props": {"Reference": "R9", "Value": "12k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25752"}, "at": ["at", "81.915", "133.985", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000602f8c0d"]}
+INSTANCE {"props": {"Reference": "C7", "Value": "470n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C47339"}, "at": ["at", "88.265", "140.335", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000602fa660"]}
+INSTANCE {"props": {"Reference": "C15", "Value": "10n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C15195"}, "at": ["at", "236.22", "63.5", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006034f725"]}
+INSTANCE {"props": {"Reference": "C17", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "246.38", "63.5", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006034f738"]}
+INSTANCE {"props": {"Reference": "C19", "Value": "10n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C15195"}, "at": ["at", "259.715", "74.295", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000603ae051"]}
+INSTANCE {"props": {"Reference": "C21", "Value": "1u", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C52923"}, "at": ["at", "269.875", "74.295", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000603ae064"]}
+INSTANCE {"props": {"Reference": "D1", "Value": "LED", "Footprint": "LED_SMD:LED_0603_1608Metric", "Datasheet": "~", "Description": "", "LCSC": "C72043"}, "at": ["at", "28.575", "125.095", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:LED"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-00006049e030"]}
+INSTANCE {"props": {"Reference": "R6", "Value": "2.2k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C25879"}, "at": ["at", "28.575", "132.715", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "00000000-0000-0000-0000-0000604a8c15"]}
+
+FILE /candidate/project/IGBT outputs.kicad_sch
+LIB Device:Q_NIGBT_GCE {"Reference": "Q", "Value": "Q_NIGBT_GCE", "Footprint": "", "Datasheet": "~", "Description": "N-IGBT transistor, gate/collector/emitter", "ki_keywords": "transistor IGBT N-IGBT"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'G', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'C', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'E', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB GND_1 {"Reference": "#PWR", "Value": "GND_1", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+INSTANCE {"props": {"Reference": "Q4", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "181.61", "134.62", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "1af8a3a1-cfb1-4c1a-bc54-340342346b95"]}
+INSTANCE {"props": {"Reference": "Q6", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "222.25", "76.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "43a969d5-5600-4d23-89ad-1bfe2c248147"]}
+INSTANCE {"props": {"Reference": "Q1", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "181.61", "46.99", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "4d34a616-8b50-4b0f-bd0b-6eca7ba4f6c0"]}
+INSTANCE {"props": {"Reference": "Q3", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "181.61", "105.41", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "754ccf00-12d0-4254-8356-483653ef7b4b"]}
+INSTANCE {"props": {"Reference": "Q2", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "181.61", "76.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "86ee67f4-88a9-41db-80f5-0fa08942b999"]}
+INSTANCE {"props": {"Reference": "Q7", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "222.25", "105.41", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "be2d050e-0e53-415c-a101-0c211f2802e7"]}
+INSTANCE {"props": {"Reference": "Q5", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "222.25", "46.99", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "d8867dbc-cc39-4073-bbaf-dc651bf7c15c"]}
+INSTANCE {"props": {"Reference": "Q8", "Value": "FGD3040G2-F085", "Footprint": "Package_TO_SOT_SMD:TO-252-2", "Datasheet": "~", "Description": "", "LCSC": "C606124"}, "at": ["at", "222.25", "134.62", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Q_NIGBT_GCE"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f0ca8d60-f489-4c4d-a015-4ef08df0ba5f"]}
+
+FILE /candidate/project/VR conditioner.kicad_sch
+LIB Device:C {"Reference": "C", "Value": "C", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor", "ki_keywords": "cap capacitor", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R {"Reference": "R", "Value": "R", "Footprint": "", "Datasheet": "~", "Description": "Resistor", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB GND_1 {"Reference": "#PWR", "Value": "GND_1", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Jumper:Jumper_3_Bridged12 {"Reference": "JP", "Value": "Jumper_3_Bridged12", "Footprint": "", "Datasheet": "~", "Description": "Jumper, 3-pole, pins 1+2 closed/bridged", "ki_keywords": "Jumper SPDT", "ki_fp_filters": "Jumper* TestPoint*3Pads* TestPoint*Bridge*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'C', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'B', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:DNP {"Reference": "R8", "Value": "DNP", "Footprint": "Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder", "Datasheet": "~", "Description": "Resistor", "LCSC": "DNP", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:MAX9924 {"Reference": "U3", "Value": "MAX9924", "Footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm", "Datasheet": "~", "Description": "", "LCSC": "N/A"}
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IN-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IN+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'BIAS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'INT_THRS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VCC', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'EXT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'COUT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ZERO_EN', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+3.3V {"Reference": "#PWR", "Value": "+3.3V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+3.3V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+3.3V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+5V {"Reference": "#PWR", "Value": "+5V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+5V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:PWR_FLAG {"Reference": "#FLG", "Value": "PWR_FLAG", "Footprint": "", "Datasheet": "~", "Description": "Special symbol for telling ERC where power comes from", "ki_keywords": "power-flag"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'pwr', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+INSTANCE {"props": {"Reference": "R25", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "103.505", "80.01", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "10c0a7f9-ef7c-4d3a-a58a-6561a231d48a"]}
+INSTANCE {"props": {"Reference": "C23", "Value": "1n", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C46653"}, "at": ["at", "118.11", "85.09", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "2a9a27cc-9173-448c-b423-1215ecbd5d18"]}
+INSTANCE {"props": {"Reference": "JP1", "Value": "Jumper_3_Bridged12", "Footprint": "Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm", "Datasheet": "~", "Description": "", "LCSC": "N/A"}, "at": ["at", "173.355", "100.33", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Jumper:Jumper_3_Bridged12"], "dnp": ["dnp", "no"], "uuid": ["uuid", "38c8f4bf-7da4-4ddf-9b99-e5b84c691b4b"]}
+INSTANCE {"props": {"Reference": "R28", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "113.03", "90.17", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "41badf65-56f7-4a0e-bfd3-938f5b249e14"]}
+INSTANCE {"props": {"Reference": "R29", "Value": "~", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "603-RC0402FR-075KL", "LCSC": ""}, "at": ["at", "125.73", "85.09", "180"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "53d394fd-9fda-4789-b6b3-9add904107e8"]}
+INSTANCE {"props": {"Reference": "R32", "Value": "DNP", "Footprint": "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder", "Datasheet": "~", "Description": "", "LCSC": "DNP"}, "at": ["at", "140.335", "114.3", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:DNP"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "5af0d30c-6014-45c7-904e-dd48543056b3"]}
+INSTANCE {"props": {"Reference": "U10", "Value": "MAX9924", "Footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm", "Datasheet": "~", "Description": "", "LCSC": "C143633"}, "at": ["at", "149.86", "90.17", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:MAX9924"], "dnp": ["dnp", "no"], "uuid": ["uuid", "6dbe779f-d3cd-46eb-99fd-d5b87360b1a3"]}
+INSTANCE {"props": {"Reference": "R30", "Value": "1k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17513"}, "at": ["at", "127", "97.79", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "7248cc0b-aae8-4a54-99a3-4f72b0a7d417"]}
+INSTANCE {"props": {"Reference": "R34", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17673"}, "at": ["at", "165.735", "79.375", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "72db721e-8911-4fbb-8abe-fbbee1eb64f8"]}
+INSTANCE {"props": {"Reference": "C24", "Value": "1u", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C28323"}, "at": ["at", "127", "109.855", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9a6a20f5-1c8c-43fa-8f38-9a63724b68b0"]}
+INSTANCE {"props": {"Reference": "C25", "Value": "100n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C1525"}, "at": ["at", "188.595", "103.505", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9b452c04-b66d-44e8-946e-d7e47e3cb8f3"]}
+INSTANCE {"props": {"Reference": "R26", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "103.505", "90.17", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "efec2684-bda9-44f3-b5ae-c9b9e49f5840"]}
+INSTANCE {"props": {"Reference": "R31", "Value": "1k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17513"}, "at": ["at", "127", "103.505", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f4e05eaf-2936-4821-b45d-448728167abd"]}
+INSTANCE {"props": {"Reference": "R27", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "113.03", "80.01", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f78175f2-f0d8-4ae9-acf5-08aa7d9a1775"]}
+INSTANCE {"props": {"Reference": "R33", "Value": "DNP", "Footprint": "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder", "Datasheet": "~", "Description": "", "LCSC": "DNP"}, "at": ["at", "156.21", "114.3", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:DNP"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "fc2b106d-3a0a-423b-936f-266418c3661b"]}
+
+FILE /candidate/project/Lowside Adder.kicad_sch
+LIB Device:D_Schottky {"Reference": "D", "Value": "D_Schottky", "Footprint": "", "Datasheet": "~", "Description": "Schottky diode", "ki_keywords": "diode Schottky", "ki_fp_filters": "TO-???* *_Diode_* *SingleDiode* D_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'K', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R_Pack04 {"Reference": "RN", "Value": "R_Pack04", "Footprint": "", "Datasheet": "~", "Description": "4 resistor network, parallel topology", "ki_keywords": "R network parallel topology isolated", "ki_fp_filters": "DIP* SOIC* R*Array*Concave* R*Array*Convex*"}
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R1.2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R1.1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R2.2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R2.1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R3.2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R3.1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R4.2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'R4.1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:VNL5090 {"Reference": "U22", "Value": "VNL5090", "Footprint": "Package_TO_SOT_SMD:SOT-223", "Datasheet": "", "Description": ""}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Input', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Drain', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Source', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Drain', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+LIB power:GND {"Reference": "#PWR", "Value": "GND", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "power-flag"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+INSTANCE {"props": {"Reference": "U12", "Value": "VNL5090", "Footprint": "Package_TO_SOT_SMD:SOT-223", "Datasheet": "", "Description": "", "LCSC": "C2680415"}, "at": ["at", "135.89", "65.405", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:VNL5090"], "dnp": ["dnp", "no"], "uuid": ["uuid", "06f4ef43-fcd4-4582-bad0-3459bf0aed5c"]}
+INSTANCE {"props": {"Reference": "U14", "Value": "VNL5090", "Footprint": "Package_TO_SOT_SMD:SOT-223", "Datasheet": "", "Description": "", "LCSC": "C2680415"}, "at": ["at", "137.16", "92.71", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:VNL5090"], "dnp": ["dnp", "no"], "uuid": ["uuid", "0d9d19ce-21f0-4386-a9a0-1b98db7f8f7c"]}
+INSTANCE {"props": {"Reference": "D3", "Value": "D_Schottky", "Footprint": "Diode_SMD:D_SMA", "Datasheet": "~", "Description": "", "LCSC": "C8678"}, "at": ["at", "157.48", "62.865", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:D_Schottky"], "dnp": ["dnp", "no"], "uuid": ["uuid", "558658e2-3a88-4983-be3b-a14a8e661c5d"]}
+INSTANCE {"props": {"Reference": "D5", "Value": "D_Schottky", "Footprint": "Diode_SMD:D_SMA", "Datasheet": "~", "Description": "", "LCSC": "C8678"}, "at": ["at", "157.48", "104.775", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:D_Schottky"], "dnp": ["dnp", "no"], "uuid": ["uuid", "7503833b-d8e3-49c7-b26c-2a98822a6dbf"]}
+INSTANCE {"props": {"Reference": "D4", "Value": "D_Schottky", "Footprint": "Diode_SMD:D_SMA", "Datasheet": "~", "Description": "", "LCSC": "C8678"}, "at": ["at", "157.48", "90.17", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:D_Schottky"], "dnp": ["dnp", "no"], "uuid": ["uuid", "87d4dfac-2c31-41d3-a466-6ad6ddb7d074"]}
+INSTANCE {"props": {"Reference": "RN2", "Value": "1k", "Footprint": "Resistor_SMD:R_Array_Convex_4x0603", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C20197"}, "at": ["at", "109.22", "83.82", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R_Pack04"], "dnp": ["dnp", "no"], "uuid": ["uuid", "b4313fa9-a0a5-4c08-a5bd-5c669af43466"]}
+INSTANCE {"props": {"Reference": "U11", "Value": "VNL5090", "Footprint": "Package_TO_SOT_SMD:SOT-223", "Datasheet": "", "Description": "", "LCSC": "C2680415"}, "at": ["at", "134.62", "50.8", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:VNL5090"], "dnp": ["dnp", "no"], "uuid": ["uuid", "b98b6da9-4c0e-431f-88ce-a5e4e12b2217"]}
+INSTANCE {"props": {"Reference": "D2", "Value": "D_Schottky", "Footprint": "Diode_SMD:D_SMA", "Datasheet": "~", "Description": "", "LCSC": "C8678"}, "at": ["at", "157.48", "48.26", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:D_Schottky"], "dnp": ["dnp", "no"], "uuid": ["uuid", "c078c5b3-1cc9-4743-9d37-6bc13fed96f3"]}
+INSTANCE {"props": {"Reference": "U13", "Value": "VNL5090", "Footprint": "Package_TO_SOT_SMD:SOT-223", "Datasheet": "", "Description": "", "LCSC": "C2680415"}, "at": ["at", "136.525", "107.315", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:VNL5090"], "dnp": ["dnp", "no"], "uuid": ["uuid", "c46d4d24-31af-45df-bde2-b86b9dd6d6f8"]}
+INSTANCE {"props": {"Reference": "RN1", "Value": "1k", "Footprint": "Resistor_SMD:R_Array_Convex_4x0603", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C20197"}, "at": ["at", "99.06", "96.52", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R_Pack04"], "dnp": ["dnp", "no"], "uuid": ["uuid", "c860c880-0e23-4479-9ab6-1a76d2d8fd65"]}
+
+FILE /candidate/project/triggers.kicad_sch
+LIB Device:C {"Reference": "C", "Value": "C", "Footprint": "", "Datasheet": "~", "ki_keywords": "cap capacitor", "ki_description": "Unpolarized capacitor", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R {"Reference": "R", "Value": "R", "Footprint": "", "Datasheet": "~", "ki_keywords": "R res resistor", "ki_description": "Resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Jumper:Jumper_3_Bridged12 {"Reference": "JP", "Value": "Jumper_3_Bridged12", "Footprint": "", "Datasheet": "~", "ki_keywords": "Jumper SPDT", "ki_description": "Jumper, 3-pole, pins 1+2 closed/bridged", "ki_fp_filters": "Jumper* TestPoint*3Pads* TestPoint*Bridge*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'C', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'B', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:DNP {"Reference": "R8", "Value": "DNP", "Footprint": "Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder", "Datasheet": "~", "LCSC": "DNP", "ki_keywords": "R res resistor", "ki_description": "Resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:MAX9924 {"Reference": "U3", "Value": "MAX9924", "Footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm", "Datasheet": "~", "LCSC": "N/A"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IN+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VCC', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IN-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'BIAS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ZERO_EN', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'COUT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'EXT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'INT_THRS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+LIB power:GND {"Reference": "#PWR", "Value": "GND", "Footprint": "", "Datasheet": "", "ki_keywords": "power-flag", "ki_description": "Power symbol creates a global label with name \"GND\" , ground"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:PWR_FLAG {"Reference": "#FLG", "Value": "PWR_FLAG", "Footprint": "", "Datasheet": "~", "ki_keywords": "power-flag", "ki_description": "Special symbol for telling ERC where power comes from"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'pwr', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+INSTANCE {"props": {"Reference": "R2", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "PN": "", "LCSC": "C17673", "LCSC_ext": "0"}, "at": ["at", "108.585", "85.09", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "0bd3ae06-c7a4-4c40-ac96-165de2196200"]}
+INSTANCE {"props": {"Reference": "C2", "Value": "1u", "Footprint": "Capacitor_SMD:C_0603_1608Metric", "Datasheet": "~", "LCSC": "C15849", "LCSC_ext": "0"}, "at": ["at", "132.2845", "106.7956", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": [], "uuid": ["uuid", "2c8e825d-6b3d-41c0-a78b-d002906b71c4"]}
+INSTANCE {"props": {"Reference": "JP1", "Value": "Jumper_3_Bridged12", "Footprint": "Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm", "Datasheet": "~", "LCSC": "N/A"}, "at": ["at", "178.435", "95.25", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Jumper:Jumper_3_Bridged12"], "dnp": [], "uuid": ["uuid", "667e58fd-638b-48d8-8590-5f335cf78584"]}
+INSTANCE {"props": {"Reference": "R1", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "PN": "", "LCSC": "C17673", "LCSC_ext": "0"}, "at": ["at", "108.585", "74.93", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "68ba3686-54f3-42b1-847b-d7576a207bac"]}
+INSTANCE {"props": {"Reference": "R7", "Value": "1k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "LCSC": "C11702", "LCSC_ext": "0"}, "at": ["at", "132.08", "100.8213", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "6c347053-8fc9-4fd0-999a-80cd1d05ea04"]}
+INSTANCE {"props": {"Reference": "R8", "Value": "DNP", "Footprint": "Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder", "Datasheet": "~", "LCSC": "DNP"}, "at": ["at", "145.415", "109.22", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:DNP"], "dnp": [], "uuid": ["uuid", "721b1f22-9dad-4fec-aa7e-f78787746a2d"]}
+INSTANCE {"props": {"Reference": "R3", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "PN": "", "LCSC": "C17673", "LCSC_ext": "0"}, "at": ["at", "118.11", "74.93", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "742a7ad1-ff35-45ea-8556-9feb2169b805"]}
+INSTANCE {"props": {"Reference": "R10", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "LCSC": "C17673", "LCSC_ext": "0"}, "at": ["at", "170.815", "74.295", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "8ad0abdd-510b-4c4f-a57a-6c5afce9c440"]}
+INSTANCE {"props": {"Reference": "C1", "Value": "1n", "Footprint": "Capacitor_SMD:C_0603_1608Metric", "Datasheet": "~", "LCSC": "C1588", "LCSC_ext": "0"}, "at": ["at", "123.19", "80.01", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": [], "uuid": ["uuid", "a4e22a47-8081-427b-a284-fdb057c6b905"]}
+INSTANCE {"props": {"Reference": "U3", "Value": "MAX9924", "Footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm", "Datasheet": "~", "LCSC": "N/A"}, "at": ["at", "154.94", "85.09", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:MAX9924"], "dnp": [], "uuid": ["uuid", "a97e3852-3c1c-4464-84aa-d5b041acfe72"]}
+INSTANCE {"props": {"Reference": "R6", "Value": "1k", "Footprint": "Resistor_SMD:R_0402_1005Metric", "Datasheet": "~", "LCSC": "C11702", "LCSC_ext": "0"}, "at": ["at", "132.08", "92.71", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "ad412018-57e9-4c1a-8093-eaaacdcc98d0"]}
+INSTANCE {"props": {"Reference": "C3", "Value": "100n", "Footprint": "Capacitor_SMD:C_0603_1608Metric", "Datasheet": "~", "LCSC": "C14663", "LCSC_ext": "0"}, "at": ["at", "193.675", "98.425", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": [], "uuid": ["uuid", "bca65c75-129f-4eae-b34d-c5596dd8827c"]}
+INSTANCE {"props": {"Reference": "R9", "Value": "DNP", "Footprint": "Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder", "Datasheet": "~", "LCSC": "DNP"}, "at": ["at", "161.29", "109.22", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:DNP"], "dnp": [], "uuid": ["uuid", "c06812c5-3b15-4311-991a-17fa7eaf1d24"]}
+INSTANCE {"props": {"Reference": "R4", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "PN": "", "LCSC": "C17673", "LCSC_ext": "0"}, "at": ["at", "118.11", "85.09", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "c31973ca-eb40-463b-8989-2eb6cc34d55e"]}
+INSTANCE {"props": {"Reference": "R5", "Value": "DNP", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "PN": "603-RC0402FR-075KL", "LCSC": "DNP"}, "at": ["at", "130.81", "80.01", "180"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": [], "uuid": ["uuid", "e2f7ba55-1651-4c65-bbe8-376975555f56"]}
+
+FILE /candidate/project/VR Conditioner.kicad_sch
+LIB Device:C {"Reference": "C", "Value": "C", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor", "ki_keywords": "cap capacitor", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R {"Reference": "R", "Value": "R", "Footprint": "", "Datasheet": "~", "Description": "Resistor", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB GND_1 {"Reference": "#PWR", "Value": "GND_1", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Jumper:Jumper_3_Bridged12 {"Reference": "JP", "Value": "Jumper_3_Bridged12", "Footprint": "", "Datasheet": "~", "Description": "Jumper, 3-pole, pins 1+2 closed/bridged", "ki_keywords": "Jumper SPDT", "ki_fp_filters": "Jumper* TestPoint*3Pads* TestPoint*Bridge*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'C', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'B', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:DNP {"Reference": "R8", "Value": "DNP", "Footprint": "Simon:R_0805_2012Metric_Pad1.15x1.40mm_HandSolder", "Datasheet": "~", "Description": "Resistor", "LCSC": "DNP", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Simon:MAX9924 {"Reference": "U3", "Value": "MAX9924", "Footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm", "Datasheet": "~", "Description": "", "LCSC": "N/A"}
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IN-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IN+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'BIAS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'INT_THRS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VCC', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'EXT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'COUT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ZERO_EN', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+3.3V {"Reference": "#PWR", "Value": "+3.3V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+3.3V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+3.3V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+5V {"Reference": "#PWR", "Value": "+5V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+5V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:PWR_FLAG {"Reference": "#FLG", "Value": "PWR_FLAG", "Footprint": "", "Datasheet": "~", "Description": "Special symbol for telling ERC where power comes from", "ki_keywords": "power-flag"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'pwr', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+INSTANCE {"props": {"Reference": "R25", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "103.505", "80.01", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "10c0a7f9-ef7c-4d3a-a58a-6561a231d48a"]}
+INSTANCE {"props": {"Reference": "C23", "Value": "1n", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C46653"}, "at": ["at", "118.11", "85.09", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "2a9a27cc-9173-448c-b423-1215ecbd5d18"]}
+INSTANCE {"props": {"Reference": "JP1", "Value": "Jumper_3_Bridged12", "Footprint": "Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm", "Datasheet": "~", "Description": "", "LCSC": "N/A"}, "at": ["at", "173.355", "100.33", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Jumper:Jumper_3_Bridged12"], "dnp": ["dnp", "no"], "uuid": ["uuid", "38c8f4bf-7da4-4ddf-9b99-e5b84c691b4b"]}
+INSTANCE {"props": {"Reference": "R28", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "113.03", "90.17", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "41badf65-56f7-4a0e-bfd3-938f5b249e14"]}
+INSTANCE {"props": {"Reference": "R29", "Value": "~", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "603-RC0402FR-075KL", "LCSC": ""}, "at": ["at", "125.73", "85.09", "180"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "53d394fd-9fda-4789-b6b3-9add904107e8"]}
+INSTANCE {"props": {"Reference": "R32", "Value": "DNP", "Footprint": "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder", "Datasheet": "~", "Description": "", "LCSC": "DNP"}, "at": ["at", "140.335", "114.3", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:DNP"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "5af0d30c-6014-45c7-904e-dd48543056b3"]}
+INSTANCE {"props": {"Reference": "U10", "Value": "MAX9924", "Footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm", "Datasheet": "~", "Description": "", "LCSC": "C143633"}, "at": ["at", "149.86", "90.17", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:MAX9924"], "dnp": ["dnp", "no"], "uuid": ["uuid", "6dbe779f-d3cd-46eb-99fd-d5b87360b1a3"]}
+INSTANCE {"props": {"Reference": "R30", "Value": "1k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17513"}, "at": ["at", "127", "97.79", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "7248cc0b-aae8-4a54-99a3-4f72b0a7d417"]}
+INSTANCE {"props": {"Reference": "R34", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17673"}, "at": ["at", "165.735", "79.375", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "72db721e-8911-4fbb-8abe-fbbee1eb64f8"]}
+INSTANCE {"props": {"Reference": "C24", "Value": "1u", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C28323"}, "at": ["at", "127", "109.855", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9a6a20f5-1c8c-43fa-8f38-9a63724b68b0"]}
+INSTANCE {"props": {"Reference": "C25", "Value": "100n", "Footprint": "Capacitor_SMD:C_0402_1005Metric", "Datasheet": "~", "Description": "", "LCSC": "C1525"}, "at": ["at", "188.595", "103.505", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9b452c04-b66d-44e8-946e-d7e47e3cb8f3"]}
+INSTANCE {"props": {"Reference": "R26", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "103.505", "90.17", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "efec2684-bda9-44f3-b5ae-c9b9e49f5840"]}
+INSTANCE {"props": {"Reference": "R31", "Value": "1k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17513"}, "at": ["at", "127", "103.505", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f4e05eaf-2936-4821-b45d-448728167abd"]}
+INSTANCE {"props": {"Reference": "R27", "Value": "4.7k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C17673"}, "at": ["at", "113.03", "80.01", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f78175f2-f0d8-4ae9-acf5-08aa7d9a1775"]}
+INSTANCE {"props": {"Reference": "R33", "Value": "DNP", "Footprint": "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder", "Datasheet": "~", "Description": "", "LCSC": "DNP"}, "at": ["at", "156.21", "114.3", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:DNP"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "fc2b106d-3a0a-423b-936f-266418c3661b"]}
+
+FILE /candidate/project/etb-9201.kicad_sch
+LIB Device:C {"Reference": "C", "Value": "C", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor", "ki_keywords": "cap capacitor", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:C_Small {"Reference": "C", "Value": "C_Small", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor, small symbol", "ki_keywords": "capacitor cap", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R {"Reference": "R", "Value": "R", "Footprint": "", "Datasheet": "~", "Description": "Resistor", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB GND_1 {"Reference": "#PWR", "Value": "GND_1", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Simon:TLE9201SG {"Reference": "U11", "Value": "TLE9201SG", "Footprint": "Package_SO:Infineon_PG-DSO-12-9", "Datasheet": "~", "Description": "", "PN": "TLE9201SG", "LCSC": "C112633", "LCSC_ext": "1", "possible_not_ext": "1"}
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'DIS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'DIR', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'PWM', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'OUT1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'OUT2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CSN', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'SCK', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'SI', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'SO', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VSO', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+3.3V {"Reference": "#PWR", "Value": "+3.3V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+3.3V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+3.3V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+INSTANCE {"props": {"Reference": "R5", "Value": "10k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C17414"}, "at": ["at", "68.58", "57.15", "270"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "no"], "uuid": ["uuid", "071e2b04-e17c-4bae-b0c3-d4fe93f9dc55"]}
+INSTANCE {"props": {"Reference": "U3", "Value": "TLE9201SG", "Footprint": "Package_SO:Infineon_PG-DSO-12-9", "Datasheet": "~", "Description": "", "PN": "TLE9201SG", "LCSC": "C112633"}, "at": ["at", "97.79", "63.5", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:TLE9201SG"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9c0d3c25-1a80-422c-b6eb-7501db48431e"]}
+INSTANCE {"props": {"Reference": "C5", "Value": "10n", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C1710"}, "at": ["at", "114.3", "60.325", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C_Small"], "dnp": ["dnp", "no"], "uuid": ["uuid", "ec3437bf-f5cf-482d-8ab3-c76bcdee83cf"]}
+INSTANCE {"props": {"Reference": "C3", "Value": "10u", "Footprint": "Capacitor_SMD:C_1206_3216Metric", "Datasheet": "~", "Description": "", "LCSC": "C13585"}, "at": ["at", "80.645", "46.99", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f24afa40-97ba-4ecd-beec-81539bdccf6b"]}
+INSTANCE {"props": {"Reference": "C4", "Value": "10n", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "PN": "", "LCSC": "C1710"}, "at": ["at", "114.3", "48.895", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C_Small"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f3e7397a-0e68-4a6a-af63-613c1a9bac37"]}
+
+FILE /candidate/project/wbo-can-trans.kicad_sch
+LIB Device:C {"Reference": "C", "Value": "C", "Footprint": "", "Datasheet": "~", "Description": "Unpolarized capacitor", "ki_keywords": "cap capacitor", "ki_fp_filters": "C_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:R {"Reference": "R", "Value": "R", "Footprint": "", "Datasheet": "~", "Description": "Resistor", "ki_keywords": "R res resistor", "ki_fp_filters": "R_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB GND_1 {"Reference": "#PWR", "Value": "GND_1", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Interface_CAN_LIN:TJA1051T-3 {"Reference": "U", "Value": "TJA1051T-3", "Footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "Datasheet": "http://www.nxp.com/documents/data_sheet/TJA1051.pdf", "Description": "High-Speed CAN Transceiver, separate VIO, silent mode, SOIC-8", "ki_keywords": "High-Speed CAN Transceiver", "ki_fp_filters": "SOIC*3.9x4.9mm*P1.27mm*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'TXD', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'RXD', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VIO', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'S', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VCC', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CANH', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CANL', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+LIB Power_Protection:NUP2105L {"Reference": "D", "Value": "NUP2105L", "Footprint": "Package_TO_SOT_SMD:SOT-23", "Datasheet": "http://www.onsemi.com/pub_link/Collateral/NUP2105L-D.PDF", "Description": "Dual Line CAN Bus Protector, 24Vrwm", "ki_keywords": "can esd protection suppression transient", "ki_fp_filters": "SOT?23*"}
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'K', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'K', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB power:+3.3V {"Reference": "#PWR", "Value": "+3.3V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+3.3V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+3.3V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+5V {"Reference": "#PWR", "Value": "+5V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+5V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+INSTANCE {"props": {"Reference": "D10", "Value": "NUP2105L", "Footprint": "Package_TO_SOT_SMD:SOT-23", "Datasheet": "http://www.onsemi.com/pub_link/Collateral/NUP2105L-D.PDF", "Description": "", "LCSC": "C284104"}, "at": ["at", "146.05", "96.52", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Power_Protection:NUP2105L"], "dnp": ["dnp", "no"], "uuid": ["uuid", "46d8e19f-3930-40b6-8592-f13dd41f9f03"]}
+INSTANCE {"props": {"Reference": "C29", "Value": "47p", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C14857"}, "at": ["at", "105.41", "77.47", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "561746ec-ae44-4f7a-824d-7bd049705475"]}
+INSTANCE {"props": {"Reference": "C30", "Value": "47p", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C14857"}, "at": ["at", "105.41", "95.25", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "862ad107-80de-43a5-ba67-43adf9ba44b5"]}
+INSTANCE {"props": {"Reference": "C31", "Value": "100n", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C49678"}, "at": ["at", "190.5", "93.98", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9657bd09-8d96-4ffd-ab66-6aa0bd94b65a"]}
+INSTANCE {"props": {"Reference": "C32", "Value": "100n", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "~", "Description": "", "LCSC": "C49678"}, "at": ["at", "200.66", "93.98", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:C"], "dnp": ["dnp", "no"], "uuid": ["uuid", "ae193398-d6f8-4f2c-b867-defd67dfa1b1"]}
+INSTANCE {"props": {"Reference": "U20", "Value": "TJA1051T-3", "Footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", "Datasheet": "http://www.nxp.com/documents/data_sheet/TJA1051.pdf", "Description": "", "LCSC": "C38695"}, "at": ["at", "166.37", "86.36", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Interface_CAN_LIN:TJA1051T-3"], "dnp": ["dnp", "no"], "uuid": ["uuid", "c4205836-eff2-46d6-b108-1f9b8c1de0f7"]}
+INSTANCE {"props": {"Reference": "R36", "Value": "120", "Footprint": "Resistor_SMD:R_1206_3216Metric", "Datasheet": "~", "Description": "", "LCSC": "C176250"}, "at": ["at", "115.57", "86.36", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:R"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "d69380f9-5487-4782-9ce9-0690df62e543"]}
+
+FILE /candidate/project/Polygonus-Universal-Base.kicad_sch
+LIB Connector:Conn_01x05_Male {"Reference": "J", "Value": "Conn_01x05_Male", "Footprint": "", "Datasheet": "~", "Description": "Generic connector, single row, 01x05, script generated (kicad-library-utils/schlib/autogen/connector/)", "ki_keywords": "connector", "ki_fp_filters": "Connector*:*_1x??_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_3', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_4', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_5', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Connector_Generic:Conn_01x07 {"Reference": "J", "Value": "Conn_01x07", "Footprint": "", "Datasheet": "~", "Description": "Generic connector, single row, 01x07, script generated (kicad-library-utils/schlib/autogen/connector/)", "ki_keywords": "connector", "ki_fp_filters": "Connector*:*_1x??_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_3', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_4', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_5', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_6', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_7', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:CP {"Reference": "C", "Value": "Device_CP", "Footprint": "", "Datasheet": "", "Description": "", "ki_fp_filters": "CP_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Device:Fuse {"Reference": "F", "Value": "Fuse", "Footprint": "", "Datasheet": "~", "Description": "Fuse", "ki_keywords": "fuse", "ki_fp_filters": "*Fuse*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB Driver_Motor:Pololu_Breakout_DRV8825 {"Reference": "A", "Value": "Pololu_Breakout_DRV8825", "Footprint": "Module:Pololu_Breakout-16_15.2x20.3mm", "Datasheet": "https://www.pololu.com/product/2982", "Description": "Pololu Breakout Board, Stepper Driver DRV8825", "ki_keywords": "Pololu Breakout Board Stepper Driver DRV8825", "ki_fp_filters": "Pololu*Breakout*15.2x20.3mm*"}
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~{FLT}', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~{RST}', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '14', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~{SLP}', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~{EN}', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '15', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'STEP', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '16', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'DIR', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'M0', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'M1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'M2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VMOT', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'A2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'B1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'B2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+LIB GND_1 {"Reference": "#PWR", "Value": "GND_1", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB Mechanical:Fiducial {"Reference": "FID", "Value": "Fiducial", "Footprint": "", "Datasheet": "~", "Description": "Fiducial Marker", "ki_keywords": "fiducial marker", "ki_fp_filters": "Fiducial*"}
+LIB Simon:Molex_112_643330100 {"Reference": "J?", "Value": "Molex_112_643330100", "Footprint": "Miata NC 120 pin", "Datasheet": "", "Description": ""}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '14', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '15', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '16', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '17', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '18', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '19', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '20', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '21', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '22', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '23', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '24', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '25', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '26', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '27', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '28', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '29', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '30', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '31', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '32', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '33', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '34', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '35', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '36', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '37', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '38', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '39', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '40', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '41', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '42', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '43', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '44', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '45', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '46', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '47', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '48', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '49', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '50', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '51', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '52', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '53', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '54', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '55', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '56', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '57', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '58', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '59', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '60', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '61', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '62', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '63', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '64', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '65', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '66', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '67', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '68', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '69', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '70', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '71', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '72', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '73', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '74', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '75', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '76', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '77', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '78', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '79', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '80', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '81', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '82', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '83', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '84', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '85', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '86', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '87', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '88', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '89', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '90', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '91', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '92', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '93', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '94', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '95', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '96', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '97', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '98', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '99', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '100', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '101', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '102', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '103', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '104', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '105', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '106', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '107', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '108', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '109', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '110', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '111', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '112', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '~', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB fome_modules:f042_wideband_module {"Reference": "U", "Value": "f042_wideband_module", "Footprint": "fome_modules:f042_wideband_module", "Datasheet": "", "Description": ""}
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CAN_RX', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CAN_TX', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'SEL_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'SEL_2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VBatt_Sense', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Boot0', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'HEATER-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'HEATER-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LSU_ip', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '14', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LSU_vm', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '15', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LSU_rtrim', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '16', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LSU_un', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'HEAT_GND2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'HEAT_GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB fome_modules:polygonus {"Reference": "M", "Value": "Polygonus ECU Module", "Footprint": "fome_modules:polygonus", "Datasheet": "", "Description": ""}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '12V_MR', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '6', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS3', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '7', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS4', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '8', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS5', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '9', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS6', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '10', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS7', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '11', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'LS8', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '12', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IGN12', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '13', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IGN11', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '14', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'IGN10', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '15', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_15', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '16', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_16', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '17', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_17', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '18', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_18', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '19', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_19', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '20', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_20', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '21', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_21', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '22', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_22', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '23', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_23', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '24', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_24', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '25', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_25', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '26', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_26', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '27', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_27', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '28', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_28', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '29', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_29', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '30', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_30', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '31', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_31', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '32', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '12V_MR', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '33', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '34', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_34', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '35', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_35', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '36', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '5V_SENSOR_2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '37', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '5V_SENSOR_2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '38', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '39', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '40', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '5V_SENSOR_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '41', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '5V_SENSOR_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '42', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_42', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '43', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_43', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '44', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_44', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '45', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_45', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '46', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_46', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '47', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_47', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '48', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_48', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '49', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_49', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '50', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_50', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '51', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_51', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '52', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_52', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '53', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_53', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '54', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_54', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '55', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_55', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '56', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_56', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '57', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_57', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '58', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_58', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '59', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_59', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '60', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_60', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '61', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_61', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '62', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_62', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '63', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Knock_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '64', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Knock_2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '97', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'USB_SHIELD', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '98', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'USB_GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '99', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'USB_D+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '100', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'USB_D-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '101', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'USB_VBUS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '81', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '82', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '3V3', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '83', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ETB1_PWM', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '84', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ETB1_DIS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '85', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ETB1_DIR', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '86', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ETB2_PWM', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '87', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ETB2_DIS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '88', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'ETB2_DIR', ['effects', ['font', ['size', '1.27', '1.27']]]], 'output')
+ pin (['number', '89', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '90', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '12V_IGN', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '91', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '92', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '93', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CAN+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '94', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CAN-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '95', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VR2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '96', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VR1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'input')
+ pin (['number', '65', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_65', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '66', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_66', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '67', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_67', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '68', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_68', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '69', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '70', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '71', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '72', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+ pin (['number', '73', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CAN2+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '74', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'CAN2-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '75', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'RC1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '76', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'RC2', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '77', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_77', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '78', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_78', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '79', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '80', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '', ['effects', ['font', ['size', '1.27', '1.27']]]], 'no_connect')
+ pin (['number', '102', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_102', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '103', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_103', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '104', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_104', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '105', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_105', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '106', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_106', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '107', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_107', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB hellen-one-common:Pad {"Reference": "P", "Value": "Pad", "Footprint": "hellen-one-common:PAD-TH", "Datasheet": "~", "Description": "Generic connector, single row, 01x01, script generated (kicad-library-utils/schlib/autogen/connector/)", "ki_keywords": "connector", "ki_fp_filters": "Connector*:*_1x??_*"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Pin_1', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB hellen-one-common:Res {"Reference": "R", "Value": "Res", "Footprint": "hellen-one-common:R0603", "Datasheet": "", "Description": "Resistor", "LCSC": ""}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+LIB hellen-one-common:USB_B {"Reference": "J", "Value": "USB_B", "Footprint": "hellen-one-common:USB_B", "Datasheet": "~", "Description": "USB Type B connector", "LCSC": "C46392", "ki_keywords": "connector USB", "ki_fp_filters": "USB*"}
+ pin (['number', '5', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'Shield', ['effects', ['font', ['size', '1.27', '1.27']]]], 'passive')
+ pin (['number', '4', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'VBUS', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_out')
+ pin (['number', '3', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'D+', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+ pin (['number', '2', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'D-', ['effects', ['font', ['size', '1.27', '1.27']]]], 'bidirectional')
+LIB power:+3.3V {"Reference": "#PWR", "Value": "+3.3V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+3.3V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+3.3V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:+5V {"Reference": "#PWR", "Value": "+5V", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"+5V\"", "ki_keywords": "global power"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', '+5V', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+LIB power:GND {"Reference": "#PWR", "Value": "GND", "Footprint": "", "Datasheet": "", "Description": "Power symbol creates a global label with name \"GND\" , ground", "ki_keywords": "power-flag"}
+ pin (['number', '1', ['effects', ['font', ['size', '1.27', '1.27']]]], ['name', 'GND', ['effects', ['font', ['size', '1.27', '1.27']]]], 'power_in')
+INSTANCE {"props": {"Reference": "P6", "Value": "Pad", "Footprint": "Simon:PAD-TH", "Datasheet": "~", "Description": ""}, "at": ["at", "91.44", "180.34", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Pad"], "dnp": ["dnp", "no"], "uuid": ["uuid", "07fc043a-6e7c-48f9-b36c-029e28517ba2"]}
+INSTANCE {"props": {"Reference": "J5", "Value": "Conn_01x07", "Footprint": "Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical", "Datasheet": "~", "Description": ""}, "at": ["at", "383.54", "175.26", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Connector_Generic:Conn_01x07"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "088d7194-68aa-439d-9288-f0d2380a6f68"]}
+INSTANCE {"props": {"Reference": "P3", "Value": "Pad", "Footprint": "Simon:PAD-TH", "Datasheet": "~", "Description": ""}, "at": ["at", "92.71", "195.58", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Pad"], "dnp": ["dnp", "no"], "uuid": ["uuid", "294d4dce-d40d-48ea-bf33-b983fcff01a7"]}
+INSTANCE {"props": {"Reference": "R3", "Value": "~", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "", "Description": "", "LCSC": ""}, "at": ["at", "171.45", "189.23", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Res"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "2ae5c0e2-89c9-44b0-9d9d-58442a1d2904"]}
+INSTANCE {"props": {"Reference": "P2", "Value": "Pad", "Footprint": "Simon:PAD-TH", "Datasheet": "~", "Description": ""}, "at": ["at", "99.06", "193.04", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Pad"], "dnp": ["dnp", "no"], "uuid": ["uuid", "2d33d9a4-0aef-4ae7-afda-e5d9e658c6c3"]}
+INSTANCE {"props": {"Reference": "P4", "Value": "Pad", "Footprint": "Simon:PAD-TH", "Datasheet": "~", "Description": ""}, "at": ["at", "92.71", "171.45", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Pad"], "dnp": ["dnp", "no"], "uuid": ["uuid", "3e6ff989-fd0f-4672-819a-39e0f63270d6"]}
+INSTANCE {"props": {"Reference": "C1", "Value": "1u", "Footprint": "Capacitor_SMD:C_0805_2012Metric", "Datasheet": "", "Description": "", "LCSC": "C28323"}, "at": ["at", "171.45", "195.58", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Res"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "3ff6b447-83b5-40bb-9a2b-d85dbc5e6565"]}
+INSTANCE {"props": {"Reference": "J8", "Value": "P1x16", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x16 pin socket", "LCSC": "C350305"}, "at": ["at", "220.98", "213.36", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "4e4ed374-30c5-44a6-9949-ad9f6015442e"]}
+INSTANCE {"props": {"Reference": "J11", "Value": "P1x16", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x16 pin socket", "LCSC": "C350305"}, "at": ["at", "233.68", "213.36", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "53638098-7a39-4afe-8974-99b965ac4099"]}
+INSTANCE {"props": {"Reference": "J10", "Value": "P1x16", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x16 pin socket", "LCSC": "C350305"}, "at": ["at", "233.68", "208.28", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "5564a73f-d2ab-44da-97d7-8a79d8fc8de5"]}
+INSTANCE {"props": {"Reference": "J9", "Value": "P1x16", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x16 pin socket", "LCSC": "C350305"}, "at": ["at", "233.68", "203.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "678cdd2a-d51c-41ff-bf24-356ba28e659a"]}
+INSTANCE {"props": {"Reference": "J1", "Value": "Molex_112_643330100", "Footprint": "Simon:Molex_112_643330100", "Datasheet": "", "Description": "", "LCSC": "C293656"}, "at": ["at", "34.29", "63.5", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Simon:Molex_112_643330100"], "dnp": ["dnp", "no"], "uuid": ["uuid", "6971898b-90b2-4a58-864c-c0217a4177d1"]}
+INSTANCE {"props": {"Reference": "U2", "Value": "f042_wideband_module", "Footprint": "fome_modules:f042_wideband_module", "Datasheet": "", "Description": ""}, "at": ["at", "177.8", "232.41", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "fome_modules:f042_wideband_module"], "dnp": ["dnp", "no"], "uuid": ["uuid", "988855b9-1be7-47c3-9b0f-2ae3aeb35f7c"]}
+INSTANCE {"props": {"Reference": "J12", "Value": "P1x5", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x5 pin socket", "LCSC": "C50950"}, "at": ["at", "252.095", "203.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "9ecc374f-2888-4c92-b645-c03b35fe27b5"]}
+INSTANCE {"props": {"Reference": "J13", "Value": "P1x5", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x5 pin socket", "LCSC": "C50950"}, "at": ["at", "264.795", "203.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "a02954fd-f747-4fe2-83ab-b323939a5614"]}
+INSTANCE {"props": {"Reference": "J6", "Value": "P1x16", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x16 pin socket", "LCSC": "C350305"}, "at": ["at", "220.98", "203.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "a3db4378-645b-4755-8398-bc17db0d2b8e"]}
+INSTANCE {"props": {"Reference": "U1", "Value": "f042_wideband_module", "Footprint": "fome_modules:f042_wideband_module", "Datasheet": "", "Description": ""}, "at": ["at", "114.3", "232.41", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "fome_modules:f042_wideband_module"], "dnp": ["dnp", "no"], "uuid": ["uuid", "b732e223-ab54-42e7-b254-efa3f9f268fb"]}
+INSTANCE {"props": {"Reference": "J2", "Value": "Polygonus ECU Module", "Footprint": "fome_modules:polygonus", "Datasheet": "", "Description": ""}, "at": ["at", "264.16", "146.05", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "fome_modules:polygonus"], "dnp": ["dnp", "no"], "uuid": ["uuid", "b99a210c-6465-4de3-89e9-0e242a93c687"]}
+INSTANCE {"props": {"Reference": "C2", "Value": "56u", "Footprint": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm", "Datasheet": "~", "Description": "", "PN": "EEH-AZF1H560B", "LCSC": "N/A"}, "at": ["at", "186.69", "195.58", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:CP"], "dnp": ["dnp", "no"], "uuid": ["uuid", "bd7dbed2-53d4-417c-9458-85252bdbb186"]}
+INSTANCE {"props": {"Reference": "F1", "Value": "Fuse", "Footprint": "Fuse:Fuseholder_Blade_Mini_Keystone_3568", "Datasheet": "~", "Description": "", "LCSC": "C5249699"}, "at": ["at", "114.3", "199.39", "90"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Device:Fuse"], "dnp": ["dnp", "no"], "uuid": ["uuid", "c9521a26-be15-4a1e-8acc-422906829663"]}
+INSTANCE {"props": {"Reference": "A1", "Value": "Pololu_Breakout_DRV8825", "Footprint": "Module:Pololu_Breakout-16_15.2x20.3mm", "Datasheet": "https://www.pololu.com/product/2982", "Description": "", "LCSC": "N/A"}, "at": ["at", "48.26", "234.95", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Driver_Motor:Pololu_Breakout_DRV8825"], "dnp": ["dnp", "no"], "uuid": ["uuid", "c9b13ac2-91d2-4c05-9bb5-c11725ae88e8"]}
+INSTANCE {"props": {"Reference": "J3", "Value": "Conn_01x05_Male", "Footprint": "Connector_PinHeader_2.00mm:PinHeader_1x05_P2.00mm_Vertical", "Datasheet": "~", "Description": ""}, "at": ["at", "341.63", "140.97", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Connector:Conn_01x05_Male"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "cc95f459-78ab-4864-9ec0-ba14fea8012d"]}
+INSTANCE {"props": {"Reference": "P5", "Value": "Pad", "Footprint": "Simon:PAD-TH", "Datasheet": "~", "Description": ""}, "at": ["at", "95.25", "177.8", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Pad"], "dnp": ["dnp", "no"], "uuid": ["uuid", "da6c8ad9-145d-48cd-ac23-17763816599b"]}
+INSTANCE {"props": {"Reference": "R2", "Value": "1k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "", "Description": "", "LCSC": "C17513"}, "at": ["at", "33.02", "233.68", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Res"], "dnp": ["dnp", "no"], "uuid": ["uuid", "ddbb0a7a-e74e-4d02-95ea-1966a2ce985d"]}
+INSTANCE {"props": {"Reference": "P1", "Value": "Pad", "Footprint": "Simon:PAD-TH", "Datasheet": "~", "Description": ""}, "at": ["at", "88.9", "203.2", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Pad"], "dnp": ["dnp", "no"], "uuid": ["uuid", "e403df5b-fbb8-48e1-8802-e490d5930c0a"]}
+INSTANCE {"props": {"Reference": "R4", "Value": "~", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "", "Description": "", "LCSC": ""}, "at": ["at", "171.45", "195.58", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Res"], "dnp": ["dnp", "yes"], "uuid": ["uuid", "efe826a0-f37b-4d60-a35e-0bfb25a8b878"]}
+INSTANCE {"props": {"Reference": "R1", "Value": "1k", "Footprint": "Resistor_SMD:R_0805_2012Metric", "Datasheet": "", "Description": "", "LCSC": "C17513"}, "at": ["at", "22.86", "242.57", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:Res"], "dnp": ["dnp", "no"], "uuid": ["uuid", "f44ebba2-b829-406f-97a8-6c3ad16044c8"]}
+INSTANCE {"props": {"Reference": "J7", "Value": "P1x16", "Footprint": "header_placement:header_loc", "Datasheet": "~", "Description": "1x16 pin socket", "LCSC": "C350305"}, "at": ["at", "220.98", "208.28", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "Mechanical:Fiducial"], "dnp": ["dnp", "no"], "uuid": ["uuid", "fa78b9ee-1608-4d8f-acfa-957e80ab2a24"]}
+INSTANCE {"props": {"Reference": "J4", "Value": "USB_B", "Footprint": "Simon:BMM-USB", "Datasheet": "~", "Description": "", "LCSC": "C46392"}, "at": ["at", "356.87", "103.505", "0"], "unit": ["unit", "1"], "lib_id": ["lib_id", "hellen-one-common:USB_B"], "dnp": ["dnp", "no"], "uuid": ["uuid", "fb4d6429-cb0c-4a08-94ec-bf1082311133"]}
+
+FILE /candidate/project/Key Power Relay.kicad_sch

@@ -1,0 +1,4 @@
+V across R1 = 48.0 V (48 - 0)
+I = V/R = 4.800 mA
+P = V^2/R = 0.2304 W
+Limit = 0.1 W; ratio = 2.30x; margin = +0.1304 W

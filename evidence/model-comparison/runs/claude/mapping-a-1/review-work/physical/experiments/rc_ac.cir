@@ -1,0 +1,12 @@
+* RC low-pass per extracted netlist: J1.1=/IN -> R1 10k -> /OUT=J1.2, C1 100n /OUT->GND=J1.3
+V1 IN 0 AC 1
+R1 IN OUT 10k
+C1 OUT 0 100n
+.control
+ac dec 10 1 100k
+let mag_1k = abs(v(OUT))
+meas ac f3db WHEN vdb(OUT)=-3
+meas ac g10hz FIND vdb(OUT) AT=10
+meas ac g10khz FIND vdb(OUT) AT=10000
+.endc
+.end

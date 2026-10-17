@@ -1,0 +1,20 @@
+{
+  "candidate_id": "450a3fbe701ce2de522829b6e4211ca1c472af4be06efae261accced6a72a658",
+  "coverage": [
+    "Verified native R1 = 10 k\u03a9 and /IN-to-/OUT pad assignments: inputs/project/rc_filter.kicad_sch:1274; inputs/project/rc_filter.kicad_pcb:256,364,372.",
+    "Independently traced saved front-copper paths J1.1\u2192R1.1 and R1.2\u2192J1.2, including the output T junction. Native source: inputs/project/rc_filter.kicad_pcb:666\u2013697. Calculated paths: review-work/physical/experiments/physical_review.json, independent_centerline_routes.",
+    "Under the specified external clamp, I = 12/10000 = 1.2 mA and R1 power = 12\u00b2/10000 = 0.0144 W, below 0.1 W. Sources: inputs/requirements.txt:1; review-work/physical/experiments/physical_review.json, calculation and assumptions. No supported power-limit defect.",
+    "Reviewed native ERC/DRC violation arrays, schematic parity, exported connectivity and saved geometry: work/erc/erc.json; work/drc/drc.json; work/netlist/design.xml, nets; work/geometry/geometry.json. Commands, versions, source hashes and verification limits recorded in review-work/physical/experiments/README.md and physical_review.json."
+  ],
+  "findings": [],
+  "limitations": [
+    "ERC/DRC were reviewed, not independently rerun. Ignored check categories remain omitted as enumerated in work/erc/erc.json and work/drc/drc.json.",
+    "Saved zone fill only; no refill. Independent centerline tracing does not replace clearance DRC.",
+    "No physical measurements, thermal model, manufacturing capability assessment or conductor ampacity qualification. No thermal rating inferred from footprint or trace width.",
+    "Used the native nominal resistance and stipulated continuous power limit. Part-specific tolerance, temperature behavior, transients, AC operation and conditions outside the specified DC clamp were not evaluated."
+  ],
+  "packet_sha256": "add0e78f8944a93dc206607b6a9a8746891fa921ba149e729dc81c93823b3545",
+  "role": "physical",
+  "run_id": "8555b879-177d-468b-b8b2-21dd96a5e2d5",
+  "schema": "agent-ee.review/1"
+}

@@ -1,0 +1,9 @@
+Saved RC shutdown, native R1/C1 values, ideal grounded IN, unloaded OUT
+Vground in 0 DC 0
+R1 in out 100k
+C1 out 0 100n IC=1
+.options reltol=1e-8 abstol=1e-15 vntol=1e-10
+.tran 0.1u 50m 0 0.1u UIC
+.meas tran vout_5ms FIND v(out) AT=5m
+.meas tran t_to_10mV WHEN v(out)=0.01 FALL=1
+.end

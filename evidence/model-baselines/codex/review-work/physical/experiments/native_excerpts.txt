@@ -1,0 +1,133 @@
+PCB J1 holes — inputs/project/Polygonus-Universal-Base.kicad_pcb
+21684: 				)
+21685: 			)
+21686: 		)
+21687: 		(pad "" thru_hole circle
+21688: 			(at -61.25 -7.85 270)
+21689: 			(size 4 4)
+21690: 			(drill 4)
+21691: 			(layers "*.Cu" "*.Mask" "F.SilkS")
+21692: 			(remove_unused_layers no)
+21693: 			(uuid "e186b75f-4739-4f2e-a723-906e090de7da")
+21694: 		)
+21695: 		(pad "" thru_hole circle
+21696: 			(at -57.65 -4 270)
+21697: 			(size 2.2 2.2)
+21698: 			(drill 2.2)
+21699: 			(layers "*.Cu" "*.Mask" "F.SilkS")
+21700: 			(remove_unused_layers no)
+21701: 			(uuid "d33d29a3-4924-49dd-a841-0d17124fc788")
+21702: 		)
+21703: 		(pad "" thru_hole circle
+21704: 			(at -13.2 -14.85 270)
+21705: 			(size 4 4)
+21706: 			(drill 4)
+21707: 			(layers "*.Cu" "*.Mask" "F.SilkS")
+21708: 			(remove_unused_layers no)
+21709: 			(uuid "e5984f98-dc19-4bdf-ab93-d568639f9b10")
+21710: 		)
+21711: 		(pad "" thru_hole circle
+21712: 			(at 66.45 -4 270)
+21713: 			(size 2.2 2.2)
+21714: 			(drill 2.2)
+21715: 			(layers "*.Cu" "*.Mask" "F.SilkS")
+21716: 			(remove_unused_layers no)
+21717: 			(uuid "233888a2-e331-456b-963a-5ee5605edf83")
+21718: 		)
+21719: 		(pad "" thru_hole circle
+21720: 			(at 70.05 -7.85 270)
+21721: 			(size 4 4)
+21722: 			(drill 4)
+21723: 			(layers "*.Cu" "*.Mask" "F.SilkS")
+21724: 			(remove_unused_layers no)
+21725: 			(uuid "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0")
+21726: 		)
+21727: 		(pad "1" thru_hole circle
+PCB ground zone — inputs/project/Polygonus-Universal-Base.kicad_pcb
+69477: 	(zone
+69478: 		(net 2)
+69479: 		(net_name "GND")
+69480: 		(layers "F.Cu" "B.Cu" "In2.Cu")
+69481: 		(uuid "bc540b8b-3ffa-4b00-b211-3a91191a1f6d")
+69482: 		(hatch edge 0.508)
+69483: 		(connect_pads
+69484: 			(clearance 0.2)
+69485: 		)
+69486: 		(min_thickness 0.25)
+69487: 		(filled_areas_thickness no)
+69488: 		(fill yes
+69489: 			(thermal_gap 0.3)
+69490: 			(thermal_bridge_width 0.4)
+69491: 		)
+69492: 		(polygon
+69493: 			(pts
+69494: 				(xy 203.2 23.36994) (xy 217.190776 37.387086) (xy 217.152706 50.605643) (xy 217.149711 87.35917)
+termination population — inputs/project/wbo-can-trans.kicad_sch
+2662: 				)
+2663: 			)
+2664: 		)
+2665: 	)
+2666: 	(symbol
+2667: 		(lib_id "Device:R")
+2668: 		(at 115.57 86.36 90)
+2669: 		(mirror x)
+2670: 		(unit 1)
+2671: 		(exclude_from_sim no)
+2672: 		(in_bom no)
+2673: 		(on_board yes)
+2674: 		(dnp yes)
+2675: 		(uuid "d69380f9-5487-4782-9ce9-0690df62e543")
+2676: 		(property "Reference" "R36"
+2677: 			(at 115.57 80.01 90)
+2678: 			(effects
+2679: 				(font
+2680: 					(size 1.27 1.27)
+2681: 				)
+2682: 			)
+2683: 		)
+2684: 		(property "Value" "120"
+2685: 			(at 115.57 82.55 90)
+2686: 			(effects
+2687: 				(font
+2688: 					(size 1.27 1.27)
+2689: 				)
+2690: 			)
+2691: 		)
+2692: 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
+2693: 			(at 115.57 84.582 90)
+2694: 			(effects
+2695: 				(font
+2696: 					(size 1.27 1.27)
+2697: 				)
+2698: 				(hide yes)
+2699: 			)
+2700: 		)
+2701: 		(property "Datasheet" "~"
+2702: 			(at 115.57 86.36 0)
+PCB R36 DNP — inputs/project/Polygonus-Universal-Base.kicad_pcb
+14730: 				(xyz 0 0 0)
+14731: 			)
+14732: 			(scale
+14733: 				(xyz 1 1 1)
+14734: 			)
+14735: 			(rotate
+14736: 				(xyz 0 0 0)
+14737: 			)
+14738: 		)
+14739: 	)
+14740: 	(footprint "Resistor_SMD:R_1206_3216Metric"
+14741: 		(layer "F.Cu")
+14742: 		(uuid "6924b9c0-bd5f-481d-9f8d-7fc20978c5ab")
+14743: 		(at 175.014418 140.66613 90)
+14744: 		(descr "Resistor SMD 1206 (3216 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
+14745: 		(tags "resistor")
+14746: 		(property "Reference" "R36"
+14747: 			(at -2.97387 -0.014418 180)
+14748: 			(layer "F.SilkS")
+14749: 			(hide yes)
+14750: 			(uuid "3628a122-33a9-46af-bfae-06484b87aab3")
+14751: 			(effects
+14752: 				(font
+14753: 					(size 1 1)
+14754: 					(thickness 0.15)
+14755: 				)

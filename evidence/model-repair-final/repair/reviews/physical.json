@@ -1,0 +1,22 @@
+{
+  "candidate_id": "300958ecd16853020cb8349fb72b85adce6c1e892d58b990815c099df44094ec",
+  "coverage": [
+    "Independently reran ERC, DRC with schematic parity, and netlist export: zero reported violations, unconnected items, or parity issues. See review-work/physical/experiments/native_execution.json, drc.json and erc.json; consistent with work/drc/drc.json and work/erc/erc.json.",
+    "Checked all seven pad assignments, signal routing, and saved ground return through the via and B.Cu thermal connections. Native evidence: inputs/project/rc_filter.kicad_pcb, pads at lines 210\u2013611 and routing/fill at lines 667\u2013785. Independent measurements: review-work/physical/experiments/native_inspection.json, pad_net_parity and ground_path_samples_in_fill.",
+    "All five native track segments are 0.25 mm, satisfying the declared 0.20 mm minimum. See inputs/project/rc_filter.kicad_pcb, lines 667\u2013705; review-work/physical/experiments/native_inspection.json, tracks.",
+    "Checked native R1=10k and C1=100n, transient stimulus, and binary waveform. Calculated tau=1 ms; raw Vout(1 ms)=0.632120134 V satisfies 0.62\u20130.65 V. See inputs/project/rc_filter.kicad_sch, lines 955 and 1274; work/rc-step/deck.cir, lines 2\u20137; work/rc-step/result.raw; review-work/physical/experiments/native_inspection.json, raw_measurements.",
+    "Commands, versions, assumptions, outcomes, native locators and limitations are recorded in review-work/physical/experiments/review-notes.md. Candidate project hashes remained unchanged."
+  ],
+  "findings": [],
+  "limitations": [
+    "Saved fill only; no refill, manufactured continuity measurement, hardware response test, or PCB parasitic extraction.",
+    "No fabrication-output audit, assembly validation, component-rating validation, ampacity qualification, or thermal qualification. Track width alone establishes none of these.",
+    "Tolerance, temperature, loading, source impedance, ADC sampling and EMI behavior remain untested.",
+    "ERC and DRC retain the ignored checks listed in work/erc/erc.json and work/drc/drc.json; this review does not independently reproduce every ignored check.",
+    "The 5 ms response has no acceptance bounds and is informational."
+  ],
+  "packet_sha256": "8db30139ed51a572b2ba794dce8bd29ff31e58b7321e20d25b23a5f6d55f2cb2",
+  "role": "physical",
+  "run_id": "7c496fac-ab12-43f8-8d50-e9de4d77ab86",
+  "schema": "agent-ee.review/1"
+}

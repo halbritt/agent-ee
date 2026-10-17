@@ -1,0 +1,102 @@
+[
+  {
+    "argv": [
+      "/usr/bin/python3",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "python-version.stdout.txt",
+    "stderr": "python-version.stderr.txt"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "kicad-version.stdout.txt",
+    "stderr": "kicad-version.stderr.txt"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "ngspice-version.stdout.txt",
+    "stderr": "ngspice-version.stderr.txt"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/experiments/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "erc.stdout.txt",
+    "stderr": "erc.stderr.txt"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "--schematic-parity",
+      "-o",
+      "/work/experiments/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "drc.stdout.txt",
+    "stderr": "drc.stderr.txt"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "netlist.stdout.txt",
+    "stderr": "netlist.stderr.txt"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-n",
+      "-b",
+      "-o",
+      "/work/experiments/independent-step.log",
+      "/work/experiments/independent-step.cir"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "independent-step.stdout.txt",
+    "stderr": "independent-step.stderr.txt"
+  }
+]

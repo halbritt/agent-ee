@@ -1,0 +1,28 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--webp detection script for compatibility-->
+    <script>!function(e){"use strict";function s(s){if(s){var t=e.documentElement;t.classList?t.classList.add("webp"):t.className+=" webp",window.sessionStorage.setItem("webpSupport",!0)}}!function(e){if(window.sessionStorage&&window.sessionStorage.getItem("webpSupport"))s(!0);else{var t=new Image;t.onload=t.onerror=function(){e(2===t.height)},t.src="data:image/webp;base64,UklGRi4AAABXRUJQVlA4TCEAAAAvAUAAEB8wAiMwAgSSNtse/cXjxyCCmrYNWPwmHRH9jwMA"}}(s)}(document);
+    </script>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    
+
+    
+
+    
+    <title>KiCad Command-Line Interface | 10.0 | English | Documentation | KiCad</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="">
+    <link rel="canonical" href="https://docs.kicad.org/10.0/en/cli/cli.html">
+
+    
+    <meta http-equiv="Content-Language" content="en">
+    <meta name="docsearch:lang" content="en">
+    
+    
+    <meta name="docsearch:version" content="10.0">
+    
+
+    <link rel="apple-touch-icon" sizes="57x57" href="https://docs.kicad

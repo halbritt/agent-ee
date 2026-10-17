@@ -1,0 +1,82 @@
+{
+  "at": "2026-10-17T00:48:41.742722+00:00",
+  "decisions": {
+    "candidate_id": "329f916010187406f161061477ccaa609a7cfa22231e8b51f90b321f35ab1028",
+    "decisions": [
+      {
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "Requirement 1: 0.62 V <= V(/OUT, 1 ms) <= 0.65 V",
+            "path": "inputs/requirements/fixture-requirements.md"
+          },
+          {
+            "locator": "R1 UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78, Value 100k; C1 UUID 1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8, Value 100n",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "components/comp[@ref='R1']; components/comp[@ref='C1']; nets/net",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "R1 IN OUT 100k; C1 OUT 0 100n; VSTEP; vout_1ms measurement",
+            "path": "work/rc-step/deck.cir"
+          },
+          {
+            "locator": "Measurements for Transient Analysis: vout_1ms = 9.516251e-02",
+            "path": "work/rc-step/ngspice.log"
+          },
+          {
+            "locator": "calculation; independent_measurements_V",
+            "path": "review-work/adjudicator/experiments/audit-results.json"
+          }
+        ],
+        "finding_id": "check/rc-step",
+        "reason": "Established defect: native R1=100 k\u03a9 and C1=100 nF yield \u03c4=10 ms and VOUT(1 ms)=0.0951626 V, violating the declared 0.62\u20130.65 V limit. Independent simulation with an explicit discharged pre-step interval confirms 0.09516263 V. Clean ERC/DRC does not resolve this response failure."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/rc-step",
+        "evidence": [
+          {
+            "locator": "Requirement 1",
+            "path": "inputs/requirements/fixture-requirements.md"
+          },
+          {
+            "locator": "components/comp[@ref='R1']; components/comp[@ref='C1']; nets/net",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "calculation; independent_measurements_V",
+            "path": "review-work/adjudicator/experiments/audit-results.json"
+          }
+        ],
+        "finding_id": "circuit/circuit-001",
+        "reason": "Supported defect with the same native values, step condition, RC mechanism and violated 1 ms limit as accepted canonical finding check/rc-step."
+      },
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "check/rc-step",
+        "evidence": [
+          {
+            "locator": "R1 Value 100k and pads /IN\u2013/OUT; C1 Value 100n and pads /OUT\u2013GND",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "Measurements for Transient Analysis: vout_1ms = 9.516251e-02",
+            "path": "work/rc-step/ngspice.log"
+          },
+          {
+            "locator": "calculation; independent_measurements_V",
+            "path": "review-work/adjudicator/experiments/audit-results.json"
+          }
+        ],
+        "finding_id": "physical/physical-001",
+        "reason": "Supported defect identifying the same saved RC time constant and response violation as accepted canonical finding check/rc-step. The 1 ns stimulus rise does not explain the shortfall."
+      }
+    ],
+    "run_id": "d49a7f53-6b11-4774-86dd-8799a02e97fd",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

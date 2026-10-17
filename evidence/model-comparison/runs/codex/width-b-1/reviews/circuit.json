@@ -1,0 +1,55 @@
+{
+  "candidate_id": "de5c5855e29e9a86af4e2f4589025065369d6a3826b22e6385c1badbab087a75",
+  "coverage": [
+    "Checked all five saved copper track segments using native text, KiCad pcbnew 10.0.7 and supplied geometry measurements.",
+    "Compared exported schematic net memberships and component values with board pads and footprints; they agree.",
+    "Inspected ERC, DRC, netlist and geometry records, including ignored checks; verified execution console hashes.",
+    "Recorded commands, versions, assumptions, outcomes and omissions in review-work/circuit/experiments/notes.md."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The saved candidate board is evaluated against the required minimum track segment width of 0.30 mm.",
+      "evidence": [
+        {
+          "locator": "Line 1: every saved copper track segment must have width >= 0.30 mm",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Segment blocks beginning at lines 667, 675, 683, 691 and 699; each specifies (width 0.25)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "tracks entries with type=track: all five width_mm values are 0.25",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "segments, violating_segments=5 and three_way_width_agreement=true",
+          "path": "review-work/circuit/experiments/measurements.json"
+        },
+        {
+          "locator": "summary: no declared geometric requirement applied",
+          "path": "checks/geometry.json"
+        }
+      ],
+      "id": "circuit-001",
+      "location": "inputs/project/rc_filter.kicad_pcb:667; all five F.Cu segments on /IN, /OUT and GND",
+      "mechanism": "Every saved segment has width 0.25 mm, which is 0.05 mm below the required 0.30 mm minimum.",
+      "reasoning": "Exact decimal comparisons of native widths fail for five of five segments. KiCad's board API and the supplied geometry output independently agree with these widths. The clean configured DRC report does not establish compliance with the separate exercise criterion. This is a geometric requirement failure; no ampacity or electrical malfunction is asserted.",
+      "severity": "major",
+      "title": "All five saved track segments violate the minimum width requirement"
+    }
+  ],
+  "limitations": [
+    "ERC and DRC were inspected as supplied, not independently rerun; ignored checks were not re-enabled.",
+    "Saved zone fill was not refilled. Via diameter, pad dimensions and zone minimum thickness were excluded from the track segment criterion.",
+    "No simulation models, stimulus or electrical measurements were supplied; no simulation or hardware testing was performed.",
+    "Component ratings, tolerances, source/load compatibility, startup, shutdown, reset and brownout behavior were not evaluated because relevant operating conditions and requirements were absent.",
+    "pcbnew emitted PROPERTY_ENUM assertions; native text independently confirms every reported segment width.",
+    "No ampacity or ECU qualification assessment was performed."
+  ],
+  "packet_sha256": "d800c309cc61b29a7f0e1e302001ee1a25925d1d2a07f121d2652fd0c8144d70",
+  "role": "circuit",
+  "run_id": "1f5975c1-2d24-4d55-a157-8fa4721964ba",
+  "schema": "agent-ee.review/1"
+}

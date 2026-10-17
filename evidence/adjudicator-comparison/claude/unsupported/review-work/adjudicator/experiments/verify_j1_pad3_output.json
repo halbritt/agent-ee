@@ -1,0 +1,89 @@
+{
+  "pad_nets": {
+    "C1.1": {
+      "net": "/OUT",
+      "pos_mm": [
+        109.05,
+        100.0
+      ]
+    },
+    "C1.2": {
+      "net": "GND",
+      "pos_mm": [
+        110.95,
+        100.0
+      ]
+    },
+    "R1.1": {
+      "net": "/IN",
+      "pos_mm": [
+        104.0875,
+        100.0
+      ]
+    },
+    "R1.2": {
+      "net": "/OUT",
+      "pos_mm": [
+        105.9125,
+        100.0
+      ]
+    },
+    "J1.1": {
+      "net": "/IN",
+      "pos_mm": [
+        100.0,
+        100.0
+      ]
+    },
+    "J1.2": {
+      "net": "/OUT",
+      "pos_mm": [
+        100.0,
+        102.54
+      ]
+    },
+    "J1.3": {
+      "net": "GND",
+      "pos_mm": [
+        100.0,
+        105.08
+      ]
+    }
+  },
+  "j1_pad3_net": "GND",
+  "zone_net": "GND",
+  "zone_is_filled": true,
+  "pad3_zone_overlap_area_mm2": 0.710077,
+  "spoke_probe_points": {
+    "45deg@1.0mm": {
+      "xy_mm": [
+        100.7071,
+        105.7871
+      ],
+      "in_zone_fill": true
+    },
+    "135deg@1.0mm": {
+      "xy_mm": [
+        99.2929,
+        105.7871
+      ],
+      "in_zone_fill": true
+    },
+    "225deg@1.0mm": {
+      "xy_mm": [
+        99.2929,
+        104.3729
+      ],
+      "in_zone_fill": true
+    },
+    "315deg@1.0mm": {
+      "xy_mm": [
+        100.7071,
+        104.3729
+      ],
+      "in_zone_fill": true
+    }
+  },
+  "gnd_unconnected_count": 0,
+  "gnd_pads_count": "n/a (API signature)"
+}

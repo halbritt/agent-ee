@@ -1,0 +1,49 @@
+{
+  "expected": "a passing old result cannot accept the changed saved design",
+  "candidate_id": "a3056a0f779d71d1360af66b5419e5d3a8cc024bd5f95a292d1888f36bafff5d",
+  "old_review_outcome": "criteria_satisfied",
+  "mutations": [
+    {
+      "path": "/home/halbritt/git/agent-ee/evidence/model-release/repair-demo/disposable/rc_filter.kicad_sch",
+      "before_sha256": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+      "changed_sha256": "4129a939d7b7eabb71c5c25261cacd9b721f991c6d3ecc996b6a3edd026efab1"
+    },
+    {
+      "path": "/home/halbritt/git/agent-ee/evidence/model-release/repair-demo/disposable/rc_filter.kicad_pcb",
+      "before_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "changed_sha256": "4237e8b9ae8c323c6a0cb4c61ce43e7e413557c81f856b34dd34eb83f3f4970b"
+    }
+  ],
+  "before": {
+    "argv": [
+      "/home/halbritt/git/agent-ee/build/profile-replay/bin/agent-ee",
+      "verify",
+      "/home/halbritt/git/agent-ee/evidence/model-release/repair-demo/repair"
+    ],
+    "exit_code": 0,
+    "stdout": "fresh criteria_satisfied: a3056a0f779d71d1360af66b5419e5d3a8cc024bd5f95a292d1888f36bafff5d\n",
+    "stderr": ""
+  },
+  "changed": {
+    "argv": [
+      "/home/halbritt/git/agent-ee/build/profile-replay/bin/agent-ee",
+      "verify",
+      "/home/halbritt/git/agent-ee/evidence/model-release/repair-demo/repair"
+    ],
+    "exit_code": 2,
+    "stdout": "",
+    "stderr": "agent-ee: declared source inputs changed; evidence applies only to the captured candidate\n"
+  },
+  "restored": {
+    "argv": [
+      "/home/halbritt/git/agent-ee/build/profile-replay/bin/agent-ee",
+      "verify",
+      "/home/halbritt/git/agent-ee/evidence/model-release/repair-demo/repair"
+    ],
+    "exit_code": 0,
+    "stdout": "fresh criteria_satisfied: a3056a0f779d71d1360af66b5419e5d3a8cc024bd5f95a292d1888f36bafff5d\n",
+    "stderr": ""
+  },
+  "source_bytes_restored": true,
+  "interpretation": "No acceptance was claimed for the changed design; restoring exact bytes restores the original candidate only."
+}

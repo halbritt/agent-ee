@@ -1,0 +1,4 @@
+zone net GND layer F.Cu saved fill outlines: 1 vertices: 187 IsFilled: True
+after refill vertices: 187
+fill identical to saved: True
+unconnected count after refill: 0

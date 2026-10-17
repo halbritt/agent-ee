@@ -1,0 +1,95 @@
+{
+  "board": "project/rc_filter.kicad_pcb",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry",
+      "params": {
+        "min_track_width_mm": 0.2
+      }
+    },
+    {
+      "id": "rc-step",
+      "kind": "rc_transient",
+      "params": {
+        "ground_net": "GND",
+        "input_net": "/IN",
+        "measurements": [
+          {
+            "at_ms": 1.0,
+            "max": 0.65,
+            "min": 0.62,
+            "name": "vout_1ms"
+          },
+          {
+            "at_ms": 5.0,
+            "name": "vout_5ms"
+          }
+        ],
+        "netlist_check": "netlist",
+        "output_net": "/OUT",
+        "step_v": 1.0,
+        "stop_ms": 5.0
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "at": "project",
+      "path": "/home/halbritt/git/agent-ee/evidence/model-release/repair-demo/disposable"
+    },
+    {
+      "at": "requirements",
+      "path": "/home/halbritt/git/agent-ee/fixtures/rc/requirements"
+    },
+    {
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ],
+      "path": "/usr/share/kicad/symbols"
+    },
+    {
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ],
+      "path": "/usr/share/kicad/footprints"
+    },
+    {
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ],
+      "path": "/usr/share/kicad/template"
+    }
+  ],
+  "limitations": [
+    "Ideal unloaded step response only; tolerance, temperature, loading, ADC sampling, EMI and hardware behavior are untested.",
+    "Zone fill is evaluated as saved; the read-only candidate forbids a refill pass."
+  ],
+  "name": "RC low-pass response review",
+  "requirements": [
+    "requirements/fixture-requirements.md"
+  ],
+  "schema": "agent-ee.scope/1",
+  "schematic": "project/rc_filter.kicad_sch",
+  "scope": "Review the saved passive RC low-pass against the captured response and geometry requirements. This is a disposable review fixture, not an ECU circuit."
+}

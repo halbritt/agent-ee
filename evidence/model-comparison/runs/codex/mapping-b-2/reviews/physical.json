@@ -1,0 +1,61 @@
+{
+  "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+  "coverage": [
+    "Traced all seven PCB pads, five track segments, one via and the saved ground-zone connectivity.",
+    "Compared numbered connector pads against the external contract, independently of net names.",
+    "Read native schematic and PCB sources, exported a fresh netlist, and confirmed agreement with the supplied netlist.",
+    "Reviewed native ERC/DRC reports, ignored checks, geometry records, placement and board outline."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The external interface uses J1 pin 2 as input and pin 1 as filtered output, as explicitly required.",
+      "evidence": [
+        {
+          "locator": "Line 1: external connector contract",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "Lines 587\u2013603: J1 pads 1 and 2; lines 667\u2013698: copper routing; C1 pad 1 at line 210",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "J1 instance at line 1093, rotation 180 degrees; IN/OUT labels at lines 805\u2013846",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "Lines 164\u2013175: /IN, /OUT and GND memberships",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "copper_components_from_connector, contract_checks and fresh_equals_supplied_nets",
+          "path": "review-work/physical/experiments/crosscheck.json"
+        },
+        {
+          "locator": "schematic_parity, unconnected_items and violations are empty",
+          "path": "work/drc/drc.json"
+        },
+        {
+          "locator": "Findings supported by original geometry; conditional electrical consequence",
+          "path": "review-work/physical/experiments/notes.md"
+        }
+      ],
+      "id": "physical-001",
+      "location": "J1 pins 1 and 2, schematic and saved PCB",
+      "mechanism": "Saved copper connects J1.1 directly to R1.1, while J1.2 connects to the R1.2/C1.1 junction. Thus the capacitor shunts the contracted input instead of the filtered output. J1.3 correctly connects to C1.2 through the saved ground return.",
+      "reasoning": "The physical connections reverse the expressly required input/output assignment; this is more than misleading net naming. With ideal drive at J1.2 and an unloaded J1.1, resistor current is zero and J1.1 follows J1.2 without the intended RC output pole. This consequence is conditional circuit reasoning, not a measured waveform. The schematic shares the reversal, explaining why clean schematic parity and ERC do not establish compliance with the external contract.",
+      "severity": "major",
+      "title": "J1 input and filtered-output pins are reversed"
+    }
+  ],
+  "limitations": [
+    "Connectivity was evaluated using saved zone fill; no refill or candidate modification was performed.",
+    "ERC/DRC reports were inspected, not rerun; checks listed as ignored in those reports remain outside coverage.",
+    "No hardware measurements, SPICE verification, parasitic extraction or source/load behavior qualification was performed.",
+    "No ampacity, thermal, EMC, production DFM, assembly or mating-connector qualification was established; operating and fabrication limits were unspecified. Commands, versions, assumptions and tool diagnostics are recorded in review-work/physical/experiments/notes.md."
+  ],
+  "packet_sha256": "bb53ede160dc09fd0d17a7c64bd8fd3c58cd53ff7e1b0fe8e66741013a0dc243",
+  "role": "physical",
+  "run_id": "e5c3df45-50fe-491e-b996-faba2b28f975",
+  "schema": "agent-ee.review/1"
+}

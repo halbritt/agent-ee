@@ -1,0 +1,175 @@
+
+FILE vr_module_poly.kicad_sch
+TEXT RS Latch
+Tracks which edge happened last
+TEXT Unused gates
+TEXT Threshold generation
+TEXT Differential to single ended conversion
+TEXT Outputs a pulse on rising edge
+TEXT Vref generation
+TEXT Outputs a pulse on falling edge
+{'Reference': 'C11', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C15195'} ['at', '172.72', '62.23', '270']
+{'Reference': 'R20', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C11702'} ['at', '181.61', '54.61', '0']
+{'Reference': 'C12', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C15195'} ['at', '172.72', '78.74', '270']
+{'Reference': 'R21', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C11702'} ['at', '181.61', '86.36', '0']
+{'Reference': 'U7', 'Value': 'MAX9142', 'Footprint': 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/ds/symlink/lm393.pdf', 'Description': '', 'LCSC': 'C18567'} ['at', '152.4', '62.23', '0']
+{'Reference': 'U7', 'Value': 'MAX9142', 'Footprint': 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/ds/symlink/lm393.pdf', 'Description': '', 'LCSC': 'C18567'} ['at', '152.4', '78.74', '0']
+{'Reference': 'U7', 'Value': 'MAX9142', 'Footprint': 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/ds/symlink/lm393.pdf', 'Description': '', 'LCSC': 'C18567'} ['at', '258.445', '33.655', '0']
+{'Reference': 'U8', 'Value': 'NC7SB3157P6X', 'Footprint': 'Package_TO_SOT_SMD:SOT-363_SC-70-6', 'Datasheet': 'https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF', 'Description': '', 'LCSC': 'C36533657'} ['at', '163.83', '35.56', '0']
+{'Reference': 'U8', 'Value': 'NC7SB3157P6X', 'Footprint': 'Package_TO_SOT_SMD:SOT-363_SC-70-6', 'Datasheet': 'https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF', 'Description': '', 'LCSC': 'C36533657'} ['at', '199.39', '33.02', '0']
+{'Reference': 'U9', 'Value': 'NC7SB3157P6X', 'Footprint': 'Package_TO_SOT_SMD:SOT-363_SC-70-6', 'Datasheet': 'https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF', 'Description': '', 'LCSC': 'C36533657'} ['at', '163.83', '105.41', '0']
+{'Reference': 'U9', 'Value': 'NC7SB3157P6X', 'Footprint': 'Package_TO_SOT_SMD:SOT-363_SC-70-6', 'Datasheet': 'https://www.onsemi.com/pub/Collateral/NC7SB3157-D.PDF', 'Description': '', 'LCSC': 'C36533657'} ['at', '213.36', '33.02', '0']
+{'Reference': 'U6', 'Value': 'MCP6004', 'Footprint': 'Package_SO:TSSOP-14_4.4x5mm_P0.65mm', 'Datasheet': 'http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf', 'Description': '', 'LCSC': 'C50282'} ['at', '241.935', '147.32', '0']
+{'Reference': 'U6', 'Value': 'MCP6004', 'Footprint': 'Package_SO:TSSOP-14_4.4x5mm_P0.65mm', 'Datasheet': 'http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf', 'Description': '', 'LCSC': 'C50282'} ['at', '110.49', '69.85', '0']
+{'Reference': 'U6', 'Value': 'MCP6004', 'Footprint': 'Package_SO:TSSOP-14_4.4x5mm_P0.65mm', 'Datasheet': 'http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf', 'Description': '', 'LCSC': 'C50282'} ['at', '128.905', '136.525', '0']
+{'Reference': 'U6', 'Value': 'MCP6004', 'Footprint': 'Package_SO:TSSOP-14_4.4x5mm_P0.65mm', 'Datasheet': 'http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf', 'Description': '', 'LCSC': 'C50282'} ['at', '164.465', '146.685', '0']
+{'Reference': 'U6', 'Value': 'MCP6004', 'Footprint': 'Package_SO:TSSOP-14_4.4x5mm_P0.65mm', 'Datasheet': 'http://ww1.microchip.com/downloads/en/DeviceDoc/21733j.pdf', 'Description': '', 'LCSC': 'C50282'} ['at', '250.825', '33.655', '0']
+{'Reference': 'U4', 'Value': 'SRV05-4', 'Footprint': 'Package_TO_SOT_SMD:SOT-23-6', 'Datasheet': 'http://www.onsemi.com/pub/Collateral/SRV05-4-D.PDF', 'Description': '', 'LCSC': 'C85364'} ['at', '67.945', '40.64', '0']
+{'Reference': 'R14', 'Value': '100k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25741'} ['at', '110.49', '59.69', '270']
+{'Reference': 'R13', 'Value': '100k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25741'} ['at', '100.33', '82.55', '0']
+{'Reference': 'R11', 'Value': '100k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25741'} ['at', '93.98', '72.39', '90']
+{'Reference': 'R10', 'Value': '100k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25741'} ['at', '93.98', '67.31', '270']
+{'Reference': 'R7', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C17414'} ['at', '43.815', '67.31', '90']
+{'Reference': 'R8', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C17414'} ['at', '43.815', '72.39', '270']
+{'Reference': 'R12', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25744'} ['at', '95.25', '133.985', '270']
+{'Reference': 'R15', 'Value': '68k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C36871'} ['at', '111.76', '140.335', '0']
+{'Reference': 'R17', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25744'} ['at', '147.955', '136.525', '270']
+{'Reference': 'R18', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25744'} ['at', '164.465', '136.525', '270']
+{'Reference': 'R23', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25744'} ['at', '221.615', '149.86', '0']
+{'Reference': 'R22', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25744'} ['at', '221.615', '139.7', '0']
+{'Reference': 'C8', 'Value': '100n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C1525'} ['at', '101.6', '140.335', '0']
+{'Reference': 'C14', 'Value': '100n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C1525'} ['at', '211.455', '149.86', '0']
+{'Reference': 'R16', 'Value': '10', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25077'} ['at', '125.095', '148.59', '90']
+{'Reference': 'C10', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '130.81', '154.305', '0']
+{'Reference': 'C6', 'Value': '1n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C1523'} ['at', '72.39', '69.85', '0']
+{'Reference': 'R19', 'Value': '10', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25077'} ['at', '180.975', '146.685', '90']
+{'Reference': 'C13', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '186.69', '152.4', '0']
+{'Reference': 'R24', 'Value': '10', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25077'} ['at', '257.175', '147.32', '90']
+{'Reference': 'C20', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '262.89', '153.035', '0']
+{'Reference': 'C22', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '271.145', '153.035', '0']
+{'Reference': 'C9', 'Value': '100n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C1525'} ['at', '104.14', '88.9', '270']
+{'Reference': 'U5', 'Value': '74HC02', 'Footprint': 'Package_SO:SOIC-14_3.9x8.7mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/gpn/sn74hc02', 'Description': '', 'LCSC': 'C5588'} ['at', '201.93', '64.77', '0']
+{'Reference': 'U5', 'Value': '74HC02', 'Footprint': 'Package_SO:SOIC-14_3.9x8.7mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/gpn/sn74hc02', 'Description': '', 'LCSC': 'C5588'} ['at', '201.93', '76.2', '0']
+{'Reference': 'U5', 'Value': '74HC02', 'Footprint': 'Package_SO:SOIC-14_3.9x8.7mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/gpn/sn74hc02', 'Description': '', 'LCSC': 'C5588'} ['at', '109.22', '26.67', '0']
+{'Reference': 'U5', 'Value': '74HC02', 'Footprint': 'Package_SO:SOIC-14_3.9x8.7mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/gpn/sn74hc02', 'Description': '', 'LCSC': 'C5588'} ['at', '109.22', '38.1', '0']
+{'Reference': 'U5', 'Value': '74HC02', 'Footprint': 'Package_SO:SOIC-14_3.9x8.7mm_P1.27mm', 'Datasheet': 'http://www.ti.com/lit/gpn/sn74hc02', 'Description': '', 'LCSC': 'C5588'} ['at', '229.235', '33.02', '0']
+{'Reference': 'C16', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C15195'} ['at', '236.22', '83.82', '0']
+{'Reference': 'C18', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '246.38', '83.82', '0']
+{'Reference': 'R9', 'Value': '12k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25752'} ['at', '81.915', '133.985', '90']
+{'Reference': 'C7', 'Value': '470n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C47339'} ['at', '88.265', '140.335', '0']
+{'Reference': 'C15', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C15195'} ['at', '236.22', '63.5', '0']
+{'Reference': 'C17', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '246.38', '63.5', '0']
+{'Reference': 'C19', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C15195'} ['at', '259.715', '74.295', '0']
+{'Reference': 'C21', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C52923'} ['at', '269.875', '74.295', '0']
+{'Reference': 'D1', 'Value': 'LED', 'Footprint': 'LED_SMD:LED_0603_1608Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C72043'} ['at', '28.575', '125.095', '90']
+{'Reference': 'R6', 'Value': '2.2k', 'Footprint': 'Resistor_SMD:R_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C25879'} ['at', '28.575', '132.715', '0']
+
+FILE IGBT outputs.kicad_sch
+{'Reference': 'Q4', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '181.61', '134.62', '0']
+{'Reference': 'Q6', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '222.25', '76.2', '0']
+{'Reference': 'Q1', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '181.61', '46.99', '0']
+{'Reference': 'Q3', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '181.61', '105.41', '0']
+{'Reference': 'Q2', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '181.61', '76.2', '0']
+{'Reference': 'Q7', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '222.25', '105.41', '0']
+{'Reference': 'Q5', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '222.25', '46.99', '0']
+{'Reference': 'Q8', 'Value': 'FGD3040G2-F085', 'Footprint': 'Package_TO_SOT_SMD:TO-252-2', 'Datasheet': '~', 'Description': '', 'LCSC': 'C606124'} ['at', '222.25', '134.62', '0']
+
+FILE Lowside Adder.kicad_sch
+{'Reference': 'U12', 'Value': 'VNL5090', 'Footprint': 'Package_TO_SOT_SMD:SOT-223', 'Datasheet': '', 'Description': '', 'LCSC': 'C2680415'} ['at', '135.89', '65.405', '0']
+{'Reference': 'U14', 'Value': 'VNL5090', 'Footprint': 'Package_TO_SOT_SMD:SOT-223', 'Datasheet': '', 'Description': '', 'LCSC': 'C2680415'} ['at', '137.16', '92.71', '0']
+{'Reference': 'D3', 'Value': 'D_Schottky', 'Footprint': 'Diode_SMD:D_SMA', 'Datasheet': '~', 'Description': '', 'LCSC': 'C8678'} ['at', '157.48', '62.865', '270']
+{'Reference': 'D5', 'Value': 'D_Schottky', 'Footprint': 'Diode_SMD:D_SMA', 'Datasheet': '~', 'Description': '', 'LCSC': 'C8678'} ['at', '157.48', '104.775', '270']
+{'Reference': 'D4', 'Value': 'D_Schottky', 'Footprint': 'Diode_SMD:D_SMA', 'Datasheet': '~', 'Description': '', 'LCSC': 'C8678'} ['at', '157.48', '90.17', '270']
+{'Reference': 'RN2', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_Array_Convex_4x0603', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C20197'} ['at', '109.22', '83.82', '270']
+{'Reference': 'U11', 'Value': 'VNL5090', 'Footprint': 'Package_TO_SOT_SMD:SOT-223', 'Datasheet': '', 'Description': '', 'LCSC': 'C2680415'} ['at', '134.62', '50.8', '0']
+{'Reference': 'D2', 'Value': 'D_Schottky', 'Footprint': 'Diode_SMD:D_SMA', 'Datasheet': '~', 'Description': '', 'LCSC': 'C8678'} ['at', '157.48', '48.26', '270']
+{'Reference': 'U13', 'Value': 'VNL5090', 'Footprint': 'Package_TO_SOT_SMD:SOT-223', 'Datasheet': '', 'Description': '', 'LCSC': 'C2680415'} ['at', '136.525', '107.315', '0']
+{'Reference': 'RN1', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_Array_Convex_4x0603', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C20197'} ['at', '99.06', '96.52', '0']
+
+FILE VR Conditioner.kicad_sch
+TEXT Optional setting in Mode C for no adaptive threshold timeout - See MAX9924 Datasheet
+Components as specified put chip in mode A1.  Flip jumper and install R1219+R2020 for mode C.
+TEXT Yes, we know that the polarity is flipped going in to the VR interface chips.
+While originally on accident, it’s no big deal since they invert anyway:
+When VR+ transitions to a higher voltage than VR-, VR_OUT will output a rising edge.
+
+See issue https://github.com/mck1117/proteus/issues/57 for more detail
+{'Reference': 'R25', 'Value': '4.7k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C17673'} ['at', '103.505', '80.01', '270']
+{'Reference': 'C23', 'Value': '1n', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C46653'} ['at', '118.11', '85.09', '0']
+{'Reference': 'JP1', 'Value': 'Jumper_3_Bridged12', 'Footprint': 'Jumper:SolderJumper-3_P1.3mm_Bridged12_RoundedPad1.0x1.5mm', 'Datasheet': '~', 'Description': '', 'LCSC': 'N/A'} ['at', '173.355', '100.33', '270']
+{'Reference': 'R28', 'Value': '4.7k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C17673'} ['at', '113.03', '90.17', '270']
+{'Reference': 'R29', 'Value': '~', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '603-RC0402FR-075KL', 'LCSC': ''} ['at', '125.73', '85.09', '180']
+{'Reference': 'R32', 'Value': 'DNP', 'Footprint': 'Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder', 'Datasheet': '~', 'Description': '', 'LCSC': 'DNP'} ['at', '140.335', '114.3', '270']
+{'Reference': 'U10', 'Value': 'MAX9924', 'Footprint': 'Package_SO:MSOP-10_3x3mm_P0.5mm', 'Datasheet': '~', 'Description': '', 'LCSC': 'C143633'} ['at', '149.86', '90.17', '0']
+{'Reference': 'R30', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C17513'} ['at', '127', '97.79', '90']
+{'Reference': 'R34', 'Value': '4.7k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C17673'} ['at', '165.735', '79.375', '0']
+{'Reference': 'C24', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C28323'} ['at', '127', '109.855', '270']
+{'Reference': 'C25', 'Value': '100n', 'Footprint': 'Capacitor_SMD:C_0402_1005Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C1525'} ['at', '188.595', '103.505', '0']
+{'Reference': 'R26', 'Value': '4.7k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C17673'} ['at', '103.505', '90.17', '270']
+{'Reference': 'R31', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C17513'} ['at', '127', '103.505', '90']
+{'Reference': 'R27', 'Value': '4.7k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C17673'} ['at', '113.03', '80.01', '270']
+{'Reference': 'R33', 'Value': 'DNP', 'Footprint': 'Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder', 'Datasheet': '~', 'Description': '', 'LCSC': 'DNP'} ['at', '156.21', '114.3', '270']
+
+FILE etb-9201.kicad_sch
+TEXT IFX9201 also acceptable
+{'Reference': 'R5', 'Value': '10k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C17414'} ['at', '68.58', '57.15', '270']
+{'Reference': 'U3', 'Value': 'TLE9201SG', 'Footprint': 'Package_SO:Infineon_PG-DSO-12-9', 'Datasheet': '~', 'Description': '', 'PN': 'TLE9201SG', 'LCSC': 'C112633'} ['at', '97.79', '63.5', '0']
+{'Reference': 'C5', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C1710'} ['at', '114.3', '60.325', '0']
+{'Reference': 'C3', 'Value': '10u', 'Footprint': 'Capacitor_SMD:C_1206_3216Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C13585'} ['at', '80.645', '46.99', '0']
+{'Reference': 'C4', 'Value': '10n', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'PN': '', 'LCSC': 'C1710'} ['at', '114.3', '48.895', '0']
+
+FILE wbo-can-trans.kicad_sch
+TEXT n.p.
+{'Reference': 'D10', 'Value': 'NUP2105L', 'Footprint': 'Package_TO_SOT_SMD:SOT-23', 'Datasheet': 'http://www.onsemi.com/pub_link/Collateral/NUP2105L-D.PDF', 'Description': '', 'LCSC': 'C284104'} ['at', '146.05', '96.52', '0']
+{'Reference': 'C29', 'Value': '47p', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C14857'} ['at', '105.41', '77.47', '0']
+{'Reference': 'C30', 'Value': '47p', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C14857'} ['at', '105.41', '95.25', '0']
+{'Reference': 'C31', 'Value': '100n', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C49678'} ['at', '190.5', '93.98', '0']
+{'Reference': 'C32', 'Value': '100n', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C49678'} ['at', '200.66', '93.98', '0']
+{'Reference': 'U20', 'Value': 'TJA1051T-3', 'Footprint': 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm', 'Datasheet': 'http://www.nxp.com/documents/data_sheet/TJA1051.pdf', 'Description': '', 'LCSC': 'C38695'} ['at', '166.37', '86.36', '0']
+{'Reference': 'R36', 'Value': '120', 'Footprint': 'Resistor_SMD:R_1206_3216Metric', 'Datasheet': '~', 'Description': '', 'LCSC': 'C176250'} ['at', '115.57', '86.36', '90']
+
+FILE Polygonus-Universal-Base.kicad_sch
+TEXT 16p header
+placement markers
+TEXT PIN FUNCTIONS
+
+12V_KEY - Connect to ignition switch. Powers internal ECU logic.
+12V_MR - Power input from the ECU-controlled main relay.
+12V_MR_FUSE - Internally-fused 12V power output for sensors etc
+PERM_LIVE - 12v permanent battery connection, keeps clock running while powered off.
+5V_SENSOR - 5V supply output for ECU sensors
+
+LS1-8, LS13-16 - Medium power low-side outputs, no diode (injectors, relays, etc)
+LS9-12, A-D - High power low-side outputs with freewheel diode (VVT, Idle, PWM solenoids, etc)
+HS1-4 - Medium power high side outputs
+TEXT 5p header
+placement markers
+{'Reference': 'P6', 'Value': 'Pad', 'Footprint': 'Simon:PAD-TH', 'Datasheet': '~', 'Description': ''} ['at', '91.44', '180.34', '0']
+{'Reference': 'J5', 'Value': 'Conn_01x07', 'Footprint': 'Connector_PinHeader_2.54mm:PinHeader_1x07_P2.54mm_Vertical', 'Datasheet': '~', 'Description': ''} ['at', '383.54', '175.26', '0']
+{'Reference': 'P3', 'Value': 'Pad', 'Footprint': 'Simon:PAD-TH', 'Datasheet': '~', 'Description': ''} ['at', '92.71', '195.58', '0']
+{'Reference': 'R3', 'Value': '~', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '', 'Description': '', 'LCSC': ''} ['at', '171.45', '189.23', '0']
+{'Reference': 'P2', 'Value': 'Pad', 'Footprint': 'Simon:PAD-TH', 'Datasheet': '~', 'Description': ''} ['at', '99.06', '193.04', '0']
+{'Reference': 'P4', 'Value': 'Pad', 'Footprint': 'Simon:PAD-TH', 'Datasheet': '~', 'Description': ''} ['at', '92.71', '171.45', '0']
+{'Reference': 'C1', 'Value': '1u', 'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'Datasheet': '', 'Description': '', 'LCSC': 'C28323'} ['at', '171.45', '195.58', '90']
+{'Reference': 'J8', 'Value': 'P1x16', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x16 pin socket', 'LCSC': 'C350305'} ['at', '220.98', '213.36', '0']
+{'Reference': 'J11', 'Value': 'P1x16', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x16 pin socket', 'LCSC': 'C350305'} ['at', '233.68', '213.36', '0']
+{'Reference': 'J10', 'Value': 'P1x16', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x16 pin socket', 'LCSC': 'C350305'} ['at', '233.68', '208.28', '0']
+{'Reference': 'J9', 'Value': 'P1x16', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x16 pin socket', 'LCSC': 'C350305'} ['at', '233.68', '203.2', '0']
+{'Reference': 'J1', 'Value': 'Molex_112_643330100', 'Footprint': 'Simon:Molex_112_643330100', 'Datasheet': '', 'Description': '', 'LCSC': 'C293656'} ['at', '34.29', '63.5', '90']
+{'Reference': 'U2', 'Value': 'f042_wideband_module', 'Footprint': 'fome_modules:f042_wideband_module', 'Datasheet': '', 'Description': ''} ['at', '177.8', '232.41', '0']
+{'Reference': 'J12', 'Value': 'P1x5', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x5 pin socket', 'LCSC': 'C50950'} ['at', '252.095', '203.2', '0']
+{'Reference': 'J13', 'Value': 'P1x5', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x5 pin socket', 'LCSC': 'C50950'} ['at', '264.795', '203.2', '0']
+{'Reference': 'J6', 'Value': 'P1x16', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x16 pin socket', 'LCSC': 'C350305'} ['at', '220.98', '203.2', '0']
+{'Reference': 'U1', 'Value': 'f042_wideband_module', 'Footprint': 'fome_modules:f042_wideband_module', 'Datasheet': '', 'Description': ''} ['at', '114.3', '232.41', '0']
+{'Reference': 'J2', 'Value': 'Polygonus ECU Module', 'Footprint': 'fome_modules:polygonus', 'Datasheet': '', 'Description': ''} ['at', '264.16', '146.05', '0']
+{'Reference': 'C2', 'Value': '56u', 'Footprint': 'Capacitor_THT:CP_Radial_D8.0mm_P3.50mm', 'Datasheet': '~', 'Description': '', 'PN': 'EEH-AZF1H560B', 'LCSC': 'N/A'} ['at', '186.69', '195.58', '0']
+{'Reference': 'F1', 'Value': 'Fuse', 'Footprint': 'Fuse:Fuseholder_Blade_Mini_Keystone_3568', 'Datasheet': '~', 'Description': '', 'LCSC': 'C5249699'} ['at', '114.3', '199.39', '90']
+{'Reference': 'A1', 'Value': 'Pololu_Breakout_DRV8825', 'Footprint': 'Module:Pololu_Breakout-16_15.2x20.3mm', 'Datasheet': 'https://www.pololu.com/product/2982', 'Description': '', 'LCSC': 'N/A'} ['at', '48.26', '234.95', '0']
+{'Reference': 'J3', 'Value': 'Conn_01x05_Male', 'Footprint': 'Connector_PinHeader_2.00mm:PinHeader_1x05_P2.00mm_Vertical', 'Datasheet': '~', 'Description': ''} ['at', '341.63', '140.97', '0']
+{'Reference': 'P5', 'Value': 'Pad', 'Footprint': 'Simon:PAD-TH', 'Datasheet': '~', 'Description': ''} ['at', '95.25', '177.8', '0']
+{'Reference': 'R2', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '', 'Description': '', 'LCSC': 'C17513'} ['at', '33.02', '233.68', '0']
+{'Reference': 'P1', 'Value': 'Pad', 'Footprint': 'Simon:PAD-TH', 'Datasheet': '~', 'Description': ''} ['at', '88.9', '203.2', '0']
+{'Reference': 'R4', 'Value': '~', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '', 'Description': '', 'LCSC': ''} ['at', '171.45', '195.58', '0']
+{'Reference': 'R1', 'Value': '1k', 'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'Datasheet': '', 'Description': '', 'LCSC': 'C17513'} ['at', '22.86', '242.57', '0']
+{'Reference': 'J7', 'Value': 'P1x16', 'Footprint': 'header_placement:header_loc', 'Datasheet': '~', 'Description': '1x16 pin socket', 'LCSC': 'C350305'} ['at', '220.98', '208.28', '0']
+{'Reference': 'J4', 'Value': 'USB_B', 'Footprint': 'Simon:BMM-USB', 'Datasheet': '~', 'Description': '', 'LCSC': 'C46392'} ['at', '356.87', '103.505', '0']

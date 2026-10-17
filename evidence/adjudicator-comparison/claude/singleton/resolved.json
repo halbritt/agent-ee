@@ -1,0 +1,134 @@
+[
+  {
+    "assessment": "defect",
+    "candidate_id": "21b0c14a5c2860d4ccecc4fe1758409cf93d368265316a1c5f42d3577cedea7e",
+    "condition": "Declared external connector contract",
+    "decision": {
+      "candidate_id": "21b0c14a5c2860d4ccecc4fe1758409cf93d368265316a1c5f42d3577cedea7e",
+      "disposition": "accepted",
+      "evidence": [
+        {
+          "locator": "line 1: 'J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground. Verify saved connectivity.'",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "J1 footprint pads: pad 1 (net \"/IN\", uuid 7e93f4b3), pad 2 (net \"/OUT\", uuid d6746591), pad 3 (net \"GND\", uuid ddcb81c6)",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "<nets>: /IN={J1.1,R1.1}; /OUT={C1.1,J1.2,R1.2}; GND={C1.2,J1.3}",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "J1 pads array: pad 1 net /IN, pad 2 net /OUT, pad 3 net GND",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "nets: /IN=[J1.1,R1.1], /OUT=[C1.1,J1.2,R1.2], GND=[C1.2,J1.3]",
+          "path": "work/netlist/connectivity.json"
+        },
+        {
+          "locator": "J1 pad nets (saved PCB): [('1','/IN'),('2','/OUT'),('3','GND')]",
+          "path": "review-work/adjudicator/experiments/verify_j1_contract.out"
+        },
+        {
+          "locator": "Electrical topology analysis and conclusion",
+          "path": "review-work/adjudicator/experiments/NOTES.md"
+        }
+      ],
+      "reason": "Verified against the declared contract (J1 pin 2 = input, pin 1 = filtered output, pin 3 = ground): saved connectivity in both schematic netlist and board puts J1.1 on /IN ({J1.1, R1.1}, the series-resistor input node) and J1.2 on /OUT ({C1.1, J1.2, R1.2}, the R1-C1 filtered-output junction), with J1.3 on GND. Pins 1 and 2 are therefore swapped relative to the contract; no interpretation of the saved topology satisfies pin2=input/pin1=output (driving pin 2 places C1 across the source and the pin-1 'output' is taken through R1, not a low-pass output). ERC/DRC/parity passing is not counter-evidence because the schematic and board are mutually consistent; the violation is against the external requirement, which the scope explicitly asks to verify. Independent extraction recorded in review-work/adjudicator/experiments/verify_j1_contract.py and verify_j1_contract.out; analysis in review-work/adjudicator/experiments/NOTES.md.",
+      "run_id": "3fbf3246-9bcf-4669-bd5c-9b3cf560c139",
+      "seq": 1
+    },
+    "decision_evidence": [
+      {
+        "locator": "line 1: 'J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground. Verify saved connectivity.'",
+        "path": "inputs/requirements.txt"
+      },
+      {
+        "locator": "J1 footprint pads: pad 1 (net \"/IN\", uuid 7e93f4b3), pad 2 (net \"/OUT\", uuid d6746591), pad 3 (net \"GND\", uuid ddcb81c6)",
+        "path": "inputs/project/rc_filter.kicad_pcb"
+      },
+      {
+        "locator": "<nets>: /IN={J1.1,R1.1}; /OUT={C1.1,J1.2,R1.2}; GND={C1.2,J1.3}",
+        "path": "work/netlist/design.xml"
+      },
+      {
+        "locator": "J1 pads array: pad 1 net /IN, pad 2 net /OUT, pad 3 net GND",
+        "path": "work/geometry/geometry.json"
+      },
+      {
+        "locator": "nets: /IN=[J1.1,R1.1], /OUT=[C1.1,J1.2,R1.2], GND=[C1.2,J1.3]",
+        "path": "work/netlist/connectivity.json"
+      },
+      {
+        "locator": "J1 pad nets (saved PCB): [('1','/IN'),('2','/OUT'),('3','GND')]",
+        "path": "review-work/adjudicator/experiments/verify_j1_contract.out"
+      },
+      {
+        "locator": "Electrical topology analysis and conclusion",
+        "path": "review-work/adjudicator/experiments/NOTES.md"
+      }
+    ],
+    "disposition": "accepted",
+    "disposition_reason": "Verified against the declared contract (J1 pin 2 = input, pin 1 = filtered output, pin 3 = ground): saved connectivity in both schematic netlist and board puts J1.1 on /IN ({J1.1, R1.1}, the series-resistor input node) and J1.2 on /OUT ({C1.1, J1.2, R1.2}, the R1-C1 filtered-output junction), with J1.3 on GND. Pins 1 and 2 are therefore swapped relative to the contract; no interpretation of the saved topology satisfies pin2=input/pin1=output (driving pin 2 places C1 across the source and the pin-1 'output' is taken through R1, not a low-pass output). ERC/DRC/parity passing is not counter-evidence because the schematic and board are mutually consistent; the violation is against the external requirement, which the scope explicitly asks to verify. Independent extraction recorded in review-work/adjudicator/experiments/verify_j1_contract.py and verify_j1_contract.out; analysis in review-work/adjudicator/experiments/NOTES.md.",
+    "events": [
+      {
+        "candidate_id": "21b0c14a5c2860d4ccecc4fe1758409cf93d368265316a1c5f42d3577cedea7e",
+        "disposition": "accepted",
+        "evidence": [
+          {
+            "locator": "line 1: 'J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground. Verify saved connectivity.'",
+            "path": "inputs/requirements.txt"
+          },
+          {
+            "locator": "J1 footprint pads: pad 1 (net \"/IN\", uuid 7e93f4b3), pad 2 (net \"/OUT\", uuid d6746591), pad 3 (net \"GND\", uuid ddcb81c6)",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "<nets>: /IN={J1.1,R1.1}; /OUT={C1.1,J1.2,R1.2}; GND={C1.2,J1.3}",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "J1 pads array: pad 1 net /IN, pad 2 net /OUT, pad 3 net GND",
+            "path": "work/geometry/geometry.json"
+          },
+          {
+            "locator": "nets: /IN=[J1.1,R1.1], /OUT=[C1.1,J1.2,R1.2], GND=[C1.2,J1.3]",
+            "path": "work/netlist/connectivity.json"
+          },
+          {
+            "locator": "J1 pad nets (saved PCB): [('1','/IN'),('2','/OUT'),('3','GND')]",
+            "path": "review-work/adjudicator/experiments/verify_j1_contract.out"
+          },
+          {
+            "locator": "Electrical topology analysis and conclusion",
+            "path": "review-work/adjudicator/experiments/NOTES.md"
+          }
+        ],
+        "reason": "Verified against the declared contract (J1 pin 2 = input, pin 1 = filtered output, pin 3 = ground): saved connectivity in both schematic netlist and board puts J1.1 on /IN ({J1.1, R1.1}, the series-resistor input node) and J1.2 on /OUT ({C1.1, J1.2, R1.2}, the R1-C1 filtered-output junction), with J1.3 on GND. Pins 1 and 2 are therefore swapped relative to the contract; no interpretation of the saved topology satisfies pin2=input/pin1=output (driving pin 2 places C1 across the source and the pin-1 'output' is taken through R1, not a low-pass output). ERC/DRC/parity passing is not counter-evidence because the schematic and board are mutually consistent; the violation is against the external requirement, which the scope explicitly asks to verify. Independent extraction recorded in review-work/adjudicator/experiments/verify_j1_contract.py and verify_j1_contract.out; analysis in review-work/adjudicator/experiments/NOTES.md.",
+        "run_id": "3fbf3246-9bcf-4669-bd5c-9b3cf560c139",
+        "seq": 1
+      }
+    ],
+    "evidence": [
+      {
+        "locator": "J1 pads 1, 2, 3 net assignments",
+        "path": "inputs/project/rc_filter.kicad_pcb"
+      },
+      {
+        "locator": "declared connector contract",
+        "path": "inputs/requirements.txt"
+      }
+    ],
+    "id": "challenger/one",
+    "location": "J1.1/J1.2",
+    "mechanism": "J1.1 is /IN and J1.2 is /OUT, contrary to required reversed assignment.",
+    "reason": "Verified against the declared contract (J1 pin 2 = input, pin 1 = filtered output, pin 3 = ground): saved connectivity in both schematic netlist and board puts J1.1 on /IN ({J1.1, R1.1}, the series-resistor input node) and J1.2 on /OUT ({C1.1, J1.2, R1.2}, the R1-C1 filtered-output junction), with J1.3 on GND. Pins 1 and 2 are therefore swapped relative to the contract; no interpretation of the saved topology satisfies pin2=input/pin1=output (driving pin 2 places C1 across the source and the pin-1 'output' is taken through R1, not a low-pass output). ERC/DRC/parity passing is not counter-evidence because the schematic and board are mutually consistent; the violation is against the external requirement, which the scope explicitly asks to verify. Independent extraction recorded in review-work/adjudicator/experiments/verify_j1_contract.py and verify_j1_contract.out; analysis in review-work/adjudicator/experiments/NOTES.md.",
+    "reasoning": "Compare saved pad nets to captured connector requirement.",
+    "run_id": "3fbf3246-9bcf-4669-bd5c-9b3cf560c139",
+    "severity": "major",
+    "status": "accepted",
+    "title": "Connector contract mismatch"
+  }
+]

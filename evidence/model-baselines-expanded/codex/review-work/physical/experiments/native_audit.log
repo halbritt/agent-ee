@@ -1,0 +1,343 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument
+{
+  "tool": "10.0.7",
+  "sha256": "4e059d571e0f46911d9101b86c8178298cefb866e2f19d5295a30c35dadedd53",
+  "holes_no_annulus": [
+    {
+      "ref": "J1",
+      "pad": "",
+      "uuid": "e186b75f-4739-4f2e-a723-906e090de7da",
+      "net": "",
+      "position_mm": [
+        71.95,
+        35.49
+      ],
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "attribute": 0,
+      "layer_set": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111"
+    },
+    {
+      "ref": "J1",
+      "pad": "",
+      "uuid": "d33d29a3-4924-49dd-a841-0d17124fc788",
+      "net": "",
+      "position_mm": [
+        75.55,
+        39.34
+      ],
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": [
+        2.2,
+        2.2
+      ],
+      "attribute": 0,
+      "layer_set": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111"
+    },
+    {
+      "ref": "J1",
+      "pad": "",
+      "uuid": "e5984f98-dc19-4bdf-ab93-d568639f9b10",
+      "net": "",
+      "position_mm": [
+        120.0,
+        28.49
+      ],
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "attribute": 0,
+      "layer_set": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111"
+    },
+    {
+      "ref": "J1",
+      "pad": "",
+      "uuid": "233888a2-e331-456b-963a-5ee5605edf83",
+      "net": "",
+      "position_mm": [
+        199.65,
+        39.34
+      ],
+      "size_mm": [
+        2.2,
+        2.2
+      ],
+      "drill_mm": [
+        2.2,
+        2.2
+      ],
+      "attribute": 0,
+      "layer_set": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111"
+    },
+    {
+      "ref": "J1",
+      "pad": "",
+      "uuid": "0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0",
+      "net": "",
+      "position_mm": [
+        203.25,
+        35.49
+      ],
+      "size_mm": [
+        4.0,
+        4.0
+      ],
+      "drill_mm": [
+        4.0,
+        4.0
+      ],
+      "attribute": 0,
+      "layer_set": "0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0000_0000|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0101_0101|0111_1111"
+    }
+  ],
+  "pin_net_discrepancies": [],
+  "extra_board_pins": [],
+  "zone_summary": [
+    {
+      "uuid": "57ea5c6f-8169-45be-8341-ed64320021c7",
+      "net": "/12V_MR",
+      "layers": [
+        "F.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": true,
+      "filled_area_mm2": 106.457999621596
+    },
+    {
+      "uuid": "bc540b8b-3ffa-4b00-b211-3a91191a1f6d",
+      "net": "GND",
+      "layers": [
+        "F.Cu",
+        "B.Cu",
+        "In2.Gnd.Cu"
+      ],
+      "thermal_gap_mm": 0.3,
+      "spoke_width_mm": 0.4,
+      "filled": true,
+      "filled_area_mm2": 43615.582754991185
+    },
+    {
+      "uuid": "068418de-6b06-46f8-a42a-f6e7af9942f0",
+      "net": "/IGBT4",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 133.7529220359655
+    },
+    {
+      "uuid": "127cf2fa-1812-461a-a187-dfb7e967cba1",
+      "net": "/IGBT5",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 117.312853293903
+    },
+    {
+      "uuid": "3579728e-ee2e-4344-a291-cc863816ab5e",
+      "net": "",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": false,
+      "filled_area_mm2": 0.0
+    },
+    {
+      "uuid": "37aa73ff-cce7-4081-b03f-58d8207d2103",
+      "net": "/IGBT1",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 117.213381822085
+    },
+    {
+      "uuid": "50659ba9-9228-44fb-b2d4-86a20c725a79",
+      "net": "/12V_MR",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.3,
+      "spoke_width_mm": 1.0,
+      "filled": true,
+      "filled_area_mm2": 82.806275750583
+    },
+    {
+      "uuid": "6a5433ee-b187-4be9-8a27-92e9e208ccb9",
+      "net": "/IGBT3",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 116.991311610602
+    },
+    {
+      "uuid": "7495946e-c00c-4a14-baf6-cc5203c3826e",
+      "net": "/IGBT2",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 134.224606123212
+    },
+    {
+      "uuid": "9163dc16-5cde-4b12-8026-7223b919a6d1",
+      "net": "/IGBT6",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 132.536831078386
+    },
+    {
+      "uuid": "f7b82b8e-356c-40e6-bb0d-0caff89bb922",
+      "net": "/IGBT8",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 133.3588493718625
+    },
+    {
+      "uuid": "fef8d15a-1a0b-4c07-a285-17350fd24159",
+      "net": "/IGBT7",
+      "layers": [
+        "B.Cu"
+      ],
+      "thermal_gap_mm": 0.508,
+      "spoke_width_mm": 0.508,
+      "filled": true,
+      "filled_area_mm2": 123.797030868318
+    },
+    {
+      "uuid": "40688da3-b3be-4697-b9c1-aaa23d011d79",
+      "net": "",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": false,
+      "filled_area_mm2": 0.0
+    },
+    {
+      "uuid": "67fbb0df-c8d2-436d-8e48-ae24f97f6741",
+      "net": "/VBUS",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": true,
+      "filled_area_mm2": 40.663142589314
+    },
+    {
+      "uuid": "6b78f1cd-3900-41b6-95cc-001b58f1f77f",
+      "net": "/12V_MR_FUSE",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.3,
+      "spoke_width_mm": 0.7,
+      "filled": true,
+      "filled_area_mm2": 14507.863776015403
+    },
+    {
+      "uuid": "9074955f-8a17-4745-bdf4-6d11013968bf",
+      "net": "/USB_GND",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": true,
+      "filled_area_mm2": 40.6651495379075
+    },
+    {
+      "uuid": "d5ee7818-027c-43cf-a8b2-e7f7cf655728",
+      "net": "/USB_SHIELD",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": true,
+      "filled_area_mm2": 40.661002149497
+    },
+    {
+      "uuid": "d755c13d-743a-48e4-9126-65e88b0de783",
+      "net": "/12V_MR",
+      "layers": [
+        "In.Power.Cu"
+      ],
+      "thermal_gap_mm": 0.5,
+      "spoke_width_mm": 0.5,
+      "filled": true,
+      "filled_area_mm2": 349.9683638545185
+    }
+  ]
+}

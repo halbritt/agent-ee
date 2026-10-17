@@ -1,0 +1,87 @@
+{
+  "candidate_id": "b965f04e4f7ec2f0a9e09341f18b450848f9a46b51435020c7d62e188f737a1b",
+  "coverage": [
+    "Verified sha256 of all candidate native files against packet artifact hashes (schematic, PCB, requirements).",
+    "Reviewed native schematic source: R1=10k between /IN and /OUT, C1=100n between /OUT and GND, J1 1x03 connector; cross-checked against work/netlist/design.xml and work/netlist/connectivity.json.",
+    "Computed R1 dissipation under the stated exercise condition (48 V on /IN, /OUT clamped to 0 V) analytically and confirmed with an ngspice-42 .op simulation.",
+    "Independently rebuilt board connectivity from the saved file in pcbnew 10.0.7 (saved zone fill, no refill): 0 unconnected items; pad nets match schematic; verified clamp current path J1.1 -> 0.25 mm F.Cu track -> R1 -> /OUT tracks -> J1.2.",
+    "Verified GND zone is on B.Cu only and filled as saved; C1.2 -> track -> 0.6/0.3 mm via -> B.Cu zone -> J1.3 path connected (carries no current in this exercise since C1 blocks DC and the clamp return is external).",
+    "Reviewed packet ERC/DRC/netlist/geometry outputs and their ignored-check lists for anything masking a relevant violation.",
+    "Not covered: thermal/derating model of the 0805 footprint (finding rests solely on the stated 0.1 W limit, as instructed); AC/filter performance (out of scope); manufacturing/DFM beyond DRC; zone refill pass (candidate read-only); component ratings not stated in the exercise (e.g. voltage ratings) per requirements.txt instruction not to impose unstated ratings; no ampacity/thermal qualification inferred from track width."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "The exercise condition in inputs/requirements.txt: external equipment holds /IN at 48 V DC and clamps /OUT to 0 V indefinitely; fitted R1 has a continuous power limit of 0.1 W.",
+      "evidence": [
+        {
+          "locator": "lines 1-2 (48 V on /IN, /OUT clamped to 0 V indefinitely, R1 continuous limit 0.1 W)",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "symbol Device:R uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78, property Value \"10k\"; labels IN/OUT on R1 pins",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "<nets>: net /IN node R1 pin 1; net /OUT node R1 pin 2",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "whole file (P = 230.4 mW, ratio 2.304, R_min 23.04k)",
+          "path": "review-work/physical/experiments/r1_power_calc.txt"
+        },
+        {
+          "locator": "op results: i = 0.0048 A, p = 0.2304 W",
+          "path": "review-work/physical/experiments/r1_power_ngspice.log"
+        },
+        {
+          "locator": "pad nets R1.1=/IN, R1.2=/OUT; J1.1=/IN, J1.2=/OUT; 0 unconnected",
+          "path": "review-work/physical/experiments/board_connectivity.txt"
+        }
+      ],
+      "id": "PHY-1",
+      "location": "R1 (10k, Resistor_SMD:R_0805_2012Metric), inputs/project/rc_filter.kicad_sch (symbol uuid c5c38e1a-7593-5c99-b971-2f9d2e7bef78); board footprint uuid 8404a180-a151-464e-8f25-8cf316cdcba5 in inputs/project/rc_filter.kicad_pcb",
+      "mechanism": "R1 connects /IN (pin 1) directly to /OUT (pin 2) per the verified netlist and board pads. With /OUT clamped to 0 V off-board, the full 48 V appears across the 10 kOhm resistor: I = 4.8 mA, P = V^2/R = 48^2/10000 = 0.2304 W. This is 230% of the stated 0.1 W continuous limit, applied indefinitely, so R1 operates in sustained overload for the entire clamp duration; C1 carries no DC and provides no relief. The ngspice operating point confirms 4.8 mA and 0.2304 W dissipated in R1. The sole stated evaluation criterion is therefore failed with a 130% margin exceedance; meeting 0.1 W at 48 V would require R1 >= 23.04 kOhm.",
+      "reasoning": "This is the single criterion the exercise asks to evaluate, and it fails deterministically by direct calculation from the native schematic value and verified connectivity, independently confirmed by simulation. The overload is continuous (clamp held indefinitely) and large (2.3x), not a marginal or transient exceedance, so the fitted R1 cannot sustain the specified condition. Severity blocking because the design as saved cannot meet the only stated requirement; the allegation is fully supported by calculation and the stated limit, with no unstated ratings imposed.",
+      "severity": "blocking",
+      "title": "R1 dissipates 230.4 mW continuously under the specified 48 V / clamped-output condition, 2.3x its stated 0.1 W limit"
+    },
+    {
+      "assessment": "concern",
+      "condition": "The packet's four fresh checks (ERC, DRC with schematic parity, netlist export, geometry probe) all pass or return info with zero violations, while the sole stated acceptance criterion is R1 power stress under a 48 V clamped-output condition.",
+      "evidence": [
+        {
+          "locator": "violations: [] (rule checks only)",
+          "path": "work/erc/erc.json"
+        },
+        {
+          "locator": "Found 0 violations / 0 unconnected / 0 parity issues",
+          "path": "work/drc/console.log"
+        },
+        {
+          "locator": "connectivity/geometry extraction only; no electrical stimulus",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "section 1 (power criterion verified only by review-side calculation/simulation, not by any packet check)",
+          "path": "review-work/physical/experiments/README.md"
+        }
+      ],
+      "id": "PHY-2",
+      "location": "Packet checks: work/erc, work/drc, work/netlist, work/geometry",
+      "mechanism": "ERC, DRC, netlist and the geometry probe verify rule compliance, parity and connectivity only; none applies the 48 V stimulus or computes component dissipation. The design fails the stated criterion (finding PHY-1) despite a fully clean check record, so the check suite as composed provides no coverage of the one requirement under evaluation. A reader aggregating outcomes ('pass, pass, info, info') without an explicit power/stress check could wrongly conclude the candidate meets the exercise requirement.",
+      "reasoning": "Flagged per the instruction to independently challenge verification coverage. A successful exit of every native check is not proof of electrical behavior; here the clean record coexists with a blocking electrical defect. Info severity because it is a coverage observation about the verification record, not an additional flaw in the board itself.",
+      "severity": "info",
+      "title": "Packet verification suite does not exercise the stated electrical criterion; all-pass toolchain results must not be read as electrical qualification"
+    }
+  ],
+  "limitations": [
+    "R1 power limit (0.1 W) is taken as given by inputs/requirements.txt; no part model or datasheet exists in the candidate to independently confirm the fitted part's rating.",
+    "Board connectivity evaluated against the saved zone fill; the read-only candidate forbids a refill pass, so fill-state-dependent connectivity was verified as saved only.",
+    "No thermal simulation of R1 on the 0805 footprint was performed; time-to-failure or steady-state temperature under the 2.3x overload was not quantified, only the limit exceedance itself."
+  ],
+  "packet_sha256": "515d67c39bac865052476abfd5226ccecd114804ffe8769e2da9d3fad4aa5112",
+  "role": "physical",
+  "run_id": "6348bf9f-798d-40df-abe5-17f5ed5ca84d",
+  "schema": "agent-ee.review/1"
+}

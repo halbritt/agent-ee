@@ -1,0 +1,62 @@
+[
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_sch",
+    "line": 18044,
+    "text": "(property \"Reference\" \"U2\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_sch",
+    "line": 18713,
+    "text": "(property \"Reference\" \"U1\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_sch",
+    "line": 18824,
+    "text": "(property \"Reference\" \"J2\""
+  },
+  {
+    "path": "inputs/project/wbo-can-trans.kicad_sch",
+    "line": 2504,
+    "text": "(property \"Reference\" \"U20\""
+  },
+  {
+    "path": "inputs/project/wbo-can-trans.kicad_sch",
+    "line": 2676,
+    "text": "(property \"Reference\" \"R36\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 4166,
+    "text": "(property \"Reference\" \"U21\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 7070,
+    "text": "(property \"Reference\" \"U1\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 14746,
+    "text": "(property \"Reference\" \"R36\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 18669,
+    "text": "(property \"Reference\" \"R37\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 26473,
+    "text": "(property \"Reference\" \"U20\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 33686,
+    "text": "(property \"Reference\" \"U2\""
+  },
+  {
+    "path": "inputs/project/Polygonus-Universal-Base.kicad_pcb",
+    "line": 35441,
+    "text": "(property \"Reference\" \"J2\""
+  }
+]

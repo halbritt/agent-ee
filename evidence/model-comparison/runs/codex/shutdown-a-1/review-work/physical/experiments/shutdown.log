@@ -1,0 +1,36 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: ideal shutdown from saved r1=10k and c1=100n; node names from native nets
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using transient initial conditions
+
+No. of Data Rows : 6011
+
+  Measurements for Transient Analysis
+
+out_5ms             =  6.737944e-03
+
+
+Total analysis time (seconds) = 0.009
+
+Total elapsed time (seconds) = 0.010 
+
+Total DRAM available = 128728.297 MB.
+DRAM currently available = 33672.824 MB.
+Maximum ngspice program size =   21.496 MB.
+Current ngspice program size =   13.059 MB.
+
+Shared ngspice pages =   11.012 MB.
+Text (code) pages =    6.156 MB.
+Stack = 0 bytes.
+Library pages =    2.246 MB.
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+Error: measure  out_initial  find(AT) : out of interval
+ .measure tran out_initial find v(out) at=1n failed!
+

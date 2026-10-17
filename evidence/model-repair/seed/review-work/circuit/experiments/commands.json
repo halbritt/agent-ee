@@ -1,0 +1,67 @@
+{
+  "entry_command": "python3 /work/experiments/audit.py",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        "--version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "python-version.stdout",
+      "stderr": "python-version.stderr"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "kicad-version.stdout",
+      "stderr": "kicad-version.stderr"
+    },
+    {
+      "argv": [
+        "ngspice",
+        "--version"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "ngspice-version.stdout",
+      "stderr": "ngspice-version.stderr"
+    },
+    {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/experiments/native-export.xml",
+        "/candidate/project/rc_filter.kicad_sch"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "netlist-export.stdout",
+      "stderr": "netlist-export.stderr"
+    },
+    {
+      "argv": [
+        "ngspice",
+        "-n",
+        "-b",
+        "-o",
+        "/work/experiments/independent-ngspice.log",
+        "/work/experiments/independent.cir"
+      ],
+      "cwd": "/work/experiments",
+      "exit_code": 0,
+      "stdout": "independent-ngspice.stdout",
+      "stderr": "independent-ngspice.stderr"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+Unloaded native LS9 or LS10 passive bias only
+Vrail rail 0 5
+Rpullup rail control 1k
+Rpulldown control 0 1k
+Rseries control driver 1k
+.control
+op
+print v(control) v(driver)
+quit
+.endc
+.end

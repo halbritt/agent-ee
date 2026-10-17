@@ -1,0 +1,4 @@
+I(R1)  = 1.200 mA
+P(R1)  = 14.400 mW
+Limit  = 100 mW (exercise-stated continuous limit)
+Margin = 6.94x  -> PASS

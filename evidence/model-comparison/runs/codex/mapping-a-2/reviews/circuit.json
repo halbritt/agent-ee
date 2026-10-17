@@ -1,0 +1,22 @@
+{
+  "candidate_id": "ba425dde3d5b5c2a4d83f96acbcaca3dff792b3c000ec9101309b32a820f24ac",
+  "coverage": [
+    "Verified J1 symbol numbering and rotation against the connector contract: pin 1=IN, pin 2=OUT, pin 3=GND. Sources: inputs/requirements.txt:1; inputs/project/rc_filter.kicad_sch:142\u2013195,805\u2013845,1093.",
+    "Fresh native netlist matches work/netlist/design.xml, nets section: IN={J1.1,R1.1}, OUT={J1.2,R1.2,C1.1}, GND={J1.3,C1.2}. Comparison: review-work/circuit/experiments/connectivity-review.json, schematic_nets and comparisons.",
+    "Verified saved copper connectivity, including C1 ground through the via and bottom-layer fill to J1.3. Sources: inputs/project/rc_filter.kicad_pcb:587\u2013613,667\u2013734; review-work/circuit/experiments/connectivity-review.json, reachable_pads_from_each_connector_pad.",
+    "Independently reran native ERC and DRC with schematic parity: zero reported violations, unconnected items or parity issues, consistent with work/erc/erc.json and work/drc/drc.json. Commands and fresh reports: review-work/circuit/experiments/commands.json, erc.json and drc.json.",
+    "Confirmed passive low-pass topology. Conditional ideal unloaded calculation gives RC=1 ms and pole=159.15 Hz; this is not a measured response or acceptance requirement. Calculation, assumptions, versions and review notes: review-work/circuit/experiments/connectivity-review.json, analytic_topology_only; review-work/circuit/experiments/notes.md."
+  ],
+  "findings": [],
+  "limitations": [
+    "Saved connectivity only; no zone refill, fabrication inspection or hardware measurement.",
+    "No stated operating voltage/current, source/load impedance, component ratings/tolerances or response limits; these were not adjudicated. No SPICE or startup, shutdown, reset or brownout testing was performed.",
+    "Ignored ERC/DRC categories were not re-enabled; exact lists remain in review-work/circuit/experiments/erc.json and drc.json.",
+    "pcbnew emitted property-enum assertions, also present in work/geometry/console.log. Returned connectivity was corroborated by native text and CLI reports; these messages do not establish an electrical defect.",
+    "No ECU qualification review, consistent with the declared exercise limitation."
+  ],
+  "packet_sha256": "3179a59afa98a5be4e1f0515255a850f1332e84ca66fb0953224e1574cba54d0",
+  "role": "circuit",
+  "run_id": "52cc8472-02ad-402f-a7e0-98d3a2482308",
+  "schema": "agent-ee.review/1"
+}

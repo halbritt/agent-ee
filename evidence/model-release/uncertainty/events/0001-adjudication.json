@@ -1,0 +1,70 @@
+{
+  "at": "2026-10-17T01:03:11.388251+00:00",
+  "decisions": {
+    "candidate_id": "7a48855eff011bbbb0e59bd670ca885cfd820dde585082a2f1a4afd688b35174",
+    "decisions": [
+      {
+        "disposition": "duplicate",
+        "duplicate_of": "physical/physical_adc_coverage",
+        "evidence": [
+          {
+            "locator": "Line 1: ADC capacitance, switch resistance, initial charge and sampling timing unspecified",
+            "path": "inputs/requirements.txt"
+          },
+          {
+            "locator": "/export/nets/net[@name='/OUT']: C1.1, J1.2, R1.2",
+            "path": "work/netlist/design.xml"
+          },
+          {
+            "locator": "symbolic_ADC_dependence; assumptions",
+            "path": "review-work/adjudicator/experiments/calculation.json"
+          }
+        ],
+        "finding_id": "circuit/circuit-001",
+        "reason": "Same operating condition, charge-sharing mechanism and missing ADC coverage as physical/physical_adc_coverage. Consolidated into that deferred concern; no demonstrated defect is lost."
+      },
+      {
+        "disposition": "deferred",
+        "evidence": [
+          {
+            "locator": "Lines 1\u20132: required voltage/time, missing ADC parameters and prohibition on unstated requirements",
+            "path": "inputs/requirements.txt"
+          },
+          {
+            "locator": "Lines 955 and 1274: C1=100n and R1=10k",
+            "path": "inputs/project/rc_filter.kicad_sch"
+          },
+          {
+            "locator": "J1.2 OUT pad at lines 596\u2013604; OUT segments at lines 675\u2013698",
+            "path": "inputs/project/rc_filter.kicad_pcb"
+          },
+          {
+            "locator": "sheets[0].violations; ignored_checks",
+            "path": "work/erc/erc.json"
+          },
+          {
+            "locator": "violations, unconnected_items and schematic_parity are empty",
+            "path": "work/drc/drc.json"
+          },
+          {
+            "locator": "unloaded_Vout_1ms_V=0.6321206; ADC_connected_test_executed=false",
+            "path": "review-work/adjudicator/experiments/measurement.json"
+          },
+          {
+            "locator": "symbolic_ADC_dependence and assumptions",
+            "path": "review-work/adjudicator/experiments/calculation.json"
+          },
+          {
+            "locator": "Evidence and interpretation; Decisions; limitations",
+            "path": "review-work/adjudicator/experiments/review_notes.md"
+          }
+        ],
+        "finding_id": "physical/physical_adc_coverage",
+        "reason": "Material uncertainty remains: the independent nominal unloaded response is within the band, but ADC charge exchange and recovery depend on explicitly unspecified parameters and switching history. Passing structural checks establish no loaded transient result. Neither a connected-condition violation nor compliance is established. Retain the major concern as deferred pending ADC specifications and evaluation at the unchanged 1 ms, 0.62\u20130.65 V criterion."
+      }
+    ],
+    "run_id": "d460fe18-d4d9-49fc-8947-a43926a68ad4",
+    "schema": "agent-ee.decisions/1"
+  },
+  "method": "fresh subscription agent adjudication"
+}

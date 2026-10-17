@@ -1,0 +1,46 @@
+{
+  "python_version": "3.12.3",
+  "pcbnew_version": "10.0.7-10.0.7~ubuntu24.04.1",
+  "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+  "requirements": "External connector contract: J1 pin 1 is the input, pin 2 the filtered output, pin 3 ground. Verify saved connectivity.\nOnly the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.\n",
+  "J1_pad_nets": {
+    "1": "/IN",
+    "2": "/OUT",
+    "3": "GND"
+  },
+  "connected_pads_from_J1_3": [
+    "C1.2",
+    "J1.3"
+  ],
+  "connected_items_from_J1_3": [
+    "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+    "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+    "93ebd746-9bba-4f51-8877-4185c5edbd19",
+    "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+    "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+  ],
+  "exported_schematic_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "supplied_drc": {
+    "kicad_version": "10.0.7",
+    "violations": [],
+    "unconnected_items": [],
+    "schematic_parity": []
+  },
+  "limitations": [
+    "Saved connectivity and saved zone fill only; no refill, save, repair, or hardware measurement performed."
+  ]
+}

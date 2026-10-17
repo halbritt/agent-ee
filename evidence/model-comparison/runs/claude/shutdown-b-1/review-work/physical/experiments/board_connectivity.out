@@ -1,0 +1,14 @@
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
+unconnected (ratsnest) count: 0
+C1.1 net=/OUT pos=(109050000, 100000000)
+C1.2 net=GND pos=(110950000, 100000000)
+R1.1 net=/IN pos=(104087500, 100000000)
+R1.2 net=/OUT pos=(105912500, 100000000)
+J1.1 net=/IN pos=(100000000, 100000000)
+J1.2 net=/OUT pos=(100000000, 102540000)
+J1.3 net=GND pos=(100000000, 105080000)
+zone net: GND filled: True layer: F.Cu fill area mm^2: 192.287427932463
+GND PTH pad J1.3 touches B.Cu fill: True
+via at (113000000, 100000000) net=GND touches B.Cu fill: True

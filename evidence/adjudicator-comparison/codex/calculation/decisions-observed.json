@@ -1,0 +1,30 @@
+{
+  "candidate_id": "4e8277b63073a5e770e39dc2e62ad2171c2ad08abd1ec36b88326fe8f078c052",
+  "decisions": [
+    {
+      "disposition": "accepted",
+      "evidence": [
+        {
+          "locator": "Line 1: continuous limit 0.1 W; externally maintained /IN=48 V and /OUT=0 V indefinitely",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "R1 instance UUID c5c38e1a-7593-5c99-b971-2f9d2e7bef78; Value 10k, DNP no; IN/OUT wires and labels",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "/export/components/comp[@ref='R1']/value; /export/nets/net[@name='/IN'] and net[@name='/OUT']: R1.1 and R1.2 respectively",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "R1_power_W=0.2304; continuous_limit_W=0.1; power_over_limit_ratio=2.304; assessment=defect",
+          "path": "review-work/adjudicator/experiments/r1_power_result.json"
+        }
+      ],
+      "finding_id": "challenger/one",
+      "reason": "Established defect: native R1 is 10 k\u03a9 between /IN and /OUT. The specified external equipment continuously maintains 48 V across it, producing I=4.8 mA and P=48\u00b2/10000=0.2304 W, or 2.304 times the declared 0.1 W limit. The alternative 0.002304 W calculation is incorrect by a factor of 100. Clean ERC/DRC results do not evaluate this continuous power criterion."
+    }
+  ],
+  "run_id": "1b57518e-2a72-4cea-be22-4074a2d9f394",
+  "schema": "agent-ee.decisions/1"
+}

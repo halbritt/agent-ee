@@ -1,0 +1,51 @@
+{
+  "candidate_id": "450a3fbe701ce2de522829b6e4211ca1c472af4be06efae261accced6a72a658",
+  "details": {
+    "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "by_severity": {},
+    "by_type": {},
+    "ignored_checks": [
+      "missing_courtyard",
+      "track_not_centered_on_via",
+      "tuning_profile_track_geometries",
+      "footprint_filters_mismatch",
+      "footprint_type_mismatch"
+    ],
+    "kicad_version": "10.0.7",
+    "schematic_parity": 0,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/drc.json",
+        "/candidate/project/rc_filter.kicad_pcb"
+      ],
+      "console_sha256": "9581d5d3321e3a9ab5e0afec8368bba15c9f7d2b55704e1ac6fddf15d791e2aa",
+      "duration_s": 1.253,
+      "exit_code": 0
+    },
+    "unconnected_items": 0,
+    "violations": 0
+  },
+  "evidence": [
+    "work/drc/execution.json",
+    "work/drc/console.log",
+    "work/drc/drc.json"
+  ],
+  "execution": "ok",
+  "id": "drc",
+  "kind": "drc",
+  "limitations": [
+    "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+  ],
+  "outcome": "pass",
+  "summary": "DRC with schematic parity reported zero issues on the saved board"
+}

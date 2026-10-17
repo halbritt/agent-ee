@@ -1,0 +1,21 @@
+Independent circuit review; candidate read-only.
+Commands: file inventory with rg; Python JSON inspection of full native ERC/DRC reports.
+No candidate files modified.
+['python3', '--version']
+Python 3.12.3
+
+['kicad-cli', 'version']
+10.0.7
+
+['ngspice', '--version']
+******
+** ngspice-42 : Circuit level simulation program
+** Compiled with KLU Direct Linear Solver
+** The U. C. Berkeley CAD Group
+** Copyright 1985-1994, Regents of the University of California.
+** Copyright 2001-2023, The ngspice team.
+** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html
+** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html
+** Creation Date: Sun Mar 31 20:15:14 UTC 2024
+******
+

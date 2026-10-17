@@ -1,0 +1,186 @@
+Python version: 3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]
+=== ERC SUMMARY ===
+Sheet: / uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55
+  [error] power_pin_not_driven: Input Power pin not driven by any Output Power pins
+    - Symbol #PWR01 Hidden pin 1 [GND, Power input, Line] @ (36.83, 78.74) uuid=ad746bdd-0707-4a48-896d-17738721a9e8
+  [error] pin_not_connected: Pin not connected
+    - Symbol A1 Pin 2 [~{FLT}, Output, Line] @ (38.1, 224.79) uuid=a25f94e0-cd48-48aa-9b62-40d59568d2dd
+  [error] power_pin_not_driven: Input Power pin not driven by any Output Power pins
+    - Symbol A1 Pin 8 [VMOT, Power input, Line] @ (48.26, 219.71) uuid=acdd6b6d-8e25-409a-ad93-dbfe1e531cbc
+  [error] pin_to_pin: Pins of type Power output and Power output are connected
+    - Symbol J2 Pin 40 [5V_SENSOR_1, Power output, Line] @ (262.89, 128.27) uuid=2f453565-0a9c-4d84-acb3-c188de3f22c6
+    - Symbol J2 Pin 41 [5V_SENSOR_1, Power output, Line] @ (262.89, 130.81) uuid=b5fc1cf2-1c0e-41a8-aaee-756bb08b3bda
+  [error] power_pin_not_driven: Input Power pin not driven by any Output Power pins
+    - Symbol J2 Pin 90 [12V_IGN, Power input, Line] @ (293.37, 173.99) uuid=3d2dd476-ab8f-4919-8110-8a3bf66c9cf0
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol R1 [Res] @ (22.86, 242.57) uuid=f44ebba2-b829-406f-97a8-6c3ad16044c8
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol R2 [Res] @ (33.02, 233.68) uuid=ddbb0a7a-e74e-4d02-95ea-1966a2ce985d
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol J1 [Molex_112_643330100] @ (34.29, 63.5) uuid=6971898b-90b2-4a58-864c-c0217a4177d1
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol P1 [Pad] @ (88.9, 203.2) uuid=e403df5b-fbb8-48e1-8802-e490d5930c0a
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol P1 [Pad] @ (88.9, 203.2) uuid=e403df5b-fbb8-48e1-8802-e490d5930c0a
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol P6 [Pad] @ (91.44, 180.34) uuid=07fc043a-6e7c-48f9-b36c-029e28517ba2
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol P6 [Pad] @ (91.44, 180.34) uuid=07fc043a-6e7c-48f9-b36c-029e28517ba2
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol P4 [Pad] @ (92.71, 171.45) uuid=3e6ff989-fd0f-4672-819a-39e0f63270d6
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol P4 [Pad] @ (92.71, 171.45) uuid=3e6ff989-fd0f-4672-819a-39e0f63270d6
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol P3 [Pad] @ (92.71, 195.58) uuid=294d4dce-d40d-48ea-bf33-b983fcff01a7
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol P3 [Pad] @ (92.71, 195.58) uuid=294d4dce-d40d-48ea-bf33-b983fcff01a7
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol P5 [Pad] @ (95.25, 177.8) uuid=da6c8ad9-145d-48cd-ac23-17763816599b
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol P5 [Pad] @ (95.25, 177.8) uuid=da6c8ad9-145d-48cd-ac23-17763816599b
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol P2 [Pad] @ (99.06, 193.04) uuid=2d33d9a4-0aef-4ae7-afda-e5d9e658c6c3
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol P2 [Pad] @ (99.06, 193.04) uuid=2d33d9a4-0aef-4ae7-afda-e5d9e658c6c3
+  [warning] multiple_net_names: Both 12V_MR_FUSE and LSU_12v are attached to the same items; 12V_MR_FUSE will be used in the netlist
+    - Label '12V_MR_FUSE' @ (222.25, 78.74) uuid=3c531ce0-f9ce-4ab0-8eec-bf17d2c1df74
+    - Label 'LSU_12v' @ (99.06, 238.76) uuid=4730018f-bdc8-43dc-9695-e3e3edc7a8e5
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol R3 [Res] @ (171.45, 189.23) uuid=2ae5c0e2-89c9-44b0-9d9d-58442a1d2904
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol C1 [Res] @ (171.45, 195.58) uuid=3ff6b447-83b5-40bb-9a2b-d85dbc5e6565
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol R4 [Res] @ (171.45, 195.58) uuid=efe826a0-f37b-4d60-a35e-0bfb25a8b878
+  [warning] lib_symbol_issues: Symbol 'CP' not found in symbol library 'Device'
+    - Symbol C2 [CP] @ (186.69, 195.58) uuid=bd7dbed2-53d4-417c-9458-85252bdbb186
+  [warning] multiple_net_names: Both GND and HEAT_GND2 are attached to the same items; GND will be used in the netlist
+    - Symbol #PWR010 Hidden pin 1 [GND, Power input, Line] @ (50.8, 255.27) uuid=629f819c-d433-4432-9e70-b2d79b91f863
+    - Symbol U2 Hidden pin 10 [HEAT_GND2, Power input, Line] @ (193.04, 241.3) uuid=2af9c3fb-9db8-4d50-be21-0835e7be11e5
+  [warning] isolated_pin_label: Label connected to only one pin
+    - Label '+3V3' @ (317.5, 166.37) uuid=6527c727-288f-4955-bcae-da38e4625531
+  [warning] isolated_pin_label: Label connected to only one pin
+    - Label 'EXT_SPI_CS' @ (317.5, 168.91) uuid=00ca97a0-2f19-4585-80d1-6801432ebce8
+  [warning] isolated_pin_label: Label connected to only one pin
+    - Label 'EXT_SPI_SCK' @ (317.5, 171.45) uuid=a02c6abd-3850-4e6e-a8cb-3f6f0cbeecda
+  [warning] isolated_pin_label: Label connected to only one pin
+    - Label 'EXT_SPI_MISO' @ (317.5, 173.99) uuid=750e1dff-a217-4781-9e39-179e902ec176
+  [warning] isolated_pin_label: Label connected to only one pin
+    - Label 'EXT_SPI_MOSI' @ (317.5, 176.53) uuid=c7f2875c-e6d1-492f-ac33-7c64abb01190
+  [warning] lib_symbol_issues: Symbol 'Conn_01x05_Male' not found in symbol library 'Connector'
+    - Symbol J3 [Conn_01x05_Male] @ (341.63, 140.97) uuid=cc95f459-78ab-4864-9ec0-ba14fea8012d
+  [warning] footprint_link_issues: The current configuration does not include the footprint library 'Simon'
+    - Symbol J4 [USB_B] @ (356.87, 103.505) uuid=fb4d6429-cb0c-4a08-94ec-bf1082311133
+  [warning] lib_symbol_issues: The current configuration does not include the symbol library 'hellen-one-common'
+    - Symbol J4 [USB_B] @ (356.87, 103.505) uuid=fb4d6429-cb0c-4a08-94ec-bf1082311133
+Sheet: /etb-2/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/eb1c8308-a44a-4a4b-a646-1cfc69b467a3
+Sheet: /VR Module/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/fb009e65-a9a4-468e-a2ae-bdcc6f13b5d3
+Sheet: /VR Conditioner/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/76f66c7e-94ea-4f9a-aa2e-a01725934e38
+  [warning] same_local_global_label: Local and global labels have same name
+    - Symbol #PWR0105 Hidden pin 1 [+5V, Power input, Line] @ (173.355, 93.98) uuid=0c8bab73-8c6b-4824-9494-696a400e254b
+    - Label '+5V' @ (378.46, 170.18) uuid=12796be7-eed1-4117-887a-d4adc20c1017
+Sheet: /IGBT outputs/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/39654894-3080-4f33-9285-6e0d77694cfd
+Sheet: /Lowside Adder/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/de31d6fa-be3a-4a6f-8e1e-8e6b8372a269
+Sheet: /etb-1/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/8bc5218e-e3ef-4de7-bea4-c8f4c6a87c8a
+Sheet: /Lowside Adder1/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/2e1028d9-7b0e-4bfd-a0ec-cbc4907c4bcc
+Sheet: /WBO-CAN-TRANS/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/2889b04e-b195-449f-8a75-049e865cc173
+Sheet: /WBO-CAN-TRANS1/ uuid: /e63e39d7-6ac0-4ffd-8aa3-1841a4541b55/10870bd0-e7b2-41e0-a73b-86c976bc9253
+
+=== DRC SUMMARY ===
+Section: violations (142)
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J12 on F.Silkscreen @ (112.075, 56.315) uuid=cb75ea42-0a7a-445c-9a37-315c00fe3a41
+    - PTH pad 104 [/EXT_SPI_SCK] of J2 @ (112.074579, 56.302538) uuid=1b772485-30d5-41f6-8f59-26ca321888c9
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Rectangle of U2 on F.Silkscreen @ (59.706115, 136.916435) uuid=2995fbe4-7913-4e53-a3b3-8980d693ff63
+    - Pad 2 [/CAN2+] of C33 on F.Cu @ (80.868167, 137.563839) uuid=331f79d6-04e4-4328-9d39-edd2445731d4
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J8 on F.Silkscreen @ (87.75, 112.965) uuid=5c658df5-242a-45b4-b440-7e093da7ef9b
+    - PTH pad 41 [/5V_SENSOR_1] of J2 @ (87.76008, 111.697154) uuid=fb7da3a3-fa52-40df-8509-d0b139c43bbe
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J8 on F.Silkscreen @ (87.75, 112.965) uuid=5c658df5-242a-45b4-b440-7e093da7ef9b
+    - PTH pad 40 [/5V_SENSOR_1] of J2 @ (87.76008, 114.237154) uuid=f6444461-22bd-462e-b268-0eb21e8e3ade
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J10 on F.Silkscreen @ (146.175, 131.04) uuid=3ff82c03-698b-49ce-b540-27fd6d5e2caf
+    - PTH pad 73 [/CAN2+] of J2 @ (144.91008, 131.026287) uuid=0c61310e-0996-4ac2-a742-b9bef0c337c3
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J10 on F.Silkscreen @ (146.175, 131.04) uuid=3ff82c03-698b-49ce-b540-27fd6d5e2caf
+    - PTH pad 72 [GND] of J2 @ (147.45008, 131.026287) uuid=17647c91-80b4-4249-acc4-780a79a145da
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J11 on F.Silkscreen @ (181.675, 112.965) uuid=2329dad5-e535-4c91-b1a7-849b65dea70f
+    - PTH pad 8 [/LS5] of J2 @ (181.672763, 114.232059) uuid=ef0983aa-a754-4b06-a2d1-46ac3f7ab428
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J11 on F.Silkscreen @ (181.675, 112.965) uuid=2329dad5-e535-4c91-b1a7-849b65dea70f
+    - PTH pad 9 [/LS6] of J2 @ (181.672763, 111.692059) uuid=445f3625-6686-48dc-b7be-e6229f3e0dbe
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J9 on F.Silkscreen @ (181.675, 72.34) uuid=0b9d68a1-ea3f-4d60-9e99-8a4938cbcdcd
+    - PTH pad 25 [/LS10] of J2 @ (181.672763, 71.052059) uuid=0729b3b4-4d5e-476f-b140-cfbeb3d7a975
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J9 on F.Silkscreen @ (181.675, 72.34) uuid=0b9d68a1-ea3f-4d60-9e99-8a4938cbcdcd
+    - PTH pad 24 [/LS9] of J2 @ (181.672763, 73.592059) uuid=351134b4-c37c-486f-b919-a955eca5857a
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J7 on F.Silkscreen @ (122.9, 117.14) uuid=09242dc3-d007-43cc-ab75-98fcea98a1b9
+    - PTH pad 88 [/ETB2_DIR] of J2 @ (124.173794, 117.134404) uuid=c1bab667-01c1-4565-a0a3-bbe8ef6b517a
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J7 on F.Silkscreen @ (122.9, 117.14) uuid=09242dc3-d007-43cc-ab75-98fcea98a1b9
+    - PTH pad 89 [GND] of J2 @ (121.633794, 117.134404) uuid=e5db63c6-4715-4361-bcb7-57d4f12a8676
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J6 on F.Silkscreen @ (87.775, 72.34) uuid=3c374c9e-e568-4e02-842c-92d82a242d79
+    - PTH pad 56 [/AV7] of J2 @ (87.76008, 73.597154) uuid=10629f05-ed77-4899-ba91-185ae70cb9ba
+  [warning] silk_over_copper: Silkscreen clipped by solder mask
+    - Circle of J6 on F.Silkscreen @ (87.775, 72.34) uuid=3c374c9e-e568-4e02-842c-92d82a242d79
+    - PTH pad 57 [/AV6] of J2 @ (87.76008, 71.057154) uuid=a734aaed-fa25-4a77-927f-8d68b2bebecc
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint P1 @ (71.628, 46.0756) uuid=1646febd-07b7-4b78-9143-4f4e3ef218d8
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint P3 @ (74.2696, 53.4416) uuid=6d6b5ea5-a8c7-4670-8949-5bad42600670
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint P6 @ (206.4004, 49.9364) uuid=89385b4b-9c70-4cbe-b39b-e2061178fb5d
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint P5 @ (202.2348, 46.0756) uuid=91098c1d-8a0e-42f4-9442-de8c41cc11b2
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint J1 @ (133.2, 43.34) uuid=93ba26da-2821-4eef-8685-c838f276fd00
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint J4 @ (205.74, 93.98) uuid=a7443703-d6a5-4977-ad3d-a3096dcba527
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint P4 @ (201.8792, 83.8708) uuid=d868f016-4d22-4c43-94c5-cfbf3a3b2966
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint J2 @ (136.565871, 99.211522) uuid=f447e585-df78-4239-b8cb-4653b3837bb1
+  [warning] lib_footprint_issues: The current configuration does not include the footprint library 'Simon'
+    - Footprint P2 @ (71.7804, 42.926) uuid=f94db640-15c9-4c9c-8cd9-2d393b58dbf2
+  [error] starved_thermal: Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)
+    - Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0 @ (203.2, 23.36994) uuid=bc540b8b-3ffa-4b00-b211-3a91191a1f6d
+    - Pad 2 [GND] of C15 on F.Cu @ (107.851547, 98.755769) uuid=9075962d-febe-4c1a-ab7d-6f8b94d3635c
+  [error] starved_thermal: Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)
+    - Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0 @ (203.2, 23.36994) uuid=bc540b8b-3ffa-4b00-b211-3a91191a1f6d
+    - Pad 4 [GND] of U7 on F.Cu @ (101.008268, 102.683572) uuid=23ac307c-764d-4806-bb29-f4965cb55097
+  [error] starved_thermal: Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)
+    - Zone [GND] on F.Cu, B.Cu and In2.Gnd.Cu, priority 0 @ (203.2, 23.36994) uuid=bc540b8b-3ffa-4b00-b211-3a91191a1f6d
+    - Pad 2 [GND] of C14 on F.Cu @ (101.591948, 104.291543) uuid=f33c422b-548e-40d6-b20d-b67c2305f336
+  [error] padstack: Padstack is questionable (PTH pad hole leaves no copper)
+    - PTH pad [<no net>] of J1 @ (71.95, 35.49) uuid=e186b75f-4739-4f2e-a723-906e090de7da
+  [error] padstack: Padstack is questionable (PTH pad hole leaves no copper)
+    - PTH pad [<no net>] of J1 @ (75.55, 39.34) uuid=d33d29a3-4924-49dd-a841-0d17124fc788
+  [error] padstack: Padstack is questionable (PTH pad hole leaves no copper)
+    - PTH pad [<no net>] of J1 @ (120.0, 28.49) uuid=e5984f98-dc19-4bdf-ab93-d568639f9b10
+  [error] padstack: Padstack is questionable (PTH pad hole leaves no copper)
+    - PTH pad [<no net>] of J1 @ (199.65, 39.34) uuid=233888a2-e331-456b-963a-5ee5605edf83
+  [error] padstack: Padstack is questionable (PTH pad hole leaves no copper)
+    - PTH pad [<no net>] of J1 @ (203.25, 35.49) uuid=0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0
+  [error] annular_width: Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)
+    - PTH pad [<no net>] of J1 @ (71.95, 35.49) uuid=e186b75f-4739-4f2e-a723-906e090de7da
+  [error] annular_width: Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)
+    - PTH pad [<no net>] of J1 @ (75.55, 39.34) uuid=d33d29a3-4924-49dd-a841-0d17124fc788
+  [error] annular_width: Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)
+    - PTH pad [<no net>] of J1 @ (120.0, 28.49) uuid=e5984f98-dc19-4bdf-ab93-d568639f9b10
+  [error] annular_width: Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)
+    - PTH pad [<no net>] of J1 @ (199.65, 39.34) uuid=233888a2-e331-456b-963a-5ee5605edf83
+  [error] annular_width: Annular width (board setup constraints min annular width 0.1000 mm; actual 0.0000 mm)
+    - PTH pad [<no net>] of J1 @ (203.25, 35.49) uuid=0b0fdd3c-c35f-4f2f-9520-66ae58d48bc0
+Section: unconnected_items (0)
+Section: schematic_parity (114)
+  [warning] footprint_symbol_mismatch: Footprint attributes don't match symbol: 'Exclude from bill of materials' settings differ
+    - Footprint C2 @ (101.112052, 65.110107) uuid=0f36f87d-2f11-43fc-a5e7-eed7011585a2
+  [warning] footprint_symbol_mismatch: Simon:Polygonus-With-USB-SWD doesn't match footprint given by symbol (fome_modules:polygonus)
+    - Footprint J2 @ (136.565871, 99.211522) uuid=f447e585-df78-4239-b8cb-4653b3837bb1
+  [warning] footprint_symbol_mismatch: Footprint attributes don't match symbol: 'Exclude from bill of materials' settings differ
+    - Footprint J2 @ (136.565871, 99.211522) uuid=f447e585-df78-4239-b8cb-4653b3837bb1

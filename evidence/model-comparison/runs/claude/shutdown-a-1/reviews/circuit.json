@@ -1,0 +1,22 @@
+{
+  "candidate_id": "bd8ff0ea2d31a613361ffad6f6f714c2f520a374e8bfdca795336382490b5cd0",
+  "coverage": [
+    "Verified sha256 of inputs/project/rc_filter.kicad_sch and inputs/project/rc_filter.kicad_pcb against packet values (review-work/circuit/experiments/hashes.txt); fresh /evidence/work netlist/erc/drc/geometry outputs are hash-identical to packet copies (review-work/circuit/experiments/evidence_hashes.txt).",
+    "Independently re-derived schematic pin-to-net mapping from symbol geometry, including J1's 180-degree rotation, against wires and local labels (review-work/circuit/experiments/pin_label_trace.txt); result matches work/netlist/design.xml: /IN={J1.1,R1.1}, /OUT={C1.1,J1.2,R1.2}, GND={C1.2,J1.3}.",
+    "Checked board-level connectivity from inputs/project/rc_filter.kicad_pcb and work/geometry/geometry.json: pad nets match the schematic netlist; /IN track J1.1-R1.1; /OUT tracks R1.2-C1.1 with collinear T-junction at (107.5,100) from J1.2; GND path C1.2 pad -> track -> via(113,100) -> filled B.Cu zone -> J1.3 PTH with thermal relief; corroborated by work/drc (0 violations, 0 unconnected, 0 parity issues).",
+    "Verified the stated shutdown criterion analytically and by ngspice transient simulation (review-work/circuit/experiments/analytic.txt, shutdown.sp, shutdown_ngspice.log): tau = 10k x 100n = 1.000 ms; V(/OUT) at 5 ms = 6.738 mV <= 10 mV limit, margin 1.48x, 10 mV crossing at 4.605 ms.",
+    "Reviewed ERC result (work/erc/erc.json, 0 violations) and noted the four ignored check classes do not affect the stated criterion for this 3-component passive fixture."
+  ],
+  "findings": [],
+  "limitations": [
+    "Component tolerances, capacitor ESR/leakage, and dielectric effects were not evaluated; the packet scope mandates ideal passive components. With real +/-10% R and C worst-case low, V(5ms) ~ e^-(5/0.81) = 2.1 mV, still passing, but this was not a scope requirement and is noted only informally.",
+    "Zone fill connectivity was evaluated as saved in the board file (refill forbidden by the packet); DRC on the saved fill reported 0 unconnected items.",
+    "Grounding of /IN was modeled as an ideal 0-ohm short at the net; connector contact resistance and off-board wiring are outside the stated operating conditions.",
+    "No thermal, ratings, or qualification analysis performed, per inputs/requirements.txt which restricts evaluation to the stated exercise criterion.",
+    "ERC/DRC ignored-check lists (e.g. single_global_label, footprint_filter) were accepted as configured by the check harness; none of the ignored classes bears on the evaluated criterion for this design."
+  ],
+  "packet_sha256": "dea9de63ecf6fd84114e0e4fefb0d04d7e5c2e248c6a2830cd74603e0d58e66e",
+  "role": "circuit",
+  "run_id": "f2b2dfbb-1d19-4ab7-b561-b489158fc5a4",
+  "schema": "agent-ee.review/1"
+}

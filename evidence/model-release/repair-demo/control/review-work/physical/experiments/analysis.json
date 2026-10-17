@@ -1,0 +1,379 @@
+{
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+  "hashes_before": {
+    "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+  },
+  "tracks": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "start_mm": [
+        100.0,
+        100.0
+      ],
+      "end_mm": [
+        104.0875,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "net": "/IN",
+      "layer": "F.Cu"
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "start_mm": [
+        105.9125,
+        100.0
+      ],
+      "end_mm": [
+        109.05,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "layer": "F.Cu"
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "start_mm": [
+        100.0,
+        102.54
+      ],
+      "end_mm": [
+        107.5,
+        102.54
+      ],
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "layer": "F.Cu"
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "start_mm": [
+        107.5,
+        102.54
+      ],
+      "end_mm": [
+        107.5,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "net": "/OUT",
+      "layer": "F.Cu"
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "start_mm": [
+        110.95,
+        100.0
+      ],
+      "end_mm": [
+        113.0,
+        100.0
+      ],
+      "width_mm": 0.25,
+      "net": "GND",
+      "layer": "F.Cu"
+    }
+  ],
+  "tracks_meet_0p2_mm": true,
+  "pads": [
+    {
+      "ref": "C1",
+      "pad": "1",
+      "kind": "smd",
+      "shape": "roundrect",
+      "position_mm": [
+        109.05,
+        100.0
+      ],
+      "size_mm": [
+        1.0,
+        1.45
+      ],
+      "net": "/OUT"
+    },
+    {
+      "ref": "C1",
+      "pad": "2",
+      "kind": "smd",
+      "shape": "roundrect",
+      "position_mm": [
+        110.95,
+        100.0
+      ],
+      "size_mm": [
+        1.0,
+        1.45
+      ],
+      "net": "GND"
+    },
+    {
+      "ref": "R1",
+      "pad": "1",
+      "kind": "smd",
+      "shape": "roundrect",
+      "position_mm": [
+        104.0875,
+        100.0
+      ],
+      "size_mm": [
+        1.025,
+        1.4
+      ],
+      "net": "/IN"
+    },
+    {
+      "ref": "R1",
+      "pad": "2",
+      "kind": "smd",
+      "shape": "roundrect",
+      "position_mm": [
+        105.9125,
+        100.0
+      ],
+      "size_mm": [
+        1.025,
+        1.4
+      ],
+      "net": "/OUT"
+    },
+    {
+      "ref": "J1",
+      "pad": "1",
+      "kind": "thru_hole",
+      "shape": "rect",
+      "position_mm": [
+        100.0,
+        100.0
+      ],
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "net": "/IN"
+    },
+    {
+      "ref": "J1",
+      "pad": "2",
+      "kind": "thru_hole",
+      "shape": "circle",
+      "position_mm": [
+        100.0,
+        102.54
+      ],
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "net": "/OUT"
+    },
+    {
+      "ref": "J1",
+      "pad": "3",
+      "kind": "thru_hole",
+      "shape": "circle",
+      "position_mm": [
+        100.0,
+        105.08
+      ],
+      "size_mm": [
+        1.7,
+        1.7
+      ],
+      "net": "GND"
+    }
+  ],
+  "schematic_netmap": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "board_netmap": {
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ]
+  },
+  "netmaps_match": true,
+  "values": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "10k"
+  },
+  "filled_polygon_count": 1,
+  "via_position_mm": [
+    113.0,
+    100.0
+  ],
+  "saved_fill_contains_via_center": true,
+  "J1_3_thermal_samples": [
+    {
+      "angle_deg": 45,
+      "radii_mm": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+        1.5,
+        1.6
+      ],
+      "saved_fill_contains": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "angle_deg": 135,
+      "radii_mm": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+        1.5,
+        1.6
+      ],
+      "saved_fill_contains": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "angle_deg": 225,
+      "radii_mm": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+        1.5,
+        1.6
+      ],
+      "saved_fill_contains": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "angle_deg": 315,
+      "radii_mm": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.4,
+        1.5,
+        1.6
+      ],
+      "saved_fill_contains": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    }
+  ],
+  "analytic": {
+    "R_ohm": 10000.0,
+    "C_F": 1e-07,
+    "tau_s": 0.001,
+    "vout_V": {
+      "0.001": 0.6321205588285577,
+      "0.005": 0.9932620530009145
+    },
+    "initial_current_A": 0.0001,
+    "peak_resistor_power_W": 0.0001,
+    "step_energy_dissipated_J": 5e-08
+  },
+  "geometry_notes": [
+    "All footprint rotations are zero in the inspected native board.",
+    "C1.2 at (110.95,100) connects by 2.05 mm F.Cu track to GND via (113,100).",
+    "J1.3 is PTH at (100,105.08), diameter 1.7 mm, drill 1 mm. Sampled fill radii overlap its annular copper.",
+    "Point samples support saved thermal contact, not a general polygon topology or fabrication proof. Native DRC separately checks connectivity.",
+    "Edge.Cuts rectangle is (96,96)-(116,108), 20 by 12 mm. All courtyard extents are inside.",
+    "No copper thickness, specific resistor/capacitor/header model, fabrication process or thermal environment is assumed."
+  ],
+  "hashes_after": {
+    "project/fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+    "project/rc_filter.kicad_pro": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+  },
+  "candidate_files_unchanged": true
+}

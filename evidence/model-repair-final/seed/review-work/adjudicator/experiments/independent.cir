@@ -1,0 +1,8 @@
+* Independent unchanged native RC values, 1 ms pre-step
+R1 IN OUT 100k
+C1 OUT 0 100n
+VSTEP IN 0 PWL(0 0 1m 0 1.000001m 1 6.1m 1)
+.tran 1u 6.1m 0 1u
+.meas tran vout_1ms FIND v(OUT) AT=2.000001m
+.meas tran vout_5ms FIND v(OUT) AT=6.000001m
+.end

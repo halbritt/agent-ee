@@ -1,0 +1,63 @@
+[
+  {
+    "argv": [
+      "python3",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "python-version.stdout",
+    "stderr": "python-version.stderr"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "kicad-version.stdout",
+    "stderr": "kicad-version.stderr"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "--version"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "ngspice-version.stdout",
+    "stderr": "ngspice-version.stderr"
+  },
+  {
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/experiments/native.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "export.stdout",
+    "stderr": "export.stderr"
+  },
+  {
+    "argv": [
+      "ngspice",
+      "-n",
+      "-b",
+      "-o",
+      "/work/experiments/independent.log",
+      "/work/experiments/independent.cir"
+    ],
+    "cwd": "/work/experiments",
+    "exit_code": 0,
+    "stdout": "independent.stdout",
+    "stderr": "independent.stderr"
+  }
+]

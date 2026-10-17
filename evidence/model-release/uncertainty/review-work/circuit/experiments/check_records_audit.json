@@ -1,0 +1,690 @@
+{
+  "erc": {
+    "summary": "ERC ran on 1 sheet instance(s) with zero violations",
+    "details": {
+      "by_severity": {},
+      "by_type": {},
+      "ignored_checks": [
+        "single_global_label",
+        "four_way_junction",
+        "simulation_model_issue",
+        "footprint_filter"
+      ],
+      "kicad_version": "10.0.7",
+      "schematic_files": [
+        "project/rc_filter.kicad_sch"
+      ],
+      "sheets_checked": 1,
+      "tool": {
+        "argv": [
+          "kicad-cli",
+          "sch",
+          "erc",
+          "--format",
+          "json",
+          "--severity-all",
+          "--units",
+          "mm",
+          "-o",
+          "/work/erc.json",
+          "/candidate/project/rc_filter.kicad_sch"
+        ],
+        "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+        "duration_s": 0.969,
+        "exit_code": 0
+      },
+      "violations": 0
+    },
+    "limitations": [],
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "erc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--units",
+      "mm",
+      "-o",
+      "/work/erc.json",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "console": "Found 0 violations\nSaved ERC Report to /work/erc.json\n",
+    "native_report": {
+      "$schema": "https://schemas.kicad.org/erc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:58:02",
+      "ignored_checks": [
+        {
+          "description": "Global label only appears once in the schematic",
+          "key": "single_global_label"
+        },
+        {
+          "description": "Four connection points are joined together",
+          "key": "four_way_junction"
+        },
+        {
+          "description": "SPICE model issue",
+          "key": "simulation_model_issue"
+        },
+        {
+          "description": "Assigned footprint doesn't match footprint filters",
+          "key": "footprint_filter"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "sheets": [
+        {
+          "path": "/",
+          "uuid_path": "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb",
+          "violations": []
+        }
+      ],
+      "source": "rc_filter.kicad_sch"
+    }
+  },
+  "drc": {
+    "summary": "DRC with schematic parity reported zero issues on the saved board",
+    "details": {
+      "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "by_severity": {},
+      "by_type": {},
+      "ignored_checks": [
+        "missing_courtyard",
+        "track_not_centered_on_via",
+        "tuning_profile_track_geometries",
+        "footprint_filters_mismatch",
+        "footprint_type_mismatch"
+      ],
+      "kicad_version": "10.0.7",
+      "schematic_parity": 0,
+      "tool": {
+        "argv": [
+          "kicad-cli",
+          "pcb",
+          "drc",
+          "--format",
+          "json",
+          "--severity-all",
+          "--schematic-parity",
+          "--units",
+          "mm",
+          "-o",
+          "/work/drc.json",
+          "/candidate/project/rc_filter.kicad_pcb"
+        ],
+        "console_sha256": "9581d5d3321e3a9ab5e0afec8368bba15c9f7d2b55704e1ac6fddf15d791e2aa",
+        "duration_s": 1.221,
+        "exit_code": 0
+      },
+      "unconnected_items": 0,
+      "violations": 0
+    },
+    "limitations": [
+      "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+    ],
+    "argv": [
+      "kicad-cli",
+      "pcb",
+      "drc",
+      "--format",
+      "json",
+      "--severity-all",
+      "--schematic-parity",
+      "--units",
+      "mm",
+      "-o",
+      "/work/drc.json",
+      "/candidate/project/rc_filter.kicad_pcb"
+    ],
+    "exit_code": 0,
+    "console": "Found 0 violations\nFound 0 unconnected items\nFound 0 schematic parity issues\nSaved DRC Report to /work/drc.json\n",
+    "native_report": {
+      "$schema": "https://schemas.kicad.org/drc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:58:03",
+      "ignored_checks": [
+        {
+          "description": "Footprint has no courtyard defined",
+          "key": "missing_courtyard"
+        },
+        {
+          "description": "Track endpoint not centered on via",
+          "key": "track_not_centered_on_via"
+        },
+        {
+          "description": "Tuning profile track geometries",
+          "key": "tuning_profile_track_geometries"
+        },
+        {
+          "description": "Footprint doesn't match symbol's footprint filters",
+          "key": "footprint_filters_mismatch"
+        },
+        {
+          "description": "Footprint component type doesn't match footprint pads",
+          "key": "footprint_type_mismatch"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "schematic_parity": [],
+      "source": "rc_filter.kicad_pcb",
+      "unconnected_items": [],
+      "violations": []
+    }
+  },
+  "netlist": {
+    "summary": "native XML netlist exported from a complete 1-instance hierarchy: 3 component(s), 3 net(s), 0 DNP",
+    "details": {
+      "components": 3,
+      "dnp_refs": [],
+      "nets": 3,
+      "refs": [
+        "C1",
+        "J1",
+        "R1"
+      ],
+      "schematic_files": [
+        "project/rc_filter.kicad_sch"
+      ],
+      "sheet_instances": 1
+    },
+    "limitations": [],
+    "argv": [
+      "kicad-cli",
+      "sch",
+      "export",
+      "netlist",
+      "--format",
+      "kicadxml",
+      "-o",
+      "/work/design.xml",
+      "/candidate/project/rc_filter.kicad_sch"
+    ],
+    "exit_code": 0,
+    "console": ""
+  },
+  "geometry": {
+    "summary": "saved-board geometry extracted (no declared geometric requirement applied)",
+    "details": {
+      "board_sha256": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de",
+      "dnp_refs": [],
+      "nets": 3,
+      "pads": 7,
+      "pcbnew_version": "10.0.7",
+      "tool": {
+        "argv": [
+          "/usr/bin/python3",
+          "-B",
+          "-m",
+          "agent_ee.geometry_probe",
+          "/candidate/project/rc_filter.kicad_pcb",
+          "-o",
+          "/work/geometry.json"
+        ],
+        "console_sha256": "e44e944d9b554ca8c963c908bb03bb907411562830fb71dd6572188b67025530",
+        "duration_s": 0.227,
+        "exit_code": 0
+      },
+      "track_segments": 5,
+      "unconnected_items": 0,
+      "vias": 1,
+      "zones": 1
+    },
+    "limitations": [
+      "geometry read from the saved board file; zone fill state as saved"
+    ],
+    "argv": [
+      "/usr/bin/python3",
+      "-B",
+      "-m",
+      "agent_ee.geometry_probe",
+      "/candidate/project/rc_filter.kicad_pcb",
+      "-o",
+      "/work/geometry.json"
+    ],
+    "exit_code": 0,
+    "console": "geometry: 3 footprint(s), 6 track item(s), 1 zone(s)\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n./kicad/include/properties/property.h(607): assert \"m_choices.GetCount() > 0\" failed in PROPERTY_ENUM(): No enum choices defined\n",
+    "native_geometry": {
+      "board": "/candidate/project/rc_filter.kicad_pcb",
+      "footprints": [
+        {
+          "dnp": false,
+          "layer": "F.Cu",
+          "pads": [
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "/OUT",
+              "pad": "1",
+              "position_mm": [
+                109.05,
+                100.0
+              ],
+              "ref": "C1",
+              "size_mm": [
+                1.0,
+                1.45
+              ],
+              "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+            },
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "GND",
+              "pad": "2",
+              "position_mm": [
+                110.95,
+                100.0
+              ],
+              "ref": "C1",
+              "size_mm": [
+                1.0,
+                1.45
+              ],
+              "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+            }
+          ],
+          "position_mm": [
+            110.0,
+            100.0
+          ],
+          "ref": "C1",
+          "uuid": "7e69886f-9bbf-4607-a40e-520cfd05e452",
+          "value": "100n"
+        },
+        {
+          "dnp": false,
+          "layer": "F.Cu",
+          "pads": [
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "/IN",
+              "pad": "1",
+              "position_mm": [
+                104.0875,
+                100.0
+              ],
+              "ref": "R1",
+              "size_mm": [
+                1.025,
+                1.4
+              ],
+              "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+            },
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "/OUT",
+              "pad": "2",
+              "position_mm": [
+                105.9125,
+                100.0
+              ],
+              "ref": "R1",
+              "size_mm": [
+                1.025,
+                1.4
+              ],
+              "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+            }
+          ],
+          "position_mm": [
+            105.0,
+            100.0
+          ],
+          "ref": "R1",
+          "uuid": "8404a180-a151-464e-8f25-8cf316cdcba5",
+          "value": "10k"
+        },
+        {
+          "dnp": false,
+          "layer": "F.Cu",
+          "pads": [
+            {
+              "attribute": "PTH",
+              "drill_mm": [
+                1.0,
+                1.0
+              ],
+              "net": "/IN",
+              "pad": "1",
+              "position_mm": [
+                100.0,
+                100.0
+              ],
+              "ref": "J1",
+              "size_mm": [
+                1.7,
+                1.7
+              ],
+              "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+            },
+            {
+              "attribute": "PTH",
+              "drill_mm": [
+                1.0,
+                1.0
+              ],
+              "net": "/OUT",
+              "pad": "2",
+              "position_mm": [
+                100.0,
+                102.54
+              ],
+              "ref": "J1",
+              "size_mm": [
+                1.7,
+                1.7
+              ],
+              "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+            },
+            {
+              "attribute": "PTH",
+              "drill_mm": [
+                1.0,
+                1.0
+              ],
+              "net": "GND",
+              "pad": "3",
+              "position_mm": [
+                100.0,
+                105.08
+              ],
+              "ref": "J1",
+              "size_mm": [
+                1.7,
+                1.7
+              ],
+              "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+            }
+          ],
+          "position_mm": [
+            100.0,
+            100.0
+          ],
+          "ref": "J1",
+          "uuid": "d529384f-9eec-4053-a911-4a9c09283aa0",
+          "value": "Conn_01x03"
+        }
+      ],
+      "nets": {
+        "/IN": 2,
+        "/OUT": 3,
+        "GND": 2
+      },
+      "pads": [
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/OUT",
+          "pad": "1",
+          "position_mm": [
+            109.05,
+            100.0
+          ],
+          "ref": "C1",
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "GND",
+          "pad": "2",
+          "position_mm": [
+            110.95,
+            100.0
+          ],
+          "ref": "C1",
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/IN",
+          "pad": "1",
+          "position_mm": [
+            104.0875,
+            100.0
+          ],
+          "ref": "R1",
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/OUT",
+          "pad": "2",
+          "position_mm": [
+            105.9125,
+            100.0
+          ],
+          "ref": "R1",
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "/IN",
+          "pad": "1",
+          "position_mm": [
+            100.0,
+            100.0
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "/OUT",
+          "pad": "2",
+          "position_mm": [
+            100.0,
+            102.54
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "GND",
+          "pad": "3",
+          "position_mm": [
+            100.0,
+            105.08
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ],
+      "pcbnew_version": "10.0.7",
+      "tracks": [
+        {
+          "end_mm": [
+            104.0875,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 4.0875,
+          "net": "/IN",
+          "start_mm": [
+            100.0,
+            100.0
+          ],
+          "type": "track",
+          "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            109.05,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 3.1375,
+          "net": "/OUT",
+          "start_mm": [
+            105.9125,
+            100.0
+          ],
+          "type": "track",
+          "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            107.5,
+            102.54
+          ],
+          "layer": "F.Cu",
+          "length_mm": 7.5,
+          "net": "/OUT",
+          "start_mm": [
+            100.0,
+            102.54
+          ],
+          "type": "track",
+          "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            107.5,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 2.54,
+          "net": "/OUT",
+          "start_mm": [
+            107.5,
+            102.54
+          ],
+          "type": "track",
+          "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            113.0,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 2.05,
+          "net": "GND",
+          "start_mm": [
+            110.95,
+            100.0
+          ],
+          "type": "track",
+          "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+          "width_mm": 0.25
+        },
+        {
+          "drill_mm": 0.3,
+          "end_mm": [
+            113.0,
+            100.0
+          ],
+          "layers": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "net": "GND",
+          "start_mm": [
+            113.0,
+            100.0
+          ],
+          "type": "via",
+          "uuid": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+          "width_mm": 0.6
+        }
+      ],
+      "unconnected_items": 0,
+      "zones": [
+        {
+          "filled": true,
+          "layers": [
+            "B.Cu"
+          ],
+          "min_thickness_mm": 0.25,
+          "net": "GND",
+          "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+        }
+      ]
+    }
+  }
+}

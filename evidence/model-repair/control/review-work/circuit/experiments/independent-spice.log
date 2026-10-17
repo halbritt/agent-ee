@@ -1,0 +1,43 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: independent ideal rc step validation from checked native values/topology
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+Initial Transient Solution
+--------------------------
+
+Node                                   Voltage
+----                                   -------
+in                                           0
+out                                          0
+vinput#branch                                0
+
+
+No. of Data Rows : 10248
+
+  Measurements for Transient Analysis
+
+before_step         =  0.000000e+00
+vout_1ms            =  6.321207e-01
+vout_5ms            =  9.932621e-01
+
+
+Total analysis time (seconds) = 0.02
+
+Total elapsed time (seconds) = 0.022 
+
+Total DRAM available = 128728.297 MB.
+DRAM currently available = 10221.992 MB.
+Maximum ngspice program size =   21.484 MB.
+Current ngspice program size =   13.027 MB.
+
+Shared ngspice pages =   10.914 MB.
+Text (code) pages =    6.156 MB.
+Stack = 0 bytes.
+Library pages =    2.234 MB.
+

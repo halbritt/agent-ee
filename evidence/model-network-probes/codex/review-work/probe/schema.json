@@ -1,0 +1,16 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "details": {
+      "type": "string"
+    },
+    "fetched": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "fetched",
+    "details"
+  ],
+  "type": "object"
+}

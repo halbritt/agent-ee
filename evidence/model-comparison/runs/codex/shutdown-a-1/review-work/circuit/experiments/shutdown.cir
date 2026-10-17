@@ -1,0 +1,13 @@
+Ideal shutdown of native R1=10k and C1=100n
+Vground in 0 DC 0
+R1 in out 10k
+C1 out 0 100n IC=1
+.options reltol=1e-8 abstol=1e-14 vntol=1e-10
+.control
+tran 1u 6m 0 1u uic
+meas tran vout_5ms FIND v(out) AT=5m
+meas tran t_10mV WHEN v(out)=0.01 FALL=1
+wrdata shutdown_samples.dat v(out) v(in)
+quit
+.endc
+.end

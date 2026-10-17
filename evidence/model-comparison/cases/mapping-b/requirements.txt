@@ -1,0 +1,2 @@
+External connector contract: J1 pin 2 is the input, pin 1 the filtered output, pin 3 ground. Verify saved connectivity.
+Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

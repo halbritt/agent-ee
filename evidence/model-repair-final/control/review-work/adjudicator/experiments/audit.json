@@ -1,0 +1,239 @@
+{
+  "versions": {
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "kicad": "10.0.7",
+    "ngspice": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******"
+  },
+  "commands": [
+    {
+      "argv": [
+        "kicad-cli",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "10.0.7\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ngspice",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "ngspice",
+        "-n",
+        "-b",
+        "-o",
+        "/work/experiments/ngspice.log",
+        "/work/experiments/deck.cir"
+      ],
+      "exit_code": 0,
+      "stdout": "******\n** ngspice-42 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2023, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Sun Mar 31 20:15:14 UTC 2024\n******\n\nBatch mode\n\nComments and warnings go to log-file: /work/experiments/ngspice.log\n\n",
+      "stderr": ""
+    }
+  ],
+  "hashes": {
+    "requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095",
+    "project/rc_filter.kicad_sch": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b",
+    "project/rc_filter.kicad_pcb": "f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de"
+  },
+  "native_instances": {
+    "#PWR02": {
+      "value": "GND",
+      "lib": "power:GND",
+      "dnp": "no"
+    },
+    "C1": {
+      "value": "100n",
+      "lib": "Device:C",
+      "dnp": "no"
+    },
+    "#PWR01": {
+      "value": "GND",
+      "lib": "power:GND",
+      "dnp": "no"
+    },
+    "J1": {
+      "value": "Conn_01x03",
+      "lib": "Connector_Generic:Conn_01x03",
+      "dnp": "no"
+    },
+    "#FLG01": {
+      "value": "PWR_FLAG",
+      "lib": "power:PWR_FLAG",
+      "dnp": "no"
+    },
+    "R1": {
+      "value": "10k",
+      "lib": "Device:R",
+      "dnp": "no"
+    }
+  },
+  "native_segments": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "width_mm": 0.25,
+      "net": "/IN"
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "width_mm": 0.25,
+      "net": "/OUT"
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "width_mm": 0.25,
+      "net": "/OUT"
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "width_mm": 0.25,
+      "net": "/OUT"
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "width_mm": 0.25,
+      "net": "GND"
+    }
+  ],
+  "native_pad_nets": {
+    "C1.1": "/OUT",
+    "C1.2": "GND",
+    "R1.1": "/IN",
+    "R1.2": "/OUT",
+    "J1.1": "/IN",
+    "J1.2": "/OUT",
+    "J1.3": "GND"
+  },
+  "netlist_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "check_outcomes": {
+    "erc": {
+      "execution": "ok",
+      "outcome": "pass"
+    },
+    "drc": {
+      "execution": "ok",
+      "outcome": "pass"
+    },
+    "netlist": {
+      "execution": "ok",
+      "outcome": "info"
+    },
+    "geometry": {
+      "execution": "ok",
+      "outcome": "pass"
+    },
+    "rc-step": {
+      "execution": "ok",
+      "outcome": "pass"
+    }
+  },
+  "reports": {
+    "erc": {
+      "$schema": "https://schemas.kicad.org/erc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:39:42",
+      "ignored_checks": [
+        {
+          "description": "Global label only appears once in the schematic",
+          "key": "single_global_label"
+        },
+        {
+          "description": "Four connection points are joined together",
+          "key": "four_way_junction"
+        },
+        {
+          "description": "SPICE model issue",
+          "key": "simulation_model_issue"
+        },
+        {
+          "description": "Assigned footprint doesn't match footprint filters",
+          "key": "footprint_filter"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "sheets": [
+        {
+          "path": "/",
+          "uuid_path": "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb",
+          "violations": []
+        }
+      ],
+      "source": "rc_filter.kicad_sch"
+    },
+    "drc": {
+      "$schema": "https://schemas.kicad.org/drc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:39:44",
+      "ignored_checks": [
+        {
+          "description": "Footprint has no courtyard defined",
+          "key": "missing_courtyard"
+        },
+        {
+          "description": "Track endpoint not centered on via",
+          "key": "track_not_centered_on_via"
+        },
+        {
+          "description": "Tuning profile track geometries",
+          "key": "tuning_profile_track_geometries"
+        },
+        {
+          "description": "Footprint doesn't match symbol's footprint filters",
+          "key": "footprint_filters_mismatch"
+        },
+        {
+          "description": "Footprint component type doesn't match footprint pads",
+          "key": "footprint_type_mismatch"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "schematic_parity": [],
+      "source": "rc_filter.kicad_pcb",
+      "unconnected_items": [],
+      "violations": []
+    }
+  },
+  "tau_s": 0.001,
+  "ideal_vout_1ms": 0.6321205588285577,
+  "rerun_measurements": {
+    "vout_1ms": 0.6321201,
+    "vout_5ms": 0.9932621
+  },
+  "retained_raw": {
+    "header": "Title: * agent-ee rc_transient deck, generated from the native xml netlist\nDate: Fri Oct 16 17:39:45  2026\nPlotname: Transient Analysis\nFlags: real\nNo. Variables: 4\nNo. Points: 1025\nVariables:\n\t0\ttime\ttime\n\t1\tv(in)\tvoltage\n\t2\tv(out)\tvoltage\n\t3\ti(vstep)\tcurrent\n",
+    "points": 1025,
+    "max_error_vs_finite_ramp_V": 7.626185536402375e-07
+  },
+  "finding_ids_supplied": [],
+  "decision": "No finding IDs supplied; decisions array remains empty. No criterion failure established."
+}

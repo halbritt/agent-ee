@@ -1,0 +1,53 @@
+{
+  "candidate_id": "d5e4026cfa1ed8135c82a9c9ccceaa1baba952eb83d0762938108020747389aa",
+  "coverage": [
+    "Verified candidate file sha256 against packet values (board f8264d95..., schematic ecc56a68...)",
+    "Independently extracted all saved copper track segments two ways (text parse of native .kicad_pcb and pcbnew 10.0.7 API): 5 segments, 0 arcs, all 0.25 mm >= 0.20 mm criterion",
+    "Checked track endpoint registration against all 7 pad centers (exact coincidence)",
+    "Verified GND return path as saved: C1.2 -> 0.25 mm F.Cu track -> via (113,100) solidly embedded in B.Cu pour (point containment tests) -> 4 thermal spokes (0.5 mm bridge, 45/135/225/315 deg) -> J1.3",
+    "Challenged saved-fill assumption: refilled zone on scratch copy; fresh fill area identical to saved (192.287427932463 mm^2, delta 0.0, 1 outline each) so saved fill is current",
+    "Reviewed board outline closure (20x12 mm rectangle) and confirmed all footprints, courtyards, tracks and via inside the edge with cross-net spacings >0.9 mm",
+    "Cross-checked packet ERC/DRC/netlist/geometry outputs for consistency with my independent probes (all consistent; DRC --severity-all 0 violations/0 unconnected/0 parity)",
+    "Confirmed geometry_probe console assert messages are tool-side wx property chatter (exit 0, data consistent), not a native violation"
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "The packet's geometry criterion was declared with empty params and its summary states 'no declared geometric requirement applied' (outcome 'info'), so the scoped requirement that every saved track segment be >= 0.20 mm wide was never adjudicated by the fresh checks; it was only raw-extracted.",
+      "evidence": [
+        {
+          "locator": "tracks[] entries: 5 objects with type 'track', each width_mm 0.25; via width_mm 0.6",
+          "path": "work/geometry/geometry.json"
+        },
+        {
+          "locator": "segment_count 5, arc_count 0, min_width_mm 0.25, all_ge_0.20 true (text parse of native board)",
+          "path": "review-work/physical/experiments/width_check_result.json"
+        },
+        {
+          "locator": "track_segments 5, min_seg_width_mm 0.25, unconnected_items 0 (pcbnew 10.0.7 API)",
+          "path": "review-work/physical/experiments/pcbnew_probe_result.json"
+        },
+        {
+          "locator": "five (segment ...) blocks, uuids ae12bf6f, 69a2edc1, 8b528360, a6dab0b4, 7deb1fb0, each '(width 0.25)'",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        }
+      ],
+      "id": "PHY-01",
+      "location": "packet checks: geometry (work/geometry/geometry.json)",
+      "mechanism": "A reader could mistake the geometry check's 'info/ok' execution for a pass of the width requirement; an undersized segment would not have been flagged by any packet check since DRC used board defaults, not the 0.20 mm exercise rule.",
+      "reasoning": "This is a verification-coverage gap in the packet, not a candidate defect. I closed it with two independent measurements of the native board file: all five saved track segments are 0.25 mm wide, satisfying the >= 0.20 mm exercise requirement with margin; there are no arc tracks. The sole GND return path (C1.2 -> F.Cu track -> via -> saved B.Cu pour -> thermal spokes -> J1.3) was additionally verified connected in the saved state, and a scratch refill reproduced the saved fill exactly (area delta 0.0 mm^2), so no stale-fill masking exists. No blocking or major physical issues were found on this board.",
+      "severity": "info",
+      "title": "Packet geometry check did not machine-apply the stated 0.20 mm width criterion (independently verified compliant)"
+    }
+  ],
+  "limitations": [
+    "No fabrication-house-specific DFM rules evaluated beyond KiCad 10.0.7 default DRC (e.g., via 0.6/0.3 with 0.15 mm annular ring not judged against any fab spec since none was supplied)",
+    "No ampacity or thermal evaluation performed; requirements.txt explicitly states the width rule is geometric, not an ampacity assertion",
+    "Mechanical/3D fit, solder mask and paste apertures not separately audited (standard library footprints used as-is)",
+    "Electrical performance (RC transfer function) not simulated; out of the stated geometric scope"
+  ],
+  "packet_sha256": "3e45532487d0bdcfbf323480c12c96504b5982949eb657df3958390c6f9bfd26",
+  "role": "physical",
+  "run_id": "bbc5e5e2-bdc8-4d1b-9bf0-264bd653be9f",
+  "schema": "agent-ee.review/1"
+}

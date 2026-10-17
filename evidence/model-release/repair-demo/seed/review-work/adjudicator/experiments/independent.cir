@@ -1,0 +1,8 @@
+* Independent adjudication, unchanged native R/C values
+R1 IN OUT 100k
+C1 OUT 0 100n
+VSTEP IN 0 PWL(0 0 1n 1)
+.tran 0.0005m 5m 0 0.0005m
+.meas tran vout_1ms FIND v(OUT) AT=1m
+.meas tran vout_5ms FIND v(OUT) AT=5m
+.end

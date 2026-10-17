@@ -1,0 +1,157 @@
+{
+  "saved_copper_groups": {
+    "C1.1": {
+      "net": "/OUT",
+      "reachable_pads": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "reachable_item_uuids": [
+        "30045e79-dcf6-4652-a104-de8761e35b6d",
+        "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+        "8b528360-109d-4533-a657-35923fd930f8",
+        "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+        "d6746591-9171-4a10-bdd5-188aafc20e95",
+        "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+      ]
+    },
+    "C1.2": {
+      "net": "GND",
+      "reachable_pads": [
+        "C1.2",
+        "J1.3"
+      ],
+      "reachable_item_uuids": [
+        "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+        "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+        "93ebd746-9bba-4f51-8877-4185c5edbd19",
+        "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+        "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+      ]
+    },
+    "R1.1": {
+      "net": "/IN",
+      "reachable_pads": [
+        "J1.1",
+        "R1.1"
+      ],
+      "reachable_item_uuids": [
+        "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4",
+        "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27",
+        "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+      ]
+    },
+    "R1.2": {
+      "net": "/OUT",
+      "reachable_pads": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "reachable_item_uuids": [
+        "30045e79-dcf6-4652-a104-de8761e35b6d",
+        "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+        "8b528360-109d-4533-a657-35923fd930f8",
+        "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+        "d6746591-9171-4a10-bdd5-188aafc20e95",
+        "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+      ]
+    },
+    "J1.1": {
+      "net": "/IN",
+      "reachable_pads": [
+        "J1.1",
+        "R1.1"
+      ],
+      "reachable_item_uuids": [
+        "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4",
+        "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27",
+        "ae12bf6f-d4ed-46d3-9916-8738850152cc"
+      ]
+    },
+    "J1.2": {
+      "net": "/OUT",
+      "reachable_pads": [
+        "C1.1",
+        "J1.2",
+        "R1.2"
+      ],
+      "reachable_item_uuids": [
+        "30045e79-dcf6-4652-a104-de8761e35b6d",
+        "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+        "8b528360-109d-4533-a657-35923fd930f8",
+        "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+        "d6746591-9171-4a10-bdd5-188aafc20e95",
+        "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+      ]
+    },
+    "J1.3": {
+      "net": "GND",
+      "reachable_pads": [
+        "C1.2",
+        "J1.3"
+      ],
+      "reachable_item_uuids": [
+        "38a83012-bcf9-4bb9-b9f4-50d49cd91d90",
+        "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+        "93ebd746-9bba-4f51-8877-4185c5edbd19",
+        "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+        "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+      ]
+    }
+  },
+  "edge_segments_mm": [
+    {
+      "start": [
+        96.0,
+        96.0
+      ],
+      "end": [
+        116.0,
+        96.0
+      ]
+    },
+    {
+      "start": [
+        96.0,
+        108.0
+      ],
+      "end": [
+        96.0,
+        96.0
+      ]
+    },
+    {
+      "start": [
+        116.0,
+        96.0
+      ],
+      "end": [
+        116.0,
+        108.0
+      ]
+    },
+    {
+      "start": [
+        116.0,
+        108.0
+      ],
+      "end": [
+        96.0,
+        108.0
+      ]
+    }
+  ],
+  "manual_geometry_observations": [
+    "Closed rectangular outline: x=96..116, y=96..108 (20 x 12 mm).",
+    "All three component courtyards lie within the outline and are separated. C1 left courtyard x=108.3; R1 right courtyard x=106.68: separation 1.62 mm.",
+    "J1 circular pads: 1.7 mm copper diameter and 1.0 mm drill; nominal radial annulus 0.35 mm. Via: 0.6 mm diameter, 0.3 mm drill; nominal radial annulus 0.15 mm. No fabrication capability is inferred.",
+    "C1.2 connects through the 2.05 mm F.Cu track to the GND via at (113,100), then saved B.Cu fill to J1.3.",
+    "IN and OUT groups agree with native netlist and are distinct from the ground group. No parallel resistor or separate output discharge component exists."
+  ],
+  "limitations": [
+    "KiCad saved copper connectivity, no refill or board save.",
+    "No fabricator capability, copper thickness, physical board or component part numbers supplied; no manufacturing or thermal qualification claimed."
+  ]
+}

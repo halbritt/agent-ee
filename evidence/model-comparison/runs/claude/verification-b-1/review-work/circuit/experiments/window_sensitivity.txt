@@ -1,0 +1,14 @@
+tau = 1.0000 ms; ideal V(out) at 1 ms = 0.632121 V
+window 0.62..0.65 V; margin low = 12.12 mV, high = 17.88 mV
+RC product must lie in [0.9525, 1.0335] ms
+=> allowed RC deviation: -4.75% .. +3.35%
+RL=10000k -> V(1ms)=0.6319 V
+RL=1000k -> V(1ms)=0.6295 V
+RL=500k -> V(1ms)=0.6269 V
+RL=320k -> V(1ms)=0.6239 V
+RL=100k -> V(1ms)=0.6065 V
+leakage to erode low margin: ~1.21 uA pulling OUT down through 10k
+Cs=10pF discharged, connected at 1ms: dV=0.063 mV
+Cs=100pF discharged, connected at 1ms: dV=0.631 mV
+Cs=1000pF discharged, connected at 1ms: dV=6.259 mV
+Cs=2000pF discharged, connected at 1ms: dV=12.395 mV

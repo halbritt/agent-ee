@@ -1,0 +1,56 @@
+{
+  "candidate_id": "38e2fe8dec46839b67a77ae9ecb488b30d9b2ecdf7cddd293c295bfecaf50650",
+  "coverage": [
+    "Read native schematic and PCB; verified connector pin identity, all seven pad memberships and saved traces.",
+    "Fresh KiCad 10.0.7 netlist export agrees with supplied connectivity and native PCB. Recorded commands, versions, hashes and symbolic circuit analysis in review-work/circuit/experiments/.",
+    "Reviewed ERC, DRC, schematic parity and geometry records. No native rule violations were reported; these checks do not establish compliance with the external connector contract."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "Using the stated contract: J1.2 input, J1.1 filtered output, J1.3 ground.",
+      "evidence": [
+        {
+          "locator": "Line 1: external connector contract",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "J1 instance at (60.96,63.5), rotation 180\u00b0, lines 1091\u20131102; connector wires and IN/OUT labels, lines 765\u2013843",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "J1 pad 1 /IN and pad 2 /OUT, lines 587\u2013603; connecting traces, lines 667\u2013697",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "/export/nets: /IN contains J1.1 and R1.1; /OUT contains J1.2, R1.2 and C1.1",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "fresh_nets, board_nets, j1_native_sheet_pin_positions_mm and symbolic_analysis",
+          "path": "review-work/circuit/experiments/audit.json"
+        },
+        {
+          "locator": "violations, unconnected_items and schematic_parity are empty",
+          "path": "work/drc/drc.json"
+        }
+      ],
+      "id": "circuit-001",
+      "location": "J1 pins 1 and 2 in the saved schematic and PCB",
+      "mechanism": "The saved circuit connects J1.1 to R1.1 (/IN), while J1.2 connects to R1.2 and C1.1 (/OUT). C1 therefore shunts the contracted input rather than the filtered output. J1.3 correctly connects to ground.",
+      "reasoning": "This is a saved topology mismatch, not merely reversed net names. With V1 and V2 measured relative to J1.3 and arbitrary output admittance Yload(s), output-node KCL gives V1/V2 = 1/(1 + R1\u00b7Yload(s)); C1 supplies no output-side RC pole in that relation. Actual source-to-output response depends on unspecified external impedances, but the reversed connector mapping is directly established. Clean schematic parity confirms that both native files share the mismatch.",
+      "severity": "major",
+      "title": "J1 input and filtered-output connections are reversed"
+    }
+  ],
+  "limitations": [
+    "No physical measurements or simulation; no supplied behavioral models, stimuli or measurements to validate.",
+    "Source/load-dependent response, voltage/current/thermal limits, tolerances and parasitics were not evaluated because operating conditions and component ratings were unspecified.",
+    "ERC/DRC were reviewed from supplied fresh records, not rerun; ignored rule categories remain unchecked. Zone fill was assessed as saved without refill.",
+    "Detailed manufacturing and mechanical qualification were not independently audited. Active reset and brownout behavior is inapplicable to this passive network; source-dependent startup/shutdown response was not evaluated."
+  ],
+  "packet_sha256": "6c16d282798b94b6e73629b0461b6be186a0befc2d2d001e9bf192612b750d26",
+  "role": "circuit",
+  "run_id": "59fb651e-962c-4d7e-80dd-13872dc35eb0",
+  "schema": "agent-ee.review/1"
+}

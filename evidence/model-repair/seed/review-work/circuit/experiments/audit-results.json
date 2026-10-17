@@ -1,0 +1,776 @@
+{
+  "native_hashes": {
+    "/candidate/project/rc_filter.kicad_sch": "ac819f42ead77072a9d070fabbad53640bf97ef0d6ce0331d3f6597921a27337",
+    "/candidate/project/rc_filter.kicad_pcb": "69ab00b2c31dfa93c0dcb9371ff24111af233ef2ee233a2b7edd83dd48bc2c87",
+    "/candidate/requirements/fixture-requirements.md": "51679a20ef8905d00721110fd75653c69f151a51b5a5a02d90126f8abb0d0095"
+  },
+  "native_symbols": {
+    "#PWR02": {
+      "value": "GND",
+      "lib_id": "power:GND",
+      "uuid": "05f0738f-fc7b-589d-9ab5-3365ee12aaf5",
+      "dnp": "no"
+    },
+    "C1": {
+      "value": "100n",
+      "lib_id": "Device:C",
+      "uuid": "1dcaf7b4-dc79-5865-a3a4-db0c3eaad5d8",
+      "dnp": "no"
+    },
+    "#PWR01": {
+      "value": "GND",
+      "lib_id": "power:GND",
+      "uuid": "2c592a57-a83b-5444-a605-e8f5bfa36d67",
+      "dnp": "no"
+    },
+    "J1": {
+      "value": "Conn_01x03",
+      "lib_id": "Connector_Generic:Conn_01x03",
+      "uuid": "465541a7-d06f-5282-b75f-15b79e4182a2",
+      "dnp": "no"
+    },
+    "#FLG01": {
+      "value": "PWR_FLAG",
+      "lib_id": "power:PWR_FLAG",
+      "uuid": "7aeaaf59-ba4c-5188-9293-39b48d5444d2",
+      "dnp": "no"
+    },
+    "R1": {
+      "value": "100k",
+      "lib_id": "Device:R",
+      "uuid": "c5c38e1a-7593-5c99-b971-2f9d2e7bef78",
+      "dnp": "no"
+    }
+  },
+  "board_components": {
+    "C1": {
+      "value": "100n",
+      "pads": {
+        "1": "/OUT",
+        "2": "GND"
+      }
+    },
+    "R1": {
+      "value": "100k",
+      "pads": {
+        "1": "/IN",
+        "2": "/OUT"
+      }
+    },
+    "J1": {
+      "value": "Conn_01x03",
+      "pads": {
+        "1": "/IN",
+        "2": "/OUT",
+        "3": "GND"
+      }
+    }
+  },
+  "fresh_export_values": {
+    "C1": "100n",
+    "J1": "Conn_01x03",
+    "R1": "100k"
+  },
+  "fresh_export_nets": {
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ],
+    "GND": [
+      "C1.2",
+      "J1.3"
+    ]
+  },
+  "native_track_segments": [
+    {
+      "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "net": "/IN",
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "net": "/OUT",
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+      "net": "/OUT",
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "net": "/OUT",
+      "width_mm": 0.25
+    },
+    {
+      "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "net": "GND",
+      "width_mm": 0.25
+    }
+  ],
+  "geometry": {
+    "count": 5,
+    "narrowest_mm": 0.25,
+    "required_min_mm": 0.2
+  },
+  "calculation": {
+    "R_ohm": 100000.0,
+    "C_F": 1.0000000000000001e-07,
+    "tau_s": 0.01,
+    "formula": "Vout(t) = 1 V * (1-exp(-t/(R*C)))",
+    "analytic_V_by_time_s": {
+      "0.001": 0.09516258196404043,
+      "0.005": 0.3934693402873666
+    },
+    "allowed_tau_s_for_1ms_limit": [
+      0.0009525423180403353,
+      0.0010335019728090538
+    ],
+    "requirement_V_at_1ms": [
+      0.62,
+      0.65
+    ],
+    "shortfall_below_min_V": 0.5248374180359596
+  },
+  "supplied_raw": {
+    "points": 1025,
+    "variables": 4,
+    "initial_row": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_row": [
+      0.005,
+      1.0,
+      0.39346931627674697,
+      -6.065306837232531e-06
+    ],
+    "interpolated_vout_1ms": 0.09516251391206769,
+    "interpolated_vout_5ms": 0.39346931627674697,
+    "max_abs_error_vs_ideal_instant_step_V": 4.9989996737760124e-08
+  },
+  "verification_model": "Ideal R and C values and topology match the native export. PWL ramps from 0 to 1 V over 1 ns; initial operating point is 0 V; no external load. Ramp error is negligible against 0.5248 V failure margin. The 5 ms measurement has no acceptance limit.",
+  "assumptions": [
+    "Initially discharged capacitor and zero input before step.",
+    "Ideal 1 V source, ideal passive values, no external load."
+  ],
+  "limitations": [
+    "No tolerance, temperature, loading, ADC sampling, EMI, parasitics or hardware tests.",
+    "No device-specific ratings or manufacturer models are provided or inferred.",
+    "ERC/DRC records inspected; not rerun. Their ignored checks remain untested.",
+    "Saved zone fill only; no refill performed.",
+    "No active reset, brownout, supply startup or shutdown circuitry exists; no additional operating conditions were introduced."
+  ],
+  "records_inspected": {
+    "/evidence/work/erc/erc.json": {
+      "$schema": "https://schemas.kicad.org/erc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:33:08",
+      "ignored_checks": [
+        {
+          "description": "Global label only appears once in the schematic",
+          "key": "single_global_label"
+        },
+        {
+          "description": "Four connection points are joined together",
+          "key": "four_way_junction"
+        },
+        {
+          "description": "SPICE model issue",
+          "key": "simulation_model_issue"
+        },
+        {
+          "description": "Assigned footprint doesn't match footprint filters",
+          "key": "footprint_filter"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "sheets": [
+        {
+          "path": "/",
+          "uuid_path": "/dc99dc4f-7c27-5bb7-bd88-7cf6f3eb0fcb",
+          "violations": []
+        }
+      ],
+      "source": "rc_filter.kicad_sch"
+    },
+    "/evidence/work/drc/drc.json": {
+      "$schema": "https://schemas.kicad.org/drc.v1.json",
+      "coordinate_units": "mm",
+      "date": "2026-10-16T17:33:09",
+      "ignored_checks": [
+        {
+          "description": "Footprint has no courtyard defined",
+          "key": "missing_courtyard"
+        },
+        {
+          "description": "Track endpoint not centered on via",
+          "key": "track_not_centered_on_via"
+        },
+        {
+          "description": "Tuning profile track geometries",
+          "key": "tuning_profile_track_geometries"
+        },
+        {
+          "description": "Footprint doesn't match symbol's footprint filters",
+          "key": "footprint_filters_mismatch"
+        },
+        {
+          "description": "Footprint component type doesn't match footprint pads",
+          "key": "footprint_type_mismatch"
+        }
+      ],
+      "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+      ],
+      "kicad_version": "10.0.7",
+      "schematic_parity": [],
+      "source": "rc_filter.kicad_pcb",
+      "unconnected_items": [],
+      "violations": []
+    },
+    "/evidence/work/geometry/geometry.json": {
+      "board": "/candidate/project/rc_filter.kicad_pcb",
+      "footprints": [
+        {
+          "dnp": false,
+          "layer": "F.Cu",
+          "pads": [
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "/OUT",
+              "pad": "1",
+              "position_mm": [
+                109.05,
+                100.0
+              ],
+              "ref": "C1",
+              "size_mm": [
+                1.0,
+                1.45
+              ],
+              "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+            },
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "GND",
+              "pad": "2",
+              "position_mm": [
+                110.95,
+                100.0
+              ],
+              "ref": "C1",
+              "size_mm": [
+                1.0,
+                1.45
+              ],
+              "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+            }
+          ],
+          "position_mm": [
+            110.0,
+            100.0
+          ],
+          "ref": "C1",
+          "uuid": "7e69886f-9bbf-4607-a40e-520cfd05e452",
+          "value": "100n"
+        },
+        {
+          "dnp": false,
+          "layer": "F.Cu",
+          "pads": [
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "/IN",
+              "pad": "1",
+              "position_mm": [
+                104.0875,
+                100.0
+              ],
+              "ref": "R1",
+              "size_mm": [
+                1.025,
+                1.4
+              ],
+              "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+            },
+            {
+              "attribute": "SMD",
+              "drill_mm": [
+                0.0,
+                0.0
+              ],
+              "net": "/OUT",
+              "pad": "2",
+              "position_mm": [
+                105.9125,
+                100.0
+              ],
+              "ref": "R1",
+              "size_mm": [
+                1.025,
+                1.4
+              ],
+              "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+            }
+          ],
+          "position_mm": [
+            105.0,
+            100.0
+          ],
+          "ref": "R1",
+          "uuid": "8404a180-a151-464e-8f25-8cf316cdcba5",
+          "value": "100k"
+        },
+        {
+          "dnp": false,
+          "layer": "F.Cu",
+          "pads": [
+            {
+              "attribute": "PTH",
+              "drill_mm": [
+                1.0,
+                1.0
+              ],
+              "net": "/IN",
+              "pad": "1",
+              "position_mm": [
+                100.0,
+                100.0
+              ],
+              "ref": "J1",
+              "size_mm": [
+                1.7,
+                1.7
+              ],
+              "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+            },
+            {
+              "attribute": "PTH",
+              "drill_mm": [
+                1.0,
+                1.0
+              ],
+              "net": "/OUT",
+              "pad": "2",
+              "position_mm": [
+                100.0,
+                102.54
+              ],
+              "ref": "J1",
+              "size_mm": [
+                1.7,
+                1.7
+              ],
+              "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+            },
+            {
+              "attribute": "PTH",
+              "drill_mm": [
+                1.0,
+                1.0
+              ],
+              "net": "GND",
+              "pad": "3",
+              "position_mm": [
+                100.0,
+                105.08
+              ],
+              "ref": "J1",
+              "size_mm": [
+                1.7,
+                1.7
+              ],
+              "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+            }
+          ],
+          "position_mm": [
+            100.0,
+            100.0
+          ],
+          "ref": "J1",
+          "uuid": "d529384f-9eec-4053-a911-4a9c09283aa0",
+          "value": "Conn_01x03"
+        }
+      ],
+      "nets": {
+        "/IN": 2,
+        "/OUT": 3,
+        "GND": 2
+      },
+      "pads": [
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/OUT",
+          "pad": "1",
+          "position_mm": [
+            109.05,
+            100.0
+          ],
+          "ref": "C1",
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "uuid": "30045e79-dcf6-4652-a104-de8761e35b6d"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "GND",
+          "pad": "2",
+          "position_mm": [
+            110.95,
+            100.0
+          ],
+          "ref": "C1",
+          "size_mm": [
+            1.0,
+            1.45
+          ],
+          "uuid": "93ebd746-9bba-4f51-8877-4185c5edbd19"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/IN",
+          "pad": "1",
+          "position_mm": [
+            104.0875,
+            100.0
+          ],
+          "ref": "R1",
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "uuid": "5ad51b00-02c3-4cf9-bf65-f29e50ae65f4"
+        },
+        {
+          "attribute": "SMD",
+          "drill_mm": [
+            0.0,
+            0.0
+          ],
+          "net": "/OUT",
+          "pad": "2",
+          "position_mm": [
+            105.9125,
+            100.0
+          ],
+          "ref": "R1",
+          "size_mm": [
+            1.025,
+            1.4
+          ],
+          "uuid": "f7f34c12-6c20-48fd-ab58-7e86ec0f2b54"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "/IN",
+          "pad": "1",
+          "position_mm": [
+            100.0,
+            100.0
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "/OUT",
+          "pad": "2",
+          "position_mm": [
+            100.0,
+            102.54
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        },
+        {
+          "attribute": "PTH",
+          "drill_mm": [
+            1.0,
+            1.0
+          ],
+          "net": "GND",
+          "pad": "3",
+          "position_mm": [
+            100.0,
+            105.08
+          ],
+          "ref": "J1",
+          "size_mm": [
+            1.7,
+            1.7
+          ],
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ],
+      "pcbnew_version": "10.0.7",
+      "tracks": [
+        {
+          "end_mm": [
+            104.0875,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 4.0875,
+          "net": "/IN",
+          "start_mm": [
+            100.0,
+            100.0
+          ],
+          "type": "track",
+          "uuid": "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            109.05,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 3.1375,
+          "net": "/OUT",
+          "start_mm": [
+            105.9125,
+            100.0
+          ],
+          "type": "track",
+          "uuid": "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            107.5,
+            102.54
+          ],
+          "layer": "F.Cu",
+          "length_mm": 7.5,
+          "net": "/OUT",
+          "start_mm": [
+            100.0,
+            102.54
+          ],
+          "type": "track",
+          "uuid": "8b528360-109d-4533-a657-35923fd930f8",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            107.5,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 2.54,
+          "net": "/OUT",
+          "start_mm": [
+            107.5,
+            102.54
+          ],
+          "type": "track",
+          "uuid": "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+          "width_mm": 0.25
+        },
+        {
+          "end_mm": [
+            113.0,
+            100.0
+          ],
+          "layer": "F.Cu",
+          "length_mm": 2.05,
+          "net": "GND",
+          "start_mm": [
+            110.95,
+            100.0
+          ],
+          "type": "track",
+          "uuid": "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+          "width_mm": 0.25
+        },
+        {
+          "drill_mm": 0.3,
+          "end_mm": [
+            113.0,
+            100.0
+          ],
+          "layers": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "net": "GND",
+          "start_mm": [
+            113.0,
+            100.0
+          ],
+          "type": "via",
+          "uuid": "b71a70d7-bbc1-43d1-ae55-5e4d992412a4",
+          "width_mm": 0.6
+        }
+      ],
+      "unconnected_items": 0,
+      "zones": [
+        {
+          "filled": true,
+          "layers": [
+            "B.Cu"
+          ],
+          "min_thickness_mm": 0.25,
+          "net": "GND",
+          "uuid": "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+        }
+      ]
+    },
+    "/evidence/work/rc-step/execution.json": {
+      "argv": [
+        "ngspice",
+        "-n",
+        "-b",
+        "-o",
+        "/work/ngspice.log",
+        "/work/control.sp"
+      ],
+      "console": "console.log",
+      "console_sha256": "2925646d2255478f43ed0d56cec943ddf32aa8a169dd58a8930ee891ff7b1758",
+      "duration_s": 0.013,
+      "execution": "ok",
+      "exit_code": 0,
+      "sandbox_argv": [
+        "bwrap",
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--symlink",
+        "usr/lib",
+        "/lib",
+        "--symlink",
+        "usr/lib64",
+        "/lib64",
+        "--symlink",
+        "usr/bin",
+        "/bin",
+        "--symlink",
+        "usr/sbin",
+        "/sbin",
+        "--ro-bind",
+        "/etc",
+        "/etc",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+        "--dir",
+        "/home",
+        "--dir",
+        "/run",
+        "--ro-bind",
+        "/home/halbritt/git/agent-ee/evidence/model-repair/seed/inputs",
+        "/candidate",
+        "--ro-bind",
+        "/home/halbritt/git/agent-ee/src",
+        "/app",
+        "--bind",
+        "/home/halbritt/git/agent-ee/evidence/model-repair/seed/work/rc-step",
+        "/work",
+        "--chdir",
+        "/work",
+        "--clearenv",
+        "--setenv",
+        "PATH",
+        "/usr/local/bin:/usr/bin:/bin",
+        "--setenv",
+        "HOME",
+        "/work/home",
+        "--setenv",
+        "LANG",
+        "C.UTF-8",
+        "--setenv",
+        "PYTHONPATH",
+        "/app",
+        "--setenv",
+        "KICAD_CONFIG_HOME",
+        "/work/kicad-config",
+        "--setenv",
+        "KICAD10_SYMBOL_DIR",
+        "/candidate/stock/symbols",
+        "--setenv",
+        "KICAD10_FOOTPRINT_DIR",
+        "/candidate/stock/footprints",
+        "--setenv",
+        "KICAD10_TEMPLATE_DIR",
+        "/candidate/stock/template",
+        "--unshare-net",
+        "--",
+        "ngspice",
+        "-n",
+        "-b",
+        "-o",
+        "/work/ngspice.log",
+        "/work/control.sp"
+      ],
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "2925646d2255478f43ed0d56cec943ddf32aa8a169dd58a8930ee891ff7b1758",
+      "timeout_s": 600
+    }
+  }
+}

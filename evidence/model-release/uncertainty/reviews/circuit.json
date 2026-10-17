@@ -1,0 +1,53 @@
+{
+  "candidate_id": "7a48855eff011bbbb0e59bd670ca885cfd820dde585082a2f1a4afd688b35174",
+  "coverage": [
+    "Read native schematic and PCB. Independently exported connectivity matches the supplied netlist and board pad assignments: R1=10k between /IN and /OUT; C1=100n between /OUT and GND; J1 pins 1/2/3 are IN/OUT/GND. Evidence: inputs/project/rc_filter.kicad_sch:944\u2013955,1263\u20131274; work/netlist/design.xml:/export/nets; review-work/circuit/experiments/connectivity_comparison.json.",
+    "Calculated the nominal unloaded response for an ideal 0-to-1 V step with C1 initially discharged: tau=1 ms and Vout(1 ms)=0.6321205588 V, within the stated window. Independent ngspice measurement gives 0.6321206 V. Evidence: review-work/circuit/experiments/calculation.json; review-work/circuit/experiments/nominal.cir:2\u20138; review-work/circuit/experiments/nominal.stdout.log:Measurements for Transient Analysis.",
+    "Read native check reports and execution records. ERC reports zero violations; DRC reports zero violations, unconnected items and schematic parity issues. These establish no transient behavior. Evidence: work/erc/erc.json:sheets; work/drc/drc.json:violations,unconnected_items,schematic_parity.",
+    "Recorded commands, tool versions, assumptions, outcomes and omissions; verified candidate file hashes remained unchanged. Evidence: review-work/circuit/experiments/commands.json; review-work/circuit/experiments/review_notes.md; review-work/circuit/experiments/native_hashes_before.json; review-work/circuit/experiments/native_hashes_after.json."
+  ],
+  "findings": [
+    {
+      "assessment": "concern",
+      "condition": "Evaluating /OUT at 1 ms while connected to the unspecified switched ADC input.",
+      "evidence": [
+        {
+          "locator": "Line 1: ADC sampling capacitance, switch resistance, initial charge and sampling timing explicitly unspecified",
+          "path": "inputs/requirements.txt"
+        },
+        {
+          "locator": "C1 value at line 955; R1 value at line 1274; J1 instance at line 1102",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "/export/nets: /OUT connects C1.1, J1.2 and R1.2",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "Vout_volt, assumptions and symbolic_charge_sharing",
+          "path": "review-work/circuit/experiments/calculation.json"
+        },
+        {
+          "locator": "Vout_1ms_volt and acceptance",
+          "path": "review-work/circuit/experiments/measurement.json"
+        }
+      ],
+      "id": "circuit-001",
+      "location": "inputs/requirements.txt:1; /OUT at J1.2",
+      "mechanism": "Connecting a sampling capacitor can exchange charge with C1. Its capacitance and initial voltage determine the disturbance; switch resistance and sampling timing determine subsequent recovery.",
+      "reasoning": "The unloaded nominal response satisfies the window, but neither the supplied structural checks nor the independent unloaded simulation establishes the ADC-loaded response. The missing interface parameters prevent determining compliance. No loaded-response failure is demonstrated.",
+      "severity": "info",
+      "title": "Switched ADC settling remains undetermined"
+    }
+  ],
+  "limitations": [
+    "No switched ADC model or sampling sequence was assigned; the requested loaded criterion remains unverified.",
+    "Simulation covers nominal ideal R/C values and an initially discharged C1 only. Physical tolerances, parasitics, source impedance and other initial conditions were not assessed.",
+    "ERC/DRC were reviewed without rerunning or enabling ignored checks. Saved board fill was inspected without refilling; no hardware measurements were performed.",
+    "No active supply, reset or brownout circuitry is present. ADC startup/shutdown histories and unstated qualification requirements were not evaluated."
+  ],
+  "packet_sha256": "dd004714f420cef09a367a27134671503e104929e99f5e8ce619a16394c4d4c7",
+  "role": "circuit",
+  "run_id": "d460fe18-d4d9-49fc-8947-a43926a68ad4",
+  "schema": "agent-ee.review/1"
+}

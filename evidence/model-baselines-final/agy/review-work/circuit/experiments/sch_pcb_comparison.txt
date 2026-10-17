@@ -1,0 +1,7 @@
+Schematic components: 139, PCB footprints: 139
+Missing on PCB: set()
+Extra on PCB: set()
+
+=== CHECKING PAD NET PARITY & MULTIPLE PADS ===
+
+=== CHECKING SCH PINS MISSING ON PCB ===

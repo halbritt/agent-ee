@@ -1,0 +1,43 @@
+{
+  "assumptions": [
+    "Ideal components; no output load; ground is J1.3.",
+    "Input is 1 V for t>=0; C1 voltage is zero at t=0.",
+    "No DC operating-point precharge: transient uses UIC and C1 IC=0.",
+    "Only stated 1 ms criterion; no finite source impedance or rise time added."
+  ],
+  "equation": "C*dVout/dt=(1-Vout)/R; Vout(t)=1-exp(-t/(R*C))",
+  "R_ohm": 10000,
+  "C_farad": 1e-07,
+  "tau_s": 0.001,
+  "time_s": 0.001,
+  "analytic_vout_V": 0.6321205588285577,
+  "required_V": [
+    0.62,
+    0.65
+  ],
+  "analytic_within_requirement": true,
+  "simulations": [
+    {
+      "maximum_step": "1u",
+      "vout_1ms": 0.6321206,
+      "vin_1ms": 1.0,
+      "vout_1us": 0.0009995001,
+      "error_vs_analytic_V": 4.117144236648329e-08,
+      "within_requirement": true
+    },
+    {
+      "maximum_step": "100n",
+      "vout_1ms": 0.6321206,
+      "vin_1ms": 1.0,
+      "vout_1us": 0.0009994994,
+      "error_vs_analytic_V": 4.117144236648329e-08,
+      "within_requirement": true
+    }
+  ],
+  "limitations": [
+    "No tolerance, parasitic, loading, physical rating or qualification analysis (outside scope).",
+    "ERC/DRC records inspected; those checks were not rerun or enabled beyond saved settings.",
+    "Saved board fill only; no refill, fabrication or hardware measurement.",
+    "No shutdown, reset, brownout or other input waveform requirement supplied."
+  ]
+}

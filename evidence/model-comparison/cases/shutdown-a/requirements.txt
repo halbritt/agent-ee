@@ -1,0 +1,2 @@
+Ideal shutdown: C1 initially charged to 1 V, /IN grounded at t=0, no external load. Require /OUT <= 0.01 V at 5 ms. Evaluate saved component values and connectivity. Ideal passive components only.
+Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

@@ -1,0 +1,57 @@
+{
+  "candidate_id": "329f916010187406f161061477ccaa609a7cfa22231e8b51f90b321f35ab1028",
+  "coverage": [
+    "Inspected native PCB connectivity, component values, placement, outline, pads, via and saved ground fill. Connected sets agree with the exported schematic topology.",
+    "Independently parsed all five native track segments: each is 0.25 mm, satisfying the declared 0.20 mm minimum.",
+    "Read original ERC, DRC, netlist and geometry records, including ignored checks.",
+    "Independently calculated the ideal RC response and decoded all 1025 original transient waveform points. Commands, versions, assumptions and outcomes are recorded in review-work/physical/experiments/notes.md and review-results.json."
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "condition": "An initially discharged capacitor, ideal 1 V input step and no external load.",
+      "evidence": [
+        {
+          "locator": "Requirement 1: V(/OUT, 1 ms) must be within 0.62\u20130.65 V",
+          "path": "inputs/requirements/fixture-requirements.md"
+        },
+        {
+          "locator": "R1 Value at line 1274 is 100k; C1 Value at line 955 is 100n",
+          "path": "inputs/project/rc_filter.kicad_sch"
+        },
+        {
+          "locator": "R1 Value at line 256 is 100k; C1 Value at line 107 is 100n; pads and segments establish the saved RC topology",
+          "path": "inputs/project/rc_filter.kicad_pcb"
+        },
+        {
+          "locator": "components R1/C1 and nets /IN, /OUT, GND",
+          "path": "work/netlist/design.xml"
+        },
+        {
+          "locator": "Transient measurements: vout_1ms = 9.516251e-02 V",
+          "path": "work/rc-step/ngspice.log"
+        },
+        {
+          "locator": "analytic_rc, raw_waveform and physical_adjacency",
+          "path": "review-work/physical/experiments/review-results.json"
+        }
+      ],
+      "id": "physical-001",
+      "location": "R1 in the saved schematic and PCB",
+      "mechanism": "R1 = 100 k\u03a9 and C1 = 100 nF produce a 10 ms time constant, making the output rise too slowly.",
+      "reasoning": "The independently calculated response is 1 \u2212 exp(\u22121 ms / 10 ms) = 0.095162582 V, below the 0.62 V minimum. Decoding the original waveform gives 0.095162514 V at 1 ms with Vin = 1 V. Saved copper connectivity agrees with the simulated topology; the deck's 1 ns input ramp cannot explain this large miss.",
+      "severity": "major",
+      "title": "Saved resistor value fails the required 1 ms response"
+    }
+  ],
+  "limitations": [
+    "Inspected saved zone fill without regeneration. No Gerber/drill export audit, assembly inspection or fabricated-board measurement was performed.",
+    "Reviewed supplied native ERC/DRC results without rerunning them. Ignored check categories are listed in review-work/physical/experiments/notes.md; pcbnew connectivity shares KiCad implementation with DRC.",
+    "Tolerance, temperature, loading, ADC sampling, EMI, parasitics and hardware behavior remain untested. The 5 ms measurement has no acceptance bound.",
+    "Exact purchased parts, fabrication capabilities, copper thickness and thermal conditions were not supplied. No ampacity, thermal or connector-mating qualification is inferred from geometry."
+  ],
+  "packet_sha256": "5dadb5c27917b9a529664a00924e33faa3caebd1f8ef286fa111a0239b7dd631",
+  "role": "physical",
+  "run_id": "09798e99-2197-4e50-8731-974e12ae3215",
+  "schema": "agent-ee.review/1"
+}
