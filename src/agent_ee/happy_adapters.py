@@ -203,6 +203,11 @@ def protection(native, rule):
     require('USB' in (connector.get('value', '') + connector.get('lib_id', '')).upper(), 'not a native USB connector')
     require(a['vbus_net'] in native.nets(a['connector']).values(), 'VBUS net missing')
     pins = native.reports['schematic']['nets'][a['vbus_net']]['pins']
+    require(all(isinstance(p, dict) and all(isinstance(p.get(k), str) and p[k]
+                for k in ('component', 'pin_number')) for p in pins),
+            'malformed native VBUS pin inventory')
+    require(len({(p['component'], p['pin_number']) for p in pins}) == len(pins),
+            'ambiguous native VBUS pin inventory')
     unique(pins, lambda p: p.get('component') == a['connector'] and p.get('pin_name') in ('VBUS','V+','VCC','VUSB'),
            'missing or ambiguous VBUS pin')
     usb = native.reports['schematic'].get('usb_compliance', {})

@@ -162,6 +162,35 @@ class NativeAdaptersTest(NativeCase):
             with self.subTest(mutation=mutation):
                 self.assertEqual(normalize(d,[rule])[1][0]['status'],'not_evaluated')
 
+    def test_usb_malformed_pin_inventory_is_not_evaluated(self):
+        rule = {'id':'protection', 'adapter':'usb-vbus-presence/1', 'analyzer':'schematic',
+                'rule_id':'UC-002', 'components':['J1'], 'min':1, 'max':1,
+                'assumptions':{'connector':'J1','vbus_net':'+5V','subcheck':'vbus_esd_protection'},
+                'assumptions_source':feedback_rule()['assumptions_source']}
+        _, result, reports = self.run_check(rule)
+        self.assertEqual((result['execution'],result['outcome']),('ok','pass'),result)
+        for pin in ({'pin_number':'99'}, {'component':None, 'pin_number':'99'},
+                    {'component':3, 'pin_number':'99'}, {'component':'', 'pin_number':'99'},
+                    {'component':[], 'pin_number':'99'}, None, 1, 'pin',
+                    {'component':'D1'}, {'component':'D1','pin_number':None},
+                    {'component':'D1','pin_number':2}):
+            changed = copy.deepcopy(reports)
+            changed['schematic']['nets']['+5V']['pins'].append(pin)
+            with self.subTest(pin=pin):
+                evaluation = normalize(changed,[rule])[1][0]
+                self.assertEqual(evaluation['status'],'not_evaluated')
+                self.assertIn('reason',evaluation)
+        for mutation in ('duplicate-pin', 'unknown-component', 'duplicate-component'):
+            changed = copy.deepcopy(reports)
+            pins = changed['schematic']['nets']['+5V']['pins']
+            if mutation == 'duplicate-pin': pins.append(copy.deepcopy(pins[0]))
+            if mutation == 'unknown-component': pins.append({'component':'U99','pin_number':'1'})
+            if mutation == 'duplicate-component':
+                changed['schematic']['components'].append(copy.deepcopy(next(
+                    c for c in changed['schematic']['components'] if c['reference']=='D1')))
+            with self.subTest(mutation=mutation):
+                self.assertEqual(normalize(changed,[rule])[1][0]['status'],'not_evaluated')
+
     def test_native_power_inventory_uses_complete_pin_set(self):
         rule={'id':'power', 'adapter':'power-pin-inventory/1', 'analyzer':'schematic',
               'rule_id':'power-pin-inventory', 'components':['U1','U2','J2'], 'min':1,'max':1,
