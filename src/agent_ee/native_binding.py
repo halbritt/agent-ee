@@ -107,11 +107,11 @@ def bind_native_assignments(manifest, captured_files, declaration, graph, virtua
         return _seal(result)
     declared = {c['reference']: c for c in declaration['components']}
     native = graph['components']
-    virtual_refs, unresolved = set(), False
+    virtual_refs, unresolved = {}, False
     for record in virtual:
         if record['embedded_power']:
             result['exclusions'].append(dict(record, kind='exporter_virtual', reason=VIRTUAL_EXCLUSION))
-            virtual_refs.update(record['references'])
+            virtual_refs.update(dict.fromkeys(record['references'], record))
         else:
             unresolved = True
             result['findings'].append(dict(record, code='virtual_nonpower_symbol',
@@ -126,7 +126,13 @@ def bind_native_assignments(manifest, captured_files, declaration, graph, virtua
                            declared_lib_id=decl['lib_id'], declared_footprint=decl['footprint'])
         if comp is None:
             if ref in virtual_refs:
-                binding.update(status='excluded', exclusion=VIRTUAL_EXCLUSION)
+                native_id = virtual_refs[ref]['lib_id']
+                binding.update(lib_id=native_id, exclusion=VIRTUAL_EXCLUSION)
+                if decl['lib_id'] == native_id:
+                    binding['status'] = 'excluded'
+                else:
+                    binding['findings'].append(dict(code='lib_id_mismatch', declared=decl['lib_id'],
+                                                    native=native_id))
             else:
                 binding['findings'].append(dict(code='ghost_declaration',
                     message='declared reference is absent from the native design'))
