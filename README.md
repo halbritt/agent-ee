@@ -104,6 +104,13 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
+earlier gates. Missing expected design content requires a native observation; it
+cannot pass merely because an empty design produces no rule violations. Progress
+is measured in the earliest failing stage, with regression and retry limits.
+Existing unstaged campaigns keep their convergence rules. A complete native
+empty-to-routed run and enforcement of stage-specific writer tools remain pending.
+
 An [offline intent importer](docs/design-intent.md) preserves source requirements
 and exact voltage values. [Decision capture](docs/design-dialog.md) records
 answers and their dependencies; missing answers remain unresolved. These tools

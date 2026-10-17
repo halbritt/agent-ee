@@ -10,6 +10,7 @@ product's hardware qualification.
 | Task | Read |
 | --- | --- |
 | Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
+| Declare stage gates and interpret absent design content | [Staged campaigns](staged-campaign.md) |
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
