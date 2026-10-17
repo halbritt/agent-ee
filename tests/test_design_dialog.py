@@ -1,8 +1,14 @@
 """Owned offline question/answer contracts."""
+import copy
 import hashlib
 import json
+from pathlib import Path
+import sys
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # Also run as tests.test_design_dialog.
+
+from agent_ee.baseline import compile_baseline
 from agent_ee.design_dialog import capture_dialog
 
 
@@ -183,3 +189,26 @@ class DesignDialogTests(unittest.TestCase):
         self.assertNotEqual(questions, qr)
         with self.assertRaises(ValueError):
             capture_dialog(idea, questions, ar, baseline)
+
+    def test_derived_requirements_feed_scope3_only_with_executable_coverage(self):
+        artifacts = capture_dialog(*inputs())
+        derived = json.loads(artifacts['requirements.json'])['requirements']
+        files = {'design.sch': 'hash', 'design.pcb': 'hash', 'target': 'hash', 'ref': 'hash',
+                 'requirements/requirements.json': hashlib.sha256(artifacts['requirements.json']).hexdigest()}
+        scope = {'schema': 'agent-ee.scope/3', 'schematic': 'design.sch', 'board': 'design.pcb',
+            'checks': [{'id': 'net', 'kind': 'netlist'},
+                       {'id': 'width', 'kind': 'geometry', 'params': {'min_track_width_mm': 0.2}}],
+            'baseline': {'requirements': [
+                {'id': r['id'], 'intent': 'acceptance', 'statement': r['text'],
+                 'source': {'path': 'requirements/requirements.json', 'locator': r['id']},
+                 'checks': ['net', 'width']} for r in derived],
+                'targets': ['target'], 'reference_architectures': ['ref']}}
+        baseline = compile_baseline(copy.deepcopy(scope), files)
+        self.assertEqual(set(baseline['coverage']['requirements']), {'R-original', 'R-supply', 'R-sensor'})
+        self.assertEqual(baseline['coverage']['requirements']['R-sensor']['acceptance_checks'], ['width'])
+        changed = dict(files, **{'requirements/requirements.json': '0' * 64})
+        self.assertNotEqual(compile_baseline(copy.deepcopy(scope), changed)['baseline_id'], baseline['baseline_id'])
+        # A derived acceptance requirement mapped only to an export check is refused.
+        scope['baseline']['requirements'][2]['checks'] = ['net']
+        with self.assertRaisesRegex(ValueError, 'R-sensor has no executable bound'):
+            compile_baseline(scope, files)
