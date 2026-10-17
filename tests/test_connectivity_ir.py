@@ -165,4 +165,103 @@ class StockLibraryTests(unittest.TestCase):
         pins = {c['id']: {p['number']: p for p in c['pins']} for c in result['components']}
         self.assertEqual(pins['r']['1']['electrical_type'], 'passive')
         self.assertEqual((pins['u']['3']['name'], pins['u']['3']['electrical_type']), ('VI', 'power_in'))
-        self.assertEqual([s['symbol'] for s in result['components'][1]['sources']], ['AMS1117-1.5', 'AMS1117-3.3'])
+        self.assertEqual([s['symbol'] for s in result['components'][1]['sources']], ['AP1117-15', 'AMS1117-3.3'])
+
+
+class ResolvedBoundaryTests(unittest.TestCase):
+    def test_rehashed_invalid_pin_metadata_is_rejected(self):
+        import copy
+        from agent_ee.connectivity_ir import validate_resolved
+        valid = resolve_intent(intent(), {'Owned.kicad_sym': LIB})
+        for field, value in [('electrical_type', 'imaginary'), ('x_nm', 1.5), ('orientation', 45), ('unit', -1)]:
+            result = copy.deepcopy(valid)
+            result['components'][0]['pins'][0][field] = value
+            payload = {k: v for k, v in result.items() if k != 'canonical_sha256'}
+            result['canonical_sha256'] = hashlib.sha256(canonical_resolved(payload)).hexdigest()
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_resolved(result)
+
+    def test_quoted_comments_power_and_common_unit_pins(self):
+        library = b'''(kicad_symbol_lib ; comment "unbalanced quote ignored
+        (symbol "Supply" (power)
+          (symbol "Supply_0_1" (pin power_in line (at 0 0 0)
+             (name "GND\\\"return" (effects (font (size 1 1)))) (number "1")))
+          (symbol "Supply_1_1" (pin power_in line (at 2.54 0 180)
+             (name "GND\\\"return") (number "2")))))'''
+        raw = intent()
+        raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+        raw['components'][0]['lib_id'] = 'Owned:Supply'
+        result = resolve_intent(raw, {'Owned.kicad_sym': library})
+        self.assertEqual(result['outcome'], 'pass', result)
+        self.assertTrue(result['components'][0]['power'])
+        self.assertEqual([p['name'] for p in result['components'][0]['pins']], ['GND"return', 'GND"return'])
+        self.assertEqual([p['unit'] for p in result['components'][0]['pins']], [0, 1])
+
+    def test_pin_binding_to_net_and_no_connect_rejected(self):
+        raw = intent()
+        raw['nets'] = [dict(id='n', name='N', terminals=raw['no_connects'][:])]
+        result = resolve_intent(raw, {'Owned.kicad_sym': LIB})
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertEqual(sum(f['code'] == 'duplicate_terminal' for f in result['findings']), 2)
+
+    def test_invalid_library_pin_nodes_return_status(self):
+        for fragment in (b'(symbol (unexpected))', b'(symbol "R_1_1" (pin (bad) line))'):
+            library = b'(kicad_symbol_lib (symbol "R" ' + fragment + b'))'
+            raw = intent()
+            raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+            self.assertNotEqual(resolve_intent(raw, {'Owned.kicad_sym': library})['outcome'], 'pass')
+
+    def test_coordinates_never_round_subnanometre_values(self):
+        raw = intent()
+        for value in (b'0.00000099999999999999999999999999999999999999999', b'NaN', b'1e1000000', b'0.0000001'):
+            library = LIB.replace(b'3.81 270', value + b' 270')
+            raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+            with self.subTest(value=value):
+                result = resolve_intent(raw, {'Owned.kicad_sym': library})
+                self.assertNotEqual(result['outcome'], 'pass')
+
+    def test_shuffled_components_nets_and_terminals_are_canonical(self):
+        import copy
+        raw = intent()
+        raw['components'].append(dict(raw['components'][0], id='s', reference='R2'))
+        raw['no_connects'] = []
+        raw['nets'] = [dict(id=number, name=number, terminals=[dict(component=c, pin={'number': number}) for c in ('r', 's')]) for number in ('1', '2')]
+        shuffled = copy.deepcopy(raw)
+        shuffled['components'].reverse()
+        shuffled['nets'].reverse()
+        for net in shuffled['nets']:
+            net['terminals'].reverse()
+        first = resolve_intent(raw, {'Owned.kicad_sym': LIB})
+        self.assertEqual(first['outcome'], 'pass', first)
+        self.assertEqual(first, resolve_intent(shuffled, {'Owned.kicad_sym': LIB}))
+
+    def test_hash_mismatch_and_duplicate_ids_fail_closed(self):
+        mismatch = resolve_intent(intent(), {'Owned.kicad_sym': LIB + b' '})
+        self.assertEqual((mismatch['execution'], mismatch['outcome']), ('failed', 'unknown'))
+        raw = intent()
+        raw['components'].append(dict(raw['components'][0], reference='R2'))
+        result = resolve_intent(raw, {'Owned.kicad_sym': LIB})
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertIn('duplicate_component', [f['code'] for f in result['findings']])
+
+    def test_alternate_and_contradictory_common_pins_are_unsupported(self):
+        for library in (LIB.replace(b'R_1_1', b'R_1_2'),
+                        LIB.replace(b'(number "2")', b'(number "1")')):
+            raw = intent()
+            raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+            result = resolve_intent(raw, {'Owned.kicad_sym': library})
+            self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
+
+    def test_cli_symlink_capture_is_missing_coverage(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.connectivity_ir import main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'intent.json').write_text(json.dumps(intent()))
+            (root / 'real.kicad_sym').write_bytes(LIB)
+            (root / 'Owned.kicad_sym').symlink_to(root / 'real.kicad_sym')
+            status = main([str(root / 'intent.json'), '--captures', tmp, '--out', str(root / 'out')])
+            self.assertEqual(status, 1)
+            self.assertEqual(json.loads((root / 'out/manifest.json').read_text())['execution'], 'failed')
