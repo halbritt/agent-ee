@@ -1,0 +1,12 @@
+{
+  "provenance": "Owner-authored repository RC fixture, R=10000 ohm, C=1e-7 F. Expectations precede native runs; no physical validation.",
+  "step_v": 1.0,
+  "at_ms": 1.0,
+  "nominal_v": 0.6321205588285577,
+  "endpoint_tau_s": [0.00081, 0.00099, 0.00099, 0.00121],
+  "control_limits_v": [0.55, 0.72],
+  "defect_limits_v": [0.60, 0.68],
+  "expected_control": "criteria_satisfied",
+  "expected_defect": "defects_or_unresolved",
+  "max_ideal_error_v": 0.000102
+}
