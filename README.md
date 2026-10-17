@@ -156,9 +156,15 @@ separately. No real fabricator preset is supplied or qualified.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. [Part selection](docs/part-selection.md)
-compares declared intervals and stock within that snapshot. These preparation APIs
-do not authenticate upstream claims or establish circuit acceptance; check and
-campaign integration and real upstream catalog qualification remain pending.
+compares declared intervals and stock within that snapshot. Both now have checks
+that use the captured baseline, sandbox and coordinator seal; selection binds one
+explicit requirement. They do not authenticate upstream claims or establish
+circuit acceptance. Real upstream catalog qualification remains pending.
+
+[Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
+URLs before offline checks, with byte limits, deadlines and per-part missing
+records. Automatic propagation from selected parts remains pending; capturing a
+PDF does not verify its applicability or its engineering claims.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
