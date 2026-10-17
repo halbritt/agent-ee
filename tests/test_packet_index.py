@@ -173,6 +173,106 @@ class PacketIndexTests(unittest.TestCase):
         write_json(self.run / 'work/board/geometry.json', geometry)
         self.assertEqual(result, build_index(self.run, self.manifest, None, self.checks, 'b')['index'])
 
+    def test_pin_in_multiple_nets_has_no_qualified_links(self):
+        self.xml.write_text(XML.replace('</nets>',
+            '<net code="2" name="OUT"><node ref="R1" pin="1"/></net></nets>'))
+        self.checks[1]['details'] = {'comparisons': [
+            {'reference': 'R1', 'pin': '1', 'fact_id': 'pin1', 'matches': False}]}
+        baseline = {'requirements': [{'id': 'pin-req', 'checks': ['pins', 'native']}]}
+        index = build_index(self.run, self.manifest, baseline, self.checks, 'a')['index']
+        pin = next(e for e in index['entries'] if e.get('kind') == 'pin' and e['pin'] == '1')
+        self.assertEqual(pin['identity_status'], 'unresolved')
+        self.assertEqual(pin['connection'], 'unresolved')
+        self.assertEqual(pin['checks'], ['native'])
+        self.assertEqual(pin['requirements'], [])
+        self.assertFalse(any(e.get('relation') == 'net_membership' and e['from'] == pin['id']
+                             for e in index['entries']))
+        self.assertIn('ambiguous native pin membership', str(index['coverage']['diagnostics']))
+        self.assertEqual(self.xml.read_text().count('<node'), 2)
+
+    def test_ambiguous_native_inventory_retains_raw_access_without_consumer_links(self):
+        import copy
+        import xml.etree.ElementTree as ET
+        self.checks[1]['details'] = {'comparisons': [
+            {'reference': 'R1', 'pin': '1', 'fact_id': 'pin1', 'matches': True}]}
+        baseline = {'requirements': [{'id': 'req', 'checks': ['pins', 'native']}]}
+        self.manifest['scope']['checks'].append({'id': 'coupled', 'kind': 'coupled_margins',
+            'params': {'members': [{'name': 'inventory', 'check': 'native', 'metric': 'count'}]}})
+        for case in ('scoped_uuid', 'net_code', 'pin_number', 'same_net_node', 'reference', 'sheet'):
+            with self.subTest(case=case):
+                root = ET.fromstring(XML)
+                design = ET.SubElement(root, 'design')
+                for path in ('/', '/sheet/', '/other/'):
+                    ET.SubElement(design, 'sheet', {'tstamps': path})
+                if case == 'scoped_uuid':
+                    comp = copy.deepcopy(root.find('./components/comp'))
+                    comp.set('ref', 'R2')
+                    root.find('components').append(comp)
+                elif case == 'net_code':
+                    net = ET.SubElement(root.find('nets'), 'net', {'code': '1', 'name': 'OTHER'})
+                    ET.SubElement(net, 'node', {'ref': 'R1', 'pin': '2'})
+                elif case == 'pin_number':
+                    del root.find('./libparts/libpart/pins/pin').attrib['num']
+                    del root.find('./nets/net/node').attrib['pin']
+                elif case == 'same_net_node':
+                    root.find('./nets/net').append(copy.deepcopy(root.find('./nets/net/node')))
+                elif case == 'reference':
+                    del root.find('./components/comp').attrib['ref']
+                    del root.find('./nets/net/node').attrib['ref']
+                else:
+                    root.find('./components/comp/sheetpath').set('tstamps', '/absent/')
+                raw = ET.tostring(root)
+                self.xml.write_bytes(raw)
+                built = build_index(self.run, self.manifest, baseline, self.checks, 'a')
+                index = built['index']
+                unresolved = [e for e in index['entries'] if e.get('identity_status') == 'unresolved']
+                self.assertTrue(unresolved)
+                self.assertTrue(index['coverage']['diagnostics'])
+                self.assertEqual(index['coverage']['unresolved_entities'], len(unresolved))
+                unresolved_ids = {e['id'] for e in unresolved}
+                self.assertFalse(any(unresolved_ids.intersection(e['entities']) for e in index['entries']
+                                     if e['type'] == 'coupling'))
+                self.assertEqual(index['coverage']['status'], 'partial')
+                self.assertEqual(built['binding']['access']['evidence'], '/evidence/<path>')
+                self.assertEqual(self.xml.read_bytes(), raw)
+                for entity in unresolved:
+                    self.assertEqual(entity['checks'], ['native'])
+                    self.assertEqual(entity['requirements'], [])
+                    self.assertEqual(entity['couplings'], [])
+                    self.assertTrue(all(m['relation'] == 'native_inventory' for m in entity['mappings']))
+                self.assertFalse(any(e.get('relation') == 'net_membership'
+                                     for e in index['entries']))
+                if case in ('net_code', 'same_net_node'):
+                    self.assertTrue(any(e.get('kind') == 'component' and e['identity_status'] == 'native'
+                                        for e in index['entries']))
+
+    def test_symbol_uuid_reuse_is_valid_only_across_declared_sheet_instances(self):
+        import copy
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(XML)
+        design = ET.SubElement(root, 'design')
+        for path in ('/sheet/', '/other/'):
+            ET.SubElement(design, 'sheet', {'tstamps': path})
+        comp = copy.deepcopy(root.find('./components/comp'))
+        comp.set('ref', 'R2')
+        comp.find('sheetpath').set('tstamps', '/other/')
+        root.find('components').append(comp)
+        self.xml.write_bytes(ET.tostring(root))
+        index = build_index(self.run, self.manifest, None, self.checks, 'a')['index']
+        components = [e for e in index['entries'] if e.get('kind') == 'component']
+        self.assertEqual(len(components), 2)
+        self.assertTrue(all(e['identity_status'] == 'native' for e in components))
+        self.assertEqual(index['coverage']['diagnostics'], [])
+        self.assertNotEqual(components[0]['id'], components[1]['id'])
+        # Sheet declarations are structural facts; volatile design timestamps are not.
+        old_id = index['index_id']
+        design.remove(design.find("sheet[@tstamps='/other/']"))
+        self.xml.write_bytes(ET.tostring(root))
+        changed = build_index(self.run, self.manifest, None, self.checks, 'a')['index']
+        self.assertNotEqual(old_id, changed['index_id'])
+        self.assertTrue(any(e.get('label') == 'R2' and e['identity_status'] == 'unresolved'
+                            for e in changed['entries']))
+
     def test_pin_consumer_links_only_compared_pins(self):
         self.checks[1]['details'] = {'comparisons': [{'reference': 'R1', 'pin': '1',
             'fact_id': 'pin1', 'matches': False}]}
@@ -246,6 +346,31 @@ class NativePacketIndexTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'navigation identity/binding changed'):
                 verify(run)
             index_path.write_bytes(original_bytes)
+            save_result(run, result)
+            self.assertEqual(verify(run)['outcome'], 'incomplete')
+            # Corrupt a retained native inventory, then refresh only its outer hashes.
+            # Public verify must reconstruct ambiguity coverage instead of trusting the old index.
+            native_path = run / resistor['source']['path']
+            native_bytes = native_path.read_bytes()
+            corrupted = ET.fromstring(native_bytes)
+            net = corrupted.find('./nets/net[node]')
+            self.assertIsNotNone(net)
+            import copy
+            net.append(copy.deepcopy(net.find('node')))
+            native_path.write_bytes(ET.tostring(corrupted))
+            save_result(run, result)
+            with self.assertRaisesRegex(ValueError, 'navigation identity/binding changed'):
+                verify(run)
+            from agent_ee.packet_index import build_index
+            from agent_ee.baseline import load_baseline
+            manifest = read_json(run / 'candidate.json')
+            diagnosed = build_index(run, manifest, load_baseline(run), result['checks'], result['run_id'])['index']
+            self.assertGreater(diagnosed['coverage']['unresolved_entities'], 0)
+            self.assertIn('ambiguous native pin membership', str(diagnosed['coverage']['diagnostics']))
+            ambiguous = [e for e in diagnosed['entries'] if e.get('identity_status') == 'unresolved']
+            self.assertTrue(all(not e['requirements'] and len(e['checks']) == 1 for e in ambiguous))
+            self.assertEqual(next(c for c in result['checks'] if c['id'] == 'rc-step')['outcome'], 'defect')
+            native_path.write_bytes(native_bytes)
             save_result(run, result)
             self.assertEqual(verify(run)['outcome'], 'incomplete')
             packet_file = run / 'packet.json'

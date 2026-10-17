@@ -306,3 +306,12 @@ preservation and unresolved entity scope. Peer marker tests verify the common
 index excludes undeclared files and preserves the existing adjudicator-only
 experiment mount. These are navigation/coordinator checks; model missed-defect
 performance and physical correctness are not established by an index.
+
+Ambiguous packet-index regression fixtures cover missing native references and
+pin numbers, duplicate scoped UUIDs and net codes, multiple-net and duplicate
+same-net pin membership, and undeclared sheet paths. They assert unresolved
+coverage, retained raw access, and suppression of qualified consumer/requirement/
+coupling links; distinct declared sheets can reuse a symbol UUID. Public verify
+also rejects stale navigation after deliberate native-inventory corruption even
+when outer artifact hashes are refreshed. Corruption fixtures are software
+boundary tests, not native-tool measurements or model-performance evidence.

@@ -36,6 +36,9 @@ def _netlist(data, source):
     entities, edges, diagnostics = [], [], []
     components = root.findall('./components/comp')
     refs = Counter(c.get('ref') for c in components)
+    scoped_ids = Counter((c.find('sheetpath').get('tstamps') if c.find('sheetpath') is not None else None,
+                          c.findtext('tstamps')) for c in components)
+    declared_sheets = Counter(s.get('tstamps') for s in root.findall('./design/sheet'))
     parts = {}
     for i, part in enumerate(root.findall('./libparts/libpart')):
         parts.setdefault((part.get('lib'), part.get('part')), []).append((i, part))
@@ -45,10 +48,15 @@ def _netlist(data, source):
         sheet = comp.find('sheetpath')
         native = [sheet.get('tstamps') if sheet is not None else None,
                   comp.findtext('tstamps'), ref]
-        status = 'native' if native[0] and native[1] and refs[ref] == 1 else 'unresolved'
+        status = 'native' if (ref and native[0] and native[1] and refs[ref] == 1
+                              and scoped_ids[tuple(native[:2])] == 1
+                              and (not declared_sheets or declared_sheets[native[0]] == 1)) else 'unresolved'
         locator = f'./components/comp[{i + 1}]'
         entry = {'kind': 'component', 'label': ref, 'native_identity': native,
                  'identity_status': status, 'source': {**source, 'locator': locator}}
+        if status == 'unresolved':
+            diagnostics.append({'source': entry['source'],
+                                'reason': 'missing/ambiguous native component reference, scoped UUID or declared sheet'})
         _append_entity(entities, entry)
         by_ref.setdefault(ref, []).append(entry)
         lib = comp.find('libsource')
@@ -63,26 +71,55 @@ def _netlist(data, source):
             pin_entry = {'kind': 'pin', 'label': f'{ref}.{pin.get("num")}',
                 'reference': ref, 'pin': pin.get('num'), 'parent_locator': locator,
                 'native_identity': [native, pin.get('num')],
-                'identity_status': status if counts[pin.get('num')] == 1 else 'unresolved',
+                'identity_status': status if pin.get('num') and counts[pin.get('num')] == 1 else 'unresolved',
                 'connection': 'unconnected',
                 'source': {**source, 'locator': f'./libparts/libpart[{part_index + 1}]/pins/pin[{j + 1}]'}}
+            if pin_entry['identity_status'] == 'unresolved':
+                pin_entry['connection'] = 'unresolved'
+                diagnostics.append({'source': pin_entry['source'],
+                                    'reason': 'missing/ambiguous native pin identity'})
             _append_entity(entities, pin_entry)
             edges.append((entry, pin_entry, pin_entry['source'], 'contains_pin'))
             pin_lookup.setdefault((ref, pin.get('num')), []).append(pin_entry)
-    for i, net in enumerate(root.findall('./nets/net')):
+    nets = root.findall('./nets/net')
+    net_codes = Counter(net.get('code') for net in nets)
+    memberships = Counter((node.get('ref'), node.get('pin'))
+                          for net in nets for node in net.findall('node'))
+    for i, net in enumerate(nets):
         locator = f'./nets/net[{i + 1}]'
         entry = {'kind': 'net', 'label': net.get('name'),
             'native_identity': [net.get('code'), net.get('name')],
-            'identity_status': 'fallback', 'source': {**source, 'locator': locator}}
+            'identity_status': 'fallback' if net.get('code') and net_codes[net.get('code')] == 1 else 'unresolved',
+            'source': {**source, 'locator': locator}}
+        if entry['identity_status'] == 'unresolved':
+            diagnostics.append({'source': entry['source'], 'reason': 'missing/ambiguous native net code'})
         _append_entity(entities, entry)
         for j, node in enumerate(net.findall('node')):
             matches = pin_lookup.get((node.get('ref'), node.get('pin')), [])
-            if len(by_ref.get(node.get('ref'), [])) != 1 or len(matches) != 1:
+            if (not node.get('ref') or not node.get('pin')
+                    or len(by_ref.get(node.get('ref'), [])) != 1 or len(matches) != 1
+                    or matches[0]['identity_status'] == 'unresolved'):
+                entry['identity_status'] = 'unresolved'
                 diagnostics.append({'source': {**source, 'locator': f'{locator}/node[{j + 1}]'},
                                     'reason': 'unresolved native node identity', 'node': dict(node.attrib)})
                 continue
+            if memberships[(node.get('ref'), node.get('pin'))] != 1:
+                matches[0]['identity_status'] = 'unresolved'
+                matches[0]['connection'] = 'unresolved'
+                entry['identity_status'] = 'unresolved'
+                diagnostics.append({'source': {**source, 'locator': f'{locator}/node[{j + 1}]'},
+                                    'reason': 'ambiguous native pin membership', 'node': dict(node.attrib)})
+                continue
             matches[0]['connection'] = 'connected'
             edges.append((matches[0], entry, {**source, 'locator': f'{locator}/node[{j + 1}]'}, 'net_membership'))
+    # An ambiguous net cannot qualify any of its otherwise identifiable pins.
+    for pin, net, _, relation in edges:
+        if relation == 'net_membership' and net['identity_status'] == 'unresolved':
+            pin['identity_status'] = 'unresolved'
+            pin['connection'] = 'unresolved'
+    edges = [(a, b, s, relation) for a, b, s, relation in edges
+             if relation != 'net_membership'
+             or (a['identity_status'] != 'unresolved' and b['identity_status'] != 'unresolved')]
     return entities, edges, diagnostics
 
 
@@ -170,6 +207,7 @@ def build_index(run, manifest, baseline, checks, run_id):
                     raise ValueError('native XML element limit exceeded')
                 semantic = [ET.tostring(root.find(k), encoding='unicode') if root.find(k) is not None else None
                             for k in ('components', 'libparts', 'nets')]
+                semantic.append([dict(s.attrib) for s in root.findall('./design/sheet')])
             else:
                 report = json.loads(data)
                 if not isinstance(report, dict):
@@ -248,7 +286,8 @@ def build_index(run, manifest, baseline, checks, run_id):
         for member in params.get('members', []):
             result = by_check.get(member['check'], {})
             metric = result.get('details', {}).get('metrics', {}).get(member['metric'])
-            linked = [e['id'] for e in entities if member['check'] in e['checks']]
+            linked = [e['id'] for e in entities if e['identity_status'] != 'unresolved'
+                      and member['check'] in e['checks']]
             entries.append({'type': 'coupling', 'check': spec['id'], 'member': member,
                 'condition': params.get('condition'), 'limits': params.get('limits'),
                 'metric': metric, 'domain': result.get('details', {}).get('producer', {}).get('domain'),
@@ -258,8 +297,10 @@ def build_index(run, manifest, baseline, checks, run_id):
     for entity in entities:
         entity['checks'] = sorted(set(entity['checks']))
         entity['requirements'] = sorted(r['id'] for r in (baseline or {}).get('requirements', [])
-                                        if set(r['checks']).intersection(entity['checks']))
-        entity['couplings'] = sorted({s['id'] for s in specs if s['kind'] == 'coupled_margins'
+                                        if entity['identity_status'] != 'unresolved'
+                                        and set(r['checks']).intersection(entity['checks']))
+        entity['couplings'] = sorted({s['id'] for s in specs if entity['identity_status'] != 'unresolved'
+            and s['kind'] == 'coupled_margins'
             and any(m['check'] in entity['checks'] for m in s.get('params', {}).get('members', []))})
     entries.extend(entities)
     entries.extend(connections)
