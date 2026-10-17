@@ -28,14 +28,21 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def integer_numbers_only(raw):
+    def refuse(token):
+        raise ValueError(f'corpus number {token} would not reserialize exactly')
+    # Records are reserialized for import; a binary float could change a source number.
+    return json.loads(raw, parse_float=refuse)
+
+
 def qualify(directory):
     source = {}
     for name, (_, expected) in FILES.items():
         raw = (directory / name).read_bytes()
         require(hashlib.sha256(raw).hexdigest() == expected, f'changed source/license: {name}')
         source[name] = raw
-    groups = [[json.loads(line) for line in source['pcbbench.jsonl'].splitlines()],
-              json.loads(source['ose_165_task_specs.json'])]
+    groups = [[integer_numbers_only(line) for line in source['pcbbench.jsonl'].splitlines()],
+              integer_numbers_only(source['ose_165_task_specs.json'])]
     require([len(g) for g in groups] == [62, 165], 'unexpected corpus counts')
     ids, unknown, placeholders, waivers = set(), [], set(), []
     for group in groups:

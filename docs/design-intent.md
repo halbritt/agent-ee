@@ -35,7 +35,13 @@ explicit lexical part counts against exact component names, optional component
 metadata counts, and nonzero signed numeric voltage syntax. Multiple voltages
 remain unassigned targets: the importer does not guess rail-to-net mappings.
 Zero, prose annotations, currents, adjustable rails and unparseable voltages yield
-unknown. Prose parsing is deliberately limited to explicit counts followed by
+unknown. A voltage may be a JSON string or a JSON number with the same
+meaning: a fraction or exponent number is never decoded as a binary float. Its
+exact source token is the target text, so `1.0000000000000001`, `1e-400` and
+`9007199254740993.0` keep their declared values. `raw` writes that same token
+unchanged, and `volts` lists exact decimal text, removing only trailing fraction
+zeros. Exponents beyond Python decimal limits yield unknown in either encoding.
+Integer tokens over Python's 4300-digit conversion limit refuse the whole record. Prose parsing is deliberately limited to explicit counts followed by
 exact declared part names; synonyms and semantic contradictions need dialog review.
 A lint pass is not proof that all prose is consistent or that a circuit works.
 `--out-justification TEXT` records an owner waiver for the exact `OUT` net only;
