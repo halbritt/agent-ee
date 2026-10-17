@@ -27,6 +27,7 @@ product's hardware qualification.
 | Diagnose a refusal, incomplete run or tool failure | [Troubleshooting](troubleshooting.md) |
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
 | Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
+| Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 
 The [acceptance index](../evidence/README.md) links all ten demonstrations,

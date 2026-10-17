@@ -1,0 +1,636 @@
+[
+  {
+    "board_id": "qwiic-dpad",
+    "embedded_symbol_ids": [
+      "SparkFun-Aesthetic:Fiducial_0.5mm",
+      "SparkFun-Aesthetic:OSHW_Logo",
+      "SparkFun-Aesthetic:SparkFun_Logo",
+      "SparkFun-Capacitor:0.1uF_0603_25V_20%",
+      "SparkFun-Connector:Conn_01x04",
+      "SparkFun-Connector:I2C_01x04",
+      "SparkFun-Connector:Qwiic_Right_Angle",
+      "SparkFun-Hardware:Standoff",
+      "SparkFun-IC-Special-Function:PCA9554PW",
+      "SparkFun-Jumper:SolderJumper_2_Bridged",
+      "SparkFun-Jumper:SolderJumper_2_Open",
+      "SparkFun-Jumper:SolderJumper_3_Bridged123",
+      "SparkFun-LED:LED_RGB_1205_Bottom",
+      "SparkFun-LED:LED_Red_0603",
+      "SparkFun-PowerSymbol:3.3V",
+      "SparkFun-PowerSymbol:GND",
+      "SparkFun-Resistor:10k_0603",
+      "SparkFun-Resistor:1k_0603",
+      "SparkFun-Resistor:2.2k_0603",
+      "SparkFun-Switch:Navigation_5Way_SMD_9.9x9.9mm"
+    ],
+    "external_models": [
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Switch:Navigation_SMD_9.9x9.9mm",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Switch/Navigation_SMD_9.9x9.9mm.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Connector:JST_SMD_1.0mm-4_RA",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector/Qwiic-Horizontal.STEP"
+      },
+      {
+        "footprint": "SparkFun-Connector:JST_SMD_1.0mm-4_RA",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector/Qwiic-Horizontal.STEP"
+      },
+      {
+        "footprint": "SparkFun-Capacitor:C_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Semiconductor-Standard:TSSOP-16_4.4x5mm_P0.65mm",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Semiconductor-Standard/TSSOP-16_4.4x5mm_P0.65mm.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-LED:LED_0603_1608Metric_Red",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/LED/LED_0603_1608Metric_Red.STEP"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-LED:LED_1205_RGB_Bottom",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/LED/LED_1206_3216Metric_Castellated_Green.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      }
+    ],
+    "license_and_library_tables": [
+      {
+        "path": "LICENSE.md",
+        "sha256": "60350b68666a0d4903a7197114c723fc6d398d72218b785cc074013e39db374d"
+      }
+    ],
+    "pcb_version": "20240108",
+    "qualification": "Native embedded symbols and footprints inspected; external library and model resolution remains unqualified. Missing dependency must yield incomplete, never stock substitution.",
+    "schematic_version": "20231120"
+  },
+  {
+    "board_id": "usb-host-pmod",
+    "embedded_symbol_ids": [
+      "Connector:USB_A",
+      "Connector_Generic:Conn_02x06_Odd_Even",
+      "Device:C",
+      "Device:L",
+      "Device:R",
+      "GND_1",
+      "Power_Protection:SP0503BAHT",
+      "Regulator_Switching:TPS61099DRV",
+      "power:+3V3",
+      "power:GND",
+      "power:VBUS"
+    ],
+    "external_models": [
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD6_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.wrl"
+      },
+      {
+        "footprint": "host-usb-pmod:PinHeader_2x06_P2.54mm_Horizontal",
+        "model": "${KICAD6_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_2x06_P2.54mm_Horizontal.wrl"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD6_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+      },
+      {
+        "footprint": "host-usb-pmod:USB_A_TE_292303-7_Horizontal",
+        "model": "${KICAD6_3DMODEL_DIR}/Connector_USB.3dshapes/USB_A_TE_292303-7_Horizontal.wrl"
+      },
+      {
+        "footprint": "Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm",
+        "model": "${KICAD6_3DMODEL_DIR}/Package_SON.3dshapes/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.wrl"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+      },
+      {
+        "footprint": "Inductor_SMD_Wurth:L_Wurth_WE-LQSH-2512",
+        "model": "${KICAD6_3DMODEL_DIR}/Inductor_SMD_Wurth.3dshapes/L_Wurth_WE-LQSH-2512.wrl"
+      },
+      {
+        "footprint": "Package_TO_SOT_SMD:SOT-143",
+        "model": "${KICAD6_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-143.wrl"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD6_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.wrl"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD6_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD6_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.wrl"
+      }
+    ],
+    "license_and_library_tables": [
+      {
+        "path": "fp-lib-table",
+        "sha256": "6451af166338e972601640869b6568010aba8a530a4cd5b0df58b031fde5b9e3"
+      },
+      {
+        "path": "LICENSE",
+        "sha256": "d4fefe93d4e64a6478df17654857ebfad512fecd32c7bc06be544f1816830763"
+      }
+    ],
+    "pcb_version": "20240108",
+    "qualification": "Native embedded symbols and footprints inspected; external library and model resolution remains unqualified. Missing dependency must yield incomplete, never stock substitution.",
+    "schematic_version": "20231120"
+  },
+  {
+    "board_id": "tmf8829",
+    "embedded_symbol_ids": [
+      "Connector_Generic:Conn_01x04",
+      "Connector_Generic:Conn_01x06",
+      "Device:C",
+      "Device:R_US",
+      "Jumper:SolderJumper_3_Bridged12",
+      "Mechanical:MountingHole",
+      "Protocentral:Protocentral Sheet Logo",
+      "Protocentral:QWIIC",
+      "Protocentral:TMF8829",
+      "Regulator_Linear:AP2112K-3.3",
+      "power:+1V8",
+      "power:+3V3",
+      "power:GND",
+      "power:VDD"
+    ],
+    "external_models": [
+      {
+        "footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+        "model": "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-23-5.step"
+      },
+      {
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+        "model": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.step"
+      },
+      {
+        "footprint": "Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal",
+        "model": "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal.step"
+      },
+      {
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+        "model": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x06_P2.54mm_Vertical.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal",
+        "model": "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal.step"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Resistor_SMD:R_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+      },
+      {
+        "footprint": "ToF Components:TMF8829",
+        "model": "kicad-embed://TD-A00130_04_PJ540065_Fresnel_P1_A.STEP"
+      }
+    ],
+    "license_and_library_tables": [
+      {
+        "path": "LICENSE",
+        "sha256": "7519475f9fa2a54246281e451545bee2da5d1d603495825514416376e5b7de40"
+      }
+    ],
+    "pcb_version": "20260206",
+    "qualification": "Native embedded symbols and footprints inspected; external library and model resolution remains unqualified. Missing dependency must yield incomplete, never stock substitution.",
+    "schematic_version": "20260306"
+  },
+  {
+    "board_id": "i2c-rj45",
+    "embedded_symbol_ids": [
+      "Connector:8P8C_Shielded",
+      "Connector_Generic:Conn_01x05",
+      "Device:C_Small",
+      "Device:R_Small",
+      "Interface:PCA9615DP",
+      "Jumper:Jumper_3_Bridged12",
+      "power:GND",
+      "power:VDD",
+      "power:VDDA"
+    ],
+    "external_models": [
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "Package_SO:TSSOP-10_3x3mm_P0.5mm",
+        "model": "${KICAD10_3DMODEL_DIR}/Package_SO.3dshapes/TSSOP-10_3x3mm_P0.5mm.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "Connector_RJ:RJ45_HALO_HFJ11-x2450HRL_Horizontal",
+        "model": "${KICAD10_3DMODEL_DIR}/Connector_RJ.3dshapes/RJ45_HALO_HFJ11-x2450HRL_Horizontal.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Horizontal",
+        "model": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x05_P2.54mm_Horizontal.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "model": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.step"
+      }
+    ],
+    "license_and_library_tables": [
+      {
+        "path": "LICENSE",
+        "sha256": "253ad3f89603e728abfa60c36fbcaf8225cf55c1eab12725f19fb3d74d647f3a"
+      },
+      {
+        "path": "LICENSES/MIT.txt",
+        "sha256": "cde8f200d8f30e02bfe06cc46f2c7258941e1cedb9573dd473b768544c36f7d0"
+      },
+      {
+        "path": "LICENSES/CC-BY-4.0.txt",
+        "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+      },
+      {
+        "path": "LICENSES/CERN-OHL-S-2.0.txt",
+        "sha256": "253ad3f89603e728abfa60c36fbcaf8225cf55c1eab12725f19fb3d74d647f3a"
+      }
+    ],
+    "pcb_version": "20260206",
+    "qualification": "Native embedded symbols and footprints inspected; external library and model resolution remains unqualified. Missing dependency must yield incomplete, never stock substitution.",
+    "schematic_version": "20260306"
+  },
+  {
+    "board_id": "rfid-usbc",
+    "embedded_symbol_ids": [
+      "SparkFun-Aesthetic:Fiducial_0.5mm",
+      "SparkFun-Aesthetic:OSHW_Logo",
+      "SparkFun-Aesthetic:SparkFun_Logo",
+      "SparkFun-Capacitor:0.1uF_0603_25V_20%",
+      "SparkFun-Capacitor:10nF_0603_50V_10%",
+      "SparkFun-Capacitor:10uF_0603_10V_20%",
+      "SparkFun-Capacitor:2.2uF_0603_10V_20%",
+      "SparkFun-Connector:Conn_01x01",
+      "SparkFun-Connector:Conn_01x04",
+      "SparkFun-Connector:Conn_01x05_2.0mm",
+      "SparkFun-Connector:Conn_01x07_2.0mm",
+      "SparkFun-Connector:USB_C_Receptacle",
+      "SparkFun-DiscreteSemi:D_TVS_ESD_USB",
+      "SparkFun-DiscreteSemi:Q_NPN_1A_40V",
+      "SparkFun-Electromechanical:Buzzer_9mm_SMD",
+      "SparkFun-Fuse:Fuse 6V/0.5A/1A",
+      "SparkFun-Hardware:Standoff",
+      "SparkFun-IC-Comm:CH340C",
+      "SparkFun-Jumper:SolderJumper_2_Bridged",
+      "SparkFun-Jumper:SolderJumper_2_Open",
+      "SparkFun-LED:LED_Green_0603",
+      "SparkFun-PowerSymbol:GND",
+      "SparkFun-PowerSymbol:VUSB",
+      "SparkFun-RF:ID-2/12/20_Outline",
+      "SparkFun-Resistor:180_0603",
+      "SparkFun-Resistor:1k_0603",
+      "SparkFun-Resistor:4.7k_0603",
+      "SparkFun-Resistor:5.1k_0603"
+    ],
+    "external_models": [
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Capacitor:C_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Capacitor:C_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Electromechanical:Buzzer_9mm_SMD",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Electromechanical/Buzzer_9mm_SMD.step"
+      },
+      {
+        "footprint": "SparkFun-Fuse:0805",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Fuse/Fuse_0805_2012Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Semiconductor-Standard:SOT23-3",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Semiconductor-Standard/SOT-23.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Screw_M3.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_4-40.step"
+      },
+      {
+        "footprint": "SparkFun-Hardware:Standoff",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware/Nut_M3.step"
+      },
+      {
+        "footprint": "SparkFun-LED:LED_0603_1608Metric_Green",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/LED/LED_0603_1608Metric_Green.STEP"
+      },
+      {
+        "footprint": "SparkFun-Capacitor:C_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor/C_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Connector:USB-C_16",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector/USB-C_16.step"
+      },
+      {
+        "footprint": "SparkFun-Semiconductor-Standard:SO-16",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Semiconductor-Standard/SO-16_3.9x9.9mm_P1.27mm.step"
+      },
+      {
+        "footprint": "SparkFun-Resistor:R_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor/R_0603_1608Metric.step"
+      },
+      {
+        "footprint": "SparkFun-Connector:1x05_2.0mm",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector/1x05_2.0mm.step"
+      },
+      {
+        "footprint": "SparkFun-Semiconductor-Standard:SOT23-6",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Semiconductor-Standard/SOT-23-6.step"
+      },
+      {
+        "footprint": "SparkFun-Connector:1x07_2.0mm",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector/1x07_2.0mm.step"
+      },
+      {
+        "footprint": "SparkFun-Capacitor:C_0603_1608Metric",
+        "model": "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor/C_0603_1608Metric.step"
+      }
+    ],
+    "license_and_library_tables": [
+      {
+        "path": "LICENSE.md",
+        "sha256": "e6560063f9b94f2bc9230cd3079a50a077b4c5e04a1137299850e8aa0e73dc85"
+      }
+    ],
+    "pcb_version": "20240108",
+    "qualification": "Native embedded symbols and footprints inspected; external library and model resolution remains unqualified. Missing dependency must yield incomplete, never stock substitution.",
+    "schematic_version": "20231120"
+  }
+]

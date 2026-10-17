@@ -301,3 +301,18 @@ provenance closure, never by a directory prefix or author list. Executed nominal
 predictions remain unqualified diagnostics for fresh bench recovery. Historical
 calibration/1 does not acquire scope/3 qualification. See [bench feedback](bench-feedback.md).
 These contracts do not authenticate instruments or establish physical validation.
+
+## Synthetic seeded benchmark
+
+The [benchmark utilities](seeded-benchmark.md) freeze five public source commits
+and 30 synthetic assembly/connectivity/geometry predictions before scored runs.
+Exact wire edits reject redundant disconnections and unintended conductor changes;
+protection deletion preserves remaining schematic and saved-copper groups. These
+structural gates are preparation, not detector performance. Nine value cases are
+assembly contracts and fourteen wiring cases intentionally change only schematic
+conductors. Native-clean controls and functional electrical failures are not
+claimed. Complete external-library/model and redistribution closure is unqualified.
+Reports keep misses, unsupported execution, unrelated findings and unresolved
+control findings separate. No adjudicated false-alarm rate or model-review
+performance is established by this preregistration. Third-party source files and
+generated candidates/results remain scratch-only pending publication approval.
