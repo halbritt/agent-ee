@@ -16,7 +16,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `verify-campaign` | `CAMPAIGN` | Recompute historical convergence and verify result/calibration links |
 | `bench-review` | `RUN REPORT --out NEW [--max-seconds N]` | Capture physical samples and run calibrated checks plus fresh review |
 | `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
-| `doctor` | None | Probe prerequisite versions/imports; no design or inference run |
+| `doctor` | `[--checks-only]` | Probe prerequisite versions/imports and hash the probed binaries; no design or inference run |
 | `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
 | `inspect` | `RUN` | Show recorded outcome/state, findings, checks, freshness and correction links |
 | `verify` | `RUN [--snapshot-only]` | Check input, policy, runtime and retained evidence consistency |
@@ -34,7 +34,7 @@ operation, with configuration and limits described in the closed-loop reference.
 
 | Command | 0 | 1 | 2 |
 | --- | --- | --- | --- |
-| `doctor` | Every recorded probe exited 0 | A prerequisite probe failed or timed out | Parser/handled invocation error |
+| `doctor` | Every recorded probe exited 0 and its binary was hashed | A prerequisite probe failed or timed out, or a probed binary could not be hashed | Parser/handled invocation error |
 | `review`, `resume` | `criteria_satisfied` | Any other recorded review outcome, including execution/capture failure and interruption | Refusal before the run is handled, such as an existing output directory or invalid budget; parser error |
 | `campaign`, `campaign-feedback`, `bench-review` | Criteria satisfied | Retained nonpassing/incomplete outcome | Invocation refusal |
 | `verify-campaign` | Integrity checks succeeded; read printed campaign state | Not a normal handled result | Inconsistent/unavailable evidence |
@@ -77,12 +77,26 @@ run. Check process status and saved records after a force kill.
 ## `doctor`
 
 The JSON object has `prerequisites` and `note`. Each normal probe records `path`,
-`exit_code`, `version_output` and `diagnostics`; a launch failure or 15-second
-probe timeout records `error` instead. The probes are kicad-cli, ngspice, bwrap,
-pcbnew through system Python, and Claude. No design check or inference occurs.
-Codex and Agy are not version-probed by doctor even when a profile selects them.
-Authentication is not probed, so doctor can succeed before a review discovers
-missing subscription access.
+`exit_code`, `version_output`, `diagnostics`, `binary` and `sha256`; a launch
+failure or 15-second probe timeout records `error` instead. The probes are
+kicad-cli, ngspice, bwrap, system Python (`/usr/bin/python3 --version`), pcbnew
+through system Python, and Claude. No design check or inference occurs.
+
+`binary` is the file whose SHA-256 is reported. For executables it is the
+`path` found on `PATH`. For pcbnew, `path` remains `/usr/bin/python3` and `binary` is
+KiCad's `_pcbnew` native extension. These are the same files and digests that
+`runtime_files` records in every result. `binary` and `sha256` are `null` when
+the extension cannot be located; a probed file that cannot be read records
+`hash_error`. Either makes doctor exit 1. A hash identifies that one file, not
+every shared library it loads; stock libraries are identified per run by the
+scope's captured input hashes.
+
+`--checks-only` omits the reviewer harness probe (Claude) and names it under
+`skipped`. Use it where only native checks run, such as the
+[container image](container.md). It does not make a full review possible without
+the harness. Codex and Agy are not version-probed by doctor even when a profile
+selects them. Authentication is not probed, so doctor can succeed before a
+review discovers missing subscription access.
 
 ## `review` and `resume`
 
