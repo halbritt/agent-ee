@@ -79,3 +79,4 @@ Historical assessment, evaluation and decision records retain their original
 context; they are not substitutes for the current references above.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
+- [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
