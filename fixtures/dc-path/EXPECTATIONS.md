@@ -33,3 +33,13 @@ outputs with KCL/energy residuals. Missing material/stackup/temperature/contact
 input or an unexpected native/tool/solver failure yields incomplete coverage.
 Tampering retained inputs, extracted graph or solutions must fail public sealing
 and witness validation. Scripted reviewers establish coordinator wiring only.
+
+Substrate qualification revision: each owned board has an axis-aligned rectangular
+outer Edge.Cuts outline from (20,20) to (60,45) mm. Copper dimensions and the
+independent resistance expectations above do not change. Closed disjoint inner
+rectangles may remove substrate; a (34,29)..(36,31) mm cutout crossing the straight
+trace MUST refuse, while a (22,22)..(24,24) mm cutout may qualify. Missing, open,
+curved, overlapping, nested or ambiguous boundaries refuse. Board and footprint
+Edge.Cuts count together. Maximum-width conductor and terminal envelopes must
+lie strictly inside retained substrate. Visible Reference, Value and user fields
+on copper refuse as unmodeled graphics, just like board and footprint graphics.
