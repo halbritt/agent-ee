@@ -558,8 +558,19 @@ class FailureCampaignTest(PlacementCampaignFixture):
         self.assertEqual(read_json(result)['status'], 'unsupported_geometry')
 
     def test_helper_timeout(self):
+        from agent_ee import stage_receipts
+        real = stage_receipts.execute
+        def budgeted(inputs, work, argv, **kwargs):
+            # The declared minimum of one second can outlast the real helper on a fast host. The real
+            # executor enforces a narrower budget on the real helper process, so its timeout is observed.
+            if argv[:4] == ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
+                kwargs['timeout'] = min(kwargs['timeout'], 0.05)
+            return real(inputs, work, argv, **kwargs)
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
-        self.failed('placement helper timeout', self.declaration(timeout_s=1), receipt_status='timeout')
+        patch('agent_ee.stage_receipts.execute', side_effect=budgeted).start()
+        _, record = self.failed('placement helper timeout', self.declaration(timeout_s=1), receipt_status='timeout')
+        receipt = read_json(self.out / 'implementations/1' / record['helper']['receipt'] / 'receipt.json')
+        self.assertEqual(receipt['execution']['execution'], 'timeout')
 
     def test_helper_cancellation(self):
         import _thread
