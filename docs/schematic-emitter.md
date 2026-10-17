@@ -63,6 +63,10 @@ KiCad 10.0):
   No wires are drawn.
 - Power and flag symbols appear only where the intent declares them as
   components. The emitter never adds a power symbol or flag.
+- Pin offsets must be exactly representable on the native 100 nm coordinate
+  lattice. Coordinates are never snapped. The editor's customary 1.27 mm grid
+  is not an electrical-connectivity restriction; native ERC may still report
+  off-grid endpoints.
 - Symbol anchors sit on a 2.54 mm grid, in rows from left to right with
   wrapping. The smallest landscape sheet from A4 to A0 that holds the content
   is chosen. Space is reserved for labels and the reference and value text, but
@@ -148,7 +152,7 @@ Generation either succeeds completely or writes nothing:
 | `layout_schema` | Malformed layout or table rows, or a transform for an unknown component |
 | `derived_symbol_unsupported` | The symbol uses `extends`; KiCad's flattening into `lib_symbols` is not natively qualified here |
 | `unsupported_symbol_node`, `unsupported_graphic` | An unknown top-level symbol node, or unit bounds the [symbol context](symbol-context.md) cannot compute (for example arcs) |
-| `unlocatable_pin` | Pin geometry differs from the symbol context, or a pin endpoint is off the 1.27 mm grid |
+| `unlocatable_pin` | Pin geometry differs from the symbol context, or a pin endpoint is not exactly representable on the native 100 nm lattice |
 | `impossible_pin_endpoint` | Two pins would share one connection point |
 | `malformed_net_name`, `duplicate_net_name` | Net names must be unique and match `[A-Za-z0-9_+.-]{1,64}`, so bus syntax, markup and text variables cannot change connectivity |
 | `malformed_reference`, `malformed_value`, `malformed_footprint` | References need a number and a `#` prefix exactly for power symbols; values refuse control characters, backslashes and `${`; footprints are empty or `Library:Name` |

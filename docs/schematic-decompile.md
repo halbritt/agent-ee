@@ -89,7 +89,7 @@ pins, unattached junctions and conductors lacking two physical terminals also
 refuse the entire extraction. A pinless conductor is not silently discarded
 merely because native netlist export omits it.
 
-## Independent qualification and remaining round trip
+## Independent qualification and native round trip
 
 The original [owned fixture](../tests/fixtures/schematic-decompile/PROVENANCE.md)
 is first exported with native `kicad-cli`. Tests use the existing strict
@@ -103,9 +103,52 @@ junction, and an extra component to fail against the original.
 The extraction report explicitly leaves `native_qualification` and `roundtrip`
 as `not_run`: extraction itself executes no native tools. Test qualification is
 a diagnostic result, separate from sealed campaign evidence and owner review.
-The authoritative baseline for this implementation contains no reviewed native
-emitter entry point. The remaining AGENTEE-42 acceptance is to consume that
-reviewed AGENTEE-40 entry point, export its emitted schematic with native KiCad,
-and require original-native versus emitted-native exact inventory/instance
-parity and Jaccard 1.0, retaining input/output/tool hashes and invocation records.
-Shared emitter/decompiler agreement alone cannot satisfy this requirement.
+
+`python3 -m agent_ee.schematic_roundtrip` performs the separate native diagnostic:
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.schematic_roundtrip captured.kicad_sch \
+  --libraries libraries.json --captures captures --layout layout.json \
+  --out roundtrip-diagnostic
+```
+
+The layout uses the existing [emitter layout schema](schematic-emitter.md).
+The caller must choose a new private output directory. Existing outputs and
+symlink output paths are refused. Captured input bytes are retained there and
+mounted read-only for native tools through the production executor, with no
+network and a finite timeout (120 seconds by default, at most 600 through the
+Python function). No global KiCad configuration is changed.
+
+`report.json` binds the source, manifest/member libraries, actual layout,
+extracted intent/resolution, emitted files, native XML and ERC artifact hashes.
+Execution receipts record exact sandbox argv, timeout, exit status and log hashes;
+the report retains their hashes separately in `execution_receipts`. The native
+executable hash, observed version and XML exporter identity are retained. Timing,
+receipt hashes and native date-bearing artifact hashes can vary across runs;
+pure extraction/emission bytes and the structural comparisons are deterministic.
+
+The shared41 reader and parity engine compare each native export against the
+same extracted resolution for exact component multiplicity, full-pin topology
+and required instance correspondence. Source UUID anchors and independently
+derived emitter UUID anchors link both native inventories through immutable
+logical component IDs. A separate native-to-native structural comparison must
+also pass. Ambiguous correspondence remains unknown; structural Jaccard alone
+cannot qualify the result. The emitted local-label file is judged through its
+native export, rather than being passed through the deliberately narrower source
+decompiler.
+
+The unchanged owned IMU qualifies with three components, ten physical pins,
+four nets and Jaccard 1.0. Native tests independently check endpoints under all
+quarter-turn/mirror combinations, including an exact 100 nm offset. Removing,
+shorting or swapping emitted labels fails topology. Changing only an emitted
+symbol UUID preserves topology but fails instance correspondence. The original
+50 mil regulator ERC/current-format control and hierarchical emitter parity
+remain separate regression controls.
+
+The IMU's native off-grid ERC observations are retained without filtering or
+suppression. A topology pass does not assert ERC cleanliness or engineering
+adequacy. Missing/failed native exports, missing/malformed XML, cancellation,
+unsupported source constructs, library mismatch and emitter refusal cannot
+produce a completed passing roundtrip. Failure records and process receipts
+remain available. No sealed coordinator finding or campaign acceptance witness
+is created by this diagnostic; owner review remains separate.
