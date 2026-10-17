@@ -78,7 +78,10 @@ D/Q/J/M/S and X device statements. Supported `.MODEL` types are D, NPN, PNP,
 NJF, PJF, NMOS, PMOS, R/RES, C, SW and VSWITCH. E/G VALUE and TABLE expressions
 may use V/I, abs, sqrt, exp, ln/log/log10, pow/pwr, min/max, limit, if,
 sin/cos/tan/tanh. Unknown functions, model types and directives are refused;
-this is not arbitrary PSpice or arbitrary behavioral-model support. Native
+this is not arbitrary PSpice or arbitrary behavioral-model support.
+Duplicate model names in the same scope and explicit diode `level` selectors
+are refused: ngspice can silently select a definition or fall back for unknown
+diode levels. Diode models use the native default level only. Native
 ngspice must still accept and solve the qualified model's device syntax.
 
 Continuations and directive case are normalized for validation. Generated
@@ -116,7 +119,14 @@ is compared with an independent analytic RC response with an explicit tolerance.
 All analyses must finish before any metrics can pass. Missing models/maps,
 unsupported dialect, or unsafe includes yield `unsupported/unknown`; unavailable
 or wrong-candidate prerequisites yield `not_run/unknown`; solver errors yield
-`failed/unknown`; missing/invalid traces or measurements yield
+`failed/unknown`. Otherwise, simulator warnings and diagnostics reporting ignored,
+unrecognized, unsupported, substituted, replaced, reset, clamped or out-of-range
+semantics yield `unsupported/unknown` before measurement extraction. The check
+examines the native log and stdout/stderr; no warning is qualified as harmless
+under this contract. Logs and any produced raw trace remain evidence, but no
+partial metrics or measurement record are emitted. This does not certify
+arbitrary parameter semantics that ngspice changes without a diagnostic.
+Missing/invalid traces or measurements yield
 `malformed/unknown`. Timeout/unavailable/interrupted retain normal execution
 semantics. Complete valid metrics are judged by the existing coordinator margin
 and calibration functions. Complete bound violations are `ok/defect` and still

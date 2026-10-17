@@ -47,6 +47,15 @@ class ModelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
 
+    def test_ambiguous_model_definitions_and_silent_diode_levels_are_refused(self):
+        for statements in ('.model dm D (level=99)', '.model dm D (level={1+98})',
+                           '.model rm R (rsh=100)\n.model RM R (rsh=200)'):
+            with self.subTest(statements=statements), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'root.lib'
+                path.write_text('.subckt x a b\n' + statements + '\nR1 a b 1k\n.ends x\n')
+                with self.assertRaises(ValueError):
+                    capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
+
     def test_repeated_include_expansion_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -276,6 +285,46 @@ class NativeActiveTests(unittest.TestCase):
         run, results = self.run_case()
         self.assertEqual(results[-1]['execution'], 'unsupported', results[-1])
         self.assertFalse((run / 'work/active/version').exists())
+
+    def test_ignored_model_parameter_refuses_measurements_and_retains_native_trace(self):
+        (self.source / 'owned.lib').write_text('.subckt buffer INP INM VP VN OUT\n'
+            'E1 OUT 0 INP INM 1e6\nRVP VP 0 rm 1e9\nRVN VN 0 1e9\n'
+            '.model rm R (rsh=100 unsupported=10)\n.ends buffer\n')
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertIn('ngspice model/device semantics', result['summary'])
+        self.assertIn('unrecognized parameter (unsupported) - ignored',
+                      (run / 'work/active/step/ngspice.log').read_text())
+        for name in ('step/ngspice.log', 'step/result.raw', 'step/stdout.log', 'step/stderr.log'):
+            self.assertIn('work/active/' + name, result['evidence'])
+        self.assertNotIn('metrics', result['details'])
+        self.assertFalse((run / 'work/active/measurements.json').exists())
+        verify_evidence(run, results, required=True)
+
+    def test_owned_malformed_model_and_primitive_parameter_boundaries(self):
+        cases = (
+            ('RVP VP 0 1e9 unsupported=10', 'failed', 'unknown parameter'),
+            ('RVP VP 0 rm 1e9\n.model rm R (rsh=)', 'failed', 'Syntax error'),
+            ('D1 OUT 0 dm\n.model dm D (unsupported=10)', 'unsupported', 'ignored'),
+            ('D1 OUT 0 dm\n.model dm D (level=99)', 'unsupported', None),
+        )
+        for index, (statements, status, diagnostic) in enumerate(cases):
+            with self.subTest(statements=statements):
+                self.root = Path(self.tmp.name) / str(index)
+                self.root.mkdir()
+                (self.source / 'owned.lib').write_text('.subckt buffer INP INM VP VN OUT\n'
+                    'E1 OUT 0 INP INM 1e6\n' + statements + '\n.ends buffer\n')
+                run, results = self.run_case()
+                result = results[-1]
+                self.assertEqual((result['execution'], result['outcome']), (status, 'unknown'), result)
+                self.assertNotIn('metrics', result['details'])
+                self.assertFalse((run / 'work/active/measurements.json').exists())
+                if diagnostic:
+                    self.assertIn(diagnostic, (run / 'work/active/step/ngspice.log').read_text())
+                else:
+                    self.assertIn('explicit diode model level', result['summary'])
+                    self.assertFalse((run / 'work/active/version').exists())
 
     def test_actual_solver_failure_is_unknown_not_defect_and_retains_log(self):
         (self.source / 'owned.lib').write_text('.subckt buffer INP INM VP VN OUT\n'
