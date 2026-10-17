@@ -166,22 +166,91 @@ The report records the request, the fixed argv and environment, the process
 exit or signal, the discovery, the retained file hashes, the full input
 inventory, the code and state identities before and after, the write probes,
 the executables (`kicad-route`, Python, `kicad-cli`) and the KiCad template
-library tables. KiCad library directories come from the image's
-`/usr/share/kicad`, as the pin hard-codes. That is recorded, not qualified as
-catalogue authority. The report's `identity` covers every field.
+library tables. For an eligible attempt it also records `candidate_files`, the
+hash of every file in the attempt's candidate project directory, because the
+candidate tree itself is a design file and is not retained. KiCad library
+directories come from the image's `/usr/share/kicad`, as the pin hard-codes.
+That is recorded, not qualified as catalogue authority. Every report has the
+same fields, whatever the outcome. Its `identity` covers every field.
 
-`verify(run, inputs)` rebuilds the outcome from the retained bytes and raises
-`ValueError` if:
+## Verification
 
-- the report identity or a retained hash differs;
-- the inputs differ from the coordinator's pre-step capture;
-- the retained `result.json` and `attempt.json` classify differently;
-- the delivered board is not the board the router validated;
-- a non-eligible attempt has a delivered board;
-- the report is missing.
+`verify(run, inputs=None, *, receipt=None, layout=None)` rebuilds the outcome
+from the retained bytes, the pin and the adapter's constants, and raises
+`ValueError` on any disagreement. The report's identity and retained hashes
+only show that the bytes agree with each other. They authenticate nothing.
+
+The authority for the bytes is the AGENTEE-95 receipt, anchored by the
+campaign. `verify` does not validate the receipt and does not replace it. The
+caller runs `stage_receipts.validate_receipt` first, then passes the validated
+receipt. The receipt supplies the inputs, and the report must agree with:
+
+- the receipt's exit, which must be the adapter exit;
+- its output for the board, which must be the delivered candidate's hash, or
+  null when nothing was delivered;
+- its hash of `routing/adapter-report.json`;
+- its backend identity, when the retained `result.json` reports one;
+- its step declaration: the routing stage, this request, the declared write,
+  artifacts and mounts, and no version probe.
+
+A report paired with another attempt's receipt is refused.
+
+`layout` overrides the production sandbox paths and pin. Only the fixture
+router's tests pass it. Without it, a report that claims any pin other than
+`08179cd` is refused, so a fixture attempt never verifies as a kicad-route
+attempt.
+
+For every outcome, `verify` refuses a report when:
+
+- a field is missing, unknown or malformed, or a retained hash differs;
+- the inputs differ from the captured pre-step candidate;
+- the classification, proposal, coverage and adapter exit do not match;
+- the reported router exit differs from the observed process exit;
+- the claimed pin, adapter compatibility or `kicad-route` path is not the pin's;
+- the tool version is anything but the pinned `unknown`, or the
+  reproducibility label is not the backend's;
+- the backend identity differs from the retained `result.json` `backend`, or is
+  claimed without one;
+- the missing-artifact list differs from what is retained;
+- a non-eligible attempt has a delivered board, or, other than a
+  contradiction, a bound candidate inventory;
+- an attempt other than exit 3 has a rejected-candidate hash.
+
+When the router ran, it also refuses:
+
+- a commit or executable hash that is not the pin's code;
+- a write probe set that is not every state directory, each refused by the OS;
+- an argv, environment, working directory or timeout other than the fixed
+  ones;
+- a discovered attempt directory other than `out/runs/<name>/<label>/<stamp>`.
+
+Each classification other than a contradiction, timeout or cancellation must be
+re-derived from the retained `result.json`, `attempt.json`, the router's
+stdout and the observed exit. Malformed retained reports, discovery problems or
+changed tool state make it a contradiction.
+
+For exits 0 and 2, `verify` re-checks every candidate binding the retained
+evidence supports:
+
+- `delivered_board_sha256` and `validated_board_sha256` both equal the
+  delivered board, and `restored_project_files` is empty;
+- `run_dir` and the candidate paths in `result.json` resolve to the discovered
+  attempt;
+- the retained `snapshot.json` names the board and schematic, every snapshot
+  file equals the captured input, and its recomputed fingerprint is the
+  result's input fingerprint;
+- the candidate inventory is exactly the snapshot with only the board changed,
+  plus at most the board's editor-state file;
+- every expected report is retained.
 
 A contradiction may sit over reports that alone look eligible, because some
-contradictions come from the file system.
+contradictions come from the file system. It never delivers a board, so
+`verify` does not re-derive why it is a contradiction.
+
+The candidate inventory and the before/after tool identities are the adapter's
+own in-sandbox observations. `verify` checks them for consistency but cannot
+re-hash trees that are not retained. The receipt's mount identities are the
+authority for the adapter, checkout and state bytes.
 
 ## Acceptance stays with agent-ee checks
 
@@ -217,9 +286,12 @@ following from that draft:
   plus its outputs. A later writer edit to the board makes the receipt
   `not_applicable`.
 
-`verify()` is the routing-specific check root should call before adoption and
-when verifying a campaign. `test_kicad_route_stage_receipt.py` runs against
-`agent_ee.stage_receipts` once both are integrated and is skipped until then.
+`verify(run, receipt=receipt)` is the routing-specific check that campaign
+integration must call after `validate_receipt`, both before adoption and when
+verifying a campaign. Generic stage-receipt checks do not interpret the routing
+report. `test_kicad_route_stage_receipt.py` and the receipt case in
+`test_kicad_route_native.py` run against `agent_ee.stage_receipts` once both are
+integrated. They are skipped until then.
 
 ## Qualification on the original placed RC
 
@@ -227,10 +299,15 @@ The placed RC is the hand-made [RC control](../fixtures/rc/PROVENANCE.md) with
 every track, via and zone removed through pcbnew. Footprint placement, outline,
 schematic, project and library tables are unchanged.
 [`test_kicad_route_native.py`](../tests/test_kicad_route_native.py) runs the
-real router on it when `AGENT_EE_KICAD_ROUTE_CHECKOUT` names a pinned checkout.
+real router on it when `AGENT_EE_KICAD_ROUTE_CHECKOUT` names a pinned checkout,
+once directly under the executor and once as an AGENTEE-95 receipt. Each run
+verifies with the production pin, then forges the retained validated-board hash
+on the real bytes and checks that `verify` refuses it.
 [`test_kicad_route_adapter.py`](../tests/test_kicad_route_adapter.py) covers
 exits 0 to 4, contradictions, timeout and cancellation with a coordinator-owned
-fixture router. Those tests qualify adapter policy, not KRT behaviour.
+fixture router. Its retained-verification cases forge one claim at a time with
+fresh hashes and identity. Those tests qualify adapter policy, not KRT
+behaviour.
 
 ## Limits
 

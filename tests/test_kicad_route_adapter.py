@@ -4,6 +4,8 @@ The router in these tests is the coordinator-owned fixture in
 kicad_route_fixture.py. They qualify the adapter's policy only. What the real
 kicad-route and KRT do is exercised by test_kicad_route_native.py.
 """
+import contextlib
+import io
 import json
 import os
 import signal
@@ -53,6 +55,11 @@ class Case:
         self.report = json.loads(path.read_text()) if path.is_file() else None
         return self
 
+    def verify(self, inputs=None, **kwargs):
+        """Production verify, told the fixture router's pin and host layout."""
+        return routing_adapter.verify(self.work, self.inputs if inputs is None else inputs,
+                                      layout=self.layout, **kwargs)
+
 
 class AdapterPolicyTest(unittest.TestCase):
     def setUp(self):
@@ -70,7 +77,7 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual(case.report['semantics']['proposal'], 'none')
         self.assertIsNone(case.report['candidate'])
         self.assertFalse(os.path.lexists(case.work / 'routing/candidate'))
-        summary = routing_adapter.verify(case.work, case.inputs)
+        summary = case.verify()
         self.assertEqual(summary['proposal'], 'none')
         return summary
 
@@ -97,9 +104,14 @@ class AdapterPolicyTest(unittest.TestCase):
         # The router's editor-state file is hashed and reported, never delivered.
         self.assertEqual(list(case.report['candidate_editor_state']), ['rc.kicad_prl'])
         self.assertEqual([p.name for p in (case.work / 'routing/candidate/project').iterdir()], ['rc.kicad_pcb'])
-        summary = routing_adapter.verify(case.work, case.inputs)
+        summary = case.verify()
         self.assertEqual((summary['proposal'], summary['candidate_sha256']),
                          ('eligible', case.report['candidate']['sha256']))
+        self.assertEqual(summary['backend'], {'status': 'reported', 'reason': None, 'value': result['backend']})
+        self.assertEqual(summary['reproducibility'], attempt.REPRODUCIBILITY['krt'])
+        self.assertEqual(case.report['candidate_files'], {
+            **json.loads((case.work / 'routing/attempt/snapshot.json').read_text())['files'],
+            **case.report['candidate_editor_state'], 'rc.kicad_pcb': case.report['candidate']['sha256']})
 
     def test_exit_two_with_incomplete_routing_is_a_partial_proposal(self):
         case = self.case('incomplete').run()
@@ -108,7 +120,7 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual((sem['classification'], sem['proposal'], sem['coverage']),
                          ('incomplete', 'eligible_partial', 'routing_incomplete'))
         self.assertTrue((case.work / 'routing/candidate/project/rc.kicad_pcb').is_file())
-        self.assertEqual(routing_adapter.verify(case.work, case.inputs)['coverage'], 'routing_incomplete')
+        self.assertEqual(case.verify()['coverage'], 'routing_incomplete')
 
     def test_exit_one_with_a_result_is_missing_routing_coverage(self):
         case = self.case('backend_failure').run()
@@ -191,7 +203,8 @@ class AdapterPolicyTest(unittest.TestCase):
                 self.assertEqual(case.exit, attempt.EXIT_REQUEST)
                 self.assertIn(reason, case.report['semantics']['reasons'])
                 self.assertIsNone(case.report['process'])
-                routing_adapter.verify(case.work)
+                self.assertEqual(routing_adapter.verify(case.work, layout=case.layout)['classification'],
+                                 'not_run')
 
     def test_request_must_match_the_fixed_shape(self):
         bad = {
@@ -309,21 +322,21 @@ class AdapterPolicyTest(unittest.TestCase):
                 case = complete()
                 tamper(case)
                 with self.assertRaises(ValueError):
-                    routing_adapter.verify(case.work, case.inputs)
+                    case.verify()
         case = complete()
         with self.assertRaises(ValueError):
-            routing_adapter.verify(case.work, {**case.inputs, 'project/rc.kicad_pcb': '0' * 64})
+            case.verify({**case.inputs, 'project/rc.kicad_pcb': '0' * 64})
         # A forged eligible report over an exit-3 attempt cannot pass, nor can a planted board.
         case = self.case('validation_failed').run()
         rewrite(case, lambda r: r['semantics'].update(classification='complete', proposal='eligible',
                                                       coverage='routing_complete', adapter_exit=0))
         with self.assertRaises(ValueError):
-            routing_adapter.verify(case.work, case.inputs)
+            case.verify()
         case = self.case('validation_failed').run()
         (case.work / 'routing/candidate/project').mkdir(parents=True)
         (case.work / 'routing/candidate/project/rc.kicad_pcb').write_text('planted')
         with self.assertRaises(ValueError):
-            routing_adapter.verify(case.work, case.inputs)
+            case.verify()
         # A missing report (for example after the coordinator killed the sandbox) is unknown, not success.
         with self.assertRaises(ValueError):
             routing_adapter.verify(self.case('complete').work)
@@ -371,6 +384,199 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertIn(spec['backend_report']['artifact'], spec['artifacts'])
 
 
+def forge(case, *, files=None, report=None):
+    """Rewrite retained JSON files and the report, then refresh every hash and the identity.
+
+    The result is self-consistent bytes, as a forger with write access to the
+    run would leave them; only re-derivation can refuse it."""
+    routing = case.work / 'routing'
+    stored = json.loads((routing / 'adapter-report.json').read_text())
+    for rel, change in (files or {}).items():
+        path = routing / 'attempt' / rel
+        value = json.loads(path.read_text())
+        change(value)
+        path.write_text(json.dumps(value))
+        stored['retained'][f'attempt/{rel}'] = attempt.digest(path)
+    if report is not None:
+        report(stored)
+    attempt.write_report(routing / 'adapter-report.json', stored)
+
+
+def set_validation(**fields):
+    return {'result.json': lambda v: v['validation'].update(fields)}
+
+
+class RetainedVerificationTest(unittest.TestCase):
+    """verify() against the retained bytes, pins and constants, never the report's word.
+
+    Each mutation starts from an honest fixture attempt, changes one claim and
+    refreshes the hashes and identity, so it would pass a self-hash check."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-verify-')
+        self.addCleanup(self.tmp.cleanup)
+        self.count = 0
+
+    def case(self, scenario, argv=REQUEST, **kwargs):
+        self.count += 1
+        with contextlib.redirect_stdout(io.StringIO()):
+            return Case(Path(self.tmp.name) / str(self.count), scenario, **kwargs).run(argv)
+
+    def test_honest_complete_and_incomplete_attempts_verify(self):
+        for scenario, proposal, coverage, code in (('complete', 'eligible', 'routing_complete', 0),
+                                                   ('incomplete', 'eligible_partial', 'routing_incomplete', 2)):
+            with self.subTest(scenario):
+                case = self.case(scenario)
+                result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+                self.assertEqual(case.verify(), {
+                    'classification': scenario, 'proposal': proposal, 'coverage': coverage, 'router_exit': code,
+                    'candidate_sha256': result['validation']['validated_board_sha256'],
+                    'backend': {'status': 'reported', 'reason': None, 'value': result['backend']},
+                    'tool_version': attempt.TOOL_VERSION, 'reproducibility': attempt.REPRODUCIBILITY['krt']})
+
+    def test_a_fixture_attempt_is_not_a_pinned_kicad_route_attempt(self):
+        case = self.case('complete')
+        with self.assertRaisesRegex(ValueError, 'different kicad-route pin'):
+            routing_adapter.verify(case.work, case.inputs)
+
+    def test_eligible_mutations_of_retained_evidence_are_refused(self):
+        def board(case):
+            return case.report['candidate']['sha256']
+
+        other = 'f' * 64
+        mutations = {
+            # The five retained-verifier mutations of the AGENTEE-93 review, then neighbours.
+            'validated board hash': (dict(files=set_validation(validated_board_sha256=other)),
+                                     'not the board the router validated'),
+            'restored project files': (dict(files=set_validation(restored_project_files=['rc.kicad_pro'])),
+                                       'restored project files'),
+            'empty snapshot': (dict(files={'snapshot.json': lambda v: v.update(files={})}),
+                               'lacks the board or schematic'),
+            'reported exit': (dict(report=lambda r: r['semantics'].update(exit_code=3)),
+                              'differs from the observed process exit'),
+            'tool pin and commit': (dict(report=lambda r: r['tool'].update(pin='0' * 40, commit='0' * 40)),
+                                    'different kicad-route pin'),
+            'delivered board hash': (dict(files=set_validation(delivered_board_sha256=other)),
+                                     'not the board the router validated'),
+            'restored files absent': (dict(files={'result.json': lambda v: v['validation'].pop(
+                'restored_project_files')}), 'restored project files'),
+            'snapshot without schematic': (dict(files={'snapshot.json': lambda v: v['files'].pop('rc.kicad_sch')}),
+                                           'lacks the board or schematic'),
+            'snapshot not the input': (dict(files={'snapshot.json': lambda v: v['files'].update(
+                {'rc.kicad_sch': other})}), 'differs from the attempt inputs'),
+            'fingerprint': (dict(files={'result.json': lambda v: v['input'].update(fingerprint=other),
+                                        'attempt.json': lambda v: v.update(input_fingerprint=other)}),
+                            'not the retained snapshot fingerprint'),
+            'process and reported exit': (dict(report=lambda r: (r['process'].update(exit_code=3),
+                                                                 r['semantics'].update(exit_code=3))),
+                                          'classify as contradiction'),
+            'commit only': (dict(report=lambda r: r['tool'].update(commit='0' * 40)), 'not the pinned code'),
+            'executable bytes': (dict(report=lambda r: r['tool']['kicad_route'].update(sha256=other)),
+                                 'not the pinned code'),
+            'executable location': (dict(report=lambda r: r['tool']['kicad_route'].update(path='/tmp/kicad-route')),
+                                    'different kicad-route pin'),
+            'adapter compatibility': (dict(report=lambda r: r['adapter'].update(compatibility='kicad-route@main')),
+                                      'different kicad-route pin'),
+            'write probe accepted': (dict(report=lambda r: r.update(state_write_probe=[
+                {'directory': str(r['tool']['kicad_route']['path']), 'refused': False, 'errno': None}])),
+                                     'OS-refused write probe'),
+            'router argv': (dict(report=lambda r: r['process']['argv'].append('--force')), 'fixed adapter values'),
+            'router environment': (dict(report=lambda r: r['process']['env'].update(OPENROUTER_API_KEY='x')),
+                                   'fixed adapter values'),
+            'backend identity': (dict(report=lambda r: r['backend']['value'].update(version='9.9')),
+                                 'backend identity differs'),
+            'backend from nowhere': (dict(files={'result.json': lambda v: v['backend'].update(build='forged')}),
+                                     'backend identity differs'),
+            'reproducibility': (dict(report=lambda r: r.update(reproducibility='reproducible measurement')),
+                                'reproducibility label'),
+            'tool version': (dict(report=lambda r: r.update(tool_version={'status': 'reported', 'value': '1.0',
+                                                                           'reason': None})),
+                             'tool version'),
+            'candidate inventory extra file': (dict(report=lambda r: r['candidate_files'].update(
+                {'extra.kicad_dru': other})), 'only the board routed'),
+            'candidate changed a project file': (dict(report=lambda r: r['candidate_files'].update(
+                {'rc.kicad_pro': other})), 'only the board routed'),
+            'candidate inventory missing': (dict(report=lambda r: r.update(candidate_files={})),
+                                            'only the board routed'),
+            'editor state renamed': (dict(report=lambda r: r.update(candidate_editor_state={'other.kicad_prl': other})),
+                                     'editor-state file'),
+            'tool state changed': (dict(report=lambda r: r['identity_after']['code'].update(bin=None)),
+                                   'is a contradiction'),
+            'discovery problem': (dict(report=lambda r: r['discovery'].update(problems=['two attempts'])),
+                                  'is a contradiction'),
+            'attempt directory elsewhere': (dict(report=lambda r: r['discovery'].update(
+                attempt_dir='out/runs/rc/step-1/../x')), 'fresh OUT stamp directory'),
+            'result run_dir elsewhere': (dict(files={'result.json': lambda v: v.update(run_dir='/etc')}),
+                                         'not inside the discovered attempt'),
+            'missing artifacts': (dict(report=lambda r: r.update(missing_artifacts=['RESULT.md'])),
+                                  'missing routing artifacts'),
+            'rejected candidate': (dict(report=lambda r: r.update(rejected_candidate_sha256=other)),
+                                   'rejected candidate'),
+            'unknown report field': (dict(report=lambda r: r.update(accepted=True)), 'unknown or missing fields'),
+            'dropped report field': (dict(report=lambda r: r.pop('candidate_files')), 'unknown or missing fields'),
+            'malformed tool record': (dict(report=lambda r: r.update(tool=None)), 'malformed routing adapter report'),
+        }
+        for label, (change, message) in mutations.items():
+            with self.subTest(label):
+                case = self.case('complete')
+                case.verify()
+                forge(case, **change)
+                with self.assertRaisesRegex(ValueError, message):
+                    case.verify()
+        # The partial proposal gets the same bindings.
+        case = self.case('incomplete')
+        forge(case, files=set_validation(validated_board_sha256=other))
+        with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
+            case.verify()
+
+    def test_non_eligible_mutations_of_retained_evidence_are_refused(self):
+        mutations = {
+            ('backend_failure', 'reported exit'): (dict(report=lambda r: r['semantics'].update(exit_code=0)),
+                                                   'observed process exit'),
+            ('backend_failure', 'malformed result'): (dict(report=lambda r: None),
+                                                      'is a contradiction'),
+            ('validation_failed', 'commit'): (dict(report=lambda r: r['tool'].update(commit='0' * 40)),
+                                              'not the pinned code'),
+            ('validation_failed', 'bound candidate'): (dict(report=lambda r: r.update(
+                candidate_files={'rc.kicad_pcb': 'f' * 64})), 'records a bound candidate'),
+            ('refused', 'reported exit'): (dict(report=lambda r: r['semantics'].update(exit_code=None)),
+                                           'observed process exit'),
+            ('refused', 'backend invented'): (dict(report=lambda r: r.update(backend={
+                'status': 'reported', 'value': {'name': 'krt'}, 'reason': None})), 'backend identity differs'),
+            ('refused', 'timed out'): (dict(report=lambda r: r['process'].update(timed_out=True)),
+                                       'timed out or cancelled'),
+            ('sleep', 'not timed out'): (dict(report=lambda r: r['process'].update(timed_out=False)),
+                                         'without that observation'),
+        }
+        for (scenario, label), (change, message) in mutations.items():
+            with self.subTest(scenario=scenario, mutation=label):
+                argv = [*REQUEST[:-4], '--budget', '1', '--timeout', '2'] if scenario == 'sleep' else REQUEST
+                case = self.case(scenario, argv)
+                case.verify()
+                if label == 'malformed result':
+                    path = case.work / 'routing/attempt/result.json'
+                    path.write_text('not json {')
+                    change = dict(report=lambda r: r['retained'].update({'attempt/result.json': attempt.digest(path)}))
+                forge(case, **change)
+                with self.assertRaisesRegex(ValueError, message):
+                    case.verify()
+
+    def test_a_not_run_attempt_cannot_claim_router_output_or_another_pin(self):
+        case = self.case('complete', probe=None)
+        self.assertEqual(case.verify()['classification'], 'not_run')
+        for label, change, message in (
+                ('discovery', lambda r: r.update(discovery={'attempt_dir': None, 'problems': []}), 'router output'),
+                ('reasons', lambda r: r['semantics'].update(reasons=[]), 'without its reasons'),
+                ('pin', lambda r: r['tool'].update(pin='0' * 40), 'different kicad-route pin')):
+            with self.subTest(label):
+                path = case.work / 'routing/adapter-report.json'
+                original = path.read_bytes()
+                forge(case, report=change)
+                with self.assertRaisesRegex(ValueError, message):
+                    case.verify()
+                path.write_bytes(original)
+
+
 class SandboxedAdapterTest(unittest.TestCase):
     """The same adapter under the production Bubblewrap executor and read-only mounts."""
 
@@ -383,6 +589,7 @@ class SandboxedAdapterTest(unittest.TestCase):
         root = Path(self.tmp.name) / (scenario if isinstance(scenario, str) else scenario['name'])
         root.mkdir()
         checkout, code = make_checkout(root / 'checkout', scenario)
+        self.pin = {'pin': FAKE_PIN, 'code': code}
         candidate = make_candidate(root / 'candidate')
         driver = root / 'driver'
         driver.mkdir()
@@ -414,13 +621,16 @@ class SandboxedAdapterTest(unittest.TestCase):
         write = json.loads((work / 'routing/attempt/validate/state-write.json').read_text())
         self.assertEqual(write['outcome'], 'OSError:30')
         inputs = attempt.files_of(attempt.tree(candidate))
-        self.assertEqual(routing_adapter.verify(work, inputs)['proposal'], 'eligible')
+        self.assertEqual(routing_adapter.verify(work, inputs, layout=self.pin)['proposal'], 'eligible')
+        # The fixture router is not the pinned kicad-route; production verify says so.
+        with self.assertRaisesRegex(ValueError, 'different kicad-route pin'):
+            routing_adapter.verify(work, inputs)
 
     def test_exit_three_in_the_sandbox_delivers_no_board(self):
         record, report, work, candidate = self.sandboxed('validation_failed')
         self.assertEqual(record['exit_code'], 3)
         self.assertFalse(os.path.lexists(work / 'routing/candidate'))
-        self.assertEqual(routing_adapter.verify(work)['classification'], 'validation_failed')
+        self.assertEqual(routing_adapter.verify(work, layout=self.pin)['classification'], 'validation_failed')
 
 
 if __name__ == '__main__':

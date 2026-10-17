@@ -39,6 +39,7 @@ class StageReceiptRoutingTest(unittest.TestCase):
     def receipt(self, scenario):
         root = Path(self.tmp.name) / scenario
         checkout, code = make_checkout(root / 'checkout', scenario)
+        self.pin = {'pin': FAKE_PIN, 'code': code}
         design = make_candidate(root / 'design')
         driver = root / 'driver'
         driver.mkdir()
@@ -60,8 +61,9 @@ class StageReceiptRoutingTest(unittest.TestCase):
         self.assertEqual(receipt['changed'], ['project/rc.kicad_pcb'])
         self.assertEqual(receipt['tool']['reported_version']['status'], 'unknown')
         self.assertEqual(receipt['tool']['backend']['value']['name'], 'krt')
-        summary = routing_adapter.verify(receipt_dir / 'run', receipt['inputs'])
+        summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)
         self.assertEqual(summary['candidate_sha256'], receipt['outputs']['project/rc.kicad_pcb'])
+        self.assertEqual(summary['backend'], receipt['tool']['backend'])
         stage_receipts.adopt(receipt_dir, receipt, design)
         delivered = attempt.files_of(attempt.tree(design))
         self.assertEqual(stage_receipts.applicability([receipt], delivered)[0]['applicability'], 'applicable')
@@ -73,6 +75,8 @@ class StageReceiptRoutingTest(unittest.TestCase):
     def test_partial_attempt_is_adoptable_as_partial(self):
         receipt, receipt_dir, design = self.receipt('incomplete')
         self.assertEqual((receipt['exit_code'], receipt['status']), (2, 'partial'))
+        self.assertEqual(routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)['coverage'],
+                         'routing_incomplete')
         stage_receipts.adopt(receipt_dir, receipt, design)
 
     def test_non_adoptable_attempts_keep_receipts_and_deliver_nothing(self):
@@ -87,7 +91,31 @@ class StageReceiptRoutingTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     stage_receipts.adopt(receipt_dir, receipt, design)
                 self.assertEqual(attempt.files_of(attempt.tree(design)), before)
-                routing_adapter.verify(receipt_dir / 'run', receipt['inputs'])
+                routing_adapter.verify(receipt_dir / 'run', receipt=receipt, layout=self.pin)
+
+    def test_the_report_must_agree_with_its_own_receipt(self):
+        complete, complete_dir, _ = self.receipt('complete')
+        partial, partial_dir, _ = self.receipt('incomplete')
+        # Each run verifies against its own receipt, and neither against the other's.
+        for run_dir, receipt in ((complete_dir, partial), (partial_dir, complete)):
+            with self.assertRaisesRegex(ValueError, 'stage receipt'):
+                routing_adapter.verify(run_dir / 'run', receipt=receipt, layout=self.pin)
+        tampers = {
+            'exit differs from the routing adapter exit': lambda r: r.update(exit_code=2),
+            'output differs from the routed candidate': lambda r: r['outputs'].update(
+                {'project/rc.kicad_pcb': '0' * 64}),
+            'does not anchor this routing adapter report': lambda r: r['artifacts'].update(
+                {'routing/adapter-report.json': '0' * 64}),
+            'backend differs': lambda r: r['tool']['backend']['value'].update(version='9.9'),
+            'not this routing adapter step': lambda r: r['spec'].update(writes={}),
+            'inputs differ': lambda r: r['inputs'].update({'project/rc.kicad_pcb': '0' * 64}),
+        }
+        for message, tamper in tampers.items():
+            with self.subTest(message):
+                receipt = json.loads(json.dumps(complete))
+                tamper(receipt)
+                with self.assertRaisesRegex(ValueError, message):
+                    routing_adapter.verify(complete_dir / 'run', receipt=receipt, layout=self.pin)
 
 
 if __name__ == '__main__':

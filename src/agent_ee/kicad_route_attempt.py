@@ -59,6 +59,14 @@ PINNED_CODE = {
     'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
 }
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
+# Every report has exactly these keys, whatever the outcome.
+REPORT_KEYS = {'schema', 'adapter', 'request', 'reproducibility', 'tool_version', 'backend', 'process',
+               'discovery', 'missing_artifacts', 'retained', 'omitted_design_files', 'candidate',
+               'candidate_editor_state', 'candidate_files', 'rejected_candidate_sha256', 'inputs', 'tool',
+               'state_write_probe', 'identity_before', 'identity_after', 'semantics', 'identity'}
+TOOL_VERSION = {'status': 'unknown', 'value': None,
+                'reason': 'kicad-route at the pin has no --version; identity is the pinned code'}
+NO_BACKEND = {'status': 'unknown', 'value': None, 'reason': 'no result.json'}
 SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-route',
            'state': '/opt/kicad-route-state'}
 PYTHON = '/usr/bin/python3'
@@ -81,6 +89,8 @@ PROCESS = ('PASS', 'FAIL')
 ROUTING = ('COMPLETE', 'INCOMPLETE', 'NOT_RUN')
 VALIDATION = ('PASS', 'FAIL', 'NOT_RUN')
 RETAINED_FILES = ('result.json', 'attempt.json', 'RESULT.md', 'snapshot.json')
+# Reports an attempt that wrote a result is expected to have; absent ones are listed, never invented.
+EXPECTED_REPORTS = ('result.json', 'attempt.json', 'RESULT.md', 'validate')
 RETAINED_DIRS = ('validate', 'facts', 'work')
 # Design files never enter the retained diagnostics: the only board that can
 # leave the attempt is the validated candidate of an eligible exit.
@@ -312,6 +322,23 @@ def write_probe(targets):
     return records
 
 
+def missing_reports(retained):
+    """EXPECTED_REPORTS absent from retained, whose keys are relative to the attempt directory."""
+    return [n for n in EXPECTED_REPORTS if not any(k == n or k.startswith(n + '/') for k in retained)]
+
+
+def fingerprint(files):
+    """The pinned tool's input fingerprint over a reference snapshot's file hashes."""
+    return hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.items())).encode()).hexdigest()
+
+
+def backend_of(result):
+    """Backend identity copied verbatim from a parsed result.json; nothing is filled in."""
+    if isinstance(result, dict) and isinstance(result.get('backend'), dict):
+        return {'status': 'reported', 'value': result['backend'], 'reason': None}
+    return dict(NO_BACKEND)
+
+
 def _is_int(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -396,7 +423,7 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     return 'contradiction', ['validation PASS with routing NOT_RUN']
 
 
-def _load_json(path, problems, label):
+def load_json(path, problems, label):
     if not path.is_file() or path.is_symlink():
         return None
     if path.stat().st_size > JSON_LIMIT:
@@ -450,7 +477,7 @@ def discover(out, request):
     return (found[0] if len(found) == 1 else None), problems
 
 
-def _resolve_reported(value, origin, routing):
+def resolve_reported(value, origin, routing):
     """A report path as an untrusted string: cwd-relative or absolute, never .."""
     if not isinstance(value, str) or not value:
         return None
@@ -472,29 +499,31 @@ def _no_links_between(base, path):
 
 def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     """Problems binding the eligible candidate to this attempt and these inputs, the
-    candidate board's sha256 and the undelivered editor-state files."""
+    candidate board's sha256, the undelivered editor-state files and the whole
+    candidate file inventory, which verification re-checks against the snapshot."""
     routing = Path(layout['work']) / 'routing'
     problems = []
-    if _resolve_reported(result['run_dir'], routing, routing) != run_dir:
+    if resolve_reported(result['run_dir'], routing, routing) != run_dir:
         problems.append('result run_dir is not the discovered attempt directory')
     cand_dir = run_dir / attempt['candidate_dir']
     ref_dir = run_dir / attempt['reference_dir']
     board = cand_dir / request['board']
-    if (_resolve_reported(result['candidate']['dir'], routing, routing) != cand_dir or
-            _resolve_reported(result['candidate']['board'], routing, routing) != board):
+    if (resolve_reported(result['candidate']['dir'], routing, routing) != cand_dir or
+            resolve_reported(result['candidate']['board'], routing, routing) != board):
         problems.append('result candidate paths are not inside the discovered attempt')
-        return problems, None, {}
+        return problems, None, {}, {}
     if not _no_links_between(run_dir, board) or not board.is_file():
         problems.append('candidate board missing, or reached through a link')
-        return problems, None, {}
+        return problems, None, {}, {}
     for label, root in (('candidate', run_dir / 'candidate'), ('reference', run_dir / 'reference')):
         if root.is_symlink() or not root.is_dir() or [p.name for p in root.iterdir()] != [cand_dir.name]:
             problems.append(f'{label}/ must hold exactly the project directory')
-            return problems, None, {}
+            return problems, None, {}, {}
     cand, ref = tree(cand_dir), tree(ref_dir)
     if links_of(cand) or links_of(ref):
         problems.append('candidate or reference tree contains links or special files')
     cand_files, ref_files = files_of(cand), files_of(ref)
+    inventory = dict(cand_files)
     # kicad-cli pcb drc --save-board writes the board's editor-state file
     # beside it. It is hashed and reported, and never delivered.
     editor_state = PurePosixPath(request['board']).stem + '.kicad_prl'
@@ -514,18 +543,17 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     for name in (request['board'], request['schematic']):
         if name not in ref_files:
             problems.append(f'reference snapshot lacks {name}')
-    snapshot = _load_json(run_dir / 'snapshot.json', problems, 'snapshot.json')
+    snapshot = load_json(run_dir / 'snapshot.json', problems, 'snapshot.json')
     if not isinstance(snapshot, dict) or snapshot.get('files') != ref_files:
         problems.append('snapshot.json files differ from the reference snapshot')
-    fingerprint = hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(ref_files.items())).encode()).hexdigest()
-    if fingerprint != result['input'].get('fingerprint'):
+    if fingerprint(ref_files) != result['input'].get('fingerprint'):
         problems.append('input fingerprint differs from the reference snapshot')
     sha = cand_files.get(request['board'])
     validation = result['validation']
     if (sha is None or validation.get('delivered_board_sha256') != sha or
             validation.get('validated_board_sha256') != sha or validation.get('restored_project_files') != []):
         problems.append('candidate board is not the board the router validated')
-    return problems, sha, report_state
+    return problems, sha, report_state, inventory
 
 
 def retain(run_dir, dest):
@@ -646,14 +674,12 @@ def attempt(request, layout, cancel=None):
         raise RequestError('routing/ already exists; an attempt needs a fresh private OUT')
     for sub in ('home', 'tmp', 'attempt'):
         (routing / sub).mkdir(parents=True)
-    report = {'schema': REPORT_SCHEMA, 'adapter': {'compatibility': f'kicad-route@{PIN}'},
+    report = {'schema': REPORT_SCHEMA, 'adapter': {'compatibility': f'kicad-route@{layout["pin"]}'},
               'request': request, 'reproducibility': REPRODUCIBILITY[request['backend']],
-              'tool_version': {'status': 'unknown', 'value': None,
-                               'reason': 'kicad-route at the pin has no --version; identity is the pinned code'},
-              'backend': {'status': 'unknown', 'value': None, 'reason': 'no result.json'},
+              'tool_version': dict(TOOL_VERSION), 'backend': dict(NO_BACKEND),
               'process': None, 'discovery': None, 'missing_artifacts': [], 'retained': {},
               'omitted_design_files': {}, 'candidate': None, 'candidate_editor_state': {},
-              'rejected_candidate_sha256': None}
+              'candidate_files': {}, 'rejected_candidate_sha256': None, 'identity_after': None}
     candidate_root, checkout, state = Path(layout['candidate']), Path(layout['checkout']), Path(layout['state'])
     problems = []
 
@@ -708,13 +734,11 @@ def attempt(request, layout, cancel=None):
     retained, omitted, links = retain(run_dir, routing / 'attempt')
     report['retained'] = {f'attempt/{k}': v for k, v in retained.items()}
     report['omitted_design_files'] = omitted
-    report['missing_artifacts'] = [n for n in ('result.json', 'attempt.json', 'RESULT.md', 'validate')
-                                   if not any(k == n or k.startswith(n + '/') for k in retained)]
+    report['missing_artifacts'] = missing_reports(retained)
     load = []
-    result = _load_json(routing / 'attempt/result.json', load, 'result.json') if 'result.json' in retained else None
-    attempt_record = _load_json(routing / 'attempt/attempt.json', load, 'attempt.json') if 'attempt.json' in retained else None
-    if isinstance(result, dict) and isinstance(result.get('backend'), dict):
-        report['backend'] = {'status': 'reported', 'value': result['backend'], 'reason': None}
+    result = load_json(routing / 'attempt/result.json', load, 'result.json') if 'result.json' in retained else None
+    attempt_record = load_json(routing / 'attempt/attempt.json', load, 'attempt.json') if 'attempt.json' in retained else None
+    report['backend'] = backend_of(result)
     stdout = (routing / 'kicad-route.stdout').read_bytes().decode('utf-8', 'replace')
     refused_line = any(line.startswith('[route] refused: ') for line in stdout.splitlines())
     process = report['process']
@@ -732,8 +756,8 @@ def attempt(request, layout, cancel=None):
         violations.append('candidate inputs changed during the attempt')
     sha = None
     if classification in ('complete', 'incomplete'):
-        bind, sha, report['candidate_editor_state'] = bind_candidate(request, layout, run_dir, result,
-                                                                     attempt_record, inputs)
+        bind, sha, report['candidate_editor_state'], report['candidate_files'] = bind_candidate(
+            request, layout, run_dir, result, attempt_record, inputs)
         violations += bind + [f'eligible attempt lacks {n}' for n in report['missing_artifacts']]
     elif classification == 'validation_failed' and run_dir is not None:
         board = run_dir / attempt_record['candidate_dir'] / request['board']
