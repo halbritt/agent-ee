@@ -178,9 +178,9 @@ and partial runs.
 
 ## Evidence, development and documentation
 
-The project has 98 tests covering native checks, evidence integrity, isolated
-review contexts, single-writer ownership, regression detection and empirical
-feedback. The original RC defect-and-repair demonstration used actual agent
+The project has 106 tests covering native checks, evidence integrity, isolated
+review contexts, single-writer ownership, regression detection, empirical
+feedback and the license and third-party-origin records. The original RC defect-and-repair demonstration used actual agent
 reviews. The newer complete campaign and bench-feedback loops are exercised with
 scripted agent responses and synthetic bench samples. A live subscription
 campaign demonstrated independent review and rejection of an invalid adjudicator
@@ -202,3 +202,14 @@ record Fable and Argon's findings on the closed-loop implementation.
 The [enhancement roadmap](docs/enhancement-roadmap.md) records proposed next
 steps, their engineering constraints and acceptance tests, with the independent
 idea pools and review decisions that informed their priority.
+
+## License
+
+Material written for agent-ee is offered under the [MIT License](LICENSE), as
+declared in the package metadata. Some tracked files come from other projects:
+the RC fixture copied from FOME-MC, material from the Universal 112 donor design
+and other ECU designs, stock KiCad libraries inside evidence archives,
+datasheets and fetched web pages. The MIT grant does not cover them. Their
+origins, known upstream licenses and publication status are listed in
+[third-party origins](docs/third-party-origins.md). Their publication rights
+are unresolved and require owner confirmation before publication.

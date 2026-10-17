@@ -40,6 +40,7 @@ install those dependencies automatically.
 | [test_findings.py](../tests/test_findings.py) | Singleton retention, unsupported allegations, evidence/dispositions, duplicate and closure invariants |
 | [test_profiles.py](../tests/test_profiles.py) | Explicit allocation, profile freshness, subscription response handling, native adapter contracts and refusal of profile-only repair closure |
 | [test_cli.py](../tests/test_cli.py) | Required work, outcome projection, interruption/budget preservation and correction behavior |
+| [test_metadata.py](../tests/test_metadata.py) | MIT declaration in LICENSE, package metadata and README; third-party-origin inventory coverage of tracked files and explicit publication status |
 
 Avoid tests that only echo generated implementation text. Define the engineering
 expected response and failure mechanism independently, then exercise actual

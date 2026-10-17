@@ -67,8 +67,11 @@ Scopes copy explicit inputs, including uncommitted files. Directory selections
 can accidentally include private material; inspect them. Retained evidence may
 contain proprietary design text, absolute local paths, model outputs and harness
 session identifiers. Keep it under the appropriate repository visibility.
-This project's remote is private; no public release or hardware fabrication
-approval follows from that remote existing.
+Retained evidence can also contain files from other projects. The
+[third-party origins](third-party-origins.md) inventory lists them and their
+publication status. Repository visibility does not grant rights to publish
+them. The GitHub remote was observed to be public on 2026-10-17. No hardware
+fabrication approval follows from that remote existing.
 
 The archive helper refuses links and files named `.credentials.json`, normalizes
 archive ownership/timestamps, verifies checksums on restore and refuses changed

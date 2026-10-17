@@ -25,6 +25,7 @@ product's hardware qualification.
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
 | Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
+| Check the license and the origin and publication status of files from other projects | [Third-party origins](third-party-origins.md) |
 
 The [acceptance index](../evidence/README.md) links all ten demonstrations,
 including actual native tools and agent reviews. The [donor baseline](../evidence/BASELINE.md)
