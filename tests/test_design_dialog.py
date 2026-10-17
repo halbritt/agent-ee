@@ -1,0 +1,173 @@
+"""Owned offline question/answer contracts."""
+import hashlib
+import json
+import unittest
+
+from agent_ee.design_dialog import capture_dialog
+
+
+def encoded(value):
+    return json.dumps(value).encode()
+
+
+def inputs():
+    idea = b'Owner idea: measure a sensor.\n'
+    baseline = encoded({'schema': 'agent-ee.requirements/1', 'requirements': [
+        {'id': 'R-original', 'text': 'Keep the owner wording.', 'source_question_ids': []}]})
+    questions = encoded({'schema': 'agent-ee.questions/1', 'context': 'Supply decision', 'questions': [
+        {'id': 'supply', 'question': 'Supply voltage?', 'options': ['3.3V', '5V'],
+         'default': '3.3V', 'depends_on': [], 'requirement_id': 'R-supply'},
+        {'id': 'sensor', 'question': 'Sensor interface?', 'options': ['analog', 'digital'],
+         'default': 'analog', 'depends_on': ['supply'], 'requirement_id': 'R-sensor'}]})
+    answers = encoded({'schema': 'agent-ee.answers/1', 'questions_sha256': hashlib.sha256(questions).hexdigest(),
+        'idea_sha256': hashlib.sha256(idea).hexdigest(), 'requirements_sha256': hashlib.sha256(baseline).hexdigest(),
+        'answers': {'sensor': {'value': 'digital'}, 'supply': {'use_default': True}}})
+    return idea, questions, answers, baseline
+
+
+class DesignDialogTests(unittest.TestCase):
+    def test_capture_binds_answers_and_preserves_originals_and_ids(self):
+        args = inputs()
+        artifacts = capture_dialog(*args)
+        report = json.loads(artifacts['dialog.json'])
+        self.assertEqual(report['outcome'], 'pass')
+        self.assertFalse(report['acceptance_ready'])
+        derived = json.loads(artifacts['requirements.json'])['requirements']
+        self.assertEqual(derived[0], json.loads(args[3])['requirements'][0])
+        self.assertEqual([r['id'] for r in derived], ['R-original', 'R-supply', 'R-sensor'])
+        self.assertEqual(derived[2]['source_question_ids'], ['supply', 'sensor'])
+        self.assertEqual(report['answers']['supply'], {'value': '3.3V', 'defaulted': True})
+        self.assertEqual(artifacts['original-requirements.json'], args[3])
+        self.assertEqual(capture_dialog(*args), artifacts)
+
+    def test_missing_malformed_and_partial_answers_never_default(self):
+        idea, questions, answers, baseline = inputs()
+        partial = json.loads(answers)
+        del partial['answers']['supply']
+        for raw in [None, b'{', b'null', b'\xff', encoded(partial)]:
+            with self.subTest(raw=raw):
+                artifacts = capture_dialog(idea, questions, raw, baseline)
+                report = json.loads(artifacts['dialog.json'])
+                self.assertEqual(report['outcome'], 'unknown')
+                self.assertNotIn('requirements.json', artifacts)
+                self.assertNotIn('requirements.md', artifacts)
+        report = json.loads(capture_dialog(idea, questions, encoded(partial), baseline)['dialog.json'])
+        self.assertEqual(report['ready_question_ids'], ['supply'])
+
+    def test_invalid_default_duplicate_ids_cycles_and_collisions_are_rejected(self):
+        idea, raw, answers, baseline = inputs()
+        for change in ['default', 'duplicate', 'cycle', 'unknown', 'collision', 'duplicate_dependency', 'invalid_id']:
+            questions = json.loads(raw)
+            first, second = questions['questions']
+            if change == 'default':
+                first['default'] = '12V'
+            elif change == 'duplicate':
+                second['id'] = first['id']
+            elif change == 'cycle':
+                first['depends_on'] = ['sensor']
+            elif change == 'unknown':
+                first['depends_on'] = ['missing']
+            elif change == 'collision':
+                first['requirement_id'] = 'R-original'
+            elif change == 'duplicate_dependency':
+                second['depends_on'] = ['supply', 'supply']
+            else:
+                first['id'] = '../path'
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                capture_dialog(idea, encoded(questions), answers, baseline)
+
+    def test_stale_hash_extra_answer_and_implicit_defaults_block_capture(self):
+        idea, questions, raw, baseline = inputs()
+        for change in ['stale', 'extra', 'empty', 'false', 'wrong_value', 'null', 'duplicate_key']:
+            answers = json.loads(raw)
+            if change == 'stale':
+                answers['idea_sha256'] = '0' * 64
+            elif change == 'extra':
+                answers['answers']['other'] = {'value': '5V'}
+            elif change == 'empty':
+                answers['answers']['supply'] = {}
+            elif change == 'false':
+                answers['answers']['supply'] = {'use_default': False}
+            elif change == 'wrong_value':
+                answers['answers']['supply'] = {'value': '12V'}
+            elif change == 'null':
+                answers['answers']['supply'] = None
+            raw_answer = encoded(answers)
+            if change == 'duplicate_key':
+                raw_answer = raw_answer[:-1] + b',"answers":{}}'
+            with self.subTest(change=change):
+                artifacts = capture_dialog(idea, questions, raw_answer, baseline)
+                self.assertEqual(json.loads(artifacts['dialog.json'])['outcome'], 'unknown')
+                self.assertNotIn('requirements.json', artifacts)
+
+    def test_independent_questions_are_batched_and_topological_ids_are_stable(self):
+        idea, raw, answers_raw, baseline = inputs()
+        questions = json.loads(raw)
+        questions['questions'].append({'id': 'housing', 'question': 'Enclosure?', 'options': ['open'],
+            'default': 'open', 'depends_on': [], 'requirement_id': 'R-housing'})
+        answers = json.loads(answers_raw)
+        answers['answers']['housing'] = {'value': 'open'}
+        first_raw = encoded(questions)
+        answers['questions_sha256'] = hashlib.sha256(first_raw).hexdigest()
+        first = capture_dialog(idea, first_raw, encoded(answers), baseline)
+        report = json.loads(first['dialog.json'])
+        self.assertEqual(report['question_batches'], [['housing', 'supply'], ['sensor']])
+        questions['questions'].reverse()
+        second_raw = encoded(questions)
+        answers['questions_sha256'] = hashlib.sha256(second_raw).hexdigest()
+        second = capture_dialog(idea, second_raw, encoded(answers), baseline)
+        self.assertEqual(first['requirements.json'], second['requirements.json'])
+        self.assertEqual(first['requirements.md'], second['requirements.md'])
+
+    def test_changed_original_requirement_bytes_invalidate_old_answers(self):
+        idea, questions, answers, baseline = inputs()
+        artifacts = capture_dialog(idea, questions, answers, baseline + b'\n')
+        self.assertEqual(json.loads(artifacts['dialog.json'])['outcome'], 'unknown')
+        self.assertEqual(artifacts['original-requirements.json'], baseline + b'\n')
+
+    def test_cli_missing_answers_is_unknown_with_no_derived_output(self):
+        from pathlib import Path
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            idea, questions, answers, baseline = inputs()
+            for name, raw in [('idea', idea), ('questions', questions), ('baseline', baseline)]:
+                (root / name).write_bytes(raw)
+            argv = [sys.executable, '-m', 'agent_ee.design_dialog', '--idea', str(root / 'idea'),
+                '--questions', str(root / 'questions'), '--requirements', str(root / 'baseline'),
+                '--answers', str(root / 'missing'), '--out', str(root / 'output')]
+            result = subprocess.run(argv, capture_output=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertFalse((root / 'output/requirements.json').exists())
+            (root / 'missing').write_bytes(answers)
+            result = subprocess.run(argv[:-1] + [str(root / 'ready')], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / 'ready/requirements.json').exists())
+
+    def test_ready_frontier_requires_all_ancestors_answered(self):
+        idea, raw, ar, baseline = inputs()
+        questions = json.loads(raw)
+        questions['questions'].append({'id': 'gain', 'question': 'Gain?', 'options': ['one'],
+            'default': 'one', 'depends_on': ['sensor'], 'requirement_id': 'R-gain'})
+        qr = encoded(questions)
+        answers = json.loads(ar)
+        answers['questions_sha256'] = hashlib.sha256(qr).hexdigest()
+        del answers['answers']['supply']
+        report = json.loads(capture_dialog(idea, qr, encoded(answers), baseline)['dialog.json'])
+        self.assertEqual(report['ready_question_ids'], ['supply'])
+        self.assertEqual(report['outcome'], 'unknown')
+
+    def test_imported_intent_original_text_and_requirement_id_survive_dialog(self):
+        from agent_ee.design_intent import import_record
+        from test_design_intent import record
+        idea, qr, ar, _ = inputs()
+        baseline = import_record(record())['requirements.json']
+        answers = json.loads(ar)
+        answers['requirements_sha256'] = hashlib.sha256(baseline).hexdigest()
+        artifacts = capture_dialog(idea, qr, encoded(answers), baseline)
+        original = json.loads(baseline)['requirements'][0]
+        derived = json.loads(artifacts['requirements.json'])['requirements']
+        self.assertEqual(derived[0], original)
+        self.assertEqual(artifacts['original-requirements.json'], baseline)
