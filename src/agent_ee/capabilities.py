@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from .storage import identity
 
 
-KINDS = frozenset(('catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
                    'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'assembly_readiness'))
@@ -326,6 +326,18 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             from .assembly_readiness import capability
             captured(scope.get('schematic'))
             descriptor = capability(params, files, inputs)
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'part_binding':
+            from .part_binding import capability
+            descriptor = capability(params, scope, files, inputs)
+            sch = params.get('schematic', scope.get('schematic'))
+            pcb = params.get('board', scope.get('board'))
+            if sch is not None:
+                captured(sch)
+            if pcb is not None:
+                captured(pcb)
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']

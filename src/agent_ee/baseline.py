@@ -104,6 +104,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "assembly_readiness":
             from .assembly_readiness import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
+        if spec.get("kind") == "part_binding":
+            from .part_binding import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "hardware_interface":
             from .hardware_interface import capability
             descriptor = capability(params, scope, files, inputs, spec["id"])
