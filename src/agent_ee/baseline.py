@@ -62,6 +62,9 @@ def compile_baseline(scope, files, inputs=None):
             paths.update(descriptor["immutable_inputs"])
     for spec in checks.values():
         params = spec.get("params", {})
+        if spec.get("kind") == "footprint_assignment":
+            from .library_checks import capability
+            paths.update(capability(params, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "netclass_completeness":
             from .netclass_completeness import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
