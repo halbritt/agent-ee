@@ -353,3 +353,8 @@ record Fable and Argon's findings on the closed-loop implementation.
 The [enhancement roadmap](docs/enhancement-roadmap.md) records proposed next
 steps, their engineering constraints and acceptance tests, with the independent
 idea pools and review decisions that informed their priority.
+
+Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
+materials and saved native copper dimensions to declared DC drop/loss limits.
+Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
+series/parallel networks; unsupported conductors leave coverage incomplete.
