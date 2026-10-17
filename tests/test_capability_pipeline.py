@@ -97,7 +97,7 @@ pcbnew.SaveBoard(p, b)
         write_json(root / 'scope.json', scope)
         return root
 
-    def agent(self, run, label, definition, prompt, schema, timeout):
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None):
         run = Path(run)
         self.calls.append((run.name, label))
         packet = read_json(run / 'packet.json')
@@ -131,8 +131,9 @@ pcbnew.SaveBoard(p, b)
                 self.assertEqual(status, 0 if expected['outcome'] == 'criteria_satisfied' else 1, result)
                 self.assertEqual(result['outcome'], expected['outcome'], result)
                 self.assertTrue(result['adjudicated'], result)
-                self.assertEqual([label for run, label in self.calls[-3:]],
-                                 ['circuit', 'physical', 'adjudicator'])
+                self.assertCountEqual([label for run, label in self.calls[-3:-1]],
+                                      ['circuit', 'physical'])
+                self.assertEqual(self.calls[-1][1], 'adjudicator')
                 self.assertEqual([c['id'] for c in result['checks'] if c['execution'] != 'ok'],
                                  expected['unknown_checks'], result['checks'])
                 accepted = [f for f in result['findings'] if f.get('status') == 'accepted']
