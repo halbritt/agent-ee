@@ -1,0 +1,4033 @@
+{
+  "environment": {
+    "evidence": "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence",
+    "platform": "Linux-6.8.0-146-generic-x86_64-with-glibc2.39",
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "worktree": "/home/halbritt/git/agent-ee-worktrees/evidence-fetch"
+  },
+  "files_manifest_sha256": "8bd1f2adfd0a0cee9ba813c01ed4b610d7dd9df07107b03a8d4976791736bfbe",
+  "implementation_ref": "83e4bc718bb208f7202269b001a2fc4a2129e674",
+  "recorded_at": "2026-10-17T15:45:54.216454+00:00",
+  "runs": [
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/agy/calculation",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/calculation",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/calculation"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/agy/singleton",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/singleton",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/singleton"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/agy/stale-repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/stale-repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/stale-repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/agy/unsupported",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/unsupported",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/agy/unsupported"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/claude/calculation",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/calculation",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/calculation"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/claude/singleton",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/singleton",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/singleton"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/claude/stale-repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/stale-repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/stale-repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/claude/unsupported",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/unsupported",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/claude/unsupported"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/codex/calculation",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/calculation",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/calculation"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/codex/singleton",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/singleton",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/singleton"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/codex/stale-repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/stale-repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/stale-repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "adjudicator-comparison/codex/unsupported",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/unsupported",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/adjudicator-comparison/codex/unsupported"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "geometry_probe.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2275,
+        "source_metadata": {
+          "scope": "changed"
+        },
+        "source_missing": 0
+      },
+      "run": "donor-baseline",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-baseline",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-baseline"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "geometry_probe.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2275,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "donor-baseline-v2",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-baseline-v2",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-baseline-v2"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2275,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "donor-final",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-final",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-final"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "donor-verified",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-verified",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/donor-verified"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines/agy",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines/agy",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines/agy"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines/claude",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines/claude",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines/claude"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines/codex",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines/codex",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines/codex"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines-expanded/agy",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-expanded/agy",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-expanded/agy"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines-expanded/claude",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-expanded/claude",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-expanded/claude"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines-expanded/codex",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-expanded/codex",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-expanded/codex"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines-final/agy",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-final/agy",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-final/agy"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines-final/claude",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-final/claude",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-final/claude"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-baselines-final/codex",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-final/codex",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-baselines-final/codex"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/agy/mapping-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/agy/mapping-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/agy/mapping-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/limits-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/limits-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/limits-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/limits-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/limits-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/limits-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/mapping-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/mapping-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/mapping-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/mapping-a-2",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/mapping-a-2",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/mapping-a-2"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/mapping-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/mapping-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/mapping-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/population-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/population-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/population-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 460,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/population-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/population-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/population-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/shutdown-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/shutdown-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/shutdown-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/shutdown-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/shutdown-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/shutdown-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/verification-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/verification-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/verification-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/verification-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/verification-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/verification-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/width-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/width-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/width-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/claude/width-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/width-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/claude/width-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/limits-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/limits-a-2",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-a-2",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-a-2"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/limits-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/limits-b-2",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-b-2",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/limits-b-2"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/mapping-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/mapping-a-2",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-a-2",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-a-2"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/mapping-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/mapping-b-2",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-b-2",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/mapping-b-2"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/population-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/population-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/population-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 460,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/population-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/population-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/population-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/shutdown-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/shutdown-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/shutdown-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/shutdown-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/shutdown-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/shutdown-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/verification-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/verification-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/verification-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/verification-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/verification-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/verification-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/width-a-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/width-a-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/width-a-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-comparison/runs/codex/width-b-1",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/width-b-1",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-comparison/runs/codex/width-b-1"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 2276,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-release/baseline",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/baseline",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/baseline"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-release/repair-demo/control",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/repair-demo/control",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/repair-demo/control"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-release/repair-demo/repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/repair-demo/repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/repair-demo/repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-release/repair-demo/seed",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/repair-demo/seed",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/repair-demo/seed"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-release/uncertainty",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/uncertainty",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-release/uncertainty"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-repair/control",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair/control",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair/control"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-repair/repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair/repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair/repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-repair/seed",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair/seed",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair/seed"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-repair-final/control",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair-final/control",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair-final/control"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-repair-final/repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair-final/repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair-final/repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "profile": "matches",
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "model-repair-final/seed",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair-final/seed",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/model-repair-final/seed"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "geometry_probe.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-demonstration/control",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-demonstration/control",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-demonstration/control"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "geometry_probe.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-demonstration/seed",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-demonstration/seed",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-demonstration/seed"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-final/control",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-final/control",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-final/control"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-final/seed",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-final/seed",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-final/seed"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-verified/control",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-verified/control",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-verified/control"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-verified/repair",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-verified/repair",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-verified/repair"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    },
+    {
+      "diagnostics": {
+        "note": "Independent diagnostics; CLI exits below retain the actual first refusal.",
+        "policy_differences": [
+          "baseline.py",
+          "campaign.py",
+          "candidate.py",
+          "checks.py",
+          "cli.py",
+          "convergence.py",
+          "empirical.py",
+          "findings.py",
+          "harnesses.py",
+          "locking.py",
+          "measurements.py",
+          "profiles.py",
+          "reviewers.py"
+        ],
+        "policy_matches": false,
+        "source_changed": 0,
+        "source_files": 459,
+        "source_metadata": {
+          "scope": "matches"
+        },
+        "source_missing": 0
+      },
+      "run": "rc-verified/seed",
+      "verify": {
+        "snapshot": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-verified/seed",
+            "--snapshot-only"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        },
+        "source": {
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "agent_ee.cli",
+            "verify",
+            "/home/halbritt/git/agent-ee-worktrees/evidence-fetch/evidence/rc-verified/seed"
+          ],
+          "exit": 2,
+          "stderr": "agent-ee: candidate snapshot changed; evidence is stale\n",
+          "stdout": ""
+        }
+      }
+    }
+  ],
+  "schema": "agent-ee.evidence-verify-baseline/1"
+}
