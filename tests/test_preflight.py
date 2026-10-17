@@ -307,7 +307,11 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
                 deadline = time.monotonic() + 1
                 while time.monotonic() < deadline:
                     stat = Path(f'/proc/{pid}/stat')
-                    if not stat.exists() or stat.read_text().split()[2] == 'Z':
+                    try:
+                        state = stat.read_text().split()[2]
+                    except FileNotFoundError:
+                        break
+                    if state == 'Z':
                         break
                     time.sleep(.01)
                 else:
