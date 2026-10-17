@@ -6,6 +6,8 @@ tests qualify the receipt and campaign seam; they do not establish any rung-1 to
 import contextlib
 import io
 import json
+import os
+import shutil
 import tempfile
 import threading
 import time
@@ -22,10 +24,32 @@ from agent_ee.storage import digest, identity, read_json, write_json
 
 from toolchain import toolchain_test
 
-TOOL = '''import json, sys, time
+TOOL = '''import json, os, sys, time
 from pathlib import Path
 mode = sys.argv[1]
 board = Path("/work/design/project/board.txt")
+if mode == "plant":
+    # Plan: remove, files, copy (from the read-only tool mount), links, fifos, sleep, exit.
+    plan = json.loads(sys.argv[2])
+    work = Path("/work")
+    for rel in plan.get("remove", []):
+        (work / rel).unlink()
+    for rel, text in plan.get("files", {}).items():
+        (work / rel).parent.mkdir(parents=True, exist_ok=True)
+        (work / rel).write_text(text)
+    for rel, source in plan.get("copy", {}).items():
+        (work / rel).parent.mkdir(parents=True, exist_ok=True)
+        (work / rel).write_bytes(Path(source).read_bytes())
+    for rel, target in plan.get("links", {}).items():
+        (work / rel).parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, work / rel)
+    for rel in plan.get("fifos", []):
+        (work / rel).parent.mkdir(parents=True, exist_ok=True)
+        os.mkfifo(work / rel)
+    for rel, mode in plan.get("chmod", {}).items():
+        os.chmod(work / rel, mode)
+    time.sleep(plan.get("sleep", 0))
+    raise SystemExit(plan.get("exit", 0))
 if mode == "version":
     print("step-tool 1.2.3"); raise SystemExit(0)
 if mode == "silent-version":
@@ -147,7 +171,7 @@ class ApplicabilityTests(unittest.TestCase):
             self.assertEqual(relation, {'applicability': 'not_applicable', 'differences': ['status:' + status]})
 
 
-class StepExecutionTests(unittest.TestCase):
+class StepFixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -172,6 +196,8 @@ class StepExecutionTests(unittest.TestCase):
         path = self.root / 'work/receipts' / f'{self.count}-{spec["step"]}'
         return path, run_step(path, self.design, spec, {**self.binding, 'receipt_index': self.count}, **kwargs)
 
+
+class StepExecutionTests(StepFixture):
     @toolchain_test
     def test_completed_step_records_coordinator_observed_identity_and_adopts_exactly(self):
         before = (self.design / 'project/board.txt').read_bytes()
@@ -364,6 +390,122 @@ class StepExecutionTests(unittest.TestCase):
             build_index(work, self.design, 1, 'c' * 64)
 
 
+SENTINEL = 'OWNED-HOST-SENTINEL-NOT-A-SECRET'
+
+
+def everything(path):
+    """Every regular file's bytes under path, never following a link."""
+    found = {}
+    for current, dirs, names in os.walk(path, followlinks=False):
+        for name in names:
+            item = Path(current) / name
+            if not item.is_symlink() and item.is_file():
+                found[item.relative_to(path).as_posix()] = item.read_bytes()
+    return found
+
+
+class CoordinatorBoundaryTests(StepFixture):
+    """A step tool may plant links and special files in /work; the coordinator never follows them."""
+
+    def setUp(self):
+        super().setUp()
+        # An owned host-only directory the sandbox cannot see; only the coordinator could reach it.
+        self.host = self.root / 'host-only'
+        (self.host / 'nested').mkdir(parents=True)
+        (self.host / 'sentinel').write_text(SENTINEL)
+        (self.host / 'nested/board.txt').write_text('routed board')
+        (self.host / 'result.json').write_text(json.dumps({'backend': {'name': 'host'}}))
+        self.host_before = everything(self.host)
+        self.sentinel_sha = digest(self.host / 'sentinel')
+
+    def plant(self, plan, **overrides):
+        return self.spec('plant', json.dumps(plan), **{'version_argv': None, **overrides})
+
+    def assert_host_untouched(self, path, receipt):
+        self.assertEqual(everything(self.host), self.host_before)
+        self.assertNotIn(self.sentinel_sha, json.dumps(receipt))
+        self.assertNotIn(SENTINEL.encode(), b''.join(everything(path).values()))
+        self.assertNotIn(SENTINEL, (self.design / 'project/board.txt').read_text())
+
+    def assert_refused_unadoptable(self, path, receipt, violation):
+        self.assertEqual(receipt['status'], 'refused')
+        self.assertIn(violation, receipt['violations'])
+        self.assertEqual(validate_receipt(path, binding={**self.binding, 'receipt_index': self.count}), receipt)
+        before = stage_receipts.file_tree(self.design)
+        with self.assertRaisesRegex(ValueError, 'no output adopted or substituted'):
+            adopt(path, receipt, self.design)
+        self.assertEqual(stage_receipts.file_tree(self.design), before)
+
+    def test_malformed_backend_reports_keep_the_observed_process_receipt(self):
+        prefix = 'backend report artifact '
+        cases = {
+            'nan': (b'{"backend": NaN}', 'has a non-finite number'),
+            'infinity': (b'{"backend": {"v": Infinity}}', 'has a non-finite number'),
+            'negative infinity': (b'{"backend": -Infinity}', 'has a non-finite number'),
+            'float overflow': (b'{"backend": 1e400}', 'has a non-finite number'),
+            'duplicate key': (b'{"backend": 1, "backend": 2}', 'has duplicate keys'),
+            'recursion depth': (b'{"backend": ' + b'[' * 100000 + b']' * 100000 + b'}', 'nesting exceeds 64'),
+            'over the nesting bound': (b'{"backend": ' + b'[' * 64 + b']' * 64 + b'}', 'nesting exceeds 64'),
+            'invalid utf-8': (b'{"backend": "\xff"}', 'is not UTF-8'),
+            'truncated': (b'{"backend": {"name": "x"', 'is not JSON'),
+            'oversized integer': (b'{"backend": ' + b'9' * 5000 + b'}', 'has an out-of-range number'),
+            'oversized': (b' ' * stage_receipts.REPORT_LIMIT + b'{}', 'too large'),
+        }
+        for label, (data, reason) in cases.items():
+            with self.subTest(label):
+                (self.tool / 'report.bin').write_bytes(data)
+                spec = self.plant({'files': {'design/project/board.txt': 'placed'},
+                                   'copy': {'out/result.json': '/tool/report.bin'}},
+                                  artifacts=['out/result.json'],
+                                  backend_report={'artifact': 'out/result.json', 'key': 'backend'})
+                path, receipt = self.run_step(spec)
+                self.assertEqual(receipt['tool']['backend'], {'status': 'unknown', 'value': None,
+                                                              'reason': prefix + reason})
+                # The process is still recorded; the backend is honestly unknown, not guessed.
+                self.assertEqual((receipt['status'], receipt['exit_code'], receipt['violations']), ('completed', 0, []))
+                self.assertEqual(receipt['artifacts'], {'out/result.json': digest(path / 'run/out/result.json')})
+                self.assertEqual(stage_receipts._strict_json((path / 'receipt.json').read_bytes()), receipt)
+                self.assertEqual(validate_receipt(path), receipt)
+        # Exactly at the nesting bound the value is copied verbatim.
+        nested = json.loads('[' * 63 + ']' * 63)
+        (self.tool / 'report.bin').write_text(json.dumps({'backend': nested}))
+        path, receipt = self.run_step(self.plant({'copy': {'out/result.json': '/tool/report.bin'}},
+                                                 writes={'project/board.txt': 'out/result.json'},
+                                                 artifacts=['out/result.json'],
+                                                 backend_report={'artifact': 'out/result.json', 'key': 'backend'}))
+        self.assertEqual(receipt['tool']['backend'], {'status': 'reported', 'value': nested, 'reason': None})
+        validate_receipt(path)
+
+    def test_partial_malformed_report_on_failure_timeout_and_cancellation(self):
+        (self.tool / 'report.bin').write_bytes(b'{"backend": {"name": "x", "version": "1.')
+        declared = dict(artifacts=['out/result.json'], backend_report={'artifact': 'out/result.json', 'key': 'backend'})
+        unknown = {'status': 'unknown', 'value': None, 'reason': 'backend report artifact is not JSON'}
+        path, receipt = self.run_step(self.plant({'copy': {'out/result.json': '/tool/report.bin'}, 'exit': 3},
+                                                 **declared))
+        self.assertEqual((receipt['status'], receipt['tool']['backend']), ('failed', unknown))
+        validate_receipt(path)
+        path, receipt = self.run_step(self.plant({'copy': {'out/result.json': '/tool/report.bin'}, 'sleep': 30},
+                                                 timeout_s=1, **declared))
+        self.assertEqual((receipt['status'], receipt['tool']['backend']), ('timeout', unknown))
+        validate_receipt(path)
+        cancellation = Cancellation()
+        timer = threading.Timer(1, cancellation.cancel)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_step(self.plant({'copy': {'out/result.json': '/tool/report.bin'}, 'sleep': 30}, **declared),
+                          cancellation=cancellation)
+        path = self.root / 'work/receipts' / f'{self.count}-test-helper'
+        receipt = validate_receipt(path)
+        self.assertEqual((receipt['status'], receipt['tool']['backend']), ('cancelled', unknown))
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(path, receipt, self.design)
+        # Every executed step left a receipt, so the index over all of them still verifies.
+        anchor = bind_implementation(self.root / 'work', self.design, 1, 'c' * 64)
+        index = verify_implementation(self.root / 'work', anchor, 1, 'c' * 64)
+        self.assertEqual([link['applicability'] for link in index['receipts']], ['not_applicable'] * 3)
+
+
 class CampaignStageReceiptTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -388,6 +530,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.tool.mkdir()
         (self.tool / 'fix.py').write_text('import json, sys\nfrom pathlib import Path\n'
             'Path("/work/design/design/design.json").write_text(json.dumps({"value": 5}))\n'
+            'if len(sys.argv) > 2:\n    Path("/work/result.json").write_text(sys.argv[2])\n'
             'raise SystemExit(int(sys.argv[1]))\n')
         definition = {'harness': 'codex', 'model': 'test', 'effort': 'high', 'timeout_s': 10}
         self.profile = {'schema': 'agent-ee.profile/1', 'name': 'protocol-test',
@@ -500,6 +643,25 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         (work / 'stage-receipts.json').unlink()
         with self.assertRaisesRegex(ValueError, 'stage receipt index changed or missing'):
             verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_malformed_backend_report_keeps_campaign_receipts_verifiable(self):
+        declared = dict(artifacts=['result.json'], backend_report={'artifact': 'result.json', 'key': 'backend'})
+        for code, report, state, receipt_status, reason in (
+                (0, '{"backend": NaN}', 'criteria_satisfied', 'completed', 'has a non-finite number'),
+                (3, '{"backend": {"name": "krt", "version": "0.', 'incomplete', 'failed', 'is not JSON')):
+            with self.subTest(receipt_status):
+                shutil.rmtree(self.root / 'campaign', ignore_errors=True)
+                status, state_record = self.campaign([self.step(code, argv=[
+                    '/usr/bin/python3', '/tool/fix.py', str(code), report], **declared)])
+                self.assertEqual((status, state_record['state']), (0 if code == 0 else 1, state), state_record)
+                work = self.root / 'campaign/implementations/1'
+                index = read_json(work / 'stage-receipts.json')
+                receipt = read_json(work / index['receipts'][0]['path'])
+                self.assertEqual(receipt['status'], receipt_status)
+                self.assertEqual(receipt['tool']['backend'], {'status': 'unknown', 'value': None,
+                                                              'reason': 'backend report artifact ' + reason})
+                self.assertEqual(verify_campaign(self.root / 'campaign')['state'], state)
 
     @toolchain_test
     def test_step_writing_immutable_input_refused_before_execution(self):
