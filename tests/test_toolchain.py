@@ -78,7 +78,7 @@ class GateBoundaryTests(unittest.TestCase):
     def test_real_shell_missing_native_executables(self):
         from unittest.mock import patch
         import toolchain
-        toolchain.require_toolchain()
+        toolchain.require_toolchain(native=True)
         original = toolchain.sandbox_argv
         for missing in ('kicad-cli', 'ngspice'):
             def absent_tool(inputs, work, command):
