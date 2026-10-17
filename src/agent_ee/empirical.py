@@ -38,8 +38,11 @@ def calibration_for(run, scope, files, *, provenance_only=False):
     return bundle
 
 
-def validate_observations(inputs, bundle):
+def validate_observations(inputs, bundle, *, empirical_root=None):
     from .measurements import finite
+
+    def artifact_path(rel):
+        return inputs / rel if empirical_root is None else empirical_root / safe_relative(rel).relative_to("empirical")
 
     observations = bundle["observations"]
     if not isinstance(observations, list) or not observations:
@@ -52,9 +55,9 @@ def validate_observations(inputs, bundle):
         index = int(observation["locator"])
         if index < 0 or str(index) != observation["locator"]:
             raise ValueError("invalid calibration sample locator")
-        sample = read_json(inputs / observation["artifact"])["samples"][index]
-        source = read_json(inputs / observation["source_result"])
-        report = read_json(inputs / observation["report"])
+        sample = read_json(artifact_path(observation["artifact"]))["samples"][index]
+        source = read_json(artifact_path(observation["source_result"]))
+        report = read_json(artifact_path(observation["report"]))
         if source["candidate_id"] != observation["candidate_id"] or report["candidate_id"] != source["candidate_id"]:
             raise ValueError("calibration source candidate mismatch")
         check = next((c for c in source["checks"] if c["id"] == observation["check_id"]), None)
@@ -120,6 +123,8 @@ def ingest(run, report_path, out):
 
     run, report_path, out = Path(run).resolve(), Path(report_path).resolve(), Path(out).resolve()
     result = verify(run, current_source=False)
+    if result.get("empirical_feedback"):
+        raise ValueError("bench source is superseded; explicit recovery of the retained epoch is required")
     baseline = load_baseline(run)
     if baseline is None:
         raise ValueError("bench feedback requires a version-2 baseline")
@@ -236,6 +241,8 @@ def ingest(run, report_path, out):
         "source": result_ref, "report": report_ref, "obligations": sorted(required), "candidate_id": manifest["candidate_id"],
         "baseline_id": baseline["baseline_id"], "source_result_sha256": digest(run / "result.json"),
         "model_inputs": models, "artifacts": hashes, "observations": all_observations}
+    from .applicability import validate_bundle
+    validate_bundle(out.parent, bundle, baseline, empirical_root=out)
     write_json(out / "calibration.json", bundle)
     return bundle
 
