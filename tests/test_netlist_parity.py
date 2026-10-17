@@ -95,7 +95,9 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(self.compare(predicate='components', multiset='at_least')['outcome'], 'defect')
 
     def test_unresolvable_keys_and_exhausted_search_never_pass(self):
-        self.assertEqual(self.compare(max_search=1)['outcome'], 'unknown')
+        exhausted = self.compare(max_search=1)
+        self.assertEqual(exhausted['outcome'], 'unknown')
+        self.assertEqual(exhausted['search_steps'], 1)
         self.actual['components']['R80']['pins'] = ('1', '2', '9')
         self.assertEqual(self.compare()['outcome'], 'unknown')
 
