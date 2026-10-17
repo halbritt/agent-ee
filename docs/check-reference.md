@@ -244,8 +244,12 @@ Changes require a new baseline. Symlinks in the inventoried tree are refused.
 `components`, `field`, and finite `min` and/or `max`. `counted_rules` and
 `blocking_rules` explicitly name rule IDs; blocking must be a subset of counted.
 All counted rules must be evaluated. Undeclared native findings are informative.
-Only `analyzer: "schematic"`, `rule_id: "RC-DET"`, low-pass records currently
-have qualified bound semantics, for fields `cutoff_hz` and `time_constant_s`.
+The native scalar form qualifies `analyzer: "schematic"`, `rule_id: "RC-DET"`
+low-pass records for `cutoff_hz` and `time_constant_s`. The separate
+[qualified adapter form](kicad-happy.md) uses `adapter`, captured `assumptions`
+and `assumptions_source` in place of an arbitrary field pointer. It covers the
+explicit power, feedback, protection, derating, thermal and EMC predicates
+documented there; other native rules remain informational.
 For example, `components: ["R1", "C1"]`, `field: "cutoff_hz"`, `min: 150`,
 `max: 170` checks the original RC fixture's cutoff. See the independent
 [expectations](../fixtures/kicad-happy/EXPECTATIONS.md).

@@ -326,6 +326,14 @@ class InterfacePipelineTests(unittest.TestCase):
         from test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
         require_toolchain(native=True)
         self.calls=[]
+        from agent_ee.cli import runtime_files
+        from agent_ee.storage import digest
+        runtime = runtime_files()
+        for name in ('codex', 'codex_tool_host'):
+            runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+        admission = patch('agent_ee.cli.runtime_files', return_value=runtime)
+        admission.start()
+        self.addCleanup(admission.stop)
         with tempfile.TemporaryDirectory() as tmp:
             for name in ('control','delete-load','unknown'):
                 case=Path(tmp)/name
@@ -345,7 +353,7 @@ class InterfacePipelineTests(unittest.TestCase):
                 write_json(case/'scope.json',scope)
                 def agent(*args,**kwargs):
                     return NativeCapabilityPipelineTests.agent(self,*args,**kwargs)
-                with patch('agent_ee.reviewers.reviewer_call',side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+                with patch('agent_ee.reviewers.dispatch',side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
                     status=run_review(case/'scope.json',case/'run',120)
                 self.assertNotIn('error',read_json(case/'run/result.json'))
                 result=verify(case/'run')
