@@ -102,7 +102,9 @@ remain in the end-to-end denominator. The evaluated-subset denominator is also
 explicit. Hardware-interface credit requires the exact invariant to fail with its
 paired control satisfied. DRC credit requires a new native violation in the
 predicted section at the exact target footprint/pad UUID; generic defects and
-unchanged control findings do not count as seed hits. Checks without a prediction
+unchanged control findings do not count as seed hits. A pre-existing violation of
+the same native rule at the target pad remains unresolved even if its witness
+wording changes. Checks without a prediction
 have zero scored opportunities, not perfect recall.
 
 Control findings require independent engineering adjudication. The report counts

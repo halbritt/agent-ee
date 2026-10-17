@@ -66,7 +66,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(classify(expected,rec('other'),self.case,rec('other')),'miss')
         self.assertEqual(classify(expected,rec('target'),self.case,rec('other')),'miss')
         self.assertEqual(classify(expected,rec('pad1'),self.case,rec('other')),'detection')
-        self.assertEqual(classify(expected,rec('pad1'),self.case,rec('pad1')),'miss')
+        self.assertEqual(classify(expected,rec('pad1'),self.case,rec('pad1')),'control_unresolved')
 
     def test_canonicalization_keeps_numerical_and_locator_changes(self):
         from agent_ee.benchmark_run import canonical_check
@@ -288,3 +288,14 @@ class NativeNormalizationTests(unittest.TestCase):
         second['violations'][1]['actual']=1.2
         second['violations'][1]['items'][0]['uuid']='different'
         self.assertNotEqual(canonical_native(first),canonical_native(second))
+
+
+class ControlWitnessTests(unittest.TestCase):
+    def test_preexisting_target_violation_with_another_witness_is_not_a_seed_hit(self):
+        from agent_ee.benchmark_run import classify
+        case={'id':'owned-seed','source_selectors':[{'pcb':{'footprint_uuid':'f'}}]}
+        expected={'kind':'drc','predicate':{'kind':'schematic_parity','pin':'1'}}
+        def record(witness):
+            return {'check':{'execution':'ok','outcome':'defect'},'pcb_pad_uuids':{'f':{'1':['pad']}},
+                'native':{'schematic_parity':[{'type':'net_conflict','description':witness,'items':[{'uuid':'pad'}]}]}}
+        self.assertEqual(classify(expected,record('new wording'),case,record('existing flaw')),'control_unresolved')

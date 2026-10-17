@@ -237,10 +237,11 @@ def check_prepared(prepared, manifest_path):
     record = read_json(prepared/'prepared.json')
     if record['manifest_sha256']!=digest(manifest_path):
         raise ValueError('prepared manifest mismatch')
-    actual = {str(p.relative_to(prepared)):digest(p) for p in prepared.rglob('*') if p.is_file() and p!=prepared/'prepared.json'}
-    for path in prepared.rglob('*'):
+    paths = list(prepared.rglob('*'))
+    for path in paths:
         if path.is_symlink():
             raise ValueError('prepared directory gained symlink')
+    actual = {str(p.relative_to(prepared)):digest(p) for p in paths if p.is_file() and p!=prepared/'prepared.json'}
     if actual!=record['files']:
         raise ValueError('prepared bytes changed')
     return record
@@ -428,7 +429,11 @@ def classify(expected, record, case, control=None):
         baseline = control['native'][section] if control and control['native'] is not None else []
         if control is not None and (control['native'] is None or control['check']['execution']!='ok'):
             return 'control_unresolved'
-        matched = [r for r in raw[section] if identities(r)&target and r not in baseline]
+        baseline_keys = {(r.get('type'),pad) for r in baseline for pad in identities(r)&target}
+        relevant = [r for r in raw[section] if identities(r)&target]
+        matched = [r for r in relevant if any((r.get('type'),pad) not in baseline_keys for pad in identities(r)&target)]
+        if relevant and not matched and baseline_keys:
+            return 'control_unresolved'
         return 'detection' if matched else 'miss'
     raise ValueError('no qualified matcher for expected check kind')
 
