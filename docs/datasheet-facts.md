@@ -114,3 +114,6 @@ inapplicable fact IDs, repeated pins, empty symbol selections and unpinned
 extractors. Facts and all referenced PDFs remain immutable verification inputs.
 This audit checks the declared contract; actual PDF extraction and native pin
 comparison must still execute successfully.
+
+PDFs can be prepared with the separate [capture module](datasheet-capture.md).
+Its URL records do not authenticate the document or replace citation verification.
