@@ -7,6 +7,11 @@ from test_checks import BASE_PARAMS, conn_fixture
 
 
 class CornerContractTest(unittest.TestCase):
+    def test_shipped_fixture_qualification_matches_reviewed_producer(self):
+        self.assertEqual(read_json(REPO / 'fixtures/passive-corners/qualification.json'),
+                         passive_corners.qualification(),
+                         'Shipped fixture needs semantic review, pin refresh and native requalification')
+
     def test_complete_endpoint_grid_and_native_values(self):
         params = {**copy.deepcopy(BASE_PARAMS), 'tolerances': {
             'R1': [-0.1, 0.1], 'C1': [-0.1, 0.1]}, 'max_corners': 4}
@@ -67,11 +72,7 @@ class NativeCornerTests(unittest.TestCase):
     agent = pipeline.NativeCapabilityPipelineTests.agent
 
     def setUp(self):
-        require_toolchain(native=True)
-        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-corners-')
-        self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-        self.calls = []
+        pipeline.NativeCapabilityPipelineTests.setUp(self)
         self.expected = read_json(REPO / 'tests/fixtures/passive-corners.json')
 
     def prepare(self, label, *, zero=False):
@@ -97,7 +98,7 @@ class NativeCornerTests(unittest.TestCase):
         for label in ('corner-control', 'corner-defect', 'corner-zero'):
             with self.subTest(label=label):
                 root = self.prepare(label, zero=label == 'corner-zero')
-                with patch('agent_ee.reviewers.reviewer_call', side_effect=self.agent), \
+                with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
                      contextlib.redirect_stdout(io.StringIO()):
                     status = run_review(root / 'scope.json', root / 'run', 180)
                 result = verify(root / 'run')

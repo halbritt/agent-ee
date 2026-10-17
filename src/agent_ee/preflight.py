@@ -16,7 +16,8 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
     tools, installations = {}, {}
     required_runtime = {'/usr/bin/python3', 'bwrap'}
     native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
-                           'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice'}
+                           'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
+                           'passive_corners': '/usr/bin/ngspice'}
     for spec in manifest['scope'].get('checks', []):
         if spec.get('kind') in native_requirements:
             required_runtime.add(native_requirements[spec['kind']])
