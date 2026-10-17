@@ -1,0 +1,27 @@
+{
+  "schema": "agent-ee.profile/1",
+  "name": "claude-donor-budget-v1",
+  "tool_mode": "investigate",
+  "reviewers": [
+    {
+      "role": "circuit",
+      "harness": "claude",
+      "model": "claude-fable-5",
+      "effort": "high",
+      "timeout_s": 900
+    },
+    {
+      "role": "physical",
+      "harness": "claude",
+      "model": "claude-fable-5",
+      "effort": "high",
+      "timeout_s": 900
+    }
+  ],
+  "adjudicator": {
+    "harness": "claude",
+    "model": "claude-fable-5",
+    "effort": "high",
+    "timeout_s": 900
+  }
+}

@@ -63,3 +63,13 @@ explicit provisional profile and explain the unresolved selection evidence.
 
 Changes to this plan or prompts after held-out results require a new evaluation
 version. Existing historical evidence stays tied to its original implementation.
+
+## Recorded baseline budget adjustment
+
+The initial 300-second donor circuit calls for Claude and Agy timed out on
+2026-10-16; Codex completed its circuit call. Those attempts remain in
+`evidence/model-baselines`. Repeat the donor under all three explicit
+`*-baseline.json` profiles at 900 seconds per call / 3600 seconds per run.
+This changes only the baseline work budget, not findings, limits or requirements.
+It does not replace the comparison's 300-second reliability observations or
+constitute a successful retry for that score.

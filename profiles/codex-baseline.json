@@ -1,0 +1,27 @@
+{
+  "schema": "agent-ee.profile/1",
+  "name": "codex-donor-budget-v1",
+  "tool_mode": "investigate",
+  "reviewers": [
+    {
+      "role": "circuit",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "timeout_s": 900
+    },
+    {
+      "role": "physical",
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "high",
+      "timeout_s": 900
+    }
+  ],
+  "adjudicator": {
+    "harness": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "timeout_s": 900
+  }
+}
