@@ -88,6 +88,12 @@ Unavailable, failed, timed-out or interrupted calls prevent admission of further
 same-harness reviewers in the run, including authentication/quota failures.
 Queued affected roles retain `not_run` records. No admitted peer is cancelled
 because another role fails; each retains its own logs and partial experiments.
+Owner SIGINT cancels the whole initial-review operation: queued roles remain
+`not_run`, active process groups are killed, and each role's execution logs and
+partial experiments are retained before interrupted coordinator finalization.
+Cancellation is checked during launch and at 50 ms intervals while waiting;
+output draining and worker cleanup have one- and two-second bounds respectively.
+A cleanup overrun is retained explicitly rather than reported as a clean review.
 A malformed initial response stays invalid while the other role may still run.
 Returned reviews and execution records follow profile role order, regardless of
 completion order. Every call is bounded by its profile timeout and the remaining

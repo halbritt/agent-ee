@@ -2,6 +2,10 @@
 import contextlib
 import io
 import json
+import os
+import signal
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -69,7 +73,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         write_json(run / "packet.json", packet)
         return run, packet
 
-    def harness(self, run, role, definition, prompt, schema, timeout):
+    def harness(self, run, role, definition, prompt, schema, timeout, *, cancellation=None):
         self.calls.append(role)
         if role == "adjudicator":
             now = time.monotonic()
@@ -89,7 +93,8 @@ class ConcurrentReviewTests(unittest.TestCase):
         work = Path(run) / "review-work" / role
         record = execute(Path(run) / "inputs", work,
             ["/usr/bin/python3", "/candidate/design/harness.py"], timeout=timeout,
-            stdin=json.dumps({"role": role, "identity": identity, **self.settings[role]}))
+            stdin=json.dumps({"role": role, "identity": identity, **self.settings[role]}),
+            **({"cancellation": cancellation} if cancellation is not None else {}))
         value = json.loads((work / "stdout.log").read_text().splitlines()[-1]) if record["execution"] == "ok" else None
         return record, value
 
@@ -237,3 +242,114 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assertNotIn("adjudicator", self.calls)
         self.assertEqual([r["role"] for r in result["reviews"]], ["physical", "independent"])
         self.assert_retained(run, result["review_executions"])
+
+
+    def test_owner_sigint_cancels_process_groups_and_queued_roles(self):
+        self.assert_owner_cancellation("waiting")
+
+    def test_owner_sigint_during_launch_cancels_new_process_groups(self):
+        self.assert_owner_cancellation("launch")
+
+    def assert_owner_cancellation(self, phase):
+        driver = r'''import json, os, subprocess, sys, time
+from pathlib import Path
+from unittest.mock import patch
+from test_concurrent_reviews import ConcurrentReviewTests
+from agent_ee.cli import run_review
+from agent_ee.storage import write_json
+case = ConcurrentReviewTests()
+case.setUp()
+root = Path(sys.argv[1])
+case.root = root
+source = root / "source"
+source.mkdir(exist_ok=True)
+(source / "harness.py").write_text("import os, subprocess, time\nfrom pathlib import Path\nchild = subprocess.Popen(['/usr/bin/sleep', '60'])\nPath('experiments/pids').write_text(str(os.getpid()) + ' ' + str(child.pid))\nprint('partial output', flush=True)\ntime.sleep(60)\n")
+case.profile['reviewers'].append({**case.profile['reviewers'][0], 'role': 'queued'})
+for role in case.profile['reviewers']:
+    role['timeout_s'] = 60
+fixture = Path('fixtures/rc/control.scope.json').resolve()
+case.scope = json.loads(fixture.read_text())
+for entry in case.scope['inputs']:
+    entry['path'] = str((fixture.parent / entry['path']).resolve())
+case.scope['inputs'].append({'path': str(source), 'at': 'design'})
+case.scope['review_profile'] = case.profile
+case.scope['checks'] = [{'id': 'netlist', 'kind': 'netlist'}]
+write_json(root / 'scope.json', case.scope)
+# Keep the real reviewer adapters' scheduling boundary and real executor;
+# only substitute a networkless scripted model call.
+def harness(run, role, definition, prompt, schema, timeout, **kwargs):
+    if role == 'adjudicator':
+        raise AssertionError('adjudicator launched after cancellation')
+    work = Path(run) / 'review-work' / role
+    (work / 'experiments').mkdir(parents=True)
+    from agent_ee.executor import execute
+    return execute(Path(run) / 'inputs', work,
+        ['/usr/bin/python3', '/candidate/design/harness.py'], timeout=timeout, **kwargs), None
+from contextlib import ExitStack
+real_popen = subprocess.Popen
+def launching(*args, **kwargs):
+    proc = real_popen(*args, **kwargs)
+    if '/candidate/design/harness.py' in args[0]:
+        Path(kwargs.get('cwd', root), 'launch-' + str(proc.pid)).touch()
+        time.sleep(.8)
+    return proc
+with ExitStack() as stack:
+    stack.enter_context(patch('agent_ee.reviewers.reviewer_call', side_effect=harness))
+    if sys.argv[2] == 'launch':
+        stack.enter_context(patch('agent_ee.executor.subprocess.Popen', side_effect=launching))
+    status = run_review(root / 'scope.json', root / 'run', 120)
+sys.exit(0 if status == 1 else 2)
+'''
+        process = subprocess.Popen([sys.executable, '-c', driver, str(self.root), phase],
+            env={**os.environ, "PYTHONPATH": "src:tests"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.addCleanup(lambda: process.poll() is None and process.kill())
+        run = self.root / "run"
+        deadline = time.monotonic() + 30
+        while len(list(run.glob("review-work/*/experiments/pids"))) < 2:
+            if process.poll() is not None:
+                self.fail(str(process.communicate()) + str(read_json(run / "result.json").get("error")))
+            if time.monotonic() >= deadline:
+                self.fail("reviewers did not start")
+            time.sleep(.02)
+        # Namespace PIDs are not host PIDs: inspect host descendants through /proc.
+        def descendants(pid):
+            children = [child for task in Path(f"/proc/{pid}/task").glob("*/children")
+                        for child in task.read_text().split()]
+            return [int(child) for child in children] + [nested for child in children for nested in descendants(child)]
+        if phase == "launch":
+            self.assertEqual(len(list(self.root.glob("launch-*"))), 2)
+        children = descendants(process.pid)
+        self.assertGreaterEqual(len(children), 4)
+        start = time.monotonic()
+        process.send_signal(signal.SIGINT)
+        try:
+            stdout, stderr = process.communicate(timeout=3)
+        except subprocess.TimeoutExpired:
+            # Clean up the red regression without leaving scripted reviewers.
+            for pid in reversed(children):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.kill()
+            process.communicate()
+            self.fail("owner interruption did not return within 3 seconds")
+        self.assertEqual(process.returncode, 0, (stdout, stderr))
+        elapsed = time.monotonic() - start
+        self.assertLess(elapsed, 3)
+        print(f"SIGINT during {phase}: coordinator returned in {elapsed:.3f}s", flush=True)
+        for pid in children:
+            path = Path(f"/proc/{pid}/stat")
+            self.assertTrue(not path.exists() or path.read_text().split()[2] == "Z", f"child {pid} survived")
+        result = read_json(run / "result.json")
+        self.assertEqual(result["state"], "interrupted")
+        self.assertEqual(result["outcome"], "incomplete")
+        self.assertFalse(result["adjudicated"])
+        self.assertEqual({r["role"]: r["execution"] for r in result["review_executions"]},
+            {"circuit": "interrupted", "physical": "interrupted", "queued": "not_run"})
+        self.assertFalse((run / "review-work/queued").exists())
+        for role in ("circuit", "physical"):
+            work = run / "review-work" / role
+            self.assertEqual(read_json(work / "execution.json")["execution"], "interrupted")
+            self.assertIn("partial output", (work / "stdout.log").read_text())
+            self.assertTrue((work / "experiments/pids").exists())
