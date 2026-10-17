@@ -1,6 +1,7 @@
 """Textual citation support and an explicitly scoped native symbol pin consumer."""
 
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -46,11 +47,76 @@ def load_facts(inputs, rel):
     return data['facts']
 
 
+# Signs belong to a written literal (-5, ±5, 1e-5); each spelling is distinct, never normalized.
+SIGNS = '+-\u00b1\u2010\u2011\u2212\u2213\ufe62\ufe63\uff0b\uff0d'
+# Dashes separate a range between digits (4.5–5.5) but are a minus sign elsewhere (–0.3).
+DASHES = '\u2012\u2013\u2014\u2015'
+# Superscript signs and multiplication signs continue a written number (10⁻⁵, 5×10³).
+JOINERS = '\u207a\u207b\u00d7\u00b7\u22c5'
+
+
+def joined(char):
+    """Word characters, combining marks, format characters and unmapped glyphs continue a token."""
+    return char is not None and (re.match(r'\w', char) is not None or char == '\ufffd' or
+                                 unicodedata.category(char) in ('Mn', 'Mc', 'Me', 'Cf', 'Co', 'Cn'))
+
+
+def numeric(char):
+    return char is not None and (char.isdecimal() or char == '.')
+
+
+def starts_token(quote, start, value):
+    before = quote[start - 1] if start else None
+    previous = quote[start - 2] if start > 1 else None
+    if before is None or joined(before):
+        return before is None
+    if value[0] in SIGNS + DASHES:
+        return before not in SIGNS + DASHES + JOINERS + '.,'
+    if not numeric(value[0]):
+        return True
+    if before in DASHES:
+        return previous is not None and previous.isdecimal()
+    return not (before in SIGNS + JOINERS + '.' or (before == ',' and numeric(previous)))
+
+
+def ends_token(quote, end, value):
+    after = quote[end] if end < len(quote) else None
+    following = quote[end + 1] if end + 1 < len(quote) else None
+    if after is None or joined(after):
+        return after is None
+    if not numeric(value[-1]):
+        return True
+    if after in '.,':
+        return not (numeric(following) or joined(following))
+    if after in SIGNS:
+        # Glued sign: a range, a difference or a flattened superscript exponent (10-5).
+        return not numeric(following)
+    return after not in JOINERS
+
+
 def value_in_quote(value, unit, quote):
-    """Whole-token occurrence: CAN is not in CANL, 5 is not in 15, 4.5 or 5.5."""
-    suffix = rf'(?:\s*{re.escape(unit)})?' if unit.strip() else ''
-    return re.search(r'(?<!\w)(?<!\d[.,])' + re.escape(value) + suffix + r'(?!\w)(?![.,]\d)',
-                     quote) is not None
+    """Complete written token, optionally followed by the declared unit.
+
+    CAN is not in CANL or CAN with a combining mark; 5 is not in 15, 4.5, .5, -5, −5
+    or 1e-5; 3 is not in 5E+3. Spelling, including sign and exponent, is compared exactly.
+    """
+    if (not value or value != value.strip() or
+            unicodedata.category(value[0]).startswith('M')):
+        return False
+    suffix = re.compile(r'\s*' + re.escape(unit)) if unit.strip() else None
+    exponent = re.compile(f'[eE][{re.escape(SIGNS)}]?\\d')
+    start = quote.find(value)
+    while start >= 0:
+        end = start + len(value)
+        if starts_token(quote, start, value) and not (
+                numeric(value[-1]) and exponent.match(quote, end)):
+            if ends_token(quote, end, value):
+                return True
+            attached = suffix.match(quote, end) if suffix else None
+            if attached and ends_token(quote, attached.end(), unit):
+                return True
+        start = quote.find(value, start + 1)
+    return False
 
 
 def verification_inputs(scope, inputs):

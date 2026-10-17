@@ -19,6 +19,38 @@ ROOT = Path(__file__).resolve().parents[1]
 PDF = ROOT / 'references/TJA1051.pdf'
 
 
+def text_pdf(path, lines, to_unicode=None):
+    """Original one-page Helvetica PDF; to_unicode maps single byte codes to extracted text."""
+    content = ''.join(f'BT /F1 10 Tf 20 {180 - 14 * i} Td ({line}) Tj ET\n' for i, line in enumerate(lines))
+    content = content.encode('latin-1')
+    font = b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica'
+    objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+               b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] '
+               b'/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+               font + (b' /ToUnicode 6 0 R >>' if to_unicode else b' >>'),
+               b'<< /Length %d >>\nstream\n' % len(content) + content + b'\nendstream']
+    if to_unicode:
+        pairs = ''.join(f'<{ord(code):02X}> <{text.encode("utf-16-be").hex().upper()}>\n'
+                        for code, text in to_unicode.items())
+        cmap = ('/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n'
+                '/CMapName /AgentEE def /CMapType 2 def\n'
+                '1 begincodespacerange <00> <FF> endcodespacerange\n'
+                f'{len(to_unicode)} beginbfchar\n{pairs}endbfchar\n'
+                'endcmap CMapName currentdict /CMap defineresource pop end end\n').encode()
+        objects.append(b'<< /Length %d >>\nstream\n' % len(cmap) + cmap + b'\nendstream')
+    data = b'%PDF-1.4\n'
+    offsets = []
+    for index, obj in enumerate(objects, 1):
+        offsets.append(len(data))
+        data += f'{index} 0 obj\n'.encode() + obj + b'\nendobj\n'
+    start = len(data)
+    data += f'xref\n0 {len(objects) + 1}\n0000000000 65535 f \n'.encode()
+    data += b''.join(f'{offset:010d} 00000 n \n'.encode() for offset in offsets)
+    data += (f'trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n'
+             f'startxref\n{start}\n%%EOF\n').encode()
+    path.write_bytes(data)
+
+
 class DatasheetFactsTests(unittest.TestCase):
     def setUp(self):
         require_toolchain(tools=('pdftotext',))
@@ -34,9 +66,10 @@ class DatasheetFactsTests(unittest.TestCase):
                                 'locator': 'Table 3, CANL row',
                                 'quote': 'CANL          6          LOW-level CAN bus line'}}
 
-    def run_fact(self, fixture=None):
-        facts = [self.fact]
-        if fixture:
+    def run_fact(self, fixture=None, facts=None):
+        if facts is None:
+            facts = [self.fact]
+        if fixture and len(facts) == 1:
             canh = copy.deepcopy(self.fact)
             canh.update(id='canh', pin='7', value='CANH')
             canh['source'].update(quote='CANH          7          HIGH-level CAN bus line', locator='Table 3, CANH row')
@@ -113,6 +146,127 @@ class DatasheetFactsTests(unittest.TestCase):
                 ('CAN', '', 'CAN bus', True), ('-0.3', 'V', '-0.3 to +6 V', True)]:
             with self.subTest(value=value, quote=quote):
                 self.assertIs(value_in_quote(value, unit, quote), expected)
+
+    def test_complete_numeric_and_symbol_lexemes(self):
+        from agent_ee.datasheet_facts import value_in_quote
+        for value, unit, quote, expected in [
+                # Leading decimals, exponents and signs belong to the written literal.
+                ('5', 'V', '.5 V', False), ('5', 'V', '1e-5 V', False), ('3', 'V', '5E+3 V', False),
+                ('5', 'V', '1e5 V', False), ('5', 'V', '5.e3 V', False), ('5', 'E', '5E+3', False),
+                ('5', 'V', '-5 V', False), ('5', 'V', '\u22125 V', False), ('5', 'V', '\u00b15 V', False),
+                ('6', 'V', '-0.3 to +6 V', False), ('5', 'V', '\uf02d5 V', False),
+                ('5', 'V', '\u20135 V', False), ('10', '', '10\u207b\u2075', False),
+                ('5', '', '5\u00d710\u00b3', False), ('10', '', '1\u00d710-5', False),
+                # A sign glued between digits is ambiguous (range, difference or flattened exponent).
+                ('5.5', 'V', '4.5-5.5 V', False), ('4.5', 'V', '4.5-5.5 V', False),
+                ('5', '', '10-5', False), ('10', '', '10-5', False),
+                # Exact complete spellings, attached declared units and dash-separated ranges.
+                ('.5', 'V', '.5 V', True), ('1e-5', 'V', '1e-5 V', True), ('1e-5', 'V', '1e-5V', True),
+                ('5E+3', 'V', '5E+3 V', True), ('+6', 'V', '-0.3 to +6 V', True),
+                ('\u22125', 'V', '\u22125 V', True), ('\uf02d0.3', 'V', '\uf02d0.3   +7   V', True),
+                ('5.5', 'V', '4.5\u20135.5 V', True), ('4.5', 'V', '4.5\u20135.5 V', True),
+                ('4.5-5.5', 'V', '4.5-5.5 V', True), ('5', 'V', '5. V', True), ('5', '\u00b5A', '5\u00b5A', True),
+                ('5', 'V', '5\u00b5A', False), ('0.5', 'V', '0.5 V', True), ('5', 'V', '(5 V)', True),
+                # Combining marks, format characters and unmapped glyphs continue a token.
+                ('CAN', '', 'CAN\u0301', False), ('CAN', '', 'CAN\u0332 bus', False),
+                ('CAN', '', '\u0301CAN', False), ('CAN', '', 'CAN\u00adL', False),
+                ('CAN', '', 'CAN\uf02d', False), ('CAN', '', 'CAN\ufffd', False),
+                ('CAN', '', 'CAN\u00b5', False), ('CAN\u0332', '', 'CAN\u0332 bus', True),
+                ('\u0332', '', 'CAN\u0332 bus', False), ('CAN', '', 'CAN-FD', True),
+                # Documented lexical limit: slash and space still delimit tokens.
+                ('3', '', 'TJA1051T/3', True), ('5', '', '5 \u00d7 10\u00b3', True),
+                # Whitespace is not part of a token; an edge-padded value is never a complete token.
+                (' 5', 'V', 'max 5 V', False), ('5 ', 'V', 'max 5 V', False)]:
+            with self.subTest(value=value, unit=unit, quote=quote):
+                self.assertIs(value_in_quote(value, unit, quote), expected)
+
+    def cited(self, fid, value, unit, quote, *, pin=None, page=1):
+        fact = copy.deepcopy(self.fact)
+        fact.update(id=fid, value=value, unit=unit, kind='pin_function' if pin else 'supply_voltage')
+        fact['pin'] = pin or fact['pin']
+        fact['source'].update(sha256=digest(self.pdf), page=page, quote=quote, locator=fid)
+        return fact
+
+    def outcomes(self, result):
+        return {r['id']: (r['status'], r['reason']) for r in result['details']['facts']}
+
+    def test_actual_pdf_numeric_fragments_are_not_verified(self):
+        # Original PDF extracted by the installed Poppler inside the sandbox; no fake page text.
+        lines = ['.5 V', '1e-5 V', '5E+3 V', '~5 V', 'CANL 1e-5', 'CANL 5E+3', '5.5V']
+        self.pdf = self.root / 'numeric.pdf'
+        text_pdf(self.pdf, lines, {'~': '\u2212'})
+        minus = '\u22125 V'
+        absent = [self.cited('leading', '5', 'V', '.5 V'), self.cited('exponent', '5', 'V', '1e-5 V'),
+                  self.cited('signed-exponent', '3', 'V', '5E+3 V'), self.cited('minus', '5', 'V', minus)]
+        pins = [self.cited('pin-exponent', 'CANL', '', 'CANL 1e-5', pin='5'),
+                self.cited('pin-signed-exponent', 'CANL', '', 'CANL 5E+3', pin='3')]
+        complete = [self.cited('leading-ok', '.5', 'V', '.5 V'), self.cited('exponent-ok', '1e-5', 'V', '1e-5 V'),
+                    self.cited('signed-exponent-ok', '5E+3', 'V', '5E+3 V'),
+                    self.cited('minus-ok', '\u22125', 'V', minus),
+                    self.cited('attached-ok', '5.5', 'V', '5.5V')]
+        result = self.run_fact(facts=absent + pins + complete)
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        expected = {f['id']: ('rejected', 'value_absent_from_quote') for f in absent}
+        expected.update({f['id']: ('rejected', 'pin_absent_from_quote') for f in pins})
+        expected.update({f['id']: ('verified', 'exact_quote_and_value_supported') for f in complete})
+        self.assertEqual(self.outcomes(result), expected)
+        # Rejected tokens never reach extraction; the minus control's extracted page is retained.
+        index = len(absent + pins) + 3
+        page = (self.run / f'work/facts/page-{index}/page.txt').read_text(encoding='utf-8')
+        self.assertIn(minus, page)
+        # Positive controls alone pass; the rejections above are the token rule, not extraction.
+        self.assertEqual(self.run_fact(facts=complete)['execution'], 'ok')
+
+    def test_actual_pdf_combining_mark_continues_symbol_token(self):
+        # U+0332 has no precomposed form, so Poppler keeps it after N in the extracted page.
+        self.pdf = self.root / 'mark.pdf'
+        text_pdf(self.pdf, ['CAN~ 6'], {'~': '\u0332'})
+        result = self.run_fact(facts=[self.cited('fragment', 'CAN', '', 'CAN\u0332 6', pin='6'),
+                                      self.cited('complete', 'CAN\u0332', '', 'CAN\u0332 6', pin='6')])
+        self.assertEqual(self.outcomes(result), {
+            'fragment': ('rejected', 'value_absent_from_quote'),
+            'complete': ('verified', 'exact_quote_and_value_supported')})
+
+    def test_real_tja1051_signed_limits_keep_their_signs(self):
+        # Table 5 prints minus with a private-use Symbol glyph; Poppler extracts it as U+F02D.
+        quote = 'on any other pin' + ' ' * 63 + '\uf02d0.3          +7             V'
+        facts = [self.cited('unsigned-min', '0.3', 'V', quote, page=7),
+                 self.cited('unsigned-max', '7', 'V', quote, page=7),
+                 self.cited('signed-min', '\uf02d0.3', 'V', quote, page=7),
+                 self.cited('signed-max', '+7', 'V', quote, page=7)]
+        result = self.run_fact(facts=facts)
+        self.assertEqual(self.outcomes(result), {
+            'unsigned-min': ('rejected', 'value_absent_from_quote'),
+            'unsigned-max': ('rejected', 'value_absent_from_quote'),
+            'signed-min': ('verified', 'exact_quote_and_value_supported'),
+            'signed-max': ('verified', 'exact_quote_and_value_supported')})
+
+    def test_exponent_fragment_pins_cannot_bless_swapped_symbol(self):
+        require_toolchain(native=True)
+        # An untrusted author cites an original PDF whose pins occur only inside exponents.
+        self.pdf = self.root / 'forged.pdf'
+        text_pdf(self.pdf, ['CANH 1e-6', 'CANL 1e-7', 'CANH 6', 'CANL 7'])
+        for suffix, expected in [(' 1e-6', 'unsupported'), (' 6', 'ok')]:
+            with self.subTest(quote=suffix):
+                seven = suffix.replace('6', '7')
+                facts = [self.cited('canl', 'CANH', '', 'CANH' + suffix, pin='6'),
+                         self.cited('canh', 'CANL', '', 'CANL' + seven, pin='7')]
+                self.run_fact('swapped', facts)
+                results = {r['id']: r for r in self.results}
+                for cid in ('erc', 'drc'):
+                    self.assertEqual((results[cid]['execution'], results[cid]['outcome']), ('ok', 'pass'))
+                self.assertEqual(results['facts']['execution'], expected, results['facts'])
+                freeze_evidence(self.run, self.results)
+                verify_evidence(self.run, self.results, required=True)
+                if expected == 'unsupported':
+                    sealed = read_json(self.run / 'work/facts/facts.json')['facts']
+                    self.assertEqual({r['reason'] for r in sealed}, {'pin_absent_from_quote'})
+                    self.assertEqual((results['pin-map']['execution'], results['pin-map']['outcome']),
+                                     ('unsupported', 'unknown'), results['pin-map'])
+                    self.assertNotIn('comparisons', results['pin-map']['details'])
+                else:
+                    # Complete tokens in the author's own PDF: textual support only, as documented.
+                    self.assertEqual(results['pin-map']['outcome'], 'pass', results['pin-map'])
 
     def test_native_swapped_pin_defect_with_clean_erc_drc(self):
         require_toolchain(native=True)
