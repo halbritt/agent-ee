@@ -146,14 +146,31 @@ text-support check passes. Downloading a PDF alone cannot pass. Existing
 `pin_map` remains unsupported when its facts prerequisite is unsupported; no
 pin numbers are invented to fill gaps.
 
-Normal scope/2 baseline capture freezes the envelope, bindings, acquisition
-manifest and every successful PDF through `verification_inputs`. Runtime checks
-also require those dependencies in the captured file inventory. Public verify
+Scope/2 and scope/3 baseline capture freeze the envelope, bindings, acquisition
+manifest and every successful PDF through `verification_inputs`. Both scope/3
+facts and pin-map descriptors declare this entire immutable closure, including
+successful PDFs without citations. Missing acquisitions add no fictional PDF.
+Runtime checks also require those dependencies in the captured file inventory. Public verify
 checks ordinary snapshot/baseline/evidence seals. Unknown results are retained
 and verifiable; verifiability does not mean acceptance. Neither version establishes
 vendor authenticity, owner approval, MPN applicability or electrical correctness.
-Scope/3 descriptor integration and dispatcher requirement mapping remain root's
-integration work; this lane adds no new acceptance predicates or coverage waiver.
+Facts remains informational in scope/3, with no bound predicates. An all-missing
+envelope can run when its facts obligation is informational and an independent
+real check covers an acceptance requirement. This leaves the datasheet obligation
+unknown; it cannot supply an accepted defect witness or satisfy acceptance. A
+pin-map declaration naming absent facts refuses compilation. Valid pin facts
+for one part do not waive another part's missing required citations: the facts
+prerequisite and dependent pin-map remain unknown. Immutable dependencies cannot
+alias a native design or staged mutable subject.
+
+This closure supports quote citation only. A caller claiming canonical selection
+must additionally capture the original catalog snapshot closure, requirements,
+selected record and explicit reference allocations, rerun `bindings_from_selection`
+and compare its result. A native-completeness or URL-propagation claim also needs
+`validate_native_bindings` against the matching native inventory. Normalized
+self-hashes authenticate neither approval, stock nor selection. Production
+dispatch, emitter propagation and owner-approved applicability remain separate
+integration work; no producer or approval service is added here.
 
 Focused tests use owned canonical catalog rows, exact-schema owned experimental
 BOM manifests and original loopback PDFs. The server stops before checks.
@@ -163,3 +180,12 @@ No-URL, HTML and deadline cases retain every per-part unknown through scope/2
 capture and public verification. Native URL extraction and distinct population,
 board and BOM flags are checked separately. Third-party project data is not
 published by these tests.
+
+Focused scope/3 tests also exercise ordinary capture, native checks and public
+verification for complete per-part facts, an uncited successful PDF and a partial
+second-part obligation. An owned native pin-name change produces a sealed
+pin-map defect witness while the same facts still pass. Retained input, evidence
+seal, check transplantation and tool-artifact mutations refuse verification or
+witness use. Source-aware verification refuses original-source drift; snapshot
+verification (`current_source=False` in the Python API) checks retained bytes
+independently. These controls do not establish engineering approval.
