@@ -145,9 +145,16 @@ check evaluates that exact field:
 
 | Obligation | Check kinds | Binding today |
 | --- | --- | --- |
-| Profile reference | `fab_profile` (AGENTEE-75, registered) | Bound when the check's `fab_profile` parameter names captured bytes with the referenced SHA-256 |
-| Outline, holes, keepouts, fixed footprints | `placement` (AGENTEE-92, proposed) | None: coverage unknown |
-| Layer count, stackup | `fab_package` (AGENTEE-94, proposed) | None: coverage unknown |
+| Profile reference | `fab_profile` (AGENTEE-75) | Bound when the check's `fab_profile` parameter names captured bytes with the referenced SHA-256 |
+| Fixed footprint | `placement` (AGENTEE-92) | Bound to a `connector-edge/1` check whose `envelope` parameter names these exact captured envelope bytes, when no other requirement maps that check. The criterion grades side, anchor within tolerance, exact rotation, insertion side and the declared edge on the saved outline |
+| Outline | `placement` | None: `outline-containment/1` grades courtyards against the saved outline, not the outline against the envelope |
+| Keepouts, mounting holes | `placement` | None: `footprint-keepout/1` grades rule areas already saved, and no predicate checks declared holes |
+| Layer count, stackup | `fab_package` (AGENTEE-94, not registered) | None |
+
+`connector-edge/1` returns one verdict for every fixed footprint in its
+envelope. With two or more fixed footprints, a defect cannot be attributed to
+one obligation, so each has unknown coverage. A check mapped by several
+requirements is refused.
 
 A `fab_profile` check's `max_layers` limit bounds only the maximum, so it cannot
 establish "exactly N copper layers". The layer-count obligation is therefore
@@ -155,12 +162,12 @@ proposed for `fab_package`, not `fab_profile`. AGENTEE-75 also binds exactly one
 requirement per `fab_profile` check, so the profile's limits must name the
 `R-envelope-<id>-fab-profile` requirement.
 
-Adding coverage for `placement` or `fab_package` means the owning item adds a
-binding in `board_envelope.BINDINGS`. Registering the kind alone covers nothing.
+Adding coverage for another field means its owning item adds a binding in
+`board_envelope.BINDINGS`. Registering a kind or criterion alone covers nothing.
 
 `obligation_coverage(scope, requirements, record, files)` reports each
-obligation as `bound`, `unmapped` or `unknown`, with its locator and the pending
-item. It refuses:
+obligation as `bound`, `unmapped` or `unknown`, with its locator and why it is
+unbound. It refuses:
 
 - a scope that is not `agent-ee.scope/3`;
 - a changed statement, source path or locator, or a non-acceptance intent;
@@ -230,13 +237,23 @@ For scope/2 and scope/3, capture also scans every captured file of at most
   a declaration;
 - a second captured envelope.
 
-Today no envelope scope can be captured. Its outline (and any layer count,
-stackup, hole, keepout or fixed footprint) needs `placement` or `fab_package`,
-which are not registered and have no binding. Capture refuses and names those
-obligations with their pending items. It writes no baseline or candidate record.
-Tests stand in for the missing bindings only inside a test block. They show that
-with complete bindings capture freezes and recompiles the envelope baseline, and
-that the same retained run fails verification once the stand-in is gone.
+Today no envelope scope can be captured. Its outline, layer count and stackup
+have no binding, nor do any holes or keepouts. Capture refuses and names those
+obligations with the reason, and writes no baseline or candidate record. A scope
+that uses an envelope only as `connector-edge/1` data is refused the same way.
+It must declare the envelope, and then every obligation must be covered.
+
+Tests stand in for the missing outline, layer-count and stackup bindings only
+inside a test block. The fixed footprint and the profile keep their real
+bindings. A native test then runs the declared RC envelope through capture, a
+placement-stage DRC, the real `connector-edge/1` and `fab_profile` checks, and a
+full DRC:
+
+- J1 at its anchor passes, and so does the profile;
+- J1 moved 3 mm is a connector defect, naming the left edge and the distance;
+- the sealed result witnesses `R-envelope-rc-filter-fixed-J1`, and only that
+  obligation;
+- once the stand-in is gone, the same retained run fails baseline verification.
 
 ## Board round trip
 
@@ -290,8 +307,8 @@ mismatch.
 
 This record states obligations; it does not check placement, courtyards,
 clearances or fabrication. Arcs, cutouts, slots, multiple outlines and oblique
-connector edges are not supported. Placement and fab-package bindings are
-pending AGENTEE-92 and AGENTEE-94, so an envelope scope/3 is refused at capture
-until they land. The envelope scan covers captured files up to 1 MiB that start
+connector edges are not supported. Outline, keepout, hole, layer-count and
+stackup bindings do not exist yet (layer count and stackup await AGENTEE-94), so
+an envelope scope/3 is refused at capture until they land. The envelope scan covers captured files up to 1 MiB that start
 with `{`. Profile support means only that the typed, source-quoted minimum
 limits admit the declared values, not that a fabricator accepts the board.

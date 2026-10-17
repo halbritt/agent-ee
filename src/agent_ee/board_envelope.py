@@ -34,15 +34,25 @@ MAX_BYTES, MAX_VERTICES, MAX_ITEMS = 1024 * 1024, 1024, 1024
 MAX_PLACES = 32
 # Check kinds that may evaluate each field. A kind name alone never covers an
 # obligation: only a (field, kind) entry in BINDINGS, whose validator proves the
-# mapped check evaluates that exact field, does. placement (AGENTEE-92) and
-# fab_package (AGENTEE-94) are proposed and unregistered, so those obligations
-# have explicit unknown coverage and a scope/3 capture refuses them. fab_profile
-# max_layers bounds only the maximum, so it cannot establish an exact layer count.
+# mapped check evaluates that exact field, does. fab_package (AGENTEE-94) is
+# proposed and unregistered; fab_profile max_layers bounds only a maximum, so it
+# cannot establish an exact layer count.
 CHECK_KINDS = {'outline': ['placement'], 'layer_count': ['fab_package'],
                'stackup': ['fab_package'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement'], 'keepouts': ['placement'],
                'fixed_footprints': ['placement']}
-PENDING_KINDS = {'placement': 'AGENTEE-92', 'fab_package': 'AGENTEE-94'}
+# Why a field without a binding has unknown coverage; reported, never assumed.
+UNBOUND = {
+    'outline': 'no registered predicate compares saved Edge.Cuts with the declared polygon '
+               '(placement outline-containment/1 grades courtyards only)',
+    'layer_count': 'fab_package (AGENTEE-94) is not registered; fab_profile max_layers bounds only a maximum',
+    'stackup': 'fab_package (AGENTEE-94) is not registered',
+    'fab_profile': 'needs one fab_profile check over the referenced profile bytes',
+    'mounting_holes': 'no registered predicate checks declared mounting holes',
+    'keepouts': 'no registered predicate binds a declared keepout to a saved rule area '
+                '(placement footprint-keepout/1 grades only rule areas already saved)',
+    'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes, '
+                        'and an envelope with exactly one fixed footprint'}
 
 
 def load(raw):
@@ -681,17 +691,45 @@ def stage_one_requirements(original, envelope_dialog):
     return raw
 
 
-def bind_fab_profile(item, spec, record, files):
-    """A fab_profile check covers the profile obligation only for the exact referenced bytes."""
-    path = spec.get('params', {}).get('fab_profile') if isinstance(spec.get('params'), dict) else None
-    if not isinstance(path, str) or files.get(path) != record['fab_profile'].get('sha256'):
+def bind_fab_profile(item, spec, record, files, others):
+    """A fab_profile check covers the profile obligation only for the exact referenced bytes.
+
+    AGENTEE-75 itself refuses a fab_profile check mapped by several requirements.
+    """
+    params = spec.get('params') if isinstance(spec.get('params'), dict) else {}
+    if files.get(params.get('fab_profile')) != record['fab_profile'].get('sha256'):
         raise ValueError(f"envelope obligation {item['id']} maps fab_profile check {spec['id']} whose "
                          'captured profile is not the referenced sha256')
 
 
-# (field, check kind) -> validator. Extending coverage to placement or fab_package
-# needs the owning item to add a validator here; registering a kind is not enough.
-BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile}
+def bind_connector_edge(item, spec, record, files, others):
+    """A placement connector-edge/1 check (AGENTEE-92) over these exact envelope bytes.
+
+    The check grades every fixed footprint of its envelope as one verdict, so it
+    can witness this obligation only when the envelope fixes exactly this one
+    footprint and no other requirement maps the check. Returns an unknown reason
+    when the verdict cannot be attributed; raises on a mapping that cannot apply.
+    """
+    params = spec.get('params') if isinstance(spec.get('params'), dict) else {}
+    if params.get('criterion') != 'connector-edge/1':
+        raise ValueError(f"envelope obligation {item['id']} maps placement check {spec['id']} with criterion "
+                         f"{params.get('criterion')!r}; only connector-edge/1 evaluates a fixed footprint")
+    if files.get(params.get('envelope')) != record['envelope_sha256']:
+        raise ValueError(f"envelope obligation {item['id']} maps placement check {spec['id']} whose "
+                         'envelope is not these captured bytes')
+    if others:
+        raise ValueError(f"placement check {spec['id']} for envelope obligation {item['id']} is also mapped by "
+                         f'{others}; one connector verdict cannot witness several requirements')
+    if len(record['fixed_footprints']) != 1:
+        return (f"connector-edge/1 grades all {len(record['fixed_footprints'])} fixed footprints as one "
+                'verdict, so a defect cannot be attributed to this one')
+    return None
+
+
+# (field, check kind) -> validator. Coverage for another field needs the owning
+# item to add a validator here; registering a kind or criterion is not enough.
+BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile,
+            ('fixed_footprints', 'placement'): bind_connector_edge}
 
 
 def field_of(item):
@@ -717,15 +755,17 @@ def obligation_coverage(scope, requirements, record, files):
     stale = sorted(i for i in baseline if isinstance(i, str) and i.startswith('R-envelope-') and i not in derived)
     if stale:
         raise ValueError(f'baseline envelope requirements not derived from the captured envelope: {stale}')
+    mappers = {}
+    for rid, requirement in baseline.items():
+        for cid in requirement.get('checks', []) if isinstance(requirement.get('checks'), list) else []:
+            mappers.setdefault(cid, set()).add(rid)
     report = []
     for item in requirements['requirements']:
-        rid, mapped = item['id'], baseline.get(item['id'])
+        rid, mapped, field = item['id'], baseline.get(item['id']), field_of(item)
         kinds = item['check_kinds']
-        pending = sorted({PENDING_KINDS[k] for k in kinds if k in PENDING_KINDS})
         entry = {'id': rid, 'locator': item['source']['locator'], 'check_kinds': kinds, 'checks': []}
         if mapped is None or not mapped.get('checks'):
-            report.append({**entry, 'status': 'unmapped' if not pending else 'unknown',
-                           'reason': 'no mapped check' + (f"; kinds {kinds} pending {pending}" if pending else '')})
+            report.append({**entry, 'status': 'unmapped', 'reason': f'no mapped check; {UNBOUND[field]}'})
             continue
         if (mapped.get('statement') != item['statement'] or mapped.get('source') != item['source']
                 or mapped.get('intent') != 'acceptance'):
@@ -736,16 +776,14 @@ def obligation_coverage(scope, requirements, record, files):
             kind = spec.get('kind') if spec else None
             if kind not in kinds:
                 raise ValueError(f"envelope obligation {rid} maps check {cid} of kind {kind!r} outside kinds {kinds}")
-            binding = BINDINGS.get((field_of(item), kind))
-            if binding is None:
-                unknown.append(cid)
-                continue
-            binding(item, spec, record, files)
+            binding = BINDINGS.get((field, kind))
+            reason = UNBOUND[field] if binding is None else binding(
+                item, spec, record, files, sorted(mappers.get(cid, set()) - {rid}))
+            if reason:
+                unknown.append(f'{cid}: {reason}')
         entry['checks'] = list(mapped['checks'])
         if unknown:
-            report.append({**entry, 'status': 'unknown',
-                           'reason': f'checks {unknown} have no executable envelope binding'
-                                     + (f'; kinds pending {pending}' if pending else '')})
+            report.append({**entry, 'status': 'unknown', 'reason': '; '.join(unknown)})
         else:
             report.append({**entry, 'status': 'bound'})
     return report
