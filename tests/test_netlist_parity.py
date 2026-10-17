@@ -2,7 +2,7 @@ import json
 import unittest
 from pathlib import Path
 
-from agent_ee.netlist_parity import resolved_inventory
+from agent_ee.netlist_parity import Unsupported, resolved_inventory
 
 FIXTURE = Path(__file__).parent / 'fixtures/netlist-parity'
 
@@ -14,6 +14,64 @@ class ResolvedTests(unittest.TestCase):
         self.assertEqual(len(graph['nets']), 3)
         self.assertEqual(graph['components']['series']['pins'], ('1', '2'))
         self.assertEqual(graph['components']['shunt']['pins'], ('1', '2'))
+
+    def test_power_projection_refuses_unqualified_or_unobservable_markers(self):
+        from agent_ee.connectivity_ir import resolve_intent
+        root = Path(__file__).parents[1] / 'fixtures/generation'
+        def nc(intent, cid, net):
+            conductor = next(n for n in intent['nets'] if n['id'] == net)
+            terminal = next(t for t in conductor['terminals'] if t['component'] == cid)
+            conductor['terminals'].remove(terminal)
+            intent['no_connects'].append(terminal)
+        def virtual_only(intent):
+            terminals = []
+            for cid, nid in (('flag_vin', 'vin'), ('flag_gnd', 'gnd')):
+                conductor = next(n for n in intent['nets'] if n['id'] == nid)
+                terminal = next(t for t in conductor['terminals'] if t['component'] == cid)
+                conductor['terminals'].remove(terminal)
+                terminals.append(terminal)
+            intent['nets'].append(dict(id='virtual', name='VIRTUAL', terminals=terminals))
+        edits = {
+            'ordinary_reference_on_power': lambda i: next(c for c in i['components'] if c['id'] == 'gnd').update(reference='P1'),
+            'virtual_reference_on_physical_part': lambda i: next(c for c in i['components'] if c['id'] == 'c_out').update(reference='#C1'),
+            'power_with_footprint': lambda i: next(c for c in i['components'] if c['id'] == 'gnd').update(footprint='OwnedFP:CAP_2PAD'),
+            'unconnected_power': lambda i: nc(i, 'gnd', 'gnd'),
+            'one_remaining_physical_pin': lambda i: nc(i, 'j_in', 'vin'),
+            'no_remaining_physical_pins': virtual_only,
+        }
+        for case, edit in edits.items():
+            with self.subTest(case=case):
+                intent = json.loads((root / 'regulator.intent.json').read_text())
+                edit(intent)
+                captures = {lib['path']: (root / 'project' / lib['path']).read_bytes() for lib in intent['libraries']}
+                resolved = resolve_intent(intent, captures)
+                self.assertEqual((resolved['execution'], resolved['outcome']), ('ok', 'pass'), resolved)
+                with self.assertRaises(Unsupported):
+                    resolved_inventory(resolved)
+
+    def test_power_projection_rejects_multiple_or_nonpower_pins(self):
+        import hashlib
+        from agent_ee.connectivity_ir import resolve_intent
+        root = Path(__file__).parents[1] / 'fixtures/generation'
+        for case in ('passive_pin', 'multiple_pins'):
+            with self.subTest(case=case):
+                intent = json.loads((root / 'regulator.intent.json').read_text())
+                captures = {lib['path']: (root / 'project' / lib['path']).read_bytes() for lib in intent['libraries']}
+                power = next(lib for lib in intent['libraries'] if lib['name'] == 'OwnedPower')
+                data = captures[power['path']]
+                if case == 'passive_pin':
+                    data = data.replace(b'(pin power_in line', b'(pin passive line', 1)
+                else:
+                    data = data.replace(b'(symbol "GND_1_1"', b'(symbol "GND_1_1"\n'
+                        b'(pin power_in line (at 2.54 0 180) (length 2.54) (name "P2") (number "2"))', 1)
+                    next(n for n in intent['nets'] if n['id'] == 'gnd')['terminals'].append(
+                        {'component': 'gnd', 'pin': {'number': '2'}})
+                captures[power['path']] = data
+                power['sha256'] = hashlib.sha256(data).hexdigest()
+                resolved = resolve_intent(intent, captures)
+                self.assertEqual((resolved['execution'], resolved['outcome']), ('ok', 'pass'), resolved)
+                with self.assertRaises(Unsupported):
+                    resolved_inventory(resolved)
 
 
 class NativeReaderTests(unittest.TestCase):

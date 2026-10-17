@@ -260,12 +260,15 @@ class NativeGridRegressionTests(unittest.TestCase):
         intent = load('regulator-core.intent.json')
         captured = captures(intent)
         path = 'lib/Owned_Gen.kicad_sym'
-        old = b'(at 7.62 0 180)'
-        self.assertIn(old, captured[path])
+        old = b'(pin power_out line\n\t\t\t\t(at 7.62 0 180)'
+        self.assertEqual(captured[path].count(old), 1)
         original = captured[path]
-        for offset in (b'7.6', b'7.600001'):
-            captured[path] = original.replace(old, b'(at ' + offset + b' 0 180)', 1)
+        for offset, expected_nm in ((b'7.6', 7600000), (b'7.600001', 7600001)):
+            captured[path] = original.replace(old, old.replace(b'7.62', offset), 1)
             intent['libraries'][0]['sha256'] = hashlib.sha256(captured[path]).hexdigest()
+            resolved = resolve_intent(intent, captured)
+            regulator = next(c for c in resolved['components'] if c['id'] == 'reg')
+            self.assertEqual(next(p['x_nm'] for p in regulator['pins'] if p['number'] == '3'), expected_nm)
             result, files = emit_schematic(intent, captured, load('regulator-core.layout.json'))
             if offset == b'7.600001':
                 self.assertIsNone(files)
@@ -277,7 +280,7 @@ class NativeGridRegressionTests(unittest.TestCase):
                 work = Path(temp)/'export'
                 run_native(project, work, 'kicad-cli','sch','export','netlist','--format','kicadxml',
                            '-o','/work/design.xml','/candidate/regulator_core.kicad_sch')
-                expected = resolved_inventory(resolve_intent(intent, captured))
+                expected = resolved_inventory(resolved)
                 actual = read_native_inventory(work/'design.xml')
                 policy = validate_policy(dict(source=dict(kind='intent',path='intent.json'), netlist_check='native',
                                               predicate='topology',multiset='exactly'))

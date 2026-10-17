@@ -181,6 +181,11 @@ executor with networking unshared:
   identical part and changed UUIDs each fail the matching predicate. The
   AGENTEE-41 modules are imported directly, so their absence is an error,
   never a skip.
+- The full regulator intent, including its declared ground symbol and two
+  power flags, passes both native ERC and all three physical parity predicates.
+  The shared parity adapter records the virtual `#` symbols that native XML
+  omits; moving a capacitor terminal onto the wrong rail still fails topology.
+  A scope/3 coordinator run retains the normalization in its sealed report.
 - `tests/test_schematic_hierarchy.py` emits an original two-level design
   (`two_level.*`): a root connector and capacitor, and a `filter` child with
   three capacitors. It has two shared nets, an internal `LOCAL_SAME` net on each
@@ -211,9 +216,11 @@ executor with networking unshared:
 - A port's name must equal its child segment's label.
 - Derived (`extends`) symbols, alternate body styles with pins, arcs and other
   graphics without qualified bounds are refused.
-- Power and flag symbols are intent components, and the resolver lists them
-  as components with pins. KiCad's netlist omits `#` references, so parity of an
-  intent that contains them needs a power-symbol policy in AGENTEE-39/41.
+- KiCad's native XML omits virtual `#` power and flag symbols. The
+  [parity adapter](netlist-parity.md) projects qualified single-pin markers out
+  of the physical graph and records each omission. Nets must retain at least
+  two physical terminals. Parity cannot prove the presence of a power marker
+  or flag; native ERC remains a separate check.
 - Label packing is conservative, not a visual-quality claim. The emitter does
   not draw wires, route, or choose parts or units.
 - Writing the project file is a scaffold concern (AGENTEE-87). A campaign

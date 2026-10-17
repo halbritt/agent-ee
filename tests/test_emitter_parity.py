@@ -2,8 +2,8 @@
 
 The comparison authority is the separately owned ``agent_ee.netlist_parity``
 (AGENTEE-41) run on the actual ``kicad-cli`` export of emitted files. The
-intent fixture has no power symbols: 41 has no power-symbol policy yet, and
-KiCad's netlist omits ``#`` references (see docs/schematic-emitter.md).
+regulator test includes its declared power symbols and flags; KiCad's netlist
+omits their virtual ``#`` references (see docs/schematic-emitter.md).
 Anchors are computed here from the frozen identity contract, not read back
 from emitter output. The parity modules are internal dependencies: their
 absence is an import error here, never a skip.
@@ -16,7 +16,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-from test_schematic_emitter import captures, load, native_project, run_native
+from test_schematic_emitter import captures, load, native_project, run_native, tables
 from agent_ee.connectivity_ir import resolve_intent
 from agent_ee.native_netlist import read_native_inventory
 from agent_ee.netlist_parity import compare, resolved_inventory, validate_policy
@@ -32,11 +32,16 @@ class EmitterParityTests(unittest.TestCase):
         self.intent = load('regulator-core.intent.json')
         self.layout = load('regulator-core.layout.json')
 
-    def native(self, intent, layout, label):
-        result, files = emit_schematic(intent, captures(intent), layout)
+    def native(self, intent, layout, label, *, erc=False):
+        result, files = emit_schematic(intent, captures(intent), layout, **(tables() if erc else {}))
         self.assertEqual(result['execution'], 'ok', result['findings'])
         project = native_project(files, self.tmp / label)
         work = self.tmp / label / 'work'
+        if erc:
+            run_native(project, work / 'erc', 'kicad-cli', 'sch', 'erc', '--format', 'json', '--severity-all',
+                       '--units', 'mm', '-o', '/work/erc.json', f'/candidate/{layout["project"]}.kicad_sch')
+            report = json.loads((work / 'erc' / 'erc.json').read_text())
+            self.assertEqual([v for s in report['sheets'] for v in s['violations']], [])
         run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
                    '-o', '/work/design.xml', f'/candidate/{layout["project"]}.kicad_sch')
         return read_native_inventory(work / 'design.xml')
@@ -51,6 +56,69 @@ class EmitterParityTests(unittest.TestCase):
         ns = uuid.UUID(namespace)
         return {cid: {'sheet': '/', 'uuid': str(uuid.uuid5(ns, json.dumps(['symbol', cid, 1], separators=(',', ':'))))}
                 for cid in ('j_in', 'reg', 'c_out')}
+
+    def test_power_regulator_passes_erc_and_every_physical_parity_predicate(self):
+        self.intent, self.layout = load('regulator.intent.json'), load('regulator.layout.json')
+        actual = self.native(self.intent, self.layout, 'power-regulator', erc=True)
+        self.assertEqual(sorted(actual['components']), ['C1', 'J1', 'U1'])
+        for predicate in ('components', 'topology', 'instance'):
+            with self.subTest(predicate=predicate):
+                extra = dict(anchors=self.anchors(self.layout['namespace']),
+                             instance_components=['j_in', 'reg', 'c_out']) if predicate == 'instance' else {}
+                report = self.compare(actual, predicate, **extra)
+                self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+                self.assertEqual({n['reference'] for n in report['normalized_power_symbols']},
+                                 {'#PWR01', '#FLG01', '#FLG02'})
+        def move_capacitor(intent):
+            vin, vout = (next(n for n in intent['nets'] if n['id'] == k) for k in ('vin', 'vout'))
+            terminal = next(t for t in vout['terminals'] if t['component'] == 'c_out')
+            vout['terminals'].remove(terminal)
+            vin['terminals'].append(terminal)
+        changed = self.mutated(move_capacitor, 'power-regulator-wrong-binding')
+        report = self.compare(changed, 'topology')
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'defect'), report)
+        report = self.compare(actual, 'instance', instance_components=['gnd'])
+        self.assertEqual((report['execution'], report['outcome']), ('unsupported', 'unknown'), report)
+
+    def test_power_regulator_coordinator_evidence_seals_normalization(self):
+        import time
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import read_json, write_json
+        intent, layout = load('regulator.intent.json'), load('regulator.layout.json')
+        result, files = emit_schematic(intent, captures(intent), layout, **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project = native_project(files, self.tmp / 'coordinator')
+        # Intent paths are relative to the captured candidate, including library paths.
+        for lib in intent['libraries']:
+            lib['path'] = 'project/' + lib['path']
+        write_json(project / 'intent.json', intent)
+        (project / 'requirements.md').write_text('Preserve regulator physical connectivity and native ERC.\n')
+        scope = {
+            'schema': 'agent-ee.scope/3', 'name': 'regulator', 'scope': 'Owned regulator emitter.',
+            'limitations': [], 'schematic': 'project/regulator.kicad_sch',
+            'inputs': [{'path': str(project), 'at': 'project'}], 'requirements': ['project/requirements.md'],
+            'checks': [{'id': 'erc', 'kind': 'erc'}, {'id': 'netlist', 'kind': 'netlist'},
+                       {'id': 'parity', 'kind': 'netlist_parity', 'params': {
+                           'source': {'kind': 'intent', 'path': 'project/intent.json'},
+                           'netlist_check': 'netlist', 'predicate': 'topology', 'multiset': 'exactly'}}],
+            'baseline': {'requirements': [{'id': 'connectivity', 'statement': 'Preserve connectivity.',
+                'source': {'path': 'project/requirements.md', 'locator': 'line 1'},
+                'checks': ['erc', 'netlist', 'parity'], 'intent': 'acceptance'}],
+                'targets': ['project/requirements.md'], 'reference_architectures': ['project/intent.json']}}
+        write_json(self.tmp / 'scope.json', scope)
+        run = self.tmp / 'run'
+        run.mkdir()
+        capture(self.tmp / 'scope.json', run)
+        checks = run_checks(run, time.monotonic() + 120)
+        self.assertEqual([(c['execution'], c['outcome']) for c in checks],
+                         [('ok', 'pass'), ('ok', 'info'), ('ok', 'pass')], checks)
+        report = read_json(run / 'work/parity/parity.json')
+        self.assertEqual({n['component'] for n in report['normalized_power_symbols']},
+                         {'gnd', 'flag_gnd', 'flag_vin'})
+        freeze_evidence(run, checks)
+        verify_evidence(run, checks, required=True)
 
     def test_emitted_native_export_passes_every_predicate(self):
         actual = self.native(self.intent, self.layout, 'base')

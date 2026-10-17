@@ -186,10 +186,11 @@ class RefusalTests(unittest.TestCase):
         return intent
 
     def test_unknown_symbol_and_duplicate_reference(self):
-        self.assertRefused('resolution_unknown_symbol', self.mutate(
-            lambda i: i['components'][2].update(lib_id='OwnedGen:MISSING')))
-        self.assertRefused('resolution_duplicate_component', self.mutate(
-            lambda i: i['components'][2].update(reference='J1')))
+        for code, edit in (
+                ('resolution_unknown_symbol', lambda i: i['components'][2].update(lib_id='OwnedGen:MISSING')),
+                ('resolution_duplicate_component', lambda i: i['components'][2].update(reference='J1'))):
+            with self.subTest(code=code):
+                self.assertEqual(self.assertRefused(code, self.mutate(edit))['execution'], 'failed')
 
     def test_changed_captured_library_hash(self):
         intent = load('regulator.intent.json')
@@ -221,6 +222,7 @@ class RefusalTests(unittest.TestCase):
             intent['libraries'][0]['sha256'] = hashlib.sha256(files['lib/Owned_Gen.kicad_sym']).hexdigest()
             result, out = emit_schematic(intent, files, load('regulator.layout.json'))
             self.assertIsNone(out and sorted(out))
+            self.assertEqual(result['execution'], 'failed')
             self.assertIn(code, [f['code'] for f in result['findings']], result['findings'])
         # VO moved onto VI's connection point: two pins would be shorted.
         vo = '(pin power_out line\n\t\t\t\t(at 7.62 0 180)'
