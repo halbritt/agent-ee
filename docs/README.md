@@ -93,6 +93,7 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
+- [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement; shared check registration pending.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
