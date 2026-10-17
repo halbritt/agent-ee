@@ -9,7 +9,7 @@
         }
       ],
       "symbols": [
-        "Owned:Port"
+        "ConnectorOwned:Port"
       ]
     },
     "series": {
@@ -38,7 +38,7 @@
       "locations": [
         {
           "sheet": "/",
-          "reference": "LOAD"
+          "reference": "RLOAD"
         }
       ],
       "symbols": [
@@ -53,7 +53,7 @@
         }
       ],
       "symbols": [
-        "Owned:Probe"
+        "ConnectorOwned:Probe"
       ]
     },
     "link": {

@@ -13,7 +13,7 @@ This original fixture uses generated pin-only symbol graphics and no donor files
 With R1 10k, C1 100n and load 1Meg, a 1 V step at IN produces approximately
 0.629 V at OUT after 1 ms (loaded DC gain 100/101; time constant 0.990099 ms).
 R1 100k produces approximately 0.095 V and fails a declared 0.62..0.65 V bound.
-Port and probe are structural terminals; functional test uses a passive-only
-native variant excluding those symbols, because the passive adapter cannot
-simulate an arbitrary terminal symbol. This limitation supplies no functional
-proof for a port model.
+Port and probe have explicitly authored connector-class pin-only symbols; the
+passive simulator ignores their non-electrical bodies. The component reference
+RLOAD is used solely to meet the existing passive simulator's supported naming
+contract; interface protection derives exclusively from the owner declarations.
