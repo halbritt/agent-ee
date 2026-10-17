@@ -96,6 +96,13 @@ The direct `select_parts` API raises the underlying input error. The integration
 below supplies scope and baseline registration without new
 reviewer access or a separate acceptance path.
 
+`selection_check` accepts either a requirements object or a `pathlib.Path` to
+the captured JSON file. The sandbox CLI uses the path form so that snapshot
+verification happens before requirements loading. Missing files, invalid UTF-8,
+invalid JSON and duplicate JSON keys retain the verified snapshot date and
+hashes in their failed/unknown report. If the snapshot itself cannot be verified,
+its date and DB hash are null; an unverified declaration cannot supply provenance.
+
 Prices, stock, and classifications are explicitly **as of the snapshot date**.
 Datasheet facts, package/pin binding and later assembly-readiness verification
 remain separate checks. The tests use original synthetic catalog rows, including

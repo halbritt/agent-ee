@@ -75,13 +75,8 @@ def main():
         report = catalog_check(args.snapshot, args.manifest_sha256)
     else:
         from .part_selection import selection_check
-        try:
-            from .catalog import strict_json
-            requirements = strict_json(Path(args.requirements).read_text(encoding='utf-8'))
-        except (OSError, ValueError, TypeError) as exc:
-            report = dict(execution='failed', outcome='unknown', details={'error': str(exc)})
-        else:
-            report = selection_check(args.snapshot, args.manifest_sha256, requirements)
+        requirements = Path(args.requirements) if args.requirements is not None else None
+        report = selection_check(args.snapshot, args.manifest_sha256, requirements)
     write_json(Path(args.out), report)
 
 

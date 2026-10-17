@@ -110,13 +110,24 @@ manifest records no capture-execution receipt or producer attestation.
 
 `catalog_check(...)` maps missing, corrupt or semantically invalid data to
 `execution: failed`, `outcome: unknown`; its pass establishes snapshot integrity
-and derivation consistency only. Successful results retain snapshot manifest/DB
-hashes and date. Consumers must capture both
+and derivation consistency only. Results retain the requested manifest pin;
+successful results also retain the verified DB hash and snapshot date. Those
+two fields are explicitly null when the snapshot cannot be verified. Selection
+retains the verified date and DB hash even when its captured requirements file
+is missing, unreadable or malformed. Consumers must capture both
 files into their immutable candidate and invoke this reader inside the existing
 networkless sandbox. The `catalog` check registers this reader as informational
 scope/3 coverage.
 It cannot satisfy an acceptance requirement; it does not expand reviewer or
 implementation permissions.
+
+Qualification uses original synthetic data: tests recapture two pinned ordinary
+ZIP volumes byte for byte, reject a mismatched second volume without publishing,
+and select a 1 kΩ 0603 resistor among value/package/unknown-stock distractors
+inside an actual isolated network namespace. These tests establish the local
+capture and offline-query contract. They do not establish that a native
+JLCPCB/LCSC feed has been acquired or converted correctly. Native upstream
+schema conversion, acquisition and real-feed qualification remain outstanding.
 
 All availability and prices are **as of `snapshot_date`**. No result establishes
 live inventory, order-time price, datasheet correctness, or assembly acceptance.

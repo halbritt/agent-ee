@@ -469,7 +469,9 @@ def catalog_check(snapshot_directory, expected_manifest_sha256):
     try:
         snapshot = load_catalog(snapshot_directory, expected_manifest_sha256)
     except (OSError, ValueError, sqlite3.Error, TypeError, KeyError) as exc:
-        return {'execution': 'failed', 'outcome': 'unknown', 'details': {'error': str(exc)}}
+        return {'execution': 'failed', 'outcome': 'unknown', 'details': {
+            'snapshot_manifest_sha256': expected_manifest_sha256,
+            'snapshot_sha256': None, 'snapshot_date': None, 'error': str(exc)}}
     return {'execution': 'ok', 'outcome': 'pass', 'details': {
         'snapshot_manifest_sha256': expected_manifest_sha256,
         'snapshot_sha256': snapshot['manifest']['database']['sha256'],

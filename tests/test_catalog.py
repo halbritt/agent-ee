@@ -56,6 +56,53 @@ class CatalogTests(unittest.TestCase):
         self.assertFalse((self.root / 'bad').exists())
         self.assertEqual(list(self.root.glob('.catalog-*')), [])
 
+    def archive_source(self):
+        import io
+        import zipfile
+        from agent_ee.catalog import COLUMNS
+        source = self.source()
+        with (self.root / 'owned.csv').open() as stream:
+            row = next(csv.DictReader(stream))
+        volumes = []
+        for number in (1, 2):
+            payload = io.StringIO(newline='')
+            writer = csv.DictWriter(payload, fieldnames=COLUMNS)
+            writer.writeheader()
+            writer.writerow({**row, 'lcsc': f'C{number}'})
+            path = self.root / f'volume-{number}.zip'
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr('parts.csv', payload.getvalue())
+            volumes.append(dict(path=path.name, sha256=digest(path),
+                                size_bytes=path.stat().st_size, format='zip-csv'))
+        return {**source, 'volumes': volumes}
+
+    def test_every_archive_and_database_is_pinned_and_recapture_is_byte_identical(self):
+        source = self.archive_source()
+        first, second = self.root / 'first', self.root / 'second'
+        manifest = capture_catalog(source, self.root, first)
+        capture_catalog(source, self.root, second)
+        self.assertEqual(manifest['volumes'], source['volumes'])
+        for volume in manifest['volumes']:
+            self.assertEqual(volume['sha256'], digest(self.root / volume['path']))
+        self.assertEqual(manifest['database']['sha256'], digest(first / 'catalog.sqlite3'))
+        self.assertEqual(manifest['row_counts']['resistor'], 2)
+        loaded = load_catalog(first, digest(first / 'manifest.json'))
+        self.assertEqual({row['provenance']['volume'] for row in loaded['rows']},
+                         {'volume-1.zip', 'volume-2.zip'})
+        for name in ('catalog.sqlite3', 'manifest.json'):
+            self.assertEqual((first / name).read_bytes(), (second / name).read_bytes())
+
+    def test_bad_second_archive_aborts_without_publishing_partial_catalog(self):
+        source = self.archive_source()
+        second = self.root / 'volume-2.zip'
+        payload = bytearray(second.read_bytes())
+        payload[-1] ^= 1
+        second.write_bytes(payload)
+        with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+            capture_catalog(source, self.root, self.root / 'bad')
+        self.assertFalse((self.root / 'bad').exists())
+        self.assertEqual(list(self.root.glob('.catalog-*')), [])
+
     def test_bad_schema_and_duplicate_rows_abort(self):
         source = self.source()
         path = self.root / 'owned.csv'
@@ -111,6 +158,10 @@ class CatalogTests(unittest.TestCase):
         (destination / 'catalog.sqlite3').write_bytes(b'corrupt')
         self.assertEqual(catalog_check(destination, expected)['execution'], 'failed')
         self.assertEqual(catalog_check(destination, expected)['outcome'], 'unknown')
+        failure = catalog_check(destination, expected)
+        self.assertEqual(failure['details']['snapshot_manifest_sha256'], expected)
+        self.assertIsNone(failure['details']['snapshot_date'])
+        self.assertIsNone(failure['details']['snapshot_sha256'])
 
     def test_units_are_explicit_and_case_sensitive(self):
         from agent_ee.catalog import attribute_interval
@@ -195,6 +246,45 @@ class CatalogTests(unittest.TestCase):
                                    capture_output=True, text=True, timeout=20)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), 'C1')
+
+    def test_1k_0603_query_filters_value_package_and_unknown_stock_offline(self):
+        import os
+        import subprocess
+        from toolchain import require_toolchain
+        from agent_ee.executor import sandbox_argv
+        require_toolchain()
+        self.source()
+        with (self.root / 'owned.csv').open() as stream:
+            row = next(csv.DictReader(stream))
+        source = self.source([
+            row,
+            {**row, 'lcsc': 'C2', 'attributes': '{"resistance":"10 kohm +/-1%"}'},
+            {**row, 'lcsc': 'C3', 'package': '0402'},
+            {**row, 'lcsc': 'C4', 'stock': ''},
+        ])
+        snapshot = self.root / 'snapshot'
+        capture_catalog(source, self.root, snapshot)
+        pin = digest(snapshot / 'manifest.json')
+        requirements = dict(schema='agent-ee.part-requirements/1', build_quantity=10,
+            stock_floor=100, parts=[dict(id='R1', category='resistor', package='0603',
+                quantity_per_board=1, constraints={'resistance': dict(kind='within',
+                    nominal='1 kohm', tolerance_percent='1')})])
+        work = self.root / 'work'
+        work.mkdir()
+        program = (
+            'import os; from agent_ee.part_selection import select_parts; '
+            f'assert os.readlink("/proc/self/ns/net") != {os.readlink("/proc/self/ns/net")!r}; '
+            f'r = select_parts("/candidate", {pin!r}, {requirements!r}); '
+            'assert r["snapshot_date"] == "2026-10-17"; '
+            'p = r["parts"][0]; '
+            'assert [c["row"]["lcsc"] for c in p["ranked"]] == ["C1"]; '
+            'assert p["chosen"]["stock"] == 123 and p["chosen"]["is_basic"] is True; '
+            'assert p["chosen"]["package"] == "0603"; '
+            'assert len(p["rejected"]) == 3; print(r["outcome"])')
+        completed = subprocess.run(sandbox_argv(snapshot, work, ['/usr/bin/python3', '-c', program]),
+                                   capture_output=True, text=True, timeout=20)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.strip(), 'pass')
 
     def test_category_table_exposes_typed_si_interval_columns(self):
         import sqlite3
