@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from toolchain import toolchain_test
+
 from agent_ee.diagnostics import diagnose
 from agent_ee.storage import digest
 
@@ -193,6 +195,7 @@ class InterruptedNativeDiagnosisTests(unittest.TestCase):
     setUp = _Fixture.setUp
     agent = _Fixture.agent
 
+    @toolchain_test
     def test_abrupt_capture_check_review_adjudication_boundaries(self):
         import contextlib
         import io
@@ -230,6 +233,7 @@ class InterruptedNativeDiagnosisTests(unittest.TestCase):
                 else:
                     self.assertEqual(report['verification']['status'], 'passed')
 
+    @toolchain_test
     def test_abrupt_empirical_registration_preserves_diagnostic_uncertainty(self):
         import contextlib
         import io
