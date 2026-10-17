@@ -9,6 +9,7 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 
 | Kind | Criterion and evidence |
 | --- | --- |
+| `land_pattern` | [Captured supplier land patterns](land-pattern.md) against native KiCad footprint copper, holes and pin numbering. Exact or bounded geometry evidence; unsupported shapes leave coverage incomplete. Does not establish supplier authenticity, approved-part identity or manufacturability. |
 | `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); declared symbol-pin/pad parity. With `netlist_check`, [native-bound](native-binding.md) exact binding of every native board component, its selection and its captured library pins. No physical fit. |
 | `netlist_parity` | [Exact intent or golden netlist parity](netlist-parity.md) against full native XML; resolved sources must rederive from captured intent. No footprint or electrical adequacy. |
 | `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |

@@ -307,6 +307,15 @@ schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
 
+## Supplier land patterns
+
+`land_pattern` takes a captured `criteria` path that binds supplier provenance,
+raw EasyEDA geometry and KiCad library members. The check retains native
+extraction and bounded overlap evidence through the coordinator seal; missing
+or unsupported geometry cannot pass. See the [contract and qualification](land-pattern.md)
+for exact parameters, pin-number comparisons and coverage limits. The actual
+C11702/0402 comparison does not meet the requested 0.98 threshold.
+
 ## Placement predicates
 
 `placement` evaluates one declared criterion per check against the saved-board
