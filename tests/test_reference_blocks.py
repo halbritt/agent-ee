@@ -129,7 +129,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
-    def prepare_run(self, *, checks_only=False, undeclared=False):
+    def prepare_run(self, *, checks_only=False, undeclared=False, shadow=False, hierarchy=False, layout=False):
         import contextlib
         import importlib.util
         import io
@@ -148,11 +148,26 @@ class NativeReferenceBlockTests(unittest.TestCase):
         sheet = generator.schematic(resistor='100k').rstrip()
         label = '''(hierarchical_label "IN" (shape input) (at 40 50 0)
           (effects (font (size 1 1))) (uuid "cb914ae0-18b3-43de-8045-9d41a1731b16"))'''
+        if hierarchy:
+            root_id = '5ba845cb-e953-48b0-998e-05c05ee05ecf'
+            sheet_id = '230f756d-a550-43ca-8130-2eff9ea6c83e'
+            sheet = sheet.replace('(project "interface"', '(project "root"').replace(
+                '/' + generator.uid('root') + '"', '/' + root_id + '/' + sheet_id + '"')
         (payload / 'sheet.kicad_sch').write_text(sheet[:-1] + label + ')\n')
         record['boundary_ports'][0].update(name='IN', net_name='IN')
         if undeclared:
             record['boundary_ports'][0].update(current_a=None, voltage_domain=None)
+        if shadow:
+            (self.root / 'shadow.kicad_sch').write_bytes((payload / 'sheet.kicad_sch').read_bytes())
+            data = (payload / 'sheet.kicad_sch').read_bytes()
+            self.assertIn(b'100k', data)
+            (payload / 'sheet.kicad_sch').write_bytes(data.replace(b'100k', b'200k'))
         record['files']['sheet.kicad_sch'] = digest(payload / 'sheet.kicad_sch')
+        if layout:
+            (payload / 'layout.kicad_pcb').write_bytes((fixture / 'interface.kicad_pcb').read_bytes())
+            record['layout'] = 'layout.kicad_pcb'
+            record['source']['paths']['layout.kicad_pcb'] = 'layout.kicad_pcb'
+            record['files']['layout.kicad_pcb'] = digest(payload / 'layout.kicad_pcb')
         record['requirements'] = [dict(id='interface', statement='Preserve declared interface invariants.', checks=['interface'])]
         write_json(payload / 'block-contract.json', block_contract(record))
         record['files']['block-contract.json'] = digest(payload / 'block-contract.json')
@@ -168,6 +183,26 @@ class NativeReferenceBlockTests(unittest.TestCase):
         for name in ('requirements.md', 'contract.json', 'interface.kicad_pcb'):
             (self.root / name).write_bytes((fixture / name).read_bytes())
             scope['inputs'].append(dict(path=name, at=name))
+        if hierarchy:
+            (self.root / 'root.kicad_sch').write_text(f'''(kicad_sch (version 20250114)
+              (generator "eeschema") (uuid "{root_id}") (paper "A4") (lib_symbols)
+              (sheet (at 20 20) (size 20 20) (stroke (width 0) (type default))
+                (fill (color 0 0 0 0)) (uuid "{sheet_id}")
+                (property "Sheetname" "OwnedChild" (at 20 19 0) (effects (font (size 1 1))))
+                (property "Sheetfile" "interface.kicad_sch" (at 20 41 0) (effects (font (size 1 1))))))''')
+            scope['inputs'].append(dict(path='root.kicad_sch', at='root.kicad_sch'))
+            scope['schematic'] = 'root.kicad_sch'
+            contract = read_json(self.root / 'contract.json')
+            for component in contract['components'].values():
+                for loc in component['locations']:
+                    loc['sheet'] = '/' + sheet_id + '/'
+            for invariant in contract['invariants']:
+                if invariant['kind'] == 'named_net':
+                    invariant['names'] = ['/OwnedChild' + n for n in invariant['names']]
+            write_json(self.root / 'contract.json', contract)
+        if shadow:
+            scope['inputs'].append(dict(path='shadow.kicad_sch', at='shadow.kicad_sch'))
+            scope['schematic'] = 'shadow.kicad_sch'
         call = dict(harness='codex', model='scripted-fixture', effort='high', timeout_s=30)
         scope['review_profile'] = dict(schema='agent-ee.profile/1', name='owned-block-qualification',
             reviewers=[dict(**call, role=r) for r in ('circuit', 'physical')], adjudicator=call)
@@ -188,8 +223,10 @@ class NativeReferenceBlockTests(unittest.TestCase):
         admission.start()
         self.addCleanup(admission.stop)
         run = self.root / 'run'
-        with patch('agent_ee.reviewers.dispatch', side_effect=dispatch), contextlib.redirect_stdout(io.StringIO()):
+        output = io.StringIO()
+        with patch('agent_ee.reviewers.dispatch', side_effect=dispatch), contextlib.redirect_stdout(output):
             status = run_review(self.root / 'scope.json', run, 120, checks_only=checks_only)
+        self.assertTrue((run / 'candidate.json').exists(), output.getvalue() + (run / 'REPORT.md').read_text())
         result = verify(run)
         self.assertEqual(status, 1 if checks_only else 0, result)
         self.assertEqual(result['checks'][0]['execution'], 'ok', result)
@@ -197,8 +234,44 @@ class NativeReferenceBlockTests(unittest.TestCase):
         baseline = read_json(run / 'baseline.json')
         record['runs'] = [dict(run_id=result['run_id'], candidate_id=result['candidate_id'],
             baseline_id=baseline['baseline_id'], files={'sheet.kicad_sch': 'interface.kicad_sch', 'parts.json': 'parts.json', 'block-contract.json': 'block-contract.json'})]
+        if layout:
+            record['runs'][0]['files']['layout.kicad_pcb'] = 'interface.kicad_pcb'
         write_json(payload / 'block.json', record)
         return payload, record, run, result
+
+    def test_defective_captured_block_cannot_inherit_native_shadow_pass(self):
+        import time
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import read_json
+        payload, record, run, result = self.prepare_run(shadow=True)
+        self.assertEqual((result['state'], result['outcome']),
+                         ('complete', 'criteria_satisfied'))
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['status'], 'unverified')
+        self.assertEqual(report['covered_requirements'], [])
+        # Independent fresh native execution proves the captured block is defective.
+        scope = read_json(self.root / 'scope.json')
+        scope['schematic'] = 'interface.kicad_sch'
+        write_json(self.root / 'actual.scope.json', scope)
+        actual = self.root / 'actual'
+        actual.mkdir()
+        capture(self.root / 'actual.scope.json', actual)
+        checks = run_checks(actual, time.monotonic() + 120)
+        self.assertEqual(checks[0]['execution'], 'ok', checks)
+        self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', 'defect'), checks)
+
+    def test_enclosing_native_hierarchy_qualifies_actual_block_occurrence(self):
+        payload, record, run, result = self.prepare_run(hierarchy=True)
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['status'], 'verified', report)
+        self.assertEqual(report['covered_requirements'], ['interface'])
+
+    def test_unchecked_optional_layout_remains_unverified(self):
+        payload, record, run, result = self.prepare_run(layout=True)
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['status'], 'unverified', report)
+        self.assertEqual(report['covered_requirements'], [])
 
     def test_complete_sealed_run_and_tamper_refusal(self):
         from agent_ee.storage import read_json
@@ -213,6 +286,16 @@ class NativeReferenceBlockTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_block(payload, locations)
         seal.write_bytes(original)
+        self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        # Sealed coordinator component witnesses cannot be rewritten to donate coverage.
+        check_path = run / 'checks/interface.json'
+        original_check = check_path.read_bytes()
+        check = read_json(check_path)
+        check['details']['invariants'][0]['actual']['components']['load']['sheet'] = '/foreign/'
+        write_json(check_path, check)
+        with self.assertRaises(ValueError):
+            validate_block(payload, locations)
+        check_path.write_bytes(original_check)
         self.assertEqual(validate_block(payload, locations)['status'], 'verified')
         # Updating the block's own hashes cannot launder a changed sheet.
         (payload / 'sheet.kicad_sch').write_bytes((payload / 'sheet.kicad_sch').read_bytes() + b'\n')

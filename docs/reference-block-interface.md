@@ -64,3 +64,19 @@ Private acquisition may use JSON `null` for an unknown `voltage_domain` or
 `current_a`. Such a block remains unverified even if referenced runs pass. This
 lets acquisition record missing owner declarations without inventing electrical
 limits from net names. Qualification requires explicit non-null declarations.
+
+Capture membership alone does not establish native coverage. Credited checks are
+currently limited to `hardware_interface`: the sealed native netlist producer
+must export the scope's actual schematic, include the mapped block sheet in its
+complete hierarchy, and contain the block's reconstructed native occurrence IDs.
+Every invariant mapped to the credited requirement must be satisfied and its
+resolved component witnesses must belong to those occurrences and to symbol
+UUIDs in the actual captured block sheet. This supports standalone sheets and
+captured enclosing hierarchies; a passing shadow sheet cannot qualify an unused
+captured block. Scope/3 informational requirements cannot supply block coverage.
+
+Other check families and optional layouts currently have no qualified subject
+binding here and therefore remain unverified, even when their runs pass. Missing
+coverage is not inferred from hashes, check names, or author-written subject
+lists. This validator consumes existing sealed coordinator evidence; it does not
+execute another engine or grant board acceptance.
