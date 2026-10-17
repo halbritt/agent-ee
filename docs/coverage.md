@@ -244,24 +244,27 @@ and policy review; old evidence never gains new audited coverage automatically.
 ## Installed analyzer coverage
 
 The `kicad_happy` check invokes the owner's installed v2.3.1 analyzers and
-retains their schema `1.4.0` outputs. Qualification currently covers low-pass
-RC calculation bounds for an explicitly selected native component set.
-The original control/seed expectations are [recorded separately](../fixtures/kicad-happy/EXPECTATIONS.md).
-All four analyzers run; their presence does not qualify every detector.
+retains schema `1.4.0` outputs. Its [adapter contracts](kicad-happy.md) define the
+exact supported topology, native branches, immutable operating assumptions and
+skip behavior. Running all four analyzers does not qualify every detector.
 
-| Requested category | Present evidence and qualification limit |
-| --- | --- |
-| Passive networks | RC-DET cutoff/time constant calculation bounds qualified for low-pass records. Other networks informative. |
-| Power trees | Native schematic facts retained; no blanket evaluated-rule coverage qualified. |
-| Regulator feedback | Native detections/math retained if emitted; no blocking qualification yet. |
-| Protection | Native connector protection records retained if emitted; absence is not a clean protection evaluation. |
-| Derating | Native findings retained if emitted; absent VD rules remain unsupported when declared counted/blocking. |
-| EMC | Installed EMC findings retained; no clean-rule evaluation inventory, so blocking EMC qualification remains unmet. |
-| Thermal | Installed assessments/skips retained. RC has zero assessable components; no thermal pass is claimed. Blocking thermal qualification remains unmet. |
+| Category | Qualified criterion | Limit |
+| --- | --- | --- |
+| Passive networks | Native low-pass RC cutoff/time constant bounds. | Other networks informative. |
+| Power trees | Complete native non-ground typed power-pin inventory, source uniqueness and declared domains. | No keyword load/default-current supply-adequacy claim. |
+| Regulator feedback | Ideal six-pin ground-referenced TPS7A4501 noninverting LDO divider math with captured Vref and native connectivity/provenance. | No fixed/unknown/heuristic-sweep Vref or physical regulator model. |
+| Protection | Explicit native USB VBUS ESD-presence subcheck. | Keyword/connectivity heuristic only; no surge/withstand rating. |
+| Derating | Explicit operating/rated voltage fraction for selected power/ground capacitors. | No resistor power, IC abs-max or capacitance/DC-bias coverage. |
+| Thermal | Declared heuristic LDO estimate, generic SOT-223/SOT-23 table values and unity board correction. | No datasheet thermal resistance, physical heat-flow or whole-board thermal pass. |
+| EMC | Exact ES-001 nearest electrically associated connector distance branch, <=50 mm eligibility and 15 mm threshold. | No ES-002 zero-via coverage, routing/ESD physics or EMC certification. |
 
-The broad power/feedback/protection/derating/EMC/thermal blocking qualification
-requested by AGENTEE-17 remains unmet. The integration does not infer evaluation
-from an empty findings list. Unsupported declared counted rules yield unknown
-execution coverage, including when another rule has a proven violation.
-Analyzer estimates do not establish thermal, EMC or electrical certification.
+Original [owned fixture assumptions](../fixtures/kicad-happy/qualified/requirements.md)
+and [RC expectations](../fixtures/kicad-happy/EXPECTATIONS.md) distinguish real
+native observations from synthetic parser boundary cases. Unrecognized envelopes
+and missing counted evaluations remain unsupported. Source assumptions and check
+parameters remain immutable scope/2 baseline inputs; the pure capability helper
+is exposed for later scope/3 integration without changing historical scope/2.
+
+Full strict host checks and owner review remain separate from qualification in
+the common completion image. A passing declared proxy never certifies hardware.
 
