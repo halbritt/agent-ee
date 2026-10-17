@@ -93,6 +93,99 @@ class BenchTransactionTests(unittest.TestCase):
         self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
 
     @toolchain_test
+    def test_replacement_attempts_preserve_all_retained_trees_on_overlap_refusal(self):
+        from unittest.mock import patch
+        from agent_ee import bench_transactions as tx
+        self.initial()
+        out = self.root / 'feedback'
+        older = self.root / 'older-parent/review'
+        middle = self.root / 'middle-parent/review'
+        latest = self.root / 'latest-parent/review'
+
+        def interrupted_review(scope, target, *args, **kwargs):
+            (target / 'checks/empty').mkdir(parents=True)
+            (target / 'checks/raw.bin').write_bytes(b'\x00retained evidence\xff')
+            raise KeyboardInterrupt()
+
+        with patch('agent_ee.cli.run_review', side_effect=interrupted_review):
+            with self.assertRaises(KeyboardInterrupt):
+                tx.transact(self.root / 'initial', self.root / 'bench.json', out,
+                            60, operation_id='overlap', review_out=older)
+            with self.assertRaises(KeyboardInterrupt):
+                tx.new_attempt(out, 'second', middle)
+            with self.assertRaises(KeyboardInterrupt):
+                tx.new_attempt(out, 'third', latest)
+
+        def snapshot():
+            return {p.relative_to(self.root).as_posix(): p.read_bytes() if p.is_file() else None
+                    for p in self.root.rglob('*')}
+
+        foreign = self.root / 'foreign-review'
+        foreign.mkdir()
+        (foreign / 'owner-data').write_bytes(b'foreign output')
+        before = snapshot()
+        with patch('agent_ee.cli.run_review', side_effect=AssertionError('refusal launched inference')):
+            for retained in (older, middle, latest, self.root / 'initial', out):
+                for target in (retained, retained.parent, retained / 'checks/new-review',
+                               retained / 'absent-parent/new-review'):
+                    with self.subTest(retained=retained, target=target):
+                        with self.assertRaisesRegex(tx.TransactionError, 'overlaps retained evidence'):
+                            tx.new_attempt(out, 'forbidden', target)
+                        self.assertEqual(snapshot(), before)
+            with self.assertRaisesRegex(tx.TransactionError, 'fresh run directory'):
+                tx.new_attempt(out, 'foreign', foreign)
+            self.assertEqual(snapshot(), before)
+        with contextlib.redirect_stdout(io.StringIO()):
+            value = tx.new_attempt(out, 'fresh-sibling', self.root / 'fresh-review')
+        self.assertEqual(value['phase'], 'completed')
+        self.assertEqual(value['review']['attempt_id'], 'fresh-sibling')
+        self.assertEqual(len(self.calls), 3)
+        for retained in (older, middle, latest):
+            prefix = retained.relative_to(self.root).as_posix() + '/'
+            self.assertEqual({k: v for k, v in snapshot().items() if k.startswith(prefix)},
+                             {k: v for k, v in before.items() if k.startswith(prefix)})
+        self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
+
+    @toolchain_test
+    def test_busy_transaction_refuses_new_attempt_before_creating_target_lease(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        from unittest.mock import patch
+        from agent_ee import bench_transactions as tx
+        from agent_ee.locking import writer_lock
+        self.initial()
+        out = self.root / 'feedback'
+        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            tx.transact(self.root / 'initial', self.root / 'bench.json', out,
+                        60, operation_id='busy-attempt', review_out=self.root / 'external-review')
+        entered, release = threading.Event(), threading.Event()
+
+        def competing_writer():
+            with writer_lock(out):
+                entered.set()
+                if not release.wait(15):
+                    raise RuntimeError('test barrier timed out')
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(competing_writer)
+            try:
+                self.assertTrue(entered.wait(15))
+                # This sorts before the journal, exposing premature lease creation.
+                target = self.root / 'aaa-new-parent/review'
+                before = {p.relative_to(self.root).as_posix(): p.read_bytes() if p.is_file() else None
+                          for p in self.root.rglob('*')}
+                with self.assertRaisesRegex(ValueError, 'another writer'):
+                    tx.new_attempt(out, 'contender', target)
+                after = {p.relative_to(self.root).as_posix(): p.read_bytes() if p.is_file() else None
+                         for p in self.root.rglob('*')}
+                self.assertEqual(after, before)
+            finally:
+                release.set()
+            future.result(timeout=15)
+        self.assertEqual(tx.recover(out)['disposition'], 'uncertain_execution')
+        self.assertEqual(self.calls, [])
+
+    @toolchain_test
     def test_changed_request_conflicts_and_equivalent_operation_returns_existing_identity(self):
         from unittest.mock import patch
         from agent_ee import bench_transactions as tx
