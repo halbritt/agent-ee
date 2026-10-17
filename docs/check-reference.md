@@ -34,6 +34,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
+| `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
@@ -333,6 +334,15 @@ authority and unknown boundaries.
 See [passive corners](passive-corners.md) for the optional `passive_corners`
 contract, supported topology, immutable qualification inputs, bounded ensemble,
 retained per-corner evidence and empirical-transfer refusal.
+
+## Schematic readability lint
+
+`schematic_lint` reads the captured schematic hierarchy, the symbol definitions
+embedded in each sheet, and the native XML of an earlier `netlist` check. It
+reports overlap, wire, placement-topology, naming, grid and title-block
+findings at `info` or `warning`; a profile can raise a rule to `defect`. A
+symbol whose definition cannot be resolved is missing coverage, not a pass.
+See [schematic lint](schematic-lint.md) for rules, parameters and coverage.
 
 ## JLCPCB fab package
 
