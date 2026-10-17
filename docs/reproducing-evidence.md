@@ -230,3 +230,89 @@ relocate these links or provide portable whole-campaign restoration. Preserve th
 full campaign plus referenced feedback and source trees at their recorded paths,
 or inspect relocated copies as historical records without claiming equivalent
 verification.
+
+## Evidence relocation preparation (AGENTEE-20)
+
+Relocation is prepared locally; retained evidence remains in this checkout.
+The owner has not created a destination store or approved third-party publication.
+No upload, evidence removal or history rewrite has occurred. The working tree
+therefore still exceeds the requested 20 MB limit. Even after a future removal
+commit, historical Git objects keep clone size large until a separately approved
+history rewrite (or another owner-chosen distribution strategy).
+
+[files-manifest.json](../evidence/files-manifest.json) is the immutable Git-recorded
+per-file inventory of the existing 20 evidence directories: 4,857 files,
+325,214,213 bytes. Each exact group-relative path has its byte length and SHA-256.
+This includes the existing archives and their manifest as ordinary files; it
+neither expands those archives nor invents missing captured inputs. File modes,
+timestamps and empty directories are outside this byte inventory. Top-level
+human summaries and the new relocation metadata remain in main. Regenerating a
+manifest requires a new output path; the generator refuses to overwrite one:
+
+```sh
+python3 scripts/evidence_fetch.py manifest --evidence evidence --out build/new-files-manifest.json
+```
+
+[verify-baseline-20261017.json](../evidence/verify-baseline-20261017.json) records
+actual current-source and snapshot-only CLI verification for every existing
+retained `agent-ee.result/1` run, with exact commands, exits and diagnostics.
+All 73 runs currently exit 2 in both modes with `candidate snapshot changed;
+evidence is stale`: expanded inputs are absent. Independent diagnostics also
+record all 73 policy mismatches and one changed source scope; selected source
+file bytes match where checked. These diagnostics do not bypass the first CLI
+refusal or establish runtime compatibility. No evidence was changed to force a pass. Older archived inputs may require the archive
+restore step above, and historical acceptance still requires matching policy and
+runtime. The baseline is a relocation comparison receipt, not fresh acceptance.
+The [local fetch receipt](../evidence/fetch-local-check-20261017.json) records an
+all-group `file:` round trip: every path/size/hash matched, and all 73 runs
+produced identical exits/stdout/stderr in both modes. It does not validate a remote
+store or restore expanded inputs. Record a new baseline when the integrator
+changes policy or environment:
+
+```sh
+/usr/bin/python3 scripts/evidence_verify_baseline.py --out build/new-verify-baseline.json
+```
+
+After the owner creates and approves a store, an authorized operator must upload
+exact group/path bytes and independently check them against the committed
+manifest. The fetch command requires an explicit base URL and an existing output
+parent. Set `EVIDENCE_STORE_URL` to that real approved store; no store is configured
+or implied by this documentation:
+
+```sh
+mkdir -p build/fetched-evidence
+python3 scripts/evidence_fetch.py fetch rc-verified \
+  --manifest evidence/files-manifest.json --base-url "$EVIDENCE_STORE_URL" \
+  --destination build/fetched-evidence
+```
+
+The store layout is `BASE_URL/GROUP/EXACT_RELATIVE_FILE_PATH`; URL components are
+encoded without interpreting filenames as URL instructions. HTTPS, HTTP and local
+`file:` URLs are supported. HTTP and file fixtures exercise the machinery locally;
+no real remote store has been validated. Keep the manifest in a trusted checkout:
+its hashes establish identity relative to that manifest, not publisher authenticity
+or permission to publish. This explicit outer tool uses network access outside
+agent/tool sandboxes; sandbox network policy is unchanged.
+
+On Linux with `/proc` and libc `renameat2`, fetch stages the whole named group in
+a private temporary directory beside the destination. Each streamed file is size
+bounded and hash checked before a single no-replace directory rename publishes
+the group. Missing, truncated, oversized or corrupted files leave no final group.
+Unsafe paths, file/directory conflicts and destination ancestor symlinks are
+refused. Every existing destination (including an empty directory, an identical
+prior fetch or a dangling link) is a conflict; choose a fresh output parent.
+A concurrent creator also causes refusal without replacing its directory.
+Unsupported publication primitives fail rather than using an incremental fallback.
+A killed process can leave hidden `.evidence-fetch-*` staging directories. They
+are never complete groups. This is atomic visibility, not a power-loss durability
+or hostile-host guarantee; the owner must protect the destination parent from
+other processes running with the same privileges.
+
+Before removing any tracked evidence, fetch every approved group into a clean
+location, independently compare every path/size/hash and record verification with
+the same policy/runtime. Compare failures as well as successes with the baseline;
+absolute source/campaign paths and unavailable inputs can prevent portable replay.
+Do not repair those records or reinterpret a mismatch as a pass. Keep the readable
+summaries and update their links only when the actual approved relocation is known.
+Store creation, publication rights, upload, real post-fetch comparison, removal,
+the under-20-MB criterion and owner review remain outstanding.

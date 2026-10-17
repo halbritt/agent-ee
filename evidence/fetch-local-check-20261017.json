@@ -1,0 +1,18 @@
+{
+  "all_path_size_hashes_equal": true,
+  "bytes": 325214213,
+  "command": "/usr/bin/python3 /tmp/agent-ee-implementation-20261017/sol-evidence-fetch/local-roundtrip.py",
+  "files": 4857,
+  "files_manifest_sha256": "8bd1f2adfd0a0cee9ba813c01ed4b610d7dd9df07107b03a8d4976791736bfbe",
+  "groups": 20,
+  "implementation_ref": "83e4bc718bb208f7202269b001a2fc4a2129e674",
+  "limitation": "Local file URL test only. No remote store, upload, publication or evidence relocation.",
+  "modes": [
+    "source",
+    "snapshot"
+  ],
+  "runs_with_equal_verify_results": 73,
+  "schema": "agent-ee.evidence-local-fetch-check/1",
+  "transport": "local file URL; no remote store",
+  "verify_baseline_sha256": "5057ba029a670ff190889fd548c9fab4da136c1a14945016b69fa930af60ef62"
+}

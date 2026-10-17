@@ -76,6 +76,15 @@ existing files. It is not a general secret scanner. The recorded hygiene probe
 is a bounded filename/pattern check, not proof of every possible secret's absence.
 Preserve raw evidence bytes rather than editing logs to make them look clean.
 
+The separate `scripts/evidence_fetch.py` outer tool requires an explicit store
+URL and a trusted per-file manifest. It checks sizes and hashes in private
+staging and atomically publishes a complete named directory without replacing
+any existing destination. It refuses destination ancestor symlinks and unsafe
+manifest paths. It does not grant sandbox network access, authenticate a publisher,
+scan all secrets, establish publication rights or protect against a hostile host.
+See the [relocation workflow](reproducing-evidence.md#evidence-relocation-preparation-agentee-20)
+for Linux prerequisites, historical verification limitations and owner gates.
+
 ## Engineering trust boundary
 
 `criteria_satisfied` covers the named candidate and declared checks. It does not
