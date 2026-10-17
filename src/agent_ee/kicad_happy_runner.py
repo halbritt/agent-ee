@@ -40,6 +40,8 @@ def main():
                 args += [request['pcb'], '--full']
             else:
                 args += ['--schematic', '/work/schematic.json', '--pcb', '/work/pcb.json']
+            if name == 'thermal':
+                args += ['--ambient', str(request['ambient_c'])]
             args += ['--output', f'/work/{name}.json', '--config', '/work/config.json']
             sys.argv = args
             write_json(f'/work/{name}-argv.json', args)

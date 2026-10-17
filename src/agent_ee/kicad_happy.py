@@ -129,6 +129,10 @@ def check_kicad_happy(ctx):
                 if source not in ctx.scope.get('requirements', []):
                     raise ValueError('adapter assumptions source must be a captured immutable requirement')
                 ctx.candidate_path(source)
+        ambient = ambient_temperature(ctx.params)
+        for rule in rules:
+            if rule.get('adapter') == 'thermal-ldo-estimate/1' and rule['assumptions']['ambient_c'] != ambient:
+                raise ValueError('thermal rule ambient differs from immutable invocation')
         root = Path(ctx.params['installation']).expanduser().resolve()
         if not (root / '.claude-plugin/plugin.json').is_file():
             raise CheckError('unavailable', 'kicad-happy installation not found')
@@ -142,7 +146,7 @@ def check_kicad_happy(ctx):
         write_json(ctx.work / 'installation.json', {'root': str(root), **before})
         ctx.evidence('installation.json')
         verified_hierarchy(ctx)
-        request = {'schematic': ctx.candidate_path(ctx.scope['schematic']),
+        request = {'ambient_c': ambient, 'schematic': ctx.candidate_path(ctx.scope['schematic']),
                    'pcb': ctx.candidate_path(ctx.scope['board'])}
         write_json(ctx.work / 'request.json', request)
         write_json(ctx.work / 'config.json', {'version': 1, 'project': {}, 'suppressions': []})
@@ -185,7 +189,7 @@ def check_kicad_happy(ctx):
         if failed:
             ctx.result['location'] = '; '.join(','.join(e['native_locator']['components']) for e in failed)
         ctx.result['limitations'].append('Heuristic analyzer output is not electrical, thermal or EMC certification; '
-            'absent rule findings never establish evaluated coverage. Only low-pass RC calculation bounds are qualified.')
+            'absent rule findings never establish evaluated coverage. Qualified adapters evaluate only their explicit target, topology and immutable assumptions; other native findings remain informative.')
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise CheckError('malformed', str(exc)) from exc
 
@@ -202,3 +206,53 @@ def verify_installations(checks):
                 raise ValueError('kicad-happy installation changed or unavailable') from exc
             if current != {k: v for k, v in recorded.items() if k != 'root'}:
                 raise ValueError('kicad-happy installation bytes changed since review')
+
+
+def describe_capability(params, files):
+    """Pure descriptor for later scope/3 integration; scope/2 is unchanged.
+
+    ``files`` is the captured path->SHA256 inventory. No installed-file read or
+    runtime qualification is performed. Only blocking qualified predicates can
+    describe acceptance capability; runtime missing target/skip remains unknown.
+    """
+    import re
+    descriptor = {'capability_version': 'kicad_happy/1', 'status': 'unsupported',
+                  'can_evaluate_bound': False, 'predicates': [], 'immutable_inputs': [],
+                  'unsupported_reasons': []}
+    try:
+        rules, counted, blocking = declarations(params)
+        if (not isinstance(params.get('installation'), str) or not params['installation']
+                or not isinstance(params.get('installation_sha256'), str)
+                or not re.fullmatch('[0-9a-f]{64}', params['installation_sha256'])):
+            raise ValueError('missing pinned installed analyzer identity')
+        ambient = ambient_temperature(params)
+        predicates, immutable = [], {}
+        for rule in rules:
+            if 'adapter' not in rule:
+                if rule['field'] not in CALCULATIONS.get((rule['analyzer'],rule['rule_id']),set()):
+                    raise ValueError('unqualified native calculation declaration')
+                name = 'low-pass-rc/1'
+            else:
+                name = rule['adapter']
+                path = rule['assumptions_source']['path']
+                sha = files.get(path)
+                if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}',sha):
+                    raise ValueError('missing captured immutable assumption source')
+                immutable[path] = sha
+                if name == 'thermal-ldo-estimate/1' and rule['assumptions']['ambient_c'] != ambient:
+                    raise ValueError('thermal ambient differs from invocation')
+            if rule['id'] in blocking:
+                predicates.append(f"happy:{rule['id']}:{name}")
+        descriptor.update(status='supported', can_evaluate_bound=bool(predicates), predicates=predicates,
+                          immutable_inputs=[{'path':p,'sha256':sha} for p,sha in sorted(immutable.items())])
+    except (ValueError, KeyError, TypeError) as exc:
+        descriptor['unsupported_reasons'] = [str(exc)]
+    return descriptor
+
+
+def ambient_temperature(params):
+    ambient = params.get('ambient_c',25.0)
+    if (isinstance(ambient,bool) or not isinstance(ambient,(int,float))
+            or not math.isfinite(ambient) or not -55 <= ambient <= 150):
+        raise ValueError('ambient_c requires finite temperature in [-55,150] C')
+    return ambient

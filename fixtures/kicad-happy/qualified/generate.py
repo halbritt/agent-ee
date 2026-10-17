@@ -20,10 +20,10 @@ def generate(variant):
     root_id = uid('sheet')
     # ref, library part, value, footprint name, [(pin name, electrical type, net)]
     parts = [
-        ('U1', 'Regulator_Linear:LM317', 'LM317', 'Fixture:SOT-223', [('VIN','power_in','+12V'), ('VOUT','power_out','+5V'), ('ADJ','input','FB')]),
+        ('U1', 'Regulator_Linear:TPS7A4501', 'TPS7A4501', ('Fixture:SOT-23' if variant == 'thermal' else 'Fixture:SOT-223'), [('SHDN','input','+12V'), ('IN','power_in','+12V'), ('GND','passive','GND'), ('OUT','power_out','+5V'), ('ADJ','input','FB'), ('GND','passive','GND')]),
         ('U2', 'Fixture:Load', 'Load', 'Fixture:Load', [('VCC','power_in','+5V'), ('GND','passive','GND')]),
-        ('R1', 'Device:R', '1000' if variant == 'feedback' else '720', 'Fixture:R_0805', [('~','passive','+5V'), ('~','passive','FB')]),
-        ('R2', 'Device:R', '240', 'Fixture:R_0805', [('~','passive','FB'), ('~','passive','GND')]),
+        ('R1', 'Device:R', '479' if variant == 'feedback' else '379', 'Fixture:R_0805', [('~','passive','+5V'), ('~','passive','FB')]),
+        ('R2', 'Device:R', '121', 'Fixture:R_0805', [('~','passive','FB'), ('~','passive','GND')]),
         ('C1', 'Device:C', '10u/6V X7R' if variant == 'derating' else '10u/16V X7R', 'Fixture:C_0805', [('~','passive','+5V'), ('~','passive','GND')]),
         ('D1', 'Device:D_TVS', 'D_TVS', 'Fixture:D', [('K','passive','+5V'), ('A','passive','GND')]),
         ('RV1', 'Device:Varistor', 'Varistor', 'Fixture:RV', [('1','passive','+5V'), ('2','passive','GND')]),
@@ -63,5 +63,5 @@ def generate(variant):
     pcbnew.SaveBoard(str(target/'qualification.kicad_pcb'),board)
     (target/'qualification.kicad_pro').write_text('{}\n')
 if __name__=='__main__':
-    for variant in ('control','feedback','protection','derating','power','emc'):
+    for variant in ('control','feedback','protection','derating','power','emc','thermal'):
         generate(variant)

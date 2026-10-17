@@ -99,8 +99,10 @@ model or acquire measurements from instruments.
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
 saved-board geometry, and an ideal passive R/C/L transient simulation through
 ngspice. An installed kicad-happy check retains schematic/PCB/thermal/EMC
-outputs, with qualified bound semantics currently limited to low-pass RC
-calculations; broader analyzer blocking coverage remains unqualified. Generic producer/parser interfaces support additional measurements and
+outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
+ideal regulator feedback, complete typed power-pin inventory, USB protection
+presence, capacitor voltage utilization, generic LDO temperature estimates and
+ESD placement distance. Other analyzer rules remain informational. Generic producer/parser interfaces support additional measurements and
 coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
 their subscription CLIs; authentication or quota failures stop the affected call
 without a provider fallback.
