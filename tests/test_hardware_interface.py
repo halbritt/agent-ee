@@ -280,6 +280,24 @@ class NativeInterfaceTests(unittest.TestCase):
         self.assertEqual(source['status'], 'disconnected', source)
         self.assertIn('at (140, 80) mm', source['locators'][0])
         self.assertFalse(any('global_label' in l for l in records['probe-name']['locators']), records)
+        # An explicit marker makes native de-duplicate the generated name; still disconnected.
+        marker = f'(no_connect (at 120 50) (uuid "{generator.uid("explicit-nc")}"))'
+        net, check, records = self.global_probe([marker, global_label(NC_PROBE[0], 140, 80, 'global-offpin')],
+                                                relation=True)
+        self.assertEqual(net, NC_PROBE[0] + '_1')
+        self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'), check)
+        self.assertEqual(records['probe-isolated']['status'], 'violation', records)
+        self.assertNotIn('global_label_sources', records['probe-name']['actual'])
+        # Attached to another conductor, native emits two nets with one name: refused, not chosen.
+        contract = read_json(FIXTURE / 'contract.json')
+        schematic = generator.schematic('disconnect')
+        run, checks = self.run_variant(contract=contract, interface_only=True, schematic=schematic[:-2]
+                                       + global_label(NC_PROBE[0], 140, 52.54, 'global-other') + ')\n')
+        names = [n.get('name') for n in ET.parse(run / 'work/netlist/design.xml').getroot().findall('./nets/net')]
+        self.assertEqual(names.count(NC_PROBE[0]), 2, names)
+        self.assertEqual((checks['interface']['execution'], checks['interface']['outcome']),
+                         ('unsupported', 'unknown'), checks)
+        self.assertTrue(all(r['status'] == 'not_evaluated' for r in checks['interface']['details']['invariants']))
         # The conservative 10 um touch margin is inclusive; beyond it, disconnection is proved.
         for x, outcome in ((120.01, 'unknown'), (120.0101, 'defect')):
             net, check, _ = self.global_probe([global_label(NC_PROBE[0], x, 50, 'global-near')])
@@ -334,6 +352,23 @@ class NativeInterfaceTests(unittest.TestCase):
         _, check, records = self.global_probe(placed(cases['micrometre-off-pin'][0], NC_PROBE[0]),
                                               names=['/OUT'])
         self.assertEqual((check['outcome'], records['probe-name']['status']), ('defect', 'violation'), check)
+        # A power symbol also names a net without a sheet prefix; only labels are modelled.
+        definition = ('(symbol "PowerOwned:Rail" (power) (pin_names (offset 0)) (in_bom yes) (on_board yes) '
+                      + generator.property_('Reference', '#PWR') + generator.property_('Value', 'Rail')
+                      + '(symbol "Rail_0_1" (pin power_in line (at 0 0 90) (length 0) hide '
+                      '(name "Rail" (effects (font (size 1 1)))) (number "1" (effects (font (size 1 1)))))))')
+        def rail(x, y):
+            return (f'(symbol (lib_id "PowerOwned:Rail") (at {x} {y} 0) (unit 1) (in_bom yes) (on_board yes) '
+                    f'(dnp no) (uuid "{generator.uid("rail")}")' + generator.property_('Reference', '#PWR01')
+                    + generator.property_('Value', NC_PROBE[0]) + f'(pin "1" (uuid "{generator.uid("rail-pin")}"))'
+                    + f'(instances (project "interface" (path "/{generator.uid("root")}" '
+                    '(reference "#PWR01") (unit 1)))))')
+        powered = generator.schematic('disconnect').replace('(lib_symbols ', '(lib_symbols ' + definition, 1)
+        net, check, records = self.global_probe([rail(120, 50)], schematic=powered)
+        self.assertEqual((net, check['outcome']), (NC_PROBE[0], 'unknown'), check)
+        self.assertIn('pin may touch PROBE pin 1', records['probe-name']['actual']['reason'])
+        net, check, _ = self.global_probe([rail(140, 80)], schematic=powered)
+        self.assertEqual((net, check['outcome']), (NC_PROBE[0], 'defect'), check)
         # Coordinates finer than the native unit are not modelled.
         _, check, records = self.global_probe([global_label(NC_PROBE[0], 140.00005, 80, 'fine')])
         self.assertEqual(check['outcome'], 'unknown', check)
