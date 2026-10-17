@@ -84,6 +84,11 @@ are refused: ngspice can silently select a definition or fall back for unknown
 diode levels. Diode models use the native default level only. Native
 ngspice must still accept and solve the qualified model's device syntax.
 
+`.ENDS` may be bare or name the open subcircuit, as many vendor libraries
+write it. Other directives need their arguments, and a directive word after a
+statement's first token, including through a continuation (`.ends` then
+`+ .control`), is refused.
+
 Continuations and directive case are normalized for validation. Generated
 copies preserve original model text except validated include-path rewrites;
 captured originals remain untouched. Alternate comment delimiters, quoted

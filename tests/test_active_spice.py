@@ -47,6 +47,27 @@ class ModelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
 
+    def test_bare_subcircuit_end_is_accepted_without_admitting_directives(self):
+        for end in ('.ends', '.ENDS', '  .Ends  '):
+            with self.subTest(end=end), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'root.lib'
+                text = '.subckt buf a b\nR1 a b 1k\n' + end + '\n'
+                path.write_text(text)
+                models = capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
+                self.assertEqual(models['subcircuits']['buf']['formals'], ['a', 'b'])
+                self.assertEqual(models['staged']['root.lib'], text)
+        for text in ('.subckt buf a b\nR1 a b 1k\n.ends .control\n',
+                     '.subckt buf a b\nR1 a b 1k\n.ends\n+ .control\n',
+                     '.subckt buf a b\nR1 a b 1k\n.ends buf .endc\n',
+                     '.subckt buf a b\nR1 a b 1k\n.ends\n.ends\n',
+                     '.ends\n', '.subckt buf a b\nR1 a b 1k\n.param\n.ends\n',
+                     '.subckt buf a b\nR1 a b 1k\n.ends\n.control\n', '.subckt buf a b\n.endc\n.ends\n'):
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'root.lib'
+                path.write_text(text)
+                with self.assertRaises(ValueError):
+                    capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
+
     def test_ambiguous_model_definitions_and_silent_diode_levels_are_refused(self):
         for statements in ('.model dm D (level=99)', '.model dm D (level={1+98})',
                            '.model rm R (rsh=100)\n.model RM R (rsh=200)'):
@@ -318,6 +339,26 @@ class NativeActiveTests(unittest.TestCase):
         run, results = self.run_case()
         self.assertEqual(results[-1]['execution'], 'unsupported', results[-1])
         self.assertIn('existing formal', results[-1]['summary'])
+
+    def test_bare_subcircuit_end_runs_native_control(self):
+        model = self.source / 'owned.lib'
+        model.write_text(model.read_text().replace('.ends buffer', '.ENDS'))
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        gain = 1e6 / (1 + 1e6)
+        self.assertAlmostEqual(result['details']['metrics']['out_1ms']['value'],
+                               .1 * (1-math.exp(-1)) * gain, delta=3e-6)
+        self.assertEqual((run / 'work/active/models/design/owned.lib').read_text(), model.read_text())
+        verify_evidence(run, results, required=True)
+
+    def test_directive_after_bare_subcircuit_end_refused_before_solver(self):
+        model = self.source / 'owned.lib'
+        model.write_text(model.read_text().replace('.ends buffer', '.ends\n+ .control'))
+        run, results = self.run_case()
+        self.assertEqual(results[-1]['execution'], 'unsupported', results[-1])
+        self.assertIn('embedded model directive', results[-1]['summary'])
+        self.assertFalse((run / 'work/active/version').exists())
 
     def test_outside_capture_include_refused_before_solver(self):
         (self.source / 'owned.lib').write_text('.include /etc/passwd\n')
