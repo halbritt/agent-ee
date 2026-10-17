@@ -68,11 +68,49 @@ segment when present) represent disconnected pins, including explicit no-connect
 markers. Their raw net codes, names and terminal locators remain in the report;
 they cannot satisfy any conductor predicate. Normalization requires exact native
 terminal/name agreement and one node, after duplicate/unknown-node validation.
-Local named nets retain their sheet-qualified names. Exact global labels are
-read from the captured native hierarchy to distinguish deliberately named singleton
-conductors from generated no-connect names; their source locators are retained.
-Connected anonymous nets retain membership; a name prefix alone never removes a
-conductor.
+Local named nets retain their sheet-qualified names. Connected anonymous nets
+retain membership; a name prefix alone never removes a conductor.
+
+### Global labels spelled like generated no-connect names
+
+A global label is unqualified, so it can deliberately name a singleton conductor
+with exactly the generated spelling. KiCad still generates that spelling for a
+truly disconnected pin when an identically spelled global label exists elsewhere.
+Label text anywhere in the hierarchy is therefore never evidence. When a native
+singleton carries a generated no-connect spelling that some captured global label
+also uses, the check reads the sheet file that owns the native component with the
+existing bounded S-expression reader. The native component UUID must resolve to
+exactly one source symbol whose hierarchical instance reference and `lib_id`
+match the XML. The pin connection point comes from the embedded library pin,
+rotated counterclockwise by 0, 90, 180 or 270 degrees and then mirrored about
+`x` or `y`. All twelve orientations are checked against kicad-cli 10.0.7. The
+result has three states:
+
+- **Connected.** The label is exactly on the visible pin, or exactly on a wire
+  reached through exact shared wire endpoints or junctions on both wires. The
+  conductor is kept and the report cites the label, its position, UUID and route
+  wires. Unmodelled items elsewhere in the file cannot break such an exact route.
+- **Disconnected.** No such route exists, every top-level item in that sheet file
+  is a modelled kind, and the conservative closure contains only wires, junctions
+  and no-connect markers. That closure joins every item within 10 µm of the pin
+  or of an item already joined. The label is reported as not reaching the pin,
+  and the pin stays disconnected.
+- **Unknown.** Every other case. This includes labels, sheet pins, hierarchical
+  ports, directive labels, buses, bus entries or other pins within the margin.
+  It also includes unmodelled item kinds, coordinates finer than the native
+  100 nm unit, oblique rotations, `extends` symbols and hidden or `no_connect`
+  pins. Multi-unit components whose native UUIDs resolve to several placed
+  symbols are also unknown.
+
+kicad-cli connects labels lying within about one native unit of a wire. It does
+not connect a pin lying inside a wire or a wire ending inside another wire
+without a junction. Those cases and slightly offset labels are deliberately
+unknown, not proved either way. An unknown pin is judged under both hypotheses.
+A predicate that fails even if the label connects, such as `same_net` with a
+singleton or a `named_net` that does not list the spelling, is a violation.
+Otherwise the predicate is `not_evaluated`, so the check is `unsupported/unknown`.
+Global-label connectivity through hierarchical ports is outside this qualified
+domain.
 
 R/C/L, ferrites, zero-ohm resistors, jumpers and semiconductors never merge native
 conductors. A declared load/testpoint is an explicitly named component, not a
@@ -118,7 +156,13 @@ The original synthetic corpus commits its requirements, contract and expected
 mutation violations before native runs. Strict native tests exercise load/probe
 deletion, depopulation, swapped pins, disconnection, explicit rename aliases,
 unsupported mappings, seal tamper and a legitimate resistor repair with a loaded
-ngspice response. Scripted independent initial reviews and central adjudication
+ngspice response. Global-label qualification tests cover the off-pin label at
+(140, 80) that the independent review reproduced. They also cover direct, wired,
+junction and interior-wire labels; junctionless tees; pins inside wires; labels
+offset by one native unit, 1 µm and 10 µm; sub-unit coordinates; all twelve pin
+orientations; and child-sheet, root-sheet and hierarchical-port scoping. Wired,
+unproven and orientation cases first check native kicad-cli connectivity with an
+ordinary label at the same point. Scripted independent initial reviews and central adjudication
 test evidence authority; they do not establish live-model reliability or physical
 validation. Undeclared topology is outside this contract's coverage.
 

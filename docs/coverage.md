@@ -93,7 +93,10 @@ The [hardware interface check](hardware-interface.md) evaluates captured owner
 predicates over full native schematic terminal inventory and direct conductors.
 Unknown mappings yield incomplete coverage. It protects only declared identities,
 population, exact values and net relations; it never infers obligations or treats
-R/C/L as shorts. Physical access, PCB routing and transfer behavior need separate checks.
+R/C/L as shorts. A global label spelled like a generated no-connect name preserves
+a singleton conductor only with exact source-geometry proof; text elsewhere is
+not evidence, and geometry outside the qualified domain is unknown. Physical
+access, PCB routing and transfer behavior need separate checks.
 
 ## Input and packet choices
 
