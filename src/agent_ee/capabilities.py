@@ -15,7 +15,8 @@ from .storage import identity
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules',
+                   'fab_profile'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -262,6 +263,12 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = descriptor['predicates']
         elif kind == 'routing_rules':
             from .routing_rules import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'fab_profile':
+            from .fab_profile import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)

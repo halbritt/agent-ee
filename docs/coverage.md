@@ -409,6 +409,16 @@ defect, even if a supported constraint failed. Impedance has no qualified solver
 Public pipeline tests use native tools with scripted reviewer transport; they do
 not establish physical qualification or live-model detection performance.
 
+## Captured fabricator profiles
+
+The [fab profile check](fab-profile.md) binds each limit to a captured source
+quote and one conjunctive fabrication requirement. Quote occurrence is not proof
+that the typed value is correct, authentic or applicable. Board size and edge
+clearance need one simple straight-segment outline; size uses fixed saved axes.
+A missing, flat or crossing outline, a curved outline or a cutout is unknown.
+SMT support means only that saved SMD pads are present. Only owned synthetic
+profiles are tested; no real fabricator standard is qualified.
+
 ## Offline catalog and part-selection preparation
 
 [Catalog capture](catalog.md) checks snapshot integrity and rederives normalized

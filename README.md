@@ -131,6 +131,10 @@ not establish that the declared clearance or track-width values are suitable.
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
+The [fab profile check](docs/fab-profile.md) runs captured, source-cited
+fabrication limits through the same native rules. It also compares layer count
+and outline size with the saved board and lists legal surcharged features
+separately. No real fabricator preset is supplied or qualified.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. [Part selection](docs/part-selection.md)

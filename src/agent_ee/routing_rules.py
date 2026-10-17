@@ -32,8 +32,10 @@ def number(value, label, *, integer=False):
 
 
 def rule_text(name, condition, constraint):
-    return ('(version 1)\n' + f'(rule "{name}"\n'
-            + f'  (condition {json.dumps(condition, ensure_ascii=False)})\n  (constraint {constraint}))\n')
+    # A None condition (board-wide fabrication limits) emits no condition clause.
+    predicate = ('' if condition is None else
+                 f'  (condition {json.dumps(condition, ensure_ascii=False)})\n')
+    return '(version 1)\n' + f'(rule "{name}"\n' + predicate + f'  (constraint {constraint}))\n'
 
 
 def compile_constraint(spec):
@@ -143,6 +145,18 @@ def load_document(path):
         raise ValueError(f'cannot read captured routing contract: {exc}') from exc
 
 
+def native_rule_inputs(scope, files, inputs):
+    """Captured board project/custom-rule criteria copied into native staging."""
+    captured_file(inputs, files, scope['board'])
+    sidecars = []
+    for suffix in ('.kicad_pro', '.kicad_dru'):
+        sidecar = str(PurePosixPath(scope['board']).with_suffix(suffix))
+        if sidecar in files:
+            captured_file(inputs, files, sidecar)
+            sidecars.append(sidecar)
+    return sidecars
+
+
 def capability(params, scope, files, inputs, cid=None):
     if set(params) != {'routing_rules'}:
         raise ValueError('routing check requires only routing_rules')
@@ -150,12 +164,7 @@ def capability(params, scope, files, inputs, cid=None):
     path = captured_file(inputs, files, params['routing_rules'])
     compiled = compile_routing(load_document(path))
     validate_mappings(compiled['constraints'], scope, files, cid)
-    immutable = [params['routing_rules']]
-    for suffix in ('.kicad_pro', '.kicad_dru'):
-        sidecar = str(PurePosixPath(scope['board']).with_suffix(suffix))
-        if sidecar in files:
-            captured_file(inputs, files, sidecar)
-            immutable.append(sidecar)
+    immutable = [params['routing_rules'], *native_rule_inputs(scope, files, inputs)]
     return {'compiled': compiled, 'immutable_inputs': immutable,
             'predicates': ['routing:' + c['id'] for c in compiled['constraints']
                            if c['execution'] == 'ready']}
@@ -188,7 +197,8 @@ def run_compiled(ctx, compiled, source):
             raise CheckError('malformed', 'native rules result coverage mismatch')
     except (ValueError, KeyError, TypeError, OSError, json.JSONDecodeError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
-    complete = all(r['execution'] == 'ok' and r['status'] in ('satisfied', 'violation')
+    # extra_charge is a proved legal fabrication surcharge, never a defect.
+    complete = all(r['execution'] == 'ok' and r['status'] in ('satisfied', 'violation', 'extra_charge')
                    for r in records)
     violations = [r['id'] for r in records if r['status'] == 'violation']
     write_json(ctx.work / 'rules-evaluation.json', {

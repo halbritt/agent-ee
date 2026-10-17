@@ -144,8 +144,12 @@ def probe_board(path, constraints):
     import pcbnew
     board = pcbnew.LoadBoard(str(path))
     nets = sorted({net for c in constraints for net in c.get('nets', [])})
-    return {'pcbnew_version': pcbnew.Version(), 'board_sha256': digest(path),
-            'routes': {n: route_coverage(board, n) for n in nets}}
+    probe = {'pcbnew_version': pcbnew.Version(), 'board_sha256': digest(path),
+             'routes': {n: route_coverage(board, n) for n in nets}}
+    if any(c.get('kind') == 'fab' for c in constraints):
+        from .fab_profile import native_inventory
+        probe['fabrication'] = native_inventory(path)
+    return probe
 
 
 def stage_board(source, directory, constraint):
@@ -156,6 +160,8 @@ def stage_board(source, directory, constraint):
     project = json.loads(pro.read_text(encoding='utf-8')) if pro.is_file() else {}
     settings = project.setdefault('board', {}).setdefault('design_settings', {})
     settings['drc_exclusions'] = []
+    # Only fabrication limits stage board minima; routing keeps captured settings.
+    settings.setdefault('rules', {}).update(constraint.get('project_rules', {}))
     severities = settings.setdefault('rule_severities', {})
     for kind in [*constraint['native_types'], 'items_not_allowed']:
         severities[kind] = 'error'
@@ -178,6 +184,9 @@ def run_constraint(source, root, constraint, probe):
     record.update(status='not_evaluated', execution='unsupported')
     if constraint['execution'] != 'ready':
         return {**record, 'reason': constraint['reason']}
+    if 'geometry' in constraint:
+        from .fab_profile import evaluate_geometry
+        return evaluate_geometry(constraint, probe['fabrication'])
     directory = root / constraint['id']
     target = stage_board(source, directory, constraint)
     record['rules_sha256'] = digest(target.with_suffix('.kicad_dru'))
@@ -240,6 +249,10 @@ def main(argv=None):
     native = root / 'native-rules'
     native.mkdir()
     records = [run_constraint(source, native, c, probe) for c in constraints]
+    if any(c.get('kind') == 'fab' for c in constraints):
+        from .fab_profile import classify_preferred
+        # The inventory gates edge clearance: no qualified outline proves nothing.
+        records = classify_preferred(records, probe['fabrication'])
     write_json(root / 'rule-results.json', {'schema': 'agent-ee.native-rules-result/1',
                                            'constraints': records})
     return 0
