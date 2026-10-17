@@ -9,3 +9,9 @@ an instance-specific predicate without an immutable UUID anchor is unknown when
 multiple mappings exist. Multiset exactly rejects extra or missing resistors;
 at_least rejects missing but permits extras. Exhausted search never passes.
 These are owned synthetic logical expectations, not observed KiCad output.
+
+Explicit no-connect pins are accounted outside resolved nets. A native generated
+unconnected singleton carrying `pintype=...+no_connect` may be ignored only for a
+compatible declared no-connect physical pin. An unmarked off-pin label singleton
+must remain a missing binding. Declaring NC on port3 and shunt2, with no ground
+net, is a valid two-net topology and must pass an actual native export.
