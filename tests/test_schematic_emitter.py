@@ -225,7 +225,7 @@ class RefusalTests(unittest.TestCase):
         # VO moved onto VI's connection point: two pins would be shorted.
         vo = '(pin power_out line\n\t\t\t\t(at 7.62 0 180)'
         variant(vo, vo.replace('7.62 0', '-7.62 0'), 'impossible_pin_endpoint')
-        variant(vo, vo.replace('7.62 0', '7.6 0'), 'unlocatable_pin')
+        variant(vo, vo.replace('7.62 0', '7.600001 0'), 'unlocatable_pin')
         body = '(symbol "REG3_0_1"\n'
         variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 6)\n'
                 '\t\t\t\t(end 5.08 5.08)\n\t\t\t)\n', 'unsupported_graphic')

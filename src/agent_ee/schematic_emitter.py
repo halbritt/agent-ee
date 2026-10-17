@@ -30,7 +30,7 @@ SCH_VERSION = '20260306'
 GENERATOR = 'agent-ee-schematic-emitter'
 GENERATOR_VERSION = '10.0'
 GRID = 2540000          # Symbol anchors (nm).
-CONNECTION_GRID = 1270000  # Pin endpoints must land on KiCad's 50 mil grid.
+CONNECTION_GRID = 100  # Exact native schematic coordinate lattice (nm).
 FONT = 1270000
 # Landscape paper, smallest first: (name, width_nm, height_nm).
 PAPERS = (('A4', 297000000, 210000000), ('A3', 420000000, 297000000),
@@ -376,7 +376,7 @@ def _plan(resolved, captured, intent_libraries, transforms):
                     raise EmissionError('unlocatable_pin', 'pin geometry disagrees with captured context',
                                         unit_location)
                 if pin['x_nm'] % CONNECTION_GRID or pin['y_nm'] % CONNECTION_GRID:
-                    raise EmissionError('unlocatable_pin', 'pin endpoint is off the 1.27 mm connection grid',
+                    raise EmissionError('unlocatable_pin', 'pin endpoint is not representable on the native 100 nm lattice',
                                         unit_location + '/pins/' + pin['number'])
             bbox = context['bbox_by_unit'].get(str(unit))
             if not bbox or bbox['coverage'] != 'complete':
