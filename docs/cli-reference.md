@@ -171,10 +171,9 @@ campaign is active. See [history verification](campaign-guide.md#retained-files-
 Both require an existing target, an `agent-ee.bench/1` report, a fresh `--out`
 directory, and optional `--max-seconds` (default 1200). Neither accepts a new
 review-profile flag. Campaign continuation passes its captured campaign profile.
-Standalone `bench-review` preserves an embedded scope `review_profile`, but the
-current implementation does not forward an external `--profile FILE` from the
-source run. With only an external profile, calibrated checks run but the fresh
-adversarial review is incomplete because no reviewer profile is supplied.
+Standalone `bench-review` preserves the captured scope `review_profile`, including
+a profile originally supplied through `--profile FILE`. Capture embeds the parsed
+external profile in that scope; bench re-entry does not reload its original path.
 Physical data must identify that candidate and match executed metric contracts.
 
 `bench-review RUN REPORT --out NEW` captures the bundle, registers feedback on

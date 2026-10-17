@@ -30,12 +30,12 @@ Before submitting a report:
    `ideal-unloaded-1.0V-step-at-1.0ms`; read the actual check JSON rather than
    constructing this string by assumption.
 
-Current standalone limitation: `bench-review` retains an embedded scope
-`review_profile`, but does not forward a source run's external `--profile FILE`.
-Use an embedded profile when preparing a standalone source run for bench feedback.
-If only an external profile was used, ingestion can supersede old acceptance and
-execute calibrated checks, but the new adversarial review remains incomplete.
-Campaign continuation explicitly passes its captured campaign profile.
+Standalone `bench-review` retains the source candidate's captured `review_profile`.
+This includes profiles originally supplied through `--profile FILE`: capture
+embeds their parsed content in the candidate scope, which bench re-entry copies.
+It does not reload the external profile file. Campaign continuation explicitly
+passes its captured campaign profile. Neither bench command offers a new profile
+override; provider availability and fresh review execution are still required.
 
 Commands below require an existing run/campaign and an intentionally prepared
 report. The output directory must be new:

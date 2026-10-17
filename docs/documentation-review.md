@@ -39,7 +39,7 @@ Neither reviewer wrote the documentation during this task.
 | --- | --- |
 | Fable initial, Cairn `6fcc63a0-401f-4683-b617-6f66161f02a4` v1 | Corrected result-tree omissions, empirical outcome projection, scope/2 witness refusal and accepted-check restrictions, packet baseline placement, check ceilings/calibration, diagnostics, navigation and budget ranges. |
 | Argon initial, Cairn `4f4896fb-65d5-4ffb-8c35-03a9baefb3ee` v1 | Updated module/test inventories and interface signatures, packet ordering, result contracts, sandbox role matrix, optional tool inputs, exhausted feedback behavior, retry collisions and current reproduction routes. Suggested diagrams were checked against source rather than copied as authority. |
-| Fable final, Cairn `343c49ad-9e8d-49ca-b271-92f561513d76` v1 | Confirmed prior corrections and new guide contracts. Found one remaining profile-propagation error: standalone bench review does not forward a source run's external profile. Corrected the CLI, profile and bench guides to state the actual limitation. Also made producer artifact location wording exact. Fable independently reported 98 passing tests. |
+| Fable final, Cairn `343c49ad-9e8d-49ca-b271-92f561513d76` v1 | Confirmed prior corrections and new guide contracts. Reported a profile-propagation error and prompted corresponding guide edits. Subsequent source inspection and a focused execution disproved that report: capture embeds external profile content in the scope, and bench re-entry preserves it. The guide edits have been corrected. Also made producer artifact location wording exact. Fable independently reported 98 passing tests. |
 | Argon final, Cairn `eb56c299-5bb3-4b77-804a-f64c893d0287` v1 | Found no remaining material error in diagram semantics, state/epoch transitions, convergence, leases or provenance. Its cosmetic heading overlap was already fixed and rerendered; added optional external-profile fields to the candidate table as suggested. |
 
 ## Verification
@@ -68,17 +68,20 @@ are the maintained diagrams.
 
 ## Implementation limits made explicit
 
-This audit found two current execution limitations and documented them without
-changing implementation behavior:
+This audit documented the following execution observations without changing
+implementation behavior. The second observation was subsequently corrected:
 
 1. RC deck validation defaults an omitted `step_v`, but metric-condition creation
    reads the original parameter directly. With measurements requested, specify
    `step_v` explicitly to avoid a post-simulation `KeyError`. A real native run
    reproduced the error in `build/docs-verification/omitted-step-run/`.
-2. Standalone `bench-review` preserves an embedded `review_profile` but does not
-   propagate an external source-run `--profile FILE`. In that case calibrated
-   checks can run and old acceptance can be superseded, while the new adversarial
-   review remains incomplete. Campaign continuation supplies its captured profile.
+2. **Correction:** standalone `bench-review` preserves external profiles too.
+   `capture` embeds their parsed content in `candidate.json` under
+   `scope.review_profile`; `bench_review` copies that scope into the new review.
+   A focused execution exercised real capture and bench scope assembly, with
+   ingestion, verification, result persistence and new review execution stubbed.
+   It confirmed profile continuity, not live provider or physical validation.
+   The earlier missing-profile claim was a source-reading error.
 
 An entirely unbounded native RC check does not invoke empirical correction.
 Parser/model qualification, instrument authenticity and physical coverage remain

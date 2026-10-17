@@ -144,9 +144,10 @@ coordinator checks with prose. The adjudicator can accept only executable check
 findings under that contract; see [scope/2 decisions](result-reference.md#version-2-witnesses-and-evidence-seal).
 
 Campaign feedback passes its captured campaign profile. Standalone `bench-review`
-preserves only an embedded scope profile; it currently does not forward an
-external source-run `--profile FILE`, leaving the fresh review incomplete in that
-case. The bench commands have no profile override flag. Initial reviewers receive tool-only empirical source
+preserves the source candidate's captured profile, including one supplied through
+`--profile FILE`: capture embeds its parsed content in the scope. Bench re-entry
+does not reload the external file. The bench commands have no profile override
+flag. Initial reviewers receive tool-only empirical source
 predictions and raw samples, without prior reviewer judgments. The implementation
 agent alone receives the broader campaign convergence history when further
 repair is allowed.
