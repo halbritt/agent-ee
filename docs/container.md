@@ -75,7 +75,7 @@ Before using the image on an AppArmor host, run
 load or replace the project-owned [named profile](../docker/agent-ee.apparmor) and prints the name to pass
 to Docker. It requires AppArmor 4 syntax support and passwordless permission for that
 command; otherwise it
-fails. The profile remains installed for later runs and applies only to
+fails. The profile is managed by this helper, remains installed for later runs, and applies only to
 containers that select it. It does not modify other profiles or global sysctls.
 When host AppArmor is disabled, the helper prints `unconfined` instead. The
 helper assumes a local Linux Docker daemon, not a remote daemon.

@@ -55,7 +55,9 @@ requirements, checks and models.
 1. **Define the engineering question.** A scope selects the native design files,
    dependencies, requirements, operating conditions and acceptance checks.
    Scope/2 binds requirements, target specifications and reference architecture
-   sources into an immutable baseline.
+   sources into an immutable baseline. Opt-in scope/3 also refuses acceptance
+   requirements that have no configured executable check; informational checks
+   cannot stand in for missing acceptance coverage.
 2. **Capture one design candidate.** Inputs are copied and hashed. Every check
    and review refers to those exact bytes, including selected uncommitted files.
 3. **Produce tool evidence.** KiCad, ngspice and configured measurement tools
@@ -65,7 +67,7 @@ requirements, checks and models.
    the same candidate, requirements and check evidence. They cannot read each
    other's initial judgments. The two calls run concurrently in separate
    contexts and workspaces; adjudication waits for both to settle.
-5. **Adjudicate centrally.** Findings get explicit dispositions. Under scope/2,
+5. **Adjudicate centrally.** Findings get explicit dispositions. Under scope/2 and scope/3,
    an accepted defect must be a coordinator check finding backed by sealed
    evidence and a mapped requirement violation. Reviewer hypotheses need
    reproduction or remain concerns; agreement alone cannot establish a defect.
