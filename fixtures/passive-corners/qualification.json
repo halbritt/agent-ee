@@ -1,0 +1,30 @@
+{
+  "at_ms": [
+    0.1,
+    5.0
+  ],
+  "initial_v": 0.0,
+  "max_analyses": 5,
+  "max_corners": 4,
+  "max_step_s": 1e-06,
+  "model_sha256": "9dcecbb83cf888cfc019f2c6445f53aa690f698ebbdabc1636ada09da9a44037",
+  "numerical_relative_v": 0.0001,
+  "oracle": "positive-step endpoint monotonicity; per-analysis ideal-step error bound",
+  "parser_sha256": "d5a09186961e143995849c4fa2ec7e9c71195c38129b3b0ff307fa0b5601f103",
+  "policy": "unloaded-first-order-rc/1",
+  "ramp_s": 1e-09,
+  "schema": "agent-ee.passive-corners/1",
+  "step_v": [
+    0.1,
+    5.0
+  ],
+  "stop_ms": 5.0,
+  "tau_s": [
+    0.0001,
+    0.01
+  ],
+  "timeout_s": 30,
+  "tool": "/usr/bin/ngspice",
+  "tool_sha256": "820658317b0b54035208da41936fd6871ce924036e5ea4113a4168b821b7fc45",
+  "tool_version": "ngspice-42"
+}

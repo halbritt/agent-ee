@@ -101,7 +101,9 @@ model or acquire measurements from instruments.
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
 [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
-and an ideal passive R/C/L transient simulation through ngspice. A separate
+and an ideal passive R/C/L transient simulation through ngspice. An optional
+[qualified RC tolerance check](docs/passive-corners.md) retains complete endpoint
+ensembles for one unloaded first-order topology. A separate
 [captured active-device check](docs/active-spice.md) supports explicit subcircuit
 pin bindings and declared transient/AC measurements. Its committed control model
 is synthetic; vendor-model qualification and publication rights are separate

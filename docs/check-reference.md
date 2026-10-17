@@ -277,3 +277,9 @@ inside the common completion image remains separate.
 schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
+
+## Qualified passive tolerance endpoints
+
+See [passive corners](passive-corners.md) for the optional `passive_corners`
+contract, supported topology, immutable qualification inputs, bounded ensemble,
+retained per-corner evidence and empirical-transfer refusal.

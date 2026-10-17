@@ -12,6 +12,7 @@ product's hardware qualification.
 | Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
+| Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
 | Ingest bench samples and calibrate subsequent verification | [Bench feedback](bench-feedback.md) |
 | Install, authenticate, upgrade or remove links | [Installation](installation.md) |
 | Build the pinned image, run checks in CI or use the GitHub Action | [Container image and CI action](container.md) |
