@@ -819,6 +819,7 @@ from .library_checks import check_footprint_assignment
 from .symbol_checks import check_symbol_pins
 from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
+from .fab_export import check_fab_export
 
 
 CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
@@ -828,7 +829,8 @@ CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_f
                "drc": check_drc, "netlist": check_netlist,
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
-               "passive_corners": check_passive_corners, "dc_path": check_dc_path}
+               "passive_corners": check_passive_corners, "dc_path": check_dc_path,
+               "fab_export": check_fab_export}
 
 
 # ------------------------------------------------------------------ entry point

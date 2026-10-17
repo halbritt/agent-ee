@@ -83,6 +83,7 @@ context; they are not substitutes for the current references above.
 [PCB DC path resistance](dc-path.md) specifies the optional native endpoint-only
 conduction model, explicit material contracts and independent owned oracles.
 
+- [JLCPCB fab package export](fab-export.md) — sandboxed `kicad-cli` Gerbers, drills, BOM, CPL and a board-bound manifest; no rotation policy or consistency gate.
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
 - [Placement geometry](placement.md) and [initial placement](placer.md) — saved-board polygon checks and an isolated proposal writer; campaign gate integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.

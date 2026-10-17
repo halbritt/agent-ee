@@ -1,0 +1,54 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Owned fab export control",
+  "scope": "Synthetic 2-layer board and schematic; exercises fab package generation only.",
+  "schematic": "design/fab.kicad_sch",
+  "board": "design/fab.kicad_pcb",
+  "inputs": [
+    {
+      "path": ".",
+      "at": "design",
+      "include": [
+        "fab.kicad_sch",
+        "fab.kicad_pcb",
+        "fab4.kicad_pcb",
+        "requirements.md"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "fab",
+      "kind": "fab_export",
+      "params": {
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-fab",
+        "statement": "The captured board yields a complete JLCPCB fab package",
+        "source": {
+          "path": "design/requirements.md",
+          "locator": "R-fab"
+        },
+        "checks": [
+          "netlist",
+          "fab"
+        ]
+      }
+    ],
+    "targets": [
+      "design/requirements.md"
+    ],
+    "reference_architectures": [
+      "design/requirements.md"
+    ]
+  }
+}

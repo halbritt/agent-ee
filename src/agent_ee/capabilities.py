@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'fab_export'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -287,6 +287,16 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in dependencies:
                 captured(path, immutable=True)
             result['predicates'] = bounds(limits(contract))
+        elif kind == 'fab_export':
+            from .fab_export import capability
+            descriptor = capability(params)
+            prerequisite(params['netlist_check'], ('netlist',))
+            captured(scope.get('board'))
+            captured(scope.get('schematic'))
+            project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))
+            if project in files:
+                captured(project, immutable=True)
+            result['predicates'] = descriptor['predicates']
         elif kind == 'measurements':
             result['predicates'] = _measurements(params, captured)
         elif kind == 'coupled_margins':
