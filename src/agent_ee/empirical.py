@@ -8,7 +8,7 @@ from .candidate import safe_relative
 from .storage import digest, identity, read_json, write_json
 
 
-def calibration_for(run, scope, files):
+def calibration_for(run, scope, files, *, provenance_only=False):
     path = scope.get("empirical")
     if path is None:
         return None
@@ -16,7 +16,7 @@ def calibration_for(run, scope, files):
     if path not in files:
         raise ValueError("empirical calibration must be a captured input")
     bundle = read_json(Path(run) / "inputs" / path)
-    if bundle.get("schema") != "agent-ee.calibration/1":
+    if bundle.get("schema") not in ("agent-ee.calibration/1", "agent-ee.calibration/2"):
         raise ValueError("expected agent-ee.calibration/1")
     from .baseline import load_baseline
     baseline = load_baseline(run)
@@ -28,6 +28,12 @@ def calibration_for(run, scope, files):
     for rel, sha in bundle["model_inputs"].items():
         if files.get(rel) != sha:
             raise ValueError("calibration model applicability changed; new bench evidence required")
+    if bundle['schema'] == 'agent-ee.calibration/2':
+        from .applicability import validate_bundle, evaluate
+        validate_bundle(Path(run) / 'inputs', bundle, baseline)
+        return bundle if provenance_only else evaluate(bundle, files, baseline, path)
+    if scope.get('schema') == 'agent-ee.scope/3':
+        raise ValueError('strict applicability requires calibration/2 migration')
     validate_observations(Path(run) / "inputs", bundle)
     return bundle
 
@@ -52,7 +58,8 @@ def validate_observations(inputs, bundle):
         if source["candidate_id"] != observation["candidate_id"] or report["candidate_id"] != source["candidate_id"]:
             raise ValueError("calibration source candidate mismatch")
         check = next((c for c in source["checks"] if c["id"] == observation["check_id"]), None)
-        if check is None or check["execution"] != "ok":
+        from .applicability import source_prediction
+        if check is None or not source_prediction(check):
             raise ValueError("calibration lacks executed source prediction")
         metric = check["details"]["metrics"][observation["metric"]]
         prediction = finite(metric.get("nominal", metric["value"]), "prediction")
@@ -71,7 +78,11 @@ def validate_observations(inputs, bundle):
 def calibrate(ctx, metrics):
     from .measurements import finite
 
-    bundle = calibration_for(ctx.run_dir, ctx.scope, ctx.manifest["files"])
+    from .applicability import ApplicabilityUnavailable, unavailable
+    try:
+        bundle = calibration_for(ctx.run_dir, ctx.scope, ctx.manifest["files"])
+    except ApplicabilityUnavailable as exc:
+        unavailable(ctx, metrics, exc.diagnostic)
     if bundle is None:
         return metrics
     calibrated = copy.deepcopy(metrics)
@@ -138,10 +149,14 @@ def ingest(run, report_path, out):
     checks = {c["id"]: c for c in result["checks"]}
     specs = {c["id"]: c for c in manifest["scope"]["checks"]}
     observations, models = [], {}
+    from .applicability import OBSERVATION_FIELDS
     for item in report["observations"]:
+        if not isinstance(item, dict) or set(item) != OBSERVATION_FIELDS:
+            raise ValueError('invalid bench observation fields')
         cid, name = item["check_id"], item["metric"]
         check = checks[cid]
-        if check["execution"] != "ok" or specs[cid]["kind"] not in ("measurements", "rc_transient"):
+        from .applicability import source_prediction
+        if not source_prediction(check) or specs[cid]["kind"] not in ("measurements", "rc_transient"):
             raise ValueError("bench observation requires an executed measurement adapter")
         metric = check["details"]["metrics"][name]
         prediction = finite(metric.get("nominal", metric["value"]), "nominal prediction")
@@ -186,7 +201,17 @@ def ingest(run, report_path, out):
     prediction_copy = out / "predictions.json"
     # Initial reviewers may inspect empirical inputs. Retain tool facts only;
     # prior reviewer judgments and adjudication prose must not cross epochs.
-    write_json(prediction_copy, {"candidate_id": manifest["candidate_id"],
+    from .applicability import design_inputs, derivation, obligation
+    parent_bundle = calibration_for(run, manifest['scope'], manifest['files'], provenance_only=True)
+    if parent_bundle is not None and parent_bundle['schema'] != 'agent-ee.calibration/2':
+        raise ValueError('legacy calibration requires a fresh uncalibrated source under the new baseline')
+    empirical_paths = set(parent_bundle['artifacts']) | {manifest['scope']['empirical']} if parent_bundle else set()
+    inventory = design_inputs(manifest['files'], baseline['files'], empirical_paths)
+    write_json(prediction_copy, {'schema': 'agent-ee.predictions/2',
+        "candidate_id": manifest["candidate_id"], 'scope': manifest['scope'], 'files': manifest['files'],
+        'baseline_id': baseline['baseline_id'], 'baseline_files': baseline['files'],
+        'criteria': baseline['criteria'], 'empirical': manifest['scope'].get('empirical'),
+        'design_inputs': inventory, 'derivation': derivation(),
         "checks": result["checks"], "source_result_sha256": digest(run / "result.json")})
     result_ref = retain_artifact(prediction_copy, out, hashes)
     prediction_copy.unlink()
@@ -197,10 +222,20 @@ def ingest(run, report_path, out):
         if manifest["files"].get(rel) != sha or (rel in models and models[rel] != sha):
             raise ValueError("prior empirical model applicability changed")
     models.update(previous_models)
-    unique = {identity(o): o for o in [*previous_observations, *observations]}
-    bundle = {"schema": "agent-ee.calibration/1", "candidate_id": manifest["candidate_id"],
+    parent = retain_artifact(run / 'inputs' / manifest['scope']['empirical'], out, hashes) if parent_bundle else None
+    for observation in observations:
+        observation.update(applicability={'policy': 'exact-design/1', 'design_inputs': inventory,
+                           'dependency_inventory_id': identity(inventory)},
+                           derivation=derivation(), model_inputs=models)
+    all_observations = [*previous_observations, *observations]
+    required = {obligation(o) for o in all_observations}
+    active = {obligation(o) for o in all_observations if o['applicability']['design_inputs'] == inventory}
+    if active != required:
+        raise ValueError('fresh bench epoch omits required correction obligations')
+    bundle = {"schema": "agent-ee.calibration/2", "parent": parent,
+        "source": result_ref, "report": report_ref, "obligations": sorted(required), "candidate_id": manifest["candidate_id"],
         "baseline_id": baseline["baseline_id"], "source_result_sha256": digest(run / "result.json"),
-        "model_inputs": models, "artifacts": hashes, "observations": list(unique.values())}
+        "model_inputs": models, "artifacts": hashes, "observations": all_observations}
     write_json(out / "calibration.json", bundle)
     return bundle
 
@@ -221,7 +256,7 @@ def retain_artifact(source, out, hashes):
 def merge_previous(run, manifest, result, baseline, out):
     bundles = []
     if manifest["scope"].get("empirical"):
-        bundle = calibration_for(run, manifest["scope"], manifest["files"])
+        bundle = calibration_for(run, manifest["scope"], manifest["files"], provenance_only=True)
         bundles.append((bundle, run / "inputs/empirical"))
     for event in result.get("empirical_feedback", []):
         root = Path(event["bundle"])
@@ -266,8 +301,22 @@ def bench_review(run, report, out, max_seconds, *, review_out=None):
         save_result(run, original)
         manifest = read_json(run / "candidate.json")
         scope = copy.deepcopy(manifest["scope"])
-        scope["inputs"] = [{"path": str(p), "at": p.name} for p in sorted((run / "inputs").iterdir()) if p.name != "empirical"]
-        scope["inputs"].append({"path": str(out / "empirical"), "at": "empirical"})
+        # Replace only the verified closure. Unclassified files, even under
+        # empirical/, remain design dependencies across bench epochs.
+        staged = out / 'candidate-inputs'
+        shutil.copytree(run / 'inputs', staged)
+        previous = calibration_for(run, manifest['scope'], manifest['files'], provenance_only=True)
+        owned = set(previous['artifacts']) | {manifest['scope']['empirical']} if previous else set()
+        for rel in owned:
+            (staged / rel).unlink()
+        for source in (out / 'empirical').rglob('*'):
+            if source.is_file():
+                target = staged / 'empirical' / source.relative_to(out / 'empirical')
+                if target.exists():
+                    raise ValueError('new empirical evidence overlaps a design dependency')
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+        scope["inputs"] = [{"path": str(p), "at": p.name} for p in sorted(staged.iterdir())]
         scope["empirical"] = "empirical/calibration.json"
         write_json(out / "scope.json", scope)
         return run_review(out / "scope.json", review_out, max_seconds, previous=str(run))

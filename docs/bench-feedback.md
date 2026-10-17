@@ -8,7 +8,7 @@ raw samples, prototype identity, measurement procedure and instrument provenance
 Use `bench-review` for a standalone run. Use `campaign-feedback` to continue an
 accepted [campaign](campaign-guide.md) under updated empirical knowledge.
 The implementation is [empirical.py](../src/agent_ee/empirical.py); it supports
-metrics from `measurements` and scope/2 `rc_transient` checks.
+metrics from `measurements` and scope/2 or scope/3 `rc_transient` checks.
 
 ## Admission and commands
 
@@ -19,7 +19,11 @@ Before submitting a report:
 2. Ensure the source run passes snapshot/policy/runtime/evidence verification.
    Its original live source can have moved; ingestion uses snapshot verification.
 3. Use an executed measurement check with the required metric. Its execution
-   must be `ok`; the measured design can have passed or failed its limits.
+   must be `ok`, or be coordinator-recorded `unavailable` solely because exact
+   calibration applicability failed after a successful nominal measurement.
+   The latter retains `executed-unqualified/1` metrics and a sealed recalibration
+   request; it cannot establish acceptance. The measured design can have passed
+   or failed its limits.
    Native RC checks need at least one bounded measurement to apply empirical
    correction during re-review; an entirely unbounded RC check stays informational.
 4. Declare a nonempty `params.calibration_inputs` list for that check in advance.
@@ -50,7 +54,10 @@ report. The output directory must be new:
 Do not submit the same physical observation through both commands as a way to
 retry a failure. They are alternatives for different orchestration contexts.
 `campaign-feedback` admits a last candidate whose verified campaign state is
-`criteria_satisfied` or `empirical_superseded`. A standalone source run need not
+`criteria_satisfied` or `empirical_superseded`, or an intact `incomplete` run
+whose nonexecuted checks all contain verified exact-applicability requests and
+executed nominal predictions. Arbitrary incomplete states cannot re-enter.
+A standalone source run need not
 have a completed passing adversarial review, provided the required captured
 baseline and executed measurement exist. An unknown measurement cannot calibrate
 another unknown.
@@ -158,16 +165,17 @@ new_upper = new_nominal_prediction + residual_upper
 
 With nominal 5 V and the synthetic 12 ± 1 V observation above, the residual is
 [6, 8] V. The unchanged prediction becomes [11, 13] V and fails a 10 V maximum.
-A later nominal prediction of 1 V becomes [7, 9] V. Both bounds, rather than just
-the displayed midpoint, participate in acceptance.
+A changed design predicting 1 V cannot inherit that correction: it requires
+new observations for its exact dependencies. Both interval bounds, rather than
+just the displayed midpoint, participate in acceptance.
 
 This is an additive discrepancy model local to the declared operating condition
-and unchanged model applicability. It is not parameter fitting, a statistical
-confidence model or a guarantee that the discrepancy transfers across arbitrary
-design changes. The operator must justify that applicability. It does not infer
+and exact captured design/model applicability. It is not parameter fitting or
+a statistical confidence model. No topology similarity or unchanged nominal
+output permits transfer to a different design. It does not infer
 unobserved operating points, new physical faults or missing uncertainty sources.
 
-Repeated observations accumulate. For a metric, the coordinator takes the
+Repeated observations accumulate within the same exact design applicability. For a metric, the coordinator takes the
 smallest corrected lower bound and largest corrected upper bound across retained
 observations; later small discrepancies cannot erase earlier ones. The metric
 retains `nominal`, `lower`, `upper` and midpoint `value`. Existing producer
@@ -181,7 +189,14 @@ intervals. Acceptance limits and normative requirements remain unchanged.
 
 ## Calibration provenance and reviewer independence
 
-`agent-ee.calibration/1` contains:
+New ingestion emits `agent-ee.calibration/2`. Historical `calibration/1` bundles
+retain their scope/1 and scope/2 verification semantics; they cannot gain strict
+scope/3 qualification. Scope/3 reports a migration need. Because upgrading scope
+changes baseline identity, establish a fresh uncalibrated prediction under the
+new baseline and ingest candidate-linked bench observations. Do not relabel old
+bundle baseline IDs.
+
+Both versions contain:
 
 | Field | Meaning |
 | --- | --- |
@@ -200,10 +215,34 @@ prediction record includes tool check facts and the source result digest, but
 excludes reviewer judgments and adjudication prose. This lets fresh initial
 reviewers inspect physical evidence without inheriting previous model opinions.
 
-The generated scope reserves the top-level `empirical` destination for this
-bundle and replaces that destination on subsequent feedback. Do not place
-unrelated native design files there. Keep feedback output directories available:
-prior event bundle paths and new scope source paths can refer to them even after
+Version 2 additionally records the source/report references, parent epoch,
+complete correction obligations, and per-observation exact design inventory,
+model hashes, producer executable hashes and coordinator derivation code identity.
+The source snapshot binds its scope/files, baseline and criteria, tool predictions
+and file partition.
+Retained reports reconstruct the complete observation list; dropping an adverse
+sample or adding an arbitrary artifact to the exclusion set is refused.
+
+The coordinator partitions captured inputs into immutable baseline files,
+validated empirical provenance closure, and every remaining design dependency.
+Only the exact validated content-addressed closure and bundle path are excluded.
+There is no directory prefix exclusion or author omit list. Libraries and
+unclassified inputs count even when the implementation cannot edit them.
+Path additions/removals, component values, connectivity and PCB changes fail the
+exact predicate. Changed raw samples or model identities fail integrity validation.
+
+For a design mismatch, checks retain nominal measurements as unqualified evidence,
+report execution `unavailable` and outcome `unknown`, and write
+`work/CHECK_ID/calibration-applicability.json` and `recalibration-request.json`.
+The request lists changed paths/hashes, source correction identities, current
+candidate/design inventory and missing correction obligations. It is missing
+evidence, not a fabricated defect. New bench observations must cover all prior
+correction obligations for that exact design before calibrated acceptance is
+available again. Old epochs remain retained; their corrections are never widened.
+
+Bench re-entry replaces only the validated closure and preserves other files,
+including unclassified inputs under `empirical/`. Keep feedback output directories
+available: prior event bundle paths and new scope source paths can refer to them even after
 a later candidate has captured copies.
 
 ## Campaign epochs and recovery
@@ -234,3 +273,24 @@ after the next run directory was created can make a second campaign feedback
 attempt collide with that directory. There is no general in-place retry or
 transaction rollback. Preserve the attempt and diagnose the stage; do not delete
 samples, forge a passing old outcome or edit history to force continuation.
+
+## Source consumers and integration seams
+
+`applicability.validate_bundle` reconstructs provenance without testing current
+design applicability. `empirical.calibration_for` uses that closure before
+`applicability.evaluate` selects the exact design class. Generic measurement
+requests use provenance-only validation so their producer can execute a fresh
+nominal prediction. `measurements.finish` applies applicability after production;
+both generic measurements and native RC finishing share that boundary.
+`empirical.ingest` accepts successful predictions or the narrowly marked
+unqualified nominal evidence, retains parent epochs, and enforces complete
+obligations. `campaign_feedback` verifies the sealed request before admitting
+an incomplete campaign. Existing writer leases cover ingestion and continuation;
+initial reviewer scheduling and centralized adjudication are unchanged.
+
+Base `bced40f` has no AGENTEE-18 facts handler or AGENTEE-19 active
+SPICE handler. Their future integration must declare capability descriptors and
+immutable source/model dependencies, and route any calibrated numeric consumer
+through the same post-production finishing boundary. Execution registration or
+facts verification alone must not grant calibrated acceptance. No coverage for
+those absent handlers is claimed here.

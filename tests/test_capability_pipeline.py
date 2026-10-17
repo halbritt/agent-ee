@@ -156,3 +156,45 @@ pcbnew.SaveBoard(p, b)
                         validate_witnesses(root / 'run', [{'requirement_id': 'R-response', 'check_id': 'rc-step'}],
                             [{'path': 'checks/rc-step.json', 'locator': 'outcome'}])
                 self.assertEqual(digest(ORACLE), self.oracle_hash)
+
+    def test_native_rc_calibration_refuses_changed_component_and_keeps_fresh_prediction(self):
+        from agent_ee.empirical import bench_review
+        root = self.prepare('calibration')
+        scope = read_json(root / 'scope.json')
+        scope['checks'] = [c for c in scope['checks'] if c['kind'] in ('netlist', 'rc_transient')]
+        scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements']
+                                             if r['id'] in ('R-response', 'I-netlist')]
+        response = next(c for c in scope['checks'] if c['kind'] == 'rc_transient')
+        response['params']['calibration_inputs'] = ['requirements/system.md']
+        write_json(root / 'scope.json', scope)
+        with patch('agent_ee.reviewers.reviewer_call', side_effect=self.agent), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(root / 'scope.json', root / 'source', 180), 0)
+            original = verify(root / 'source')
+            metric = next(c for c in original['checks'] if c['id'] == 'rc-step')['details']['metrics']['vout_1ms']
+            sample = {'check_id': 'rc-step', 'metric': 'vout_1ms', 'value': metric['value'],
+                      'uncertainty': 0, 'unit': metric['unit'], 'condition': metric['condition']}
+            write_json(root / 'raw.json', {'samples': [sample]})
+            write_json(root / 'bench.json', {'schema': 'agent-ee.bench/1',
+                'candidate_id': original['candidate_id'], 'prototype': 'synthetic native test',
+                'instrument': 'synthetic', 'instrument_calibration': 'none; test fixture',
+                'procedure': 'coordinator replay test, not bench validation', 'observed_utc': '2026-10-17',
+                'artifacts': [{'path': 'raw.json', 'sha256': digest(root / 'raw.json')}],
+                'observations': [{**sample, 'artifact': 'raw.json', 'locator': '0'}]})
+            self.assertEqual(bench_review(root / 'source', root / 'bench.json', root / 'calibrated', 180), 0)
+            calibrated = verify(root / 'calibrated/review')
+            replay = next(c for c in calibrated['checks'] if c['id'] == 'rc-step')['details']['metrics']['vout_1ms']
+            self.assertEqual((replay['lower'], replay['upper']), (metric['value'], metric['value']))
+            changed_scope = read_json(root / 'calibrated/scope.json')
+            schematic = root / 'calibrated/candidate-inputs/project/rc_filter.kicad_sch'
+            self.assertIn('"10k"', schematic.read_text())
+            schematic.write_text(schematic.read_text().replace('"10k"', '"100k"'))
+            write_json(root / 'changed.scope.json', changed_scope)
+            self.assertEqual(run_review(root / 'changed.scope.json', root / 'changed', 180), 1)
+            changed = verify(root / 'changed')
+        check = next(c for c in changed['checks'] if c['id'] == 'rc-step')
+        self.assertEqual((check['execution'], check['outcome']), ('unavailable', 'unknown'))
+        self.assertAlmostEqual(check['details']['metrics']['vout_1ms']['value'],
+                               1 - math.exp(-.001 / (100_000 * 100e-9)), delta=.0001)
+        self.assertTrue((root / 'changed/work/rc-step/recalibration-request.json').is_file())
+        self.assertFalse(any(f.get('status') == 'accepted' for f in changed['findings']))

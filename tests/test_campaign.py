@@ -107,19 +107,25 @@ Path(sys.argv[2]).write_text(json.dumps(report))
 
     @toolchain_test
     def test_campaign_bench_epoch_repairs_without_erasing_original_history(self):
+        self.scope['checks'][0]['params']['limits']['aux'] = {'unit': 'V', 'condition': 'load', 'min': 0, 'max': 10}
+        adapter = self.root / 'source/adapter.py'
+        adapter.write_text(adapter.read_text().replace('"metrics": {"output":',
+            '"metrics": {"aux": {"value": value, "unit": "V", "condition": "load"}, "output":'))
+        write_json(self.root / 'scope.json', self.scope)
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
         first = verify_campaign(self.root / "campaign")
         sample = {"check_id": "response", "metric": "output", "value": 12,
                   "uncertainty": 1, "unit": "V", "condition": "load"}
-        write_json(self.root / "instrument.json", {"samples": [sample]})
+        write_json(self.root / "instrument.json", {"samples": [sample, {**sample, "metric": "aux"}]})
         write_json(self.root / "bench.json", {"schema": "agent-ee.bench/1",
             "candidate_id": first["history"][-1]["candidate_id"], "prototype": "fixture",
             "instrument": "test", "instrument_calibration": "test", "procedure": "test",
             "observed_utc": "2026-10-17T00:00:00Z", "artifacts": [{"path": "instrument.json",
                 "sha256": digest(self.root / "instrument.json")}],
-            "observations": [{**sample, "artifact": "instrument.json", "locator": "0"}]})
+            "observations": [{**sample, "artifact": "instrument.json", "locator": "0"},
+                             {**sample, "metric": "aux", "artifact": "instrument.json", "locator": "1"}]})
         def calibrated_repair(run, label, definition, prompt, schema, timeout, *, cancellation=None):
             reply = self.agent(run, label, definition, prompt, schema, timeout)
             if label == "implementation":
@@ -130,13 +136,42 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 status = campaign_feedback(self.root / "campaign", self.root / "bench.json",
                                            self.root / "feedback", 60)
         state = verify_campaign(self.root / "campaign")
-        self.assertEqual(status, 0, state)
-        self.assertEqual(state["state"], "criteria_satisfied")
-        self.assertEqual([h["epoch"] for h in state["history"]], [0, 1, 1])
-        self.assertEqual(state["history"][0], first["history"][0])
-        self.assertEqual(state["history"][1]["failed"], ["response"])
-        self.assertEqual(state["history"][2]["failed"], [])
-        self.assertEqual(verify(self.root / "campaign/runs/1")["outcome"], "incomplete")
+        self.assertEqual(status, 1, state)
+        self.assertEqual(state['state'], 'incomplete')
+        stale = verify(self.root / 'campaign/runs/3')
+        self.assertEqual(stale['checks'][0]['execution'], 'unavailable')
+        self.assertEqual(stale['checks'][0]['outcome'], 'unknown')
+        self.assertEqual(stale['checks'][0]['details']['metrics']['output']['value'], 1)
+        self.assertEqual(stale['findings'], [])
+        sample.update(value=2, uncertainty=0)
+        write_json(self.root / 'instrument.json', {'samples': [sample]})
+        report = read_json(self.root / 'bench.json')
+        report.update(candidate_id=stale['candidate_id'],
+            artifacts=[{'path': 'instrument.json', 'sha256': digest(self.root / 'instrument.json')}],
+            observations=[{**sample, 'artifact': 'instrument.json', 'locator': '0'}])
+        write_json(self.root / 'bench.json', report)
+        from agent_ee.empirical import ingest
+        with self.assertRaisesRegex(ValueError, 'omits required correction obligations'):
+            ingest(self.root / 'campaign/runs/3', self.root / 'bench.json', self.root / 'omitted-epoch')
+        self.assertNotIn('empirical_feedback', verify(self.root / 'campaign/runs/3'))
+        write_json(self.root / 'instrument.json', {'samples': [sample, {**sample, 'metric': 'aux'}]})
+        report['artifacts'][0]['sha256'] = digest(self.root / 'instrument.json')
+        report['observations'].append({**sample, 'metric': 'aux', 'artifact': 'instrument.json', 'locator': '1'})
+        write_json(self.root / 'bench.json', report)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(campaign_feedback(self.root / 'campaign', self.root / 'bench.json',
+                                               self.root / 'fresh-feedback', 60), 0)
+        state = verify_campaign(self.root / 'campaign')
+        self.assertEqual(state['state'], 'criteria_satisfied')
+        self.assertEqual([h['epoch'] for h in state['history']], [0, 1, 1, 2])
+        self.assertEqual(state['history'][0], first['history'][0])
+        self.assertEqual(state['history'][1]['failed'], ['response'])
+        fresh = verify(self.root / 'campaign/runs/4')
+        metric = fresh['checks'][0]['details']['metrics']['output']
+        self.assertEqual((metric['nominal'], metric['lower'], metric['upper']), (1, 2, 2))
+        self.assertEqual(len(read_json(self.root / 'fresh-feedback/empirical/calibration.json')['observations']), 4)
+        self.assertEqual(verify(self.root / 'campaign/runs/1')['outcome'], 'incomplete')
+        self.assertEqual(verify(self.root / 'campaign/runs/3')['outcome'], 'incomplete')
         state["history"][2]["epoch"] = 2
         write_json(self.root / "campaign/state.json", state)
         with self.assertRaisesRegex(ValueError, "epoch lacks"):
@@ -232,6 +267,57 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         metric = second["checks"][0]["details"]["metrics"]["output"]
         self.assertEqual((metric["nominal"], metric["lower"], metric["upper"]), (5, 6, 13))
         self.assertEqual(len(second["checks"][0]["details"]["empirical_cases"]), 2)
+
+    @toolchain_test
+    def test_arbitrary_incomplete_campaign_cannot_use_bench_recovery(self):
+        (self.root / 'source/adapter.py').write_text("raise RuntimeError('parser failure')")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+        with self.assertRaisesRegex(ValueError, 'bench continuation requires'):
+            campaign_feedback(self.root / 'campaign', self.root / 'absent-report.json',
+                              self.root / 'refused-feedback', 60)
+        self.assertFalse((self.root / 'refused-feedback').exists())
+
+    @toolchain_test
+    def test_reentry_preserves_unclassified_empirical_files_and_supersession_on_interrupt(self):
+        write_json(self.root / 'source/design.json', {'value': 5})
+        (self.root / 'unclassified').mkdir()
+        (self.root / 'unclassified/stackup.txt').write_text('captured material dependency')
+        self.scope['inputs'].append({'path': str(self.root / 'unclassified'), 'at': 'empirical'})
+        write_json(self.root / 'scope.json', self.scope)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'initial', 60), 0)
+        original = verify(self.root / 'initial')
+        sample = {'check_id': 'response', 'metric': 'output', 'value': 5,
+                  'uncertainty': 0, 'unit': 'V', 'condition': 'load'}
+        write_json(self.root / 'raw.json', {'samples': [sample]})
+        report = {'schema': 'agent-ee.bench/1', 'candidate_id': original['candidate_id'],
+            'prototype': 'fixture', 'instrument': 'fixture', 'instrument_calibration': 'fixture',
+            'procedure': 'synthetic coordinator test', 'observed_utc': '2026-10-17',
+            'artifacts': [{'path': 'raw.json', 'sha256': digest(self.root / 'raw.json')}],
+            'observations': [{**sample, 'artifact': 'raw.json', 'locator': '0'}]}
+        write_json(self.root / 'bench.json', report)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(bench_review(self.root / 'initial', self.root / 'bench.json',
+                                         self.root / 'feedback', 60), 0)
+        captured = self.root / 'feedback/review/inputs/empirical/stackup.txt'
+        self.assertEqual(captured.read_text(), 'captured material dependency')
+        fresh = verify(self.root / 'feedback/review')
+        report['candidate_id'] = fresh['candidate_id']
+        write_json(self.root / 'bench.json', report)
+        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            bench_review(self.root / 'feedback/review', self.root / 'bench.json', self.root / 'interrupted', 60)
+        self.assertEqual(verify(self.root / 'feedback/review')['outcome'], 'incomplete')
+        self.assertTrue((self.root / 'interrupted/empirical/calibration.json').is_file())
+        self.assertEqual(len(read_json(self.root / 'interrupted/empirical/calibration.json')['observations']), 2)
+
+    @toolchain_test
+    def test_scope3_changed_design_requires_and_recovers_with_fresh_bench_epoch(self):
+        from agent_ee.capabilities import convert_scope
+        self.scope = convert_scope(self.scope)
+        write_json(self.root / 'scope.json', self.scope)
+        self.test_campaign_bench_epoch_repairs_without_erasing_original_history()
 
     @toolchain_test
     def test_scope3_campaign_preserves_audited_baseline_and_single_writer(self):

@@ -246,7 +246,10 @@ def campaign_feedback(root, report, out, max_seconds):
     with writer_lock(root, out):
         checked = verify_campaign(root)
         state = read_json(root / "state.json")
-        if not state["history"] or checked["state"] not in ("criteria_satisfied", "empirical_superseded"):
+        from .applicability import pending_recalibration
+        pending = bool(state['history']) and pending_recalibration(Path(state['history'][-1]['run']))
+        if not state["history"] or (checked["state"] not in ("criteria_satisfied", "empirical_superseded")
+                                    and not (checked['state'] == 'incomplete' and pending)):
             raise ValueError("bench continuation requires a completed accepted candidate or pending physical feedback")
         run = Path(state["history"][-1]["run"])
         next_run = root / "runs" / str(len(state["history"]) + 1)

@@ -60,7 +60,7 @@ def check_measurements(ctx):
             "candidate_id": ctx.manifest["candidate_id"], "files": ctx.manifest["files"],
             "baseline": load_baseline(ctx.run_dir), "parameters": ctx.params.get("parameters", {})}
         from .empirical import calibration_for
-        request["empirical"] = calibration_for(ctx.run_dir, ctx.scope, ctx.manifest["files"])
+        request["empirical"] = calibration_for(ctx.run_dir, ctx.scope, ctx.manifest["files"], provenance_only=True)
         write_json(ctx.work / "request.json", request)
         request_sha256 = digest(ctx.work / "request.json")
         ctx.evidence("request.json")
