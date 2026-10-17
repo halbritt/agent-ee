@@ -239,7 +239,8 @@ Maintain these boundaries when extending behavior:
 | [test_measurements.py](../tests/test_measurements.py) | Actual sandbox producer/parser execution, request/raw isolation, pinned binary, domain/condition/bounds and coupling |
 | [test_convergence.py](../tests/test_convergence.py) | Protected criteria and metric margins, stalls, finite limits and execution-vs-design classification |
 | [test_locking.py](../tests/test_locking.py) | Competing process refusal, exception cleanup and enclosing campaign ownership |
-| [test_empirical.py](../tests/test_empirical.py) | Bias/uncertainty propagation, replay evidence and model/condition applicability |
+| [test_empirical.py](../tests/test_empirical.py) | Historical bias/uncertainty propagation and model/condition applicability |
+| [test_applicability.py](../tests/test_applicability.py) | Exact design inventories, provenance closure, omission/tamper refusal, unqualified prediction diagnostics and strict migration |
 | [test_campaign.py](../tests/test_campaign.py) | Real coordinator with scripted model replies: repair, fresh review, history, restricted write authority and accumulated empirical epochs |
 
 The final implementation verification recorded 98 passing tests. That count is

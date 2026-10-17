@@ -277,3 +277,15 @@ Claude executable override mounting, and real SIGINT during a slow networkless
 probe. Retained receipt tampering is checked separately. These tests establish
 coordinator behavior, not provider quota, live-model quality or elimination of
 external upgrade races. See [preflight receipts](result-reference.md#pre-inference-environment-receipts).
+
+### Exact empirical applicability
+
+New bench ingestion emits calibration/2 with exact captured design-dependency
+hashes. Unchanged designs replay residual envelopes against unchanged bounds.
+Changed values, connectivity, PCB bytes, libraries, unclassified inputs or file
+inventory make calibrated acceptance unavailable and produce a structured
+recalibration request. Validated coordinator evidence is excluded by reconstructed
+provenance closure, never by a directory prefix or author list. Executed nominal
+predictions remain unqualified diagnostics for fresh bench recovery. Historical
+calibration/1 does not acquire scope/3 qualification. See [bench feedback](bench-feedback.md).
+These contracts do not authenticate instruments or establish physical validation.
