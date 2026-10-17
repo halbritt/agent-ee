@@ -177,6 +177,9 @@ with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references. The [native-bound mode](docs/native-binding.md)
 requires the declaration to match every native board component, its exact
 selection and its captured library pins; declared-only reports remain distinct.
+A [land-pattern geometry kernel](docs/land-geometry.md) compares supported pad
+shapes using exact areas or certified bounds. Its supplier/native check adapter
+and supplier qualification remain pending; the kernel alone cannot accept a part.
 
 The [placement check](docs/placement.md#placement-check-kind) grades one
 declared criterion per check: native DRC courtyard overlap and footprint
