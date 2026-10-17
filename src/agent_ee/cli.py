@@ -38,15 +38,57 @@ def runtime_files():
     host = Path(native_codex).parent / "codex-code-mode-host" if native_codex else None
     files["codex_tool_host"] = {"path": str(host) if host and host.is_file() else None,
         "sha256": digest(host) if host and host.is_file() else None}
+    path, diagnostic = pcbnew_extension()
+    if path:
+        files["pcbnew"] = {"path": path, "sha256": digest(path)}
+    else:
+        files["pcbnew"] = {"path": None, "sha256": None, "diagnostic": diagnostic}
+    return files
+
+
+def pcbnew_extension():
+    """Return (path, diagnostic) for KiCad's native _pcbnew extension module."""
     # pcbnew shares a large native extension rather than a standalone CLI.
     probe = subprocess.run(["/usr/bin/python3", "-c", "import _pcbnew; print(_pcbnew.__file__)"],
                            capture_output=True, text=True, timeout=15)
-    if probe.returncode == 0:
-        path = probe.stdout.strip()
-        files["pcbnew"] = {"path": path, "sha256": digest(path)}
-    else:
-        files["pcbnew"] = {"path": None, "sha256": None, "diagnostic": probe.stderr}
-    return files
+    return (probe.stdout.strip(), "") if probe.returncode == 0 else (None, probe.stderr)
+
+
+DOCTOR_PROBES = {"kicad-cli": ["kicad-cli", "version"], "ngspice": ["ngspice", "--version"],
+    "bwrap": ["bwrap", "--version"], "python3": ["/usr/bin/python3", "--version"],
+    "pcbnew": ["/usr/bin/python3", "-c", "import pcbnew; print(pcbnew.GetBuildVersion())"],
+    "claude": ["claude", "--version"]}
+HARNESS_PROBES = ("claude",)
+
+
+def doctor(checks_only=False):
+    """Probe versions and hash the probed binaries; real runs establish integration."""
+    checks, skipped = {}, {}
+    for name, command in DOCTOR_PROBES.items():
+        if checks_only and name in HARNESS_PROBES:
+            skipped[name] = "not probed with --checks-only; reviews and adjudication still require it"
+            continue
+        try:
+            p = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            checks[name] = {"error": str(exc)}
+            continue
+        record = {"path": shutil.which(command[0]), "exit_code": p.returncode,
+                  "version_output": p.stdout.strip(), "diagnostics": p.stderr.strip()}
+        # The hashed file is the one runtime_files() fingerprints in each result.
+        try:
+            record["binary"] = pcbnew_extension()[0] if name == "pcbnew" else record["path"]
+            record["sha256"] = digest(record["binary"]) if record["binary"] else None
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            record.update(sha256=None, hash_error=str(exc))
+        record.setdefault("binary", None)
+        checks[name] = record
+    report = {"prerequisites": checks,
+        "note": "Presence/version probes do not establish engineering integration. Run a declared scope."}
+    if skipped:
+        report["skipped"] = skipped
+    print(json.dumps(report, indent=2))
+    return 0 if all(c.get("exit_code") == 0 and c.get("sha256") for c in checks.values()) else 1
 
 
 def artifacts(run):
@@ -422,7 +464,9 @@ def _link_correction(previous, current, finding_id, check_ids, reason):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("doctor", help="inspect installed prerequisites; real runs establish integration")
+    doctor_parser = sub.add_parser("doctor", help="inspect installed prerequisites; real runs establish integration")
+    doctor_parser.add_argument("--checks-only", action="store_true",
+                               help="probe only the native check toolchain, not reviewer harnesses")
     bench = sub.add_parser("bench-review", help="capture bench evidence and rerun calibrated checks/reviews")
     bench.add_argument("run")
     bench.add_argument("report")
@@ -474,20 +518,7 @@ def main(argv=None):
             print(json.dumps(report, indent=2) if args.machine else render_diagnosis(report))
             return 0
         if args.command == "doctor":
-            checks = {}
-            for name, command in {"kicad-cli": ["kicad-cli", "version"],
-                "ngspice": ["ngspice", "--version"], "bwrap": ["bwrap", "--version"],
-                "pcbnew": ["/usr/bin/python3", "-c", "import pcbnew; print(pcbnew.GetBuildVersion())"],
-                "claude": ["claude", "--version"]}.items():
-                try:
-                    p = subprocess.run(command, capture_output=True, text=True, timeout=15)
-                    checks[name] = {"path": shutil.which(command[0]), "exit_code": p.returncode,
-                                    "version_output": p.stdout.strip(), "diagnostics": p.stderr.strip()}
-                except (OSError, subprocess.TimeoutExpired) as exc:
-                    checks[name] = {"error": str(exc)}
-            print(json.dumps({"prerequisites": checks,
-                "note": "Presence/version probes do not establish engineering integration. Run a declared scope."}, indent=2))
-            return 0 if all(c.get("exit_code") == 0 for c in checks.values()) else 1
+            return doctor(checks_only=args.checks_only)
         if args.command == "bench-review":
             from .empirical import bench_review
             return bench_review(args.run, args.report, args.out, args.max_seconds)
