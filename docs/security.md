@@ -158,3 +158,13 @@ initial review contexts. New model knowledge changes the calibration epoch, not
 the immutable requirement baseline. Once feedback is registered, a later failure
 cannot silently restore the old acceptance. Recovery must preserve the evidence
 and the supersession relationship.
+
+## Active SPICE model data
+
+The [active-device check](active-spice.md) validates captured model closures before
+ngspice: only explicitly declared immutable model files can be included, and
+control, analysis, file-I/O and unsupported directives/functions are refused.
+Generated model copies are mounted read-only in the existing networkless tool
+sandbox. This bounded dialect does not qualify arbitrary vendor model syntax,
+model accuracy or publication rights. Retained decks, traces and bindings use
+the existing coordinator evidence seal.

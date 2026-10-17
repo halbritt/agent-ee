@@ -810,9 +810,10 @@ def check_rc_transient(ctx):
 
 
 from .measurements import check_measurements, check_coupled_margins
+from .active_spice import check_active_spice
 
 
-CHECK_FUNCS = {"measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
+CHECK_FUNCS = {"active_spice": check_active_spice, "measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
                "geometry": check_geometry, "rc_transient": check_rc_transient}
 
 

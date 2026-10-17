@@ -247,6 +247,15 @@ def validate_scope(scope):
             raise ValueError(f"invalid or duplicate check ID: {cid!r}")
         if check.get("kind") == "rc_transient" and check.get("params", {}).get("netlist_check") not in seen:
             raise ValueError("rc_transient must name a preceding declared netlist check")
+        if check.get("kind") == "active_spice":
+            from .active_spice import validate_params
+            try:
+                params = validate_params(check.get("params", {}))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"invalid active_spice declaration: {exc}") from exc
+            if not any(c["id"] == params["netlist_check"] and c["kind"] == "netlist"
+                       for c in scope["checks"] if c["id"] in seen):
+                raise ValueError("active_spice must name a preceding native netlist check")
         seen.add(cid)
     seen = set()
     for reviewer in scope.get("review_profile", {}).get("reviewers", [{"role": "circuit"}, {"role": "physical"}]):

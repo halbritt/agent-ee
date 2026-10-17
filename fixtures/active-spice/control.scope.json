@@ -1,0 +1,143 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Owned active simulation control",
+  "scope": "Synthetic amplifier mechanics only; no vendor accuracy claim.",
+  "schematic": "design/active.kicad_sch",
+  "inputs": [
+    {
+      "path": ".",
+      "at": "design",
+      "include": [
+        "active.kicad_sch",
+        "owned.lib",
+        "requirements.md",
+        "active.kicad_pcb"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "active",
+      "kind": "active_spice",
+      "params": {
+        "contract": "active-spice/1",
+        "dialect": "ngspice",
+        "netlist_check": "netlist",
+        "ground_net": "/GND",
+        "temperature_c": 25,
+        "model_files": [
+          "design/owned.lib"
+        ],
+        "active_parts": {
+          "U1": {
+            "model_file": "design/owned.lib",
+            "subcircuit": "buffer",
+            "pin_map": {
+              "3": "INP",
+              "2": "INM",
+              "7": "VP",
+              "4": "VN",
+              "6": "OUT"
+            }
+          }
+        },
+        "sources": [
+          {
+            "id": "input",
+            "positive_net": "/IN",
+            "negative_net": "/GND",
+            "dc_v": 0,
+            "ac_magnitude_v": 1,
+            "step": {
+              "initial_v": 0,
+              "final_v": 0.1,
+              "delay_s": 0,
+              "rise_s": 1e-07
+            }
+          },
+          {
+            "id": "positive",
+            "positive_net": "/VP",
+            "negative_net": "/GND",
+            "dc_v": 15
+          },
+          {
+            "id": "negative",
+            "positive_net": "/VN",
+            "negative_net": "/GND",
+            "dc_v": -15
+          }
+        ],
+        "analyses": [
+          {
+            "id": "step",
+            "kind": "transient",
+            "step_s": 1e-06,
+            "stop_s": 0.005,
+            "measurements": [
+              {
+                "name": "out_1ms",
+                "observable": "voltage",
+                "positive_net": "/OUT",
+                "negative_net": "/GND",
+                "at_s": 0.001,
+                "unit": "V",
+                "min": 0.062,
+                "max": 0.065
+              }
+            ]
+          },
+          {
+            "id": "gain",
+            "kind": "ac",
+            "sweep": "dec",
+            "points_per_decade": 100,
+            "start_hz": 1,
+            "stop_hz": 10000,
+            "measurements": [
+              {
+                "name": "gain_100hz",
+                "observable": "transfer_magnitude",
+                "output_positive_net": "/OUT",
+                "output_negative_net": "/GND",
+                "input_positive_net": "/IN",
+                "input_negative_net": "/GND",
+                "at_hz": 100,
+                "unit": "V/V",
+                "min": 0.84,
+                "max": 0.85
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-response",
+        "statement": "Declared active filter response meets bounds",
+        "source": {
+          "path": "design/requirements.md",
+          "locator": "R-response"
+        },
+        "checks": [
+          "netlist",
+          "active"
+        ]
+      }
+    ],
+    "targets": [
+      "design/requirements.md"
+    ],
+    "reference_architectures": [
+      "design/requirements.md"
+    ]
+  },
+  "board": "design/active.kicad_pcb"
+}

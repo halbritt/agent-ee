@@ -1,0 +1,1 @@
+R-response: At 25 C, 0.1 V step and 1 V AC stimulus, RC=1 ms plus closed-loop gain 1e6/(1e6+1). Transient at 1 ms must be 0.062..0.065 V. AC at 100 Hz must be 0.84..0.85 V/V. Seed R1=100k violates both. Owned synthetic amplifier tests software only; no vendor/hardware accuracy claim.

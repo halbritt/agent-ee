@@ -15,6 +15,7 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `drc` | Native all-severity DRC, saved fill, and schematic parity. Reports retain exclusions and native items. A violation is distinct from execution failure. |
 | `netlist` | Complete-hierarchy native XML export, with derived connectivity, DNP, native symbol identity, and sheet/UUID provenance. Informational rather than functional acceptance. |
 | `geometry` | Saved-board pcbnew extraction. `params.min_track_width_mm` retains its historical straight-segment meaning; `params.exclude_nets` records explicit exemptions. Opt-in `params.criterion: "copper-width/1"` covers straight tracks and native arcs with explicit coverage evidence (see below). |
+| `active_spice` | Explicit captured subcircuits, complete native pin bindings and declared transient-voltage/AC complex-transfer measurements; see the [contract and limits](active-spice.md). Owned synthetic fixture proves software mechanics, not vendor accuracy. |
 | `rc_transient` | Prior `params.netlist_check` supplies actual native connectivity/values. A supported populated passive R/C/L network receives the declared `input_net`, `output_net`, `ground_net`, positive `step_v`, `stop_ms`, and named measurements with `at_ms`, optional `min`/`max`. |
 
 For `rc_transient`, omitted `step_v` uses 1.0 V and omitted `stop_ms` uses
