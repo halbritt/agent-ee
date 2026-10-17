@@ -96,6 +96,9 @@ runs. Scope/2 and scope/3 bind exactly one requirement per routing check and
 freeze its rule document and captured native rule sidecars. Complete route and
 constraint coverage is required; unsupported topology or missing inputs are
 unknown. General DRC and schematic parity remain separate obligations.
+The evidence includes generated and staged effective rule hashes and the native
+DRC reports. An impedance target remains unverified because no qualified stackup
+and solver path is implemented, even when those inputs are named in the contract.
 
 ## Captured fabricator profiles
 
