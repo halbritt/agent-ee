@@ -15,6 +15,14 @@ def record(**changes):
     return json.dumps(value).encode()
 
 
+def numeric_record(token, field='input_voltage', **changes):
+    """Raw JSON number bytes; json.dumps cannot express arbitrary decimal tokens."""
+    raw = record(**{field: 'PLACEHOLDER'}, **changes)
+    marker = f'"{field}": "PLACEHOLDER"'.encode()
+    assert raw.count(marker) == 1
+    return raw.replace(marker, f'"{field}": '.encode() + token.encode())
+
+
 class DesignIntentTests(unittest.TestCase):
     def test_owned_import_preserves_bytes_and_incomplete_contract_boundary(self):
         raw = record()
@@ -114,3 +122,90 @@ class DesignIntentTests(unittest.TestCase):
         self.assertEqual(first['text'], 'Use 1x OWN_CAN and 2x R_Small.')
         self.assertEqual(first['id'], second['id'])
         self.assertNotEqual(first['id'], third['id'])
+
+    def test_numeric_voltage_tokens_keep_exact_decimal_value_and_raw_token(self):
+        from decimal import Decimal
+        for token, volts in [('1.0000000000000001', '1.0000000000000001'),
+                             ('9007199254740993.0', '9007199254740993'),
+                             ('9007199254740993', '9007199254740993'),
+                             ('1.23456789012345678901234567890123456789',
+                              '1.23456789012345678901234567890123456789'),
+                             ('3.30', '3.3'), ('-1.5E-3', '-0.0015'), ('2.5e+1', '25'),
+                             ('1e-400', '1E-400'), ('-1.0e400', '-1.0E+400')]:
+            with self.subTest(token=token):
+                raw = numeric_record(token)
+                artifacts = import_record(raw)
+                self.assertEqual(artifacts['source-record.json'], raw)
+                report = json.loads(artifacts['intent.json'], parse_float=Decimal)
+                self.assertEqual(report['outcome'], 'pass')
+                target = report['operating_targets']['input_voltage']
+                self.assertEqual(target['volts'], [volts])
+                self.assertEqual(Decimal(target['volts'][0]), Decimal(token))
+                self.assertIn(b'"raw":' + token.encode() + b',', artifacts['intent.json'])
+                self.assertEqual(import_record(raw), artifacts)
+
+    def test_numeric_and_string_voltage_tokens_are_equivalent(self):
+        for token in ['1.0000000000000001', '9007199254740993.0', '-1.5E-3', '1e-400', '1e400',
+                      '0', '0.0', '-0.0', '0e5', '1e9999999999999999999', '-1e-9999999999999999999']:
+            with self.subTest(token=token):
+                numeric = json.loads(import_record(numeric_record(token))['intent.json'],
+                                     parse_float=str)
+                string = json.loads(import_record(record(input_voltage=token))['intent.json'])
+                self.assertEqual(numeric['outcome'], string['outcome'])
+                self.assertEqual(numeric['findings'], string['findings'])
+                self.assertEqual(numeric['operating_targets']['input_voltage']['volts'],
+                                 string['operating_targets']['input_voltage']['volts'])
+                self.assertEqual(str(numeric['operating_targets']['input_voltage']['raw']), token)
+
+    def test_numeric_zero_and_out_of_range_exponents_never_pass(self):
+        for token in ['0', '-0.0', '0E-7', '1e9999999999999999999', '-1e-9999999999999999999']:
+            with self.subTest(token=token):
+                artifacts = import_record(numeric_record(token, field='output_voltage'))
+                report = json.loads(artifacts['intent.json'], parse_float=str)
+                self.assertEqual(report['outcome'], 'unknown')
+                self.assertEqual([f['code'] for f in report['findings']], ['unknown_voltage'])
+                self.assertIsNone(report['operating_targets']['output_voltage']['volts'])
+
+    def test_unrepresentable_integer_tokens_and_inexact_counts_are_refused(self):
+        with self.assertRaises(ValueError):
+            import_record(numeric_record('1' + '0' * 5000))
+        for raw in [record()[:-1] + b', "n_gt_components": 3.0}']:
+            report = json.loads(import_record(raw)['intent.json'])
+            self.assertEqual(report['outcome'], 'unknown')
+            self.assertEqual(report['findings'][0]['code'], 'component_metadata_mismatch')
+        for raw in [record(id='X').replace(b'"id": "X"', b'"id": 37.0'),
+                    record(components={'R_Small': 'X'}).replace(b'"X"', b'2.0')]:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                import_record(raw)
+
+    def test_intent_bytes_remain_storage_canonical(self):
+        from agent_ee.storage import canonical
+        for raw in [record(), numeric_record('3.3'), numeric_record('12')]:
+            intent = import_record(raw)['intent.json']
+            self.assertEqual(intent, canonical(json.loads(intent)) + b'\n')
+
+    def test_cli_writes_exact_numeric_voltage_token(self):
+        from pathlib import Path
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source.json'
+            source.write_bytes(numeric_record('9007199254740993.0'))
+            result = subprocess.run([sys.executable, '-m', 'agent_ee.design_intent', str(source),
+                                     '--out', str(root / 'out')], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((root / 'out/intent.json').read_bytes(), parse_float=str)
+            self.assertEqual(report['operating_targets']['input_voltage'],
+                             {'raw': '9007199254740993.0', 'volts': ['9007199254740993']})
+
+    def test_structured_numeric_voltage_stays_unknown_with_exact_raw_tokens(self):
+        for token in ['[1.0000000000000001]', '{"V": 1e400}', '[3.3, -0.0]']:
+            with self.subTest(token=token):
+                artifacts = import_record(numeric_record(token))
+                report = json.loads(artifacts['intent.json'], parse_float=str)
+                self.assertEqual(report['outcome'], 'unknown')
+                self.assertIsNone(report['operating_targets']['input_voltage']['volts'])
+                self.assertIn(b'"raw":' + token.replace(', ', ',').replace(': ', ':').encode(),
+                              artifacts['intent.json'])

@@ -1,6 +1,7 @@
 """Offline stage-one intent import. Derivatives confer no design acceptance."""
 import argparse
 from collections import Counter
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -11,7 +12,14 @@ from .hardware_interface import text
 from .storage import canonical
 
 
+@dataclass(frozen=True)
+class JsonNumber:
+    """Exact source text of a non-integer JSON number; never a binary float."""
+    token: str
+
+
 def load_json(raw):
+    """Decode strictly; fraction/exponent numbers keep their exact source token."""
     def unique(pairs):
         value = {}
         for key, item in pairs:
@@ -19,8 +27,20 @@ def load_json(raw):
                 raise ValueError(f'duplicate JSON key: {key}')
             value[key] = item
         return value
-    return json.loads(raw, object_pairs_hook=unique,
+    return json.loads(raw, object_pairs_hook=unique, parse_float=JsonNumber,
                       parse_constant=lambda v: (_ for _ in ()).throw(ValueError(f'invalid number: {v}')))
+
+
+def exact_canonical(value):
+    """storage.canonical bytes, writing each decoded JsonNumber as its source token."""
+    if isinstance(value, JsonNumber):
+        return value.token.encode()
+    if isinstance(value, dict):
+        return b'{' + b','.join(canonical(key) + b':' + exact_canonical(item)
+                                for key, item in sorted(value.items())) + b'}'
+    if isinstance(value, list):
+        return b'[' + b','.join(exact_canonical(item) for item in value) + b']'
+    return canonical(value)
 
 
 def component_counts(value):
@@ -48,11 +68,15 @@ def component_counts(value):
 
 
 def voltage_targets(value):
-    """Only explicit signed numeric voltages; annotations remain unsupported."""
-    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+    """Only explicit signed numeric voltages; annotations remain unsupported.
+
+    A JSON number is read from its exact source token, exactly as the same text
+    in a JSON string, so no binary rounding, underflow or overflow occurs.
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, int, float, JsonNumber)):
         raise ValueError('voltage must be numeric text or a number')
     values = []
-    for token in str(value).split(','):
+    for token in (value.token if isinstance(value, JsonNumber) else str(value)).split(','):
         token = token.strip()
         if not re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*V?', token):
             raise ValueError('unparseable voltage')
@@ -134,7 +158,7 @@ def import_record(raw, *, out_justification=None):
             'requirements.json': canonical({'schema': 'agent-ee.requirements/1', 'requirements': [
                 {'id': 'R-intent-' + hashlib.sha256(str(rid).encode()).hexdigest(),
                  'text': task, 'source_question_ids': []}]}) + b'\n',
-            'intent.json': canonical(report) + b'\n',
+            'intent.json': exact_canonical(report) + b'\n',
             'hardware-interface.stub.json': canonical(stub) + b'\n',
             'component-expectation.json': canonical({'schema': 'agent-ee.component-expectation/1',
                 'source_sha256': source, 'required_components': counts}) + b'\n'}

@@ -171,3 +171,15 @@ class DesignDialogTests(unittest.TestCase):
         derived = json.loads(artifacts['requirements.json'])['requirements']
         self.assertEqual(derived[0], original)
         self.assertEqual(artifacts['original-requirements.json'], baseline)
+
+    def test_numeric_answer_and_default_tokens_are_not_options(self):
+        idea, qr, ar, baseline = inputs()
+        answers = ar.replace(b'{"value": "digital"}', b'{"value": 1.0000000000000001}')
+        self.assertNotEqual(answers, ar)
+        report = json.loads(capture_dialog(idea, qr, answers, baseline)['dialog.json'])
+        self.assertEqual(report['outcome'], 'unknown')
+        self.assertIn({'code': 'answer_invalid', 'question_id': 'sensor'}, report['findings'])
+        questions = qr.replace(b'"default": "3.3V"', b'"default": 3.3')
+        self.assertNotEqual(questions, qr)
+        with self.assertRaises(ValueError):
+            capture_dialog(idea, questions, ar, baseline)
