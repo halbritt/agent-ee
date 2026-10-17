@@ -64,11 +64,20 @@ before making that stronger electrical claim.
 
 ## DRC and schematic parity
 
-No check parameters are currently interpreted. Required JSON lists are
-`violations`, `unconnected_items`, and `schematic_parity`. A missing list is
-malformed coverage. The console is also checked for known native messages that
-indicate skipped schematic parity even when the CLI exits 0. Any item in the
-three lists makes the criterion fail.
+Required JSON lists are `violations`, `unconnected_items`, and
+`schematic_parity`. A missing list is malformed coverage. The console is also
+checked for known native messages that indicate skipped schematic parity even
+when the CLI exits 0. Any item in the three lists makes the criterion fail.
+
+The only parameter is the optional `projection: "placement-stage/1"`. It runs
+the same single native DRC and retains the same raw `drc.json`, but grades only
+`violations` and `schematic_parity`. Unconnected items are counted in
+`details.ungraded`; a placed but unrouted board can pass this projection. Its
+capability predicate is `native:drc:placement-stage/1`, distinct from the full
+`native:drc:violations`. A scope/3 capability audit refuses a projection unless a
+later full `drc` check exists, so connectivity is still graded before
+acceptance. Any other projection value is unsupported. The
+[placement checks](placement.md#placement-check-kind) consume either DRC result.
 
 Zone fill is evaluated as saved. The implementation does not refill, save or
 repair the board. Reported exclusions stay visible and are not dropped by this
@@ -297,6 +306,13 @@ inside the common completion image remains separate.
 schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
+
+## Placement predicates
+
+`placement` evaluates one declared criterion per check against the saved-board
+probe and the raw report of an earlier `drc` check; it never runs DRC itself.
+See [placement checks](placement.md#placement-check-kind) for parameters,
+authority and unknown boundaries.
 
 ## Qualified passive tolerance endpoints
 
