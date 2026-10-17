@@ -6,7 +6,7 @@ only satisfied later by mapped coordinator checks. Fabricator support is never
 inferred here; it stays unresolved until a captured profile contract exists.
 """
 import argparse
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from fractions import Fraction
 import hashlib
 import json
@@ -27,8 +27,12 @@ FORBID = ('footprints', 'tracks', 'vias', 'pads', 'copper_pours')
 MAX_COPPER = 32
 # Bounds keep exact O(n^2) polygon checks small; real envelopes are far below them.
 MAX_BYTES, MAX_VERTICES, MAX_ITEMS = 1024 * 1024, 1024, 1024
-# Provisional mapping from the ticket graph (AGENTEE-92 placement, AGENTEE-75
-# fab profile, AGENTEE-94 fab package); none of these kinds is registered yet.
+# Rotations and copper weights stay exact decimals. Values needing more than this
+# many digits before or after the point are refused, never rounded.
+MAX_PLACES = 32
+# Proposed check-kind names from the ticket graph (AGENTEE-92, AGENTEE-75,
+# AGENTEE-94), not registered capability kinds and not an executable gate: the
+# owners still confirm them, and capture refuses a scope that maps them today.
 CHECK_KINDS = {'outline': ['placement'], 'layer_count': ['fab_profile'],
                'stackup': ['fab_package'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement'], 'keepouts': ['placement'],
@@ -103,23 +107,40 @@ def point(value, label):
         raise ValueError(f'{label} must be exact to 1 nm: {exc}') from exc
 
 
-def text(number):
-    """Exact positional decimal text without exponent or trailing zeros."""
-    out = format(Decimal(number), 'f')
-    if '.' in out:
-        out = out.rstrip('0').rstrip('.')
-    return '0' if out in ('-0', '') else out
+def fixed_point(n, places):
+    """Exact text of integer n / 10**places, without exponent or trailing zeros."""
+    whole, fraction = divmod(abs(n), 10 ** places)
+    fraction = str(fraction).rjust(places, '0').rstrip('0')
+    return ('-' if n < 0 else '') + str(whole) + ('.' + fraction if fraction else '')
 
 
-def degrees(value):
-    """Exact angle text normalized to [0, 360); KiCad may save -90 for 270."""
-    if not value.is_finite():
-        raise ValueError('rotation must be finite')
-    return text((value % 360 + 360) % 360)
+def scaled(value, label):
+    """Integer n with value == n / 10**MAX_PLACES exactly; no Decimal context is used."""
+    try:
+        number = Decimal(value) if not isinstance(value, str) or len(value) <= 128 else None
+    except DecimalException:
+        number = None
+    if number is None or not number.is_finite():
+        raise ValueError(f'{label} must be a finite decimal token')
+    sign, digits, exponent = number.as_tuple()
+    coefficient = ''.join(map(str, digits)).rstrip('0')
+    if not coefficient:
+        return 0
+    exponent += len(digits) - len(coefficient)
+    if exponent < -MAX_PLACES or len(coefficient) + exponent > MAX_PLACES:
+        raise ValueError(f'{label} is not exactly representable with at most '
+                         f'{MAX_PLACES} digits before and after the point')
+    n = int(coefficient) * 10 ** (exponent + MAX_PLACES)
+    return -n if sign else n
+
+
+def degrees(value, label):
+    """Exact angle text in [0, 360); KiCad may save -90 for 270. Never rounds."""
+    return fixed_point(scaled(value, label) % (360 * 10 ** MAX_PLACES), MAX_PLACES)
 
 
 def mm(nm):
-    return text(Decimal(nm).scaleb(-6))
+    return fixed_point(nm, 6)
 
 
 def mm_point(p):
@@ -270,7 +291,8 @@ def validate_outline(value):
                  and len(set(xs)) == 2 and len(set(ys)) == 2)
     return vertices, records, {
         'edges': [{k: v for k, v in r.items() if not k.startswith('_')} for r in records.values()],
-        'area_mm2': text(Decimal(abs(area2)).scaleb(-12) / 2),
+        # Twice the area in nm^2: area_mm2 = |area2| / (2 * 10**12) = 5 |area2| / 10**13.
+        'area_mm2': fixed_point(5 * abs(area2), 13),
         'winding': 'positive_shoelace' if area2 > 0 else 'negative_shoelace',
         'axis_aligned_rectangle': rectangle,
         'bounds_mm': {'min': mm_point((min(xs), min(ys))), 'max': mm_point((max(xs), max(ys)))}}
@@ -297,7 +319,7 @@ def validate_stackup(value, count):
             raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
         if layer['kind'] == 'copper':
             fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm', 'copper_weight_oz'])
-            weight = decimal(layer['copper_weight_oz'], 'copper_weight_oz')
+            weight = scaled(decimal(layer['copper_weight_oz'], 'copper_weight_oz'), 'copper_weight_oz')
             if weight <= 0:
                 raise ValueError('copper_weight_oz must be positive')
             copper.append(layer['name'])
@@ -311,7 +333,7 @@ def validate_stackup(value, count):
         thickness = length(layer['thickness_mm'], f'stackup layer {label} thickness_mm', positive=True)
         summed += thickness
         records.append({'name': label, 'kind': layer['kind'], 'thickness_mm': mm(thickness),
-                        **({'copper_weight_oz': text(weight)} if weight is not None else {})})
+                        **({'copper_weight_oz': fixed_point(weight, MAX_PLACES)} if weight is not None else {})})
     if len(layers) % 2 == 0:
         raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
     if copper != copper_names(count):
@@ -430,7 +452,9 @@ def validate_fixed(footprints, vertices, edges):
             raise ValueError(f'fixed footprint {ref} anchor {mm_point(anchor)} is outside the outline')
         records.append({'reference': ref, 'side': footprint['side'], 'layer': SIDES[footprint['side']],
                         'edge': edge['name'], 'position_mm': mm(position), 'inset_mm': mm(inset),
-                        'anchor_mm': mm_point(anchor), 'rotation_deg': degrees(rotation), 'insertion': insertion,
+                        'anchor_mm': mm_point(anchor),
+                        'rotation_deg': degrees(rotation, f'fixed footprint {ref} rotation_deg'),
+                        'insertion': insertion,
                         'mating_axis': edge['outward'] if insertion == 'through_edge' else
                         ('z-' if insertion == 'from_top' else 'z+'),
                         'tolerance_mm': mm(tolerance)})
@@ -570,6 +594,33 @@ def atoms(node):
     return [x for x in node[1:] if isinstance(x, str)]
 
 
+def edge_cuts_items(root):
+    """Every saved item with Edge.Cuts in its own layer or layers list, at any depth.
+
+    Yields (item, label path). KiCad joins footprint shapes on Edge.Cuts
+    to the board outline, and a footprint field (PCB_FIELD) or text can be put
+    there too, so nothing is skipped by tag.
+    """
+    stack = [(item, []) for item in reversed(root[1:]) if isinstance(item, list)]
+    while stack:
+        node, path = stack.pop()
+        if not node or not isinstance(node[0], str):
+            continue
+        label = node[0]
+        if label == 'footprint':
+            reference = [atoms(p)[1] for p in children(node, 'property')
+                         if atoms(p)[:1] == ['Reference'] and len(atoms(p)) > 1]
+            label += f' {reference[0]}' if len(reference) == 1 else ''
+        elif label == 'property' and atoms(node):
+            label += f' {atoms(node)[0]}'
+        here = path + [label]
+        if any(isinstance(c, list) and c and c[0] in ('layer', 'layers') and 'Edge.Cuts' in atoms(c)
+               for c in node[1:]):
+            yield node, here
+        stack.extend((c, here) for c in reversed(node[1:]) if isinstance(c, list) and c and c[0] not in
+                     ('layer', 'layers'))
+
+
 def board_facts(pcb):
     """Static facts from saved .kicad_pcb bytes; unsupported outline items are listed."""
     try:
@@ -608,35 +659,29 @@ def saved_facts(root):
             stackup.append({'name': layer[1], 'type': atoms(kind)[0] if atoms(kind) else None,
                             'thickness_nm': nanometres(atoms(value)[0]) if value and atoms(value) else None})
     segments, other = [], []
-    for item in root[1:]:
-        if not isinstance(item, list) or not item or not str(item[0]).startswith('gr_'):
-            continue
-        layer = one(item, 'layer')
-        if not layer or atoms(layer) != ['Edge.Cuts']:
-            continue
-        if item[0] == 'gr_line':
+    for item, path in edge_cuts_items(root):
+        # Only a board-level straight line or rectangle solely on Edge.Cuts is compared.
+        supported = (len(path) == 1 and item[0] in ('gr_line', 'gr_rect') and not children(item, 'layers')
+                     and len(children(item, 'layer')) == 1 and atoms(one(item, 'layer')) == ['Edge.Cuts'])
+        if not supported:
+            other.append(' '.join(path))
+        elif item[0] == 'gr_line':
             start, end = (tuple(nanometres(v) for v in atoms(one(item, k))) for k in ('start', 'end'))
             segments.append((start, end))
-        elif item[0] == 'gr_rect':
+        else:
             (x0, y0), (x1, y1) = (tuple(nanometres(v) for v in atoms(one(item, k))) for k in ('start', 'end'))
             segments += [((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))]
-        else:
-            other.append(item[0])
     footprints = {}
     for footprint in children(root, 'footprint'):
         reference = [atoms(p)[1] for p in children(footprint, 'property') if atoms(p)[:1] == ['Reference']]
         at, layer = one(footprint, 'at'), one(footprint, 'layer')
-        for p in children(footprint, 'fp_line') + children(footprint, 'fp_rect') + children(footprint, 'fp_arc') \
-                + children(footprint, 'fp_circle') + children(footprint, 'fp_poly'):
-            if one(p, 'layer') and atoms(one(p, 'layer')) == ['Edge.Cuts']:
-                other.append('footprint ' + p[0])
         if len(reference) != 1 or not at or not layer:
             raise ValueError('footprint without one Reference, at and layer')
         values = atoms(at)
         # Duplicate references stay listed; a fixed footprint needs exactly one match.
         footprints.setdefault(reference[0], []).append({
             'layer': atoms(layer)[0], 'at': (nanometres(values[0]), nanometres(values[1])),
-            'rotation_deg': degrees(Decimal(values[2]) if len(values) > 2 else Decimal(0))})
+            'rotation_deg': degrees(values[2] if len(values) > 2 else '0', f'footprint {reference[0]} rotation')})
     return {'copper_layers': copper,
             'thickness_nm': nanometres(atoms(thickness)[0]) if thickness and atoms(thickness) else None,
             'stackup': stackup, 'edge_segments': segments, 'other_edge_cuts': sorted(other),

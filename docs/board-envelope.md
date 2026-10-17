@@ -47,6 +47,12 @@ A fixed footprint's anchor is its KiCad footprint origin. The anchor is
 (0 to its length, inclusive), and the anchor must lie inside the outline.
 `side` is `front` (`F.Cu`) or `back` (`B.Cu`).
 
+`rotation_deg` is an exact decimal in [0, 360). `copper_weight_oz` is an exact
+positive decimal. Each may have at most 32 digits before and after the point;
+trailing zeros don't count. Anything finer or larger is refused, never rounded,
+so `1E-29` stays `0.00000000000000000000000000001`. Results don't depend on
+Python's ambient `decimal` context.
+
 `insertion` names how the mating part arrives:
 
 - `through_edge`: across the edge from outside the board. The record gives the
@@ -112,8 +118,9 @@ The same envelope bytes always produce byte-identical outputs. Reformatting the
 JSON changes the envelope hash but no obligation. Changing one field changes
 only the obligation that cites it.
 
-Proposed check kinds, taken from the ticket graph and still to be confirmed by
-their owners:
+Proposed check-kind names, taken from the ticket graph. They are not
+registered capability kinds and are not an executable gate. Their owners
+still have to confirm them:
 
 | Obligation | Check kind |
 | --- | --- |
@@ -121,8 +128,11 @@ their owners:
 | Layer count, profile reference | `fab_profile` (AGENTEE-75) |
 | Stackup | `fab_package` (AGENTEE-94) |
 
-None of these kinds is registered on main. A scope/3 baseline that maps them is
-therefore refused by capture today.
+None of these kinds is registered on main, so capture refuses a scope/3
+baseline that maps them today. The AGENTEE-75 profile is delivered through the
+routing-rules lane, so its actual kind and its layer-count predicate must be
+taken from that contract once it is integrated. This module does not register
+them.
 
 `agent_ee.board_envelope.require_obligations(scope, requirements)` refuses an
 `agent-ee.scope/3` baseline when any obligation:
@@ -132,7 +142,10 @@ therefore refused by capture today.
 - maps a check whose kind is outside its `check_kinds`.
 
 An obligation is refused rather than dropped. The function also refuses
-requirements derived while predicates remained unresolved. Calling it from
+requirements derived while predicates remained unresolved. It trusts the
+requirements document it is given. A caller-supplied `complete` flag or
+obligation list is not evidence, so baseline integration must first re-derive
+the document from the captured envelope (and profile) bytes. Calling it from
 baseline compilation is an integration step that has not been done.
 
 ## Board round trip
@@ -141,19 +154,42 @@ baseline compilation is an integration step that has not been done.
 `.kicad_pcb` can show, parsed from its bytes with the shared S-expression
 reader. It checks:
 
-- the Edge.Cuts segments (`gr_line`, or `gr_rect` as four segments), with any
-  other Edge.Cuts item a mismatch;
+- the Edge.Cuts segments: a board-level `gr_line`, or a `gr_rect` as four
+  segments, whose only layer is `Edge.Cuts`;
+- every other saved item that has `Edge.Cuts` in its own `layer` or `layers`,
+  at any depth. Each is listed under `other` and makes the outline a mismatch.
+  That includes footprint fields (`property`, native `PCB_FIELD`), footprint
+  text and shapes, pads, dimensions and their text, targets and zones. No item
+  is skipped by tag. Such an item need not be a valid contour; it is
+  unsupported, so it can't match;
 - the copper layer names;
 - `(general (thickness))`, and per-layer thicknesses when the board saves a
   stackup;
 - each fixed footprint's layer, origin within `tolerance_mm`, and exact
-  rotation modulo 360 degrees. The reference must match exactly one board
-  footprint; a missing or duplicated fixed reference is a mismatch.
+  rotation modulo 360 degrees, with no angular tolerance. The reference must
+  match exactly one board footprint; a missing or duplicated fixed reference is
+  a mismatch. A saved rotation that is not a number, or needs more than 32
+  decimal places, refuses the comparison.
 
 Copper weight is always `not_in_board`, because KiCad saves only copper
 thickness. Holes and keepouts are `not_compared` in version 1. An independent
 test loads the RC board with `pcbnew` and checks that its outline, copper
 count, thickness and J1 transform agree with the static reading.
+
+A second native test saves and reloads RC boards with `pcbnew`:
+
+- J1's Value field moved to Edge.Cuts gives a mismatch with
+  `footprint J1 property Value` listed;
+- a footprint text and a board dimension on Edge.Cuts give a mismatch with
+  each listed;
+- an unmodified re-save, and the field moved to `Dwgs.User`, still match.
+
+In every case the reloaded board confirms what is on Edge.Cuts, and the outline
+segments are identical to the fixture's.
+
+`match` means that no compared field differs. It does not mean the envelope is
+satisfied: holes, keepouts, copper weight and unsaved stackup layers are not
+compared.
 
 The RC envelope matches its saved board on outline, layers, thickness and J1.
 The board saves no stackup section, so the per-layer split is not compared.
