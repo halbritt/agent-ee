@@ -1,0 +1,27 @@
+{
+  "control": [],
+  "delete-load": [
+    "load-present",
+    "load-wire"
+  ],
+  "delete-probe": [
+    "probe-present",
+    "probe-wire"
+  ],
+  "dnp-load": [
+    "load-present"
+  ],
+  "swapped": [
+    "input-pin",
+    "output-pin",
+    "load-wire",
+    "probe-wire"
+  ],
+  "disconnect": [
+    "probe-wire"
+  ],
+  "renamed": [
+    "output-pin"
+  ],
+  "wrong-value": []
+}
