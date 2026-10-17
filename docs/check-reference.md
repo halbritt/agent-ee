@@ -93,15 +93,18 @@ connectivity from the same run; it does not use fixture-specific wiring.
 
 | Parameter | Meaning |
 | --- | --- |
-| `min_track_width_mm` | Optional fixed minimum for straight track segments |
-| `exclude_nets` | Optional exact net names exempt from that minimum; default empty |
+| `min_track_width_mm` | Legacy optional straight-segment minimum; required finite positive minimum for copper-width/1 |
+| `exclude_nets` | Exact exempt net names; legacy default empty, explicit list required for copper-width/1 |
+| `criterion` | Optional `copper-width/1` selects versioned straight-track and arc coverage |
+| `covered_primitives` | Required with copper-width/1: exactly `["PCB_TRACK", "PCB_ARC"]` |
 
 Use a finite positive numeric width justified by an actual requirement. The
-handler converts the value to float but does not comprehensively reject invalid
+legacy handler converts the value to float but does not comprehensively reject invalid
 or nonphysical width limits at scope-validation time. Do not assume a malformed
 criterion is made meaningful by a check that executes.
 
-Without a width limit, geometry has outcome `info`. With a limit it checks all
+Without the new criterion or a width limit, geometry has outcome `info`. The
+legacy check with a limit checks all
 non-excluded items whose extracted type is `track`. The comparison permits
 1e-9 mm numeric tolerance. No eligible track segments is malformed, not a
 vacuous pass. At most 50 offending segments are copied into check details; the
@@ -111,10 +114,21 @@ covered by this straight-segment width criterion.
 The geometry file contains footprint reference/value/DNP/UUID/layer/position,
 pad number/net/attribute/position/size/drill/UUID, track/via dimensions and nets,
 zone net/layers/fill-state/minimum-thickness/UUID, and a connectivity count when
-available. Coordinates and dimensions are millimetres, rounded to four decimal
-places. The `nets` counts describe pads; track/zone-only nets can have zero pad
+available. Coordinates and `width_mm` dimensions are millimetres, rounded to
+four decimal places. Track items also retain `native_class` and exact `width_nm`. The `nets` counts describe pads; track/zone-only nets can have zero pad
 counts. A failed unconnected-count query is recorded as unavailable information,
 not silently replaced with zero. Other extraction failures fail the probe.
+
+With `criterion: "copper-width/1"`, declared tracks and native arcs are checked
+using integer-nanometre widths without the legacy tolerance/rounding. Empty or
+unsupported eligible geometry is `unsupported/unknown`, including when another
+primitive is known narrow. Complete coverage is `ok/defect` for any below-limit
+primitive, otherwise `ok/pass`. Candidate-bound `copper-width.json` retains all
+primitive identities, values, limits, statuses and coverage counts alongside the
+raw probe report. Vias remain separate; zones, pads and graphic copper shapes
+are outside this routing-width criterion. See [coverage](coverage.md) for the
+complete class/count contract. Opting in changes the scope/2 baseline identity;
+existing baseline criteria keep their historical meaning.
 
 Width is not ampacity. A zone's `filled` flag is not a full polygon/return-path
 analysis. Review actual saved native polygons and connectivity when needed;

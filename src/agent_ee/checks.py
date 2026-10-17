@@ -20,7 +20,11 @@ Check kinds and parameters:
   (`agent_ee.geometry_probe`). Parameters: `min_track_width_mm` (float,
   optional) — declared fixed minimum copper track segment width;
   `exclude_nets` (list[str], optional) — net names exempt from that minimum.
-  Without `min_track_width_mm` the check reports facts only (outcome `info`).
+  Without `min_track_width_mm` the legacy check reports facts only (outcome `info`).
+  Opt in to `criterion: "copper-width/1"` with explicit `covered_primitives:
+  ["PCB_TRACK", "PCB_ARC"]`, `exclude_nets` and `min_track_width_mm` to check
+  straight segments and native arcs. Empty or unsupported eligible geometry is
+  incomplete. Vias, pads and zones are outside this width criterion.
 - `rc_transient`: generates a SPICE deck from the XML netlist produced by a
   prior `netlist` check (values, connectivity, DNP state and symbol classes
   come from KiCad, never from fixture knowledge) and runs ngspice. DNP
@@ -357,6 +361,57 @@ def check_netlist(ctx):
                              f"{len(parsed['nets'])} net(s), {len(dnp_refs)} DNP")
 
 
+def copper_width_coverage(geo, params):
+    """Evaluate only explicit track/arc widths; unknown track items block coverage."""
+    if (params.get("criterion") != "copper-width/1" or
+            not isinstance(params.get("covered_primitives"), list) or
+            any(not isinstance(c, str) for c in params["covered_primitives"]) or
+            sorted(params["covered_primitives"]) != ["PCB_ARC", "PCB_TRACK"]):
+        raise CheckError("unsupported", "copper-width/1 requires covered_primitives PCB_TRACK and PCB_ARC")
+    limit = params.get("min_track_width_mm")
+    excluded = params.get("exclude_nets")
+    if (isinstance(limit, bool) or not isinstance(limit, (int, float)) or
+            not math.isfinite(limit) or limit <= 0 or
+            not isinstance(excluded, list) or any(not isinstance(n, str) for n in excluded)):
+        raise CheckError("unsupported", "copper-width/1 needs a finite positive minimum and explicit exclude_nets")
+    tracks = geo.get("tracks")
+    if not isinstance(tracks, list):
+        raise CheckError("malformed", "geometry tracks must be a list")
+    counts = dict(eligible=0, checked=0, excluded=0, unsupported=0)
+    records, offenders = [], []
+    for item in tracks:
+        primitive = item if isinstance(item, dict) else {}
+        cls = primitive.get("native_class")
+        if cls == "PCB_VIA":
+            continue
+        record = {key: primitive.get(key) for key in ("uuid", "net", "layer")}
+        width = primitive.get("width_nm")
+        valid_width = isinstance(width, int) and not isinstance(width, bool) and width > 0
+        record.update(type=cls, width_mm=width / 1_000_000 if valid_width else None,
+                      limit_mm=limit)
+        records.append(record)
+        identity_ok = all(isinstance(record[k], str) and record[k]
+                          for k in ("uuid", "layer")) and isinstance(record["net"], str)
+        if identity_ok and record["net"] in excluded:
+            counts["excluded"] += 1
+            record["status"] = "excluded"
+            continue
+        counts["eligible"] += 1
+        if cls not in ("PCB_TRACK", "PCB_ARC") or not identity_ok or not valid_width:
+            counts["unsupported"] += 1
+            record["status"] = "unsupported"
+            continue
+        record["status"] = "checked"
+        counts["checked"] += 1
+        if record["width_mm"] < limit:
+            offenders.append(record)
+    return {"criterion": "copper-width/1", "covered_primitives": ["PCB_TRACK", "PCB_ARC"],
+            "exclude_nets": sorted(set(excluded)), "counts": counts, "primitives": records,
+            "offending_primitives": offenders,
+            "out_of_scope": {"PCB_VIA": sum(isinstance(t, dict) and t.get("native_class") == "PCB_VIA"
+                                            for t in tracks), "zones": len(geo["zones"])}}
+
+
 def check_geometry(ctx):
     board = ctx.candidate_path(ctx.scope["board"])
     ctx.execute(["/usr/bin/python3", "-B", "-m", "agent_ee.geometry_probe",
@@ -373,6 +428,22 @@ def check_geometry(ctx):
         ctx.result["limitations"].append(
             "connectivity unconnected count unavailable from pcbnew: "
             + str(geo.get("unconnected_items_error")))
+    if "criterion" in ctx.params or "covered_primitives" in ctx.params:
+        coverage = copper_width_coverage(geo, ctx.params)
+        coverage.update(candidate_id=ctx.manifest["candidate_id"],
+                        board_sha256=ctx.manifest["files"].get(ctx.scope["board"]),
+                        pcbnew_version=geo["pcbnew_version"])
+        write_json(ctx.work / "copper-width.json", coverage)
+        ctx.evidence("copper-width.json")
+        ctx.result["details"].update(coverage)
+        counts = coverage["counts"]
+        if not counts["eligible"] or counts["unsupported"]:
+            raise CheckError("unsupported", "copper-width/1 coverage incomplete: empty eligible set or unsupported primitive")
+        ctx.result["execution"] = "ok"
+        ctx.result["outcome"] = "defect" if coverage["offending_primitives"] else "pass"
+        ctx.result["summary"] = (f"copper-width/1: {counts['checked']} track/arc primitive(s) checked, "
+                                 f"{len(coverage['offending_primitives'])} below {ctx.params['min_track_width_mm']} mm")
+        return
     ctx.result["details"].update({
         "pcbnew_version": geo["pcbnew_version"],
         "board_sha256": ctx.manifest["files"].get(ctx.scope["board"]),
