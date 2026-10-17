@@ -62,7 +62,17 @@ Names are case-sensitive and retain leading slashes and hierarchical context.
 Aliases must be explicitly listed in immutable `names`. Anonymous nets should
 use terminal relations; generated anonymous names are not stable identities.
 Disconnected terminals fail both same-net and different-net predicates because
-neither establishes membership in a known conductor.
+neither establishes membership in a known conductor. Qualified native singleton
+`unconnected-(reference-Padpin)` nets (including the native symbol pin-name
+segment when present) represent disconnected pins, including explicit no-connect
+markers. Their raw net codes, names and terminal locators remain in the report;
+they cannot satisfy any conductor predicate. Normalization requires exact native
+terminal/name agreement and one node, after duplicate/unknown-node validation.
+Local named nets retain their sheet-qualified names. Exact global labels are
+read from the captured native hierarchy to distinguish deliberately named singleton
+conductors from generated no-connect names; their source locators are retained.
+Connected anonymous nets retain membership; a name prefix alone never removes a
+conductor.
 
 R/C/L, ferrites, zero-ohm resistors, jumpers and semiconductors never merge native
 conductors. A declared load/testpoint is an explicitly named component, not a
@@ -74,7 +84,11 @@ checks; this check makes no claim that matching pad labels establish routing.
 ## Results and immutable evidence
 
 The reader uses full native XML sheet, component UUID, library part pin inventory
-and net-node membership. Duplicate references (including across sheets), duplicate
+and net-node membership. Every declared sheet path is validated, including unused
+sheets. Duplicate net names or codes and absent/duplicate component value elements
+are unsupported inventory. An explicitly empty value element is a known empty
+string and can violate a nonempty value requirement. Duplicate references
+(including across sheets), duplicate
 pin numbers, missing parts, unresolved sheets, duplicate UUIDs within one sheet
 instance and multiple net
 memberships are unsupported. It refuses these cases rather than selecting an
