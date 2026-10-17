@@ -14,6 +14,7 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `netlist_parity` | [Exact intent or golden netlist parity](netlist-parity.md) against full native XML; resolved sources must rederive from captured intent. No footprint or electrical adequacy. |
 | `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |
 | `netlist_extra` | [Captured direct-net topology](netlist-extra.md) for exact declared two-terminal classes and anchored rail pairs; hierarchical basename islands are informational. |
+| `package_consistency` | [Footprint against pinned catalog package names](package-consistency.md) through a captured, hashed mapping table; unmapped names are unknown, class mismatch follows explicit policy; no land-pattern geometry. |
 | `netclass_completeness` | [Captured Default netclass field presence](netclass-completeness.md), qualified for KiCad 10.0.7 settings schema 5; no value or rendering validation. |
 | `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
 | `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |
