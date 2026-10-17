@@ -100,6 +100,9 @@ class ControlFixtureTest(unittest.TestCase):
 
 
 class RCDefaultTest(unittest.TestCase):
+    def setUp(self):
+        require_toolchain(native=True)
+
     def test_native_default_matches_explicit_and_analytic_response(self):
         with tempfile.TemporaryDirectory(prefix="agent-ee-rc-default-") as tmp:
             root = Path(tmp)

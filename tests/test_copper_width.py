@@ -7,6 +7,8 @@ import time
 import unittest
 from pathlib import Path
 
+from toolchain import require_toolchain
+
 from agent_ee import candidate, checks
 from agent_ee.baseline import freeze_evidence, verify_evidence, validate_witnesses, compile_baseline
 from agent_ee.storage import write_json
@@ -18,6 +20,7 @@ PARAMS = {"criterion": "copper-width/1", "covered_primitives": ["PCB_TRACK", "PC
 
 class NativeCopperWidthTests(unittest.TestCase):
     def setUp(self):
+        require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
