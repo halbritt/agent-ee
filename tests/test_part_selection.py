@@ -203,3 +203,38 @@ class SelectionTests(unittest.TestCase):
         failure = selection_check(snapshot, expected, self.requirements(quantity_per_board=0))
         self.assertEqual(failure['snapshot_date'], '2026-10-17')
         self.assertEqual(failure['snapshot_sha256'], json.loads((snapshot / 'manifest.json').read_text())['database']['sha256'])
+
+    def test_repinned_interval_contradicting_raw_tolerance_never_selects(self):
+        from agent_ee.part_selection import selection_check
+        from catalog_repin import repin, set_derived
+        snapshot, expected = self.snapshot([self.row(
+            attributes=json.dumps({'resistance': '10 kohm +/-5%', 'voltage': '50 V'}))])
+        self.assertEqual(select_parts(snapshot, expected, self.requirements())['outcome'], 'unknown')
+        tampered = repin(snapshot, lambda connection: set_derived(connection, 'C1', {
+            'resistance': {'min': '9900', 'max': '10100', 'unit': 'ohm'},
+            'voltage': {'min': '50', 'max': '50', 'unit': 'V'}}))
+        self.assertNotEqual(tampered, expected)
+        with self.assertRaisesRegex(ValueError, 'rederiv'):
+            select_parts(snapshot, tampered, self.requirements())
+        failure = selection_check(snapshot, tampered, self.requirements())
+        self.assertEqual((failure['execution'], failure['outcome'], failure['parts']), ('failed', 'unknown', []))
+        self.assertRegex(failure['details']['error'], 'rederiv')
+
+    def test_repinned_valid_snapshot_still_selects(self):
+        from catalog_repin import repin, set_derived
+        snapshot, expected = self.snapshot([self.row()])
+        rewritten = repin(snapshot, lambda connection: set_derived(connection, 'C1', {
+            'resistance': {'min': '9900', 'max': '10100', 'unit': 'ohm'},
+            'voltage': {'min': '50', 'max': '50', 'unit': 'V'}}))
+        self.assertNotEqual(rewritten, expected)
+        selection = select_parts(snapshot, rewritten, self.requirements())
+        self.assertEqual((selection['outcome'], selection['parts'][0]['chosen']['lcsc']), ('pass', 'C1'))
+
+    def test_repinned_invalid_price_is_failed_not_an_uncaught_ranking_error(self):
+        from agent_ee.part_selection import selection_check
+        from catalog_repin import repin
+        snapshot, _ = self.snapshot([self.row('C1'), self.row('C2')])
+        tampered = repin(snapshot, lambda connection: [connection.execute(
+            f"UPDATE {table} SET price1='abc' WHERE lcsc='C2'") for table in ('component_base', 'resistor')])
+        failure = selection_check(snapshot, tampered, self.requirements())
+        self.assertEqual((failure['execution'], failure['outcome'], failure['parts']), ('failed', 'unknown', []))
