@@ -22,9 +22,49 @@ placements. Proven total same-side courtyard area exceeding board area yields
 `packing_infeasible`, `outcome=defect`. Budget exhaustion, finite greedy-search
 exhaustion and a conflicting fixed placement yield typed unknown results:
 these do not prove geometric infeasibility. Missing/unsupported geometry is
-unknown. Initial rotations and pad rotations must be quarter turns and pads
-must be native rectangles. The placer does not optimize thermal/EMC behavior,
-decoupling loops, routing, arbitrary pad shapes or arbitrary rotations.
+unknown. Initial rotations and pad rotations must be quarter turns. The placer
+does not optimize thermal/EMC behavior, decoupling loops, routing or arbitrary
+rotations.
+
+### Pad shapes (AGENTEE-109)
+
+Pad outlines never enter the search or the judge: the packer uses pad centres
+for wire cost and courtyard polygons for space. Pads must still have a
+reviewed native shape, so that a plan states what it covers. The accepted
+native `PAD_SHAPE` values, read from the KiCad 10.0.7 pcbnew bindings, are:
+
+| Value | Shape | Stock examples |
+| --- | --- | --- |
+| 0 | circle | `PinHeader_1x03_P2.54mm_Vertical` pads 2 and 3 |
+| 1 | rect | header pad 1 |
+| 2 | oval | |
+| 4 | roundrect | `R_0805_2012Metric`, `C_0805_2012Metric` |
+| 5 | chamfered rect | |
+
+TRAPEZOID (3), CUSTOM (6), any other value, a non-integer shape, a pad angle
+that is not a quarter turn, and a capture with pads whose recorded
+`pcbnew_version` is not major version 10 give `unsupported_geometry`,
+`outcome=unknown`. The enum is read only for the probe version it came from.
+Every complete plan records the domain as `pad_shapes`, the value of
+`placer.pad_shape_qualification()`:
+
+```json
+{"pcbnew_major": "10", "accepted": {"0": "circle", "1": "rect", "2": "oval",
+ "4": "roundrect", "5": "chamfered_rect"}, "pad_rotation": "quarter-turn",
+ "pad_outline_in_geometry": false}
+```
+
+The placement probe records one shape per pad. The native writer therefore
+also refuses, as typed `unsupported_geometry`, any pad whose padstack is not
+KiCad's normal single-shape mode: a front/inner/back or custom padstack could
+carry an unqualified shape on another layer. After saving, the writer reloads
+the board and compares every pad's footprint-local facts with the source:
+UUID, number, net, attribute, padstack mode, shape, size, offset, drill size
+and shape, corner and chamfer ratios, chamfer corners, layer set, relative
+position and relative angle, plus each footprint's library identity. Any
+difference fails the proposal; it is retained as a `NAME-failure-*`
+diagnostic and nothing is published. A placement therefore moves stock
+footprints; it never substitutes rectangles for their pads.
 
 `placer_runner.place_candidate(source, netlist, destination, request)` is the
 native writer. `netlist` is a captured native XML export: reference inventories
@@ -71,3 +111,18 @@ independent rectangular mechanical placeholders; it does not qualify those
 placeholders as production footprint models. Authorization, net mismatch,
 unsupported geometry, insufficient area, deterministic budget and tool failure
 boundaries are exercised without fabricating successful tool evidence.
+
+The pad-shape tests build owned boards with every accepted shape at quarter
+turns, including plated circle and oval pads with drills, and check that the
+saved pads match the source. Trapezoid, custom, 45-degree and per-layer
+padstack pads, a missing courtyard and a 45-degree footprint refuse as typed
+unknown with no destination. A locked footprint stays unchanged. Rewriting
+pads to rectangles inside the writer fails and is not published. The stock RC
+test exports native XML from the owned RC schematic, loads the unchanged
+installed KiCad 10.0.7 `R_0805_2012Metric`, `C_0805_2012Metric` and
+`PinHeader_1x03_P2.54mm_Vertical` footprints, fixes and locks J1 on a 50 x 30 mm
+outline and places R1 and C1. The saved board passes the judge and native
+courtyard DRC, keeps the netlist's pad nets, and its pads match the library
+footprints. Unconnected copper is expected before routing; this is not a
+routed or schematic-parity result. Schematic parity of the stock RC board
+belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
