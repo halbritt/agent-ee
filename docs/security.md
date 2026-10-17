@@ -40,8 +40,9 @@ temporary name is never opened or written through. An entry the tool created or 
 record name is moved aside, unread, to `<name>.displaced-<random>`, and listed in the record's
 `displaced_records`. Stage receipts refuse such a step. A scratch the tool left unwritable
 makes the executor raise without writing anything; an interrupt still propagates as one.
-`storage.write_json` uses the same exclusive temporary file, so a coordinator JSON record
-written into tool scratch does not follow a planted link either. The work directory's parent
+`storage.write_json` removes any entry at its fixed `<name>.tmp` without following it, creates
+that file exclusively and renames it over the record, so a coordinator JSON record written into
+tool scratch does not follow a planted link either. The work directory's parent
 is a coordinator path and is resolved as given.
 
 ## Inference and credentials

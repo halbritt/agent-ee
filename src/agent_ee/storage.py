@@ -63,11 +63,31 @@ def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = json_bytes(value)
-    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    temp = path.with_name(path.name + ".tmp")
+    # A stale or planted entry at the temporary name is removed, never followed,
+    # and the file is created exclusively; replace() renames over a link at path.
     try:
-        publish(directory, path.name, data)
+        os.unlink(temp)
+    except FileNotFoundError:
+        pass
+    descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o666)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temp.replace(path)
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except FileNotFoundError:
+            pass
+        raise
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
     finally:
-        os.close(directory)
+        os.close(descriptor)
 
 
 def json_digest(value):

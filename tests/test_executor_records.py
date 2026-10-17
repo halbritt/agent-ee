@@ -246,17 +246,18 @@ class WriteJsonTests(unittest.TestCase):
         self.dir = self.root / 'scratch'
         self.dir.mkdir()
 
-    def test_planted_leaf_and_temporary_links_are_replaced_or_left_never_followed(self):
+    def test_planted_leaf_and_temporary_links_are_replaced_never_followed(self):
         os.symlink(self.host / 'sentinel', self.dir / 'record.json')
         os.symlink(self.host / 'created', self.dir / 'record.json.tmp')
+        os.symlink(self.host / 'sentinel', self.dir / 'other.json.tmp')
         value = {'execution': 'ok', 'values': [1, 2]}
         write_json(self.dir / 'record.json', value)
-        self.assertEqual((self.host / 'sentinel').read_bytes(), SENTINEL)
-        self.assertFalse((self.host / 'created').exists())
-        self.assertFalse((self.dir / 'record.json').is_symlink())
-        self.assertEqual(hashlib.sha256((self.dir / 'record.json').read_bytes()).hexdigest(), json_digest(value))
-        self.assertEqual(os.readlink(self.dir / 'record.json.tmp'), str(self.host / 'created'))
-        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ['record.json', 'record.json.tmp'])
+        write_json(self.dir / 'other.json', value)
+        self.assertEqual(entries(self.host), {'sentinel': ('file', SENTINEL)})
+        for name in ('record.json', 'other.json'):
+            self.assertFalse((self.dir / name).is_symlink())
+            self.assertEqual(hashlib.sha256((self.dir / name).read_bytes()).hexdigest(), json_digest(value))
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ['other.json', 'record.json'])
 
     def test_failed_write_keeps_the_previous_record_and_no_temporary_file(self):
         write_json(self.dir / 'record.json', {'kept': True})
