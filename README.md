@@ -99,7 +99,8 @@ model or acquire measurements from instruments.
 ## What is implemented today
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
-saved-board geometry, [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
+saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
+[page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
 and an ideal passive R/C/L transient simulation through ngspice. A separate
 [captured active-device check](docs/active-spice.md) supports explicit subcircuit
 pin bindings and declared transient/AC measurements. Its committed control model

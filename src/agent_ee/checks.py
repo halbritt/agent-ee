@@ -813,9 +813,11 @@ from .measurements import check_measurements, check_coupled_margins
 from .datasheet_facts import check_datasheet_facts, check_pin_map
 from .active_spice import check_active_spice
 from .kicad_happy import check_kicad_happy
+from .hardware_interface import check_hardware_interface
 
 
-CHECK_FUNCS = {"kicad_happy": check_kicad_happy, "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
+CHECK_FUNCS = {"kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+               "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,
                "drc": check_drc, "netlist": check_netlist,
