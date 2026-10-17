@@ -69,7 +69,10 @@ Inherited symbols recursively retain parent and child path/hash/symbol locators.
 Missing parents and cycles cannot pass. Version 1 refuses derived replacement
 pin graphics, alternate pin representations and repeated physical numbers across
 selected units rather than guessing equivalence. Common-unit pins are selected
-alongside the explicitly selected numbered units. Same-name pins with distinct
+alongside the explicitly selected numbered units. Selected units must exist in
+the inherited base symbol declarations, including units with graphics but no
+unit-specific pins. A symbol with only common-unit declarations supports only
+physical unit 1; common pins never authorize arbitrary unit numbers. Same-name pins with distinct
 numbers remain distinct. Power classification never follows net-name heuristics.
 
 The tokenizer handles quoted strings, escapes, semicolon comments and nested
@@ -96,6 +99,10 @@ physical inventory and complete terminal membership.
 | Non-JSON/schema-invalid generation response | malformed | unknown | missing |
 | Missing capture, hash mismatch or unparseable library | failed | unknown | missing |
 | Unsupported symbol representation or hierarchy | unsupported | unknown | missing |
+
+When unsupported features and failed library captures coexist, execution is
+`failed`, outcome is `unknown`, and coverage is `missing`; both findings remain.
+Declaration ordering cannot change this classification.
 
 Findings retain logical source locations and available pin inventories for unknown
 pins. Partial results are diagnostics and cannot authorize emission or parity.

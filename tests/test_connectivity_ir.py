@@ -197,6 +197,80 @@ class ResolvedBoundaryTests(unittest.TestCase):
         self.assertEqual([p['name'] for p in result['components'][0]['pins']], ['GND"return', 'GND"return'])
         self.assertEqual([p['unit'] for p in result['components'][0]['pins']], [0, 1])
 
+    def test_common_only_units_do_not_license_arbitrary_selections(self):
+        library = LIB.replace(b'R_1_1', b'R_0_1')
+        for units, status in (([1], ('ok', 'pass', 'complete')),
+                              ([99], ('unsupported', 'unknown', 'missing')),
+                              ([1, 99], ('unsupported', 'unknown', 'missing'))):
+            raw = intent()
+            raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+            raw['components'][0]['units'] = units
+            with self.subTest(units=units):
+                result = resolve_intent(raw, {'Owned.kicad_sym': library})
+                self.assertEqual(tuple(result[k] for k in ('execution', 'outcome', 'coverage')), status)
+                if status[1] == 'pass':
+                    from agent_ee.connectivity_ir import validate_resolved
+                    validate_resolved(result)
+                    self.assertEqual([p['unit'] for p in result['components'][0]['pins']], [0, 0])
+                else:
+                    self.assertIn('symbol_unsupported', [f['code'] for f in result['findings']])
+
+    def test_declared_multiunits_include_pinless_units_and_inheritance(self):
+        library = b'''(kicad_symbol_lib
+          (symbol "R"
+            (symbol "R_0_1" (pin power_in line (at 0 0 0) (name "GND") (number "1")))
+            (symbol "R_1_1" (pin passive line (at 1 0 0) (name "A") (number "2")))
+            (symbol "R_2_1" (pin passive line (at 2 0 0) (name "B") (number "3")))
+            (symbol "R_3_1" (rectangle (start 0 0) (end 1 1))))
+          (symbol "Child" (extends "R")))'''
+        for symbol in ('R', 'Child'):
+            for units, numbers in (([1], ['1', '2']), ([2], ['1', '3']),
+                                   ([1, 2], ['1', '2', '3']), ([3], ['1']),
+                                   ([4], None), ([1, 4], None)):
+                raw = intent()
+                raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+                raw['components'][0].update(lib_id='Owned:' + symbol, units=units)
+                raw['no_connects'] = [dict(component='r', pin={'number': n}) for n in numbers or []]
+                with self.subTest(symbol=symbol, units=units):
+                    result = resolve_intent(raw, {'Owned.kicad_sym': library})
+                    if numbers is None:
+                        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
+                    else:
+                        from agent_ee.connectivity_ir import validate_resolved
+                        validate_resolved(result)
+                        self.assertEqual([p['number'] for p in result['components'][0]['pins']], numbers)
+                        self.assertEqual(result['components'][0]['sources'][0]['symbol'], 'R')
+
+    def test_failed_capture_dominates_unsupported_in_all_orders(self):
+        import copy
+        import itertools
+        for capture in (None, b'not a library', LIB + b' '):
+            for hierarchy in ([], [dict(id='child')]):
+                raw = intent()
+                raw['libraries'].append(dict(name='Missing', path='Missing.kicad_sym',
+                    sha256=hashlib.sha256(capture or b'').hexdigest() if capture != LIB + b' ' else '0' * 64))
+                raw['components'].append(dict(raw['components'][0], id='s', reference='R2', units=[99]))
+                raw['hierarchy'] = hierarchy
+                captures = {'Owned.kicad_sym': LIB}
+                if capture is not None:
+                    captures['Missing.kicad_sym'] = capture
+                expected = None
+                for libraries in itertools.permutations(raw['libraries']):
+                    for components in itertools.permutations(raw['components']):
+                        case = copy.deepcopy(raw)
+                        case['libraries'], case['components'] = list(libraries), list(components)
+                        with self.subTest(capture=capture, hierarchy=hierarchy, components=[c['id'] for c in components]):
+                            result = resolve_intent(case, captures)
+                            self.assertEqual(tuple(result[k] for k in ('execution', 'outcome', 'coverage')),
+                                             ('failed', 'unknown', 'missing'))
+                            codes = {f['code'] for f in result['findings']}
+                            self.assertTrue({'library_coverage', 'symbol_unsupported'} <= codes)
+                            if hierarchy:
+                                self.assertIn('hierarchy_unsupported', codes)
+                            if expected is not None:
+                                self.assertEqual(result, expected)
+                            expected = result
+
     def test_pin_binding_to_net_and_no_connect_rejected(self):
         raw = intent()
         raw['nets'] = [dict(id='n', name='N', terminals=raw['no_connects'][:])]

@@ -9,7 +9,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 
-from .symbol_library import ELECTRICAL_TYPES, LibraryError, parse_library, resolve_symbol
+from .symbol_library import ELECTRICAL_TYPES, LibraryError, children, parse_library, resolve_symbol
 
 INTENT_SCHEMA = 'agent-ee.connectivity-intent/1'
 RESOLVED_SCHEMA = 'agent-ee.resolved-connectivity/1'
@@ -129,6 +129,10 @@ def resolve_intent(intent, captured_libraries):
                   no_connects=[], hierarchy=[], ports=[])
     def finding(code, location, message, **extra):
         result['findings'].append(dict(code=code, location=location, message=message, **extra))
+    def incomplete(execution):
+        # A failed capture remains failed even when another item is unsupported.
+        if result['execution'] != 'failed':
+            result.update(execution=execution, outcome='unknown', coverage='missing')
     try:
         raw = _read_json(intent)
         _validate_intent(raw)
@@ -138,13 +142,13 @@ def resolve_intent(intent, captured_libraries):
         finding('intent_schema', '/', str(exc))
         return _seal(result)
     if not isinstance(captured_libraries, dict):
-        result.update(execution='failed', outcome='unknown', coverage='missing')
+        incomplete('failed')
         finding('library_coverage', '/libraries', 'captured_libraries must be an explicit path-to-bytes map')
         return _seal(result)
     result['intent_sha256'] = hashlib.sha256(_json_bytes(raw)).hexdigest()
     result['hierarchy'], result['ports'] = raw.get('hierarchy', []), raw.get('ports', [])
     if result['hierarchy'] or result['ports']:
-        result.update(execution='unsupported', outcome='unknown', coverage='missing')
+        incomplete('unsupported')
         finding('hierarchy_unsupported', '/', 'hierarchy and ports retained but not resolved in v1')
     libraries = {}
     for lib in raw['libraries']:
@@ -160,7 +164,7 @@ def resolve_intent(intent, captured_libraries):
                 raise LibraryError('captured library hash/type mismatch')
             libraries[lib['name']] = (lib, parse_library(data))
         except LibraryError as exc:
-            result.update(execution='failed', outcome='unknown', coverage='missing')
+            incomplete('failed')
             finding('library_coverage', '/libraries/' + lib['name'], str(exc))
     components, references = {}, set()
     for comp in raw['components']:
@@ -181,8 +185,12 @@ def resolve_intent(intent, captured_libraries):
             continue
         try:
             pins, sources, power = resolve_symbol(symbols, symbol, lib['path'], lib['sha256'])
-            available_units = {p['unit'] for p in pins if p['unit']}
-            if set(comp['units']) - available_units and available_units:
+            # resolve_symbol has validated these inherited base-unit identifiers.
+            base = symbols[sources[0]['symbol']]
+            available_units = {int(node[1].rsplit('_', 2)[1])
+                               for node in children(base, 'symbol')} - {0}
+            # Common-only libraries represent one physical unit, numbered 1.
+            if set(comp['units']) - (available_units or {1}):
                 raise LibraryError('selected unit does not exist')
             pins = [p for p in pins if p['unit'] == 0 or p['unit'] in comp['units']]
             if not pins:
@@ -197,7 +205,7 @@ def resolve_intent(intent, captured_libraries):
             components[comp['id']] = resolved
             result['components'].append(resolved)
         except LibraryError as exc:
-            result.update(execution='unsupported', outcome='unknown', coverage='missing')
+            incomplete('unsupported')
             finding('symbol_unsupported', location, str(exc))
     bound = set()
     def expand(terminal, location):
