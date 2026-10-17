@@ -1,0 +1,89 @@
+(footprint "REG_4PAD"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Owned four-pad regulator land pattern fixture")
+	(property "Reference" "REF**"
+		(at 0 -3.3 0)
+		(layer "F.SilkS")
+		(uuid "5250c4d4-d6cd-4f0e-8998-9957a8bd2d99")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "REG_4PAD"
+		(at 0 3.3 0)
+		(layer "F.Fab")
+		(uuid "68dabff8-3430-4967-8ca2-8040c931050f")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "4e6799e7-8313-4b3d-8fe0-c1ecb004e066")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "9613d7fd-2a28-4079-b124-f506153243da")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_rect
+		(start -3.2 -1.8)
+		(end 3.2 1.8)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "243a062f-2d80-46f7-beec-8a47c93113fe")
+	)
+	(pad "1" smd rect
+		(at -2.3 -0.95)
+		(size 1.2 0.6)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "21bdde9e-472e-4ec2-a9a1-63b22dfd4248")
+	)
+	(pad "2" smd rect
+		(at -2.3 0.95)
+		(size 1.2 0.6)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "fa363a0e-b85f-46df-b2aa-6084a1fef14d")
+	)
+	(pad "3" smd rect
+		(at 2.3 0)
+		(size 1.2 2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "fc6896e9-077f-405c-b392-54314f0aa754")
+	)
+	(pad "4" smd rect
+		(at -2.3 0)
+		(size 1.2 0.6)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "eaff9ad1-2faa-429e-af30-b1d66f63bc70")
+	)
+	(embedded_fonts no)
+)

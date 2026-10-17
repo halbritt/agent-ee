@@ -1,0 +1,793 @@
+{
+  "schema": "agent-ee.connectivity-intent/1",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    }
+  ],
+  "components": [
+    {
+      "id": "x1",
+      "reference": "X1",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r1",
+      "reference": "R1",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x2",
+      "reference": "X2",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r2",
+      "reference": "R2",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x3",
+      "reference": "X3",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r3",
+      "reference": "R3",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x4",
+      "reference": "X4",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r4",
+      "reference": "R4",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x5",
+      "reference": "X5",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r5",
+      "reference": "R5",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x6",
+      "reference": "X6",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r6",
+      "reference": "R6",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x7",
+      "reference": "X7",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r7",
+      "reference": "R7",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "x8",
+      "reference": "X8",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "r8",
+      "reference": "R8",
+      "lib_id": "OwnedGen:ASYM",
+      "value": "ASYM",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "dual",
+      "reference": "U1",
+      "lib_id": "OwnedGen:DUAL",
+      "value": "DUAL",
+      "footprint": "",
+      "units": [
+        1,
+        2
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "id": "t1_1",
+      "name": "T1_1",
+      "terminals": [
+        {
+          "component": "x1",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r1",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t1_2",
+      "name": "T1_2",
+      "terminals": [
+        {
+          "component": "x1",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r1",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t1_3",
+      "name": "T1_3",
+      "terminals": [
+        {
+          "component": "x1",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r1",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t1_4",
+      "name": "T1_4",
+      "terminals": [
+        {
+          "component": "x1",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r1",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t2_1",
+      "name": "T2_1",
+      "terminals": [
+        {
+          "component": "x2",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r2",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t2_2",
+      "name": "T2_2",
+      "terminals": [
+        {
+          "component": "x2",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r2",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t2_3",
+      "name": "T2_3",
+      "terminals": [
+        {
+          "component": "x2",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r2",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t2_4",
+      "name": "T2_4",
+      "terminals": [
+        {
+          "component": "x2",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r2",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t3_1",
+      "name": "T3_1",
+      "terminals": [
+        {
+          "component": "x3",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r3",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t3_2",
+      "name": "T3_2",
+      "terminals": [
+        {
+          "component": "x3",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r3",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t3_3",
+      "name": "T3_3",
+      "terminals": [
+        {
+          "component": "x3",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r3",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t3_4",
+      "name": "T3_4",
+      "terminals": [
+        {
+          "component": "x3",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r3",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t4_1",
+      "name": "T4_1",
+      "terminals": [
+        {
+          "component": "x4",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r4",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t4_2",
+      "name": "T4_2",
+      "terminals": [
+        {
+          "component": "x4",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r4",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t4_3",
+      "name": "T4_3",
+      "terminals": [
+        {
+          "component": "x4",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r4",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t4_4",
+      "name": "T4_4",
+      "terminals": [
+        {
+          "component": "x4",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r4",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t5_1",
+      "name": "T5_1",
+      "terminals": [
+        {
+          "component": "x5",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r5",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t5_2",
+      "name": "T5_2",
+      "terminals": [
+        {
+          "component": "x5",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r5",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t5_3",
+      "name": "T5_3",
+      "terminals": [
+        {
+          "component": "x5",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r5",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t5_4",
+      "name": "T5_4",
+      "terminals": [
+        {
+          "component": "x5",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r5",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t6_1",
+      "name": "T6_1",
+      "terminals": [
+        {
+          "component": "x6",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r6",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t6_2",
+      "name": "T6_2",
+      "terminals": [
+        {
+          "component": "x6",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r6",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t6_3",
+      "name": "T6_3",
+      "terminals": [
+        {
+          "component": "x6",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r6",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t6_4",
+      "name": "T6_4",
+      "terminals": [
+        {
+          "component": "x6",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r6",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t7_1",
+      "name": "T7_1",
+      "terminals": [
+        {
+          "component": "x7",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "r7",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t7_2",
+      "name": "T7_2",
+      "terminals": [
+        {
+          "component": "x7",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r7",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t7_3",
+      "name": "T7_3",
+      "terminals": [
+        {
+          "component": "x7",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "r7",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t8_2",
+      "name": "T8_2",
+      "terminals": [
+        {
+          "component": "x8",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "r8",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t8_4",
+      "name": "T8_4",
+      "terminals": [
+        {
+          "component": "x8",
+          "pin": {
+            "number": "4"
+          }
+        },
+        {
+          "component": "r8",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "t8_a",
+      "name": "T8_A",
+      "terminals": [
+        {
+          "component": "x8",
+          "pin": {
+            "name": "A"
+          }
+        },
+        {
+          "component": "r8",
+          "pin": {
+            "name": "A"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d_a",
+      "name": "D_A",
+      "terminals": [
+        {
+          "component": "dual",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "dual",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d_b",
+      "name": "D_B",
+      "terminals": [
+        {
+          "component": "dual",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "dual",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d_p",
+      "name": "D_P",
+      "terminals": [
+        {
+          "component": "dual",
+          "pin": {
+            "number": "5"
+          }
+        },
+        {
+          "component": "dual",
+          "pin": {
+            "number": "6"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": [
+    {
+      "component": "x7",
+      "pin": {
+        "number": "4"
+      }
+    },
+    {
+      "component": "r7",
+      "pin": {
+        "number": "4"
+      }
+    }
+  ]
+}

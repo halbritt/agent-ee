@@ -1,0 +1,212 @@
+{
+  "schema": "agent-ee.connectivity-intent/2",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    }
+  ],
+  "hierarchy": [
+    {
+      "id": "root",
+      "parent": null,
+      "local_id": "root",
+      "file": "two_level.kicad_sch"
+    },
+    {
+      "id": "filter",
+      "parent": "root",
+      "local_id": "filter",
+      "file": "filter.kicad_sch"
+    }
+  ],
+  "components": [
+    {
+      "sheet": "root",
+      "id": "j_in",
+      "reference": "J1",
+      "lib_id": "OwnedGen:CONN3",
+      "value": "CONN3",
+      "footprint": "OwnedFP:CONN_1x3",
+      "units": [
+        1
+      ]
+    },
+    {
+      "sheet": "root",
+      "id": "c_bulk",
+      "reference": "C1",
+      "lib_id": "OwnedGen:CAP",
+      "value": "10u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "sheet": "filter",
+      "id": "c_in",
+      "reference": "C2",
+      "lib_id": "OwnedGen:CAP",
+      "value": "100n",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "sheet": "filter",
+      "id": "c_gnd",
+      "reference": "C3",
+      "lib_id": "OwnedGen:CAP",
+      "value": "1u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "sheet": "filter",
+      "id": "c_local",
+      "reference": "C4",
+      "lib_id": "OwnedGen:CAP",
+      "value": "10n",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "sheet": "root",
+      "id": "sig",
+      "name": "SIG",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "root",
+      "id": "gnd",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "c_bulk",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "root",
+      "id": "local",
+      "name": "LOCAL_SAME",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_bulk",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "filter",
+      "id": "in",
+      "name": "IN",
+      "terminals": [
+        {
+          "component": "c_in",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "filter",
+      "id": "gnd",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "c_in",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_gnd",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "filter",
+      "id": "local",
+      "name": "LOCAL_SAME",
+      "terminals": [
+        {
+          "component": "c_gnd",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "c_local",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": [
+    {
+      "sheet": "filter",
+      "component": "c_local",
+      "pin": {
+        "number": "2"
+      }
+    }
+  ],
+  "ports": [
+    {
+      "child": "filter",
+      "id": "in",
+      "name": "IN",
+      "direction": "passive",
+      "parent_net": "sig",
+      "child_net": "in"
+    },
+    {
+      "child": "filter",
+      "id": "gnd",
+      "name": "GND",
+      "direction": "passive",
+      "parent_net": "gnd",
+      "child_net": "gnd"
+    }
+  ]
+}

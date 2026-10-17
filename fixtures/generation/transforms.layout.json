@@ -1,0 +1,43 @@
+{
+  "schema": "agent-ee.schematic-layout/1",
+  "namespace": "0b9c4bd4-3a5e-5f86-8f0e-6f5d0a7c9e21",
+  "project": "transforms",
+  "transforms": {
+    "x1": {
+      "rotation": 0,
+      "mirror": null
+    },
+    "x2": {
+      "rotation": 90,
+      "mirror": null
+    },
+    "x3": {
+      "rotation": 180,
+      "mirror": null
+    },
+    "x4": {
+      "rotation": 270,
+      "mirror": null
+    },
+    "x5": {
+      "rotation": 0,
+      "mirror": "x"
+    },
+    "x6": {
+      "rotation": 0,
+      "mirror": "y"
+    },
+    "x7": {
+      "rotation": 90,
+      "mirror": "x"
+    },
+    "x8": {
+      "rotation": 90,
+      "mirror": "y"
+    },
+    "dual": {
+      "rotation": 270,
+      "mirror": "y"
+    }
+  }
+}

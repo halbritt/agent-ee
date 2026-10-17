@@ -1,0 +1,118 @@
+{
+  "schema": "agent-ee.connectivity-intent/1",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    }
+  ],
+  "components": [
+    {
+      "id": "j_in",
+      "reference": "J1",
+      "lib_id": "OwnedGen:CONN3",
+      "value": "CONN3",
+      "footprint": "OwnedFP:CONN_1x3",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "reg",
+      "reference": "U1",
+      "lib_id": "OwnedGen:REG3",
+      "value": "REG3",
+      "footprint": "OwnedFP:REG_4PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "c_out",
+      "reference": "C1",
+      "lib_id": "OwnedGen:CAP",
+      "value": "10u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "id": "vin",
+      "name": "VIN",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "reg",
+          "pin": {
+            "name": "VI"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gnd",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "reg",
+          "pin": {
+            "name": "GND"
+          }
+        },
+        {
+          "component": "c_out",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "vout",
+      "name": "VOUT",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "reg",
+          "pin": {
+            "name": "VO"
+          }
+        },
+        {
+          "component": "c_out",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": [
+    {
+      "component": "reg",
+      "pin": {
+        "number": "4"
+      }
+    }
+  ]
+}

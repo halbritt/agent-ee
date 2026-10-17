@@ -1,0 +1,96 @@
+{
+  "_comment": "Hand-specified before any hierarchical emitter output. Physical nets are sets of [reference, pin]; port names are sheet pins on the filter sheet symbol and hierarchical labels in filter.kicad_sch; LOCAL_SAME appears on both sheets but is two separate nets.",
+  "physical_nets": [
+    [
+      [
+        "J1",
+        "1"
+      ],
+      [
+        "C2",
+        "1"
+      ]
+    ],
+    [
+      [
+        "C1",
+        "2"
+      ],
+      [
+        "C2",
+        "2"
+      ],
+      [
+        "C3",
+        "2"
+      ],
+      [
+        "J1",
+        "3"
+      ]
+    ],
+    [
+      [
+        "C1",
+        "1"
+      ],
+      [
+        "J1",
+        "2"
+      ]
+    ],
+    [
+      [
+        "C3",
+        "1"
+      ],
+      [
+        "C4",
+        "1"
+      ]
+    ]
+  ],
+  "explicit_nc": [
+    [
+      "C4",
+      "2"
+    ]
+  ],
+  "sheets": {
+    "two_level.kicad_sch": {
+      "local_labels": [
+        "GND",
+        "LOCAL_SAME",
+        "SIG"
+      ],
+      "hierarchical_labels": [],
+      "sheet_pins": {
+        "filter": [
+          "GND",
+          "IN"
+        ]
+      }
+    },
+    "filter.kicad_sch": {
+      "local_labels": [
+        "LOCAL_SAME"
+      ],
+      "hierarchical_labels": [
+        "GND",
+        "IN"
+      ],
+      "sheet_pins": {}
+    }
+  },
+  "components_by_sheet": {
+    "two_level.kicad_sch": [
+      "C1",
+      "J1"
+    ],
+    "filter.kicad_sch": [
+      "C2",
+      "C3",
+      "C4"
+    ]
+  }
+}
