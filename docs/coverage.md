@@ -385,6 +385,24 @@ the stopped report SHA-256 is
 These identifiers support retained-record comparison; the records and captured
 third-party fixture inputs have not been republished as benchmark evidence.
 
+## Writer-side stage receipts
+
+`test_stage_receipts.py` runs an original test step program in the real sandbox.
+It covers the following:
+
+- coordinator-observed executable, source-tree and version identity, and an unknown version when no probe exists or the probe prints nothing;
+- exact input and output hashes and adoption;
+- partial, failed, crashed, timed-out and cancelled steps;
+- out-of-scope writes and inventory changes;
+- verbatim backend reports;
+- forged, tampered and foreign receipts;
+- exact whole-tree applicability.
+
+Campaign tests bind a receipt to the captured proposal. They show that a late change after binding fails
+`verify-campaign`, that a failed step stops the repair without substitution, and
+that undeclared or unanchored receipts are refused. No scaffold, placement helper or
+kicad-route execution is qualified. The rung 1 receipt set remains open.
+
 ## Synthetic seeded benchmark
 
 The [benchmark utilities](seeded-benchmark.md) freeze five public source commits

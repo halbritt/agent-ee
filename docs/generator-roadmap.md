@@ -216,7 +216,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 - Inputs are captured and hashed; a stage reads captured bytes, never a live
   checkout, catalogue or network source.
 - Tool versions and executable hashes are recorded per run. Writer-side tools
-  (scaffold, placers, kicad-route) get stage receipts (AGENTEE-95).
+  (scaffold, placers, kicad-route) get [stage receipts](stage-receipts.md)
+  (AGENTEE-95). The receipt format and the campaign seam exist; no scaffold,
+  placer or kicad-route step is wired to them yet.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings
