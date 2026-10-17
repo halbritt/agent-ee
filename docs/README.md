@@ -98,5 +98,6 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison; supplier/native check integration remains pending.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
+- [Native schematic emission](schematic-emitter.md) and [forward annotation](forward-annotation.md) — captured-intent generation and native-netlist board updates; full campaign integration remains pending.
 - [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.

@@ -134,8 +134,11 @@ series/parallel networks; unsupported conductors leave coverage incomplete.
 The [connectivity resolver](docs/connectivity-ir.md) elaborates explicit captured
 symbol pins and scoped sheet ports into physical nets. Hierarchical port names
 that would short distinct local nets are rejected. Repeated sheet files and
-multi-sheet global power remain unsupported; native hierarchical emission and
-end-to-end generation qualification are still pending.
+multi-sheet global power remain unsupported. The [native emitter](docs/schematic-emitter.md)
+produces flat and supported hierarchical schematics from that captured intent.
+[Forward annotation](docs/forward-annotation.md) plans and applies native-netlist
+changes to a board with protected placement and routing. Full campaign generation
+and hierarchical annotation application remain unqualified.
 [Netlist parity](docs/netlist-parity.md) compares native connectivity with captured
 intent and libraries or an explicit golden netlist. Resolved intent is rederived
 before comparison. Exact instance connectivity catches exchanges that collapsed

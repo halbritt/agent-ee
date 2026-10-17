@@ -193,8 +193,10 @@ record still does not attest captured source or execution. Consumers must
 freshly resolve the raw intent against captured library bytes before granting
 emission or parity authority; existing resolved-source limitations remain.
 
-This extension supplies the resolver interface only. Native two-level export,
-ERC, sheet-instance anchoring, mutated native output and forward annotation
-require the separately owned emitter and native inventory adapter. Pure tests
-are not native qualification or completion of AGENTEE-40. Repeated sheet files
-and multi-sheet power remain explicit unsupported coverage.
+The [native emitter](schematic-emitter.md) consumes this resolver interface and
+has native two-level export, ERC, sheet-instance and mutation controls.
+[Forward annotation](forward-annotation.md) consumes the native inventory;
+hierarchical planning and binding are tested, but hierarchical application is
+not yet qualified. Pure resolver tests alone do not qualify emission. Repeated
+sheet files and multi-sheet power remain explicit unsupported coverage, and
+full generation-campaign integration remains pending.
