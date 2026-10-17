@@ -20,13 +20,40 @@ pinned by this adapter. Extractor outputs and invocation records are retained.
 
 Verification compares the PDF hash to the captured manifest, finds the exact
 quote on the cited physical page, and checks that the value occurs in the quote
-as a whole token, optionally followed directly by the declared unit: `CAN` is
-absent from `CANL`, and `5` is absent from `15`, `4.5` and `5.5`.
-Pin-function facts additionally require the pin as a whole token. Whitespace
-and case are significant; there is no OCR, normalization or model-generated
-replacement text. `facts.json` in the check workspace records each fact's status
-and reason. Incorrect hashes, absent values, altered quotes and wrong pages
-produce specific rejection reasons. A blank/scanned page with no extractable
+as a complete written token, optionally followed by the declared unit (`5V`,
+`5 V`, `5µA`). The comparison is lexical:
+
+- Letters, digits, underscores, combining marks, format characters (such as a
+  soft hyphen), private-use glyphs and U+FFFD continue a token. `CAN` is absent
+  from `CANL` and from `CAN` followed by a combining mark.
+- A number includes its leading decimal point, fraction, sign and exponent.
+  `5` is absent from `15`, `4.5`, `5.5`, `.5`, `1e-5`, `-5`, `−5`, `±5` and
+  `+5`; `1` is absent from `1,000` and `3` from `5E+3`. Superscript signs and `×`
+  continue a number (`10⁻⁵`, `5×10³`).
+- A hyphen, minus or plus glued between digits is ambiguous: a range, a
+  difference, or a superscript exponent that extraction flattened (`10-5`).
+  Neither side is a complete value there; cite the whole `4.5-5.5`. Figure,
+  en and em dashes between digits separate a range (`4.5–5.5`) and elsewhere
+  are minus signs.
+
+Values keep the extracted spelling exactly. Signs are not normalized: the
+TJA1051 PDF prints its minus as a private-use Symbol glyph, extracted as
+U+F02D, so its −0.3 V limit is cited as `\uf02d0.3` (JSON escape), not `-0.3`
+or `0.3`. Whitespace and case are significant, and a value with edge whitespace
+is never a complete token. There is no OCR, Unicode normalization or
+model-generated replacement text. Pin-function facts additionally require the
+pin as a complete token under the same rules.
+
+These are boundaries, not interpretation. The checker does not compare
+numeric equivalence (`5E+3` versus `5000`), convert or validate units, or
+decide what a sign, range or expression means. Slash or space separation
+still delimits a token: `3` is a token of `TJA1051T/3`, and `5` of `5 × 10³`.
+The tested Unicode boundaries cover the categories above, not every script's
+word segmentation.
+
+`facts.json` in the check workspace records each fact's status and reason.
+Incorrect hashes, absent values, altered quotes and wrong pages produce
+specific rejection reasons. A blank/scanned page with no extractable
 text is `unsupported`. An out-of-range page is rejected. Any unverified fact
 makes the check `execution: unsupported`, `outcome: unknown`, preventing citation
 failure from becoming an accepted electrical defect.
