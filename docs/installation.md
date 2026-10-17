@@ -83,8 +83,9 @@ checks-only reviews and CI, not agent reviews. The
 
 ```sh
 docker build -t agent-ee:local .
+profile=$(bash scripts/container_apparmor.sh)
 docker run --rm --network none \
-  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+  --security-opt seccomp=unconfined --security-opt "apparmor=$profile" \
   --security-opt systempaths=unconfined \
   agent-ee:local agent-ee doctor --checks-only
 ```
@@ -93,20 +94,27 @@ docker run --rm --network none \
 
 Bubblewrap still isolates every native check inside the container. To create its
 namespaces, the container needs three relaxations of Docker's default
-confinement. Nothing else is required, and the tool sandbox gets no network:
+confinement and, on an AppArmor host, a named host profile. The tool sandbox
+gets no network:
 
 | Option | Grants |
 | --- | --- |
 | `--security-opt seccomp=unconfined` | Removes Docker's syscall filter so the non-root user can call `unshare` for a user namespace; kernel permission checks still apply |
-| `--security-opt apparmor=unconfined` | Removes Docker's `docker-default` AppArmor profile, which denies the mounts Bubblewrap makes; host profiles that attach by path, such as Ubuntu's `bwrap` profile, still apply |
+| `--security-opt apparmor=<profile>` | Replaces Docker's `docker-default` AppArmor profile, which denies the mounts Bubblewrap makes, with the project's permissive `agent-ee-container` profile that also allows user namespaces (`unconfined` when host AppArmor is disabled) |
 | `--security-opt systempaths=unconfined` | Removes Docker's `/proc` masks so a fresh `proc` can be mounted in the new PID namespace; also exposes masked `/proc` entries to the container |
+
+`bash scripts/container_apparmor.sh` loads that profile with
+`sudo -n apparmor_parser -r` and prints the name to pass. It changes no other
+profile or global sysctl. Plain `apparmor=unconfined` is not enough on a host
+that restricts unprivileged user namespaces: the first hosted CI run failed that
+way with `Failed RTM_NEWADDR: Operation not permitted`.
 
 Run as a non-root user: the image's `agentee` user, or `--user "$(id -u):$(id -g)"
 -e HOME=/tmp` when a mounted workspace must stay owned by you. `--privileged`,
 `--cap-add SYS_ADMIN` and container root are not needed and grant more. The
 demonstrated Ubuntu 24.04 host kept `kernel.apparmor_restrict_unprivileged_userns=1`.
-A host that blocks user namespaces without a `bwrap` profile needs an explicit
-administrator decision. If the relaxations are missing, the native checks fail
+Loading the profile needs that `sudo` permission, which is an explicit
+administrator decision on a self-hosted machine. If the relaxations are missing, the native checks fail
 and the run is incomplete; agent-ee never falls back to unsandboxed execution. See
 [Bubblewrap inside the container](container.md#bubblewrap-inside-the-container)
 for each failure message and what each option exposes.
