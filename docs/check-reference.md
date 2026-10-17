@@ -33,6 +33,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
+| `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -328,3 +329,10 @@ authority and unknown boundaries.
 See [passive corners](passive-corners.md) for the optional `passive_corners`
 contract, supported topology, immutable qualification inputs, bounded ensemble,
 retained per-corner evidence and empirical-transfer refusal.
+
+## JLCPCB fab package
+
+See [fab export](fab-export.md) for the `fab_export` staging layout, the
+`agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
+v1 refusals and outcome mapping. It requires an earlier `netlist_check` and
+applies no CPL rotation policy.

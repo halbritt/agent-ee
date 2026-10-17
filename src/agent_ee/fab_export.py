@@ -1,0 +1,741 @@
+"""JLCPCB fab package generation from the captured native board (AGENTEE-23).
+
+Check kind `fab_export` runs the pinned `kicad-cli` inside the executor sandbox
+against the captured `.kicad_pcb` and writes the staging layout fixed by the
+fab lane interface contract v1 under `work/<check-id>/fab/`:
+
+    gerbers/          one plot per enabled fab layer, Protel (JLC) extensions
+    drill/            exactly one PTH and one NPTH Excellon file + Gerber X2 maps
+    bom.csv           part-binding properties from the native XML netlist of a
+                      preceding `netlist` check, grouped by LCSC number
+    cpl.csv           native position file rewritten to the JLCPCB CPL header
+    gerbers.zip       gerbers/ + drill/, deterministic member order and metadata
+    pcb_summary.json  native `kicad-cli pcb export stats` JSON
+    manifest.json     agent-ee.fab-manifest/1, written last and only on success
+
+No rotation, offset or pin-1 policy is applied to the CPL (AGENTEE-72 owns
+that); rotations are the native position-file values. Outcome `pass` means
+only that every export succeeded, validated and was hashed into a complete
+manifest. It does not establish DFM, BOM/CPL/board designator consistency
+(AGENTEE-73) or orderability. Missing, empty or unparseable output, an
+unsupported board feature or a part without a binding is unknown coverage;
+a native nonzero exit is execution `failed`. Neither leaves a `fab/` package:
+the partial staging is renamed `fab.incomplete/` and no manifest is written.
+"""
+
+import csv
+import io
+import json
+import math
+import re
+import shutil
+import unicodedata
+import xml.etree.ElementTree as ET
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .storage import digest, read_json, write_json
+
+SCHEMA = 'agent-ee.fab-manifest/1'
+BOM_HEADER = 'Designator,Footprint,Quantity,Value,Manufacturer,Partnumber,"LCSC Part #"'
+CPL_HEADER = 'Designator,Mid X,Mid Y,Layer,Rotation'
+POS_HEADER = ['Ref', 'Val', 'Package', 'PosX', 'PosY', 'Rot', 'Side']
+SANDBOX_PATH = '/usr/local/bin:/usr/bin:/bin'
+LCSC_RE = re.compile(r'^C[1-9][0-9]*$')
+REF_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
+NUMBER_RE = re.compile(r'^-?\d+(?:\.\d+)?$')
+# Non-copper fab layers: (board layer name, Protel extension, X2 file function).
+FAB_LAYERS = (('F.Mask', 'gts', 'Soldermask,Top'), ('B.Mask', 'gbs', 'Soldermask,Bot'),
+              ('F.Paste', 'gtp', 'Paste,Top'), ('B.Paste', 'gbp', 'Paste,Bot'),
+              ('F.SilkS', 'gto', 'Legend,Top'), ('B.SilkS', 'gbo', 'Legend,Bot'),
+              ('Edge.Cuts', 'gm1', 'Profile,NP'))
+# Deterministic ASCII substitutions applied before NFKD decomposition.
+ASCII_MAP = {'\u00b5': 'u', '\u03bc': 'u', '\u2126': 'ohm', '\u03a9': 'ohm',
+             '\u00b1': '+/-', '\u00b0': 'deg'}
+FIXED_TIME = '1970-01-01T00:00:00'
+TIMESTAMP_RE = re.compile(r'\d{4}-\d\d-\d\d[T ]\d\d:\d\d')
+GERBER_TIMES = (
+    (re.compile(r'^(%TF\.CreationDate,)[^*\n]*(\*%)$', re.M), r'\g<1>' + FIXED_TIME + r'+00:00\2'),
+    (re.compile(r'^(G04 Created by KiCad \([^)\n]*\) date )\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\*)$', re.M),
+     r'\g<1>1970-01-01 00:00:00\2'))
+DRILL_TIMES = (
+    (re.compile(r'^(; DRILL file .* date )\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$', re.M), r'\g<1>' + FIXED_TIME),
+    (re.compile(r'^(; #@! TF\.CreationDate,)\S+$', re.M), r'\g<1>' + FIXED_TIME + '+00:00'))
+STATS_TIME = re.compile(r'^(\s*"date": ")\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(",?)$', re.M)
+ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+STEP_CEILING = 600
+TOKEN_RE = re.compile(r'\s+|;[^\n]*|\(|\)|"(?:[^"\\]|\\.)*"|[^\s();"]+')
+
+
+def _error(execution, message):
+    from .checks import CheckError
+    return CheckError(execution, message)
+
+
+# ------------------------------------------------------------ pure validation
+
+def validate_params(params):
+    """v1 interprets exactly one parameter; layer overrides are refused."""
+    if not isinstance(params, dict) or set(params) != {'netlist_check'}:
+        raise ValueError('fab_export/1 params must be exactly {"netlist_check"}; '
+                         'layer and output overrides are refused in v1')
+    if not isinstance(params['netlist_check'], str) or not params['netlist_check']:
+        raise ValueError('netlist_check must name the preceding netlist check')
+    return params
+
+
+def capability(params):
+    validate_params(params)
+    return {'predicates': ['fab-export:jlcpcb-package/1']}
+
+
+def natural_key(text):
+    return [(0, int(part), '') if part.isdigit() else (1, 0, part)
+            for part in re.split(r'(\d+)', text) if part]
+
+
+def ascii_text(value, label):
+    """Deterministic ASCII form of a CSV value; unmappable text is refused."""
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(f'{label} contains control characters')
+    mapped = ''.join(ASCII_MAP.get(ch, ch) for ch in value)
+    decomposed = ''.join(ch for ch in unicodedata.normalize('NFKD', mapped)
+                         if not unicodedata.combining(ch))
+    if not decomposed.isascii():
+        bad = sorted({ch for ch in decomposed if not ch.isascii()})
+        raise ValueError(f'{label} {value!r} has characters without a deterministic ASCII form: {bad}')
+    return decomposed
+
+
+def scan_sexpr(data, want, *, limit=256 * 1024 * 1024):
+    """Selectively materialise one KiCad S-expression without a node ceiling.
+
+    `want(path)` receives the tuple of list heads from the root and decides
+    whether that list is kept. Skipped lists are still tokenised and balanced.
+    Returns (tree, heads), where heads is every list head seen at any depth.
+    """
+    if not isinstance(data, bytes) or len(data) > limit:
+        raise ValueError('native file must be bytes within the size limit')
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError as exc:
+        raise ValueError('native file is not UTF-8') from exc
+    stack, root, heads, pos = [], None, set(), 0
+    for match in TOKEN_RE.finditer(text):
+        if match.start() != pos:
+            raise ValueError(f'invalid token at offset {pos}')
+        pos = match.end()
+        token = match.group(0)
+        if token[0].isspace() or token[0] == ';':
+            continue
+        if token == '(':
+            if root is not None:
+                raise ValueError('more than one root expression')
+            if stack and stack[-1][1] is None:
+                raise ValueError('list without a head atom')
+            if len(stack) >= 256:
+                raise ValueError('nesting limit exceeded')
+            stack.append([[], None, None, None])  # node, head, keep, path
+            continue
+        if token == ')':
+            if not stack:
+                raise ValueError('unmatched closing parenthesis')
+            node, head, keep, _ = stack.pop()
+            if head is None:
+                raise ValueError('empty list')
+            if not stack:
+                root = node
+            elif keep and stack[-1][2]:
+                stack[-1][0].append(node)
+            continue
+        if not stack:
+            raise ValueError('atom outside the root expression')
+        if token[0] == '"':
+            atom = re.sub(r'\\(.)', lambda m: {'n': '\n', 'r': '\r', 't': '\t'}.get(m.group(1), m.group(1)),
+                          token[1:-1])
+        else:
+            atom = token
+        entry = stack[-1]
+        if entry[1] is None:
+            entry[1] = atom
+            heads.add(atom)
+            parent_keep = stack[-2][2] if len(stack) > 1 else True
+            entry[3] = (stack[-2][3] if len(stack) > 1 else ()) + (atom,)
+            entry[2] = parent_keep and want(entry[3])
+        if entry[2]:
+            entry[0].append(atom)
+    if pos != len(text):
+        raise ValueError('unterminated quoted string or trailing data')
+    if stack or root is None:
+        raise ValueError('incomplete S-expression')
+    return root, heads
+
+
+def _board_want(path):
+    if len(path) == 1:
+        return path[0] == 'kicad_pcb'
+    if path[1] in ('layers', 'variants', 'version'):
+        return True
+    if path[1] != 'footprint':
+        return False
+    return len(path) == 2 or path[2] in ('layer', 'property', 'attr', 'variant')
+
+
+def _lists(node, head):
+    return [x for x in node[1:] if isinstance(x, list) and x and x[0] == head]
+
+
+def board_facts(data):
+    """Layer table and footprint inventory of a captured board.
+
+    Raises ValueError for unparseable bytes and returns `unsupported` reasons
+    for features this v1 exporter cannot represent honestly.
+    """
+    root, heads = scan_sexpr(data, _board_want)
+    if root[0] != 'kicad_pcb':
+        raise ValueError('not a kicad_pcb file')
+    unsupported = []
+    layer_tables = _lists(root, 'layers')
+    if len(layer_tables) != 1:
+        raise ValueError('board needs exactly one layers table')
+    names = []
+    for entry in layer_tables[0][1:]:
+        if not isinstance(entry, list) or len(entry) < 3:
+            raise ValueError('malformed layer table entry')
+        names.append(entry[1])
+    copper = [n for n in names if n.endswith('.Cu')]
+    count = len(copper)
+    expected = ['F.Cu'] + [f'In{i}.Cu' for i in range(1, count - 1)] + ['B.Cu']
+    if count < 2 or count % 2 or count > 32 or sorted(copper, key=natural_key) != sorted(expected, key=natural_key):
+        unsupported.append(f'copper layers {copper} are not F.Cu, contiguous In*.Cu and B.Cu '
+                           'with an even count from 2 to 32')
+    missing = [name for name, _, _ in FAB_LAYERS if name not in names]
+    if missing:
+        unsupported.append(f'board layer table lacks fab layers {missing}')
+    if 'variant' in heads:
+        unsupported.append('board declares assembly variants; v1 exports only an unvaried board')
+    footprints, seen = [], set()
+    for fp in _lists(root, 'footprint'):
+        refs = [p[2] for p in _lists(fp, 'property') if len(p) > 2 and p[1] == 'Reference']
+        layer = _lists(fp, 'layer')
+        attrs = set(a for attr in _lists(fp, 'attr') for a in attr[1:] if isinstance(a, str))
+        if len(refs) != 1 or len(layer) != 1 or len(layer[0]) != 2:
+            raise ValueError(f'footprint {fp[1:2]} lacks exactly one Reference and layer')
+        ref, side = refs[0], layer[0][1]
+        if side not in ('F.Cu', 'B.Cu'):
+            raise ValueError(f'footprint {ref} is on {side}, not F.Cu or B.Cu')
+        dnp = 'dnp' in attrs
+        record = {'ref': ref, 'side': 'Top' if side == 'F.Cu' else 'Bottom', 'dnp': dnp,
+                  'attributes': sorted(attrs)}
+        footprints.append(record)
+        if not REF_RE.match(ref):
+            unsupported.append(f'footprint reference {ref!r} is not a plain designator')
+            continue
+        if ref in seen:
+            unsupported.append(f'duplicate footprint reference {ref}')
+        seen.add(ref)
+        excluded = attrs & {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
+        if excluded and not dnp:
+            unsupported.append(f'populated footprint {ref} carries {sorted(excluded)}; '
+                               'v1 refuses non-DNP exclusions')
+    populated = sorted((f['ref'] for f in footprints if not f['dnp']), key=natural_key)
+    if not populated:
+        unsupported.append('board has no populated footprints; an assembly package would be vacuous')
+    return {'copper_layers': count, 'copper': expected if count >= 2 else copper,
+            'layers': names, 'footprints': footprints, 'board_non_dnp': populated,
+            'unsupported': unsupported}
+
+
+def schematic_variants(data):
+    _, heads = scan_sexpr(data, lambda path: len(path) == 1)
+    return 'variant' in heads
+
+
+def part_bindings(xml_path):
+    """BOM inputs from the native XML netlist: refs, DNP and binding fields.
+
+    Returns (parts, dnp_refs, unsupported). Each part has value, footprint
+    and the `LCSC`, `Manufacturer` and `Partnumber` (fallback `PartNumber`)
+    symbol fields verbatim; validation happens in `bom_rows`.
+    """
+    root = ET.parse(xml_path).getroot()
+    parts, dnp, unsupported = {}, [], []
+    for comp in root.findall('./components/comp'):
+        ref = comp.get('ref') or ''
+        if ref.startswith('#'):
+            continue  # power symbols are virtual
+        if ref in parts or ref in dnp:
+            unsupported.append(f'netlist repeats component {ref}')
+            continue
+        props = {p.get('name'): p.get('value') for p in comp.findall('property')}
+        fields = {}
+        for field in comp.findall('./fields/field'):
+            fields[field.get('name')] = (field.text or '').strip()
+        if 'dnp' in props:
+            dnp.append(ref)
+            continue
+        excluded = sorted(set(props) & {'exclude_from_bom', 'exclude_from_board'})
+        if excluded:
+            unsupported.append(f'populated component {ref} carries {excluded}; v1 refuses non-DNP exclusions')
+            continue
+        if not REF_RE.match(ref):
+            unsupported.append(f'component reference {ref!r} is not a plain designator')
+            continue
+        partnumber, camel = fields.get('Partnumber', ''), fields.get('PartNumber', '')
+        if partnumber and camel and partnumber != camel:
+            unsupported.append(f'{ref} has conflicting Partnumber {partnumber!r} and PartNumber {camel!r}')
+            continue
+        parts[ref] = {'value': (comp.findtext('value') or '').strip(),
+                      'footprint': (comp.findtext('footprint') or '').strip(),
+                      'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
+                      'partnumber': partnumber or camel}
+    return parts, sorted(dnp, key=natural_key), unsupported
+
+
+def bom_rows(parts):
+    """JLC BOM rows grouped by LCSC; returns (rows, flagged).
+
+    Members of one LCSC number whose sanitised footprint, value, manufacturer
+    or part number differ stay on separate rows that share the LCSC number,
+    so the consistency gate can see the conflict instead of a merged row.
+    A part with a missing or malformed binding is emitted with an empty LCSC
+    cell and flagged; any flag keeps the package incomplete.
+    """
+    groups, flagged = {}, []
+    for ref in sorted(parts, key=natural_key):
+        part = parts[ref]
+        missing = [label for label, key in (('LCSC', 'lcsc'), ('Manufacturer', 'manufacturer'),
+                                            ('Partnumber', 'partnumber'), ('Value', 'value'),
+                                            ('Footprint', 'footprint')) if not part[key]]
+        lcsc = part['lcsc']
+        if lcsc and not LCSC_RE.match(lcsc):
+            flagged.append({'reference': ref, 'reason': f'LCSC {lcsc!r} is not C<digits>'})
+            lcsc = ''
+        if missing:
+            flagged.append({'reference': ref, 'reason': 'missing part-binding properties: ' + ', '.join(missing)})
+            if 'LCSC' in missing:
+                lcsc = ''
+        cells = tuple(ascii_text(part[key], f'{ref} {key}')
+                      for key in ('footprint', 'value', 'manufacturer', 'partnumber'))
+        key = (lcsc or '\0' + ref,) + cells  # unbound parts never merge
+        groups.setdefault(key, []).append(ref)
+    rows = []
+    for key, refs in groups.items():
+        refs = sorted(refs, key=natural_key)
+        lcsc = '' if key[0].startswith('\0') else key[0]
+        rows.append([','.join(refs), key[1], str(len(refs)), key[2], key[3], key[4], lcsc])
+    rows.sort(key=lambda row: natural_key(row[0].split(',')[0]))
+    return rows, flagged
+
+
+def render_bom(rows):
+    out = io.StringIO()
+    out.write(BOM_HEADER + '\n')
+    csv.writer(out, lineterminator='\n').writerows(rows)
+    return out.getvalue()
+
+
+def cpl_rows(pos_text):
+    """Rewrite native `pos --format csv --units mm` output to JLC CPL rows."""
+    reader = csv.reader(io.StringIO(pos_text))
+    try:
+        header = next(reader)
+    except StopIteration:
+        raise ValueError('position file is empty')
+    if header != POS_HEADER:
+        raise ValueError(f'position file header {header} is not {POS_HEADER}')
+    rows, seen = [], set()
+    for line in reader:
+        if len(line) != len(POS_HEADER):
+            raise ValueError(f'position row {line} does not have {len(POS_HEADER)} columns')
+        ref, _, _, x, y, rot, side = line
+        if not REF_RE.match(ref) or ref in seen:
+            raise ValueError(f'position row reference {ref!r} is invalid or repeated')
+        seen.add(ref)
+        for label, token in (('PosX', x), ('PosY', y), ('Rot', rot)):
+            if not NUMBER_RE.match(token) or not math.isfinite(float(token)):
+                raise ValueError(f'{ref} {label} {token!r} is not a finite millimetre number')
+        if side not in ('top', 'bottom'):
+            raise ValueError(f'{ref} side {side!r} is not top or bottom')
+        rows.append([ref, x, y, 'Top' if side == 'top' else 'Bottom', rot])
+    rows.sort(key=lambda row: natural_key(row[0]))
+    return rows
+
+
+def render_cpl(rows):
+    out = io.StringIO()
+    out.write(CPL_HEADER + '\n')
+    csv.writer(out, lineterminator='\n').writerows(rows)
+    return out.getvalue()
+
+
+def normalise(text, patterns, label):
+    """Replace each native timestamp exactly once; refuse any other date text."""
+    for pattern, replacement in patterns:
+        text, count = pattern.subn(replacement, text)
+        if count != 1:
+            raise ValueError(f'{label}: expected one native timestamp for {pattern.pattern!r}, found {count}')
+    leftover = [m.group(0) for m in TIMESTAMP_RE.finditer(text)
+                if not m.group(0).startswith(('1970-01-01T00:00', '1970-01-01 00:00'))]
+    if leftover:
+        raise ValueError(f'{label}: unnormalised timestamp text {leftover[:3]}')
+    return text
+
+
+def gerber_text(data, function, label):
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError as exc:
+        raise ValueError(f'{label} is not UTF-8') from exc
+    if not text.rstrip('\n').endswith('M02*'):
+        raise ValueError(f'{label} does not end with M02*')
+    functions = re.findall(r'^%TF\.FileFunction,([^*\n]*)\*%$', text, re.M)
+    if functions != [function]:
+        raise ValueError(f'{label} file function {functions} is not [{function!r}]')
+    if not re.search(r'^%FSLAX\d\dY\d\d\*%$', text, re.M):
+        raise ValueError(f'{label} has no Gerber coordinate format')
+    return normalise(text, GERBER_TIMES, label)
+
+
+def excellon_text(data, function, label):
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError as exc:
+        raise ValueError(f'{label} is not UTF-8') from exc
+    lines = text.splitlines()
+    if not lines or lines[0] != 'M48' or lines[-1] != 'M30':
+        raise ValueError(f'{label} is not a complete Excellon file (M48 ... M30)')
+    functions = re.findall(r'^; #@! TF\.FileFunction,(.*)$', text, re.M)
+    if functions != [function]:
+        raise ValueError(f'{label} file function {functions} is not [{function!r}]')
+    return normalise(text, DRILL_TIMES, label)
+
+
+def write_zip(path, members):
+    """Deterministic zip: fixed order, timestamps, permissions and compression."""
+    with zipfile.ZipFile(path, 'w') as archive:
+        for name, source in members:
+            info = zipfile.ZipInfo(name, date_time=ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, Path(source).read_bytes(), compresslevel=9)
+
+
+def inventory(fab):
+    """sha256 of every regular file under fab/ except manifest.json."""
+    files = {}
+    for path in sorted(Path(fab).rglob('*')):
+        rel = path.relative_to(fab).as_posix()
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            raise ValueError(f'fab staging contains a non-regular entry {rel}')
+        if path.is_file() and rel != 'manifest.json':
+            if path.stat().st_size == 0:
+                raise ValueError(f'fab staging file {rel} is empty')
+            files[rel] = digest(path)
+    return files
+
+
+def verify_manifest(fab, manifest):
+    """Recompute the staging inventory; raise ValueError on any disagreement."""
+    if manifest.get('schema') != SCHEMA:
+        raise ValueError('not an agent-ee.fab-manifest/1')
+    actual = inventory(fab)
+    if actual != manifest.get('files'):
+        listed = manifest.get('files') or {}
+        raise ValueError(f'manifest inventory mismatch: missing={sorted(set(listed) - set(actual))} '
+                         f'extra={sorted(set(actual) - set(listed))} '
+                         f'changed={sorted(k for k in set(actual) & set(listed) if actual[k] != listed[k])}')
+    return actual
+
+
+# ---------------------------------------------------------------- the check
+
+def _prerequisite(ctx, nid):
+    from .checks import parse_xml_netlist
+    specs = ctx.scope['checks']
+    earlier = specs[:next(i for i, spec in enumerate(specs) if spec.get('id') == ctx.cid)]
+    if not any(s.get('id') == nid and s.get('kind') == 'netlist' for s in earlier):
+        raise _error('not_run', f'fab_export requires a preceding netlist check {nid!r}')
+    path = ctx.run_dir / 'checks' / f'{nid}.json'
+    if not path.is_file():
+        raise _error('not_run', f'netlist prerequisite {nid!r} has not run')
+    prior = read_json(path)
+    if (not isinstance(prior, dict) or prior.get('execution') != 'ok' or prior.get('kind') != 'netlist'
+            or prior.get('candidate_id') != ctx.manifest['candidate_id']):
+        raise _error('not_run', f'netlist prerequisite {nid!r} is unsuccessful or belongs to another candidate')
+    xml = ctx.run_dir / 'work' / nid / 'design.xml'
+    for rel in (f'work/{nid}/design.xml', f'work/{nid}/connectivity.json'):
+        if rel not in prior.get('evidence', []) or not (ctx.run_dir / rel).is_file():
+            raise _error('not_run', f'netlist prerequisite {nid!r} did not retain {rel}')
+    try:
+        if parse_xml_netlist(xml) != read_json(xml.with_name('connectivity.json')):
+            raise ValueError('native XML and prerequisite connectivity disagree')
+    except (ValueError, OSError, ET.ParseError) as exc:
+        raise _error('malformed', f'invalid retained native netlist evidence: {exc}') from exc
+    ctx.result['evidence'].extend([f'work/{nid}/design.xml', f'work/{nid}/connectivity.json'])
+    return prior, xml
+
+
+def _step(ctx, name, argv):
+    """Run one native step with its own /work so each record is retained."""
+    from .executor import execute
+    directory = ctx.work / 'steps' / name
+    config = ctx.work / 'kicad-config'
+    if config.is_dir():
+        shutil.copytree(config, directory / 'kicad-config', dirs_exist_ok=True)
+    remaining = ctx.remaining()
+    if remaining <= 1:
+        raise _error('interrupted', f'deadline exhausted before kicad-cli {name}')
+    clamped = min(STEP_CEILING, remaining)
+    try:
+        record = execute(ctx.inputs, directory, argv, timeout=clamped)
+    finally:
+        for rel in ('execution.json', 'console.log', 'stdout.log', 'stderr.log'):
+            ctx.evidence(f'steps/{name}/{rel}')
+        # Raw native outputs stay beside the normalised staging for audit.
+        for path in sorted((directory / 'out').rglob('*')) if (directory / 'out').is_dir() else ():
+            if path.is_file() and not path.is_symlink():
+                ctx.evidence(path.relative_to(ctx.work).as_posix())
+    ctx.result['details'].setdefault('tools', {})[name] = {
+        'argv': record['argv'], 'exit_code': record['exit_code'],
+        'duration_s': record['duration_s'], 'console_sha256': record['console_sha256']}
+    if record['execution'] == 'timeout' and clamped < STEP_CEILING:
+        raise _error('interrupted', f'run deadline cut kicad-cli {name} off after {clamped:.0f}s')
+    if record['execution'] != 'ok':
+        raise _error(record['execution'], f'kicad-cli {name} {record["execution"]} '
+                                          f'(exit {record["exit_code"]}); no package was marked complete')
+    return directory
+
+
+def _outputs(directory, label):
+    out = directory / 'out'
+    if not out.is_dir():
+        raise _error('malformed', f'kicad-cli {label} wrote no output directory')
+    found = {p.name: p for p in out.iterdir()}
+    for name, path in found.items():
+        if path.is_symlink() or not path.is_file():
+            raise _error('malformed', f'kicad-cli {label} output {name} is not a regular file')
+        if path.stat().st_size == 0:
+            raise _error('malformed', f'kicad-cli {label} output {name} is empty')
+    return found
+
+
+def check_fab_export(ctx):
+    try:
+        params = validate_params(ctx.params)
+    except ValueError as exc:
+        raise _error('unsupported', str(exc)) from exc
+    prior, xml = _prerequisite(ctx, params['netlist_check'])
+    board_rel = ctx.scope.get('board')
+    if not isinstance(board_rel, str):
+        raise _error('unsupported', 'scope declares no board')
+    board = ctx.candidate_path(board_rel)
+    board_sha = ctx.manifest['files'].get(board_rel)
+    if not board_sha or digest(ctx.inputs / board_rel) != board_sha:
+        raise _error('malformed', 'captured board bytes differ from the candidate manifest digest')
+    details = ctx.result['details']
+    details.update(board_path=board_rel, board_sha256=board_sha)
+    try:
+        facts = board_facts((ctx.inputs / board_rel).read_bytes())
+    except ValueError as exc:
+        raise _error('malformed', f'board unreadable for fab export: {exc}') from exc
+    details['board'] = {k: facts[k] for k in ('copper_layers', 'board_non_dnp', 'footprints')}
+    unsupported = list(facts['unsupported'])
+    for rel in prior.get('details', {}).get('schematic_files', []):
+        try:
+            if schematic_variants((ctx.inputs / rel).read_bytes()):
+                unsupported.append(f'schematic {rel} declares assembly variants')
+        except (OSError, ValueError) as exc:
+            raise _error('malformed', f'schematic {rel} unreadable: {exc}') from exc
+    try:
+        parts, dnp_refs, part_problems = part_bindings(xml)
+    except (ET.ParseError, OSError) as exc:
+        raise _error('malformed', f'native XML netlist unreadable: {exc}') from exc
+    unsupported += part_problems
+    try:
+        rows, flagged = bom_rows(parts)
+    except ValueError as exc:
+        unsupported.append(str(exc))
+        rows, flagged = [], []
+    if not parts:
+        unsupported.append('netlist has no populated components to place in a BOM')
+    details['schematic_dnp'] = dnp_refs
+    if unsupported:
+        details['unsupported'] = unsupported
+        raise _error('unsupported', 'fab export refused: ' + '; '.join(unsupported))
+
+    copper = facts['copper']
+    layers = copper + [name for name, _, _ in FAB_LAYERS]
+    ctx.seed_kicad_config()
+    fab = ctx.work / 'fab'
+    try:
+        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
+    except BaseException:
+        if fab.is_dir():
+            shutil.rmtree(ctx.work / 'fab.incomplete', ignore_errors=True)
+            fab.rename(ctx.work / 'fab.incomplete')
+            ctx.result['evidence'] = [e for e in ctx.result['evidence']
+                                      if not e.startswith(f'work/{ctx.cid}/fab/')]
+            for path in sorted((ctx.work / 'fab.incomplete').rglob('*')):
+                if path.is_file():
+                    ctx.evidence(path.relative_to(ctx.work).as_posix())
+        raise
+
+
+def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab):
+    details = ctx.result['details']
+    version_dir = _step(ctx, 'version', ['kicad-cli', 'version'])
+    version = (version_dir / 'stdout.log').read_text(errors='replace').strip()
+    if not version or '\n' in version:
+        raise _error('malformed', f'kicad-cli version output {version!r} is not one version line')
+    tool_path = shutil.which('kicad-cli', path=SANDBOX_PATH)
+    if not tool_path:
+        raise _error('unavailable', 'kicad-cli is not on the sandbox PATH')
+    tool = {'path': tool_path, 'version': version, 'sha256': digest(tool_path)}
+    details['kicad_cli'] = tool
+
+    stats_dir = _step(ctx, 'stats', ['kicad-cli', 'pcb', 'export', 'stats', '--format', 'json',
+                                     '--units', 'mm', '-o', '/work/out/stats.json', board])
+    stats_path = _outputs(stats_dir, 'stats').get('stats.json')
+    if stats_path is None:
+        raise _error('malformed', 'kicad-cli stats wrote no stats.json')
+    try:
+        stats_text = stats_path.read_text()
+        summary = STATS_TIME.subn(r'\g<1>' + FIXED_TIME + r'\2', stats_text)
+        if summary[1] != 1:
+            raise ValueError('expected one metadata date')
+        stats = json.loads(summary[0])
+        vias, pads, board_stats = stats['vias'], stats['pads'], stats['board']
+        holes = stats['drill_holes']
+        features = [f'{count} {kind} via(s)' for kind in ('blind', 'buried', 'micro')
+                    if (count := vias[kind]) != 0]
+        features += [f'{count} {kind} pad(s)' for kind in ('castellated', 'press_fit')
+                     if (count := pads[kind]) != 0]
+        features += [f'drill span {h["start_layer"]}..{h["stop_layer"]}' for h in holes
+                     if (h['start_layer'], h['stop_layer']) != ('F.Cu', 'B.Cu')]
+        if board_stats['has_outline'] is not True:
+            features.append('no closed board outline')
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError) as exc:
+        raise _error('malformed', f'native board statistics unusable: {exc}') from exc
+    if features:
+        details['unsupported'] = features
+        raise _error('unsupported', 'unsupported board features for the v1 JLC package: ' + ', '.join(features))
+
+    gerber_dir = _step(ctx, 'gerbers', ['kicad-cli', 'pcb', 'export', 'gerbers', '-o', '/work/out/',
+                                        '--layers', ','.join(layers), board])
+    drill_dir = _step(ctx, 'drill', ['kicad-cli', 'pcb', 'export', 'drill', '-o', '/work/out/',
+                                     '--format', 'excellon', '--excellon-units', 'mm',
+                                     '--excellon-separate-th', '--generate-map',
+                                     '--map-format', 'gerberx2', board])
+    pos_dir = _step(ctx, 'pos', ['kicad-cli', 'pcb', 'export', 'pos', '-o', '/work/out/pos.csv',
+                                 '--side', 'both', '--format', 'csv', '--units', 'mm',
+                                 '--exclude-dnp', board])
+
+    fab.mkdir()
+    (fab / 'gerbers').mkdir()
+    (fab / 'drill').mkdir()
+    plots = _outputs(gerber_dir, 'gerbers')
+    try:
+        jobs = [p for n, p in plots.items() if n.endswith('.gbrjob')]
+        if len(jobs) != 1:
+            raise ValueError(f'expected one Gerber job file, found {len(jobs)}')
+        job = json.loads(jobs[0].read_text())
+        if job['GeneralSpecs']['LayerNumber'] != facts['copper_layers']:
+            raise ValueError(f"native job file reports {job['GeneralSpecs']['LayerNumber']} copper "
+                             f"layers, board table has {facts['copper_layers']}")
+        expected = []
+        count = facts['copper_layers']
+        for index, name in enumerate(facts['copper']):
+            ext = 'gtl' if name == 'F.Cu' else 'gbl' if name == 'B.Cu' else f'g{index}'
+            position = 'Top' if name == 'F.Cu' else 'Bot' if name == 'B.Cu' else 'Inr'
+            expected.append((name, ext, f'Copper,L{index + 1},{position}'))
+        expected += list(FAB_LAYERS)
+        gerbers = [n for n in plots if not n.endswith('.gbrjob')]
+        if len(gerbers) != len(expected):
+            raise ValueError(f'expected {len(expected)} layer plots, kicad-cli wrote {sorted(gerbers)}')
+        for name, ext, function in expected:
+            match = [n for n in gerbers if n.lower().endswith('.' + ext)]
+            if len(match) != 1:
+                raise ValueError(f'layer {name}: expected one .{ext} plot, found {match}')
+            text = gerber_text(plots[match[0]].read_bytes(), function, match[0])
+            (fab / 'gerbers' / match[0]).write_bytes(text.encode('utf-8'))
+        drills = _outputs(drill_dir, 'drill')
+        roles = {}
+        for role, function in (('pth', 'PTH'), ('npth', 'NPTH')):
+            found = [n for n in drills if n.endswith(f'-{function}.drl')]
+            maps = [n for n in drills if n.endswith(f'-{function}-drl_map.gbr')]
+            if len(found) != 1 or len(maps) != 1:
+                raise ValueError(f'expected one {function} drill and map, found {found} {maps}')
+            text = excellon_text(drills[found[0]].read_bytes(),
+                                 f'Plated,1,{count},PTH' if role == 'pth' else
+                                 f'NonPlated,1,{count},NPTH', found[0])
+            (fab / 'drill' / found[0]).write_bytes(text.encode('utf-8'))
+            text = gerber_text(drills[maps[0]].read_bytes(), 'Drillmap', maps[0])
+            (fab / 'drill' / maps[0]).write_bytes(text.encode('utf-8'))
+            roles[role] = found[0]
+        if len(drills) != 4:
+            raise ValueError(f'drill export wrote more than PTH/NPTH files and maps: {sorted(drills)}')
+        pos = _outputs(pos_dir, 'pos').get('pos.csv')
+        if pos is None:
+            raise ValueError('kicad-cli pos wrote no pos.csv')
+        cpl = cpl_rows(pos.read_text(encoding='utf-8'))
+    except (ValueError, KeyError, TypeError, UnicodeError, OSError) as exc:
+        raise _error('malformed', f'native fab output unusable: {exc}') from exc
+    (fab / 'cpl.csv').write_text(render_cpl(cpl))
+    (fab / 'bom.csv').write_text(render_bom(rows))
+    (fab / 'pcb_summary.json').write_text(summary[0])
+    members = ([(p.name, p) for p in sorted((fab / 'gerbers').iterdir(), key=lambda p: p.name)] +
+               [(p.name, p) for p in sorted((fab / 'drill').iterdir(), key=lambda p: p.name)])
+    if len({name for name, _ in members}) != len(members):
+        raise _error('malformed', 'Gerber and drill file names collide in the flat zip')
+    write_zip(fab / 'gerbers.zip', members)
+
+    cpl_refs = sorted((r[0] for r in cpl), key=natural_key)
+    bom_refs = sorted((ref for row in rows for ref in row[0].split(',')), key=natural_key)
+    details['designators'] = {'board_non_dnp': facts['board_non_dnp'], 'cpl': cpl_refs, 'bom': bom_refs,
+                              'agree': facts['board_non_dnp'] == cpl_refs == bom_refs}
+    details['bom_rows'] = len(rows)
+    details['cpl_rows'] = len(cpl)
+    for path in sorted(fab.rglob('*')):
+        if path.is_file():
+            ctx.evidence(path.relative_to(ctx.work).as_posix())
+    if flagged:
+        details['flagged_parts'] = flagged
+        raise _error('unsupported', 'BOM has parts without a complete LCSC/manufacturer/part-number '
+                                    'binding: ' + ', '.join(f['reference'] for f in flagged))
+    if cpl_refs != facts['board_non_dnp']:
+        raise _error('malformed', f'native position file designators {cpl_refs} differ from the board '
+                                  f'non-DNP footprints {facts["board_non_dnp"]}')
+    try:
+        files = inventory(fab)
+    except ValueError as exc:
+        raise _error('malformed', str(exc)) from exc
+    manifest = {
+        'schema': SCHEMA, 'candidate_id': ctx.manifest['candidate_id'],
+        'board_path': board_rel, 'board_sha256': board_sha, 'tool': tool, 'files': files,
+        'copper_layers': facts['copper_layers'], 'enabled_fab_layers': layers,
+        'drill': roles, 'designators': {'board_non_dnp': facts['board_non_dnp']},
+        'generated_utc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+    write_json(fab / 'manifest.json', manifest)
+    try:
+        verify_manifest(fab, read_json(fab / 'manifest.json'))
+    except ValueError as exc:
+        raise _error('malformed', f'manifest does not verify: {exc}') from exc
+    ctx.evidence('fab/manifest.json')
+    details['manifest_sha256'] = digest(fab / 'manifest.json')
+    ctx.result['limitations'] += [
+        'CPL rotations are the native KiCad position-file values; no JLC rotation, offset or '
+        'pin-1 policy was applied (AGENTEE-72)',
+        'pass means the exports exist, parsed and are hashed; BOM/CPL/board designator '
+        'consistency is gated by fab_consistency (AGENTEE-73), not by this check',
+        'no DFM, panelisation, stock, price or orderability evaluation',
+    ]
+    ctx.result['execution'] = 'ok'
+    ctx.result['outcome'] = 'pass'
+    ctx.result['summary'] = (f"JLCPCB fab package exported by kicad-cli {version}: "
+                             f"{len(expected)} layer plots ({facts['copper_layers']} copper), PTH/NPTH "
+                             f"drills, {len(rows)} BOM row(s), {len(cpl)} CPL row(s), manifest bound to "
+                             f"board {board_sha[:12]}")
