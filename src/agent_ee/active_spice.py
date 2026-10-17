@@ -234,6 +234,8 @@ def validate_params(params):
     named_list(params['analyses'], 'analyses', 16)
     metric_names = set()
     for analysis in params['analyses']:
+        if analysis['id'] in ('models', 'version'):
+            raise ValueError('analysis identifier collides with a reserved workspace')
         kind = analysis['kind']
         if kind == 'transient':
             fields(analysis, ('id', 'kind', 'step_s', 'stop_s', 'measurements'))

@@ -82,6 +82,8 @@ class DeclarationTests(unittest.TestCase):
                      lambda p: p['sources'][0]['step'].update(delay_s=1e308, rise_s=1e308),
                      lambda p: p['sources'][0].update(dc_v=True),
                      lambda p: p['analyses'][0].update(step_s=0),
+                     lambda p: p['analyses'][0].update(id='version'),
+                     lambda p: p['analyses'][1].update(id='models'),
                      lambda p: p['analyses'][0]['measurements'][0].update(at_s=0.1),
                      lambda p: p['analyses'][1].update(points_per_decade=1.5),
                      lambda p: p['analyses'][1]['measurements'][0].update(unit='V'),
