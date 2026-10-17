@@ -59,13 +59,14 @@ class ReportTests(unittest.TestCase):
 
     def test_drc_requires_new_native_violation_at_exact_target(self):
         from agent_ee.benchmark_run import classify
-        expected = {'kind':'drc','predicate':{'kind':'schematic_parity'}}
+        expected = {'kind':'drc','predicate':{'kind':'schematic_parity','pin':'1'}}
         def rec(uuid):
             return {'check':{'execution':'ok','outcome':'defect'},'native':{
-                'schematic_parity':[{'type':'net_conflict','items':[{'uuid':uuid}]}]}}
+                'schematic_parity':[{'type':'net_conflict','items':[{'uuid':uuid}]}]},'pcb_pad_uuids':{'target':{'1':['pad1']}}}
         self.assertEqual(classify(expected,rec('other'),self.case,rec('other')),'miss')
-        self.assertEqual(classify(expected,rec('target'),self.case,rec('other')),'detection')
-        self.assertEqual(classify(expected,rec('target'),self.case,rec('target')),'miss')
+        self.assertEqual(classify(expected,rec('target'),self.case,rec('other')),'miss')
+        self.assertEqual(classify(expected,rec('pad1'),self.case,rec('other')),'detection')
+        self.assertEqual(classify(expected,rec('pad1'),self.case,rec('pad1')),'miss')
 
     def test_canonicalization_keeps_numerical_and_locator_changes(self):
         from agent_ee.benchmark_run import canonical_check
@@ -274,3 +275,16 @@ class NativeReviewTests(unittest.TestCase):
             self.assertTrue(all(c['execution']=='ok' for c in result['checks']),result['checks'])
             self.assertEqual(result['reviews'],[])
             self.assertFalse(result['adjudicated'])
+
+
+class NativeNormalizationTests(unittest.TestCase):
+    def test_native_order_is_incidental_but_witness_and_measurements_are_retained(self):
+        from agent_ee.benchmark_run import canonical_native
+        first={'violations':[{'items':[{'uuid':'b'},{'uuid':'a'}],'actual':1.2},{'items':[{'uuid':'c'}]}]}
+        second={'violations':[{'items':[{'uuid':'c'}]},{'items':[{'uuid':'a'},{'uuid':'b'}],'actual':1.2}]}
+        self.assertEqual(canonical_native(first),canonical_native(second))
+        second['violations'][1]['actual']=1.3
+        self.assertNotEqual(canonical_native(first),canonical_native(second))
+        second['violations'][1]['actual']=1.2
+        second['violations'][1]['items'][0]['uuid']='different'
+        self.assertNotEqual(canonical_native(first),canonical_native(second))

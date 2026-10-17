@@ -50,7 +50,11 @@ python3 scripts/seeded_benchmark.py prepare benchmarks/seeded/expectations.json 
 `fetch --archives DIRECTORY` can reuse the pinned original `.tar.gz` archives
 already acquired locally; archive, native-file and license hashes are still
 checked. Alternate electrical pads come from the installed, hash-pinned KiCad
-footprint library and remain in the scratch cache.
+footprint library and remain in the scratch cache. The
+[alternate-library supplement](../benchmarks/seeded/alternate-library.json) records
+the exact installed package, attribution and original license hash; fetch retains
+that license in the cache. Its upstream source commit has not been independently
+recovered from the binary package, and remains a qualification gap.
 
 Preparation performs source parsing and structural validation only. It does not
 run ERC, DRC, netlist checks, analyzers or benchmark reviews. Wire edits compare
@@ -108,7 +112,9 @@ before that work does not mean the controls are defect-free. Model results, if
 added later, must stay in a separate report.
 
 Reruns compare check execution/outcome, details, native violation records,
-numerical values and locators. Normalization removes timing, candidate/run IDs,
+numerical values and locators. Native finding/item array order is incidental and
+is sorted; different witness UUIDs remain differences. Normalization removes
+timing, candidate/run IDs,
 evidence hashes and native report provenance/date fields; the original sealed
 artifacts remain available. Numerical or locator differences remain differences.
 The report checks retained snapshot/evidence integrity; the runner's public

@@ -11,7 +11,7 @@ import urllib.request
 
 from .benchmark import checked_read, mutate, safe_path, sha
 from .findings import CHECK_EXECUTIONS, CHECK_OUTCOMES, safe_id
-from .storage import digest, identity, read_json, write_json
+from .storage import canonical, digest, identity, read_json, write_json
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 
@@ -111,6 +111,12 @@ def fetch(manifest_path, cache, *, archives=None, footprint_library='/usr/share/
         if sha(data)!=license['sha256'] or blob!=license['git_blob_sha']:
             raise ValueError('upstream license hash mismatch')
     alternates = cache/'alternate-footprints';alternates.mkdir()
+    library = read_json(Path(manifest_path).parent/'alternate-library.json')
+    license_data = Path('/usr/share/doc/kicad-footprints/LICENSE.md').read_bytes()
+    if sha(license_data)!=library['license_sha256']:
+        raise ValueError('alternate library license differs from pin')
+    (alternates/'LICENSE.md').write_bytes(license_data)
+    write_json(alternates/'provenance.json',library)
     for case in manifest['cases']:
         m = case['mutation']
         if m['operation'] == 'replace_embedded_physical_footprint':
@@ -297,7 +303,7 @@ def run(manifest_path, cache_prepared, output, expectation_commit, image):
         '-e','AGENT_EE_REQUIRE_TOOLCHAIN=1','--security-opt','seccomp=unconfined',
         '--security-opt','apparmor=agent-ee-container','--security-opt','systempaths=unconfined',
         '-v',f'{source}:/opt/agent-ee:ro','-v',f'{prepared}:{prepared}:ro',
-        '-v',f'{output}:{output}','--entrypoint','/usr/bin/python3',image,
+        '-v',f'{output}:{output}','-w','/opt/agent-ee','--entrypoint','/usr/bin/python3',image,
         '/opt/agent-ee/scripts/seeded_benchmark.py','_execute',str(prepared),str(output/'runs')]
     write_json(output/'command.json',command)
     with (output/'console.log').open('wb') as console:
@@ -358,7 +364,19 @@ def observations(run):
                 # actual violation geometry, item UUIDs, rule types and values.
                 for key in ('date','kicad_version','source'):
                     raw.pop(key,None)
-        records[cid] = {'check':canonical_check(check),'native':raw}
+        records[cid] = {'check':canonical_check(check),'native':canonical_native(raw)}
+        if check['kind']=='drc':
+            from .benchmark import parse, children, uid, values
+            manifest = read_json(run/'candidate.json')
+            board = parse((run/'inputs'/manifest['scope']['board']).read_text())
+            mapping = {}
+            for footprint in children(board,'footprint'):
+                pads = {}
+                for pad in children(footprint,'pad'):
+                    if values(pad)[0]:
+                        pads.setdefault(values(pad)[0],[]).append(uid(pad))
+                mapping[uid(footprint)] = pads
+            records[cid]['pcb_pad_uuids'] = mapping
     return records
 
 
@@ -394,7 +412,15 @@ def classify(expected, record, case, control=None):
         predicate = expected['predicate'];section = predicate['kind']
         if section not in ('schematic_parity','unconnected_items'):
             raise ValueError('unknown native benchmark predicate')
-        target = {s['pcb']['footprint_uuid'] for s in case['source_selectors']}
+        target = set()
+        if section=='schematic_parity':
+            pins = predicate.get('pins',[predicate['pin']] if 'pin' in predicate else [])
+            for selector in case['source_selectors']:
+                footprint = selector['pcb']['footprint_uuid']
+                mapping = record['pcb_pad_uuids'].get(footprint,{})
+                if any(pin not in mapping for pin in pins) or not pins:
+                    return 'not_evaluated'
+                target.update(pad for pin in pins for pad in mapping[pin])
         if section=='unconnected_items':
             target = {p['uuid'] for p in case['mutation']['before_pad_geometry'] if p['number']!='1'}
         def identities(row):
@@ -458,14 +484,29 @@ def report(manifest_path, first, second=None):
         if {r['id'] for r in other_index['records']}!=expected_ids:
             raise ValueError('rerun missing cases')
         differences = []
+        assessment_differences = []
+        other_observed = {}
         for entry in other_index['records']:
             run = Path(second)/'runs'/entry['id']
             if digest(run/'result.json')!=entry['result_sha256']:
                 raise ValueError('rerun result changed')
-            if observations(run)!=observed[entry['id']]:
+            other = observations(run)
+            other_observed[entry['id']] = other
+            original = observed[entry['id']]
+            if other!=original:
                 differences.append(entry['id'])
+            if {k:v['check'] for k,v in other.items()}!={k:v['check'] for k,v in original.items()}:
+                assessment_differences.append(entry['id'])
+        classification_differences = []
+        for case,first_case in zip(manifest['cases'],cases):
+            statuses = [classify(e,other_observed[case['id']].get(e['check_id']),case,
+                other_observed[case['board_id']+'-control'].get(e['check_id'])) for e in case['expected_checks']]
+            if statuses!=[p['status'] for p in first_case['predictions']]:
+                classification_differences.append(case['id'])
         comparison = {'same_check_results':not differences,'different_cases':differences,
-            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; compare parsed native records and exact details/locators/numerical values.'}
+            'same_check_assessments':not assessment_differences,'different_check_assessments':assessment_differences,
+            'same_seed_classifications':not classification_differences,'different_seed_classifications':classification_differences,
+            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; preserve exact details/locators/numerical values.'}
     return {'schema':'agent-ee.benchmark-report/1','synthetic':True,'model_pass':False,
         'expectation_commit':request['expectation_commit'],'image_id':request['image_id'],
         'per_kind':counts,'cases':cases,'controls':controls,
@@ -497,3 +538,16 @@ def review_case(scope, run):
     if {c['id'] for c in verified['checks']}!=expected or verified.get('error'):
         raise ValueError('review failed before all declared checks were retained')
     return verified
+
+
+def canonical_native(value):
+    """Ignore native record ordering, preserving every witness/value/locator."""
+    if isinstance(value,list):
+        return [canonical_native(v) for v in value]
+    if not isinstance(value,dict):
+        return value
+    result = {k:canonical_native(v) for k,v in value.items()}
+    for key in ('violations','unconnected_items','schematic_parity','items','ignored_checks','sheets'):
+        if isinstance(result.get(key),list):
+            result[key] = sorted(result[key],key=canonical)
+    return result
