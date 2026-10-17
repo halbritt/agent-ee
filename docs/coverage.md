@@ -355,3 +355,24 @@ and rename in the prelaunch transaction; recovery runs in another process and
 must reconcile deterministically or refuse with retained evidence. Recovery
 has a provider boundary assertion. These tests model process interruption,
 not physical power loss, instrument authenticity or live-provider reliability.
+
+## Packet-navigation measurement attempt
+
+A private pilot on 2026-10-17 compared source snapshots `1ce6a52` and
+`d0f7755` with identical captured control/seed inputs, requirements, native check
+results and Codex subscription profile. Four native preparation runs verified
+successfully. Only native subprocess elapsed time was excluded from exact
+engineering-result comparison; raw durations were retained. The first live
+control run stopped with both initial reviewers timed out at their 300-second
+limits, empty console logs, and no session or token-usage records. Origin-snapshot
+verification succeeded. No adjudicator, treatment sample, replacement sample or
+fallback followed. The attempt therefore establishes neither token savings,
+latency improvement nor recognition performance. The cause of the empty-log
+timeouts remains under investigation.
+
+The private manifest SHA-256 is
+`b2a73834bd2f21d62694d3ff6929bc6dc3bf6c70052163b75596d514a7508072`;
+the stopped report SHA-256 is
+`6b521b3b526161e92577e92296d7197046d525ed7d3b4365540cc5852009ac86`.
+These identifiers support retained-record comparison; the records and captured
+third-party fixture inputs have not been republished as benchmark evidence.

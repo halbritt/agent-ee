@@ -133,6 +133,8 @@ native components, pins, nets and board primitives to declared checks and
 requirements. Bounded views retain access to the full baseline and raw evidence;
 ambiguous identities stay unresolved. The index supplies navigation, not defect
 authority. Its effect on model token use and detection is not yet measured.
+An initial matched-version pilot stopped when both control reviewers timed out;
+no replacement samples or performance claims were made.
 
 Bench corrections bind to the complete captured design inventory. Changing a
 component, connection, layout or library makes calibrated acceptance unavailable
