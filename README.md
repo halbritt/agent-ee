@@ -123,6 +123,12 @@ Before each reviewer, adjudicator or implementation call, a
 checks captured tool and policy identities and tests sandbox execution. Drift or
 an unavailable prerequisite stops the call with a retained diagnostic.
 
+[Packet navigation](docs/result-reference.md#factual-packet-navigation) links
+native components, pins, nets and board primitives to declared checks and
+requirements. Bounded views retain access to the full baseline and raw evidence;
+ambiguous identities stay unresolved. The index supplies navigation, not defect
+authority. Its effect on model token use and detection is not yet measured.
+
 Bench corrections bind to the complete captured design inventory. Changing a
 component, connection, layout or library makes calibrated acceptance unavailable
 until fresh observations cover the changed design. The nominal simulation stays
