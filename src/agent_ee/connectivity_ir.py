@@ -250,6 +250,7 @@ def validate_resolved(record):
     """Reject partial, rejected, tampered or structurally invalid parity inputs."""
     _object(record, ('schema', 'execution', 'outcome', 'coverage', 'findings', 'intent_sha256',
                      'libraries', 'components', 'nets', 'no_connects', 'hierarchy', 'ports', 'canonical_sha256'))
+    _list(record['findings'])
     if (record['schema'], record['execution'], record['outcome'], record['coverage']) != (RESOLVED_SCHEMA, 'ok', 'pass', 'complete') or record['findings']:
         raise ValueError('resolved intent is not complete and passing')
     payload = {k: v for k, v in record.items() if k != 'canonical_sha256'}

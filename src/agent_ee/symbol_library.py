@@ -19,6 +19,8 @@ def parse_library(data):
         text = data.decode('utf-8')
     except UnicodeError as exc:
         raise LibraryError('library is not UTF-8') from exc
+    if '\x00' in text:
+        raise LibraryError('NUL byte in library')
     stack, roots, nodes = [], [], 0
     pos = 0
     while pos < len(text):
