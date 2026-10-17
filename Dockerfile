@@ -75,6 +75,17 @@ RUN set -eu; \
         test -e "/usr/share/kicad/$f"; \
     done
 
+# Installed analyzer tool, kept outside the agent-ee package and candidate.
+# Runtime analysis remains networkless; only the image build fetches this pin.
+ARG KICAD_HAPPY_COMMIT=06840467ad0f5d76af45f64449b1f5ecb10f052f
+ENV AGENT_EE_KICAD_HAPPY=/opt/kicad-happy
+RUN set -eu; \
+    git clone https://github.com/aklofas/kicad-happy.git /opt/kicad-happy; \
+    git -C /opt/kicad-happy checkout --detach "${KICAD_HAPPY_COMMIT}"; \
+    test "$(git -C /opt/kicad-happy rev-parse HEAD)" = "${KICAD_HAPPY_COMMIT}"; \
+    /usr/bin/python3 -c 'import json; assert json.load(open("/opt/kicad-happy/.claude-plugin/plugin.json"))["version"] == "2.3.1"'; \
+    rm -rf /opt/kicad-happy/.git
+
 # Source-launcher installation, as in docs/installation.md: the launcher uses
 # /usr/bin/python3 (which imports pcbnew) and locates src/ from its checkout.
 COPY . /opt/agent-ee

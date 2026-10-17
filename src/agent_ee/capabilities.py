@@ -13,7 +13,7 @@ from .storage import identity
 
 
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
-                   'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice'))
+                   'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice', 'kicad_happy'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -215,6 +215,20 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = _geometry(params)
         elif kind == 'rc_transient':
             result['predicates'] = _rc_transient(params, prerequisite)
+        elif kind == 'kicad_happy':
+            from .kicad_happy import describe_capability
+            captured(scope.get('schematic'))
+            captured(scope.get('board'))
+            descriptor = describe_capability(params, files)
+            if descriptor['status'] != 'supported':
+                raise ValueError('; '.join(descriptor['unsupported_reasons']))
+            for dependency in descriptor['immutable_inputs']:
+                path = dependency['path']
+                if path not in scope.get('requirements', []):
+                    raise ValueError('adapter assumptions source must be a captured immutable requirement')
+                captured(path, immutable=True)
+            result['capability_version'] = descriptor['capability_version']
+            result['predicates'] = descriptor['predicates']
         elif kind == 'active_spice':
             from .active_spice import capability
             descriptor = capability(params, files)

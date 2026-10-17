@@ -4,6 +4,7 @@ import argparse
 import datetime
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -64,7 +65,10 @@ HARNESS_PROBES = ("claude",)
 def doctor(checks_only=False):
     """Probe versions and hash the probed binaries; real runs establish integration."""
     checks, skipped = {}, {}
-    for name, command in DOCTOR_PROBES.items():
+    probes = dict(DOCTOR_PROBES)
+    if shutil.which("pdftotext"):
+        probes["pdftotext"] = ["pdftotext", "-v"]
+    for name, command in probes.items():
         if checks_only and name in HARNESS_PROBES:
             skipped[name] = "not probed with --checks-only; reviews and adjudication still require it"
             continue
@@ -83,6 +87,15 @@ def doctor(checks_only=False):
             record.update(sha256=None, hash_error=str(exc))
         record.setdefault("binary", None)
         checks[name] = record
+    # Optional installed analyzers are tools, not core package dependencies.
+    analyzer = os.environ.get("AGENT_EE_KICAD_HAPPY")
+    if analyzer:
+        from .kicad_happy import installation
+        try:
+            installed = installation(Path(analyzer).expanduser().resolve())
+            checks["kicad-happy"] = {"path": analyzer, "exit_code": 0, **installed}
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            checks["kicad-happy"] = {"path": analyzer, "error": str(exc)}
     report = {"prerequisites": checks,
         "note": "Presence/version probes do not establish engineering integration. Run a declared scope."}
     if skipped:

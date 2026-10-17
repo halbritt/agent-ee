@@ -221,8 +221,8 @@ Execution registration alone never grants scope/3 capability. A new kind remains
 unsupported until a focused pure validator in `capabilities.py` validates its
 actual parameters, prerequisites, predicates and immutable dependencies. The
 registry/execution agreement test intentionally requires this follow-up when
-handlers are integrated. No placeholder support exists for AGENTEE-17/18/19.
-Their integration must supply:
+handlers are integrated. The installed-analyzer, datasheet and active-SPICE
+descriptors now enforce these contracts:
 
 - Installed analyzer: supported contract/version and explicit known blocking
   rules, captured rule/program inputs and retained tool identity. Actual evaluated
@@ -263,7 +263,8 @@ and [RC expectations](../fixtures/kicad-happy/EXPECTATIONS.md) distinguish real
 native observations from synthetic parser boundary cases. Unrecognized envelopes
 and missing counted evaluations remain unsupported. Source assumptions and check
 parameters remain immutable scope/2 baseline inputs; the pure capability helper
-is exposed for later scope/3 integration without changing historical scope/2.
+is registered in scope/3 with captured requirement-source ownership; historical
+scope/2 evidence remains unchanged.
 
 Full strict host checks and owner review remain separate from qualification in
 the common completion image. A passing declared proxy never certifies hardware.

@@ -28,6 +28,9 @@ class DoctorTests(unittest.TestCase):
         self.missing = set()
         self.pcbnew_fails = False
         self.calls = []
+        environment = patch.dict("os.environ", {"AGENT_EE_KICAD_HAPPY": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
 
     def which(self, name):
         return None if name in self.missing else str(self.binaries[name]) if name in self.binaries else None
@@ -73,6 +76,28 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(probes["pcbnew"]["binary"], str(self.binaries["_pcbnew.so"]))
         self.assertEqual(probes["pcbnew"]["sha256"], self.sha("_pcbnew.so"))
         self.assertNotIn("skipped", report)
+
+    def test_optional_pdf_extractor_is_identified_when_installed(self):
+        tool = self.root / "pdftotext"
+        tool.write_bytes(b"installed extractor")
+        self.binaries["pdftotext"] = tool
+        self.versions["pdftotext"] = "pdftotext version 24.02.0"
+        code, report = self.doctor("--checks-only")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["prerequisites"]["pdftotext"]["sha256"], self.sha("pdftotext"))
+
+    def test_declared_optional_analyzer_is_hashed_or_reports_failure(self):
+        installed = {"version": "2.3.1", "sha256": "a" * 64, "files": {"analyzer.py": "b" * 64}}
+        with patch.dict("os.environ", {"AGENT_EE_KICAD_HAPPY": "/installed"}), \
+                patch("agent_ee.kicad_happy.installation", return_value=installed):
+            code, report = self.doctor("--checks-only")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["prerequisites"]["kicad-happy"]["files"], installed["files"])
+        with patch.dict("os.environ", {"AGENT_EE_KICAD_HAPPY": "/absent"}), \
+                patch("agent_ee.kicad_happy.installation", side_effect=ValueError("missing analyzer")):
+            code, report = self.doctor("--checks-only")
+        self.assertEqual(code, 1)
+        self.assertIn("error", report["prerequisites"]["kicad-happy"])
 
     def test_missing_tool_fails_without_a_hash(self):
         self.missing.add("ngspice")

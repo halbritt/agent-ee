@@ -8,9 +8,11 @@ cannot run initial reviews, adjudication or campaigns. `agent-ee doctor` without
 `--checks-only` therefore exits 1 inside the image because `claude` is absent.
 
 The image has been built and exercised on one Linux x86-64 host with Docker
-29.8 (Ubuntu 24.04 host, kernel 6.8, AppArmor enabled). Other architectures,
-container engines have not been demonstrated. The first hosted Ubuntu runner
-exposed an additional AppArmor user-namespace requirement, handled below.
+29.8 (Ubuntu 24.04 host, kernel 6.8, AppArmor enabled). The project CI also passed on a hosted Ubuntu runner at commit `c0ddba2`: 230
+strict tests, no skips, documentation checks and both native RC gates. See the
+[retained CI result](https://github.com/halbritt/agent-ee/actions/runs/39050160054).
+Other architectures and container engines have not been demonstrated. The first
+hosted run exposed an AppArmor user-namespace requirement, handled below.
 
 ## Pinned toolchain
 
@@ -24,6 +26,7 @@ exposed an additional AppArmor user-namespace requirement, handled below.
 | Bubblewrap 0.9.0 | `0.9.0-1ubuntu0.3` | Exact apt version; build fails unless `bwrap --version` is `bubblewrap 0.9.0` and the binary is not setuid |
 | Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
+| kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -31,6 +34,12 @@ unavailable version stops `apt-get install`, and the verification layer refuses
 an image whose tools report other versions or whose stock library paths used by
 the RC fixtures are missing. Unpinned dependencies (shared libraries, `git`) are
 fixed by the snapshot timestamp rather than individual version strings.
+
+`doctor` reports the installed PDF extractor binary and, when
+`AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version and its
+source-file hashes. Optional tools absent from a basic installation do not
+become required merely by running doctor. An explicitly configured broken
+analyzer does fail the probe.
 
 Updating a pin means changing the build argument, rebuilding and rerunning the
 suite and fixtures. A new tool binary changes `runtime_files`, so earlier results

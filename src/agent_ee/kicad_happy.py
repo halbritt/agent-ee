@@ -209,7 +209,7 @@ def verify_installations(checks):
 
 
 def describe_capability(params, files):
-    """Pure descriptor for later scope/3 integration; scope/2 is unchanged.
+    """Pure descriptor used by scope/3 coverage; scope/2 is unchanged.
 
     ``files`` is the captured path->SHA256 inventory. No installed-file read or
     runtime qualification is performed. Only blocking qualified predicates can

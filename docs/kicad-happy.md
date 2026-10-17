@@ -97,10 +97,10 @@ while the functional calculation detects the seed. No third-party hardware was
 imported or published. The generator authors original simple symbols and pads.
 
 `describe_capability(params, files)` is a pure helper returning bounded predicate
-IDs and captured immutable source path/SHA256 metadata for later scope/3
-integration. It reads no installation or candidate files and runs no tools.
-It is **not registered** into scope/3 on this branch; scope/3 is absent from this
-base. Static capability is not runtime coverage or electrical qualification.
+IDs and captured immutable source path/SHA256 metadata. The scope/3 registry
+validates captured schematic and board inputs and requires each adapter source
+to be an immutable requirement. It reads no installation or candidate files and
+runs no tools. Static capability is not runtime coverage or electrical qualification.
 
 All other native findings remain informational. These narrow adapters do not
 qualify all power, protection, derating, thermal or EMC rules, manufacturer
