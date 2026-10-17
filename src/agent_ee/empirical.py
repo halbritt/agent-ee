@@ -295,8 +295,13 @@ def bench_review(run, report, out, max_seconds, *, review_out=None):
 
     run, out = Path(run).resolve(), Path(out).resolve()
     review_out = Path(review_out).resolve() if review_out is not None else out / "review"
-    with writer_lock(run, out):
-        out.mkdir(parents=True, exist_ok=False)
+    if out.exists():
+        raise ValueError("bench output already exists; legacy partial directories require diagnosis")
+    with writer_lock(run, out, review_out):
+        lease_file = review_out.parent / ('.' + review_out.name + '.writer.lock')
+        if out.exists() and any(p != lease_file for p in out.iterdir()):
+            raise ValueError('bench output already exists')
+        out.mkdir(parents=True, exist_ok=True)
         ingest(run, report, out / "empirical")
         # A newly captured physical discrepancy invalidates current acceptance
         # even if re-verification is interrupted or the provider is unavailable.

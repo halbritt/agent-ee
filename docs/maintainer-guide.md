@@ -271,3 +271,13 @@ unknown kinds fail closed even when execution is registered. The registry
 agreement test catches missing descriptors. Preserve historical scope/1 and
 scope/2 semantics and baseline/1 serialization when changing this interface.
 See [descriptor extension requirements](coverage.md#capability-descriptors-for-new-handlers).
+
+The opt-in bench transaction module owns pinned preparation, publication intents,
+phase receipts and explicit inference attempt identities. `verify_records` checks
+an explicit result projection; the public `verify` wrapper additionally holds a
+shared lease and validates pending bench publications. Recovery can call the
+projection validator only after proving the exact original evidence inventory
+and sole intended event delta. It must not rehash an arbitrary tree through
+`save_result` to make a stale projection pass. Transaction completion retains an
+immutable terminal result snapshot so later empirical supersession can preserve
+the earlier review identity without claiming its old acceptance is current.

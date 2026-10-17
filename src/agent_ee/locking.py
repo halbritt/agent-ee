@@ -32,3 +32,28 @@ def writer_lock(*directories):
             _local.held.add(path)
             stack.callback(_local.held.remove, path)
         yield
+
+
+@contextmanager
+def reader_lock(*directories, require_existing=False):
+    """Coherent supported reads; never create or repair historical lock files."""
+    paths = {Path(p).resolve() for p in directories}
+    for path in list(paths):
+        paths.update(p for p in path.parents if (p / '.campaign-root').is_file())
+    held = getattr(_local, 'held', set()) if getattr(_local, 'pid', None) == os.getpid() else set()
+    with ExitStack() as stack:
+        for path in sorted(paths):
+            if path in held:
+                continue
+            try:
+                stream = stack.enter_context((path.parent / f'.{path.name}.writer.lock').open('rb'))
+            except FileNotFoundError:
+                if require_existing:
+                    raise ValueError(f'existing lease unavailable: {path}')
+                # Legacy read-only records have no supported live writer.
+                continue
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ValueError(f'another writer owns {path}; coherent read unavailable') from exc
+        yield

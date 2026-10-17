@@ -304,3 +304,89 @@ restore its old acceptance. Explicit transaction recovery is required for that
 partial state. After a completed follow-up review, ingest subsequent observations
 against the new review candidate. Every new calibration/2 bundle is validated
 against its complete provenance closure before publication.
+
+## Recoverable feedback transactions
+
+New feedback can opt into `agent-ee.bench-transaction/1` with a caller operation
+ID. Existing feedback without an operation ID retains its historical behavior;
+partial legacy directories are diagnostic inputs and cannot be converted by
+these commands.
+
+```sh
+agent-ee bench-review build/source bench/report.json --out build/feedback \
+  --operation-id prototype-a-20261017 --max-seconds 1200
+agent-ee bench-status build/feedback
+agent-ee bench-recover build/feedback
+agent-ee bench-launch build/feedback
+```
+
+The initial `bench-review` authorizes one fresh review. Repeating the same
+operation returns or reconciles its retained transaction; it does not authorize
+another provider call. Changing the report, raw bytes, source, output, review
+configuration or budget under the same ID conflicts. An equivalent report for
+the same source under another ID returns the existing operation identity.
+Recovery uses captured preparation, so the original report directory need not
+remain available for `bench-recover`.
+
+The four hash-linked receipts are `prepared`, `supersession_committed`,
+`review_started` and `completed`. Preparation retains the original source result,
+report bytes, validated calibration closure and staged candidate inputs. Private
+source results stay outside the review candidate; empirical prediction inputs
+contain tool facts without prior review prose. A source-side publication intent
+precedes the deterministic feedback event and result projection. Ordinary
+verification refuses partial publication, including a stale report projection.
+Publication does not roll back when later checks, inference or cancellation fail.
+
+`bench-status` reads under existing shared leases and never repairs records.
+`bench-recover` acquires the full writer lease set and reconciles only the exact
+prepared event and source projection. Incomplete preparation, changed evidence,
+foreign output or inconsistent campaign history produces a structured refusal.
+Temporary files do not prove a phase. Persistent sibling lock files must remain
+in place; process exit releases the kernel lease.
+
+If recovery proves no review start was recorded, it reports
+`ready_for_explicit_review`; `bench-launch` explicitly spends inference for the
+first attempt. After a start intent, missing or partial execution evidence is
+`uncertain_execution`. Neither recovery nor another launch automatically replays
+that attempt. A fully verified terminal result with coordinator completion time
+can be adopted without another call, including an incomplete or interrupted
+outcome. `completed` describes transaction settlement, not engineering acceptance.
+
+To authorize another review after uncertain execution, choose a new attempt ID
+and a fresh directory:
+
+```sh
+agent-ee bench-new-attempt build/feedback --attempt-id operator-retry-2 \
+  --out build/review-attempt-2
+```
+
+All previous attempt directories and start receipts remain retained. This command
+only launches a review of the pinned candidate. It does not acquire instrument
+data, edit designs or re-ingest observations. A settled transaction is immutable;
+a further review can use the retained `prepared/scope.json` through the ordinary
+explicit `review` command.
+
+`campaign-feedback --operation-id ID` applies the same bounded transaction to
+the campaign's declared next review. Its terminal projection advances one epoch
+and charges one history entry under the existing convergence budget. It stops
+after recording that review, including a `repair` decision; it does not launch
+an implementation or automatically continue a repair campaign. An explicitly
+identified replacement attempt may use a fresh run directory while preserving
+the partial original next-run directory. Campaign verification binds that
+exception to the transaction, calibration and attempt chain. Historical snapshots
+and the immutable requirement baseline remain unchanged.
+
+Durability uses file fsync, atomic JSON replacement and directory fsync on the
+local filesystem, with staged copies verified before publication. This is
+trusted local storage consistency. It does not qualify network filesystems,
+provide a hostile-host signature or prove physical measurement authenticity.
+The crash matrix interrupts every prelaunch fsync/rename in fresh processes;
+scripted review and native sandbox tests establish orchestration behavior,
+not live-provider reliability or hardware validation.
+
+Structured results keep `review` as the retained terminal identity and outcome.
+`current_review` reports the presently verified review projection, including
+`empirical_superseded`. If a later bench epoch supersedes that review, the old
+transaction remains completed while `current_review.outcome` becomes incomplete.
+An initial transaction command uses the current outcome for its acceptance exit
+status; settlement alone cannot restore historical acceptance.

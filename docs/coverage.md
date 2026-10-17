@@ -342,3 +342,16 @@ coverage. Native owned fixtures test rho*L/A, independent network solutions,
 actual narrowed/lengthened trace violations and sealed evidence tampering.
 These results do not qualify pad spreading, vias, zones, RLC extraction,
 self-heating or arbitrary-board/hardware behavior.
+
+## Bench transaction recovery coverage
+
+`test_bench_transactions.py` exercises the real coordinator and sandboxed
+synthetic measurement producer/parser with scripted independent reviewers.
+It covers duplicate/conflicting requests, captured-parent epoch closure,
+source supersession, explicit replacement attempts, full external-target leases,
+coherent reader refusal, completed-result adoption and exactly-once campaign
+history projection. A process exits immediately before and after every fsync
+and rename in the prelaunch transaction; recovery runs in another process and
+must reconcile deterministically or refuse with retained evidence. Recovery
+has a provider boundary assertion. These tests model process interruption,
+not physical power loss, instrument authenticity or live-provider reliability.
