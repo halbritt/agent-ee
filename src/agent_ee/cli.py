@@ -314,7 +314,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline)
             result["findings"] = collect_findings(result["reviews"], result["checks"])
             save_result(run, result)
-            if len(result["reviews"]) >= 2 and time.monotonic() < deadline:
+            if len(result["reviews"]) == len(result["expected_review_roles"]) and time.monotonic() < deadline:
                 execution, decisions = adjudicator_call(run, packet, result["findings"], result["reviews"], deadline)
                 if decisions is not None:
                     try:

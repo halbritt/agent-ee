@@ -25,10 +25,11 @@ flowchart TD
   B --> C
 ```
 
-The two initial judgments are separate contexts. They execute sequentially in
-the current adapter, not concurrently. The adjudicator receives both only after
-initial review. The diagram's branches represent information separation, not
-parallel model execution or proof of epistemic independence.
+The two initial judgments run concurrently in separate contexts and workspaces.
+The coordinator waits for both calls to settle before adjudication and projects
+reviews and execution records in profile role order. Profiles with additional
+roles run at most two initial calls at once. Parallel execution does not prove
+epistemic independence.
 
 ## Modules and seams
 

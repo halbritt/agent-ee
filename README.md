@@ -63,8 +63,8 @@ requirements, checks and models.
    recorded as missing coverage, never as a passing design.
 4. **Review independently.** Fresh circuit and physical-design reviewers receive
    the same candidate, requirements and check evidence. They cannot read each
-   other's initial judgments. Calls currently run sequentially in separate
-   contexts and workspaces.
+   other's initial judgments. The two calls run concurrently in separate
+   contexts and workspaces; adjudication waits for both to settle.
 5. **Adjudicate centrally.** Findings get explicit dispositions. Under scope/2,
    an accepted defect must be a coordinator check finding backed by sealed
    evidence and a mapped requirement violation. Reviewer hypotheses need
