@@ -555,6 +555,10 @@ def _link_correction(previous, current, finding_id, check_ids, reason):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    catalog = sub.add_parser('capture-catalog', help='prepare a pinned local catalog; no upstream authentication')
+    catalog.add_argument('manifest')
+    catalog.add_argument('--source-root', required=True)
+    catalog.add_argument('--out', required=True)
     request = sub.add_parser("evidence-request", help="export an inert request from a retained concern")
     request.add_argument("run")
     request.add_argument("--finding", required=True)
@@ -628,6 +632,11 @@ def main(argv=None):
     closure.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'capture-catalog':
+            from .catalog import capture_catalog, strict_json
+            capture_catalog(strict_json(Path(args.manifest).read_text(encoding='utf-8')), args.source_root, args.out)
+            print(digest(Path(args.out) / 'manifest.json'))
+            return 0
         if args.command == "evidence-request":
             from .evidence_requests import export_request
             record = export_request(args.run, args.finding, read_json(args.spec), args.out, script=args.script)

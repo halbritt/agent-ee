@@ -822,7 +822,9 @@ from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
 
 
-CHECK_FUNCS = {"routing_rules": check_routing_rules, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+from .catalog_checks import check_catalog
+
+CHECK_FUNCS = {"catalog": check_catalog, "part_selection": check_catalog, "routing_rules": check_routing_rules, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,

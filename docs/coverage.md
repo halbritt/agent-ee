@@ -416,5 +416,8 @@ quantities from retained raw attributes before [selection](part-selection.md).
 Repinned contradictory quantities fail closed. This proves internal consistency,
 not upstream authenticity. Selection compares declared intervals and allocates
 snapshot stock; it is not circuit acceptance or purchasing authorization.
-The real upstream catalog and exact Konnect fixture remain unqualified. These
-APIs are not yet registered as campaign checks with requirement-bound witnesses.
+The real upstream catalog and exact Konnect fixture remain unqualified.
+The informational `catalog` check and bounded `part_selection` check now use
+the existing sandbox, immutable baseline and coordinator seal. Selection binds
+one requirement sourced from its captured requirements file. Unknown selection
+cannot establish a defect witness; checks-only success is not campaign acceptance.

@@ -92,12 +92,41 @@ semantically invalid snapshots to `execution: failed, outcome: unknown` with an
 error and no fallback choice. Selection uses only intervals that `load_catalog`
 has rederived from each row's retained raw attributes. A repinned snapshot whose
 stored intervals disagree with its raw claims is never used to select a part.
-The direct `select_parts` API raises the underlying input error. Shared scope,
-CLI, baseline and check registration belong to the integrator; this module
-adds no acceptance authority or new reviewer access.
+The direct `select_parts` API raises the underlying input error. The integration
+below supplies scope and baseline registration without new
+reviewer access or a separate acceptance path.
 
 Prices, stock, and classifications are explicitly **as of the snapshot date**.
 Datasheet facts, package/pin binding and later assembly-readiness verification
 remain separate checks. The tests use original synthetic catalog rows, including
 a 33-row Basic/stock ranking case; they do not reproduce or qualify the named
 third-party Konnect fixture.
+
+## Requirement-bound check
+
+Register `kind: "part_selection"` with exactly these params:
+
+```json
+{
+  "snapshot": "data/catalog",
+  "manifest_sha256": "<trusted manifest SHA-256>",
+  "requirements": "data/parts.json",
+  "requirement_id": "parts"
+}
+```
+
+Use the actual manifest SHA-256 in place of the placeholder. The check must map
+to exactly one baseline requirement with ID `parts` and source path
+`data/parts.json`. That file uses the existing part-requirements schema above;
+no separate selection schema is introduced. Multiple parts form one conjunctive
+requirement. Split checks explicitly when separate baseline requirements are
+needed. Capture the requirements file and both snapshot files. All three are
+immutable baseline inputs in scope/2 and scope/3.
+
+Scope/3 describes the bounded predicate `catalog:declared-part-constraints/1`.
+A pass covers only those declared constraints against the approved snapshot's
+claims. An empty candidate set remains unknown, so it cannot become a sealed
+defect witness. Invalid inputs return failed/unknown. The retained sandbox
+report enters the existing coordinator seal, public verify and witness gates;
+selection has no private acceptance or adjudication route. A checks-only run
+still has incomplete independent review, even if its selection check passes.
