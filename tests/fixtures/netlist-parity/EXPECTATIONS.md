@@ -20,3 +20,6 @@ Stronger collapse regression: exchange series.pin2 and shunt.pin2 between output
 and ground. The series resistor becomes input-to-ground and both shunt terminals
 land on output. Every net retains exactly the same SET of (lib_id,value,pin)
 tokens, but the physical instance graph is non-isomorphic and must be a defect.
+`resolved.json` is not an authored expectation. It is the exact output of
+`connectivity_ir.resolve_intent(intent.json, {Owned.kicad_sym})`, and the
+`resolved` adapter rederives and compares it byte-for-byte at check time.

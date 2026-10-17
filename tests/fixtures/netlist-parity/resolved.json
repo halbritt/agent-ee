@@ -1,5 +1,9 @@
 {
   "schema": "agent-ee.resolved-connectivity/1",
+  "execution": "ok",
+  "outcome": "pass",
+  "coverage": "complete",
+  "findings": [],
   "intent_sha256": "4593d610daf9f6679bba6e08fad5972623279641b754a213e702f70a78f55766",
   "libraries": [
     {
@@ -208,6 +212,20 @@
   ],
   "nets": [
     {
+      "id": "ground",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": "3"
+        },
+        {
+          "component": "shunt",
+          "pin": "2"
+        }
+      ]
+    },
+    {
       "id": "input",
       "name": "VBUS",
       "terminals": [
@@ -238,28 +256,10 @@
           "pin": "1"
         }
       ]
-    },
-    {
-      "id": "ground",
-      "name": "GND",
-      "terminals": [
-        {
-          "component": "port",
-          "pin": "3"
-        },
-        {
-          "component": "shunt",
-          "pin": "2"
-        }
-      ]
     }
   ],
   "no_connects": [],
-  "execution": "ok",
-  "outcome": "pass",
-  "coverage": "complete",
-  "findings": [],
   "hierarchy": [],
   "ports": [],
-  "canonical_sha256": "0c4bfb2e2ee1333e436ad2a6e8883bad4525ace492e1e78e5c162a428f7aa04f"
+  "canonical_sha256": "e58b7b9bd96f91bb51c505b7796b252544ca2956697c2990f4e104c37a6c6048"
 }

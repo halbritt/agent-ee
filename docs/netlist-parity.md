@@ -27,6 +27,25 @@ The source adapter must be explicit: `golden_xml`, `resolved` for
 incomplete or rejected resolution cannot establish parity. No host library search
 or model call supplies missing input.
 
+A resolved record is not graph authority by itself. Its self-hash and structural
+validation do not show that the captured libraries produced its pin inventory.
+`resolved` therefore requires the captured intent it came from:
+
+```json
+{"source": {"kind": "resolved", "path": "resolved.json", "intent": "intent.json"}}
+```
+
+The check resolves that intent against the captured libraries in coordinator code.
+The captured record's canonical bytes must equal that resolution exactly; any
+difference, including an authored and re-signed edit, is `malformed` with outcome
+`unknown`. Library dependencies come from the intent, not from the record's own
+claims. The intent, the record and every library are immutable scope/2 and
+scope/3 inputs. Reports record `source_provenance`
+(`captured_golden_native_xml`, `resolved_from_captured_intent` or
+`captured_resolution_rederived_from_captured_intent`) and `intent_source_sha256`.
+A golden XML netlist is a separately captured owner reference. It makes no
+library-resolution claim.
+
 `topology` compares exact physical-pin incidence and component multiplicity,
 independent of reference designators and net names. Component keys contain exact
 library symbol, exact value and native population state. Identical parts remain
