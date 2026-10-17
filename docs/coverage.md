@@ -418,3 +418,12 @@ not upstream authenticity. Selection compares declared intervals and allocates
 snapshot stock; it is not circuit acceptance or purchasing authorization.
 The real upstream catalog and exact Konnect fixture remain unqualified. These
 APIs are not yet registered as campaign checks with requirement-bound witnesses.
+
+## Intent and golden netlist parity
+
+The [netlist parity check](netlist-parity.md) compares full native XML physical-pin
+incidence and exact component multiplicity with a captured source. It preserves
+identical instances, bounds exact graph search, and leaves ambiguous instance
+correspondence unknown unless explicit immutable anchors resolve it. Descriptive
+scores do not grant conformance. Missing or malformed producer/source evidence
+cannot pass; footprint adequacy and electrical behavior remain outside coverage.

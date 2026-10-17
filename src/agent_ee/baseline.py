@@ -75,6 +75,10 @@ def compile_baseline(scope, files, inputs=None):
             from .routing_rules import capability
             descriptor = capability(params, scope, files, inputs, spec["id"])
             paths.update(descriptor["immutable_inputs"])
+        if spec.get("kind") == "netlist_parity":
+            from .netlist_parity import capability
+            descriptor = capability(params, scope, files, inputs, spec["id"])
+            paths.update(descriptor["immutable_inputs"])
         if spec.get("kind") == "hardware_interface":
             from .hardware_interface import capability
             descriptor = capability(params, scope, files, inputs, spec["id"])
