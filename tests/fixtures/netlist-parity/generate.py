@@ -41,6 +41,11 @@ def schematic(variant='control'):
                 labels = ['VCC', None]
         if variant == 'symmetric' and identity == 'R90':
             labels = ['VBUS', 'VCC']
+        if variant == 'identical-pin-swap':
+            if identity == 'R80':
+                labels = ['VBUS', 'GND']
+            if identity == 'R90':
+                labels = ['VCC', 'VCC']
         if variant == 'same-part-mutation' and identity == 'R90':
             labels = ['VBUS', 'GND']
         x, y = 40 + index * 30, 50

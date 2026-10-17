@@ -393,6 +393,23 @@ class NativeParityTests(unittest.TestCase):
                 self.assertTrue(all(n['native_no_connect_marker'] == (variant == 'no-connects') for n in normalized))
                 self.assertEqual(report['details']['scores']['jaccard'], 1.0)
 
+    def test_native_identical_part_swap_defeats_collapsed_token_oracle(self):
+        from agent_ee.native_netlist import read_native_inventory
+        run, checks = self.run_variant('identical-pin-swap', params={
+            'source': {'kind': 'intent', 'path': 'intent.json'}})
+        graph = read_native_inventory(run / 'work/netlist/design.xml')
+        # Independently worked bags: a lossy per-net SET oracle sees no change.
+        expected_bags = {
+            'VBUS': {('Owned:Port', 'port', '1'), ('Owned:R', '10k', '1')},
+            'VCC': {('Owned:Port', 'port', '2'), ('Owned:R', '10k', '1'), ('Owned:R', '10k', '2')},
+            'GND': {('Owned:Port', 'port', '3'), ('Owned:R', '10k', '2')}}
+        collapsed = {net['name'].removeprefix('/'): {
+            (graph['components'][cid]['lib_id'], graph['components'][cid]['value'], pin)
+            for cid, pin in net['terminals']} for net in graph['nets'].values()}
+        self.assertEqual(collapsed, expected_bags)
+        self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', 'defect'), checks)
+        self.assertEqual(set(checks[1]['details']['missing_nets']), {'output', 'ground'})
+
 
 class FailureBoundaryTests(unittest.TestCase):
     def test_native_duplicate_id_pin_membership_and_entities_are_malformed(self):
