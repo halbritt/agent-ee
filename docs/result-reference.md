@@ -431,6 +431,14 @@ runtime path does not change topology identity. Changing candidate bytes, native
 entities or declared criteria invalidates prior index continuations. Source
 locators identify retained evidence; they are not synthetic tool observations.
 
+Missing references or pin numbers, duplicate sheet-scoped symbol UUIDs, duplicate
+net codes, repeated pin memberships (including duplicate nodes in one net), and
+unknown sheets in a declared sheet inventory make affected navigation unresolved.
+Such entities retain raw source locators and inventory attribution, but receive
+no consumer, requirement or coupling links. Ambiguous net membership edges are
+omitted. A symbol UUID may be reused in distinct declared sheet instances. Sheet
+declarations participate in structural hashes; volatile design dates do not.
+
 `packet_index.page` bounds UTF-8 JSON display bytes as rendered in reviewer prompts (default 12,000).
 Each continuation binds candidate/index IDs and an exact offset. An entry too
 large for the display has an explicit full-index JSON pointer and continuation.
