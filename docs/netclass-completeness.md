@@ -12,7 +12,13 @@ The qualified profile is KiCad 10.0.7, `net_settings.meta.version == 5`.
 The [empty native project](../fixtures/netclass-completeness/native.kicad_pro)
 was generated through `pcbnew.SETTINGS_MANAGER.LoadProject/SaveProject` using
 10.0.7-10.0.7~ubuntu24.04.1. Its [generator](../fixtures/netclass-completeness/generate.py)
-uses no third-party design. Qualification records its hash and the exact primary
+uses no third-party design. For a fresh nonexistent path, LoadProject returns
+false after registering default state; SaveProject must return true and write
+the exact qualified hash. The fixture regeneration probe passed in the pinned
+image. The Python binding also emits three native PROPERTY_ENUM diagnostics
+about missing enum choices during initialization; these are retained in the
+worker log, so this is not a claim of a diagnostic-free writer.
+Qualification records its hash and the exact primary
 source hashes. The writer and loader are in
 [common/project/net_settings.cpp](https://github.com/KiCad/kicad/blob/10.0.7/common/project/net_settings.cpp)
 (lines 38, 65–224); the initialized defaults are in
