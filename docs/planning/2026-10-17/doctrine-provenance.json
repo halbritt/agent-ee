@@ -1,0 +1,275 @@
+{
+  "packet_id": "pkt-dea9c12d22744e48",
+  "packet_content_sha256": "dea9c12d22744e486ebe5e5919e67952d7db6b5022844fa64bbbf6d377663499",
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "doctrine_version": "doctrine-f6bbb5196a3f8bf9",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "release_commit": "d3e0c0d4ccd1920b2e045c156f1cf0db4fc5f04f",
+  "selected_concepts": [
+    "agent-conduct-authority-bounded-action",
+    "universal-evidence-before-intervention",
+    "architecture-decision-record"
+  ],
+  "authority_ceiling": "Planning, consensus and publishing backlog items explicitly requested by owner; no feature implementation or physical acceptance.",
+  "unmet_obligations": [
+    {
+      "obligation_id": "obl-dd00da5e657fa8b6",
+      "requirement": "application scenario and forbidden observations",
+      "required_by": "data-consistency-model-selection",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No replicated datastore consistency model is selected by this planning deliverable. Future transaction semantics require the item-specific crash tests."
+    },
+    {
+      "obligation_id": "obl-4b621b51b457c6c1",
+      "requirement": "datastore consistency and isolation guarantees",
+      "required_by": "data-consistency-model-selection",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No replicated datastore consistency model is selected by this planning deliverable. Future transaction semantics require the item-specific crash tests."
+    },
+    {
+      "obligation_id": "obl-795250639cc29ff0",
+      "requirement": "datastore guarantee",
+      "required_by": "data-consistency-model-selection",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No replicated datastore consistency model is selected by this planning deliverable. Future transaction semantics require the item-specific crash tests."
+    },
+    {
+      "obligation_id": "obl-ab369878e5e9afe7",
+      "requirement": "forbidden observation or invariant",
+      "required_by": "data-consistency-model-selection",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No replicated datastore consistency model is selected by this planning deliverable. Future transaction semantics require the item-specific crash tests."
+    },
+    {
+      "obligation_id": "obl-8fb57c952a469a61",
+      "requirement": "latency and availability consequences under partition or failure",
+      "required_by": "data-consistency-model-selection",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No replicated datastore consistency model is selected by this planning deliverable. Future transaction semantics require the item-specific crash tests."
+    },
+    {
+      "obligation_id": "obl-16e17fee2741100e",
+      "requirement": "business strategy and user value",
+      "required_by": "domain-core-domain-priority",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No market differentiation or economic return is asserted. Priority is engineering risk preference, not validated business value."
+    },
+    {
+      "obligation_id": "obl-65e0895fd36fe599",
+      "requirement": "change and risk in core workflows",
+      "required_by": "domain-core-domain-priority",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No market differentiation or economic return is asserted. Priority is engineering risk preference, not validated business value."
+    },
+    {
+      "obligation_id": "obl-e198c1643a240514",
+      "requirement": "sourcing and integration economics",
+      "required_by": "domain-core-domain-priority",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No market differentiation or economic return is asserted. Priority is engineering risk preference, not validated business value."
+    },
+    {
+      "obligation_id": "obl-aa617540cbb78b74",
+      "requirement": "stakeholder validation of differentiation",
+      "required_by": "domain-core-domain-priority",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No market differentiation or economic return is asserted. Priority is engineering risk preference, not validated business value."
+    },
+    {
+      "obligation_id": "obl-e3ec7fa1ac65085a",
+      "requirement": "stakeholder-validated business value",
+      "required_by": "domain-core-domain-priority",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No market differentiation or economic return is asserted. Priority is engineering risk preference, not validated business value."
+    },
+    {
+      "obligation_id": "obl-e645197e9ad5111e",
+      "requirement": "baseline",
+      "required_by": "refactoring-stop-backtrack-escalate",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime refactoring is performed. Implementation baselines and rollback gates remain future work-item acceptance requirements."
+    },
+    {
+      "obligation_id": "obl-ee616c2ddfc58b5d",
+      "requirement": "current diff",
+      "required_by": "refactoring-stop-backtrack-escalate",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime refactoring is performed. Implementation baselines and rollback gates remain future work-item acceptance requirements."
+    },
+    {
+      "obligation_id": "obl-d82bcdc3af644212",
+      "requirement": "failure output",
+      "required_by": "refactoring-stop-backtrack-escalate",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime refactoring is performed. Implementation baselines and rollback gates remain future work-item acceptance requirements."
+    },
+    {
+      "obligation_id": "obl-f3c302e2f8559e89",
+      "requirement": "last known-good state",
+      "required_by": "refactoring-stop-backtrack-escalate",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime refactoring is performed. Implementation baselines and rollback gates remain future work-item acceptance requirements."
+    },
+    {
+      "obligation_id": "obl-1045572a49443af2",
+      "requirement": "ownership and authority",
+      "required_by": "refactoring-stop-backtrack-escalate",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime refactoring is performed. Implementation baselines and rollback gates remain future work-item acceptance requirements."
+    },
+    {
+      "obligation_id": "obl-a696b1af271c4520",
+      "requirement": "evidence-accepted-design-decisions",
+      "required_by": "task:architecture-assessment",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "The claim is a bounded backlog recommendation, not implementation acceptance or a complete operational architecture assessment. Source snapshots and user constraints are recorded independently."
+    },
+    {
+      "obligation_id": "obl-3694b1a814b49e8d",
+      "requirement": "evidence-operational-constraints",
+      "required_by": "task:architecture-assessment",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "The claim is a bounded backlog recommendation, not implementation acceptance or a complete operational architecture assessment. Source snapshots and user constraints are recorded independently."
+    },
+    {
+      "obligation_id": "obl-b1a426b2fcb0fe3b",
+      "requirement": "evidence-version-history",
+      "required_by": "task:architecture-assessment",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "The claim is a bounded backlog recommendation, not implementation acceptance or a complete operational architecture assessment. Source snapshots and user constraints are recorded independently."
+    },
+    {
+      "obligation_id": "obl-e747a32ecc17a8e0",
+      "requirement": "all mutation/creation paths and authority",
+      "required_by": "universal-explicit-invariants",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "User-prescribed invariants are retained as design constraints; this deliverable does not prove all implementation mutation paths enforce them."
+    },
+    {
+      "obligation_id": "obl-10853c19f01226f6",
+      "requirement": "actual caller needs",
+      "required_by": "universal-information-hiding",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No new module boundary is implemented or claimed superior; detailed module placement remains an implementation decision."
+    },
+    {
+      "obligation_id": "obl-c1e09438a10093c4",
+      "requirement": "caller needs and decision owner",
+      "required_by": "universal-information-hiding",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No new module boundary is implemented or claimed superior; detailed module placement remains an implementation decision."
+    },
+    {
+      "obligation_id": "obl-0a506f1cf59a4e05",
+      "requirement": "decision owner and volatility",
+      "required_by": "universal-information-hiding",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No new module boundary is implemented or claimed superior; detailed module placement remains an implementation decision."
+    },
+    {
+      "obligation_id": "obl-733a86bfcf974e5c",
+      "requirement": "leaked knowledge or coordinated change",
+      "required_by": "universal-information-hiding",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No new module boundary is implemented or claimed superior; detailed module placement remains an implementation decision."
+    },
+    {
+      "obligation_id": "obl-394110b31c052712",
+      "requirement": "material cost/failure semantics callers require",
+      "required_by": "universal-information-hiding",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No new module boundary is implemented or claimed superior; detailed module placement remains an implementation decision."
+    },
+    {
+      "obligation_id": "obl-88e0ac180929bdd1",
+      "requirement": "knowledge and navigation required by callers/maintainers",
+      "required_by": "universal-local-reasoning",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "Navigation improvement is a hypothesis with required fixture measurements, not a demonstrated maintainability claim."
+    },
+    {
+      "obligation_id": "obl-c21a7c21c790fb22",
+      "requirement": "representative change or use scenario",
+      "required_by": "universal-local-reasoning",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "Navigation improvement is a hypothesis with required fixture measurements, not a demonstrated maintainability claim."
+    },
+    {
+      "obligation_id": "obl-e053f0e1f20ce2aa",
+      "requirement": "representative change scenario",
+      "required_by": "universal-local-reasoning",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "Navigation improvement is a hypothesis with required fixture measurements, not a demonstrated maintainability claim."
+    },
+    {
+      "obligation_id": "obl-ec0bebeb749e3fa9",
+      "requirement": "actual current cost/risk or absence within a stated interval",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No feature is implemented. No-change and bounded alternatives are retained; uncertain benefits must be measured before broader adoption."
+    },
+    {
+      "obligation_id": "obl-a7c3deeb27a6d936",
+      "requirement": "expected future change from accepted plans",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No feature is implemented. No-change and bounded alternatives are retained; uncertain benefits must be measured before broader adoption."
+    },
+    {
+      "obligation_id": "obl-543196d64e60fc3a",
+      "requirement": "latent security, safety, data, durability, and compatibility check",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No feature is implemented. No-change and bounded alternatives are retained; uncertain benefits must be measured before broader adoption."
+    },
+    {
+      "obligation_id": "obl-a89dd32d7271dec4",
+      "requirement": "proc-decide-leave-code-alone",
+      "required_by": "universal-no-change-option",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No feature is implemented. No-change and bounded alternatives are retained; uncertain benefits must be measured before broader adoption."
+    },
+    {
+      "obligation_id": "obl-3579d03ad8af3e57",
+      "requirement": "accepted desired behavior and semantic authority",
+      "required_by": "universal-preserve-behavior-by-default",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime behavior change is made; each future semantic change has explicit migration and verification requirements."
+    },
+    {
+      "obligation_id": "obl-125d0b69ca2b7b70",
+      "requirement": "proc-establish-preservation-boundaries",
+      "required_by": "universal-preserve-behavior-by-default",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "No runtime behavior change is made; each future semantic change has explicit migration and verification requirements."
+    },
+    {
+      "obligation_id": "obl-5ad348092a91d31f",
+      "requirement": "repository instructions from root through target path",
+      "required_by": "universal-repository-contract-precedence",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "User instructions and inspected source govern this plan directly. No doctrine rule is used to override local contracts or infer implementation permission."
+    },
+    {
+      "obligation_id": "obl-bc386b0d0552a2c6",
+      "requirement": "change-type classification",
+      "required_by": "universal-separate-semantic-structural-change",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "Only planning documents and one factual documentation correction are changed. Runtime changes remain separate future work."
+    },
+    {
+      "obligation_id": "obl-a6fcb0b50aa1efa9",
+      "requirement": "checkpoint verification",
+      "required_by": "universal-separate-semantic-structural-change",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "Only planning documents and one factual documentation correction are changed. Runtime changes remain separate future work."
+    },
+    {
+      "obligation_id": "obl-5363e6b05fa6c7de",
+      "requirement": "per-edit change classification",
+      "required_by": "universal-separate-semantic-structural-change",
+      "classification": "nonmaterial to bounded planning recommendation",
+      "rationale": "Only planning documents and one factual documentation correction are changed. Runtime changes remain separate future work."
+    }
+  ]
+}

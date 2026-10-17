@@ -1,0 +1,26 @@
+{
+  "source_commit": "a834201ef7014abe360e70742ffb2d672fe24b34",
+  "method": "Actual KiCad saved-board geometry check on disposable RC fixture with added 0.05 mm PCB_ARC; declared minimum 0.20 mm.",
+  "check_execution": "ok",
+  "check_outcome": "pass",
+  "summary": "all 5 checked track segment(s) meet the declared 0.2 mm minimum width (narrowest 0.25 mm)",
+  "arc_items": [
+    {
+      "end_mm": [
+        12.0,
+        10.0
+      ],
+      "layer": "F.Cu",
+      "length_mm": 3.1416,
+      "net": "/IN",
+      "start_mm": [
+        10.0,
+        10.0
+      ],
+      "type": "pcb_arc",
+      "uuid": "aeaa0b5c-bf0f-4d0e-8958-7e17c84c9c8f",
+      "width_mm": 0.05
+    }
+  ],
+  "limits": "Only geometry check executed; checks-only review incomplete. No ERC/DRC or assembled-board claim. Exposes a track-width coverage limitation; unknown primitives must not silently satisfy broadened future criteria."
+}

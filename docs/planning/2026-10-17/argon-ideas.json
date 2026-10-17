@@ -1,0 +1,1452 @@
+{
+  "schema": "agent-ee.adhd-report/1",
+  "participant": "argon",
+  "commit": "a834201",
+  "brief": {
+    "problem": "What enhancements/improvements would most improve agent-ee as a useful, trustworthy electronics engineering review and repair tool? Preserve one implementation writer, immutable candidate/requirements, independent initial reviewers, centralized evidence-backed adjudication, bounded convergence and bench feedback. Explore beyond the first obvious bug fixes; ground focus-stage proposals in current source and real workflow gaps.",
+    "frames_used": [
+      {
+        "id": "B1",
+        "name": "hardware engineer",
+        "tags": [
+          "code",
+          "wild"
+        ]
+      },
+      {
+        "id": "B2",
+        "name": "regulator",
+        "tags": [
+          "design",
+          "general"
+        ]
+      },
+      {
+        "id": "B3",
+        "name": "competitor trying to break it",
+        "tags": [
+          "code",
+          "design"
+        ]
+      },
+      {
+        "id": "B4",
+        "name": "remove the load-bearing assumption",
+        "tags": [
+          "code",
+          "design",
+          "wild"
+        ]
+      },
+      {
+        "id": "B5",
+        "name": "3am on-call",
+        "tags": [
+          "code",
+          "design"
+        ]
+      }
+    ],
+    "total_ideas": 30,
+    "cluster_count": 6,
+    "shortlist_ids": [
+      "B3-1",
+      "B3-2",
+      "B5-4",
+      "B3-5",
+      "B3-6",
+      "B1-1"
+    ],
+    "top3_ids": [
+      "B3-1",
+      "B3-2",
+      "B5-4"
+    ],
+    "trap_ids": [
+      "B1-3",
+      "B4-4",
+      "B1-4",
+      "B1-6",
+      "B4-5",
+      "B5-6"
+    ],
+    "scoring_axes": {
+      "novelty": {
+        "weight": 0.35,
+        "definition": "distance from the obvious default"
+      },
+      "viability": {
+        "weight": 0.4,
+        "definition": "could it actually ship"
+      },
+      "fit": {
+        "weight": 0.25,
+        "definition": "does it address the stated problem"
+      }
+    }
+  },
+  "ideas": [
+    {
+      "id": "B5-4",
+      "branch_id": "B5",
+      "frame": "3am on-call",
+      "cluster": "1. Bench Calibration Validity & Operating-Envelope Guards",
+      "text": "Gate empirical residual interval reuse in empirical.py on a netlist-subgraph and operating-envelope equivalence hash so topological or component-class edits by the single writer automatically invalidate stale additive bench offsets.",
+      "rationale": "Prevents linear additive calibration intervals [m-u-p, m+u-p] captured on one circuit topology from hiding a nonlinear cliff edge after the repair writer modifies the surrounding network.",
+      "novelty": 9,
+      "viability": 9,
+      "fit": 9,
+      "composite": 9.0,
+      "status": "top3",
+      "rank": 3,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 9,
+        "value": 9,
+        "feasibility": 9,
+        "composite": 9.0,
+        "rank": 1
+      }
+    },
+    {
+      "id": "B2-3",
+      "branch_id": "B2",
+      "frame": "regulator",
+      "cluster": "1. Bench Calibration Validity & Operating-Envelope Guards",
+      "text": "Invalidate `empirical.py` additive residual intervals (`[m-u-p, m+u-p]`) and force a `recalibration_required` halt whenever a repair campaign mutates topology, component class, or layout geometry beyond the calibrated candidate's linearity neighborhood.",
+      "rationale": "Applying a static bench residual across structural circuit or layout edits assumes error stationarity; compliance requires proving a candidate remains within the physical regime where the bench calibration epoch is mathematically valid.",
+      "novelty": 8,
+      "viability": 9,
+      "fit": 9,
+      "composite": 8.65,
+      "status": "deduped_into_B5-4",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 9,
+        "composite": 8.65,
+        "rank": null
+      }
+    },
+    {
+      "id": "B3-3",
+      "branch_id": "B3",
+      "frame": "competitor trying to break it",
+      "cluster": "1. Bench Calibration Validity & Operating-Envelope Guards",
+      "text": "Invalidate or widen `empirical.py` additive bench calibration intervals whenever a repair proposal shifts netlist topology, driving impedance, or operating-point sensitivity beyond a bounded neighborhood of the calibrated candidate.",
+      "rationale": "Static additive residuals (`[m-u-p, m+u-p]`) break down under nonlinear topological or impedance edits, allowing a repair writer to exploit stale bench offsets to manufacture fake pass margins.",
+      "novelty": 8,
+      "viability": 8,
+      "fit": 9,
+      "composite": 8.25,
+      "status": "deduped_into_B5-4",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 8,
+        "composite": 8.35,
+        "rank": null
+      }
+    },
+    {
+      "id": "B1-6",
+      "branch_id": "B1",
+      "frame": "hardware engineer",
+      "cluster": "1. Bench Calibration Validity & Operating-Envelope Guards",
+      "text": "Upgrade empirical.py from scalar additive residual intervals to a two-term ratiometric gain-plus-offset transfer function indexed by operating-point registers (rail voltage, load current, frequency).",
+      "rationale": "Physical hardware errors scale multiplicatively with impedance, thermal drift, and fixture attenuation, so a flat additive offset miscalibrates the error budget as soon as the operating point shifts.",
+      "novelty": 7,
+      "viability": 5,
+      "fit": 7,
+      "composite": 6.2,
+      "status": "trap",
+      "rank": null,
+      "trap": true,
+      "trap_reason": "Fitting multi-parameter gain+offset transfer functions from a single bench epoch is mathematically underdetermined (1 equation, 2 unknowns per metric) without multi-point hardware sweeps.",
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 7,
+        "feasibility": 5,
+        "composite": 6.4,
+        "rank": null
+      }
+    },
+    {
+      "id": "B4-5",
+      "branch_id": "B4",
+      "frame": "remove the load-bearing assumption",
+      "cluster": "1. Bench Calibration Validity & Operating-Envelope Guards",
+      "text": "Remove the assumption that bench feedback is a passive scalar residual interval: back-annotate empirical residuals as inferred parasitic elements inside the candidate simulation model and emit active next-probe stimulus requests that maximally shrink model uncertainty.",
+      "rationale": "Replacing flat additive offset intervals with structural parasitic synthesis and active experiment design lets hardware feedback localize the physical mechanism of simulation-to-bench divergence.",
+      "novelty": 9,
+      "viability": 4,
+      "fit": 8,
+      "composite": 6.75,
+      "status": "trap",
+      "rank": null,
+      "trap": true,
+      "trap_reason": "Solving the inverse problem from scalar bench residuals to unique lumped parasitic circuit elements is ill-posed and non-unique without multi-frequency vector network measurements.",
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 9,
+        "value": 8,
+        "feasibility": 4,
+        "composite": 7.15,
+        "rank": null
+      }
+    },
+    {
+      "id": "B3-2",
+      "branch_id": "B3",
+      "frame": "competitor trying to break it",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Add a boundary-invariant contract check that pins external connector pinouts, power rails, testpoint nodes, and functional net connectivity across campaign proposals so the writer cannot pass checks by amputating subcircuits or renaming probed nodes.",
+      "rationale": "A reward-hacking implementation writer can vacuously satisfy `rc_transient`, `drc`, or `measurements` checks by disconnecting offending loads, deleting testpoints, or renaming nets referenced by downstream simulations.",
+      "novelty": 8,
+      "viability": 10,
+      "fit": 9,
+      "composite": 9.05,
+      "status": "top3",
+      "rank": 2,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 10,
+        "composite": 8.9,
+        "rank": 2
+      }
+    },
+    {
+      "id": "B2-1",
+      "branch_id": "B2",
+      "frame": "regulator",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Enforce non-vacuity and domain-cardinality proofs in sealed check evidence so checks cannot pass by silently skipping curved tracks, polygons, unmapped SPICE primitives, or renamed nets.",
+      "rationale": "A regulator audits whether a 'pass' actually tested the physical artifact; if `geometry` only checks straight tracks or `rc_transient` ignores non-passive components, a candidate can pass by moving hazards into unmodeled primitives unless the evidence proves 100% domain coverage or refuses unscanned elements.",
+      "novelty": 8,
+      "viability": 9,
+      "fit": 9,
+      "composite": 8.65,
+      "status": "merged_into_B3-2",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 9,
+        "composite": 8.65,
+        "rank": null
+      }
+    },
+    {
+      "id": "B5-2",
+      "branch_id": "B5",
+      "frame": "3am on-call",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Enforce a KiCad S-expression blast-radius lock between the parent candidate and each single-writer proposal that rejects edits outside the adjudicated defect's witness net/component cone before running expensive checks or reviews.",
+      "rationale": "Stops the single writer from causing whack-a-mole collateral damage\u2014such as unrouting unrelated traces or altering uninvolved footprints\u2014that triggers cascading 3am convergence failures.",
+      "novelty": 8,
+      "viability": 8,
+      "fit": 9,
+      "composite": 8.25,
+      "status": "merged_into_B3-2",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 8,
+        "composite": 8.35,
+        "rank": null
+      }
+    },
+    {
+      "id": "B2-6",
+      "branch_id": "B2",
+      "frame": "regulator",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Enforce a structural collateral-invariance contract across single-writer campaign iterations that refuses proposals mutating BOM part numbers, external connector pinouts, or passing check margins beyond a declared tolerance.",
+      "rationale": "A single writer optimizing solely to clear failed `check/<id>` witnesses can silently degrade unmonitored thermal, mechanical, or supply-chain properties unless every proposal proves invariance outside its authorized repair locus.",
+      "novelty": 7,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.05,
+      "status": "merged_into_B3-2",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 7.95,
+        "rank": null
+      }
+    },
+    {
+      "id": "B2-4",
+      "branch_id": "B2",
+      "frame": "regulator",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Cryptographically seal `measurements` parser scripts and check extraction definitions into the immutable baseline outside `mutable_inputs`, and refuse any candidate whose repair alters measurement parsing logic or test-point bindings.",
+      "rationale": "When `measurements` combines a pinned `/usr` producer with a captured Python parser, any ambiguity between candidate files and verification parsers creates an audit hazard where a repair writer can game the parser or probe node rather than fixing the hardware.",
+      "novelty": 6,
+      "viability": 10,
+      "fit": 8,
+      "composite": 8.1,
+      "status": "partially_satisfied_and_merged_into_B3-2",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 6,
+        "value": 8,
+        "feasibility": 10,
+        "composite": 7.9,
+        "rank": null
+      }
+    },
+    {
+      "id": "B1-3",
+      "branch_id": "B1",
+      "frame": "hardware engineer",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Constrain the single implementation writer to transact through a typed KiCad S-expression register interface (atomic component value trims, net re-bindings, and track segment moves) rather than raw text-file writes.",
+      "rationale": "Allowing raw text edits on KiCad files is an unclocked asynchronous bus crossing that introduces UUID/coordinate metastability, whereas a register-transfer bus guarantees bus protocol compliance on every write cycle.",
+      "novelty": 7,
+      "viability": 4,
+      "fit": 6,
+      "composite": 5.55,
+      "status": "trap",
+      "rank": null,
+      "trap": true,
+      "trap_reason": "Building and maintaining a complete transactional S-expression mutation DSL across KiCad 8/9 schematic and PCB formats is high-effort and brittle compared to validating post-edit structural invariants on connectivity.json and geometry.json.",
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 7,
+        "feasibility": 4,
+        "composite": 6.1,
+        "rank": null
+      }
+    },
+    {
+      "id": "B4-4",
+      "branch_id": "B4",
+      "frame": "remove the load-bearing assumption",
+      "cluster": "2. Structural Blast-Radius, Non-Vacuous Primitives & Anti-Reward-Hacking Contracts",
+      "text": "Remove the assumption that the implementation writer edits raw KiCad S-expression files directly: constrain the single writer to emit atomic, schematic-and-layout co-transforming ECAD transactions that preserve schematic parity and geometric validity by construction.",
+      "rationale": "Replacing raw file mutation with a parity-preserving ECAD delta algebra prevents the single writer from wasting bounded campaign rounds on syntax corruption or desynchronized netlists.",
+      "novelty": 8,
+      "viability": 3,
+      "fit": 6,
+      "composite": 5.5,
+      "status": "trap",
+      "rank": null,
+      "trap": true,
+      "trap_reason": "Co-transforming schematic symbols and routed PCB copper automatically requires a full ECAD placement-and-routing synthesis engine inside agent-ee's stdlib-only codebase.",
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 7,
+        "feasibility": 3,
+        "composite": 6.15,
+        "rank": null
+      }
+    },
+    {
+      "id": "B3-1",
+      "branch_id": "B3",
+      "frame": "competitor trying to break it",
+      "cluster": "3. Executable Reviewer Counterexamples & Check Promotion",
+      "text": "Allow independent reviewers to author sandboxed counterexample witnesses in `/work/experiments` (such as targeted SPICE stimuli or `pcbnew` geometry assertions) that the adjudicator deterministically replays against `/candidate` to promote unmodeled reviewer discoveries into verified check-backed defects.",
+      "rationale": "An attacker or defective design can currently bypass `scope/2` adjudication whenever a critical electrical fault is noticed by the `circuit` or `physical` reviewer but lacks a pre-existing failing `check/<id>` in `baseline.py`.",
+      "novelty": 9,
+      "viability": 10,
+      "fit": 8,
+      "composite": 9.15,
+      "status": "top3",
+      "rank": 1,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 9,
+        "value": 8,
+        "feasibility": 10,
+        "composite": 8.85,
+        "rank": 3
+      }
+    },
+    {
+      "id": "B4-1",
+      "branch_id": "B4",
+      "frame": "remove the load-bearing assumption",
+      "cluster": "3. Executable Reviewer Counterexamples & Check Promotion",
+      "text": "Remove the assumption that baseline checks are pre-authored before review: allow isolated reviewers to emit sandboxed executable falsification checks in `/work/experiments` that the harness seals and runs against `/candidate` to produce deterministic `check/<id>` witnesses for adjudication.",
+      "rationale": "Dissolving the static check-catalog assumption turns reviewers from prose commentators into adversarial property generators while strictly preserving deterministic, evidence-backed `check/<id>` adjudication.",
+      "novelty": 9,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.75,
+      "status": "deduped_into_B3-1",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 9,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 8.55,
+        "rank": null
+      }
+    },
+    {
+      "id": "B5-5",
+      "branch_id": "B5",
+      "frame": "3am on-call",
+      "cluster": "3. Executable Reviewer Counterexamples & Check Promotion",
+      "text": "Add a promotion pipeline that turns high-signal reviewer /work/experiments scripts into sealed deterministic measurement producer/parser checks before entering the repair campaign.",
+      "rationale": "Ensures the adjudicator and single-writer convergence loop remain strictly check-witness-driven rather than either dropping novel reviewer discoveries or paging a human to hand-author a check at 3am.",
+      "novelty": 8,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.4,
+      "status": "deduped_into_B3-1",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 8.3,
+        "rank": null
+      }
+    },
+    {
+      "id": "B1-5",
+      "branch_id": "B1",
+      "frame": "hardware engineer",
+      "cluster": "3. Executable Reviewer Counterexamples & Check Promotion",
+      "text": "Structure reviewer /work/experiments as a DMA scatter-gather descriptor ring where ad-hoc diagnostic scripts that expose unmodeled failures are latched into machine-verifiable check candidates for the next baseline epoch.",
+      "rationale": "Reviewer experiments currently sit in volatile scratchpad RAM and evaporate after adjudication instead of having a DMA path to promote proven fault probes into non-volatile regression ROM.",
+      "novelty": 8,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.4,
+      "status": "deduped_into_B3-1",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 8.3,
+        "rank": null
+      }
+    },
+    {
+      "id": "B2-2",
+      "branch_id": "B2",
+      "frame": "regulator",
+      "cluster": "3. Executable Reviewer Counterexamples & Check Promotion",
+      "text": "Introduce a mandatory `scope_insufficient` refusal state in `scope/2` adjudication when an isolated reviewer produces a reproducible `/work/experiments` witness for a defect that no baseline `check/<id>` encodes.",
+      "rationale": "Requiring `scope/2` accepted defects to cite a failed baseline check creates a regulatory blind spot where genuine flaws discovered by reviewers are discarded simply because the baseline check suite was incomplete.",
+      "novelty": 7,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.05,
+      "status": "deduped_into_B3-1",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 7.95,
+        "rank": null
+      }
+    },
+    {
+      "id": "B1-1",
+      "branch_id": "B1",
+      "frame": "hardware engineer",
+      "cluster": "4. Layout-to-SPICE Parasitic Back-Annotation & Tolerance Corner Sweeps",
+      "text": "Close the open-loop bus between PCB geometry and SPICE by extracting routed copper resistance, via counts, and trace parasitics from pcbnew and back-annotating them directly into the netlist before running transient and coupled-margin checks.",
+      "rationale": "In hardware, schematic netlists are zero-length ideal wires until post-layout parasitic extraction closes the timing/impedance loop between physical layout and circuit simulation.",
+      "novelty": 8,
+      "viability": 8,
+      "fit": 9,
+      "composite": 8.25,
+      "status": "shortlist",
+      "rank": 6,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 8,
+        "composite": 8.35,
+        "rank": 4
+      }
+    },
+    {
+      "id": "B4-2",
+      "branch_id": "B4",
+      "frame": "remove the load-bearing assumption",
+      "cluster": "4. Layout-to-SPICE Parasitic Back-Annotation & Tolerance Corner Sweeps",
+      "text": "Remove the assumption that schematic netlists and PCB copper are separate check worlds: extract trace RLC parasitics, via inductances, and return-path splits directly from `pcbnew` copper geometry into the canonical netlist before any simulation or review executes.",
+      "rationale": "Eliminating the boundary between logical connectivity and physical geometry lets SPICE checks and circuit reviewers directly observe layout-induced ground bounce, IR drop, and ringing.",
+      "novelty": 8,
+      "viability": 7,
+      "fit": 9,
+      "composite": 7.85,
+      "status": "deduped_into_B1-1",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 7,
+        "composite": 8.05,
+        "rank": null
+      }
+    },
+    {
+      "id": "B3-4",
+      "branch_id": "B3",
+      "frame": "competitor trying to break it",
+      "cluster": "4. Layout-to-SPICE Parasitic Back-Annotation & Tolerance Corner Sweeps",
+      "text": "Sweep check evaluations across component tolerance corners, standard E-series value quantization, and `pcbnew`-extracted trace parasitics so the repair writer cannot game nominal single-point thresholds.",
+      "rationale": "A writer agent can pass deterministic nominal checks by tuning ideal component values to sit microns or millivolts inside a margin that immediately fails under real component tolerances and layout parasitics.",
+      "novelty": 7,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.05,
+      "status": "pool",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 7.95,
+        "rank": null
+      }
+    },
+    {
+      "id": "B4-3",
+      "branch_id": "B4",
+      "frame": "remove the load-bearing assumption",
+      "cluster": "4. Layout-to-SPICE Parasitic Back-Annotation & Tolerance Corner Sweeps",
+      "text": "Remove the assumption of a single nominal candidate: represent `/candidate` as a parametric tolerance-and-fabrication ensemble across component drift, stackup variation, and thermal corners so every check and repair evaluates the worst-case vertex.",
+      "rationale": "Replacing the point-design assumption exposes fragile designs that pass nominal DRC and transient checks but fail across realistic manufacturing and environmental spread.",
+      "novelty": 8,
+      "viability": 7,
+      "fit": 8,
+      "composite": 7.6,
+      "status": "pool",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 7,
+        "composite": 7.7,
+        "rank": null
+      }
+    },
+    {
+      "id": "B3-5",
+      "branch_id": "B3",
+      "frame": "competitor trying to break it",
+      "cluster": "5. Fault-Cone Context Slicing & Packet Coverage Guarantees",
+      "text": "Construct `packet.json` using topological and spatial fault-cone slicing around failed checks, high-margin-stress nets, and candidate diffs rather than flat byte-budget truncation.",
+      "rationale": "Large schematics or verbose check logs can flood the bounded packet budget and blind sequential reviewers by truncating the exact netlist neighborhood or layout region where a defect resides.",
+      "novelty": 8,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.4,
+      "status": "shortlist",
+      "rank": 4,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 8.3,
+        "rank": 5
+      }
+    },
+    {
+      "id": "B1-2",
+      "branch_id": "B1",
+      "frame": "hardware engineer",
+      "cluster": "5. Fault-Cone Context Slicing & Packet Coverage Guarantees",
+      "text": "Replace the monolithic packet.json payload with net-indexed spatial cache lines that load only the 1-hop electrical and physical bounding-box neighborhood of failing check witnesses into reviewer and writer context windows.",
+      "rationale": "Streaming the entire board metadata into every LLM call is like thrashing L1 instruction cache with a full DRAM dump instead of fetching localized cache lines around the active fault address.",
+      "novelty": 8,
+      "viability": 8,
+      "fit": 8,
+      "composite": 8.0,
+      "status": "deduped_into_B3-5",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 8,
+        "composite": 8.0,
+        "rank": null
+      }
+    },
+    {
+      "id": "B2-5",
+      "branch_id": "B2",
+      "frame": "regulator",
+      "cluster": "5. Fault-Cone Context Slicing & Packet Coverage Guarantees",
+      "text": "Require `packet.json` to emit a formal entity-coverage manifest and refuse adjudication if budget truncation elides any mutated net, failed-check neighborhood, or external interface pin from the reviewers' bounded context.",
+      "rationale": "Bounded text packets risk silently dropping critical schematic or PCB regions before review; an auditor must be able to prove that every modified or safety-critical element was actually present in the evidence packet seen by reviewers.",
+      "novelty": 7,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.05,
+      "status": "merged_into_B3-5",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 7.95,
+        "rank": null
+      }
+    },
+    {
+      "id": "B3-6",
+      "branch_id": "B3",
+      "frame": "competitor trying to break it",
+      "cluster": "6. Convergence Memory, Pre-Flight Canaries & Pipeline Resilience",
+      "text": "Maintain a cross-iteration Jacobian margin ledger in `convergence.py` that records how each mutable edit shifted all check margins simultaneously and rejects proposals that repeat a previously visited check-failure signature.",
+      "rationale": "Single-writer repair campaigns can thrash until budget exhaustion by trading electrical transient margins against physical DRC clearances in an undetected limit cycle.",
+      "novelty": 8,
+      "viability": 9,
+      "fit": 8,
+      "composite": 8.4,
+      "status": "shortlist",
+      "rank": 5,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 9,
+        "composite": 8.3,
+        "rank": 6
+      }
+    },
+    {
+      "id": "B4-6",
+      "branch_id": "B4",
+      "frame": "remove the load-bearing assumption",
+      "cluster": "6. Convergence Memory, Pre-Flight Canaries & Pipeline Resilience",
+      "text": "Remove the assumption that campaign convergence is a memoryless chain of candidate overwrites: accumulate a sealed cross-round exclusion lattice of falsified parameter regions and requirement trade-off conflicts so the writer cannot oscillate between previously refuted states.",
+      "rationale": "Turning rejected proposals into persistent formal exclusion zones prevents multi-round limit cycles where fixing a physical violation repeatedly re-triggers a circuit margin failure.",
+      "novelty": 8,
+      "viability": 8,
+      "fit": 8,
+      "composite": 8.0,
+      "status": "deduped_into_B3-6",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 8,
+        "composite": 8.0,
+        "rank": null
+      }
+    },
+    {
+      "id": "B5-1",
+      "branch_id": "B5",
+      "frame": "3am on-call",
+      "cluster": "6. Convergence Memory, Pre-Flight Canaries & Pipeline Resilience",
+      "text": "Run a pre-campaign fault-injection self-test that deterministically mutates the candidate at each requirement's target nets/components to prove the bound scope/2 checks can actually fail before letting the single writer start an overnight repair loop.",
+      "rationale": "Prevents 3am silent false-passes where a parser bug, regex mismatch, or misbound net name makes a check tautologically green while the writer edits the board.",
+      "novelty": 8,
+      "viability": 7,
+      "fit": 8,
+      "composite": 7.6,
+      "status": "pool",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 8,
+        "feasibility": 7,
+        "composite": 7.7,
+        "rank": null
+      }
+    },
+    {
+      "id": "B5-3",
+      "branch_id": "B5",
+      "frame": "3am on-call",
+      "cluster": "6. Convergence Memory, Pre-Flight Canaries & Pipeline Resilience",
+      "text": "Embed a canonical micro-canary circuit and PCB inside baseline compilation to verify that Bubblewrap-mounted /usr tools (kicad-cli, pcbnew, ngspice) produce bit-identical reference outputs before evaluating the candidate.",
+      "rationale": "Eliminates 3am false alarms caused by shared-library, locale, font, or headless display drift under /usr that hash-pinning the top-level binary alone fails to catch.",
+      "novelty": 7,
+      "viability": 9,
+      "fit": 7,
+      "composite": 7.8,
+      "status": "pool",
+      "rank": null,
+      "trap": false,
+      "trap_reason": null,
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 7,
+        "value": 7,
+        "feasibility": 9,
+        "composite": 7.6,
+        "rank": null
+      }
+    },
+    {
+      "id": "B5-6",
+      "branch_id": "B5",
+      "frame": "3am on-call",
+      "cluster": "6. Convergence Memory, Pre-Flight Canaries & Pipeline Resilience",
+      "text": "Make campaign.py crash-only and content-addressed at every capture, check, reviewer, and adjudication boundary so interrupted overnight runs resume deterministically without re-executing sealed steps.",
+      "rationale": "Prevents a single hung subscription CLI or runaway ngspice transient simulation at iteration 4 from destroying hours of sealed verification evidence and forcing a full manual restart.",
+      "novelty": 6,
+      "viability": 8,
+      "fit": 6,
+      "composite": 6.8,
+      "status": "trap",
+      "rank": null,
+      "trap": true,
+      "trap_reason": "Pure operational plumbing that improves restart latency but does not close any electronics review, repair soundness, or bench-calibration trust gap.",
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 6,
+        "value": 8,
+        "feasibility": 8,
+        "composite": 7.3,
+        "rank": null
+      }
+    },
+    {
+      "id": "B1-4",
+      "branch_id": "B1",
+      "frame": "hardware engineer",
+      "cluster": "6. Convergence Memory, Pre-Flight Canaries & Pipeline Resilience",
+      "text": "Wire a priority-interrupt fault line across the check pipeline so fatal topological shorts or open power rails in fast checks immediately assert an early-abort reset that skips expensive downstream SPICE and LLM review cycles.",
+      "rationale": "A real-time hardware pipeline does not clock downstream DSP blocks when the front-end crowbar circuit has already tripped on a hard rail short.",
+      "novelty": 5,
+      "viability": 9,
+      "fit": 3,
+      "composite": 6.1,
+      "status": "trap",
+      "rank": null,
+      "trap": true,
+      "trap_reason": "Violates agent-ee's all-declared-work completeness invariant and deprives the single implementation writer of the full simultaneous defect set needed to avoid multi-round whack-a-mole repairs.",
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 5,
+        "value": 6,
+        "feasibility": 9,
+        "composite": 6.55,
+        "rank": null
+      }
+    }
+  ],
+  "deepened_top3": [
+    {
+      "rank": 1,
+      "idea_id": "B3-1",
+      "merged_from": [
+        "B3-1",
+        "B4-1",
+        "B5-5",
+        "B1-5",
+        "B2-2"
+      ],
+      "title": "Sandboxed Counterexample Witness Replay and Check-Promotion Receipts",
+      "score": {
+        "novelty": 9,
+        "viability": 10,
+        "fit": 8,
+        "composite": 9.15
+      },
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 9,
+        "value": 8,
+        "feasibility": 10,
+        "composite": 8.85,
+        "rank": 3
+      },
+      "focus_branch": {
+        "idea_id": "B3-1",
+        "title": "Sandboxed Counterexample Witness Replay and Check-Promotion Receipts",
+        "sketch": "When a `circuit` or `physical` reviewer discovers an unmodeled defect during `review_role()`, they author a self-contained executable counterexample script or SPICE/pcbnew harness under `/work/experiments/<witness_id>/` and reference its relative path in a structured `witness` descriptor on their `concern` finding. Before `adjudicate_findings()` runs, the coordinator inspects every `major` or `blocking` reviewer `concern` carrying a `witness` descriptor and copies only that witness directory into a fresh, ephemeral, networkless check sandbox (`run_in_sandbox` with `allow_network=False`) alongside a read-only mount of the sealed `/candidate` snapshot. The coordinator executes the witness entrypoint under deterministic resource and timeout limits against `/candidate` (and optionally `/baseline` for differential classification) and records a SHA-256-sealed receipt under `checks/witness-<role>-<id>/result.json`. In `findings.py` and `baseline.py`, `agent-ee.scope/2` retains its strict ban on accepting unverified prose, while permitting a reviewer discovery backed by a sealed, deterministically failing witness receipt to be promoted into an executable check citation or recorded as a machine-verified check-promotion receipt in `tradeoff.json`. When the campaign halts on `unresolved_review_claims` or advances to a new iteration, `tradeoff.json` emits the exact command, artifact digests, and reproduction receipt needed to graduate the witness into `scope.checks`.",
+        "load_bearing_risk": "False-positive or brittle reviewer witnesses\u2014such as a SPICE deck with non-convergent solver settings or a script that crashes on missing imports or hardcoded `/work` paths\u2014could fail with a non-zero exit code for reasons unrelated to the claimed hardware defect, tricking the coordinator into validating a broken script as a confirmed hardware counterexample unless assertion failures are strictly separated from harness runtime errors.",
+        "first_concrete_step": "Extend the reviewer finding validator in `src/agent_ee/findings.py` to accept an optional `witness` object (`{\"entrypoint\": \"experiments/...\", \"kind\": \"spice|pcbnew|python\"}`) on `concern` findings, and add a `replay_reviewer_witnesses()` helper in `src/agent_ee/campaign.py` between `review()` and `adjudicate_findings()` that runs each declared entrypoint against the read-only `/candidate` mount via `run_in_sandbox(..., allow_network=False)` and writes `checks/witness-<id>/result.json`.",
+        "child_ideas": [
+          {
+            "id": "B3-1a",
+            "title": "Differential Witness Replay Across `/baseline` and `/candidate`",
+            "description": "Replay every reviewer witness against both read-only `/baseline` and `/candidate` mounts in the networkless sandbox; a witness that passes on `/baseline` and fails on `/candidate` proves an iteration-induced regression that can be immediately promoted to an in-loop check for the next `implement()` pass."
+          },
+          {
+            "id": "B3-1b",
+            "title": "Tri-State Witness Exit Contract (Pass / Counterexample / Harness Error)",
+            "description": "Enforce a strict witness protocol where exit code 1 plus a schema-valid `counterexample.json` artifact denotes a verified hardware defect, whereas exit codes >=2 or missing structured output classify the witness as a broken harness (`discarded` during adjudication) so buggy reviewer scripts cannot stall convergence."
+          },
+          {
+            "id": "B3-1c",
+            "title": "Turnkey `scope.checks` Graduation Bundle in `tradeoff.json`",
+            "description": "When halting on a witness-verified `unresolved_review_claims` finding, package the sanitized witness script into the iteration output and emit a ready-to-merge `scope.checks` descriptor in `tradeoff.json` so the outer orchestrator or human engineer can promote the check with zero manual script extraction."
+          },
+          {
+            "id": "B3-1d",
+            "title": "Design-Coupling Provenance Check for Witnesses",
+            "description": "Prevent trivial `exit 1` witness gaming by requiring the witness execution in the check sandbox to read at least one `/candidate` schematic, netlist, or PCB file (verified via read-access trace or required SHA-256 + extracted net/component metrics in `counterexample.json`) before its failure receipt is considered valid."
+          }
+        ]
+      },
+      "engineering_design": {
+        "user_benefit": "Bridges the gap between independent reviewer discovery (`circuit` and `physical` reviewers working in `/work/experiments`) and `agent-ee.scope/2`'s strict check-backed adjudication rule\u2014turning ephemeral reviewer scripts into replayed, networkless, SHA-256-sealed counterexample receipts and turnkey `scope.checks` promotion specs instead of dead-ending in opaque `unresolved_review_claims` halts.",
+        "source_evidence": [
+          "src/agent_ee/reviewers.py:303-336 mounts a writable `/work` (`review-work/<role>/`) with `/work/experiments` and instructs reviewers: 'Use /work/experiments for temporary calculations, scripts, or reproducers.'",
+          "src/agent_ee/findings.py:607-625 enforces that in `agent-ee.scope/2`, `accepted` findings must have `source == 'check'` and cite sealed failed check evidence; reviewer findings (`source == 'review'`) can only be `concern` (`deferred`, `noted`, or `rejected`).",
+          "src/agent_ee/convergence.py:48-49 halts the campaign with `reason = 'unresolved_review_claims'` whenever any `deferred` finding remains, and `campaign.py:36-37` passes only `accepted` check findings to `implement()`. Thus, an unmodeled defect proven by a reviewer script in `/work/experiments` is never replayed in the clean check sandbox and never packaged for check promotion."
+        ],
+        "concrete_end_to_end_slice": "1. Allow reviewer `concern` findings (`src/agent_ee/findings.py` and `src/agent_ee/reviewers.py:FINDING_SCHEMA`) to include an optional structured `witness` field: `{\"entrypoint\": \"experiments/<script>.py\", \"kind\": \"python|ngspice|pcbnew\", \"expected_metric\": \"...\", \"requirement_id\": \"...\"}`.\n2. Between `review()` and `adjudicate_findings()` in `src/agent_ee/campaign.py`, run `replay_reviewer_witnesses()`: for each `major`/`blocking` reviewer `concern` with a `witness`, copy the declared script into an isolated check directory `checks/witness-<role>-<idx>/` and execute it via `run_in_sandbox(..., allow_network=False)` against the read-only `/candidate` mount (and `/baseline` when in a campaign).\n3. Enforce a tri-state exit contract: exit 0 = witness did not reproduce (`witness_status = 'unreproducible'`, allowing the adjudicator to `reject` false-alarm reviewer claims with deterministic evidence); exit 1 + valid `counterexample.json` reading `/candidate` files = verified counterexample (`witness_status = 'reproduced'`); exit >= 2 = broken witness script (`witness_status = 'error'`).\n4. Seal the replay receipt into `work/verification/evidence.json`. When a campaign halts on `unresolved_review_claims` with a `reproduced` witness, `tradeoff.json` (`campaign.py:102-117`) includes a `promoted_check_candidates` array containing the sealed script path, SHA-256 digest, and ready-to-add `measurements` check stanza for `scope.json`.",
+        "state_tool_interface_changes": {
+          "files_modified": [
+            "src/agent_ee/reviewers.py",
+            "src/agent_ee/findings.py",
+            "src/agent_ee/campaign.py",
+            "src/agent_ee/convergence.py"
+          ],
+          "schema_additions": "Add optional `witness` object to reviewer finding schema (`reviewers.py:67-99`); add `witness_replays` list to `work/verification/evidence.json`; add `promoted_check_candidates` list to `tradeoff.json`.",
+          "cli_changes": "None required; optional `agent-ee promote-witness <run_dir> <finding_id>` helper subcommand to copy a verified witness into the project's check suite."
+        },
+        "invariant_protections": "Strictly preserves `agent-ee.scope/2` immutable baseline requirements (does not mutate `baseline.json` mid-run or allow unverified reviewer prose to be `accepted`), keeps reviewers context-isolated, runs all witness replays in Bubblewrap with `allow_network=False`, and additionally lets the adjudicator deterministically `reject` hallucinated reviewer concerns whose witness scripts exit 0 on `/candidate`.",
+        "failure_and_recovery_behavior": "If a reviewer's witness script times out, attempts network access, fails to read any `/candidate` artifact, or exits >= 2, `replay_reviewer_witnesses()` records `witness_status = 'error'` with captured `stderr.log` and never promotes it. If a witness exits 0 (claim refuted on `/candidate`), the sealed replay receipt is cited by the adjudicator to `reject` the false-positive concern instead of stalling the campaign on a `deferred` claim.",
+        "acceptance_tests": [
+          "test_reproduced_reviewer_witness_emits_sealed_receipt_and_promotion_spec: a reviewer concern with an experiments/ script that exits 1 and writes counterexample.json against /candidate produces a sealed witness receipt and a promoted_check_candidates entry in tradeoff.json.",
+          "test_refuted_reviewer_witness_allows_deterministic_rejection: a reviewer concern whose witness exits 0 on /candidate is recorded as witness_status='unreproducible' and cleanly rejected by adjudication without halting convergence.",
+          "test_broken_or_ungrounded_witness_fails_closed: a witness script that exits 2 or never reads /candidate is marked witness_status='error' and cannot be promoted."
+        ],
+        "dependencies": "Standard library only + existing `sandbox.py:run_in_sandbox` (`bwrap` with `allow_network=False`).",
+        "effort_and_risk": "Effort: Medium (~150 LOC across `reviewers.py`, `findings.py`, `campaign.py`, ~120 LOC tests). Risk: Low-Medium; tri-state exit code + mandatory `/candidate` file-read provenance prevents trivial `sys.exit(1)` scripts from spoofing counterexamples."
+      }
+    },
+    {
+      "rank": 2,
+      "idea_id": "B3-2",
+      "merged_from": [
+        "B3-2",
+        "B2-1",
+        "B5-2",
+        "B2-6",
+        "B2-4"
+      ],
+      "title": "Boundary-Invariant Hardware Contract and Non-Vacuous Geometry Check",
+      "score": {
+        "novelty": 8,
+        "viability": 10,
+        "fit": 9,
+        "composite": 9.05
+      },
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 8,
+        "value": 9,
+        "feasibility": 10,
+        "composite": 8.9,
+        "rank": 2
+      },
+      "focus_branch": {
+        "idea_id": "B3-2",
+        "title": "Boundary-Invariant Hardware Contract and Non-Vacuous Geometry Check",
+        "sketch": "During baseline snapshot creation, agent-ee derives a canonical boundary contract from the baseline connectivity.json and geometry.json artifacts and records it alongside the check configuration. The electrical boundary contract pins external interface components (J*, TP*, power symbols, and user-declared frozen refs), capturing each component's footprint, dnp status, pin-to-net bindings, probed simulation/measurement nodes, and baseline non-DNP component counts. During evaluate(), a new check_boundary_contract pass diffs candidate connectivity.json against this baseline contract and fails with structured diagnostics (PINOUT_MUTATION, DNP_TOGGLED, PROBED_NET_DISCONNECTED, COMPONENT_AMPUTATED) if any boundary pin is rewired, disconnected from active loads, or bypassed via DNP flags. In parallel, check_geometry in src/agent_ee/checks.py is expanded so it cannot be evaded by primitive substitution or copper deletion. Specifically, check_geometry validates both track and arc segments against min_track_width_mm, checks vias against min_via_drill_mm and min_annular_ring_mm, requires non-zero routed copper when multi-pin nets exist, and verifies that baseline copper zones retain their net assignment and non-empty filled polygons. Because both checks consume the existing connectivity.json and geometry.json artifacts already generated in evaluate(), they require zero new external EDA tooling while closing the reward-hacking gap in campaign.py:implement().",
+        "load_bearing_risk": "Over-constraining legitimate schematic edits on unnamed nets: KiCad automatically renames auto-generated local net labels (e.g., Net-(J1-Pad2) to Net-(R5-Pad1)) when a series resistor, ESD diode, or filter passive is inserted at a connector pin, so pinning raw net name strings on anonymous nets will false-positive reject valid circuit refinements unless the contract distinguishes named/global nets from local nets or checks reachability through two-pin passives.",
+        "first_concrete_step": "In src/agent_ee/checks.py, update check_geometry (lines 386-415) to enforce min_track_width_mm across t['type'] in ('track', 'arc') plus via drill/annular-ring and zone fill invariants, and add check_boundary_contract(connectivity, baseline_connectivity, config) to assert invariant footprint, dnp, and pin-net mappings for J*/TP* components and probed nets.",
+        "child_ideas": [
+          {
+            "id": "B3-2a",
+            "title": "Passive-Transparent Port Reachability Contract",
+            "description": "Instead of requiring exact net-name string equality on anonymous nets attached to J*/TP* pins, model two-pin passives (R, C, L, FB) as transparent edges in connectivity.json and verify that every boundary pin maintains a valid path to the same named rails and active IC pins, allowing legitimate insertion of series termination, RC filters, or protection components."
+          },
+          {
+            "id": "B3-2b",
+            "title": "Scoped Subcircuit Edit Envelopes in scope.json",
+            "description": "Allow scope.json to declare frozen_refs or editable_subcircuits so check_boundary_contract enforces exact component-value, footprint, DNP, and netlist isomorphism outside the permitted edit envelope while granting the writer freedom to synthesize or tune components inside the target stage."
+          },
+          {
+            "id": "B3-2c",
+            "title": "Copper Zone Fill & Pour Retention Check",
+            "description": "Extend extract_pcb_geometry in src/agent_ee/checks.py to export filled polygon vertex counts and net-level copper pour areas from KiCad zones, enabling check_geometry to fail when zones are left unfilled, reassigned off power/ground nets, or shrunk below a minimum area retention ratio relative to baseline."
+          },
+          {
+            "id": "B3-2d",
+            "title": "Saboteur Mutation Suite for Evaluator Soundness",
+            "description": "Build an automated adversarial test harness that applies reward-hacking mutations to baseline fixtures (toggling DNP on load branches, converting thin tracks to arcs, deleting GND zones, floating connector pins) and asserts that evaluate() rejects every mutation with a deterministic check failure."
+          }
+        ]
+      },
+      "engineering_design": {
+        "user_benefit": "Closes the single-writer reward-hacking and collateral-damage gap in `campaign.py:implement()`, preventing the repair writer from passing checks by marking components DNP, amputating load subcircuits, rewiring external connectors (`J*`) or testpoints (`TP*`), renaming probed SPICE/measurement nets, or hiding narrow traces/unfilled pours in unchecked PCB primitives (`arc`, `via`, `zones`).",
+        "source_evidence": [
+          "src/agent_ee/campaign.py:44-61 (`implement()`) checks only file-set equality and SHA-256 invariance of files outside `mutable_inputs`. Because `mutable_inputs` defaults to `[scope['board'], scope['schematic']]` (`campaign.py:131`), the writer has unconstrained edit freedom inside both files.",
+          "src/agent_ee/checks.py:304-325 (`parse_xml_netlist`) already extracts `dnp`, `footprint`, `value`, `libsource`, and `nets` into `connectivity.json`, and `checks.py:432-437` (`generate_spice_netlist`) skips any component with `comp.get('dnp')`\u2014allowing a writer to silence transient failures by setting `dnp` on load components.",
+          "src/agent_ee/checks.py:386-415 (`check_geometry`) checks only `if t['type'] == 'track' and t['width_mm'] < min_width - 1e-6`, completely ignoring `t['type'] == 'arc'`, `vias` (`drill_mm`, `size_mm`), `zones` (`filled`, `net`), and total routed track count (a board with all tracks deleted vacuously passes `min_track_width_mm`)."
+        ],
+        "concrete_end_to_end_slice": "1. Expand `check_geometry()` in `src/agent_ee/checks.py:386-415` to enforce: (a) `min_track_width_mm` across both `track` and `arc` primitives, (b) `min_via_drill_mm` and `min_annular_ring_mm` (`(size_mm - drill_mm) / 2`) across `vias`, (c) non-vacuity (`len(tracks) > 0` whenever multi-pin nets exist or `require_routed_tracks=True`), and (d) `zones` integrity (no baseline zone deleted, reassigned to a different net, or left with `filled == False`).\n2. Add a deterministic `boundary_contract` check (and automatic baseline-to-proposal guard in `campaign.py:evaluate()`) that compares candidate `connectivity.json` against the initial baseline `connectivity.json`: external connectors (`J*`), testpoints (`TP*`), power symbols, and `scope`-declared `frozen_refs` must preserve their existence, `footprint`, `dnp` state, and passive-transparent reachability to active pins and named power/probed nets; total non-DNP component count cannot drop unless explicitly permitted in `scope.json`.",
+        "state_tool_interface_changes": {
+          "files_modified": [
+            "src/agent_ee/checks.py",
+            "src/agent_ee/baseline.py",
+            "src/agent_ee/campaign.py"
+          ],
+          "schema_additions": "Extend `geometry` check `params` with optional `min_via_drill_mm`, `min_annular_ring_mm`, `require_filled_zones` (default `True`), and `require_nonempty_tracks` (default `True`). Add `boundary_contract` check kind in `baseline.py:KNOWN_CHECK_KINDS` (or auto-attach to `netlist`/`geometry` in `campaign.py`) emitting structured violation codes (`PINOUT_MUTATION`, `DNP_TOGGLED`, `PROBED_NET_MISSING`, `ARC_WIDTH_VIOLATION`, `VIA_RING_VIOLATION`, `ZONE_UNFILLED`).",
+          "cli_changes": "None required; existing `agent-ee evaluate` and `agent-ee campaign` invocations gain non-vacuous geometry and boundary enforcement automatically."
+        },
+        "invariant_protections": "Preserves the single writer's freedom to tune component values, reroute traces, and adjust compensation networks on raw KiCad files without introducing a brittle S-expression mutation DSL, while guaranteeing that every violation produces a deterministic `check/<id>` witness compatible with `scope/2` adjudication.",
+        "failure_and_recovery_behavior": "When the implementation writer produces a proposal that toggles DNP, disconnects a probed net, or routes an undersized arc/via, the check fails deterministically with a `check/<id>` defect finding naming the exact component ref, net, or `(start, end, layer)` coordinates. In the next iteration, `implement()` receives that exact `accepted` check finding so it can repair the board legitimately.",
+        "acceptance_tests": [
+          "test_geometry_rejects_narrow_arc_and_unfilled_zone: converting a narrow track to an arc or leaving a copper zone unfilled fails check_geometry with deterministic metrics.",
+          "test_geometry_rejects_vacuous_unrouted_board: deleting all tracks on a board with multi-pin nets fails check_geometry non-vacuity.",
+          "test_boundary_contract_blocks_dnp_and_connector_rewiring: setting DNP on a load resistor or changing J1 pin bindings fails boundary validation with DNP_TOGGLED / PINOUT_MUTATION.",
+          "test_boundary_contract_allows_series_passive_insertion_on_anonymous_net: inserting a series damping resistor that renames an auto-generated Net-(J1-Pad1) label passes passive-transparent reachability."
+        ],
+        "dependencies": "Standard library only; uses `connectivity.json` and `geometry.json` already extracted in `src/agent_ee/checks.py`.",
+        "effort_and_risk": "Effort: Small (~130 LOC in `checks.py` + `baseline.py`, ~120 LOC tests). Risk: Low once anonymous net names (`Net-(...)`) are compared via two-pin passive reachability rather than raw string identity."
+      }
+    },
+    {
+      "rank": 3,
+      "idea_id": "B5-4",
+      "merged_from": [
+        "B5-4",
+        "B2-3",
+        "B3-3"
+      ],
+      "title": "Topology- and Operating-Envelope-Gated Empirical Residual Validity",
+      "score": {
+        "novelty": 9,
+        "viability": 9,
+        "fit": 9,
+        "composite": 9.0
+      },
+      "superseded_score": {
+        "axes": "Novelty/Value/Feasibility",
+        "weights": {
+          "novelty": 0.35,
+          "value": 0.35,
+          "feasibility": 0.3
+        },
+        "novelty": 9,
+        "value": 9,
+        "feasibility": 9,
+        "composite": 9.0,
+        "rank": 1
+      },
+      "focus_branch": {
+        "idea_id": "B5-4",
+        "title": "Topology- and Operating-Envelope-Gated Empirical Residual Validity",
+        "sketch": "During ingest_feedback() in src/agent_ee/empirical.py, extract a canonical structural signature from the mutable design files (schematic and board) at bench-ingestion time without violating campaign.py's disjointness invariant between baseline['files'] and mutable_inputs. Specifically, parse the KiCad schematic/netlist to compute a parameter-stripped topology_hash (canonicalized component refdes, lib_id, footprint, and pin-to-net incidence graph, excluding scalar passive values like R/L/C magnitudes) alongside each metric's reference nominal prediction p_0 and a configurable operating-envelope radius. Store topology_hash, reference_nominal, and envelope_tolerance inside empirical-bundle.json when creating a calibrated epoch. When calibrate() (src/agent_ee/empirical.py:71-101) evaluates subsequent candidates modified by implement(), it recomputes the candidate's topology_hash and verifies both structural equivalence (candidate_topology_hash == bundle_topology_hash) and local-linearity validity (abs(p_candidate - p_0) <= envelope_tolerance). If either gate trips, calibrate() refuses to apply the stale additive offset [m - u - p_0, m + u - p_0], tags the metric status as calibration_invalidated in the evaluation record, and forces campaign.py to either reject topological mutations during a parametric-tuning epoch or halt for fresh bench characterization.",
+        "load_bearing_risk": "Canonicalizing the KiCad schematic/netlist representation so that legitimate parametric tuning by implement() (e.g., adjusting a feedback resistor from 10k to 12.1k) preserves topology_hash, while physics-altering changes (net rewiring, active device swaps, topology edits) reliably change it, without setting the operating-envelope threshold so tight that moving nominal prediction p toward the target specification triggers false invalidation.",
+        "first_concrete_step": "Implement compute_topology_signature(schematic_path, board_path) in src/agent_ee/empirical.py that extracts and SHA-256 hashes sorted (ref_prefix, lib_id, footprint, pin_net_map) tuples with scalar passive values stripped, and persist both topology_hash and reference_nominal in empirical-bundle.json during ingest_feedback().",
+        "child_ideas": [
+          {
+            "id": "B5-4a",
+            "title": "Per-Metric Cone-of-Influence Subgraph Hashing",
+            "description": "Trace the electrical connectivity cone from each metric's SPICE probe nodes and hash only the reachable netlist subgraph per metric, allowing implement() to modify unrelated subcircuits (e.g., power-good indicators or auxiliary rails) without invalidating empirical residuals on an isolated analog signal chain."
+          },
+          {
+            "id": "B5-4b",
+            "title": "Distance-Based Residual Uncertainty Inflation (Soft Envelope)",
+            "description": "Instead of a hard cutoff when abs(p - p_0) exceeds the operating envelope, widen the calibrated residual interval [residual_lower - alpha * abs(p - p_0), residual_upper + alpha * abs(p - p_0)] proportionally to nominal drift from the bench-characterized operating point p_0, encoding local linearization error directly into the pass/fail margin."
+          },
+          {
+            "id": "B5-4c",
+            "title": "Hybrid Multiplicative-Additive Calibration Laws by Metric Class",
+            "description": "Extend empirical.py to support ratio/gain scaling residuals (m / p_0) or two-epoch secant sensitivity estimation alongside pure additive offsets, preventing zero-crossing or sign-inversion artifacts when calibrating gain, efficiency, or impedance metrics across wider parametric sweeps."
+          },
+          {
+            "id": "B5-4d",
+            "title": "PCB Layout Parasitic Equivalence Fingerprinting",
+            "description": "Augment the schematic topology hash with quantized geometric invariants from the .kicad_pcb file (per-net trace length/via counts and power-loop area buckets) so that board routing changes by implement() selectively invalidate parasitic-sensitive bench residuals even when the schematic netlist is untouched."
+          }
+        ]
+      },
+      "engineering_design": {
+        "user_benefit": "Prevents silent false-pass acceptance during bench-calibrated repair epochs (`campaign-feedback`) when the single implementation writer alters circuit topology, swaps active device classes, rewires probed nets, or shifts the operating point far outside the local linear neighborhood where the bench discrepancy interval `[m - u - p_0, m + u - p_0]` was measured.",
+        "source_evidence": [
+          "src/agent_ee/campaign.py:131-138 enforces `set(mutable) & baseline['files'].keys() == set()`, where `mutable_inputs` defaults to `[scope['board'], scope['schematic']]`.",
+          "src/agent_ee/baseline.py:59 and src/agent_ee/empirical.py:166-171 populate `bundle['model_inputs']` strictly from `baseline['files']` (`params.calibration_inputs`), meaning `model_inputs` cannot include the mutable schematic or PCB files.",
+          "src/agent_ee/empirical.py:71-101 (`calibrate()`) checks only `bundle.get('model_inputs') != current_inputs` (`model_inputs_changed`) and then unconditionally applies `lower = nominal + residual_lower` and `upper = nominal + residual_upper` across subsequent `implement()` candidates in `campaign.py:217-226`, even if the writer modified schematic topology or moved `nominal` (`p`) far from the bench-calibrated prediction `p_0`."
+        ],
+        "concrete_end_to_end_slice": "1. During `evaluate()`, `netlist` and `geometry` checks already emit `checks/netlist/connectivity.json` and `checks/geometry/geometry.json`.\n2. When `agent-ee campaign-feedback` calls `ingest_feedback()` (`src/agent_ee/empirical.py:124-213`), it computes `topology_signature` from the calibrated candidate's `connectivity.json` (canonical sorted `(ref, ref_prefix, libsource, footprint, dnp, sorted_pin_to_net)` tuples with scalar passive R/L/C values stripped, plus per-metric cone-of-influence subgraph hashes reachable from probed nets) and records `reference_prediction` (`p_0`) and `envelope_max_delta` (from `check['params'].get('calibration_envelope')`) inside `empirical-bundle.json`.\n3. When `calibrate()` (`src/agent_ee/empirical.py:71-101`) runs on a new candidate produced by `implement()`, it recomputes the candidate's `topology_signature` and compares `abs(nominal - p_0)` against `envelope_max_delta`.\n4. If the metric's cone-of-influence topology hash changed or `abs(nominal - p_0) > envelope_max_delta`, `calibrate()` marks the metric `calibration_invalidated` (instead of `pass`), sets check `outcome = 'defect'` with `calibration_status = 'invalidated_topology'` or `'invalidated_envelope'`, and emits a deterministic `check/<id>` finding so the campaign either constrains `implement()` to parametric edits within the calibrated topology or halts cleanly with `tradeoff.json` (`reason = 'recalibration_required'`).",
+        "state_tool_interface_changes": {
+          "files_modified": [
+            "src/agent_ee/empirical.py",
+            "src/agent_ee/campaign.py",
+            "src/agent_ee/convergence.py",
+            "src/agent_ee/baseline.py"
+          ],
+          "schema_additions": "In `empirical-bundle.json` (`agent-ee.empirical-bundle/1`), add `topology_signature: {\"global_hash\": \"sha256:...\", \"metric_subgraphs\": {\"<check_id>:<metric>\": \"sha256:...\"}}` and per-entry `envelope_max_delta: float | null`. In `empirical-evaluation.json`, add `calibration_status: \"valid\" | \"invalidated_topology\" | \"invalidated_envelope\" | \"model_inputs_changed\"`.",
+          "cli_changes": "No breaking CLI flag changes; optional `calibration_envelope` map in `scope.checks[].params`."
+        },
+        "invariant_protections": "Strictly preserves the single implementation writer, immutable `baseline.json` (`baseline['files']` remains disjoint from `mutable_inputs`), independent reviewers, centralized `scope/2` check-backed adjudication, and candidate-bound empirical epochs.",
+        "failure_and_recovery_behavior": "If `connectivity.json` is missing or malformed when `calibrate()` runs, `calibrate()` fails closed (`calibration_status = 'invalidated_topology'`, `outcome = 'unknown'`, `execution_status = 'error'`). When invalidation occurs mid-campaign after an `implement()` edit, `convergence.py` records the invalidation in `history` and either rejects the topological mutation or halts with `reason = 'recalibration_required'` in `tradeoff.json`, instructing the operator which candidate requires fresh bench measurements.",
+        "acceptance_tests": [
+          "test_parametric_passive_trim_preserves_empirical_calibration: changing R1 from 1k to 1.2k within envelope_max_delta preserves topology_signature and applies calibrated residual bounds.",
+          "test_topological_edit_invalidates_empirical_calibration: rewiring a pin, adding/removing a component, or toggling DNP in the probed subgraph changes topology_signature, causing calibrate() to reject stale additive residuals with calibration_status='invalidated_topology'.",
+          "test_operating_envelope_drift_invalidates_calibration: shifting nominal prediction p beyond p_0 +/- envelope_max_delta triggers calibration_status='invalidated_envelope' instead of a false pass."
+        ],
+        "dependencies": "Standard library only (`hashlib`, `json`); consumes existing `connectivity.json` output from `src/agent_ee/checks.py:parse_xml_netlist`.",
+        "effort_and_risk": "Effort: Small-Medium (~120 LOC in `empirical.py` + `campaign.py`, ~100 LOC tests). Risk: Low, provided passive-value stripping and anonymous local-net canonicalization are used when hashing the incidence graph."
+      }
+    }
+  ],
+  "provocation": {
+    "title": "Continuous Tolerance-and-Parasitic Shadow Ensemble (Zero-Prose Verification)",
+    "assumption_removed": "What if `/candidate` is never evaluated as a single nominal schematic and ideal zero-impedance netlist, and reviewers never write prose findings at all?",
+    "description": "Every time a candidate is captured, `agent-ee` automatically expands `/candidate` into a deterministic 2^k corner ensemble combining E-series component tolerance vertices, thermal drift, and `pcbnew`-extracted copper trace/via RLC parasitics, while reviewers may only submit executable falsification harnesses in `/work/experiments` (zero prose allowed). Any finding that cannot be expressed as a deterministic script failing at least one physical corner vertex in the networkless sandbox is unrepresentable by construction."
+  },
+  "execution_provenance": {
+    "agent_session": "agent-414",
+    "agent_id": "bb0e897d-3bb5-4778-a490-4cef621d429f",
+    "execution_id": "b9af3290-4ab7-41b7-a1b4-d540ec36d039",
+    "commit": "a834201",
+    "diverge_phase": {
+      "branch_count": 5,
+      "ideas_per_branch": 6,
+      "total_raw_ideas": 30,
+      "parallel_launch_timestamp": "2026-10-17T14:46:09Z",
+      "last_completion_timestamp": "2026-10-17T14:47:13Z",
+      "branches": [
+        {
+          "branch_id": "B1",
+          "role": "ADHD Diverge Branch 1: Hardware Engineer",
+          "frame": "hardware engineer",
+          "tags": [
+            "code",
+            "wild"
+          ],
+          "conversation_id": "38d7a54a-87af-412a-be2a-5cc542b863d0",
+          "started_at": "2026-10-17T14:46:09Z",
+          "completed_at": "2026-10-17T14:47:01Z",
+          "parent_spawn_at": "2026-10-17T14:46:07Z"
+        },
+        {
+          "branch_id": "B2",
+          "role": "ADHD Diverge Branch 2: Regulator",
+          "frame": "regulator",
+          "tags": [
+            "design",
+            "general"
+          ],
+          "conversation_id": "85c2b922-8473-4e21-8d5a-b38e4ef09442",
+          "started_at": "2026-10-17T14:46:09Z",
+          "completed_at": "2026-10-17T14:47:11Z",
+          "parent_spawn_at": "2026-10-17T14:46:07Z"
+        },
+        {
+          "branch_id": "B3",
+          "role": "ADHD Diverge Branch 3: Competitor Trying To Break It",
+          "frame": "competitor trying to break it",
+          "tags": [
+            "code",
+            "design"
+          ],
+          "conversation_id": "65458719-82d2-4a86-9c49-95aecb963618",
+          "started_at": "2026-10-17T14:46:09Z",
+          "completed_at": "2026-10-17T14:47:13Z",
+          "parent_spawn_at": "2026-10-17T14:46:07Z"
+        },
+        {
+          "branch_id": "B4",
+          "role": "ADHD Diverge Branch 4: Remove Load-Bearing Assumption",
+          "frame": "remove the load-bearing assumption",
+          "tags": [
+            "code",
+            "design",
+            "wild"
+          ],
+          "conversation_id": "809a2bc1-439c-45af-b0b1-3b2a56f5eaa2",
+          "started_at": "2026-10-17T14:46:09Z",
+          "completed_at": "2026-10-17T14:47:07Z",
+          "parent_spawn_at": "2026-10-17T14:46:07Z"
+        },
+        {
+          "branch_id": "B5",
+          "role": "ADHD Diverge Branch 5: 3am On-Call",
+          "frame": "3am on-call",
+          "tags": [
+            "code",
+            "design"
+          ],
+          "conversation_id": "9803bb57-ee3a-4ef3-ae62-365905da6093",
+          "started_at": "2026-10-17T14:46:09Z",
+          "completed_at": "2026-10-17T14:47:04Z",
+          "parent_spawn_at": "2026-10-17T14:46:07Z"
+        }
+      ],
+      "parent_spawn_timestamp": "2026-10-17T14:46:07Z"
+    },
+    "focus_phase": {
+      "branch_count": 3,
+      "parallel_launch_timestamp": "2026-10-17T14:49:02Z",
+      "last_completion_timestamp": "2026-10-17T14:49:50Z",
+      "branches": [
+        {
+          "branch_id": "F1",
+          "role": "ADHD Focus Deepen 1: Empirical Topology & Envelope Guard",
+          "idea_id": "B5-4",
+          "conversation_id": "603a822a-046b-4e4b-b885-a57553dc1653",
+          "started_at": "2026-10-17T14:49:02Z",
+          "completed_at": "2026-10-17T14:49:49Z",
+          "parent_spawn_at": "2026-10-17T14:49:01Z"
+        },
+        {
+          "branch_id": "F2",
+          "role": "ADHD Focus Deepen 2: Structural Blast-Radius & Geometry Guard",
+          "idea_id": "B3-2",
+          "conversation_id": "846687c4-a88c-491f-bfd5-0d2628f3af5f",
+          "started_at": "2026-10-17T14:49:02Z",
+          "completed_at": "2026-10-17T14:49:50Z",
+          "parent_spawn_at": "2026-10-17T14:49:01Z"
+        },
+        {
+          "branch_id": "F3",
+          "role": "ADHD Focus Deepen 3: Sandboxed Counterexample Replay & Promotion",
+          "idea_id": "B3-1",
+          "conversation_id": "bc4caeec-1abc-4b45-a82e-096955ec53c7",
+          "started_at": "2026-10-17T14:49:02Z",
+          "completed_at": "2026-10-17T14:49:43Z",
+          "parent_spawn_at": "2026-10-17T14:49:01Z"
+        }
+      ],
+      "parent_spawn_timestamp": "2026-10-17T14:49:01Z"
+    }
+  },
+  "ranked_recommendation": {
+    "summary": "Under the corrected adhd skill weighting (0.35*Novelty + 0.40*Viability + 0.25*Fit), the Top 3 membership set {B3-1, B3-2, B5-4} is unchanged (all >= 9.00 vs next cluster at 8.40), with internal rank order #1 B3-1 (9.15, Sandboxed Counterexample Witness Replay & Check Promotion) -> #2 B3-2 (9.05, Boundary-Invariant Hardware Contract & Non-Vacuous Geometry Check) -> #3 B5-4 (9.00, Topology- & Operating-Envelope-Gated Empirical Residual Validity), followed by #4 B3-5 (8.40), #5 B3-6 (8.40), and #6 B1-1 (8.25).",
+    "confidence": "High (0.92)",
+    "confidence_rationale": "All three top proposals close concrete, source-verified soundness gaps in commit a834201 with high shipping viability (V=10, V=10, V=9) using existing stdlib/Bubblewrap/KiCad/ngspice primitives; theTop-3 set is invariant across both weighting schemes."
+  },
+  "scoring_protocol_correction": {
+    "corrected_at": "2026-10-17T14:59:28Z",
+    "reason": "Protocol alignment with adhd skill (SKILL.md:86-98): score axes Novelty (0.35), Viability (0.40), Fit (0.25) instead of superseded Novelty (0.35), Value (0.35), Feasibility (0.30).",
+    "semantic_mapping": {
+      "Novelty (0.35 -> 0.35)": "Unchanged: distance from the obvious default.",
+      "Superseded Feasibility (0.30) -> Viability (0.40)": "Could it actually ship cleanly in agent-ee's stdlib Python / Bubblewrap / KiCad / ngspice architecture.",
+      "Superseded Value (0.35) -> Fit (0.25)": "Does it address the stated problem (useful, trustworthy EE review/repair tool) while preserving all six architectural invariants (penalizing invariant-violating traps such as B1-4, B1-3, B4-4, B5-6)."
+    },
+    "top3_membership_changed": false,
+    "top3_membership_set": [
+      "B3-1",
+      "B3-2",
+      "B5-4"
+    ],
+    "top3_order_change": {
+      "superseded_order": [
+        {
+          "rank": 1,
+          "id": "B5-4",
+          "composite": 9.0,
+          "chip": "N9 Val9 Feas9"
+        },
+        {
+          "rank": 2,
+          "id": "B3-2",
+          "composite": 8.9,
+          "chip": "N8 Val9 Feas10"
+        },
+        {
+          "rank": 3,
+          "id": "B3-1",
+          "composite": 8.85,
+          "chip": "N9 Val8 Feas10"
+        }
+      ],
+      "corrected_order": [
+        {
+          "rank": 1,
+          "id": "B3-1",
+          "composite": 9.15,
+          "chip": "N9 V10 F8"
+        },
+        {
+          "rank": 2,
+          "id": "B3-2",
+          "composite": 9.05,
+          "chip": "N8 V10 F9"
+        },
+        {
+          "rank": 3,
+          "id": "B5-4",
+          "composite": 9.0,
+          "chip": "N9 V9 F9"
+        }
+      ]
+    },
+    "shortlist_4_to_6_order_change": {
+      "superseded_order": [
+        {
+          "rank": 4,
+          "id": "B1-1",
+          "composite": 8.35,
+          "chip": "N8 Val9 Feas8"
+        },
+        {
+          "rank": 5,
+          "id": "B3-5",
+          "composite": 8.3,
+          "chip": "N8 Val8 Feas9"
+        },
+        {
+          "rank": 6,
+          "id": "B3-6",
+          "composite": 8.3,
+          "chip": "N8 Val8 Feas9"
+        }
+      ],
+      "corrected_order": [
+        {
+          "rank": 4,
+          "id": "B3-5",
+          "composite": 8.4,
+          "chip": "N8 V9 F8"
+        },
+        {
+          "rank": 5,
+          "id": "B3-6",
+          "composite": 8.4,
+          "chip": "N8 V9 F8"
+        },
+        {
+          "rank": 6,
+          "id": "B1-1",
+          "composite": 8.25,
+          "chip": "N8 V8 F9"
+        }
+      ]
+    },
+    "focus_calls_reused": true,
+    "focus_calls_replayed_or_added": false
+  }
+}

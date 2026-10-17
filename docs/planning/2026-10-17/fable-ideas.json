@@ -1,0 +1,373 @@
+{
+  "schema": "adhd-ideas/1",
+  "problem": "What enhancements/improvements would most improve agent-ee as a useful, trustworthy electronics engineering review and repair tool? (preserving: one implementation writer, immutable candidate/requirements, independent initial reviewers, centralized evidence-backed adjudication, bounded convergence, bench feedback)",
+  "repo": "/home/halbritt/git/agent-ee @ a834201 (main, clean)",
+  "weights": {
+    "novelty": 0.35,
+    "viability": 0.4,
+    "fit": 0.25
+  },
+  "frames": [
+    "competitor trying to break it",
+    "3am on-call",
+    "logistics",
+    "game design",
+    "biology (wild)"
+  ],
+  "ideas": [
+    {
+      "id": "A1",
+      "branch": "attacker",
+      "cluster": "prove-the-verifier",
+      "text": "Poison-pill library audit: standing self-test canaries over the capture boundary (corrupted symbol/footprint fixtures must be flagged)",
+      "novelty": 6,
+      "viability": 8,
+      "fit": 8,
+      "weighted": 7.3,
+      "trap": null
+    },
+    {
+      "id": "A2",
+      "branch": "attacker",
+      "cluster": "prove-the-verifier",
+      "text": "Unfalsifiable-requirement detector: find baseline requirements no declared check can ever fail; demand a real check or explicit waiver",
+      "novelty": 7,
+      "viability": 8,
+      "fit": 9,
+      "weighted": 7.9,
+      "trap": null
+    },
+    {
+      "id": "A3",
+      "branch": "attacker",
+      "cluster": "prove-the-verifier",
+      "text": "Reviewer-collusion fingerprinting: flag statistically improbable agreement (shared phrasing/citation order) as loss-of-independence",
+      "novelty": 8,
+      "viability": 5,
+      "fit": 7,
+      "weighted": 6.55,
+      "trap": null
+    },
+    {
+      "id": "A4",
+      "branch": "attacker",
+      "cluster": "prove-the-verifier",
+      "text": "Metric-gaming detector: margin gains must trace to design changes, not parser tolerances or measurement-window artifacts",
+      "novelty": 7,
+      "viability": 6,
+      "fit": 7,
+      "weighted": 6.6,
+      "trap": null
+    },
+    {
+      "id": "A5",
+      "branch": "attacker",
+      "cluster": "custody-beyond-hashes",
+      "text": "Bench forgery resistance: residual envelopes re-derived from raw instrument capture files, not operator-typed summaries",
+      "novelty": 6,
+      "viability": 6,
+      "fit": 8,
+      "weighted": 6.5,
+      "trap": null
+    },
+    {
+      "id": "A6",
+      "branch": "attacker",
+      "cluster": "prove-the-verifier",
+      "text": "Evidence-consumption coverage gate: disposition built on unread packet regions is incomplete review",
+      "novelty": 8,
+      "viability": 5,
+      "fit": 8,
+      "weighted": 6.8,
+      "trap": "attention tracking from harness logs is unreliable; as a hard gate it fails runs on instrumentation noise \u2014 viable only as an advisory metric"
+    },
+    {
+      "id": "O1",
+      "branch": "oncall",
+      "cluster": "spend-judgment-where-it-counts",
+      "text": "Pre-flight quota canary call per harness before launching a reviewer wave",
+      "novelty": 4,
+      "viability": 8,
+      "fit": 8,
+      "weighted": 6.6,
+      "trap": null
+    },
+    {
+      "id": "O2",
+      "branch": "oncall",
+      "cluster": "fail-legible-resume-safe",
+      "text": "Campaign coroner subcommand: replay the hash chain after any failure; print which phase died, what evidence is valid, the single safe next action",
+      "novelty": 6,
+      "viability": 9,
+      "fit": 9,
+      "weighted": 7.95,
+      "trap": null
+    },
+    {
+      "id": "O3",
+      "branch": "oncall",
+      "cluster": "fail-legible-resume-safe",
+      "text": "Reviewer liveness heartbeats with automatic kill-and-replace of a wedged reviewer",
+      "novelty": 5,
+      "viability": 5,
+      "fit": 7,
+      "weighted": 5.5,
+      "trap": "automatic replacement is a retry by another name; violates the deliberate no-retry/fail-closed provider policy"
+    },
+    {
+      "id": "O4",
+      "branch": "oncall",
+      "cluster": "spend-judgment-where-it-counts",
+      "text": "Staleness tripwires: re-verify runtime/library fingerprints immediately before each expensive phase, refusing before quota is spent",
+      "novelty": 5,
+      "viability": 9,
+      "fit": 8,
+      "weighted": 7.35,
+      "trap": null
+    },
+    {
+      "id": "O5",
+      "branch": "oncall",
+      "cluster": "fail-legible-resume-safe",
+      "text": "Refusal explainer: map every refusal to the policy clause, exact hash mismatch and one-line remediation",
+      "novelty": 4,
+      "viability": 8,
+      "fit": 8,
+      "weighted": 6.6,
+      "trap": null
+    },
+    {
+      "id": "O6",
+      "branch": "oncall",
+      "cluster": "fail-legible-resume-safe",
+      "text": "Budget-aware sealed partial verdict that later runs can resume from",
+      "novelty": 6,
+      "viability": 5,
+      "fit": 7,
+      "weighted": 5.85,
+      "trap": "reusing partial evidence undermines the freshness-by-rerun principle; viable only as a notarized report, not as resumable acceptance"
+    },
+    {
+      "id": "L1",
+      "branch": "logistics",
+      "cluster": "spend-judgment-where-it-counts",
+      "text": "Customs lanes: risk-routed review depth per campaign iteration (checks-only while checks fail; full adversarial review for acceptance candidates) with mandatory random full inspections",
+      "novelty": 7,
+      "viability": 8,
+      "fit": 9,
+      "weighted": 7.9,
+      "trap": null
+    },
+    {
+      "id": "L2",
+      "branch": "logistics",
+      "cluster": "memory-without-contamination",
+      "text": "Defect depot: failed iterations retained as sealed negative-example packets consulted by the implementation agent (not initial reviewers)",
+      "novelty": 6,
+      "viability": 7,
+      "fit": 7,
+      "weighted": 6.65,
+      "trap": null
+    },
+    {
+      "id": "L3",
+      "branch": "logistics",
+      "cluster": "custody-beyond-hashes",
+      "text": "Cold-chain custody for bench evidence: calibration-expiry and attestation-chain records; a cold-chain break quarantines the residual envelope",
+      "novelty": 7,
+      "viability": 7,
+      "fit": 8,
+      "weighted": 7.25,
+      "trap": null
+    },
+    {
+      "id": "L4",
+      "branch": "logistics",
+      "cluster": "spend-judgment-where-it-counts",
+      "text": "Cross-docking: dedupe expensive extractions across checks/reviewers with hashed dock manifests",
+      "novelty": 5,
+      "viability": 5,
+      "fit": 5,
+      "weighted": 5.0,
+      "trap": "premature optimization: extractions cost seconds while the dedup adds real trust-chain complexity"
+    },
+    {
+      "id": "L5",
+      "branch": "logistics",
+      "cluster": "operator-as-player",
+      "text": "Signature-on-delivery: engineer must acknowledge each adjudicated defect at its schematic/board location before a campaign consumes it",
+      "novelty": 7,
+      "viability": 6,
+      "fit": 7,
+      "weighted": 6.6,
+      "trap": null
+    },
+    {
+      "id": "L6",
+      "branch": "logistics",
+      "cluster": "memory-without-contamination",
+      "text": "Requirement waybills: per-reviewer requirement-coverage attestations whose union must cover the baseline",
+      "novelty": 6,
+      "viability": 6,
+      "fit": 7,
+      "weighted": 6.25,
+      "trap": null
+    },
+    {
+      "id": "G1",
+      "branch": "gamedesign",
+      "cluster": "memory-without-contamination",
+      "text": "Replay ghosts: render campaign margin trajectories against prior campaigns so pacing is legible",
+      "novelty": 6,
+      "viability": 6,
+      "fit": 6,
+      "weighted": 6.0,
+      "trap": null
+    },
+    {
+      "id": "G2",
+      "branch": "gamedesign",
+      "cluster": "operator-as-player",
+      "text": "Pre-registered operator predictions before unsealing adjudication, with a scored calibration ledger (measures what the tool catches that the engineer missed)",
+      "novelty": 8,
+      "viability": 7,
+      "fit": 7,
+      "weighted": 7.35,
+      "trap": null
+    },
+    {
+      "id": "G3",
+      "branch": "gamedesign",
+      "cluster": "operator-as-player",
+      "text": "Trade-off decision screen: escalation rendered as curated live tensions with evidence chains and explicit spend options",
+      "novelty": 6,
+      "viability": 8,
+      "fit": 8,
+      "weighted": 7.3,
+      "trap": null
+    },
+    {
+      "id": "G4",
+      "branch": "gamedesign",
+      "cluster": "operator-as-player",
+      "text": "Campaign forks: named alternate lines from any sealed iteration, with side-by-side margin/defect history diffs",
+      "novelty": 7,
+      "viability": 7,
+      "fit": 8,
+      "weighted": 7.25,
+      "trap": null
+    },
+    {
+      "id": "G5",
+      "branch": "gamedesign",
+      "cluster": "memory-without-contamination",
+      "text": "Defect bestiary: named cross-project defect classes seeded to reviewers as hunting lenses",
+      "novelty": 7,
+      "viability": 6,
+      "fit": 6,
+      "weighted": 6.35,
+      "trap": null
+    },
+    {
+      "id": "G6",
+      "branch": "gamedesign",
+      "cluster": "prove-the-verifier",
+      "text": "New-game-plus onboarding: graded library of deliberately broken reference boards with sealed ground truth for trust calibration",
+      "novelty": 5,
+      "viability": 8,
+      "fit": 7,
+      "weighted": 6.7,
+      "trap": null
+    },
+    {
+      "id": "B1",
+      "branch": "biology",
+      "cluster": "prove-the-verifier",
+      "text": "Thymic negative selection: score reviewer false-positive rates on seeded known-good designs per epoch",
+      "novelty": 8,
+      "viability": 5,
+      "fit": 6,
+      "weighted": 6.3,
+      "trap": "auto-pruning reviewers is model substitution, which the explicit-profile policy forbids; viable only as a reported scorecard"
+    },
+    {
+      "id": "B2",
+      "branch": "biology",
+      "cluster": "prove-the-verifier",
+      "text": "Complement cascade: ordered multi-step evidence amplification before defect acceptance",
+      "novelty": 4,
+      "viability": 6,
+      "fit": 6,
+      "weighted": 5.3,
+      "trap": null
+    },
+    {
+      "id": "B3",
+      "branch": "biology",
+      "cluster": "memory-without-contamination",
+      "text": "Scar-tissue annotation: repaired board regions carry persistent hash-bound markers forcing elevated check density and reviewer attention in all future candidates",
+      "novelty": 8,
+      "viability": 7,
+      "fit": 8,
+      "weighted": 7.6,
+      "trap": null
+    },
+    {
+      "id": "B4",
+      "branch": "biology",
+      "cluster": "prove-the-verifier",
+      "text": "Quorum sensing via secreted structured claims in the sealed evidence store",
+      "novelty": 6,
+      "viability": 4,
+      "fit": 5,
+      "weighted": 4.95,
+      "trap": "adjudicator already sees all claims; a shared claim store risks reviewer isolation for no added signal"
+    },
+    {
+      "id": "B5",
+      "branch": "biology",
+      "cluster": "custody-beyond-hashes",
+      "text": "Hormetic bench dosing: low-dose off-nominal stress epochs whose margin response (hold vs collapse) widens or revokes trust",
+      "novelty": 8,
+      "viability": 5,
+      "fit": 7,
+      "weighted": 6.55,
+      "trap": null
+    },
+    {
+      "id": "B6",
+      "branch": "biology",
+      "cluster": "spend-judgment-where-it-counts",
+      "text": "Chaperone pre-candidate lint: non-writing fast native validity pass over the implementation proposal that kills doomed edit sessions before a full review iteration is spent",
+      "novelty": 7,
+      "viability": 8,
+      "fit": 8,
+      "weighted": 7.65,
+      "trap": null,
+      "correction": "weighted score corrected from erroneous 7.75 (arithmetic: .35*7+.40*8+.25*8=7.65); flagged by coordinator in final confirmation; top-3 set/order unchanged (B6 remains 4th among non-traps)"
+    }
+  ],
+  "clusters": {
+    "prove-the-verifier": "self-tests and audits of the trust machinery itself (canaries, falsifiability, independence monitoring)",
+    "spend-judgment-where-it-counts": "pipeline economics: route expensive LLM judgment only where it changes outcomes",
+    "fail-legible-resume-safe": "operability: failures explain themselves and name the safe next action",
+    "custody-beyond-hashes": "physical/bench evidence provenance beyond byte hashes (calibration decay, raw re-derivation, stress dosing)",
+    "memory-without-contamination": "compounding institutional memory while preserving reviewer independence",
+    "operator-as-player": "the engineer as calibrated participant (predictions, decision screens, forks, acknowledgments)"
+  },
+  "shortlist": [
+    "O2",
+    "A2",
+    "L1",
+    "B3"
+  ],
+  "star_nonobvious": "B3",
+  "top3_deepened": [
+    "O2",
+    "A2",
+    "L1"
+  ],
+  "corrections": [
+    "B6 weighted 7.75 -> 7.65 (superseded, 2026-10-17 final confirmation); no branch rerun"
+  ]
+}

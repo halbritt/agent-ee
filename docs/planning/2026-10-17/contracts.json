@@ -1,0 +1,227 @@
+{
+  "status": "draft; priority and scope await three-party agreement",
+  "source_commit": "a834201",
+  "contracts": [
+    {
+      "id": 1,
+      "title": "Normalize RC step defaults through measured-result generation",
+      "size": "small",
+      "mode": "AFK",
+      "contract": "Deck generation and metric-condition construction consume one validated normalized parameter object. Persist effective step voltage without rewriting input scope or retroactively changing historical identities. Omitted step_v and explicit 1.0 produce equivalent metrics/condition text, while candidate identities may differ because scopes differ.",
+      "verification": [
+        "Native ngspice control with bounded measurements and omitted step_v completes checks; measured value agrees with analytic V*(1-exp(-t/RC)) within declared numerical tolerance.",
+        "Explicit and omitted defaults produce matching conditions; nondefault amplitude scales measured response.",
+        "Zero, negative, nonfinite and nonnumeric amplitudes remain unsupported; a failed simulator cannot produce a passing metric."
+      ],
+      "migration": "No new baseline semantics; runtime policy identity changes and historical results remain historical. Do not silently rewrite scopes.",
+      "failure": "Propagate execution errors as incomplete, never missing-data pass.",
+      "dependencies": []
+    },
+    {
+      "id": 3,
+      "title": "Make copper-width coverage explicit and include native arcs",
+      "size": "medium",
+      "mode": "AFK",
+      "contract": "New versioned geometry criterion declares covered primitive classes and excludes nets explicitly. Width evidence lists primitive UUID/type/net/layer/value/limit plus eligible, checked, excluded and unsupported counts. Include native PCB_ARC with straight copper tracks. Via drill/annular ring and zone geometry are separate future criteria, not coerced into width.",
+      "verification": [
+        "Actual KiCad fixture containing a 0.05 mm arc and five legal straight segments fails declared 0.20 mm broader copper-width criterion; straight-only legacy result retains its narrower meaning.",
+        "Arc-only valid and invalid boards, empty eligible set, excluded-net arcs, malformed primitive and unsupported copper class exercise coverage outcomes.",
+        "Evidence tampering or wrong candidate binding fails historical verification; no accepted defect from unsupported geometry."
+      ],
+      "migration": "Opt-in new criterion/version; old scope/2 check definitions retain explicit straight-segment semantics. Require a new baseline to broaden existing campaign acceptance coverage.",
+      "failure": "Empty or unknown eligible geometry produces incomplete coverage. Deterministic proven below-width primitive yields defect.",
+      "dependencies": []
+    },
+    {
+      "id": 4,
+      "title": "Audit executable acceptance coverage before launching reviews",
+      "size": "medium",
+      "mode": "AFK",
+      "contract": "Versioned requirement intent distinguishes acceptance from informational obligations. A parameter-aware registry exposes can_evaluate_bound, required prerequisites and unsupported reasons. Compile a captured coverage report mapping each acceptance requirement to at least one defect-capable check. Informational requirements/checks remain traceable but cannot satisfy an acceptance obligation. Unknown capability blocks new-policy launch.",
+      "verification": [
+        "Baseline mapping a functional acceptance requirement solely to netlist export or unbounded geometry is refused before model calls.",
+        "Mixed informational and bounded acceptance requirements compile and map every check.",
+        "Built-in mutation corpus demonstrates legal/wrong RC values, width violation and rule-check defects change expected criteria; unsupported/malformed mutants are not counted as detected physical defects.",
+        "Missing limits, unresolved prerequisites, unknown registry kind and informational-only baseline exercise refusals.",
+        "Run the full pipeline with scripted independent reviewer/adjudicator fixtures on deliberately broken reference boards and matched controls. Seal expected requirement violations separately from implementation outputs. Distinguish this harness test from live-model defect detection performance."
+      ],
+      "migration": "New scope/baseline contract; do not reinterpret historical scope/2 results as audited. Explicit conversion preserves all acceptance requirements; no arbitrary waiver field.",
+      "failure": "Capability is necessary coverage evidence, not semantic proof of requirement completeness. No model inference sets capability.",
+      "dependencies": []
+    },
+    {
+      "id": 5,
+      "title": "Reject empirical correction outside its declared design applicability",
+      "size": "large",
+      "mode": "AFK",
+      "contract": "Versioned calibration bundle binds each correction to source observation identity, baseline/check/metric/unit/condition, immutable model dependencies and a design applicability predicate. Initial predicate is exact captured design-dependency hashes; include all design inputs by default. Evidence producer/parser/model versions and calibration provenance remain captured. Mismatch prevents calibrated acceptance, records the failed predicate and requests new bench evidence. Qualified transfer envelopes are a later explicit policy, never inferred from topology similarity.",
+      "verification": [
+        "Unchanged measured design replays its discrepancy interval against unchanged bounds.",
+        "Change a component value, connectivity, PCB geometry or unclassified design dependency: calibration becomes unavailable rather than silently transferring or producing a fabricated defect.",
+        "Changed model, metric/unit/condition, omitted observation, tampered raw sample and wrong baseline fail closed.",
+        "Re-ingest new candidate observations produces a new epoch; old acceptance remains superseded and old evidence retained."
+      ],
+      "migration": "Legacy bundles stay verifiable under historical policy but do not acquire qualification. New strict campaigns require upgraded applicability; report migration need rather than silently widening predicates.",
+      "failure": "Use missing-evidence/incomplete classification and structured recalibration request. No automatic widening, inverse model fit or claim that metadata authenticates instruments.",
+      "dependencies": []
+    },
+    {
+      "id": 6,
+      "title": "Explain incomplete campaigns without changing their state",
+      "size": "medium",
+      "mode": "AFK",
+      "contract": "A diagnostic command produces a versioned machine report and readable evidence timeline. Include campaign/run/baseline identities, verified facts, failed invariants, unavailable facts, ambiguous transition candidates and operator actions with preconditions. Share pure verifier semantics; do not hide verifier exceptions. Read under an existing coherent lease or explicitly report unverified snapshot. Do not create lock files solely to diagnose historical data. Do not use F_GETLK as evidence about flock ownership without demonstrated platform-specific interoperability. Default diagnostic is advisory/unverified unless coherent reads are actually established. A .tmp file alone may reflect an active writer, not necessarily an interrupted write.",
+      "verification": [
+        "Inject interruption at capture/check/review/adjudication/empirical boundaries and show only facts justified by retained artifacts.",
+        "Differential results match ordinary integrity verification on tampered and intact runs.",
+        "Byte/hash directory inventory before/after diagnosis is identical, including failure paths.",
+        "Concurrent writer yields an explicit busy/unverified result; partial .tmp files do not imply a uniquely known phase or safe retry."
+      ],
+      "migration": "Additive output contract, no mutation or automatic recovery. Existing unreadable histories produce partial diagnostic with reasons.",
+      "failure": "Unknown is an allowed result; offer zero/multiple actions when no single safe action is established. Pure verifier extraction can drift: read-only does not mean zero trust-kernel risk.",
+      "dependencies": []
+    },
+    {
+      "id": 7,
+      "title": "Enforce declared hardware interfaces across candidate repairs",
+      "size": "large",
+      "mode": "AFK",
+      "contract": "Owner-authored immutable interface specification enumerates required terminal identities, pin-to-net relations, required component/testpoint presence and allowed edits. A deterministic check maps those declarations onto each native candidate and emits bound violations. Reference identities derive from requirements, not prefix heuristics or a possibly defective first board. Distinguish named/anonymous nets and make renames explicit.",
+      "verification": [
+        "Deletion of required load/testpoint, swapped external pins and disconnection each fail their declared invariant.",
+        "A legitimate resistor-value repair preserves interface checks and passes functional measurements.",
+        "R/C/L are not treated as transparent shorts; frequency-dependent networks do not become falsely equivalent.",
+        "Unknown symbol mapping and ambiguous terminal identities yield incomplete coverage; undeclared topology is not silently claimed protected."
+      ],
+      "migration": "New check and captured contract require new baseline; no inferred obligations imposed retroactively. Public contract documents limits of graph equivalence.",
+      "failure": "No changes to source candidate, scope or owner declarations by implementation agent. Unsupported mappings cannot become pass.",
+      "dependencies": [
+        4
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Turn unresolved concerns into reproducible evidence requests",
+      "size": "large",
+      "mode": "AFK",
+      "contract": "Versioned request binds candidate/baseline/requirement/concern, operating condition, requested observable and existing declared check if available. Coordinator may schedule already authorized deterministic verification. Reviewer experiments run only in isolated networkless sandbox, with bounded time/resources and retained script/tool/input/output hashes. Receipt reports execution and assertions separately; arbitrary exit code is never acceptance authority. New test proposals export a graduation bundle for a new explicitly authorized baseline/campaign.",
+      "verification": [
+        "Concern tied to existing declared failed bound becomes accepted only through normal sealed coordinator-check witness validation.",
+        "Script reading candidate then exiting 1 cannot manufacture a defect; script success cannot resolve concern automatically.",
+        "Timeout, malformed output, missing interpreter, attempted network/write escape and changed candidate produce retained failed/unsupported receipts.",
+        "New check proposal leaves current baseline byte-identical and every initial reviewer context isolated."
+      ],
+      "migration": "Additive concern/request/receipt schemas; current disposition vocabulary and acceptance rules remain authoritative. Human-readable actionable request even when no adapter supports it.",
+      "failure": "Failed replay leaves concern unresolved. No automatic new thresholds, checks or requirement edits.",
+      "dependencies": [
+        4
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Ship a qualified passive tolerance-corner adapter",
+      "size": "large",
+      "mode": "AFK",
+      "contract": "Captured adapter specification declares supported passive topology, component tolerances, excitation/measurement conditions, finite corner grid, tool/model versions and qualification fixtures. Enumerate corners deterministically, retain each result and aggregate only the declared envelope. Initial analytically tractable RC response provides an independent oracle; expanded RLC support requires separate demonstrated bounds. Qualification must establish when endpoint extrema suffice; otherwise label sampled coverage rather than worst-case guarantee.",
+      "verification": [
+        "Nominally passing RC fixture violates declared response at a tolerance corner and receives an evidence-backed defect.",
+        "Zero-tolerance result agrees with nominal analysis; independent analytic solution bounds each simulated corner within documented numerical error.",
+        "Unsupported topology/nonlinear parts, missing tolerance, excessive corner count and failed corner simulation yield incomplete coverage.",
+        "Model/tool/parser version change invalidates qualification; outputs preserve condition and unit identity for coupled metrics and empirical checks."
+      ],
+      "migration": "New optional captured adapter/qualification contract and baseline criteria. No qualification conferred on arbitrary third-party solvers by hashing alone.",
+      "failure": "Bounded resource budget; partial ensemble cannot masquerade as complete. Physical validation remains separate.",
+      "dependencies": [
+        4,
+        5
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Recover interrupted bench-feedback transactions safely",
+      "size": "large",
+      "mode": "AFK",
+      "contract": "Versioned journal records operation identity from source candidate/report hash, target paths and intended review configuration. Explicit prepared, supersession_committed, review_started and completed states have durable receipts and directory fsync ordering. Under one writer lease, recovery validates identities/artifacts and reconciles only known deterministic transition steps. Same operation retries idempotently; changed report under same identity conflicts. A new model review remains a new identified attempt, never replayed automatically after uncertain external execution.",
+      "verification": [
+        "Crash injection before/after each durable write and rename produces a recoverable state or explicit ambiguity without stale accepted outcome.",
+        "Two processes contend for same target: only one commits supersession/review start.",
+        "Duplicate operation produces one feedback event; conflicting identities refuse without clobbering files.",
+        "Uncertain provider execution is reported for operator resolution, not rerun; no instrument acquisition replay.",
+        "Recovered history verifies with retained original candidate and empirical receipts."
+      ],
+      "migration": "Opt-in journal version for new operations. Legacy partial directories remain read-only diagnostic inputs unless explicit conversion proves their state; no guessed migration.",
+      "failure": "Recovery scope ends at empirical ingestion and review launch. Preserve current convergence budget/epoch rules and all superseded evidence.",
+      "dependencies": [
+        5,
+        6
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Index reviewer packets by entities and requirement coverage",
+      "size": "medium",
+      "mode": "AFK",
+      "contract": "Deterministic packet index maps native component/pin/net/primitive IDs to requirements, checks, retained artifacts and declared coupling criteria. Full baseline and captured evidence remain programmatically reachable; index entries contain factual references, not prior reviewer opinions or inferred acceptance. Show missing/unmapped entities explicitly. Bounded display truncation includes continuation locators and coverage counts.",
+      "verification": [
+        "Stable candidate produces stable index; entity rename and candidate change invalidate stale references.",
+        "Cross-domain check remains visible from both implicated entities with condition identity intact.",
+        "Fresh reviewer packets contain no peer judgments or campaign reviewer history.",
+        "Measured comparison on recorded fixtures reports token/latency and missed-defect outcomes; no savings claim without measurements.",
+        "Large/ambiguous netlists preserve full artifact access and mark partial index coverage."
+      ],
+      "migration": "Additive versioned packet index; existing reviewers can ignore it. No narrowing of baseline/evidence permissions.",
+      "failure": "Index failures cannot erase underlying evidence or grant pass; expose unavailable navigation.",
+      "dependencies": []
+    },
+    {
+      "id": 12,
+      "title": "Qualify PCB DC-resistance back-annotation for declared paths",
+      "size": "large",
+      "mode": "AFK",
+      "contract": "Captured stackup, copper thickness/resistivity/reference temperature, operating temperature and terminal mapping drive deterministic resistance extraction for an explicitly supported trace/via network. Native straight and arc lengths/widths become resistor-network edges. Solve declared DC load cases and emit voltage-drop/loss metrics through existing measurement/coupling contracts. Unsupported zones or ambiguous connections refuse until a qualified model exists. Initial scope is DC conduction, not switching parasitics or thermal fields.",
+      "verification": [
+        "Straight and arc paths agree with rho*L/A; series/parallel supported networks agree with independent analytic resistance solutions.",
+        "Actual KiCad fixture with narrowed/lengthened trace produces expected voltage-drop failure under declared current.",
+        "Missing stackup, temperature, unresolved terminal, unsupported zone and disconnected path yield incomplete coverage.",
+        "Model inputs, extracted network and solver outputs are captured and tamper checked; nominal/worst dimensional cases are distinguished.",
+        "Any added via or parallel-path support has its own oracle and qualification before inclusion."
+      ],
+      "migration": "Optional new adapter and explicit baseline requirements. No retroactive claim of RLC extraction or EMC/DFM certification.",
+      "failure": "Do not infer board materials or fabrication tolerances from defaults. Refuse outside qualified geometry and temperature domain.",
+      "dependencies": [
+        3,
+        4
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Refuse environment drift before spending review inference",
+      "size": "small",
+      "mode": "AFK",
+      "contract": "Before each reviewer, adjudicator and implementation call, compare declared tool/runtime/policy identities to captured execution expectations and emit a retained preflight receipt. Validate required binaries and sandbox availability without invoking a model. Optional qualified native canary uses declared numerical tolerances and supported version ranges; no bit-identical numerical promise. Refusal consumes no inference call and cannot adjudicate or repair a candidate.",
+      "verification": [
+        "Replace a captured binary or policy between check completion and reviewer launch: call hook records zero provider invocations and explicit incomplete drift result.",
+        "Unchanged supported environment launches normal independent calls; no prior review content enters other reviewer contexts.",
+        "Missing binary, broken sandbox and malformed receipt refuse with specific diagnostic; canary failure is execution coverage failure, not design defect.",
+        "Check drift separately at implementation and adjudication boundaries; report that preflight does not eliminate races with later external upgrades or establish subscription quota."
+      ],
+      "migration": "Additive versioned receipt for new executions; preserve old evidence policy identities. No new acceptance criterion or automatic repair lane.",
+      "failure": "No one-token model quota canary or automatic provider fallback. Known authentication/quota failure stops affected operation under existing routing rules.",
+      "dependencies": []
+    }
+  ],
+  "order": [
+    1,
+    3,
+    4,
+    5,
+    6,
+    13,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ]
+}

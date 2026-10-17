@@ -1,0 +1,240 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "agent-ee-enhancement-plan-20261017",
+  "question": "Which independently proposed agent-ee enhancements should become bounded implementation tickets, preserving evidence authority and single-writer review isolation?",
+  "scope": [
+    "agent-ee enhancement roadmap and detailed Plane backlog designs"
+  ],
+  "status": "decided",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "Explicit thread goal: independently run ADHD, discuss, gain consensus and publish detailed Plane work items.",
+    "authorized_scope": [
+      "Independent ideation and discussion",
+      "Detailed backlog designs and Plane publication",
+      "Supporting factual documentation correction"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "authority",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner authorizes independent ideation, design discussion, consensus priority and Plane publication; feature execution is not requested.",
+      "provenance": [
+        {
+          "locator": "/tmp/agent-ee-adhd-20261017/owner-goal.txt",
+          "method": "source inspection",
+          "content_sha256": "a4a651459d6460be82161aa651589b29ca3eeea285874c548d89423ac01377ee"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "user instruction and authority",
+        "authority owner",
+        "decision authority and affected stakeholders",
+        "decision scope",
+        "target repository and task scope"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "contracts",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Scope/2 evidence gates, independent contexts, one repair writer, conservative convergence and documented qualification limits define the preservation boundary. Docs task found RC step default and standalone external-profile gaps; no automatic campaign resume exists. Tests cover baseline/margins/locks/empirical epochs; historical live adjudication fails closed.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/closed-loop.md",
+          "method": "source inspection",
+          "content_sha256": "3cb4fe8dacc7c5170139a49689ded07ff365efd01e1c3684c2d9c999431534ea"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/documentation-review.md",
+          "method": "source inspection",
+          "content_sha256": "b2f6df0d04a7e6f847cd152917bc92bdcccfa6e36929faaf14d9fa3e1cca9939"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/campaign-guide.md",
+          "method": "source inspection",
+          "content_sha256": "c0225c5809fefb9031a58238e83744e464deefe08803a86365eb6941542a8ebf"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/campaign.py",
+          "method": "source inspection",
+          "content_sha256": "6003015006e1807c1fcbef541040d69eb9fd967ec72be2bd1d893e1242386a1b"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/empirical.py",
+          "method": "source inspection",
+          "content_sha256": "2b676e31650b79585e6dd742ff8d5434094dbcd4ab8639e0062bcaf36f454677"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/convergence.py",
+          "method": "source inspection",
+          "content_sha256": "a5d2f9b167f10a9d6be01bea472c578ecd866ac4e9f27fbb07596fc2c74fe8ef"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_campaign.py",
+          "method": "source inspection",
+          "content_sha256": "fc3b710b35b05ab17c692256ea3af70878f5117e9bb4e39ecb9fb9c4f18d9be2"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "accepted policy or current relied-upon constraint",
+        "current source, configuration, and relevant runtime state",
+        "preservation boundary and semantic authority",
+        "affected behavior and state",
+        "preservation matrix and consumers",
+        "tests, characterization, probes, or explicit residual risk",
+        "state, invariant, and dependency ownership",
+        "identified authoritative owner",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "bounded-plan",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Draft roadmap states ranked proposals, alternatives including no change, exact preservation/authority boundaries, per-item acceptance tests, versioning and explicit failure cases. This proves the content of the proposed plan, not implementation efficacy or final consensus. Publication can be revised through issue updates and a docs commit; no feature code is changed.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/enhancement-roadmap.md",
+          "method": "source inspection of drafted design",
+          "content_sha256": "a3904059f6994cfc1392de247ec52f7d32eabc33d707c6a38358e49ed9321dc3"
+        }
+      ],
+      "satisfies": [
+        "architecture significance and scope",
+        "ranked drivers and alternatives",
+        "verification and reversal plan",
+        "reversibility and verification",
+        "a bounded decision question",
+        "alternatives including no change where viable",
+        "failure and recovery requirements",
+        "intervention cost and uncertainty"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "native-arc-observation",
+      "evidence_class": "evidence-runtime-observation",
+      "summary": "Actual KiCad geometry execution on a disposable board reports pass for five straight segments despite an added 0.05 mm PCB_ARC and declared 0.20 mm straight-segment criterion. Observation supports explicit coverage extension; it does not establish ERC/DRC failure, physical validation or a completed adversarial review.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/planning/2026-10-17/arc-observation.json",
+          "method": "native geometry check reproduction",
+          "content_sha256": "a6f7d76ef4ea525a159ffbbf244550e6ed0933d2e62a68393dc291c82689cefb"
+        }
+      ],
+      "satisfies": [
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "plan-scope",
+      "type": "observation",
+      "text": "Owner requested a planning and publication deliverable; implementation and hardware release were not requested.",
+      "evidence": [
+        "authority"
+      ]
+    },
+    {
+      "id": "observed-coverage",
+      "type": "observation",
+      "text": "Native arc reproduction demonstrates the current straight-segment coverage limit; extending the criterion requires explicit semantics and verification.",
+      "evidence": [
+        "native-arc-observation"
+      ]
+    },
+    {
+      "id": "bounded-recommendation",
+      "type": "recommendation",
+      "text": "Prefer explicit failure/capability/applicability contracts and bounded qualified extensions while retaining existing independent-review and sealed-check authority. Publish only after explicit three-party consensus.",
+      "depends_on": [
+        "plan-scope",
+        "observed-coverage"
+      ],
+      "alternatives": [
+        "No feature change; retain current documented limits",
+        "Checks-only repair lanes",
+        "Automatic reviewer-script promotion",
+        "General physical solver expansion"
+      ],
+      "tradeoffs": [
+        "Bounded contracts offer less coverage than general solvers but make unsupported domains explicit.",
+        "Qualification and compatibility gates add engineering work.",
+        "Scores and team consensus do not prove physical efficacy."
+      ]
+    },
+    {
+      "id": "team-decision",
+      "type": "decision",
+      "text": "Parent, Fable and Argon explicitly agreed to final proposal order 1,3,4,5,6,13,7,8,9,10,11,12 and the retained detailed contracts. The coordinator published and read back the roadmap parent and twelve child designs.",
+      "depends_on": [
+        "bounded-recommendation"
+      ],
+      "owner": "repository owner, via explicitly requested team consensus",
+      "authority": "User thread goal authorizes team selection and Plane publication; final confirmations retained in fable-consensus.md and argon-consensus.md."
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Bounded independently reviewed backlog",
+      "disposition": "selected",
+      "evidence": [
+        "authority",
+        "bounded-plan"
+      ]
+    },
+    {
+      "option": "No runtime change during planning",
+      "disposition": "selected",
+      "evidence": [
+        "authority"
+      ]
+    },
+    {
+      "option": "Checks-only intermediate acceptance or arbitrary script promotion",
+      "disposition": "rejected",
+      "evidence": [
+        "contracts"
+      ]
+    },
+    {
+      "option": "General physical solving and automatic inverse model fitting",
+      "disposition": "deferred",
+      "evidence": [
+        "bounded-plan"
+      ]
+    }
+  ],
+  "source_locators": [
+    "docs/enhancement-roadmap.md",
+    "docs/planning/2026-10-17/arc-observation.json",
+    "docs/planning/2026-10-17/doctrine-provenance.json"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "Three independent 30-idea pools with 5 parallel divergent frames and 3 focus calls each",
+    "Explicit final order and contract agreement from parent, Fable and Argon",
+    "Readback of every Plane item body, parent, state and priority",
+    "Documentation checks, committed and pushed repository artifacts"
+  ],
+  "reopening_conditions": [
+    "New source or reproduction contradicts a premise",
+    "Implementation cannot preserve the stated authority or compatibility contract",
+    "Qualification fixtures fail or measured benefit does not justify the proposed extension"
+  ],
+  "residual_risk": [
+    "Future feature acceptance tests are not executed by this planning task.",
+    "Engineering model qualification and physical measurements remain separate obligations.",
+    "All 37 remaining generic doctrine obligations are classified in doctrine-provenance.json; no broader implementation or architecture claim is made."
+  ]
+}

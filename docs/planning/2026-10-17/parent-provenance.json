@@ -1,0 +1,91 @@
+{
+  "source_commit": "a834201ef7014abe360e70742ffb2d672fe24b34",
+  "launches": [
+    {
+      "frame": "regulator",
+      "pid": 1442391,
+      "started": "2026-10-17T14:44:13.839669+00:00"
+    },
+    {
+      "frame": "logistics",
+      "pid": 1442392,
+      "started": "2026-10-17T14:44:13.841132+00:00"
+    },
+    {
+      "frame": "oncall",
+      "pid": 1442394,
+      "started": "2026-10-17T14:44:13.842620+00:00"
+    },
+    {
+      "frame": "biology",
+      "pid": 1442396,
+      "started": "2026-10-17T14:44:13.843854+00:00"
+    },
+    {
+      "frame": "assumption",
+      "pid": 1442397,
+      "started": "2026-10-17T14:44:13.845556+00:00"
+    }
+  ],
+  "completion": {
+    "finished": "2026-10-17T14:44:31.914170+00:00",
+    "failed": []
+  },
+  "outputs": {
+    "oncall/ideas.json": "0e943316fdbc1f929a8bad9242f9ba5c04491f1d536b7d0d04be09f49f8efce5",
+    "logistics/ideas.json": "5c482aad4ecd2e5a26e37d529491815040ee567b842b7af5f3de88ca5af5044c",
+    "regulator/ideas.json": "82a98b072c62ab80250b28d956b2805414bb4b4d8dc0d848b54883745a3719a3",
+    "biology/ideas.json": "a13c1cc2a7aa798a53b5533fba097bd6f1e57c68e08ca84dcd263e6f8e1b85e0",
+    "assumption/ideas.json": "4b5b55c531f4fe0d21f1bccaec1e6e0824bcd39231cb3a9a0f3409cafb9e0661"
+  },
+  "sessions": {
+    "oncall": {
+      "thread_id": "01a14a52-1d0c-7ba1-9be1-c3b075a08c3e",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "focus-logistics-3": {
+      "thread_id": "01a14a53-9512-78b0-a3db-072b84c48423",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "logistics": {
+      "thread_id": "01a14a52-1cdd-7470-ab16-b9abd5434d68",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "focus-oncall-1": {
+      "thread_id": "01a14a53-95a5-7023-b220-621efd839282",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "regulator": {
+      "thread_id": "01a14a52-1cd7-7110-9a5c-0c0cddc13293",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "biology": {
+      "thread_id": "01a14a52-1cdd-7250-8ee8-c631d6c0f40c",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "assumption": {
+      "thread_id": "01a14a52-1cd6-7d72-92a8-3fc4a74e8783",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    },
+    "focus-regulator-4": {
+      "thread_id": "01a14a53-95aa-7bc2-9d15-724fb8da96a3",
+      "completed_item_types": [
+        "agent_message"
+      ]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "adhd-provenance/1",
+  "operator_agent": "Claude Fable agent-413 (Cairn agent 5a68e2bb-cff0-477a-9fcc-eecf37163b58, execution 8112016a-8c2a-414d-9cb1-bdf7372fef70)",
+  "skill": "/home/halbritt/.codex-harm/skills/adhd/SKILL.md (explicit invocation; pre-flight gate skipped per Step 1)",
+  "repo_state": "/home/halbritt/git/agent-ee @ a834201 (main, clean); not modified",
+  "scratch": "/tmp/agent-ee-adhd-20261017/fable/",
+  "subscription_routing": "all branches ran as Claude Code subagents inside the owner's existing Claude subscription session; no OpenRouter/API fallback; genuinely parallel isolated contexts (five Agent calls issued in one batch, none saw another's output)",
+  "divergent_branches": [
+    {"frame": "competitor trying to break it", "tags": "code,design", "duration_ms": 20333, "tokens": 44317, "tool_uses": 0, "output": "branches/attacker.json"},
+    {"frame": "3am on-call", "tags": "code,design", "duration_ms": 18278, "tokens": 44201, "tool_uses": 0, "output": "branches/oncall.json"},
+    {"frame": "logistics", "tags": "code,design", "duration_ms": 21938, "tokens": 44474, "tool_uses": 0, "output": "branches/logistics.json"},
+    {"frame": "game design", "tags": "design,general", "duration_ms": 19026, "tokens": 44212, "tool_uses": 0, "output": "branches/gamedesign.json"},
+    {"frame": "biology", "tags": "code,wild", "duration_ms": 26201, "tokens": 44704, "tool_uses": 0, "output": "branches/biology.json"}
+  ],
+  "scoring": "performed by the coordinating agent (Fable) after all branches returned; weights novelty .35 / viability .40 / fit .25; traps excluded from deepening",
+  "focus_branches": [
+    {"idea": "O2 campaign coroner", "duration_ms": 124457, "tokens": 77487, "tool_uses": 5, "repo_access": "read-only", "output": "focus/O2-coroner.json"},
+    {"idea": "A2 unfalsifiable-requirement detector", "duration_ms": 156751, "tokens": 85233, "tool_uses": 9, "repo_access": "read-only", "output": "focus/A2-falsifiability.json"},
+    {"idea": "L1 customs-lane staged review depth", "duration_ms": 175075, "tokens": 106129, "tool_uses": 8, "repo_access": "read-only", "output": "focus/L1-lanes.json"}
+  ],
+  "branch_wave_launched_utc": "2026-10-17T14:44:21Z",
+  "branch_outputs_all_saved_utc": "2026-10-17T14:47:47Z",
+  "launch_timestamps_file": "branches/launch.txt (exact recorded values; per-branch launch instants were not individually recorded and are not invented)",
+  "independence": "no other participant's idea files were read; no Plane items created; no repo edits"
+}

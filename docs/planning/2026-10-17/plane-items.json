@@ -1,0 +1,184 @@
+[
+  {
+    "proposal": "roadmap",
+    "id": "c7c4ca90-8655-4e5e-a844-0a8ac200f8ec",
+    "identifier": "AGENTEE-1",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "1",
+    "id": "56a232f8-3367-44c7-8d9a-e644de9d9247",
+    "identifier": "AGENTEE-2",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "3",
+    "id": "6c981f4e-c551-4721-803c-4ea2c853249c",
+    "identifier": "AGENTEE-3",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "4",
+    "id": "4ad33501-0a68-4d7c-845c-d852e3602b83",
+    "identifier": "AGENTEE-4",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "5",
+    "id": "33acbf12-50e5-4e72-afd4-5b10333e2f2d",
+    "identifier": "AGENTEE-5",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "6",
+    "id": "b8f5c440-2883-46b8-89ae-d8f4ebfc6e36",
+    "identifier": "AGENTEE-6",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "13",
+    "id": "c99d5ffd-6564-4460-b5d2-e952541ced35",
+    "identifier": "AGENTEE-7",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "7",
+    "id": "02254578-dbdc-4c81-8700-6ccdd00082bd",
+    "identifier": "AGENTEE-8",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "8",
+    "id": "24f4dc60-9320-4c46-8b3f-9f5d1c899aed",
+    "identifier": "AGENTEE-9",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "9",
+    "id": "1345c75e-eb82-4f0a-a898-2bc6e3dbe4ea",
+    "identifier": "AGENTEE-10",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "10",
+    "id": "f0509567-d206-4e2b-b15a-38de17f00c9b",
+    "identifier": "AGENTEE-11",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "11",
+    "id": "84e45539-ae66-40f2-a6a6-13eb5601dc22",
+    "identifier": "AGENTEE-12",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  },
+  {
+    "proposal": "12",
+    "id": "14ddbf80-360a-4154-b2b3-6a0b8bb0be0a",
+    "identifier": "AGENTEE-13",
+    "verified_fields": [
+      "name",
+      "description_html",
+      "priority",
+      "state",
+      "parent",
+      "external_source",
+      "external_id"
+    ]
+  }
+]

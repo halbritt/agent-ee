@@ -1,0 +1,44 @@
+{
+  "schema": "agent-ee.ideation-audit/1",
+  "source_commit": "a834201ef7014abe360e70742ffb2d672fe24b34",
+  "participants": {
+    "parent": {
+      "ideas": 30,
+      "divergent_branches": 5,
+      "focus_calls": 3
+    },
+    "fable": {
+      "ideas": 30,
+      "divergent_branches": 5,
+      "focus_calls": 3
+    },
+    "argon": {
+      "ideas": 30,
+      "divergent_branches": 5,
+      "focus_calls": 3
+    }
+  },
+  "score_verification": "All 90 composites recomputed using .35 novelty + .40 viability + .25 fit; match after recorded corrections.",
+  "status": "All three participants explicitly confirmed exact final order and contracts; 13 Plane items created and read back.",
+  "corrections": [
+    "Argon axes/weights corrected; top-three membership unchanged.",
+    "Fable B6 arithmetic corrected 7.75 to 7.65; top three unchanged.",
+    "Fable approximate timestamps replaced with actual batch launch/output-save instants; individual instants unavailable.",
+    "False external-profile bench propagation bug withdrawn after real capture/scope-assembly observation; documentation corrected in 5516e13."
+  ],
+  "limits": "Branch isolation is supported by retained session identities and participant provenance, not a formal proof of model independence. Scores are subjective prioritization aids. Physical validity must be established separately.",
+  "final_order": [
+    1,
+    3,
+    4,
+    5,
+    6,
+    13,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ]
+}

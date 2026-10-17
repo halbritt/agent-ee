@@ -198,3 +198,7 @@ interfaces and tests; [security](docs/security.md) explains sandbox and trust
 limits; [evidence reproduction](docs/reproducing-evidence.md) describes replaying
 historical demonstrations. [Independent review dispositions](docs/closed-loop-review.md)
 record Fable and Argon's findings on the closed-loop implementation.
+
+The [enhancement roadmap](docs/enhancement-roadmap.md) records proposed next
+steps, their engineering constraints and acceptance tests, with the independent
+idea pools and review decisions that informed their priority.
