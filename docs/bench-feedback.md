@@ -360,7 +360,11 @@ agent-ee bench-new-attempt build/feedback --attempt-id operator-retry-2 \
   --out build/review-attempt-2
 ```
 
-All previous attempt directories and start receipts remain retained. This command
+All previous attempt directories and start receipts remain retained. The fresh
+target must be disjoint from the source, transaction and every retained attempt:
+equal paths, ancestors and descendants are refused before a target lease creates
+any directories or lock files. Request and attempt-chain validation hold the
+transaction lease through target acquisition and launch. This command
 only launches a review of the pinned candidate. It does not acquire instrument
 data, edit designs or re-ingest observations. A settled transaction is immutable;
 a further review can use the retained `prepared/scope.json` through the ordinary

@@ -405,11 +405,12 @@ def recover(out, *, launch_review=False):
         return value
 
 
-def latest_attempt(out, records):
+def review_attempts(out, records):
     attempt = records['review_started']['attempt']
     request = read_json(out / 'request.json')
     if attempt != {'id': request['operation_id'] + '-1', 'out': request['review_out']}:
         raise TransactionError('conflict', 'initial review attempt differs from pinned request', out=out)
+    attempts = [attempt]
     previous = digest(out / 'review_started.json')
     for index, path in enumerate(sorted((out / 'attempts').glob('*.json')), 2):
         record = read_json(path)
@@ -417,44 +418,49 @@ def latest_attempt(out, records):
                 record.get('sequence') != index or record.get('previous') != previous):
             raise TransactionError('conflict', 'broken review attempt chain', out=out)
         previous = digest(path)
-        attempt = record['attempt']
-    return attempt
+        attempts.append(record['attempt'])
+    return attempts
+
+
+def latest_attempt(out, records):
+    return review_attempts(out, records)[-1]
 
 
 def new_attempt(out, attempt_id, target):
     """Explicit operator inference authorization; retain every uncertain attempt."""
     out, target = Path(out).resolve(), Path(target).resolve()
-    request, records = load(out)
-    prior_target = latest_attempt(out, records)['out'] if 'review_started' in records else request['review_out']
-    source = Path(request['run'])
-    if target.is_relative_to(out) or out.is_relative_to(target) or target.is_relative_to(source) or source.is_relative_to(target):
-        raise TransactionError('conflict', 'attempt target overlaps retained evidence', out=out)
-    with writer_lock(request['run'], out, request['review_out'], prior_target, target):
+    # Validate the complete retained history while supported writers are excluded.
+    # Target leases create parent directories/files, so acquire them only after
+    # proving that the new path is disjoint from every retained evidence tree.
+    with writer_lock(out):
         request, records = load(out)
-        if 'review_started' in records and latest_attempt(out, records)['out'] != prior_target:
-            raise TransactionError('conflict', 'attempt changed while acquiring leases; retry diagnosis', out=out)
         if 'review_started' not in records or 'completed' in records:
             raise TransactionError('conflict', 'new attempt requires an unsettled prior review start', out=out)
+        retained = review_attempts(out, records)
+        protected = [out, Path(request['run']).resolve(), *(Path(a['out']).resolve() for a in retained)]
+        if any(target.is_relative_to(path) or path.is_relative_to(target) for path in protected):
+            raise TransactionError('conflict', 'attempt target overlaps retained evidence', out=out)
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', attempt_id):
             raise ValueError('invalid attempt ID')
-        old = latest_attempt(out, records)
-        if target.exists() or target == Path(old['out']):
+        if target.exists():
             raise TransactionError('conflict', 'new attempt requires a fresh run directory', out=out)
-        attempts = sorted((out / 'attempts').glob('*.json'))
-        if attempt_id == records['review_started']['attempt']['id'] or any(
-                read_json(p)['attempt']['id'] == attempt_id for p in attempts):
+        if any(attempt['id'] == attempt_id for attempt in retained):
             raise TransactionError('conflict', 'attempt ID already used', out=out)
-        value = settle(out, request, records)
-        if value['disposition'] != 'uncertain_execution':
-            raise TransactionError('conflict', 'prior attempt already completed', out=out)
-        previous = attempts[-1] if attempts else out / 'review_started.json'
-        put(out / 'attempts' / f'{len(attempts) + 2:06}.json', {
-            'schema': SCHEMA, 'sequence': len(attempts) + 2, 'previous': digest(previous),
-            'attempt': {'id': attempt_id, 'out': str(target)}})
-        from .cli import run_review
-        run_review(out / 'prepared/scope.json', target, request['max_seconds'],
-                   previous=request['run'], output_stream=sys.stderr)
-        return settle(out, request, load(out)[1])
+        with writer_lock(request['run'], request['review_out'], retained[-1]['out'], target):
+            if target.exists():
+                raise TransactionError('conflict', 'new attempt requires a fresh run directory', out=out)
+            value = settle(out, request, records)
+            if value['disposition'] != 'uncertain_execution':
+                raise TransactionError('conflict', 'prior attempt already completed', out=out)
+            attempts = sorted((out / 'attempts').glob('*.json'))
+            previous = attempts[-1] if attempts else out / 'review_started.json'
+            put(out / 'attempts' / f'{len(attempts) + 2:06}.json', {
+                'schema': SCHEMA, 'sequence': len(attempts) + 2, 'previous': digest(previous),
+                'attempt': {'id': attempt_id, 'out': str(target)}})
+            from .cli import run_review
+            run_review(out / 'prepared/scope.json', target, request['max_seconds'],
+                       previous=request['run'], output_stream=sys.stderr)
+            return settle(out, request, load(out)[1])
 
 
 def campaign_context(run, target):
