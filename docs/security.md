@@ -158,6 +158,13 @@ the tool planted in its scratch directory. Write sources, artifacts, backend rep
 records and adopted outputs are opened one component at a time without following links. A host
 file is therefore never hashed or copied into the design through such a link
 ([details](stage-receipts.md#links-and-special-files-planted-by-the-tool)).
+When invoked, the [placement adapter](placement-adapter.md) narrows
+the board further. It allows only footprint translations and quarter turns, and
+it protects fixed and locked footprints. Every other board change and every
+non-board byte change is refused. The coordinator, not the writer, runs the placer
+helper. The helper runs networkless, from a hashed read-only source copy, and
+writes to a fresh scratch destination. Its receipt and local checks are
+provenance only.
 
 The implementation call receives baseline and campaign history in its prompt.
 That is additional inference exposure compared with an initial reviewer. The

@@ -183,9 +183,11 @@ declared criterion per check: native DRC courtyard overlap and footprint
 keepouts from an earlier DRC, outline containment, courtyard edge clearance,
 declared connector edges and a pad-centre ratsnest proxy. An
 [initial placer](docs/placer.md) proposes deterministic positions on an isolated
-copy and validates the saved result with native tools. The placer is not yet a
-campaign writer step; neither establishes routing quality or a
-fabrication-ready board.
+copy and validates the saved result with native tools. The
+[placement campaign adapter](docs/placement-adapter.md) runs the placer as a
+receipted coordinator step and refuses edits other than footprint translations
+and quarter turns. Automatic campaign wiring remains pending; these checks do
+not establish routing quality or a fabrication-ready board.
 
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,

@@ -97,4 +97,5 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
+- [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
