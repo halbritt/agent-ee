@@ -50,6 +50,12 @@ class RoutingCompilerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             compile_routing(contract('via_count', max_count=2.5))
 
+    def test_compilation_owns_its_expected_declaration(self):
+        doc = contract(max_mm=0.15)
+        compiled = compile_routing(doc)
+        doc['constraints'][0]['max_mm'] = 10
+        self.assertEqual(compiled['constraints'][0]['expected']['max_mm'], 0.15)
+
 
 class NativeRoutingTest(unittest.TestCase):
     @classmethod
@@ -62,7 +68,7 @@ class NativeRoutingTest(unittest.TestCase):
         import tempfile
         import time
         from pathlib import Path
-        from routing_fixture import make_board
+        from routing_fixture import make_board, manifest_for_rules, assert_sealed_native
         from agent_ee.checks import Ctx
         from agent_ee.routing_rules import check_routing_rules
         from agent_ee.storage import digest
@@ -80,11 +86,11 @@ class NativeRoutingTest(unittest.TestCase):
         reqs = [{'id': rid, 'checks': ['routing'],
                  'source': {'path': 'requirements.txt', 'locator': 'Owned test'}}
                 for rid in sorted({c['requirement'] for c in document['constraints']})]
-        scope = {'board': 'test.kicad_pcb', 'baseline': {'requirements': reqs}}
-        manifest = {'candidate_id': 'owned-test', 'scope': scope, 'files': files}
-        ctx = Ctx(root, manifest, {'id': 'routing', 'kind': 'routing_rules',
-                                 'params': {'routing_rules': 'rules.json'}}, time.monotonic()+900)
+        spec = {'id': 'routing', 'kind': 'routing_rules', 'params': {'routing_rules': 'rules.json'}}
+        manifest = manifest_for_rules(inputs, files, spec, reqs)
+        ctx = Ctx(root, manifest, spec, time.monotonic()+900)
         check_routing_rules(ctx)
+        assert_sealed_native(self, ctx)
         self.assertEqual(files, {p.name: digest(p) for p in inputs.iterdir()})
         for path in ctx.result['evidence']:
             self.assertTrue((root / path).is_file())
@@ -175,6 +181,34 @@ class NativeRoutingTest(unittest.TestCase):
         self.assertEqual(result['outcome'], 'defect', result)
         self.assertEqual({r['id']: r['status'] for r in result['details']['constraints']},
                          {'usb': 'violation', 'permissive': 'satisfied'})
+
+    def test_native_disabled_via_check_is_enabled_in_staging(self):
+        import json
+        project = json.dumps({'board': {'design_settings': {'rule_severities': {'too_many_vias': 'ignore'}}}})
+        result = self.run_rules(contract('via_count', max_count=2), vias=3, project=project)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+
+    def test_native_bad_project_does_not_report_pass(self):
+        from agent_ee.checks import CheckError
+        with self.assertRaises(CheckError) as failed:
+            self.run_rules(contract(max_mm=0.15), project='{invalid-json')
+        self.assertEqual(failed.exception.execution, 'failed')
+
+    def test_native_bad_custom_rules_are_missing_coverage(self):
+        from agent_ee.checks import CheckError
+        try:
+            result = self.run_rules(contract(max_mm=0.15), custom='(version 1) (rule "broken" (constraint nonsense))')
+        except CheckError as failed:
+            self.assertIn(failed.execution, ('failed', 'malformed'))
+        else:
+            self.assertEqual(result['outcome'], 'unknown', result)
+            self.assertNotEqual(result['execution'], 'ok', result)
+
+    def test_native_unicode_net_names_select_the_saved_routes(self):
+        document = contract(max_mm=0.15)
+        document['constraints'][0]['nets'] = ['測+', '測-']
+        result = self.run_rules(document, net_names=('測+', '測-'))
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
 
 
 class RoutingBoundaryTest(unittest.TestCase):

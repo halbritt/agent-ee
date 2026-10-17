@@ -228,6 +228,10 @@ def run_constraint(source, root, constraint, probe):
         record['route_coverage'] = coverage
         if not all(c['complete'] for c in coverage.values()):
             return {**record, 'reason': 'missing complete pad-to-pad route coverage'}
+    load_witness = [v for v in report['violations'] if f"rule '{LOAD_WITNESS}'" in v['description']]
+    record['tool_load_witness'] = load_witness
+    if not load_witness or any(v['severity'] != 'error' for v in load_witness):
+        return {**record, 'execution': 'malformed', 'reason': 'native custom-rule loading not established'}
     marker = f"rule '{constraint['marker']}'"
     failures = [v for v in report['violations'] if marker in v['description']]
     if any(v['type'] not in constraint['native_types'] for v in failures):

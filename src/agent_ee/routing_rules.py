@@ -12,6 +12,7 @@ import re
 from pathlib import Path, PurePosixPath
 
 from .storage import digest, write_json
+from .hardware_interface import unique_object
 
 ID = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
 NET = re.compile(r"[^'\"\\\x00-\x1f]+\Z")
@@ -117,9 +118,23 @@ def captured_file(inputs, files, relative):
     return path
 
 
+def native_rule_inputs(scope, files, inputs):
+    board = captured_file(inputs, files, scope['board'])
+    paths = []
+    for suffix in ('.kicad_pro', '.kicad_dru'):
+        sidecar = board.with_suffix(suffix)
+        relative = sidecar.relative_to(inputs).as_posix()
+        if relative in files or sidecar.exists():
+            captured_file(inputs, files, relative)
+            paths.append(relative)
+    return sorted(paths)
+
+
 def validate_mappings(constraints, scope, files, cid):
     requirements = {r['id']: r for r in scope.get('baseline', {}).get('requirements', [])}
     declared = {c['requirement'] for c in constraints}
+    if len(declared) != 1:
+        raise ValueError('rules require exactly one requirement per check for sealed witness authority')
     mapped = {rid for rid, req in requirements.items() if cid in req['checks']}
     if declared != mapped:
         raise ValueError('rule requirement mappings must exactly match baseline check mappings')
@@ -175,11 +190,7 @@ def run_compiled(ctx, compiled, source):
     from .checks import CheckError
     try:
         board = captured_file(ctx.inputs, ctx.manifest['files'], ctx.scope['board'])
-        project = board.with_suffix('.kicad_pro')
-        custom = board.with_suffix('.kicad_dru')
-        for sidecar in (project, custom):
-            if sidecar.exists():
-                captured_file(ctx.inputs, ctx.manifest['files'], sidecar.relative_to(ctx.inputs).as_posix())
+        native_rule_inputs(ctx.scope, ctx.manifest['files'], ctx.inputs)
         request = {'schema': 'agent-ee.native-rules-request/1', 'board': '/candidate/' + ctx.scope['board'],
                    'compiled': compiled}
         write_json(ctx.work / 'rule-request.json', request)

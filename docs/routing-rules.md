@@ -27,7 +27,7 @@ borrow another requirement's failed constraint as its defect witness.
 {
   "schema": "agent-ee.routing-rules/1",
   "constraints": [
-    {"id": "usb-skew", "requirement": "usb", "kind": "skew",
+    {"id": "usb-skew", "requirement": "board-routing", "kind": "skew",
      "nets": ["USB_D+", "USB_D-"], "max_mm": 0.15},
     {"id": "usb-vias", "requirement": "usb", "kind": "via_count",
      "nets": ["USB_D+", "USB_D-"], "max_count": 2}
@@ -39,7 +39,10 @@ Supported kinds are `length` (`min_mm`, `max_mm`, or `target_mm` with
 `tolerance_mm`), `skew` (`max_mm`, across all explicitly selected nets),
 `via_count` (`max_count`, integer), and `clearance` (`min_mm`). A two-member
 skew set can represent an explicit differential pair; no pair-name inference is
-used. Length matching a bus uses one skew constraint naming all members.
+used. Length matching a bus uses one skew constraint naming all members. Length and
+skew use planar copper length in millimetres; staged project settings explicitly
+disable via-height additions, so an implicit stackup thickness cannot determine
+a result. Vertical delay/length and impedance need separate qualified inputs.
 `impedance` with `target_ohm` always remains unsupported: this implementation
 contains no qualified impedance solver, even if stackup or solver names appear.
 Net expressions, duplicate JSON keys, undeclared fields, nonfinite bounds and
