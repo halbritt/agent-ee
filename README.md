@@ -104,6 +104,12 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+An [offline intent importer](docs/design-intent.md) preserves source requirements
+and exact voltage values. [Decision capture](docs/design-dialog.md) records
+answers and their dependencies; missing answers remain unresolved. These tools
+prepare inputs, but do not choose executable acceptance checks or generate a
+verified circuit.
+
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
 [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
