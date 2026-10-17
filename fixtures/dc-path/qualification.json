@@ -1,0 +1,21 @@
+{
+  "junction_min_angle_degrees": 90,
+  "max_edges": 128,
+  "max_loads": 8,
+  "max_nodes": 32,
+  "min_length_width_ratio": 10,
+  "model_sha256": "547541399afb3bd44f9a3a1311fea6d7fd004359eb1b273c849c3665a29eeaa0",
+  "pcbnew_version": "10.0.7",
+  "physics": "ideal rho*L/A; endpoint contacts; external temperature; fixed topology",
+  "policy": "endpoint-planar-dc/1",
+  "probe_sha256": "5b1286983dd75b7ff5cb25fccdcf0f1a8ee75ec4a04fb363af858269081a4a5a",
+  "residual_relative": 1e-09,
+  "resistance_ratio_max": 1000000.0,
+  "schema": "agent-ee.dc-qualification/1",
+  "solver": "exact-rational-elimination/1",
+  "tools": {
+    "/usr/bin/python3": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+    "/usr/lib/python3/dist-packages/_pcbnew.so": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8",
+    "/usr/lib/python3/dist-packages/pcbnew.py": "50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458"
+  }
+}

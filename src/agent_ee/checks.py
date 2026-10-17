@@ -815,6 +815,7 @@ from .active_spice import check_active_spice
 from .kicad_happy import check_kicad_happy
 from .hardware_interface import check_hardware_interface
 from .passive_corners import check_passive_corners
+from .dc_path import check_dc_path
 
 
 CHECK_FUNCS = {"kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
@@ -824,7 +825,7 @@ CHECK_FUNCS = {"kicad_happy": check_kicad_happy, "hardware_interface": check_har
                "drc": check_drc, "netlist": check_netlist,
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
-               "passive_corners": check_passive_corners}
+               "passive_corners": check_passive_corners, "dc_path": check_dc_path}
 
 
 # ------------------------------------------------------------------ entry point

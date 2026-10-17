@@ -331,3 +331,14 @@ coupling links; distinct declared sheets can reuse a symbol UUID. Public verify
 also rejects stale navigation after deliberate native-inventory corruption even
 when outer artifact hashes are refreshed. Corruption fixtures are software
 boundary tests, not native-tool measurements or model-performance evidence.
+
+## PCB DC conduction
+
+The optional [DC path check](dc-path.md) qualifies ideal single-layer straight
+and circular-arc paths and bounded endpoint-connected series/parallel networks.
+Materials, temperature, terminal contacts, current and dimensional intervals
+must be captured explicitly. Unsupported copper or incomplete branches refuse
+coverage. Native owned fixtures test rho*L/A, independent network solutions,
+actual narrowed/lengthened trace violations and sealed evidence tampering.
+These results do not qualify pad spreading, vias, zones, RLC extraction,
+self-heating or arbitrary-board/hardware behavior.

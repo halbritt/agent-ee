@@ -70,6 +70,10 @@ def compile_baseline(scope, files, inputs=None):
             from .active_spice import capability
             descriptor = capability(params, files)
             paths.update(descriptor["immutable_inputs"])
+        if spec.get("kind") == "dc_path":
+            from .dc_path import load_inputs
+            _, dependencies = load_inputs(params, files, inputs)
+            paths.update(dependencies)
         if spec.get("kind") == "passive_corners":
             paths.add(str(safe_relative(params["qualification"])))
         if spec.get("kind") == "measurements":
