@@ -170,3 +170,27 @@ Unavailable prerequisites produce explicit skips by default;
 execution evidence. Parser, orchestration and failure tests that do not require
 those tools continue to run. See the [maintainer guide](maintainer-guide.md#development-and-checks)
 for the strict command. Production missing-tool classification is unchanged.
+
+## Installed analyzer coverage
+
+The `kicad_happy` check invokes the owner's installed v2.3.1 analyzers and
+retains their schema `1.4.0` outputs. Qualification currently covers low-pass
+RC calculation bounds for an explicitly selected native component set.
+The original control/seed expectations are [recorded separately](../fixtures/kicad-happy/EXPECTATIONS.md).
+All four analyzers run; their presence does not qualify every detector.
+
+| Requested category | Present evidence and qualification limit |
+| --- | --- |
+| Passive networks | RC-DET cutoff/time constant calculation bounds qualified for low-pass records. Other networks informative. |
+| Power trees | Native schematic facts retained; no blanket evaluated-rule coverage qualified. |
+| Regulator feedback | Native detections/math retained if emitted; no blocking qualification yet. |
+| Protection | Native connector protection records retained if emitted; absence is not a clean protection evaluation. |
+| Derating | Native findings retained if emitted; absent VD rules remain unsupported when declared counted/blocking. |
+| EMC | Installed EMC findings retained; no clean-rule evaluation inventory, so blocking EMC qualification remains unmet. |
+| Thermal | Installed assessments/skips retained. RC has zero assessable components; no thermal pass is claimed. Blocking thermal qualification remains unmet. |
+
+The broad power/feedback/protection/derating/EMC/thermal blocking qualification
+requested by AGENTEE-17 remains unmet. The integration does not infer evaluation
+from an empty findings list. Unsupported declared counted rules yield unknown
+execution coverage, including when another rule has a proven violation.
+Analyzer estimates do not establish thermal, EMC or electrical certification.

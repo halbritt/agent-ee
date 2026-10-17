@@ -224,3 +224,43 @@ A scope/2 RC result can fail despite an in-range raw SPICE value when its
 empirically corrected interval crosses a bound. Inspect `details.metrics`
 (`nominal`, `lower`, `upper`), `details.margins` and `bench-replay.json` alongside
 the raw `details.measurements`; they answer different questions.
+
+## Installed kicad-happy
+
+`kind: "kicad_happy"` runs the installed v2.3.1 schematic, full PCB, thermal
+and EMC analyzers with schema `1.4.0`. The installed tree stays external.
+No lifecycle, datasheet sync, distributor or SPICE-enhanced option is invoked.
+Tool execution has no network and receives the immutable candidate read-only.
+
+Parameters are explicit: `installation` is the installed checkout's absolute
+path; `installation_sha256` pins the conservative `skills/` and
+`.claude-plugin/` inventory (excluding Python/test caches). Compute it using
+`agent_ee.kicad_happy.installation(path)["sha256"]` before authoring the scope.
+The pin, rule declarations and bounds become baseline criteria in scope/2.
+Changes require a new baseline. Symlinks in the inventoried tree are refused.
+
+`rules` is a list of records with `id`, `analyzer`, `rule_id`, exact native
+`components`, `field`, and finite `min` and/or `max`. `counted_rules` and
+`blocking_rules` explicitly name rule IDs; blocking must be a subset of counted.
+All counted rules must be evaluated. Undeclared native findings are informative.
+Only `analyzer: "schematic"`, `rule_id: "RC-DET"`, low-pass records currently
+have qualified bound semantics, for fields `cutoff_hz` and `time_constant_s`.
+For example, `components: ["R1", "C1"]`, `field: "cutoff_hz"`, `min: 150`,
+`max: 170` checks the original RC fixture's cutoff. See the independent
+[expectations](../fixtures/kicad-happy/EXPECTATIONS.md).
+
+Raw per-analyzer JSON, argv, stdout/stderr, execution record, installation
+inventory and executed Python helper hashes remain under `work/<id>/`.
+`normalized.json` records native rule/severity, component/net/pin locators,
+raw JSON path/pointer and explicit satisfied/violation/not-evaluated status.
+An absent blocking evaluation is unsupported, never clean. Invalid JSON is
+malformed; unrecognized envelopes/findings are unsupported; crashes remain
+failed execution. `verify` rehashes the installed inventory, including helper
+and data bytes, and refuses drift. The usual scope/2 seal and requirement/check
+witness remain mandatory for accepting a coordinator finding.
+
+Native qualification tests use `AGENT_EE_KICAD_HAPPY` to locate an installation
+(default `$HOME/git/kicad-happy`). `AGENT_EE_REQUIRE_TOOLCHAIN=1` makes missing
+native prerequisites or the installation a test failure. The demonstrated host
+uses KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12.3; qualification
+inside the common completion image remains separate.

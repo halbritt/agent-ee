@@ -810,9 +810,10 @@ def check_rc_transient(ctx):
 
 
 from .measurements import check_measurements, check_coupled_margins
+from .kicad_happy import check_kicad_happy
 
 
-CHECK_FUNCS = {"measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
+CHECK_FUNCS = {"kicad_happy": check_kicad_happy, "measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
                "geometry": check_geometry, "rc_transient": check_rc_transient}
 
 
