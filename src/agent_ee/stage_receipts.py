@@ -488,13 +488,15 @@ def _violations(spec, inputs, receipt_dir, tool, tool_after, executions):
     writes = _writes(spec, run)
     violations += ['missing_output:' + rel for rel, (state, _) in writes.items() if state == 'missing']
     violations += ['unsafe_output:' + rel for rel, (state, _) in writes.items() if state == 'unsafe']
-    # A tool can plant a link where the executor later writes its own records, or leave
-    # /work unwritable so that the executor cannot write them at all.
+    # A tool can plant an entry where the executor later writes its own records, which the
+    # executor moves aside and reports, or leave /work unwritable so that it cannot write them.
     for name in ('version', 'run'):
         work = Path(receipt_dir) / name
         records = _records(work)
+        displaced = executions[name].get('displaced_records', {}) if executions[name] else {}
         for record, (state, _) in records.items():
-            if state == 'unsafe' or (state == 'missing' and executions[name] is not None):
+            if (state == 'unsafe' or record in displaced or
+                    (state == 'missing' and executions[name] is not None)):
                 violations.append(f'executor_record_unsafe:{name}/{record}')
         # The executor creates home/ before launch, so its presence shows the step was entered.
         entered = _exists(work, 'home') or any(st != 'missing' for st, _ in records.values())
@@ -628,6 +630,9 @@ def _execution_record(record, work, argv):
     if (not isinstance(record, dict) or record.get('argv') != argv or
             (records['execution.json'][0] != 'unsafe' and record != _retained_record(work))):
         raise ValueError('stage receipt execution record differs from retained execution')
+    displaced = record.get('displaced_records', {})
+    if not isinstance(displaced, dict) or not set(displaced) <= set(RECORD_FILES):
+        raise ValueError('malformed stage receipt displaced executor records')
     sandbox = record.get('sandbox_argv')
     if (not isinstance(sandbox, list) or '--' not in sandbox or sandbox[sandbox.index('--') + 1:] != argv or
             '--unshare-net' not in sandbox[:sandbox.index('--')]):

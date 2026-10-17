@@ -401,8 +401,9 @@ It covers the following:
   sources, artifacts and backend reports, links to candidate and retained files, broken links,
   links and a FIFO inside a declared artifact directory beside a valid nested output, and links in the design copy.
   The sentinel is never hashed, adopted or modified;
-- planted executor-record links, an unwritable `/work`, and forged records after an interrupt.
-  These give a retained `refused` receipt, never an adoptable one;
+- links planted at every executor record name against the host-only sentinel, an unwritable `/work`,
+  and forged records after an interrupt. These give a retained `refused` receipt, never an adoptable one,
+  and the sentinel is unchanged;
 - adoption that refuses a replaced output or ancestor even when its bytes match, and a receipt
   object that differs from the retained receipt;
 - forged, tampered and foreign receipts;
