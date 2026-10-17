@@ -1,5 +1,6 @@
 """Board envelope record: exact structure, provenance and obligation binding."""
 import copy
+import decimal
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from agent_ee.board_envelope import (board_facts, derive, require_obligations, round_trip, validate)
+from agent_ee.storage import canonical
 from toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +36,23 @@ def l_shape():
                                   for i, n in enumerate(names)]}
     value['fixed_footprints'] = []
     return value
+
+
+def with_rotation(token):
+    """The RC envelope with J1's rotation written as this exact JSON number token."""
+    data = RC_ENVELOPE.read_bytes()
+    assert data.count(b'"rotation_deg": 0,') == 1
+    return data.replace(b'"rotation_deg": 0,', b'"rotation_deg": ' + token.encode() + b',')
+
+
+def rotated_board(token):
+    board = RC_BOARD.read_bytes()
+    assert board.count(b'(at 100 100)') == 1
+    return board.replace(b'(at 100 100)', b'(at 100 100 ' + token.encode() + b')')
+
+
+def fixed_status(trip):
+    return {r['field']: r for r in trip['fields']}['/fixed_footprints/0']
 
 
 def mapped_scope(requirements, kinds=None):
@@ -287,6 +306,89 @@ class EnvelopeValidationTests(unittest.TestCase):
                 validate(raw(value))
 
 
+class EnvelopeExactAngleTests(unittest.TestCase):
+    """Rotations are exact decimals: never rounded, never given an implicit tolerance."""
+
+    def test_nonzero_near_zero_rotation_is_preserved_and_never_matches_zero(self):
+        exact = '0.00000000000000000000000000001'
+        for token in (exact, '1E-29', '1e-29'):
+            data = with_rotation(token)
+            with self.subTest(token=token):
+                self.assertEqual(validate(data)['fixed_footprints'][0]['rotation_deg'], exact)
+                statement = json.loads(derive(data, source_path='e.json')['envelope-requirements.json'])
+                self.assertIn(f'rotation {exact} deg', statement['requirements'][-1]['statement'])
+                # The saved RC J1 is at exactly 0 degrees.
+                trip = round_trip(data, RC_BOARD.read_bytes())
+                self.assertEqual((fixed_status(trip)['status'], trip['outcome']), ('mismatch', 'mismatch'))
+                self.assertEqual(fixed_status(trip)['detail']['board']['rotation_deg'], '0')
+                self.assertEqual(fixed_status(round_trip(data, rotated_board(exact)))['status'], 'match')
+        self.assertEqual(fixed_status(round_trip(RC_ENVELOPE.read_bytes(), rotated_board(exact)))['status'],
+                         'mismatch')
+
+    def test_saved_rotations_normalize_exactly_modulo_360(self):
+        near = '359.99999999999999999999999999999'
+        for declared, saved, status in (
+                (near, '-0.00000000000000000000000000001', 'match'),
+                (near, '0', 'mismatch'), (near, '360', 'mismatch'),
+                (near, '-0.0000000000000000000000000001', 'mismatch'),
+                ('0', '360', 'match'), ('0', '-0', 'match'), ('0', '-360', 'match'), ('0', '720', 'match'),
+                ('270', '-90', 'match'), ('270', '-90.00000000000000000000000000001', 'mismatch'),
+                ('90', '450', 'match'), ('90', '-270', 'match'), ('90', '90.000', 'match'),
+                ('90', '89.99999999999999999999999999999', 'mismatch')):
+            with self.subTest(declared=declared, saved=saved):
+                trip = round_trip(with_rotation(declared), rotated_board(saved))
+                self.assertEqual(fixed_status(trip)['status'], status)
+        self.assertEqual(fixed_status(round_trip(with_rotation('0'), rotated_board('-0.00000000000000000000000000001')))
+                         ['detail']['board']['rotation_deg'], near)
+
+    def test_unrepresentable_rotations_and_weights_are_refused_not_rounded(self):
+        # 32 places are kept exactly; a 33rd significant place is refused.
+        self.assertEqual(validate(with_rotation('1E-32'))['fixed_footprints'][0]['rotation_deg'],
+                         '0.' + '0' * 31 + '1')
+        # Trailing zeros carry no value and are not refused.
+        self.assertEqual(validate(with_rotation('90.' + '0' * 40))['fixed_footprints'][0]['rotation_deg'], '90')
+        for token in ('1E-33', '0.' + '0' * 32 + '1', '1E-999999999', '359.' + '9' * 33):
+            with self.subTest(token=token[:40]), self.assertRaisesRegex(ValueError, 'not exactly representable'):
+                validate(with_rotation(token))
+        for token in ('360', '-1E-29', '1E+999999999'):
+            with self.subTest(token=token), self.assertRaisesRegex(ValueError, r'rotation_deg must be in \[0, 360\)'):
+                validate(with_rotation(token))
+        data = RC_ENVELOPE.read_bytes()
+        self.assertEqual(data.count(b'"copper_weight_oz": 1}'), 2)
+        for token in (b'1E-999999999', b'1E+999999999', b'1E-33'):
+            with self.subTest(weight=token), self.assertRaisesRegex(ValueError, 'copper_weight_oz is not exactly'):
+                validate(data.replace(b'"copper_weight_oz": 1}', b'"copper_weight_oz": ' + token + b'}'))
+        weighted = validate(data.replace(b'"copper_weight_oz": 1}', b'"copper_weight_oz": 5E-1}'))
+        self.assertEqual(weighted['stackup']['layers'][0]['copper_weight_oz'], '0.5')
+        # A saved rotation that cannot be represented, or is not a number, refuses the comparison.
+        for token in ('1E-33', 'abc', 'NaN', 'Infinity', '9' * 129):
+            with self.subTest(saved=token[:20]), self.assertRaisesRegex(ValueError, 'J1 rotation'):
+                round_trip(RC_ENVELOPE.read_bytes(), rotated_board(token))
+
+    def test_results_do_not_depend_on_the_ambient_decimal_context(self):
+        value = rc()
+        value['mounting_holes'] = [{'id': 'H1', 'at': [113.000001, 105.123457], 'drill_mm': 1.000001, 'plated': True}]
+        value['outline']['edges'][0]['end'] = [116.000001, 96]
+        value['outline']['edges'][1]['start'] = [116.000001, 96]
+        value['stackup']['layers'][0]['copper_weight_oz'] = decimal.Decimal('0.123456789012345678901234567891')
+        data = json.dumps(value, default=str).replace('"0.123456789012345678901234567891"',
+                                                     '0.123456789012345678901234567891').encode()
+        data = data.replace(b'"rotation_deg": 0,', b'"rotation_deg": 1E-29,')
+        expected = (canonical(validate(data)), canonical(round_trip(data, RC_BOARD.read_bytes())),
+                    derive(data, source_path='e.json'))
+        with decimal.localcontext() as context:
+            context.prec = 2
+            context.traps[decimal.Inexact] = context.traps[decimal.Rounded] = True
+            self.assertEqual((canonical(validate(data)), canonical(round_trip(data, RC_BOARD.read_bytes())),
+                              derive(data, source_path='e.json')), expected)
+        record = json.loads(expected[0])
+        # Only the top-right corner moves: a trapezoid of (20.000001 + 20) / 2 * 12 mm^2.
+        self.assertEqual(record['outline']['area_mm2'], '240.000006')
+        self.assertEqual(record['outline']['edges'][0]['length_mm'], '20.000001')
+        self.assertEqual(record['mounting_holes'][0]['at_mm'], ['113.000001', '105.123457'])
+        self.assertEqual(record['stackup']['layers'][0]['copper_weight_oz'], '0.123456789012345678901234567891')
+
+
 class EnvelopeProfileTests(unittest.TestCase):
     def test_profile_reference_is_hash_bound_and_support_stays_unresolved(self):
         profile = b'{"schema": "agent-ee.fab-profile/1", "name": "owned"}'
@@ -504,6 +606,95 @@ class EnvelopeRoundTripTests(unittest.TestCase):
             board_facts(b'(kicad_pcb (gr_line (layer "Edge.Cuts")))')
         with self.assertRaises(ValueError):
             board_facts(b'(kicad_sch)')
+
+    def test_every_saved_edge_cuts_item_is_inventoried_and_refuses_an_outline_match(self):
+        board = RC_BOARD.read_bytes()
+        value = b'(property "Value" "Conn_01x03"\n\t\t\t(at 0 7.46 0)\n\t\t\t(layer "F.Fab")'
+        self.assertEqual(board.count(value), 1)
+        self.assertEqual(board.count(b'\t\t(at 100 100)\n'), 1)
+        self.assertTrue(board.endswith(b')\n'))
+        in_j1 = {
+            'footprint J1 fp_text': '(fp_text user "note" (at 0 0 0) (layer "{}") (effects (font (size 1 1))))',
+            'footprint J1 fp_text_box': '(fp_text_box "note" (start 0 0) (end 1 1) (layer "{}"))',
+            'footprint J1 fp_line': '(fp_line (start 0 0) (end 1 0) (stroke (width 0.1) (type solid)) (layer "{}"))',
+            'footprint J1 fp_curve': '(fp_curve (pts (xy 0 0) (xy 1 1) (xy 2 1) (xy 3 0)) (layer "{}"))',
+            'footprint J1 pad': '(pad "9" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "{}"))',
+        }
+        on_board = {
+            'dimension': '(dimension (type aligned) (layer "{}") (pts (xy 97 97) (xy 105 97)) (height 0))',
+            'gr_text': '(gr_text "note" (at 100 104 0) (layer "{}"))',
+            'target': '(target plus (at 100 104) (size 5) (width 0.1) (layer "{}"))',
+            'zone': '(zone (net 0) (layers "F.Cu" "{}") (polygon (pts (xy 97 97) (xy 99 97) (xy 99 99))))',
+            'gr_line': '(gr_line (start 97 97) (end 99 97) (layer "{}" "F.SilkS"))',
+        }
+
+        def variant(label, layer):
+            if label == 'footprint J1 property Value':
+                return board.replace(value, value.replace(b'"F.Fab"', f'"{layer}"'.encode()))
+            if label in in_j1:
+                item = in_j1[label].format(layer).encode()
+                return board.replace(b'\t\t(at 100 100)\n', b'\t\t(at 100 100)\n\t\t' + item + b'\n')
+            return board[:-2] + on_board[label].format(layer).encode() + b')\n'
+        for label in ['footprint J1 property Value', *in_j1, *on_board]:
+            with self.subTest(label):
+                trip = round_trip(RC_ENVELOPE.read_bytes(), variant(label, 'Edge.Cuts'))
+                outline = {r['field']: r for r in trip['fields']}['/outline']
+                self.assertEqual((outline['status'], trip['outcome']), ('mismatch', 'mismatch'))
+                self.assertEqual(outline['detail'], {'missing': 0, 'extra': 0, 'other': [label]})
+                # Paired control: the same item on a non-outline layer leaves the outline match intact.
+                control = round_trip(RC_ENVELOPE.read_bytes(), variant(label, 'Dwgs.User'))
+                self.assertEqual(control['outcome'], 'match')
+                self.assertEqual({r['field']: r for r in control['fields']}['/outline']['detail']['other'], [])
+
+    def test_native_saved_edge_cuts_field_text_and_dimension_refuse_the_outline(self):
+        require_toolchain(native=True)
+        probe = ('import json, sys, pcbnew\n'
+                 'source, out = sys.argv[1], sys.argv[2]\n'
+                 'def save(name, edit):\n'
+                 '    b = pcbnew.LoadBoard(source)\n'
+                 '    edit(b, b.FindFootprintByReference("J1"))\n'
+                 '    pcbnew.SaveBoard(f"{out}/{name}.kicad_pcb", b)\n'
+                 'def text(b, j):\n'
+                 '    t = pcbnew.PCB_TEXT(j); t.SetText("note"); t.SetLayer(pcbnew.Edge_Cuts); j.Add(t)\n'
+                 '    d = pcbnew.PCB_DIM_ALIGNED(b); d.SetLayer(pcbnew.Edge_Cuts)\n'
+                 '    d.SetStart(pcbnew.VECTOR2I(97000000, 97000000)); d.SetEnd(pcbnew.VECTOR2I(105000000, 97000000))\n'
+                 '    b.Add(d)\n'
+                 'save("resaved", lambda b, j: None)\n'
+                 'save("field", lambda b, j: j.Value().SetLayer(pcbnew.Edge_Cuts))\n'
+                 'save("field-control", lambda b, j: j.Value().SetLayer(pcbnew.Dwgs_User))\n'
+                 'save("text", text)\n'
+                 'report = {}\n'
+                 'for name in ("resaved", "field", "field-control", "text"):\n'
+                 '    b = pcbnew.LoadBoard(f"{out}/{name}.kicad_pcb")\n'
+                 '    j = b.FindFootprintByReference("J1")\n'
+                 '    report[name] = sorted([i.GetClass(), i.GetLayerName()] for i in\n'
+                 '        [*j.GetFields(), *j.GraphicalItems(), *b.GetDrawings()]\n'
+                 '        if i.GetLayer() == pcbnew.Edge_Cuts)\n'
+                 'print(json.dumps(report))\n')
+        with tempfile.TemporaryDirectory(prefix='agent-ee-envelope-native-') as tmp:
+            result = subprocess.run(['/usr/bin/python3', '-c', probe, str(RC_BOARD), tmp], capture_output=True,
+                                    text=True, timeout=120, env={**os.environ, 'PYTHONPATH': ''})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            native = json.loads(result.stdout.strip().splitlines()[-1])
+            saved = {name: (Path(tmp) / f'{name}.kicad_pcb').read_bytes() for name in native}
+        segments = [['PCB_SHAPE', 'Edge.Cuts']] * 4
+        # Reloaded native boards confirm what each saved file holds on Edge.Cuts.
+        self.assertEqual(native['resaved'], segments)
+        self.assertEqual(native['field-control'], segments)
+        self.assertEqual(native['field'], sorted(segments + [['PCB_FIELD', 'Edge.Cuts']]))
+        self.assertEqual(native['text'],
+                         sorted(segments + [['PCB_DIM_ALIGNED', 'Edge.Cuts'], ['PCB_TEXT', 'Edge.Cuts']]))
+        reference = board_facts(RC_BOARD.read_bytes())['edge_segments']
+        for name, other in (('resaved', []), ('field-control', []), ('field', ['footprint J1 property Value']),
+                            ('text', ['dimension', 'dimension gr_text', 'footprint J1 fp_text'])):
+            with self.subTest(name):
+                # pcbnew re-saving keeps the native outline geometry identical.
+                self.assertEqual(board_facts(saved[name])['edge_segments'], reference)
+                trip = round_trip(RC_ENVELOPE.read_bytes(), saved[name])
+                fields = {r['field']: r for r in trip['fields']}
+                self.assertEqual(fields['/outline']['detail'], {'missing': 0, 'extra': 0, 'other': other})
+                self.assertEqual(fields['/fixed_footprints/0']['status'], 'match')
+                self.assertEqual(trip['outcome'], 'mismatch' if other else 'match')
 
     def test_native_pcbnew_agrees_with_static_board_facts(self):
         require_toolchain(native=True)
