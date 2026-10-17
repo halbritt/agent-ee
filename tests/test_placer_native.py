@@ -10,6 +10,27 @@ import test_placement_native as native_fixtures
 from toolchain import require_toolchain
 
 
+def export_rc_netlist(test, root):
+    """Actual kicad-cli XML export of a scratch copy of the owned RC schematic.
+
+    kicad-cli writes project-local settings beside the schematic, so the
+    repository fixture itself is never the export target.
+    """
+    import shutil
+    import subprocess
+    fixture = Path(__file__).resolve().parents[1] / 'fixtures/rc/control'
+    project = root / 'rc-project'
+    project.mkdir()
+    for name in ('rc_filter.kicad_sch', 'rc_filter.kicad_pro', 'sym-lib-table', 'fp-lib-table'):
+        shutil.copyfile(fixture / name, project / name)
+    exported = root / 'native-export.xml'
+    completed = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                '-o', str(exported), str(project / 'rc_filter.kicad_sch')],
+                               capture_output=True, text=True, timeout=60)
+    test.assertEqual(completed.returncode, 0, completed.stderr)
+    return exported
+
+
 class NativePlacerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -116,14 +137,9 @@ class NativePlacerTest(unittest.TestCase):
         self.assertEqual((inputs / 'board.kicad_pcb').read_bytes(), self.saved)
 
     def test_actual_native_xml_export_drives_independent_rectangular_fixture(self):
-        import subprocess
         import xml.etree.ElementTree as ET
         import pcbnew as k
-        schematic = Path(__file__).resolve().parents[1] / 'fixtures/rc/control/rc_filter.kicad_sch'
-        exported = self.root / 'native-export.xml'
-        completed = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                                    '-o', str(exported), str(schematic)], capture_output=True, text=True, timeout=60)
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        exported = export_rc_netlist(self, self.root)
         xml = ET.parse(exported).getroot()
         refs = sorted(c.get('ref') for c in xml.findall('components/comp'))
         self.assertEqual(refs, ['C1', 'J1', 'R1'])
@@ -378,17 +394,16 @@ class StockPadShapeNativeTest(unittest.TestCase):
         self.assertEqual((failure['status'], failure['outcome']), ('not_placed', 'unknown'))
 
     def test_unchanged_stock_rc_footprints_place_on_50x30_envelope_with_fixed_j1(self):
-        import subprocess
         import xml.etree.ElementTree as ET
         import pcbnew as k
         from agent_ee.placement import judge
         from agent_ee.placement_probe import extract
-        schematic = Path(__file__).resolve().parents[1] / 'fixtures/rc/control/rc_filter.kicad_sch'
-        exported = self.root / 'native-export.xml'
-        completed = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                                    '-o', str(exported), str(schematic)], capture_output=True, text=True, timeout=60)
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        exported = export_rc_netlist(self, self.root)
         xml = ET.parse(exported).getroot()
+        self.assertEqual(sorted((c.get('ref'), c.findtext('footprint')) for c in xml.findall('components/comp')),
+                         [('C1', 'Capacitor_SMD:C_0805_2012Metric'),
+                          ('J1', 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical'),
+                          ('R1', 'Resistor_SMD:R_0805_2012Metric')])
         board = k.BOARD()
         corners = [(100, 100), (150, 100), (150, 130), (100, 130)]
         for i, a in enumerate(corners):
