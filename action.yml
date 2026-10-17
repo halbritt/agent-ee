@@ -38,6 +38,15 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Prepare container AppArmor profile
+      id: apparmor
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        profile=$(bash "$ACTION_PATH/scripts/container_apparmor.sh")
+        printf 'profile=%s\n' "$profile" >> "$GITHUB_OUTPUT"
+
     - name: Build agent-ee image
       id: image
       shell: bash
@@ -61,6 +70,7 @@ runs:
         INPUT_SCOPE: ${{ inputs.scope }}
         INPUT_OUT: ${{ inputs.output-directory }}
         INPUT_MAX_SECONDS: ${{ inputs.max-seconds }}
+        APPARMOR_PROFILE: ${{ steps.apparmor.outputs.profile }}
       run: |
         # GitHub runs bash with -e; exit statuses here are recorded, not fatal.
         set +e -uo pipefail
@@ -85,7 +95,7 @@ runs:
         # unprivileged UID, and checks-only work needs no network at all.
         run_image() {
           docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
-            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            --security-opt seccomp=unconfined --security-opt "apparmor=$APPARMOR_PROFILE" \
             --security-opt systempaths=unconfined \
             -v "$workspace:$workspace" -w "$workspace" "$IMAGE" "$@"
         }

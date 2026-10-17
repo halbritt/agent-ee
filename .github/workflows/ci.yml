@@ -22,7 +22,7 @@ jobs:
       SANDBOX_OPTS: >-
         --network none
         --security-opt seccomp=unconfined
-        --security-opt apparmor=unconfined
+        --security-opt apparmor=agent-ee-container
         --security-opt systempaths=unconfined
     defaults:
       run:
@@ -30,12 +30,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Permit container user namespaces with a named AppArmor profile
+        run: |
+          profile=$(bash scripts/container_apparmor.sh)
+          echo "SANDBOX_OPTS=--network none --security-opt seccomp=unconfined --security-opt apparmor=$profile --security-opt systempaths=unconfined" >> "$GITHUB_ENV"
+
       - name: Build the image from the checkout
         run: docker build -t "$IMAGE" .
 
       - name: Doctor (native toolchain versions and binary hashes)
         run: |
           docker run --rm $SANDBOX_OPTS "$IMAGE" agent-ee doctor --checks-only
+
+      - name: Probe the production tool sandbox
+        run: docker run --rm $SANDBOX_OPTS "$IMAGE" python3 /opt/agent-ee/scripts/check_container_sandbox.py
+
+      - name: Host diagnostics on sandbox setup failure
+        if: failure()
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          sudo -n journalctl -k --since '10 minutes ago' --grep='apparmor|RTM_NEWADDR|userns' --no-pager || true
 
       - name: Full test suite, strict toolchain mode, no skips
         run: |

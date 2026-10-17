@@ -9,7 +9,8 @@ cannot run initial reviews, adjudication or campaigns. `agent-ee doctor` without
 
 The image has been built and exercised on one Linux x86-64 host with Docker
 29.8 (Ubuntu 24.04 host, kernel 6.8, AppArmor enabled). Other architectures,
-container engines and hosted CI runners have not been demonstrated.
+container engines have not been demonstrated. The first hosted Ubuntu runner
+exposed an additional AppArmor user-namespace requirement, handled below.
 
 ## Pinned toolchain
 
@@ -22,6 +23,7 @@ container engines and hosted CI runners have not been demonstrated.
 | ngspice 42 | `42+ds-3build1` | Exact apt version; build fails unless `ngspice --version` reports `ngspice-42` |
 | Bubblewrap 0.9.0 | `0.9.0-1ubuntu0.3` | Exact apt version; build fails unless `bwrap --version` is `bubblewrap 0.9.0` and the binary is not setuid |
 | Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
+| PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -47,12 +49,13 @@ runs under Bubblewrap with a read-only candidate, separate PID/IPC/UTS/network
 namespaces and a minimal filesystem view, exactly as described in
 [security](security.md#candidate-permissions). Docker's default confinement
 prevents Bubblewrap from creating those namespaces. Running the image requires
-three explicit relaxations of Docker's own confinement, and nothing more:
+three explicit changes to Docker's confinement plus a host AppArmor profile
+when AppArmor restricts unprivileged user namespaces:
 
 | `docker run` option | Why Bubblewrap needs it | What it grants the container |
 | --- | --- | --- |
 | `--security-opt seccomp=unconfined` | Docker's default seccomp filter rejects `unshare`/`clone` with namespace flags for processes without `CAP_SYS_ADMIN`; without it Bubblewrap reports "No permissions to create new namespace" | Removes Docker's syscall filter. Kernel permission and capability checks still apply; a non-root container user gains no capabilities in the host namespace |
-| `--security-opt apparmor=unconfined` | Docker's `docker-default` AppArmor profile denies `mount`; without it Bubblewrap fails "to make / slave" | Removes the `docker-default` profile. Host AppArmor profiles that attach by path still apply; on an Ubuntu host the stock `bwrap` profile is what permits its user namespace |
+| `--security-opt apparmor=agent-ee-container` | Docker's default profile denies mounts; Ubuntu also restricts capabilities after unprivileged user-namespace creation without an explicit allowance | Selects the named permissive outer profile with `userns,`; inner Bubblewrap restrictions remain in force |
 | `--security-opt systempaths=unconfined` | Docker overmounts parts of `/proc`, and the kernel refuses a fresh `proc` mount in a user namespace while those overmounts exist ("Can't mount proc") | Unmasks paths such as `/proc/kcore`, `/proc/keys`, `/proc/timer_list` and makes `/proc/sys` writable to processes privileged enough to write it. The non-root container user still lacks that privilege; root-only files stay root-only |
 
 Run as the image's non-root user (default `agentee`, UID 10001) or as your own
@@ -64,11 +67,24 @@ it creates an unprivileged user namespace. Do not use these instead:
 - Running as container root without `--privileged` fails, because a non-setuid
   Bubblewrap started as UID 0 needs `CAP_SYS_ADMIN` rather than a user namespace.
   Adding `--cap-add SYS_ADMIN` would hand the container that capability.
-- Disabling the host's `kernel.apparmor_restrict_unprivileged_userns` sysctl is
-  a host-wide change. It was not needed on the demonstrated Ubuntu host because
-  its `bwrap` AppArmor profile applies inside the container. A host that
-  restricts user namespaces without such a profile needs an equivalent
-  administrator decision; record it rather than silently weakening the host.
+- Disabling the host's `kernel.apparmor_restrict_unprivileged_userns` sysctl
+  changes every unconfined application. The image and action do not do this.
+
+Before using the image on an AppArmor host, run
+`bash scripts/container_apparmor.sh`. It uses `sudo -n apparmor_parser -r` to
+load or replace the project-owned [named profile](../docker/agent-ee.apparmor) and prints the name to pass
+to Docker. It requires AppArmor 4 syntax support and passwordless permission for that
+command; otherwise it
+fails. The profile remains installed for later runs and applies only to
+containers that select it. It does not modify other profiles or global sysctls.
+When host AppArmor is disabled, the helper prints `unconfined` instead. The
+helper assumes a local Linux Docker daemon, not a remote daemon.
+
+Project CI and the reusable action perform this preparation explicitly. A
+self-hosted runner administrator must authorize it. Ubuntu can otherwise deny
+loopback setup with `Failed RTM_NEWADDR: Operation not permitted`, even when
+Docker uses `apparmor=unconfined`. That was the first hosted CI failure; strict
+mode correctly failed rather than skipping those tests.
 
 Checks-only work needs no network, so the documented commands also pass
 `--network none`. Bubblewrap still unshares the network for native tools; the
@@ -82,8 +98,9 @@ is incomplete, and the action's gate reports `coverage_incomplete`.
 A typical run, with the review directory created under the mounted workspace:
 
 ```sh
+profile=$(bash scripts/container_apparmor.sh)
 docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+  --security-opt seccomp=unconfined --security-opt "apparmor=$profile" \
   --security-opt systempaths=unconfined \
   -v "$PWD:$PWD" -w "$PWD" agent-ee:local \
   agent-ee review fixtures/rc/seeded.scope.json --out build/seeded --checks-only
@@ -109,7 +126,8 @@ the binary it relies on. The pcbnew hash is the `_pcbnew` native extension that
 repository. One job:
 
 1. Builds the image from the checkout.
-2. Runs `agent-ee doctor --checks-only` in the image.
+2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
+   executor before the suite. Failed setup also records host AppArmor diagnostics.
 3. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    and fails if any test fails, errors or is skipped.
 4. Runs `scripts/check_docs.py` in the image.
@@ -139,8 +157,9 @@ fixture step was replayed locally with GitHub's `bash -eo pipefail` semantics:
 the control gave `checks_passed`, the seeded run gave `check_failed` with
 `rc-step` `defect` and ERC, DRC and geometry `pass`, `agent-ee verify` exited 0
 for both, and the step failed when a run directory already existed or an
-expectation did not match. A hosted GitHub Actions run had not been observed
-when this page was written.
+expectation did not match. The first hosted run built the image but failed at the Bubblewrap host-policy
+boundary described above. The named-profile correction still needs a passing
+hosted run; local success is not reported as hosted CI acceptance.
 
 ## Reusable action
 
