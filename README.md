@@ -127,6 +127,12 @@ with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references. These checks do not yet establish that an
 assignment declaration covers the actual schematic inventory.
 
+The [placement judge](docs/placement.md) checks supported saved-board outlines
+and courtyards. An [initial placer](docs/placer.md) proposes deterministic
+positions on an isolated copy and validates the saved result with native tools.
+These helpers are not yet registered as campaign placement gates; they do not
+establish routing quality or a fabrication-ready board.
+
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
 ideal regulator feedback, complete typed power-pin inventory, USB protection
