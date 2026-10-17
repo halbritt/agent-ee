@@ -348,7 +348,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'coupled_margins':
             result['predicates'] = _coupled_margins(params, prerequisite, files, inputs)
         elif kind in ('datasheet_facts', 'pin_map'):
-            from .datasheet_facts import load_facts, validate_extractor
+            from .datasheet_facts import load_facts, load_obligations, validate_extractor
             if inputs is None:
                 raise ValueError('datasheet capability requires captured inputs')
             source = spec if kind == 'datasheet_facts' else prerequisite(
@@ -357,6 +357,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             captured(source_params['facts'], immutable=True)
             validate_extractor(source_params['extractor'])
             facts = load_facts(inputs, source_params['facts'])
+            obligations = load_obligations(inputs, source_params['facts'])
+            if obligations is not None:
+                for path in obligations['dependencies']:
+                    captured(path, immutable=True)
             for fact in facts:
                 captured(fact['source']['path'], immutable=True)
             if kind == 'pin_map':

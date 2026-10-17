@@ -1,7 +1,7 @@
 # Datasheet acquisition
 
 `agent_ee.datasheet_capture` fetches explicit part-binding Datasheet URLs during
-preparation, before candidate capture. Checks never call this module. It uses
+preparation, before candidate capture. Checks never invoke acquisition. It uses
 stdlib urllib, with no new dependency, scraper, model inference or network-enabled
 check sandbox. Retained URLs are source claims, not authentication of a vendor,
 part identity, document applicability or engineering correctness.
@@ -59,9 +59,9 @@ uses the existing full `read_native_inventory` API. `properties` maps native
 references to explicit `{"Datasheet": "https://..."}` declarations; absent
 references are retained as missing and unknown references are refused.
 `--native-inventory design.xml` selects this input format in the module CLI.
-There is no new schematic parser or inferred applicability. The current catalog
-selection row has no dedicated datasheet URL field; selected-part/property and
-approved-parts manifest integration remain work for their owning lanes.
+There is no new schematic parser or inferred applicability. The current catalog has no dedicated URL column; the opt-in preparation adapters
+below preserve exact raw `Datasheet` metadata. Approved-part authority remains
+work for its owning lane.
 
 To consume the output, include the directory in ordinary scope `inputs`, then
 point each authored fact's `source.path` and `source.sha256` to the captured PDF
@@ -81,3 +81,55 @@ An actual native netlist and Poppler citation check consume the captured origina
 PDF after the HTTP server shuts down, through checks-only review and public
 verification. Deleting that PDF makes facts and pin-map coverage unknown. No
 third-party PDFs are added; real TJA1051 Internet acquisition remains unqualified.
+
+## Selection preparation seam
+
+The pure adapters in [datasheet_parts.py](../src/agent_ee/datasheet_parts.py)
+normalize provenance into `agent-ee.datasheet-bindings/1`. They grant no approval:
+
+- `bindings_from_selection(snapshot_directory, manifest_sha256, requirements,
+  selection, references)` reruns canonical catalog/1 selection from captured
+  bytes and rejects any changed chosen row or selection record. `references`
+  maps every requirement ID to an explicit list of native references with exactly
+  its per-board multiplicity. Duplicate references refuse. The only URL metadata
+  key is the exact raw attribute `Datasheet`; missing winners/attributes retain
+  null URLs. MPN comes only from the chosen row. The qualifier is `selection-only`.
+- `bindings_from_rung1(manifest, source_root)` consumes the committed
+  `37d96d50979f2e8590db76af888d0915feb7fef2` experimental shape. It validates
+  catalog bytes, full chosen row/part identity, reference sets, selection IDs and
+  assembly exclusions. Only the relative catalog path under `source_root` is
+  read; absolute provenance and footprint paths confer no read authority.
+  The complete original manifest and its canonical identity are retained.
+  The qualifier remains `experimental-unqualified`. This CSV has no Datasheet
+  or MPN column, so every reference, including the hand-soldered header, remains
+  a missing obligation. BOM usage quantity is not stock availability.
+
+`prepare_datasheets(bindings, required_facts, out)` is the single preparation
+callable. `required_facts` maps **every** reference to a nonempty list of distinct
+fact IDs. It invokes the existing downloader, then publishes a new directory
+containing `bindings.json`, `acquisition/manifest.json`, successful PDFs and an
+empty [facts/2 envelope](datasheet-facts.md#per-part-missing-coverage).
+It returns `outcome`, `qualification`, source paths and ordinary scope `inputs`
+fragments. Add those fragments without changing their `at` paths: envelope
+locators are candidate-root-relative. Missing records return `outcome: missing`;
+`captured` means acquisition completed, not that facts or approval exist.
+Normal exceptions/cancellation remove preparation staging; an existing output
+is refused. No campaign or frozen baseline is changed.
+
+`bindings_from_native(native_xml)` without a second argument extracts actual
+Datasheet values through the shared XML reader. The legacy two-argument join
+remains an explicit caller declaration, not authenticated native extraction.
+`validate_native_bindings(native_xml, bindings)` requires identical full reference
+sets and exact Datasheet text, without filtering population, board or BOM flags.
+Absent and empty values remain distinct. Actual KiCad 10.0.7 native tests qualify
+`fields/field[@name='Datasheet']`; dedicated elements and custom properties have
+parser-boundary controls, including contradiction/duplicate/structured rejection.
+This does not establish the separate emitter's production URL propagation.
+
+The dispatcher and future approved-binding contract belong to their owning
+lanes. The preparation caller must retain the original catalog/requirements and
+approval inputs, map every obligation into immutable baseline requirements, and
+request a fresh capture/review after a declaration changes. Neither adapter
+upgrades selection into owner approval. Whole-ticket acceptance still requires
+that contract and a URL-bearing emitter/source path; the experimental all-null
+rung1 manifest cannot demonstrate positive end-to-end acquisition.

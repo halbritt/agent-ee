@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .candidate import safe_relative
-from .storage import digest, read_json, write_json
+from .storage import digest, identity, read_json, write_json
 
 EXTRACTOR = '/usr/bin/pdftotext'
 
@@ -14,7 +14,10 @@ EXTRACTOR = '/usr/bin/pdftotext'
 def load_facts(inputs, rel):
     path = inputs / str(safe_relative(rel))
     data = read_json(path)
-    if (not isinstance(data, dict) or set(data) != {'schema', 'facts'} or
+    opted_in = isinstance(data, dict) and data.get('schema') == 'agent-ee.datasheet-facts/2'
+    if opted_in and not isinstance(data.get('facts'), list):
+        raise ValueError('facts must be a list')
+    if not opted_in and (not isinstance(data, dict) or set(data) != {'schema', 'facts'} or
             data['schema'] != 'agent-ee.datasheet-facts/1' or
             not isinstance(data['facts'], list) or not data['facts']):
         raise ValueError('expected nonempty agent-ee.datasheet-facts/1')
@@ -44,7 +47,124 @@ def load_facts(inputs, rel):
         for key in ('locator', 'quote'):
             if not isinstance(source[key], str) or not source[key].strip():
                 raise ValueError(f'fact source needs {key}')
+    if opted_in:
+        load_obligations(inputs, rel, data=data)
     return data['facts']
+
+
+def load_obligations(inputs, rel, *, data=None):
+    """Validate opt-in captured per-part obligations; facts/1 remains unchanged."""
+    from .catalog import exact_fields, nonempty
+    from .datasheet_parts import captured_path, validate_bindings, _hash
+    inputs = Path(inputs)
+    data = read_json(captured_path(inputs, rel)) if data is None else data
+    if not isinstance(data, dict) or data.get('schema') != 'agent-ee.datasheet-facts/2':
+        return None
+    exact_fields(data, ('schema', 'bindings', 'acquisition', 'required_parts', 'facts'))
+    if not isinstance(data['facts'], list):
+        raise ValueError('facts must be a list')
+    dependencies = set()
+    documents = {}
+    for name in ('bindings', 'acquisition'):
+        locator = data[name]
+        exact_fields(locator, ('path', 'sha256'))
+        path = captured_path(inputs, locator['path'])
+        if digest(path) != _hash(locator['sha256']):
+            raise ValueError(f'{name} hash mismatch')
+        dependencies.add(str(safe_relative(locator['path'])))
+        documents[name] = read_json(path)
+    bindings = validate_bindings(documents['bindings'])
+    by_ref = {p['reference']: p for p in bindings['parts']}
+    required = data['required_parts']
+    if not isinstance(required, list) or len(required) != len(by_ref):
+        raise ValueError('required parts must cover complete bindings')
+    seen = set()
+    for part in required:
+        exact_fields(part, ('reference', 'selection_id', 'part_number', 'required_facts'))
+        ref = nonempty(part['reference'])
+        if ref in seen or ref not in by_ref:
+            raise ValueError('duplicate or unknown required reference')
+        seen.add(ref)
+        if any(part[k] != by_ref[ref][k] for k in ('selection_id', 'part_number')):
+            raise ValueError('required part identity mismatch')
+        ids = part['required_facts']
+        if (not isinstance(ids, list) or not ids or any(not isinstance(fid, str) or not fid.strip() for fid in ids)
+                or len(ids) != len(set(ids))):
+            raise ValueError('part needs distinct nonempty required facts')
+    acquisition = documents['acquisition']
+    exact_fields(acquisition, ('schema', 'bindings_sha256', 'outcome', 'parts'))
+    capture_bindings = sorted([{'id': p['reference'], 'datasheet_url': p['datasheet_url']}
+                               for p in bindings['parts']], key=lambda p: p['id'])
+    if acquisition['schema'] != 'agent-ee.datasheet-capture/1' or acquisition['bindings_sha256'] != identity(capture_bindings):
+        raise ValueError('acquisition binding identity mismatch')
+    if not isinstance(acquisition['parts'], list) or len(acquisition['parts']) != len(by_ref):
+        raise ValueError('acquisition must cover every binding')
+    acquired, directory = {}, Path(data['acquisition']['path']).parent
+    for record in acquisition['parts']:
+        exact_fields(record, ('id', 'url', 'final_url', 'fetched_at', 'sha256', 'path', 'missing', 'reason'))
+        ref = record['id']
+        if not isinstance(ref, str) or ref in acquired or ref not in by_ref or record['url'] != by_ref[ref]['datasheet_url']:
+            raise ValueError('acquisition reference/URL mismatch')
+        for key in ('final_url', 'fetched_at'):
+            if record[key] is not None and not isinstance(record[key], str):
+                raise ValueError(f'acquisition {key} must be text or null')
+        if type(record['missing']) is not bool:
+            raise ValueError('acquisition missing must be boolean')
+        if record['missing']:
+            if record['path'] is not None or record['sha256'] is not None:
+                raise ValueError('missing acquisition cannot claim a PDF')
+            nonempty(record['reason'])
+        else:
+            from .datasheet_capture import validate_url
+            validate_url(record['url'])
+            validate_url(record['final_url'])
+            nonempty(record['fetched_at'])
+            if record['reason'] is not None:
+                raise ValueError('successful acquisition cannot have missing reason')
+            pdf_rel = str(directory / str(safe_relative(record['path'])))
+            pdf = captured_path(inputs, pdf_rel)
+            if digest(pdf) != _hash(record['sha256']):
+                raise ValueError('successful acquisition PDF hash mismatch')
+            raw = pdf.read_bytes()
+            if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
+                raise ValueError('successful acquisition is not a PDF envelope')
+            dependencies.add(pdf_rel)
+        acquired[ref] = record
+    expected_outcome = 'missing' if any(r['missing'] for r in acquired.values()) else 'captured'
+    if acquisition['outcome'] != expected_outcome:
+        raise ValueError('acquisition outcome contradicts records')
+    # A cited fact must belong to an explicit part obligation and that part's PDF.
+    declared = {fid for p in required for fid in p['required_facts']}
+    for fact in data['facts']:
+        if (not isinstance(fact, dict) or not isinstance(fact.get('id'), str) or
+                fact['id'] not in declared or not isinstance(fact.get('source'), dict)):
+            raise ValueError('fact is not a declared obligation')
+        applicable = [p for p in required if fact['id'] in p['required_facts']]
+        for part in applicable:
+            record = acquired[part['reference']]
+            expected_path = str(directory / str(record['path']))
+            if (record['missing'] or part['part_number'] is None or
+                    fact.get('part_number') != part['part_number'] or
+                    fact.get('source', {}).get('path') != expected_path or
+                    fact.get('source', {}).get('sha256') != record['sha256']):
+                raise ValueError('citation does not match required part acquisition/applicability')
+    return {**data, 'dependencies': dependencies, 'acquired': acquired,
+            'qualification': bindings['qualification']}
+
+
+def obligation_records(envelope, facts):
+    """One result per required part, including absent PDFs and absent citations."""
+    verified = {r['id'] for r in facts if r['status'] == 'verified'}
+    records = []
+    for part in envelope['required_parts']:
+        acquisition = envelope['acquired'][part['reference']]
+        missing = [fid for fid in part['required_facts'] if fid not in verified]
+        reason = ('datasheet_missing' if acquisition['missing'] else
+                  'part_number_unknown' if part['part_number'] is None else
+                  'citations_missing_or_unverified' if missing else 'declared_citations_verified')
+        records.append({**part, 'status': 'verified' if reason == 'declared_citations_verified' else 'unsupported',
+                        'reason': reason, 'missing_facts': missing})
+    return records
 
 
 # Signs belong to a written literal (-5, ±5, 1e-5); each spelling is distinct, never normalized.
@@ -129,6 +249,9 @@ def verification_inputs(scope, inputs):
             rel = str(safe_relative(spec['params']['facts']))
             paths.add(rel)
             paths.update(str(safe_relative(f['source']['path'])) for f in load_facts(Path(inputs), rel))
+            envelope = load_obligations(Path(inputs), rel)
+            if envelope is not None:
+                paths.update(envelope['dependencies'])
     return paths
 
 
@@ -166,6 +289,11 @@ def check_datasheet_facts(ctx):
     from .checks import CheckError
     try:
         facts = load_facts(ctx.inputs, ctx.params['facts'])
+        envelope = load_obligations(ctx.inputs, ctx.params['facts'])
+        if envelope:
+            for rel in envelope['dependencies'] | {str(safe_relative(ctx.params['facts']))}:
+                if ctx.manifest['files'].get(rel) != digest(ctx.inputs / rel):
+                    raise ValueError('obligation dependency not captured or changed: ' + rel)
         tool = ctx.params['extractor']
         verify_extractor(tool)
     except (ValueError, KeyError, TypeError, OSError) as exc:
@@ -213,12 +341,18 @@ def check_datasheet_facts(ctx):
         verify_extractor(tool)
     except (ValueError, OSError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
-    write_json(ctx.work / 'facts.json', {'facts': records, 'extractor': tool})
+    obligations = obligation_records(envelope, records) if envelope else []
+    report = {'facts': records, 'extractor': tool}
+    if envelope:
+        report.update(required_parts=obligations, qualification=envelope['qualification'])
+    write_json(ctx.work / 'facts.json', report)
     ctx.evidence('facts.json')
     ctx.result['details'].update(facts=records, extractor=tool)
     ctx.result['limitations'].append('Citation verification proves text occurrence only; it does not '
         'establish part applicability, correct row, conditions, units or engineering interpretation.')
-    verified = all(r['status'] == 'verified' for r in records)
+    if envelope:
+        ctx.result['details'].update(required_parts=obligations, qualification=envelope['qualification'])
+    verified = all(r['status'] == 'verified' for r in records + obligations)
     ctx.result.update(execution='ok' if verified else 'unsupported',
                       outcome='pass' if verified else 'unknown',
                       summary='All datasheet citations verified' if verified else 'Unverified datasheet citations')
