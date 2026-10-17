@@ -4,14 +4,15 @@ This page summarizes the [file-origin inventory](file-origins.json) for owner
 review (AGENTEE-14). The inventory classifies every tracked file by kind,
 origin, known upstream license and publication status. It was prepared on
 2026-10-17 against baseline `69d7bbf`, with 5,166 tracked files at that
-baseline. This change adds five more files.
+baseline. Main integration extended the inventory to all 5,407 tracked files,
+including the new native fixtures, generation tooling and vendored viewer runtime.
 
 ## Status
 
 - MIT is **proposed** in [LICENSE](../LICENSE) for agent-ee material: files
   whose only origins are `AE` (written for agent-ee) or `AE-RUN` (outputs of
-  agent-ee runs on such material). The owner has not approved it and it is not
-  merged. MIT was the owner's stated default; another license needs explicit
+  agent-ee runs on such material). The proposal is now included on main; the
+  owner has not approved it. MIT was the owner's stated default; another license needs explicit
   owner approval.
 - Every other origin is **unresolved**. Those files are not offered under MIT.
   Each origin needs an owner decision, recorded in the inventory, before its
@@ -45,6 +46,7 @@ Most unresolved files are retained evidence, which is classified by directory.
 | T11 | LCSC pages and web-search captures | Proprietary; terms not reviewed | 11 pages and captures |
 | T12 | KiCad 10.0 PPA signing public key | No license stated | `docker/kicad-10.0-releases.asc` |
 | T13 | Seeded-benchmark source boards | CC-BY-SA-4.0, CERN-OHL-P/S-2.0 | Metadata and extracted identifiers in `benchmarks/seeded/`; no design files |
+| T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and

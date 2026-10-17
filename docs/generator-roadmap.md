@@ -241,9 +241,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 ## Licence posture
 
-- agent-ee: MIT is proposed on `impl/license-preparation` (AGENTEE-14), with
+- agent-ee: MIT is proposed in main (AGENTEE-14), with
   a [file-origin inventory](file-origins.json) of every tracked file and a
-  [summary](third-party-origins.md). It is not merged or owner-confirmed.
+  [summary](third-party-origins.md). The proposal is merged; owner confirmation remains pending.
   FOME-MC fixture, donor, vendor and other third-party files stay excluded
   until the owner decides each origin.
 - kicad-route: no `LICENSE` file and no licence field in `pyproject.toml` yet;

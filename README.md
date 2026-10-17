@@ -375,7 +375,7 @@ series/parallel networks; unsupported conductors leave coverage incomplete.
 
 The [MIT License](LICENSE) is proposed for material written for agent-ee and
 for outputs of its runs on that material, and it is declared in the package
-metadata. The proposal is included for review; owner approval remains pending.
+metadata. The proposal is included for review; the owner has not yet approved it.
 
 The MIT grant does not cover files that come from other projects. These include
 the RC fixture copied from FOME-MC, logic in `src/agent_ee/checks.py` adapted

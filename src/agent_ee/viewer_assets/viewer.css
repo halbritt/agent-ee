@@ -517,6 +517,7 @@ input[type=range] {
 }
 
 .warnings-section ul {
+  overflow-wrap: anywhere;
   margin: 0;
   padding-left: 15px;
   font-size: 11px;

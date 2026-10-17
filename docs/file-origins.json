@@ -6,7 +6,7 @@
   "license_proposal": {
     "spdx": "MIT",
     "file": "LICENSE",
-    "status": "Proposed on branch impl/license-preparation. Not merged, not owner-approved and not applied publicly.",
+    "status": "Merged as a proposal for owner review. Not owner-approved; third-party origins remain excluded.",
     "covers": "Files whose every origin has permission_status proposed-mit-pending-owner-approval.",
     "excludes": "Every file with an origin whose permission_status is unresolved-owner-decision-required."
   },
@@ -29,7 +29,8 @@
     "third-party-data": "Other data published by another party.",
     "retained-output": "Tool, coordinator and reviewer outputs retained as evidence.",
     "generated-design-output": "Plots, renders, Gerber and drill outputs generated from a design.",
-    "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration."
+    "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
+    "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
   "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
@@ -335,6 +336,18 @@
       "evidence": [
         "benchmarks/seeded/expectations.json",
         "docs/seeded-benchmark.md"
+      ]
+    },
+    "T14": {
+      "name": "three.js r180 viewer runtime and loaders",
+      "repository": "https://github.com/mrdoob/three.js",
+      "revision": "r180 (npm 0.180.0)",
+      "upstream_license": "MIT; local license and exact source hashes retained under src/agent_ee/viewer_assets/vendor/",
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "No separate owner publication decision recorded. Retain the upstream MIT notice; excluded from the proposed agent-ee grant.",
+      "evidence": [
+        "src/agent_ee/viewer_assets/vendor/LICENSE",
+        "src/agent_ee/viewer_assets/vendor/manifest.json"
       ]
     }
   },
@@ -1313,6 +1326,668 @@
         "AE-RUN"
       ],
       "reviewed": "Listing checked 2026-10-17: only the 31 readable files of evidence/model-selection; no captured design inputs or generated configuration."
+    },
+    {
+      "paths": [
+        "src/agent_ee/viewer_assets/vendor/"
+      ],
+      "kind": "third-party-source",
+      "origins": [
+        "T14"
+      ],
+      "note": "Pinned third-party JS modules and upstream notice; manifest records local transforms and hashes."
+    },
+    {
+      "paths": [
+        ".uipass.yaml"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "fixtures/board-envelope/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
+        "fixtures/fab-export/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
+        "fixtures/generation/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
+        "fixtures/rung1/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
+        "fixtures/stages/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
+        "fixtures/netlist-extra/generate.py",
+        "fixtures/package-consistency/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original generators with synthetic symbol geometry, UUIDs and test catalog values, as stated in their module provenance."
+    },
+    {
+      "paths": [
+        "references/package-map/"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original declared package-name vocabulary and generator; the generated table records names and dimensions rather than copied footprint geometry."
+    },
+    {
+      "paths": [
+        "tests/fixtures/envelope/rc-explicit-stackup.kicad_pcb",
+        "tests/fixtures/envelope/rc-explicit-stackup.kicad_pro",
+        "tests/fixtures/envelope/rc-explicit-stackup.kicad_prl"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T1"
+      ],
+      "note": "RC-control variant with saved stackup and generated local project/preferences; see tests/fixtures/envelope/PROVENANCE.md."
+    },
+    {
+      "paths": [
+        "docs/datasheet-capture.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original format-validation code or documentation. PDF header markers and schematic node names describe parsing, rather than embedding a third-party document or design."
+    },
+    {
+      "paths": [
+        "fixtures/fab-export/fab.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board/schematic output from fixtures/fab-export/generate.py; its module docstring records the invented geometry and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/fab-export/fab.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board/schematic output from fixtures/fab-export/generate.py; its module docstring records the invented geometry and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/fab-export/fab4.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board/schematic output from fixtures/fab-export/generate.py; its module docstring records the invented geometry and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/fab-export/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board/schematic output from fixtures/fab-export/generate.py; its module docstring records the invented geometry and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/generation/project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation/project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation/project/lib/OwnedFP.pretty/DUAL_6PAD.kicad_mod"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation/project/lib/OwnedFP.pretty/REG_4PAD.kicad_mod"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation/project/lib/Owned_Gen.kicad_sym"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation/project/lib/Owned_Power.kicad_sym"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation/regulator.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols, footprints and board described in fixtures/generation/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
+        "fixtures/stages/empty.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Hand-authored stage-presence controls described in fixtures/stages/README.md; no stock symbol or footprint graphics."
+    },
+    {
+      "paths": [
+        "fixtures/stages/empty.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Hand-authored stage-presence controls described in fixtures/stages/README.md; no stock symbol or footprint graphics."
+    },
+    {
+      "paths": [
+        "fixtures/stages/placed.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Hand-authored stage-presence controls described in fixtures/stages/README.md; no stock symbol or footprint graphics."
+    },
+    {
+      "paths": [
+        "fixtures/stages/routed.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Hand-authored stage-presence controls described in fixtures/stages/README.md; no stock symbol or footprint graphics."
+    },
+    {
+      "paths": [
+        "fixtures/stages/schematic.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Hand-authored stage-presence controls described in fixtures/stages/README.md; no stock symbol or footprint graphics."
+    },
+    {
+      "paths": [
+        "src/agent_ee/assembly_readiness.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original format-validation code or documentation. PDF header markers and schematic node names describe parsing, rather than embedding a third-party document or design."
+    },
+    {
+      "paths": [
+        "src/agent_ee/datasheet_capture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original format-validation code or documentation. PDF header markers and schematic node names describe parsing, rather than embedding a third-party document or design."
+    },
+    {
+      "paths": [
+        "src/agent_ee/datasheet_facts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original format-validation code or documentation. PDF header markers and schematic node names describe parsing, rather than embedding a third-party document or design."
+    },
+    {
+      "paths": [
+        "src/agent_ee/fab_profile.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original format-validation code or documentation. PDF header markers and schematic node names describe parsing, rather than embedding a third-party document or design."
+    },
+    {
+      "paths": [
+        "src/agent_ee/viewer_assets/index.html"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original local viewer HTML interface; third-party runtime lives separately in vendor/ under origin T14."
+    },
+    {
+      "paths": [
+        "tests/fixtures/native-binding/control.xml"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/native-binding/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/netlist-parity/Owned.kicad_sym"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/netlist-parity/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/netlist-parity/native.xml"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/netlist-parity/symmetric.xml"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/parts-subset/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/schematic-decompile/Owned.kicad_sym"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/fixtures/schematic-decompile/imu.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic design/netlist controls from the adjacent owned-fixture generator or PROVENANCE.md; format markers are test inputs."
+    },
+    {
+      "paths": [
+        "tests/kicad_route_fixture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/land_pattern_fixtures.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/routing_fixture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_assembly_readiness.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_board_envelope.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_connectivity_hierarchy.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_datasheet_capture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_envelope_check.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_fab_consistency.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_fab_export.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_fab_profile.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_land_pattern.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_models3d.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_native_binding.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_netlist_parity.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_part_binding.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_parts_subset.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_placement_adapter.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_reference_blocks.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_render3d.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_schematic_emit.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_schematic_roundtrip.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_stages.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_symbol_capture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/test_viewer.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
     }
   ]
 }
