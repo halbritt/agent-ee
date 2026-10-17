@@ -390,13 +390,24 @@ It covers the following:
 - exact input and output hashes and adoption;
 - partial, failed, crashed, timed-out and cancelled steps;
 - out-of-scope writes and inventory changes;
-- verbatim backend reports;
+- verbatim backend reports, and malformed reports that keep the process receipt: `NaN`, `Infinity`,
+  float overflow, duplicate keys, overdeep nesting, invalid UTF-8, truncation, oversized integers and
+  size, including on failure, timeout and cancellation;
+- links planted by the tool, against an owned host-only sentinel. The cases are ancestor and leaf links in write
+  sources, artifacts and backend reports, links to candidate and retained files, broken links,
+  links and a FIFO inside a declared artifact directory beside a valid nested output, and links in the design copy.
+  The sentinel is never hashed, adopted or modified;
+- planted executor-record links, an unwritable `/work`, and forged records after an interrupt.
+  These give a retained `refused` receipt, never an adoptable one;
+- adoption that refuses a replaced output or ancestor even when its bytes match, and a receipt
+  object that differs from the retained receipt;
 - forged, tampered and foreign receipts;
 - exact whole-tree applicability.
 
 Campaign tests bind a receipt to the captured proposal. They show that a late change after binding fails
 `verify-campaign`, that a failed step stops the repair without substitution, and
-that undeclared or unanchored receipts are refused. No scaffold, placement helper or
+that undeclared or unanchored receipts are refused. A step whose backend report is `NaN` or truncated
+leaves a verifiable campaign. No scaffold, placement helper or
 kicad-route execution is qualified. The rung 1 receipt set remains open.
 
 ## Synthetic seeded benchmark

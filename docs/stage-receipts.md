@@ -54,12 +54,19 @@ writable `design/` copy and declared outputs) and `version/`.
   `tool_after` repeats the observation after the step. A change, or a missing executable, adds the violation `tool_changed`.
   Mount trees and the Python source tree are compared the same way.
 - `tool.reported_version`: `reported` with the probe's first output line, or `unknown` with
-  `value: null` and a reason (no probe declared, a failing probe, or empty output). An unknown
-  identity is never filled in.
+  `value: null` and a reason. The reasons are: no probe declared, a failing probe, empty output, output
+  that is not UTF-8 or larger than 1 MB, or output that is not a regular file. An unknown identity is never filled in.
 - `tool.backend`: the declared report key copied verbatim. A `null` backend version stays `null`.
+  The report is parsed as strict JSON. Any of the following records the backend as `unknown` with a
+  specific reason: a missing, linked or special file, more than 1 MB, invalid UTF-8, a parse error,
+  duplicate keys, `NaN` or `Infinity` (including float overflow such as `1e400`), nesting deeper than
+  64, or an integer beyond the interpreter limit. No backend is guessed, and the process receipt
+  is still written. A malformed report alone does not change the step status: the backend is provenance.
 - `inputs` and `outputs`: sha256 by candidate path. `changed` lists outputs whose bytes differ.
-- `violations`: `inventory_changed`, `write_outside_scope`, `missing_output`, `tool_changed`,
-  `mount_changed` and `source_changed`.
+- `violations`: `inventory_changed`, `write_outside_scope`, `missing_output`, `unsafe_output`
+  (the write source is behind a link or special entry), `executor_record_unsafe:<dir>/<file>` (an
+  executor record in `run/` or `version/` is a link or special file), `executor_record_missing:<dir>`
+  (the executor was entered but no trusted record exists), `tool_changed`, `mount_changed` and `source_changed`.
 - `status`, recomputed from the recorded execution and violations:
 
 | Status | Meaning | Adoptable |
@@ -69,7 +76,39 @@ writable `design/` copy and declared outputs) and `version/`.
 | `failed` | another exit, including a crash or a missing executable | no |
 | `timeout`, `unavailable` | executor result | no |
 | `cancelled` | interrupted; partial outputs are hashed and the receipt is written before the interrupt propagates | no |
-| `refused` | an adoptable exit with a violation | no |
+| `refused` | an adoptable exit with a violation, or no trusted executor record together with an `executor_record_*` violation | no |
+
+## Links and special files planted by the tool
+
+The tool can create links, FIFOs and other entries anywhere in its writable `/work`. A link
+target string is resolved differently in the coordinator's namespace: `/work/link -> /home/...` dangles inside the
+sandbox but would name a real host directory outside it. The coordinator therefore never resolves
+a path below the run directory by name.
+
+- Every lookup of a write source, artifact, backend report or executor record opens one component
+  at a time, relative to its parent, without following links. The leaf must be a regular file.
+  A link or special entry at any component is reported, and its target is never read or hashed.
+- A write source behind a link is `unsafe_output`, so the step is `refused`. A declared artifact, or an entry
+  inside a declared artifact directory, behind a link or special entry is recorded as `null`. Artifact
+  links are allowed, for example kicad-route's `latest` link, so they are not violations.
+- The design copy, the retained inputs and artifact directories are walked through directory
+  descriptors, iteratively. Directories deeper than 128 levels are recorded as special entries rather
+  than entered. A link or special entry in the design copy is an `inventory_changed` violation.
+- `adopt` first revalidates the retained receipt and refuses any receipt object that differs from it.
+  A writer-supplied or edited copy cannot authorize adoption. It then reads each output without following
+  links, checks the sha256 of the bytes it read, and writes those same bytes beneath the design, again
+  without following links. A replaced output or ancestor is refused even when its bytes match.
+- The executor writes `stdout.log`, `stderr.log`, `console.log` and `execution.json` into `/work`
+  after the tool exits. A tool-planted link there is `executor_record_unsafe` and is never read through.
+  If the executor cannot write its records (for example the tool left `/work` unwritable), or an interrupt
+  arrives before it does, no record on disk is trusted. The receipt is kept with `execution: null`,
+  `executor_record_missing` and status `refused`. A non-interrupt executor error is then re-raised. A
+  record left on disk after an interrupt is used only if it is a well-formed `interrupted` record, so at most it gives
+  `cancelled`.
+
+Tool descendants do not outlive the step. Bubblewrap's PID namespace is torn down when the step
+exits or is killed on timeout or cancellation, so nothing in the sandbox can swap a path while the
+coordinator reads it. The descriptor-relative reads and the hash-then-write adoption do not depend on that.
 
 ## Exact applicability
 
@@ -119,3 +158,9 @@ Campaigns created before this change have no anchors and no index, and they veri
   rung 1 record (AGENTEE-96) still needs real receipts for those three steps.
 - Whether kicad-route exits 1 and 4 should leave the writer's unrouted board as the proposal, rather than
   stopping the repair, is a decision for AGENTEE-93 and AGENTEE-88.
+- A link that a tool plants at an executor record path is written through by `executor.execute` itself,
+  before the receipt code runs. The receipt refuses such a step and never reads through the link,
+  but it cannot prevent that write. The fix belongs in the shared executor.
+- A completed receipt with all writes present but missing declared artifacts or an unknown backend is still
+  adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
+  the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.
