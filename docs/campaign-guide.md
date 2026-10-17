@@ -211,3 +211,7 @@ last candidate; it is not a generic recovery mechanism. A partial output directo
 or already-created next run can prevent another attempt. Preserve those records,
 resolve the cause, and start a fresh explicitly configured campaign if needed.
 Never edit history, limits or state labels to manufacture continuation.
+
+The opt-in [staged campaign contract](staged-campaign.md) adds declared generation
+stages and captured expected-content witnesses to this same campaign. It preserves
+unstaged behavior and requires separate owner acceptance of the convergence change.
