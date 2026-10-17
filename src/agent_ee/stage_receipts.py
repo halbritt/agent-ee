@@ -30,6 +30,7 @@ RESERVED_MOUNTS = ('/candidate', '/work', '/app', '/usr', '/bin', '/sbin', '/lib
                    '/etc', '/proc', '/dev', '/tmp', '/home', '/run')
 EXECUTOR_FILES = ('stdout.log', 'stderr.log', 'console.log', 'execution.json', 'home')
 REPORT_LIMIT = 1_000_000
+REPORT_DEPTH = 64
 VERSION_TIMEOUT_S = 30
 STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'source',
              'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s'}
@@ -250,11 +251,63 @@ def _reported_version(spec, record, work):
     if record['execution'] != 'ok' or record['exit_code'] != 0:
         return {'status': 'unknown', 'value': None,
                 'reason': f"version probe {record['execution']} exit {record['exit_code']}"}
-    lines = (Path(work) / 'stdout.log').read_bytes().decode('utf-8', 'replace').splitlines()
+    try:
+        lines = (Path(work) / 'stdout.log').read_bytes().decode('utf-8').splitlines()
+    except UnicodeDecodeError:
+        return {'status': 'unknown', 'value': None, 'reason': 'version probe output is not UTF-8'}
     value = lines[0].strip() if lines else ''
     if not value:
         return {'status': 'unknown', 'value': None, 'reason': 'version probe printed no version'}
     return {'status': 'reported', 'value': value, 'reason': None}
+
+
+class _Unreported(ValueError):
+    pass
+
+
+def _unique(pairs):
+    keys = [key for key, _ in pairs]
+    if len(set(keys)) != len(keys):
+        raise _Unreported('has duplicate keys')
+    return dict(pairs)
+
+
+def _nonfinite(token):
+    raise _Unreported('has a non-finite number')
+
+
+def _finite(token):
+    value = float(token)
+    if not math.isfinite(value):
+        raise _Unreported('has a non-finite number')
+    return value
+
+
+def _strict_json(data):
+    """UTF-8 JSON with unique keys, finite numbers and bounded nesting, or _Unreported."""
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise _Unreported('is not UTF-8') from exc
+    try:
+        value = json.loads(text, object_pairs_hook=_unique, parse_constant=_nonfinite, parse_float=_finite)
+    except RecursionError as exc:
+        raise _Unreported(f'nesting exceeds {REPORT_DEPTH}') from exc
+    except _Unreported:
+        raise
+    except json.JSONDecodeError as exc:
+        raise _Unreported('is not JSON') from exc
+    except ValueError as exc:
+        # For example an integer beyond the interpreter's digit limit.
+        raise _Unreported('has an out-of-range number') from exc
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            if depth > REPORT_DEPTH:
+                raise _Unreported(f'nesting exceeds {REPORT_DEPTH}')
+            stack += [(child, depth + 1) for child in (item.values() if isinstance(item, dict) else item)]
+    return value
 
 
 def _backend(spec, run):
@@ -267,9 +320,9 @@ def _backend(spec, run):
     if path.stat().st_size > REPORT_LIMIT:
         return {'status': 'unknown', 'value': None, 'reason': 'backend report artifact too large'}
     try:
-        value = json.loads(path.read_text())
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return {'status': 'unknown', 'value': None, 'reason': 'backend report artifact is not JSON'}
+        value = _strict_json(path.read_bytes())
+    except _Unreported as exc:
+        return {'status': 'unknown', 'value': None, 'reason': f'backend report artifact {exc}'}
     if not isinstance(value, dict) or report['key'] not in value:
         return {'status': 'unknown', 'value': None, 'reason': 'backend report key missing'}
     # Copied verbatim: a null version stays null rather than being filled in.
