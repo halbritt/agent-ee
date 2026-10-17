@@ -14,6 +14,17 @@ paths exposed as required. This is a host tool execution boundary, not a
 container image containing only captured dependencies. Inspect `sandbox_argv`
 in an execution record to see the actual mounts and arguments.
 
+In the [container image](container.md), the same Bubblewrap boundary runs inside
+the container, and `/usr` and `/etc` are the image's. The image does not replace
+that boundary. To let Bubblewrap create namespaces, the container must run with
+Docker's seccomp filter, `docker-default` AppArmor profile and `/proc` masks
+disabled. The container user stays non-root, and no capabilities, devices or
+network are added. These relaxations widen what a process escaping Bubblewrap
+could reach inside the container, compared with default Docker confinement. The
+[container reference](container.md#bubblewrap-inside-the-container) lists what
+each one exposes. The documented commands also disable the container's network
+for checks-only work.
+
 The parent CLI performs capture and record writes on the host under the owner's
 permissions. Bubblewrap does not constrain the owner, another host process with
 sufficient access, a compromised kernel/provider, or a malicious change to the

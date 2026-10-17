@@ -12,6 +12,8 @@ attempt does not retroactively complete an interrupted candidate's evidence.
 | `agent-ee` not found | CLI link missing or `~/.local/bin` absent from PATH | Use `./bin/agent-ee`; inspect installation and shell PATH |
 | Doctor's pcbnew probe fails | System Python cannot import installed KiCad bindings | Check `/usr/bin/python3`, not an unrelated virtualenv; repair the environment |
 | Bubblewrap fails before a tool runs | Namespace/mount permissions or binary/environment problem | Read `sandbox_argv` and console; repair permissions/setup, then create a fresh run |
+| In the container: `No permissions to create new namespace`, `Failed to make / slave` or `Can't mount proc` | Docker's seccomp, AppArmor or `/proc` masking blocks Bubblewrap; container root fails with `Creating new namespace failed` | Run as non-root with the three options in [container privileges](container.md#bubblewrap-inside-the-container); do not substitute `--privileged` |
+| Action verdict `result_invalid` or `coverage_incomplete` | The gate found no trustworthy result or an unexecuted check, independent of the review's exit 1 | Read the job summary and the uploaded run directory; fix the cause and rerun into a new directory |
 | Output path already exists | Runs cannot overwrite old evidence | Select a new output path or use `resume` with a new path |
 | `max-seconds must be finite and between 0 and 86400` | Invalid work budget | Supply a finite value in the supported range |
 | `input selects no files` | Missing/overrestrictive source selection | Compare source location, case and fnmatch patterns |

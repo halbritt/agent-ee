@@ -1,0 +1,11 @@
+# Mirror .gitignore so a build context matches a clean checkout.
+.git
+**/__pycache__
+**/*.py[cod]
+.venv
+build
+**/*.egg-info
+.pytest_cache
+evidence/**/inputs
+evidence/**/home
+evidence/**/kicad-config

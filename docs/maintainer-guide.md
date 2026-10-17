@@ -44,6 +44,10 @@ access. Only recognized namespace-denial diagnostics and explicit missing-tool
 results can skip; malformed commands and other probe failures fail the suite. This mode changes only tests;
 production execution still records unavailable/failed tools as incomplete work.
 
+The [container image](container.md) provides the pinned toolchain. Project CI
+runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` and no permitted skips.
+
+
 | Test module | Protection |
 | --- | --- |
 | [test_toolchain.py](../tests/test_toolchain.py) | Real discovery with absent tools, strict-mode refusal, prerequisite diagnostics and preservation of assertions/production semantics |
@@ -54,6 +58,8 @@ production execution still records unavailable/failed tools as incomplete work.
 | [test_findings.py](../tests/test_findings.py) | Singleton retention, unsupported allegations, evidence/dispositions, duplicate and closure invariants |
 | [test_profiles.py](../tests/test_profiles.py) | Explicit allocation, profile freshness, subscription response handling, native adapter contracts and refusal of profile-only repair closure |
 | [test_cli.py](../tests/test_cli.py) | Required work, outcome projection, interruption/budget preservation and correction behavior |
+| [test_doctor.py](../tests/test_doctor.py) | Doctor version output and binary hashes, missing tools, unimportable pcbnew, unhashable binaries and `--checks-only` |
+| [test_action_gate.py](../tests/test_action_gate.py) | CI/action verdicts from `result.json`: passing checks, defects, incomplete coverage, missing or malformed results and failed verification |
 
 Avoid tests that only echo generated implementation text. Define the engineering
 expected response and failure mechanism independently, then exercise actual

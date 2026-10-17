@@ -73,6 +73,85 @@ The package's console entry point also exists in `pyproject.toml`; the documente
 installation method is the source launcher, which avoids a required package
 installation or extra interpreter environment.
 
+## Container image
+
+The [Dockerfile](../Dockerfile) pins the demonstrated toolchain: KiCad
+10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, ngspice
+42, Bubblewrap 0.9.0 and Python 3.12, with this checkout installed through the
+source launcher. It contains no reviewer harness or credential, so it supports
+checks-only reviews and CI, not agent reviews. The
+[container reference](container.md) explains how each pin is enforced.
+
+```sh
+docker build -t agent-ee:local .
+docker run --rm --network none \
+  --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+  --security-opt systempaths=unconfined \
+  agent-ee:local agent-ee doctor --checks-only
+```
+
+### Host privileges for Bubblewrap
+
+Bubblewrap still isolates every native check inside the container. To create its
+namespaces, the container needs three relaxations of Docker's default
+confinement. Nothing else is required, and the tool sandbox gets no network:
+
+| Option | Grants |
+| --- | --- |
+| `--security-opt seccomp=unconfined` | Removes Docker's syscall filter so the non-root user can call `unshare` for a user namespace; kernel permission checks still apply |
+| `--security-opt apparmor=unconfined` | Removes Docker's `docker-default` AppArmor profile, which denies the mounts Bubblewrap makes; host profiles that attach by path, such as Ubuntu's `bwrap` profile, still apply |
+| `--security-opt systempaths=unconfined` | Removes Docker's `/proc` masks so a fresh `proc` can be mounted in the new PID namespace; also exposes masked `/proc` entries to the container |
+
+Run as a non-root user: the image's `agentee` user, or `--user "$(id -u):$(id -g)"
+-e HOME=/tmp` when a mounted workspace must stay owned by you. `--privileged`,
+`--cap-add SYS_ADMIN` and container root are not needed and grant more. The
+demonstrated Ubuntu 24.04 host kept `kernel.apparmor_restrict_unprivileged_userns=1`.
+A host that blocks user namespaces without a `bwrap` profile needs an explicit
+administrator decision. If the relaxations are missing, the native checks fail
+and the run is incomplete; agent-ee never falls back to unsandboxed execution. See
+[Bubblewrap inside the container](container.md#bubblewrap-inside-the-container)
+for each failure message and what each option exposes.
+
+### Sample consumer workflow
+
+The reusable [action](../action.yml) runs a checks-only review in the image,
+uploads the run directory as an artifact and writes the report to the job
+summary. It judges the outcome from `result.json`: it fails only when a declared
+check reports a defect, coverage is incomplete, or the result is missing,
+malformed or refused by `agent-ee verify`. The expected exit 1 of a checks-only
+review is not a failure. No model review runs.
+
+This workflow runs the action on the RC fixture with the seeded resistor defect
+and is expected to fail. The job summary shows the `check_failed` verdict, the
+`rc-step` row (`vout_1ms=0.0951625 outside [0.62, 0.65]`) and the run report.
+The run directory is uploaded as `rc-seeded-run`.
+
+```yaml
+name: agent-ee checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: halbritt/agent-ee@REF  # replace REF with a reviewed commit SHA
+        with:
+          scope: fixtures/rc/seeded.scope.json
+          output-directory: build/agent-ee/rc-seeded
+          max-seconds: "900"
+          artifact-name: rc-seeded-run
+```
+
+Inside an agent-ee checkout, `uses: ./` runs the local copy. For a real board,
+use your own scope and requirements; the fixture's limits apply only to that
+filter. Consumer pull requests are a choice of the consumer project. agent-ee's
+own CI runs on pushes to `main` and manual dispatch. Inputs, verdicts and the
+local evidence for this behavior are listed in the [container reference](container.md#reusable-action).
+
 ## Subscription authentication
 
 Authenticate each selected harness through its subscription workflow. Credential
@@ -86,7 +165,8 @@ credential, auth failure or exhausted quota leaves that review incomplete. There
 is no API-key or OpenRouter fallback. Do not copy credential contents into a
 scope, report, issue or archive.
 
-`doctor` probes executable versions and the Python binding import. It does not
+`doctor` probes executable versions and the Python binding import, and prints
+the SHA-256 of each probed binary. It does not
 read the credential file, validate subscription access, run a real sandboxed
 check, or perform inference. A passing doctor report is prerequisite evidence
 only. Run the fixture described in the [operator guide](operator-guide.md) for
