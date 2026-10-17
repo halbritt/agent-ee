@@ -339,7 +339,9 @@ retained per-corner evidence and empirical-transfer refusal.
 
 See [assembly readiness](assembly-readiness.md) for `assembly_readiness`. It
 reads its own native XML netlist export after every hierarchy file parses
-completely, then checks each populated component against the captured
+completely. It binds every placed symbol occurrence of the hierarchy to a
+netlist component, and the reverse; a child sheet that kicad-cli silently
+drops fails. It then checks each populated component against the captured
 catalog: required and any-of BOM properties, R/C rating properties, exact
 LCSC binding, three-state stock (zero is a defect; missing, stale or
 undeclared freshness is unknown), stock for quantity per board times boards,

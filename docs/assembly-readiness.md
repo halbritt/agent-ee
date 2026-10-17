@@ -24,6 +24,19 @@ The check does not pick replacements, query live stock or price the board.
   exit 0 and silently drops its components, so a netlist alone is not trusted.
   The netlist's `<design><sheet>` count must also equal the hierarchy instance
   count.
+- **Coverage gate**: parsing and sheet counts are not enough. KiCad 10 also
+  drops every component of a complete child sheet it cannot load, such as one
+  with `(in_bom maybe)` or an unknown token. It still exits 0 and still
+  reports the sheet. After the export, every placed symbol occurrence (sheet
+  instance path plus symbol UUID) in the captured hierarchy must therefore
+  bind to one netlist `<comp>` (`sheetpath`/`tstamps`), and every netlist
+  component must bind back to an occurrence. The audit is the shared
+  `native_binding.virtual_symbols` occurrence walk. Only `#`-referenced
+  occurrences, such as power symbols and `PWR_FLAG`, may be missing from the
+  export. Any other gap fails, and the message names the missing references,
+  the problem kinds and the affected sheet files. A sheet set that differs
+  from the hierarchy also fails. The report records
+  `netlist.hierarchy_coverage` (`bound_components`, `exporter_omitted`).
 - **Catalog**: `params["catalog"]`, either an `agent-ee.catalog/1` manifest
   (whose SQLite `database.path` is size- and SHA-256-pinned) or a JSON snapshot
   (`agent-ee.catalog-snapshot/1` or `agent-ee.jlc-catalog/1`).
@@ -123,8 +136,10 @@ reused sheet).
 
 - Invalid parameters: `execution="unsupported"`.
 - Missing or unparseable root or child sheet, a hierarchy cycle or escape,
-  kicad-cli failure, a missing or unparseable netlist, a repeated reference,
-  a sheet-count mismatch, or a missing, corrupt or hash-mismatched catalog:
+  kicad-cli failure, a missing or unparseable netlist, a repeated reference
+  or component identity, a sheet-count mismatch, a placed symbol occurrence
+  missing from the netlist (or a netlist component that is no occurrence of
+  the hierarchy), or a missing, corrupt or hash-mismatched catalog:
   `execution="failed"` (`"malformed"` for missing sheet files reported by the
   shared hierarchy walk), `outcome="unknown"`. These never produce an empty
   finding list.
@@ -143,3 +158,13 @@ groups, DNP exclusion; a swallowed load failure there returns a silent pass,
 which this check refuses), and Konnect's BOM health check. The tests use
 original `clean_boost`-like and `di_box`-like schematics exported by the real
 kicad-cli.
+
+The ticket's acceptance criterion says a PartNumber-only policy reports
+"4 of 9" components on `clean_boost`. That number comes from circuit-synth's
+`TEST_FIXTURES_BOM_AUDIT.md`. The document says "Missing PartNumber: 4" but
+lists only three components (U1, R2 and C1). Its own table, and its real
+fixture exported through this check, also give 3 of 9. The original
+`clean_boost`-like fixture here has the same shape: 9 populated parts, with
+C1 lacking any part number and R2 and U1 carrying only `MPN`. It reports
+**3 of 9** (C1, R2, U1) under a PartNumber-only policy and only C1 under the
+any-of policy. The fixture is not built to reach 4.

@@ -23,11 +23,12 @@ from agent_ee.assembly_readiness import (
     evaluate_assembly_readiness,
     load_catalog_snapshot,
     read_netlist_components,
+    verify_netlist_coverage,
     verify_schematic_files,
 )
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
-from agent_ee.checks import run_checks
+from agent_ee.checks import run_checks, sheet_instances
 from agent_ee.storage import digest, read_json, write_json
 from toolchain import require_toolchain
 
@@ -167,6 +168,7 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.exports = 0
+        self.roots = {}
 
     def catalog(self, parts, *, snapshot_date="2026-10-15", stale_before="2026-10-08", name="catalog.json"):
         doc = {"schema": "agent-ee.catalog-snapshot/1", "snapshot_date": snapshot_date, "parts": parts}
@@ -191,10 +193,17 @@ class AssemblyReadinessTests(unittest.TestCase):
             timeout=120,
         )
         self.assertEqual(record["execution"], "ok", record)
+        self.roots[work / "design.xml"] = name
         return work / "design.xml"
 
     def evaluate(self, netlist, params):
-        return evaluate_assembly_readiness(self.root, netlist, params)
+        """Evaluate as the check does: exported netlists are bound to their captured hierarchy."""
+        if netlist not in self.roots:
+            return evaluate_assembly_readiness(self.root, netlist, params)
+        files, instances, missing = sheet_instances(self.root, self.roots[netlist])
+        self.assertEqual(missing, [])
+        return evaluate_assembly_readiness(self.root, netlist, params, expected_sheets=instances,
+                                           hierarchy_files=files)
 
     # ------------------------------------------------------------------ LCSC binding
     def test_lcsc_binding_missing_invalid_and_unknown_in_catalog(self):
@@ -275,28 +284,31 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual(outcome([{**fresh, "stock": 0, "last_seen": "2026-01-01"}]), ("defect", ["out_of_stock"]))
 
     # ------------------------------------------------------------------ property policy (clean_boost-like)
-    def test_clean_boost_like_part_number_only_policy_reports_4_of_9_and_any_of_only_c1(self):
+    def test_clean_boost_like_part_number_only_policy_reports_3_of_9_and_any_of_only_c1(self):
+        # The ticket says "4 of 9"; its source document lists only three (C1, R2, U1). See
+        # docs/assembly-readiness.md. This original fixture has the same shape and gives 3.
         cat = self.catalog([
             {"lcsc": f"C1000{i}", "stock": 200, "is_basic": True, "last_seen": "2026-10-15"} for i in range(1, 10)
         ])
-        volts = ("Voltage", "50V")
+        volts = ("Voltage", "25V")
         netlist = self.export("clean_boost.kicad_sch", schematic("clean_boost", [
             part("C1", "C", lcsc="C10001", part_number=None, rating=volts),
-            part("C2", "C", lcsc="C10002", part_number=("PartNumber", "CAP-100N-50V"), rating=volts),
-            part("D1", "D", lcsc="C10003", part_number=("MPN", "DIODE-SCHOTTKY-1A"), rating=None),
-            part("J1", "J", lcsc="C10004", part_number=("CompanyPN", "HDR-1X2"), rating=None),
-            part("Q1", "Q", lcsc="C10005", part_number=("PartNumber", "NPN-SOT23"), rating=None),
+            part("C2", "C", lcsc="C10002", part_number=("PartNumber", "CAP-22U-25V"), rating=volts),
+            part("C3", "C", lcsc="C10003", part_number=("PartNumber", "CAP-100N-25V"), rating=volts),
+            part("J1", "J", lcsc="C10004", part_number=("PartNumber", "HDR-1X2-IN"), rating=None),
+            part("J2", "J", lcsc="C10005", part_number=("PartNumber", "HDR-1X2-OUT"), rating=None),
             part("R1", lcsc="C10006", part_number=("PartNumber", "RES-1M")),
-            part("R2", lcsc="C10007", part_number=("PartNumber", "RES-10K")),
+            part("R2", lcsc="C10007", part_number=("MPN", "RES-100K")),
             part("R3", lcsc="C10008", part_number=("PartNumber", "RES-4K7")),
-            part("R4", lcsc="C10009", part_number=("MPN", "RES-100R")),
+            part("U1", "U", footprint="ee29:SOT-23-6", lcsc="C10009", part_number=("MPN", "BOOST-REG-X"),
+                 rating=None),
             power("#PWR01"), power("#FLG01", "power:PWR_FLAG", "PWR_FLAG"),
         ]))
         part_number_only = self.evaluate(netlist, {"catalog": cat, "required_properties": ["PartNumber"]})
         self.assertEqual(part_number_only["counts"]["populated"], 9)
-        self.assertEqual(sorted(part_number_only["missing_properties"]), ["C1", "D1", "J1", "R4"])
+        self.assertEqual(sorted(part_number_only["missing_properties"]), ["C1", "R2", "U1"])
         missing = [f["reference"] for f in part_number_only["findings"] if f["code"] == "missing_property"]
-        self.assertEqual(missing, ["C1", "D1", "J1", "R4"])
+        self.assertEqual(missing, ["C1", "R2", "U1"])
 
         for policy in (["PartNumber|MPN|CompanyPN"],
                        ["Footprint", "LCSC", "Manufacturer", {"any_of": ["PartNumber", "MPN", "CompanyPN"]}]):
@@ -336,7 +348,10 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual(report["excluded_from_bom"], ["H2", "TP1"])
         self.assertEqual({f["code"] for f in report["findings"]}, {"exclude_from_bom"})
         self.assertTrue(all(f["severity"] == "info" for f in report["findings"]))
-        self.assertNotIn("#PWR01", str(report))
+        # Power symbols are never components; they are only the exporter-omitted occurrences.
+        self.assertNotIn("#PWR01", str({k: v for k, v in report.items() if k != "netlist"}))
+        self.assertEqual(report["netlist"]["hierarchy_coverage"],
+                         {"bound_components": 6, "exporter_omitted": ["#FLG01", "#PWR01"]})
 
         # A field-level DNP convention is not a native DNP: the part stays populated and is a defect.
         marked = self.export("di_box_marked.kicad_sch", schematic("di_box_marked", base + [
@@ -424,6 +439,55 @@ class AssemblyReadinessTests(unittest.TestCase):
             self.evaluate(netlist, {"catalog": cat, "boards": 0})
         self.assertEqual(params.exception.execution, "unsupported")
 
+    # ------------------------------------------------------------------ hierarchy coverage
+    def test_child_sheet_kicad_cannot_load_fails_closed_naming_dropped_references(self):
+        # kicad-cli exports the root with exit 0 and both sheets but drops every component of a
+        # child sheet it cannot load; the occurrence audit must name what is missing.
+        cat = self.catalog([{"lcsc": "C25804", "stock": 500, "is_basic": True, "last_seen": "2026-10-15"}])
+        root_uuid, a_uuid = _uuid("sheet-top"), _uuid("inst-a")
+        child = schematic("stage", [part("R5", lcsc="C0BAD"), part("R6", lcsc=None)],
+                          instance_paths=[(f"/{root_uuid}/{a_uuid}", 1)])
+        top = schematic("top", [part("R1"), power("#PWR01")],
+                        sheets=[("A", "stage.kicad_sch", a_uuid, root_uuid)])
+
+        control = self.export("top.kicad_sch", top, children=[("stage.kicad_sch", child)])
+        report = self.evaluate(control, {"catalog": cat})
+        self.assertEqual((report["execution"], report["outcome"]), ("ok", "defect"))
+        self.assertEqual(report["populated_refs"], ["R1", "R105", "R106"])
+        self.assertEqual(report["invalid_lcsc"], {"R105": "C0BAD"})
+        self.assertEqual(report["missing_lcsc_refs"], ["R106"])
+        self.assertEqual(report["netlist"]["hierarchy_coverage"],
+                         {"bound_components": 3, "exporter_omitted": ["#PWR01"]})
+
+        for label, broken in (("bad_bool", child.replace("(in_bom yes)", "(in_bom maybe)", 1)),
+                              ("unknown_token", child.replace("(in_bom yes)", "(in_bom yes) (bogus_token 1)", 1))):
+            with self.subTest(label):
+                netlist = self.export("top.kicad_sch", top, children=[("stage.kicad_sch", broken)])
+                # The sheet still parses as an S-expression and still counts as a sheet ...
+                self.assertEqual(list(verify_schematic_files(self.root, ["top.kicad_sch", "stage.kicad_sch"])),
+                                 ["top.kicad_sch", "stage.kicad_sch"])
+                extracted = read_netlist_components(netlist)
+                self.assertEqual((extracted["sheets"], extracted["components"]), (2, 1))
+                # ... so without the occurrence audit the check would pass on R1 alone.
+                self.assertEqual(evaluate_assembly_readiness(self.root, netlist, {"catalog": cat},
+                                                             expected_sheets=2)["outcome"], "pass")
+                with self.assertRaises(AssemblyReadinessExecutionError) as caught:
+                    self.evaluate(netlist, {"catalog": cat})
+                self.assertEqual(caught.exception.execution, "failed")
+                message = str(caught.exception)
+                self.assertIn("unexplained_omission", message)
+                self.assertIn("['R105', 'R106']", message)
+                self.assertIn("stage.kicad_sch", message)
+
+        # Reverse direction: a netlist component that is no occurrence of the captured hierarchy.
+        (self.root / "stage.kicad_sch").write_text(child, encoding="utf-8")
+        other = self.export("other.kicad_sch", schematic("other", [part("R9")]))
+        with self.assertRaises(AssemblyReadinessExecutionError) as foreign:
+            verify_netlist_coverage(self.root, ["top.kicad_sch", "stage.kicad_sch"], read_netlist_components(other))
+        self.assertEqual(foreign.exception.execution, "failed")
+        self.assertIn("native_identity_unmatched", str(foreign.exception))
+        self.assertIn("R9", str(foreign.exception))
+
     # ------------------------------------------------------------------ pipeline
     def test_sqlite_catalog_reused_sheet_extended_limit_and_run_checks_pipeline(self):
         source = self.root / "src_tree"
@@ -498,6 +562,8 @@ class AssemblyReadinessTests(unittest.TestCase):
             "design/stage.kicad_sch": digest(source / "stage.kicad_sch"),
         })
         self.assertEqual(details["netlist"]["sha256"], digest(run_dir / "work/jlc_assembly/design.xml"))
+        self.assertEqual(details["netlist"]["hierarchy_coverage"],
+                         {"bound_components": 5, "exporter_omitted": ["#PWR01"]})
         self.assertEqual(details["catalog"]["database_sha256"], digest(source / "catalog.sqlite"))
 
         # 2 per board x 50 boards = 100 > 80 available; 2 Extended > 1.
@@ -515,6 +581,13 @@ class AssemblyReadinessTests(unittest.TestCase):
         failed = run_checks(run_dir, time.monotonic() + 300.0)[0]
         self.assertEqual((failed["execution"], failed["outcome"]), ("failed", "unknown"), failed["summary"])
         self.assertIn("does not parse", failed["summary"])
+
+        # A complete child sheet kicad-cli cannot load is dropped with exit 0; the check must still fail.
+        (run_dir / "inputs/design/stage.kicad_sch").write_text(
+            truncated.replace("(in_bom yes)", "(in_bom maybe)", 1), encoding="utf-8")
+        dropped = run_checks(run_dir, time.monotonic() + 300.0)[0]
+        self.assertEqual((dropped["execution"], dropped["outcome"]), ("failed", "unknown"), dropped["summary"])
+        self.assertIn("['U101', 'U201']", dropped["summary"])
 
         (run_dir / "inputs/design/top.kicad_sch").write_text("(kicad_sch (unclosed", encoding="utf-8")
         failed_root = run_checks(run_dir, time.monotonic() + 300.0)[0]

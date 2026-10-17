@@ -466,6 +466,53 @@ def verify_schematic_files(inputs_root: Path, files) -> dict:
     return hashes
 
 
+def verify_netlist_coverage(inputs_root: Path, files, extracted) -> dict:
+    """Bind every placed symbol occurrence of the captured hierarchy to the netlist, and the reverse.
+
+    kicad-cli exports a hierarchy with exit 0 and the full sheet count even
+    when it cannot load a child sheet (an unknown token, a bad boolean), and
+    drops that sheet's components. An occurrence is one sheet instance path
+    plus symbol UUID, audited by ``native_binding.virtual_symbols``; only
+    ``#``-referenced occurrences may be absent from the export. ``files`` is
+    the ``sheet_instances`` list with the root first. Any gap fails.
+    """
+    from .footprint_library import FootprintError
+    from .native_binding import OCCURRENCE_PROBLEMS, virtual_symbols
+
+    schematics = {}
+    for rel in files:
+        path, norm_rel = _resolve_captured_file(inputs_root, rel, "schematic")
+        schematics[norm_rel] = path.read_bytes()
+    components = [
+        c for bucket in ("populated", "excluded_dnp", "excluded_from_bom", "ignored_non_assembly")
+        for c in extracted[bucket]
+    ]
+    graph = {
+        "sheets": extracted["sheet_paths"],
+        "components": {c["reference"]: {"sheet": c["sheet_path"], "uuid": c["uuid"]} for c in components},
+    }
+    try:
+        records = virtual_symbols(schematics, next(iter(schematics)), graph)
+    except FootprintError as exc:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"schematic hierarchy cannot be bound to the native netlist: {exc}") from exc
+    gaps = [r for r in records if "problem" in r]
+    if gaps:
+        named = sorted({ref for r in gaps for ref in r["references"]}, key=natural_key)
+        kinds = sorted({r["problem"] for r in gaps})
+        raise AssemblyReadinessExecutionError(
+            "failed",
+            "native netlist does not cover the captured hierarchy ("
+            + "; ".join(f"{k}: {OCCURRENCE_PROBLEMS[k]}" for k in kinds)
+            + f"); references: {named or 'unnamed'}; affected sheet files: "
+            + f"{sorted({r['file'] for r in gaps if r.get('file')})}",
+        )
+    return {
+        "bound_components": len(components),
+        "exporter_omitted": sorted((r["references"][0] for r in records), key=natural_key),
+    }
+
+
 def read_netlist_components(netlist_path: Path) -> dict:
     """Classify components of a native ``kicad-cli sch export netlist --format kicadxml`` file.
 
@@ -483,7 +530,7 @@ def read_netlist_components(netlist_path: Path) -> dict:
     if components_node is None:
         raise AssemblyReadinessExecutionError("failed", "native XML netlist has no <export>/<components> section")
 
-    seen = set()
+    seen, identities = set(), set()
     ignored_non_assembly, excluded_dnp, excluded_from_bom, populated = [], [], [], []
     for comp in components_node.findall("comp"):
         ref = (comp.get("ref") or "").strip()
@@ -506,12 +553,20 @@ def read_netlist_components(netlist_path: Path) -> dict:
         libsource = comp.find("libsource")
         lib_id = f"{libsource.get('lib', '')}:{libsource.get('part', '')}" if libsource is not None else ""
         sheetpath = comp.find("sheetpath")
+        sheet_path = (sheetpath.get("tstamps") or "").strip() if sheetpath is not None else ""
+        uuids = (comp.findtext("tstamps") or "").split()
+        if not sheet_path or not uuids:
+            raise AssemblyReadinessExecutionError("failed", f"native XML netlist component {ref} has no sheet/UUID identity")
+        if any((sheet_path, uid) in identities for uid in uuids) or len(set(uuids)) != len(uuids):
+            raise AssemblyReadinessExecutionError("failed", f"native XML netlist repeats the identity of {ref}")
+        identities.update((sheet_path, uid) for uid in uuids)
         flags = _native_flags(comp)
         record = {
             "reference": ref,
             "lib_id": lib_id,
             "sheet": sheetpath.get("names") if sheetpath is not None else None,
-            "uuid": (comp.findtext("tstamps") or "").strip(),
+            "sheet_path": sheet_path,
+            "uuid": " ".join(uuids),
             "dnp": "dnp" in flags,
             "in_bom": "exclude_from_bom" not in flags,
             "on_board": "exclude_from_board" not in flags,
@@ -531,9 +586,11 @@ def read_netlist_components(netlist_path: Path) -> dict:
     def ordered(items):
         return sorted(items, key=lambda c: natural_key(c["reference"]))
 
+    sheet_paths = [(sheet.get("tstamps") or "").strip() for sheet in root.findall("./design/sheet")]
     return {
         "components": len(seen),
-        "sheets": len(root.findall("./design/sheet")),
+        "sheets": len(sheet_paths),
+        "sheet_paths": sheet_paths,
         "populated": ordered(populated),
         "excluded_dnp": ordered(excluded_dnp),
         "excluded_from_bom": ordered(excluded_from_bom),
@@ -761,11 +818,14 @@ def capability(params, files, inputs=None):
     }
 
 
-def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: dict, *, expected_sheets=None) -> dict:
+def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: dict, *, expected_sheets=None,
+                                hierarchy_files=None) -> dict:
     """Join native XML netlist components with the BOM property policy and captured catalog snapshot.
 
     ``expected_sheets`` is the hierarchy instance count; a netlist covering a
     different number of sheets is incomplete evidence and fails.
+    ``hierarchy_files`` (root first) binds every placed symbol occurrence to
+    a netlist component and the reverse; any gap fails.
     """
     try:
         cfg = validate_params(params)
@@ -783,6 +843,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "failed",
             f"native netlist covers {extracted['sheets']} sheet instance(s), hierarchy has {expected_sheets}",
         )
+    coverage = verify_netlist_coverage(inputs_root, hierarchy_files, extracted) if hierarchy_files else None
 
     populated = extracted["populated"]
     excluded_dnp = extracted["excluded_dnp"]
@@ -1197,6 +1258,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "sha256": digest(netlist_path),
             "components": extracted["components"],
             "sheets": extracted["sheets"],
+            "hierarchy_coverage": coverage,
         },
     }
 
@@ -1229,7 +1291,8 @@ def check_assembly_readiness(ctx):
         raise CheckError("failed", "native XML netlist was not written")
 
     try:
-        report = evaluate_assembly_readiness(ctx.inputs, netlist, ctx.params, expected_sheets=instances)
+        report = evaluate_assembly_readiness(ctx.inputs, netlist, ctx.params, expected_sheets=instances,
+                                             hierarchy_files=files)
     except AssemblyReadinessExecutionError as exc:
         raise CheckError(exc.execution, str(exc)) from exc
 
