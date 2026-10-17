@@ -14,7 +14,8 @@ from .storage import identity
 
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
-                   'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path'))
+                   'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
+                   'netclass_completeness'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -237,6 +238,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     raise ValueError('adapter assumptions source must be a captured immutable requirement')
                 captured(path, immutable=True)
             result['capability_version'] = descriptor['capability_version']
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'netclass_completeness':
+            from .netclass_completeness import capability
+            descriptor = capability(params, files, inputs)
+            captured(params['project'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
         elif kind == 'hardware_interface':
             from .hardware_interface import capability
