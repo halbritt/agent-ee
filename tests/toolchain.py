@@ -22,15 +22,28 @@ def prerequisite_problem(native=False):
         command = sandbox_argv(root / 'inputs', root / 'work', ['/usr/bin/true'])
         result = subprocess.run(command, capture_output=True, text=True, timeout=15)
         if result.returncode:
-            return 'Bubblewrap/user namespaces unavailable: ' + result.stderr.strip()
+            diagnostic = result.stderr.strip()
+            if result.returncode == 1 and diagnostic in (
+                'bwrap: Creating new namespace failed: Operation not permitted',
+                'bwrap: No permissions to create new namespace, likely because the kernel '
+                'does not allow non-privileged user namespaces. See '
+                '<https://deb.li/bubblewrap> or <file:///usr/share/doc/bubblewrap/README.Debian.gz>.',
+            ):
+                return 'Bubblewrap/user namespaces unavailable: ' + diagnostic
+            raise AssertionError(f'Bubblewrap prerequisite probe failed ({result.returncode}): '
+                                 + diagnostic)
         if native:
             # The sandbox has a fixed PATH, independent of the launching shell.
             for tool in ('kicad-cli', 'ngspice'):
                 result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
-                    ['/bin/sh', '-c', f'command -v {tool}']),
+                    ['/bin/sh', '-c', f'command -v {tool} >/dev/null; status=$?; '
+                     'if [ "$status" -eq 1 ]; then exit 42; fi; exit "$status"']),
                     capture_output=True, text=True, timeout=15)
-                if result.returncode:
+                if result.returncode == 42 and not result.stderr:
                     return f'{tool} not found in native sandbox'
+                if result.returncode:
+                    raise AssertionError(f'{tool} prerequisite probe failed ({result.returncode}): '
+                                         + result.stderr)
             result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
                 ['/usr/bin/python3', '-c', 'import importlib.util; '
                  'raise SystemExit(0 if importlib.util.find_spec("pcbnew") else 42)']),
