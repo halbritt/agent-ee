@@ -1,12 +1,14 @@
 # Placement campaign adapter (AGENTEE-91)
 
-`placement_adapter` is the campaign-side part of the placement stage. It runs the
-existing [initial placer](placer.md) as a coordinator step and limits what a
-placement iteration may change on the board. It adds no second placer, campaign,
-writer or acceptance path. The campaign wiring belongs to the integrator and is
-not yet in `campaign.py`. Until then, this module is a tested library seam.
+`placement_adapter` is the placement stage of the existing repair campaign. When
+the earliest failing stage is placement, the one implementation writer proposes
+footprint transforms. The coordinator can then run the pinned
+[initial placer](placer.md) once as a receipted step. Before the next capture, it
+limits what the iteration may change on the board. The adapter adds no second
+placer, campaign, writer or acceptance path. Fresh captured checks grade every
+proposal.
 
-## Declaration and dispatch
+## Declaration and admission
 
 The campaign configuration key `placement_adapter` holds an
 `agent-ee.placement-adapter/1` declaration. It is part of the hashed `config.json`:
@@ -20,40 +22,120 @@ The campaign configuration key `placement_adapter` holds an
 ```
 
 - `helper` is either `agent-ee.placer/1` or `null`. With `null`, only the writer
-  edits the board.
+  edits the board. This is a writer-only placement mode, not a skipped helper.
 - `policy` must be a captured `agent-ee.packing-policy/1` file outside
-  `mutable_inputs`.
-- `fixed_footprints` lists native footprint UUIDs that the envelope fixes. The
-  envelope record should supply them once it is frozen. The adapter infers no
-  connector role.
+  `mutable_inputs`. It is required with a helper and refused without one.
+- `fixed_footprints` lists native footprint UUIDs that must not move. The list
+  may be incomplete: envelope-fixed parts are protected anyway (see below).
 
-The protected set is the union of three groups: the declared UUIDs, the policy's
-`fixed_refs` resolved on the source board, and footprints locked on the source
-board.
+`run_campaign` validates the declaration before it creates the campaign
+directory, so before any provider call. It refuses these cases:
 
-`is_placement_iteration` is true only when two conditions hold. The scope
-declares `stages`, and the earliest failing stage recorded in the history is
-`placement`. Other iterations and unstaged scopes are unaffected.
-`writer_context` gives the writer the sealed placement-stage check results and
-their accepted findings. It also includes the retained `placement-probe.json`,
-but only when that file's hash matches `result.json` `artifact_hashes`. Routing
-feedback is reported as `unavailable` until a captured routed-attempt receipt
-exists. This context is prompt data, not evidence.
+- a malformed declaration;
+- a scope without an `agent-ee.stages/1` declaration that includes `placement`;
+- the adapter combined with `implementation_steps` of stage `placement`, so that
+  one placement helper never runs twice in an iteration.
+
+When the first candidate has been captured, the coordinator binds the declaration
+to that candidate and stores the binding in `state.json["placement_binding"]`
+(`agent-ee.placement-binding/1`). The binding holds the declaration identity, the
+board and schematic paths, the policy path and digest, and every envelope that
+a `placement` check consumes, with its digest and fixed references. The binding
+is refused if the policy or an envelope is a mutable input, if a captured digest
+does not match, or if any declared UUID or fixed reference does not resolve to
+exactly one source footprint. Every later iteration re-derives the binding from
+its own source candidate and refuses any drift. The reviews of the first run
+happen before the binding, but no writer runs before it.
+
+### Protected footprints
+
+The protected set is the union of four groups, all resolved on the captured
+source board:
+
+- the declared `fixed_footprints` UUIDs;
+- the policy's `fixed_refs`;
+- the `fixed_footprints[].reference` of every captured envelope named by a
+  `placement` check's `envelope` parameter, read from the envelope bytes with the
+  [AGENTEE-85 validator](board-envelope.md);
+- footprints locked on the source board.
+
+A missing or ambiguous reference refuses the binding. It never shrinks the set.
+A writer cannot unlock a footprint, edit the policy or envelope, or drop a fixed
+reference before the set is computed, because all three come from the source
+candidate, which is immutable. The envelope is consumed here under the existing
+placement-check semantics. This is not the full AGENTEE-85 normative baseline
+integration, which remains separate.
+
+## Step plan and dispatch
+
+The coordinator derives one ordered step plan for each implementation
+(`agent-ee.step-plan/1`). Its only inputs are the frozen configuration, the
+source candidate and the verified history record of the source run. The writer
+cannot change it.
+
+| Campaign | Plan |
+| --- | --- |
+| Staged scope | `implementation_steps` whose stage equals the earliest failing stage, then the placement adapter when that stage is `placement` and the adapter is declared |
+| Unstaged scope | Every `implementation_steps` entry, as before; the adapter is refused |
+| Created before the plan (no `state["step_plan"]`) | Every `implementation_steps` entry, as before; the adapter is refused |
+
+Receipt indexes come from the same plan, in order. A routing-stage step therefore
+never runs on a placement turn, and the placer never runs on a schematic or
+routing turn. Older campaigns keep their historical meaning and verify as
+before. To use the adapter, start a fresh campaign.
+
+## Placement iteration sequence
+
+On a placement turn, `campaign.implement` does the following, under the
+existing campaign and source-run writer leases:
+
+1. The previous run and the campaign have already been verified; the earliest
+   failing stage comes from that verified history. The writer prompt gains
+   `writer_context`: the sealed placement-stage check results, their accepted
+   findings, the retained `placement-probe.json` when its hash matches
+   `result.json`, the protected references and the supported transform family.
+   A finding is included only when its `id` is `check/<local_id>` for a
+   placement-stage check. Routing feedback is reported as `unavailable` until a
+   captured AGENTEE-93 routed-attempt receipt exists. The context is prompt
+   data, not evidence.
+2. The single writer runs under the existing preflight and operation deadline.
+   A failed call leaves the campaign incomplete, with no retry or fallback. The
+   existing inventory and immutable-input checks run on its result.
+3. `run_placement_iteration` holds the writer's delivered design to the
+   placement write scope against the source candidate (`writer_scope`), before
+   any helper runs. A helper therefore cannot overwrite an illegal writer edit
+   and conceal it.
+4. With a helper, exactly one AGENTEE-95 step runs (described below), and only a
+   qualified result is adopted.
+5. The final design is compared with the original source inputs again
+   (`proposal_scope`). The existing proposal checks run once more, and only then
+   is `proposal.scope.json` written.
+
+The next run captures the proposal and runs the ordinary checks: the
+placement-stage DRC projection, the placement checks, later eligible checks,
+independent initial reviews and adjudication. The adapter's `proposed` status
+never proves a placement pass. The existing stage convergence decides whether to
+repair again or stop.
+
+Any refusal, helper failure, timeout, cancellation or invalid result leaves the
+iteration incomplete. The retained record keeps the original exception. If the
+record itself cannot be written, the original exception is still reported, and
+the missing record is anchored as `null`.
 
 ## Helper step
 
-`run_placement_iteration` runs after the writer session and the existing
-inventory checks. It runs inside the campaign's existing writer lease and takes
-no other campaign lease. When `helper` is set, it runs exactly one
-stage-receipt step (AGENTEE-95, `stage_receipts.run_step`). That module is not yet
-on this branch. The step's sandbox view is:
+When `helper` is set, the coordinator runs one stage-receipt step
+(`stage_receipts.run_step`) as receipt `receipts/<index>-agent-ee-placer`, where
+the index comes from the step plan. The step's sandbox view is:
 
 - `/candidate`: the receipt's read-only copy of the delivered design. The
   source board is therefore outside the writable root.
 - `/placement-tool`: a coordinator copy of the `agent_ee` sources plus a constant
   launcher. Python runs with `-I`, so this hashed tree, rather than `/app`,
   supplies the helper code. The receipt records the tree as the step's source
-  identity.
+  identity. The snapshot must equal the campaign's pinned `agent_ee` sources
+  (the launch policy files) before the step runs, and verification checks the
+  retained snapshot against both the pin and the receipt.
 - `/placement-request/request.json`: a request derived by the coordinator. It
   contains `agent-ee.placement-write/1` with `single_design_writer: true`, the
   exact delivered board SHA-256 and `writable_root: /work/placement`. Its policy is
@@ -90,8 +172,11 @@ placer's inventory binding then refuses it.
 ## Placement write scope
 
 `write_scope(before, after, protected)` compares two complete saved
-`.kicad_pcb` parse trees, using the shared bounded S-expression parser. It allows
-only the following changes:
+`.kicad_pcb` parse trees, using the shared bounded S-expression parser. The
+report is `agent-ee.placement-write-scope/2`, and its transform family is
+`agent-ee.placement-transforms/2`. Each transform records `rotation_deg`,
+`flipped` and the resulting `side`. Only the following footprint changes are
+allowed:
 
 - a footprint `at` translation;
 - a footprint rotation delta of 0, 90, 180 or 270 degrees, modulo 360;
@@ -100,7 +185,8 @@ only the following changes:
   stay equal. KiCad 10.0.7 stores those angles as footprint plus local angle, and
   the native tests check actual pcbnew output;
 - a reordering of a footprint's UUID-keyed children, which KiCad re-sorts
-  graphics into on save.
+  graphics into on save;
+- a front/back side flip, as described in the next section.
 
 Every other change is refused with a specific violation:
 
@@ -108,19 +194,52 @@ Every other change is refused with a specific violation:
   This covers the header, setup and rules, the outline, zones, tracks, vias,
   nets and groups;
 - a footprint added, removed or given a duplicate UUID;
-- a changed library identity, layer or side. Side flips are refused as
-  unsupported until a mirrored-child rule is qualified;
+- a changed library identity, or a layer change other than a front/back flip;
 - a rotation delta that is not a quarter turn;
-- any `at` token change on a protected footprint;
+- any `at` token change or side flip of a protected footprint;
 - a pad position, size, net, number or UUID change;
 - a field, model, schematic path or graphic change;
 - a lock-state change;
 - a footprint-owned zone that would move with its footprint.
 
 `proposal_scope` additionally requires every non-board file to keep its exact
-bytes and inventory. In a placement iteration, it compares the delivered design
-with the source candidate's captured inputs. It therefore covers the writer's own
-edits as well as the helper's output.
+bytes and inventory. File-level `mutable_inputs` is therefore not enough: a
+schematic listed as mutable is still refused in a placement iteration.
+
+### Side flips
+
+A side flip is accepted only in the exact form that KiCad 10.0.7
+`FOOTPRINT::Flip` saves. The native tests check both flip directions, from every
+quarter turn, followed by a move, a further quarter turn and a flip back:
+
+- the footprint `layer` swaps between `F.Cu` and `B.Cu`;
+- the saved footprint angle is negated, and what remains must be a quarter turn.
+  A top-bottom flip leaves 0 degrees, a left-right flip 180 degrees;
+- every footprint-local point (`start`, `end`, `center`, polygon `xy`, and the
+  local x/y of `at`) keeps x and negates y exactly;
+- every `F.*`/`B.*` layer of `Cu`, `Adhes`, `Paste`, `SilkS`, `Mask`, `CrtYd` and
+  `Fab` swaps. `*.Cu` and `*.Mask` stay. Any other layer refuses the flip;
+- a pad angle `a` becomes `θ' - (a - θ)`, where θ and θ' are the footprint angles
+  before and after: the local pad angle is negated;
+- a text angle `a` becomes `180 - a + turn`, and `mirror` toggles in its
+  justification. KiCad may also keep a flipped text upright: a further half turn
+  with `left` and `right` swapped is accepted, and nothing else;
+- 3D models and every other footprint token are unchanged.
+
+A flip of a footprint outside this qualified family is refused as unsupported:
+
+- `fp_arc`: pcbnew re-derives arcs on a flip, swapping their endpoints and
+  recomputing the midpoint;
+- custom (`primitives`/`options`), chamfered, trapezoid (`rect_delta`) or
+  offset-drill pads;
+- text with `top` or `bottom` justification;
+- any other keyed child kind.
+
+Arbitrary orientations are not supported. A footprint saved at a non-quarter
+angle may be translated, turned by a quarter turn or flipped, but the change
+relative to its source must always be a qualified transform.
+
+### Exact angles
 
 Angles are compared exactly. Each saved angle token is scaled to an integer
 number of 10^-32 degree units, without any Decimal context, and turns are
@@ -141,65 +260,92 @@ The shared parser does not keep the difference between quoted and unquoted
 atoms. Native reload and the fresh checks remain the authority on how KiCad
 parses the bytes.
 
-## Records and authority
+## Records, anchors and verification
 
-`implementations/N/placement-adapter.json` (`agent-ee.placement-adapter-record/1`)
+`implementations/N/placement-adapter.json` (`agent-ee.placement-adapter-record/2`)
 records the following:
 
-- the declaration identity and the protected UUIDs;
+- the declaration and binding identities, and the protected UUIDs and references;
 - the request identity, receipt path, ID, status and digest;
-- the helper result digest, the step's scope proof and the proposal scope proof;
-- `authority: provenance-only`.
+- the helper result digest and the step's scope proof;
+- the writer's pre-helper scope proof (`writer_scope`) and the final proposal
+  scope proof;
+- `status` (`proposed`, `refused`, `incomplete` or `cancelled`), the error, and
+  `authority: provenance-only`.
 
-`verify_record` rebuilds a proposed record from three sources: the retained
-receipt (through `stage_receipts.validate_receipt`), the request, and the
-captured proposal inputs. It derives every field itself and copies none from the
-stored record. It refuses the following:
+Its digest is anchored in `state.json["placement_records"]`, keyed by
+implementation, including for failed iterations. `verify-campaign` re-derives the
+step plan of every implementation from the history it has just verified against
+evidence, then does the following:
 
-- a record whose keys differ from the record schema, whose `status` is not
-  `proposed`, whose `error` is not null, or whose `authority` is not
-  `provenance-only`;
-- a captured proposal whose recomputed proposal scope is not `allowed` with no
-  violations. This applies to helper-free and helper-backed iterations, and it
-  holds even when the stored record repeats the same refused scope;
-- with a declared helper: a missing helper entry, or a receipt path other than
-  `receipts/<index>-agent-ee-placer`. It also refuses a captured proposal that
-  differs from the receipt's inputs with its outputs applied. The proposal must
-  be exactly the adopted helper output over the delivered design;
-- any remaining difference from the rebuilt record.
-
-`verify_record` does not check the anchored receipt index or the receipt's
-applicability. The campaign's stage-receipt verification owns both.
+- It passes each implementation's expected receipt declarations to the stage
+  receipt verifier. A delivered proposal must hold a receipt for every planned
+  step; an incomplete one may hold a prefix.
+- It refuses a placement record or anchor on an implementation whose plan has no
+  placement step, a missing or changed record, and a binding that differs from the
+  first captured candidate or drifts later.
+- For a `proposed` record, `verify_record` rebuilds every field from the retained
+  receipt, the re-derived request, the source inputs and the captured next
+  candidate. It copies no field from the stored record. Both scope proofs must be
+  `allowed`. With a helper, the captured proposal must be exactly the adopted
+  helper output over the writer's delivered design. When no next run exists, the
+  coordinator's scratch design stands in for it.
+- For an incomplete last iteration, `verify_attempt` checks the record without
+  asserting adoption or completion. It recomputes the binding, the protected set,
+  any helper receipt and request, and each scope proof from the retained records
+  and the unchanged scratch design. A refused status needs a refused scope proof;
+  a cancelled status needs the `KeyboardInterrupt` error. An attempt whose final
+  scope is allowed is not accepted as incomplete.
 
 The helper's local judgment, its native courtyard DRC and its `placed` status
 describe a disposable proposal only. Grades come only from the next run's fresh
-captured checks of the captured candidate, which include native DRC and the
-placement check. Reviewers and adjudication follow as before.
+captured checks of the captured candidate.
 
 ## Qualification and open obligations
 
-The tests use owned boards and actual tools:
+The adapter tests use owned boards and actual tools: KiCad 10.0.7 pcbnew edits
+and flips, `kicad-cli` netlist export, the production networkless executor and
+the AGENTEE-95 receipt module.
 
-- KiCad 10.0.7 pcbnew edits;
-- `kicad-cli` netlist export of the owned RC schematic;
-- the production networkless executor;
-- the AGENTEE-95 receipt module.
+`tests/test_placement_campaign.py` runs the existing campaign with real capture,
+sandboxed checks, stage gates, receipts and the pinned placer. Only the agent
+transport is scripted, so these tests do not show live-model repair quality. The
+starting boards are owned variants of the RC control fixture. Tracks and zones are
+removed and every pad is made rectangular. Project-local footprint libraries are
+rebuilt from the stock KiCad footprints at test time and are not committed. The
+tests show the following:
 
-They check that quarter turns are accepted on the top and bottom sides, with an
-unmodified re-save as a control. They check that edits outside the scope,
-non-quarter and tiny turns, a footprint-owned zone moving with its footprint,
-fixed-connector moves, helper failures, cancellation and an exhausted deadline
-are refused. The rectangular placeholder footprints are not production models.
+- the pinned placer repairs an R1/C1 courtyard overlap. The next run's fresh
+  placement-stage DRC and placement checks pass on the adopted board, and the
+  routing turn that follows runs no helper and gets no placement context;
+- two writer-only repairs, each graded by fresh native checks, with the second
+  writer turn receiving the second run's findings;
+- a writer side flip that is captured and graded;
+- refusal of an outline move, added copper, a field change, an envelope-fixed
+  connector move with an incomplete declared list, a lock removed before a move,
+  a schematic change, a tiny angle and a flip with a non-quarter turn. None of
+  them creates a next candidate;
+- a helper typed failure, a crash, a timeout, a real coordinator interrupt, the
+  real RC roundrect and circle pads (which the unchanged packer reports as
+  `unsupported_geometry`), a writer failure and a failed record write. Each one
+  leaves the campaign incomplete and publicly verifiable;
+- public verification refusing tampered records, requests, outputs, receipts,
+  configuration, bindings, anchors and relabelled history.
 
 These obligations remain open:
 
-- The real RC fixture footprints use roundrect and circle pads. The unchanged
-  initial packer reports `unsupported_geometry` for them, so the real RC ladder
-  needs pad-shape qualification in AGENTEE-54 or AGENTEE-55. The structural
-  scope proof itself accepts transforms of those real footprints.
-- AGENTEE-91 closure needs an actual RC campaign. It must run with forward
-  annotation (AGENTEE-52), the registered placement check (AGENTEE-92), staged
-  gates (AGENTEE-48/88), merged stage receipts (AGENTEE-95) and integrator-owned
-  `campaign.py` wiring. Standalone helper tests are not that proof.
-- Side changes, writer-selected helper invocation and routed-attempt feedback
-  are not supported yet.
+- **AGENTEE-52 forward annotation.** The starting boards are not forward-annotated
+  scaffolds. The qualified AGENTEE-52 commit is still under repair by its owner.
+  The campaign-level acceptance with a genuine forward-annotated RC board is
+  therefore unmet.
+- **AGENTEE-54 pad shapes.** The unchanged packer supports only rectangular pads.
+  On the real RC roundrect and circle pads the iteration is incomplete. The
+  writer-only pcbnew path covers the transform use case there, but that does not
+  qualify the missing placer capability.
+- **AGENTEE-93 routing feedback.** The writer context reports it as unavailable;
+  no stale result or model prose substitutes for a captured routed-attempt
+  receipt.
+- **Deadline exhaustion** is exercised directly on `run_placement_iteration`,
+  not through a full campaign.
+- Writer-selected helper invocation is not supported. The declaration selects the
+  helper.

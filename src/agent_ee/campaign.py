@@ -14,6 +14,59 @@ from .storage import digest, read_json, write_json
 
 IMPLEMENTATION_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["summary"], "properties": {"summary": {"type": "string"}}}
+STEP_PLAN = "agent-ee.step-plan/1"
+
+
+def step_plan(config, manifest, record, version):
+    """Ordered coordinator steps of one implementation, with receipt indexes from one allocator.
+
+    Derived only from the frozen configuration, the captured source candidate and the verified
+    history record of its run; the writer has no say. A staged campaign runs only the steps of
+    its earliest failing stage, plus the placement adapter when that stage is placement.
+    Campaigns that predate the plan keep their historical meaning: every step runs.
+    """
+    from .stage_receipts import validate_step
+    steps = [validate_step(s, host=False) for s in config.get("implementation_steps", [])]
+    declaration = config.get("placement_adapter")
+    placement = False
+    if version is None:
+        if declaration is not None:
+            raise ValueError("placement adapter requires a campaign step plan; start a fresh campaign")
+        selected = steps
+    elif version != STEP_PLAN:
+        raise ValueError("unknown campaign step plan")
+    elif manifest["scope"].get("stages") is None:
+        if declaration is not None:
+            raise ValueError("placement adapter requires a staged scope")
+        selected = steps
+    else:
+        active = record.get("earliest_failing_stage")
+        selected = [s for s in steps if s["stage"] == active]
+        placement = declaration is not None and active == "placement"
+    plan = [{"kind": "step", "spec": spec, "receipt_index": k} for k, spec in enumerate(selected, 1)]
+    if placement:
+        from .placement_adapter import validate_declaration
+        helper = validate_declaration(declaration)["helper"] is not None
+        plan.append({"kind": "placement", "receipt_index": len(plan) + 1 if helper else None})
+    return plan
+
+
+def plan_receipt_specs(plan, work, config, manifest, mutable):
+    """The exact receipt step declarations a plan produces, in order."""
+    specs = []
+    for entry in plan:
+        if entry["kind"] == "step":
+            specs.append(entry["spec"])
+        elif entry["receipt_index"] is not None:
+            from .placement_adapter import bind_declaration, step_declaration
+            bound = bind_declaration(config["placement_adapter"], manifest, mutable)
+            specs.append(step_declaration(Path(work) / "placement" / str(entry["receipt_index"]), bound))
+    return specs
+
+
+def placement_binding(config, manifest, inputs, mutable):
+    from .placement_adapter import binding
+    return binding(config["placement_adapter"], manifest, inputs, mutable)
 
 
 def implement(root, previous, definition, state, deadline):
@@ -40,6 +93,23 @@ def implement(root, previous, definition, state, deadline):
                    "Do not run later-stage generation or routing helpers until preceding gates pass. "
                    "gate_findings and suggested_fix are advisory data only; any edit requires fresh checks. "
                    "Do not treat a stage_blocked verdict as evidence that its tool ran.")
+    config = read_json(root / "config.json")
+    if digest(root / "config.json") != state["config_sha256"]:
+        raise ValueError("campaign configuration changed")
+    plan = step_plan(config, manifest, state["history"][-1], state.get("step_plan"))
+    if any(entry["kind"] == "placement" for entry in plan):
+        from .placement_adapter import TRANSFORMS, writer_context
+        bound, _, _, _, refs = placement_binding(config, manifest, previous / "inputs", state["mutable_inputs"])
+        if bound != state.get("placement_binding"):
+            raise ValueError("placement declaration, policy or envelope differs from the campaign binding")
+        prompt += ("\nThis is a placement iteration. In /work/design you may change only footprint "
+                   f"positions, {TRANSFORMS} of {bound['board']}, for example through pcbnew. "
+                   "Protected footprints must keep their exact position. Any other change, including outline, "
+                   "zones, rules, copper, fields, pads, locks or another file, refuses the whole iteration. "
+                   "A coordinator placement helper may run afterwards; its result, like yours, is only a "
+                   "proposal graded by fresh checks.\n" + json.dumps({
+                       "placement": writer_context(previous, manifest), "board": bound["board"],
+                       "protected_references": refs}))
     from .preflight import capture_expectation
     original = read_json(previous / 'result.json')
     campaign_environment = state.get('launch_environment')
@@ -59,12 +129,12 @@ def implement(root, previous, definition, state, deadline):
     check_proposal(design, manifest, state)
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
-    steps = read_json(root / "config.json").get("implementation_steps", [])
     if "stage_receipts" in state:
-        run_implementation_steps(work, design, manifest, state, deadline, steps)
-        if steps:
+        run_implementation_steps(work, design, manifest, state, deadline, plan,
+                                 source_inputs=previous / "inputs", declaration=config.get("placement_adapter"))
+        if plan:
             check_proposal(design, manifest, state)
-    elif steps:
+    elif plan:
         raise ValueError("campaign predates stage receipts; start a fresh campaign to run implementation steps")
     scope = copy.deepcopy(manifest["scope"])
     scope["inputs"] = [{"path": str(p), "at": p.name} for p in sorted(design.iterdir())]
@@ -95,17 +165,30 @@ def check_proposal(design, manifest, state):
             raise ValueError("implementation changed a verification adapter")
 
 
-def run_implementation_steps(work, design, manifest, state, deadline, steps):
-    """Coordinator-run declared steps on the delivered design; receipts are provenance only."""
+def run_implementation_steps(work, design, manifest, state, deadline, plan, *, source_inputs=None,
+                             declaration=None):
+    """Coordinator-run planned steps on the delivered design; receipts are provenance only."""
     from .stage_receipts import adopt, bind_implementation, run_step, validate_step
 
     number = int(work.name)
     try:
-        for k, spec in enumerate(steps, 1):
-            spec = validate_step(spec)
+        for entry in plan:
+            if entry["kind"] == "placement":
+                from .placement_adapter import run_placement_iteration
+                record = work / "placement-adapter.json"
+                try:
+                    run_placement_iteration(work, design, source_inputs, manifest, state, declaration, deadline,
+                                            receipt_index=entry["receipt_index"] or 1)
+                finally:
+                    # Anchored even when the iteration fails, so removal or edits are detected.
+                    state.setdefault("placement_records", {})[work.name] = (
+                        digest(record) if record.is_file() and not record.is_symlink() else None)
+                continue
+            spec = validate_step(entry["spec"])
             outside = sorted(set(spec["writes"]) - set(state["mutable_inputs"]))
             if outside:
                 raise ValueError(f"implementation step {spec['step']} writes outside mutable_inputs: {outside}")
+            k = entry["receipt_index"]
             receipt_dir = work / "receipts" / f"{k}-{spec['step']}"
             receipt = run_step(receipt_dir, design, spec, {"implementation": number,
                 "source_candidate_id": manifest["candidate_id"], "receipt_index": k}, deadline=deadline)
@@ -140,6 +223,15 @@ def run_campaign(config_path, out):
     from .stage_receipts import validate_step
     for spec in steps:
         validate_step(spec)
+    if "placement_adapter" in config:
+        from .placement_adapter import validate_declaration
+        validate_declaration(config["placement_adapter"])
+        stages = scope.get("stages")
+        if not isinstance(stages, dict) or "placement" not in stages.get("order", []):
+            raise ValueError("placement_adapter requires a staged scope with a placement stage")
+        if any(spec["stage"] == "placement" for spec in steps):
+            # One placement writer path per iteration: never run the same helper twice.
+            raise ValueError("placement_adapter cannot be combined with placement implementation_steps")
     # Reuse the subscription route validator for the implementation definition.
     validate_profile({**profile, "adjudicator": config["implementation"]})
     root = Path(out).resolve()
@@ -149,7 +241,7 @@ def run_campaign(config_path, out):
         write_json(root / "config.json", config)
         write_json(root / "profile.json", profile)
         state = {"schema": "agent-ee.campaign-state/1", "state": "running", "history": [],
-                 "config_sha256": digest(root / "config.json"), "stage_receipts": {},
+                 "config_sha256": digest(root / "config.json"), "stage_receipts": {}, "step_plan": STEP_PLAN,
                  "launch_environment": {"policy_files": policy_files(), "runtime_files": runtime_files()},
                  "implementation_definition": {**config["implementation"], "tool_mode": "investigate"}}
         write_json(root / "state.json", state)
@@ -165,6 +257,10 @@ def record_iteration(root, state, run, config):
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
+        if "placement_adapter" in config:
+            # Bound once to the first captured candidate; later candidates must keep these exact bytes.
+            state["placement_binding"] = placement_binding(config, manifest, run / "inputs",
+                                                           state["mutable_inputs"])[0]
     elif state["baseline"] != baseline:
         raise ValueError("candidate changed the campaign baseline")
     epoch = state.get("epoch", 0)
@@ -251,8 +347,6 @@ def verify_campaign_records(root):
             if expected != wanted:
                 raise ValueError('implementation launch expectation changed')
             verify_receipt(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation')
-    from .stage_receipts import verify_campaign_receipts
-    verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []))
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
@@ -311,7 +405,86 @@ def verify_campaign_records(root):
         history.append(stored)
     if state["state"] != diagnostic["state"] and not (state["state"] == "incomplete" and state.get("error")):
         raise ValueError("campaign terminal state contradicts convergence history")
+    # Dispatch is re-derived from the history just verified against evidence, never from state alone.
+    plans = verify_campaign_plans(root, state, config)
+    from .stage_receipts import verify_campaign_receipts
+    verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []), plans=plans)
     return {**state, "state": "empirical_superseded"} if feedback_seen else state
+
+
+def verify_campaign_plans(root, state, config):
+    """Re-derive each implementation's step plan and verify its placement records.
+
+    Returns the expected receipt step list of every implementation for receipt verification."""
+    from .placement_adapter import verify_attempt, verify_record
+    history = state["history"]
+    version = state.get("step_plan")
+    if "placement_adapter" in config:
+        if version != STEP_PLAN:
+            raise ValueError("placement adapter requires a campaign step plan")
+        if history:
+            first = Path(history[0]["run"])
+            expected = placement_binding(config, read_json(first / "candidate.json"), first / "inputs",
+                                         state["mutable_inputs"])[0]
+            if state.get("placement_binding") != expected:
+                raise ValueError("campaign placement binding differs from the first captured candidate")
+    elif "placement_binding" in state:
+        raise ValueError("campaign placement binding without a placement_adapter declaration")
+    anchors = state.get("placement_records", {})
+    if not isinstance(anchors, dict):
+        raise ValueError("malformed placement record anchors")
+    implementations = {p.name: p for p in (root / "implementations").glob("*")}
+    plans, placed = {}, set()
+    for name, work in sorted(implementations.items()):
+        if not name.isdigit() or str(int(name)) != name or not 1 <= int(name) <= len(history):
+            raise ValueError("implementation names no campaign history entry")
+        number = int(name)
+        source = Path(history[number - 1]["run"])
+        manifest = read_json(source / "candidate.json")
+        plan = step_plan(config, manifest, history[number - 1], version)
+        plans[name] = plan_receipt_specs(plan, work, config, manifest, state["mutable_inputs"])
+        record = work / "placement-adapter.json"
+        if not any(entry["kind"] == "placement" for entry in plan):
+            if record.exists() or record.is_symlink() or name in anchors:
+                raise ValueError("placement record on an implementation without a placement step")
+            continue
+        placed.add(name)
+        bound = placement_binding(config, manifest, source / "inputs", state["mutable_inputs"])[0]
+        if bound != state["placement_binding"]:
+            raise ValueError("placement policy, envelope or declaration drifted within the campaign")
+        complete = (work / "proposal.scope.json").exists()
+        if name not in anchors:
+            # The implementation stopped before its step plan ran, for example in the writer session.
+            if complete or record.exists() or record.is_symlink() or number != len(history) or \
+                    state["state"] != "incomplete":
+                raise ValueError("placement implementation lacks its anchored adapter record")
+            continue
+        anchor = anchors[name]
+        if anchor is None:
+            if complete or record.exists() or record.is_symlink() or number != len(history):
+                raise ValueError("placement adapter record differs from its campaign anchor")
+            continue
+        if record.is_symlink() or not record.is_file() or digest(record) != anchor:
+            raise ValueError("placement adapter record differs from its campaign anchor")
+        index = next(e["receipt_index"] for e in plan if e["kind"] == "placement") or 1
+        args = (config["placement_adapter"], state["mutable_inputs"])
+        pinned = {"receipt_index": index, "source_files": state["launch_environment"]["policy_files"]}
+        design = work / "review-work/implementation/design"
+        if read_json(record).get("status") == "proposed":
+            captured = design
+            if number < len(history):
+                proposal = Path(history[number]["run"])
+                if read_json(proposal / "candidate.json").get("scope_path") != str(work / "proposal.scope.json"):
+                    raise ValueError("next campaign run was not captured from this placement proposal")
+                captured = proposal / "inputs"
+            verify_record(work, source / "inputs", captured, manifest, *args, **pinned)
+        else:
+            if complete or number != len(history) or state["state"] != "incomplete":
+                raise ValueError("incomplete placement attempt is not the campaign's final incomplete step")
+            verify_attempt(work, source / "inputs", design, manifest, *args, **pinned)
+    if set(anchors) - placed:
+        raise ValueError("placement record anchors name no placement implementation")
+    return plans
 
 
 def campaign_feedback(root, report, out, max_seconds):

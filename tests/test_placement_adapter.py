@@ -1,9 +1,7 @@
 """Placement-iteration write scope and coordinator-run helper step (AGENTEE-91)."""
-import copy
 import decimal
 import hashlib
 import importlib.util
-import json
 import os
 import shutil
 import subprocess
@@ -63,6 +61,48 @@ def rotated(turn, x='12', y='9'):
                   ('(at -0.5 0)', f'(at -0.5 0 {turn})'), ('(at 0.5 0)', f'(at 0.5 0 {turn})'))
 
 
+def flipped(angle='0', ref_text='180', value_text='180', user_text='90', pad='0', arc=False, vertical=False,
+            chamfer=False, before=False):
+    """R1 flipped to the back as KiCad 10 saves it: local y mirrored, layers swapped, texts mirrored.
+
+    The defaults are a top-bottom flip in place; `angle` is the saved footprint angle afterwards
+    and the text angles follow 180 - a + turn. With before=True only the optional extra
+    children are added, unflipped, to build a matching source board."""
+    arc_child = ('  (fp_arc (start 0 -1) (mid 0.7 -0.7) (end 1 0) (stroke (width 0.1) (type solid)) '
+                 '(layer "F.SilkS") (uuid "a8"))\n')
+    if before:
+        text = TEXT.replace('  (pad "1" smd rect (at -0.5 0)', arc_child + '  (pad "1" smd rect (at -0.5 0)') if arc else TEXT
+        if vertical:
+            text = text.replace('(effects (font (size 0.5 0.5)))', '(effects (font (size 0.5 0.5)) (justify top))')
+        if chamfer:
+            text = text.replace('(pad "2" smd rect', '(pad "2" smd roundrect (chamfer_ratio 0.2) (chamfer top_left)')
+        return text.encode()
+    pads = {'-0.5': f'(at -0.5 0{"" if pad == "0" else " " + pad})', '0.5': f'(at 0.5 0{"" if pad == "0" else " " + pad})'}
+    pairs = [('(footprint "Owned:R" (layer "F.Cu")', '(footprint "Owned:R" (layer "B.Cu")'),
+             ('(at 10 10)', '(at 10 10)' if angle == '0' else f'(at 10 10 {angle})'),
+             ('(at 0 -1.5 0) (layer "F.SilkS") (uuid "a1") (effects (font (size 1 1))))',
+              f'(at 0 1.5 {ref_text}) (layer "B.SilkS") (uuid "a1") (effects (font (size 1 1)) (justify mirror)))'),
+             ('(at 0 1.5 0) (layer "F.Fab") (uuid "a2") (effects (font (size 1 1))))',
+              f'(at 0 -1.5 {value_text}) (layer "B.Fab") (uuid "a2") (effects (font (size 1 1)) (justify mirror)))'),
+             ('(start -1 -1) (end 1 -1) (stroke (width 0.05) (type solid)) (layer "F.CrtYd")',
+              '(start -1 1) (end 1 1) (stroke (width 0.05) (type solid)) (layer "B.CrtYd")'),
+             ('(start 1 -1) (end 1 1) (stroke (width 0.05) (type solid)) (layer "F.CrtYd")',
+              '(start 1 1) (end 1 -1) (stroke (width 0.05) (type solid)) (layer "B.CrtYd")'),
+             ('(at 0 0 90) (layer "F.Fab") (uuid "a5") (effects (font (size 0.5 0.5))))',
+              f'(at 0 0 {user_text}) (layer "B.Fab") (uuid "a5") (effects (font (size 0.5 0.5)'
+              f'){" (justify top mirror)" if vertical else " (justify mirror)"}))'),
+             ('(at -0.5 0) (size 0.5 0.5) (layers "F.Cu")', pads['-0.5'] + ' (size 0.5 0.5) (layers "B.Cu")'),
+             ('(at 0.5 0) (size 0.5 0.5) (layers "F.Cu")', pads['0.5'] + ' (size 0.5 0.5) (layers "B.Cu")')]
+    text = flipped(arc=arc, vertical=False, chamfer=chamfer, before=True).decode()
+    if arc:
+        pairs.append((arc_child.strip(), '(fp_arc (start 1 0) (mid 0.7 0.7) (end 0 1) (stroke (width 0.1) (type solid)) '
+                                         '(layer "B.SilkS") (uuid "a8"))'))
+    if chamfer:
+        pairs[-1] = ('(at 0.5 0) (size 0.5 0.5) (layers "F.Cu")', '(at 0.5 0) (size 0.5 0.5) (layers "B.Cu")')
+        pairs.append(('(chamfer top_left)', '(chamfer bottom_left)'))
+    return mutate(*pairs, text=text)
+
+
 class WriteScopeTest(unittest.TestCase):
     def assertRefused(self, after, fragment, protected=()):
         report = pa.write_scope(TEXT.encode(), after, protected)
@@ -81,8 +121,8 @@ class WriteScopeTest(unittest.TestCase):
             with self.subTest(turn=turn):
                 report = pa.write_scope(TEXT.encode(), rotated(turn), [FP_J])
                 self.assertEqual(report['status'], 'allowed', report['violations'])
-                self.assertEqual(report['transforms'], [{'uuid': FP_R, 'reference': 'R1',
-                    'rotation_deg': turn % 360, 'from': ['10', '10', '0'], 'to': ['12', '9', str(turn)]}])
+                self.assertEqual(report['transforms'], [{'uuid': FP_R, 'reference': 'R1', 'rotation_deg': turn % 360,
+                    'flipped': False, 'side': 'front', 'from': ['10', '10', '0'], 'to': ['12', '9', str(turn)]}])
 
     def test_translation_only_and_reordered_keyed_graphics_are_allowed(self):
         line3 = '  (fp_line (start -1 -1) (end 1 -1) (stroke (width 0.05) (type solid)) (layer "F.CrtYd") (uuid "a3"))\n'
@@ -190,9 +230,58 @@ class WriteScopeTest(unittest.TestCase):
                           pa.write_scope(TEXT.encode(), boundary)['violations'][0])
             self.assertEqual(pa.write_scope(TEXT.encode(), rotated(90, x='12.' + '0' * 60 + '1'))['status'], 'allowed')
 
-    def test_side_flip_is_refused_as_unsupported(self):
-        self.assertRefused(mutate(('(footprint "Owned:R" (layer "F.Cu")', '(footprint "Owned:R" (layer "B.Cu")')),
-                           'side flips are not supported')
+    def test_exact_side_flip_is_a_transform_and_partial_flips_are_refused(self):
+        report = pa.write_scope(TEXT.encode(), flipped(), [FP_J])
+        self.assertEqual(report['status'], 'allowed', report['violations'])
+        self.assertEqual(report['family'], 'agent-ee.placement-transforms/2')
+        self.assertEqual(report['transforms'], [{'uuid': FP_R, 'reference': 'R1', 'rotation_deg': 0, 'flipped': True,
+            'side': 'back', 'from': ['10', '10', '0'], 'to': ['10', '10', '0']}])
+        # Flipped back to the front side, the mirror justification is removed again.
+        back = pa.write_scope(flipped(), TEXT.encode(), [FP_J])
+        self.assertEqual((back['status'], back['transforms'][0]['side']), ('allowed', 'front'), back['violations'])
+        # A left-right flip is the same mirror plus a half turn; text may be kept upright with swapped justification.
+        half = flipped(angle='180', ref_text='0', value_text='0', user_text='270', pad='180')
+        upright = half.replace(b'(at 0 0 270) (layer "B.Fab")', b'(at 0 0 90) (layer "B.Fab")')
+        for name, after in (('half turn', half), ('kept upright', upright)):
+            with self.subTest(name):
+                report = pa.write_scope(TEXT.encode(), after, [FP_J])
+                self.assertEqual(report['status'], 'allowed', report['violations'])
+                self.assertEqual(report['transforms'][0]['rotation_deg'], 180)
+        cases = {
+            'bare layer change': (mutate(('(footprint "Owned:R" (layer "F.Cu")', '(footprint "Owned:R" (layer "B.Cu")')),
+                                  'changed beyond the footprint transform'),
+            'pad layer not swapped': (flipped().replace(b'(layers "B.Cu") (net "/IN")', b'(layers "F.Cu") (net "/IN")'),
+                                      'pad a6 changed beyond'),
+            'point not mirrored': (flipped().replace(b'(start -1 1) (end 1 1)', b'(start -1 -1) (end 1 -1)'),
+                                   'fp_line a3 changed beyond'),
+            'mirror justification missing': (flipped().replace(b'(size 0.5 0.5)) (justify mirror)', b'(size 0.5 0.5))'),
+                                             'fp_text a5 changed beyond'),
+            'text turned otherwise': (flipped().replace(b'(at 0 0 90) (layer "B.Fab")', b'(at 0 0 0) (layer "B.Fab")'),
+                                      'fp_text a5 changed beyond'),
+            'upright without swapped justification': (
+                upright.replace(b'(size 0.5 0.5)) (justify mirror)', b'(size 0.5 0.5)) (justify left mirror)'),
+                'fp_text a5 changed beyond'),
+            'pad local angle not negated': (flipped().replace(b'(at 0.5 0) (size', b'(at 0.5 0 90) (size'),
+                                            'pad a7 changed beyond'),
+            'non-quarter turn after flip': (flipped(angle='45', ref_text='225', value_text='225', user_text='135',
+                                                    pad='45'), 'after the side flip is not a quarter turn'),
+            'other layer': (mutate(('(footprint "Owned:R" (layer "F.Cu")', '(footprint "Owned:R" (layer "In1.Cu")')),
+                            'layer changed other than a front/back side flip'),
+            'arc': (flipped(arc=True), 'fp_arc a8 is not supported under a side flip'),
+            'vertical justification': (flipped(vertical=True), 'fp_text a5 is not supported under a side flip'),
+            'chamfered pad': (flipped(chamfer=True), 'pad a7 is not supported under a side flip'),
+        }
+        for name, (after, fragment) in cases.items():
+            with self.subTest(name):
+                before = flipped(arc=True, before=True) if name == 'arc' else (
+                    flipped(vertical=True, before=True) if name == 'vertical justification' else (
+                        flipped(chamfer=True, before=True) if name == 'chamfered pad' else TEXT.encode()))
+                report = pa.write_scope(before, after, [FP_J])
+                self.assertEqual(report['status'], 'refused', name)
+                self.assertTrue(any(fragment in v for v in report['violations']), report['violations'])
+                self.assertEqual(report['transforms'], [])
+        # A protected footprint never flips, even when its saved position tokens stay equal.
+        self.assertRefused(flipped(), 'protected footprint transform changed', [FP_R])
 
     def test_protected_footprint_cannot_move_rotate_or_change_lock(self):
         self.assertRefused(mutate(('(at 2 10)', '(at 3 10)')), 'protected footprint transform changed', [FP_J])
@@ -273,8 +362,9 @@ class DeclarationAndContextTest(unittest.TestCase):
             checks = [{'id': 'place', 'kind': 'placement', 'execution': 'ok', 'outcome': 'defect', 'summary': 's',
                        'details': {'hard_failures': [1]}, 'evidence': []},
                       {'id': 'drc', 'kind': 'drc', 'execution': 'ok', 'outcome': 'defect'}]
-            findings = [{'source': 'check', 'status': 'accepted', 'local_id': 'place'},
-                        {'source': 'check', 'status': 'accepted', 'local_id': 'drc'},
+            findings = [{'id': 'check/place', 'source': 'check', 'status': 'accepted', 'local_id': 'place'},
+                        {'id': 'check/drc', 'source': 'check', 'status': 'accepted', 'local_id': 'drc'},
+                        {'id': 'check/drc', 'source': 'check', 'status': 'accepted', 'local_id': 'place'},
                         {'source': 'reviewer', 'status': 'accepted', 'local_id': 'place'}]
             write_json(run / 'result.json', {'checks': checks, 'findings': findings, 'artifact_hashes': {
                 'work/place/placement-probe.json': digest(run / 'work/place/placement-probe.json')}})
@@ -321,7 +411,8 @@ class WriterOnlyRecordTest(unittest.TestCase):
             (tree / SCHEMATIC).write_text('(kicad_sch)')
         self.work = root / 'implementations/1'
         self.work.mkdir(parents=True)
-        self.manifest = {'candidate_id': 'c' * 64, 'files': {BOARD: 'a', SCHEMATIC: 'b'},
+        self.manifest = {'candidate_id': 'c' * 64, 'files': {BOARD: digest(self.source / BOARD),
+                                                             SCHEMATIC: digest(self.source / SCHEMATIC)},
                          'scope': {'board': BOARD, 'schematic': SCHEMATIC, 'stages': {'schema': 'agent-ee.stages/1'}}}
         self.declaration = {'schema': pa.ADAPTER_SCHEMA, 'helper': None, 'policy': None,
                             'fixed_footprints': [FP_J], 'timeout_s': 10}
@@ -567,8 +658,6 @@ class NativeWriteScopeTest(unittest.TestCase):
     def test_actual_pcbnew_out_of_scope_edits_are_refused(self):
         def move_fixed(k, board, fps):
             fps['J1'].SetPosition(k.VECTOR2I(5_000_000, 15_000_000))
-        def flip(k, board, fps):
-            fps['C1'].Flip(fps['C1'].GetPosition(), False)
         def free_angle(k, board, fps):
             fps['C1'].SetOrientationDegrees(30)
         def pad_size(k, board, fps):
@@ -588,7 +677,7 @@ class NativeWriteScopeTest(unittest.TestCase):
         def value(k, board, fps):
             fps['R1'].SetValue('changed')
         cases = {'fixed connector moved': (move_fixed, 'protected footprint transform changed'),
-                 'side flip': (flip, 'side flips are not supported'), 'free angle': (free_angle, 'not a quarter turn'),
+                 'free angle': (free_angle, 'not a quarter turn'),
                  'pad size': (pad_size, 'changed beyond the footprint transform'),
                  'pad net': (pad_net, 'changed beyond the footprint transform'),
                  'outline': (outline, 'board: removed or changed gr_line'), 'copper': (track, 'board: added or changed segment'),
@@ -596,6 +685,91 @@ class NativeWriteScopeTest(unittest.TestCase):
         for name, (edit, fragment) in cases.items():
             with self.subTest(name):
                 report = pa.write_scope(self.before, self.edited(name.replace(' ', '-'), edit), [self.fixed])
+                self.assertEqual(report['status'], 'refused')
+                self.assertTrue(any(fragment in v for v in report['violations']), report['violations'])
+
+
+class NativeSideFlipTest(unittest.TestCase):
+    """The side-flip family against actual pcbnew FOOTPRINT::Flip saves of owned and RC boards."""
+    setUpClass = NativeWriteScopeTest.setUpClass
+    setUp = NativeWriteScopeTest.setUp
+    edited = NativeWriteScopeTest.edited
+
+    def flips(self, source, refs, protected=()):
+        before = Path(source).read_bytes()
+        for turn in (0, 90, 180, 270):
+            for direction in ('FLIP_DIRECTION_LEFT_RIGHT', 'FLIP_DIRECTION_TOP_BOTTOM'):
+                def turned(k, board, fps, turn=turn):
+                    for ref in refs:
+                        fps[ref].SetOrientationDegrees(turn)
+                start = self.root / f'start-{turn}.kicad_pcb'
+                start.write_bytes(self.edited(f'start-{turn}', turned, source))
+                def flip(k, board, fps, direction=direction):
+                    for ref in refs:
+                        fps[ref].Flip(fps[ref].GetPosition(), getattr(k, direction))
+                with self.subTest(turn=turn, direction=direction):
+                    after = self.edited(f'flip-{turn}-{direction}', flip, start)
+                    report = pa.write_scope(start.read_bytes(), after, protected)
+                    self.assertEqual(report['status'], 'allowed', report['violations'])
+                    self.assertEqual(sorted((t['reference'], t['flipped'], t['side']) for t in report['transforms']),
+                                     sorted((ref, True, 'back') for ref in refs))
+                    self.assertEqual({t['rotation_deg'] for t in report['transforms']},
+                                     {180 if direction.endswith('LEFT_RIGHT') else 0})
+                    # Moved, turned a further quarter turn and flipped back: still one exact transform.
+                    flipped_path = self.root / 'flipped.kicad_pcb'
+                    flipped_path.write_bytes(after)
+                    def back(k, board, fps, direction=direction):
+                        for ref in refs:
+                            fps[ref].SetOrientationDegrees(fps[ref].GetOrientationDegrees() + 90)
+                            fps[ref].SetPosition(k.VECTOR2I(fps[ref].GetPosition().x + 1_000_000,
+                                                            fps[ref].GetPosition().y))
+                            fps[ref].Flip(fps[ref].GetPosition(), getattr(k, direction))
+                    report = pa.write_scope(after, self.edited(f'back-{turn}-{direction}', back, flipped_path),
+                                            protected)
+                    self.assertEqual(report['status'], 'allowed', report['violations'])
+                    self.assertEqual({t['side'] for t in report['transforms']}, {'front'})
+        return before
+
+    def test_actual_pcbnew_flips_of_owned_footprints_both_ways_from_every_quarter_turn(self):
+        self.flips(self.board, ('C1', 'R1'), [self.fixed])
+
+    def test_actual_pcbnew_flips_of_rc_library_smd_and_tht_footprints(self):
+        source = self.root / 'rc.kicad_pcb'
+        shutil.copyfile(REPO / 'fixtures/rc/control/rc_filter.kicad_pcb', source)
+        # Unrouted footprints only: pcbnew rewrites tracks whose pads move. A separate interpreter
+        # strips them, as pcbnew 10.0.7 crashes walking a board after Remove().
+        strip = ('import sys\nimport pcbnew as k\nboard = k.LoadBoard(sys.argv[1])\n'
+                 'for item in list(board.GetTracks()) + list(board.Zones()):\n    board.Remove(item)\n'
+                 'k.SaveBoard(sys.argv[1], board, True)\n')
+        completed = subprocess.run(['/usr/bin/python3', '-c', strip, str(source)], capture_output=True, text=True,
+                                   timeout=120)
+        self.assertEqual(completed.returncode, 0, completed.stderr[-2000:])
+        self.flips(source, ('C1', 'J1', 'R1'))
+
+    def test_actual_pcbnew_flips_outside_the_family_are_refused(self):
+        def flip_and_turn(k, board, fps):
+            fps['R1'].Flip(fps['R1'].GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+            fps['R1'].SetOrientationDegrees(fps['R1'].GetOrientationDegrees() + 45)
+        def flip_fixed(k, board, fps):
+            fps['J1'].Flip(fps['J1'].GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+        def add_arc(k, board, fps):
+            arc = k.PCB_SHAPE(fps['C1'])
+            arc.SetShape(k.SHAPE_T_ARC)
+            arc.SetLayer(k.F_SilkS)
+            arc.SetWidth(120000)
+            arc.SetArcGeometry(k.VECTOR2I(200000, -1000000), k.VECTOR2I(800000, -600000), k.VECTOR2I(1200000, 300000))
+            fps['C1'].Add(arc)
+        arc_source = self.root / 'arc.kicad_pcb'
+        arc_source.write_bytes(self.edited('arc-source', add_arc))
+        def flip_arc(k, board, fps):
+            fps['C1'].Flip(fps['C1'].GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+        cases = {'turn after flip': (self.board, flip_and_turn, 'after the side flip is not a quarter turn'),
+                 'protected connector': (self.board, flip_fixed, 'protected footprint transform changed'),
+                 'arc': (arc_source, flip_arc, 'is not supported under a side flip')}
+        for name, (source, edit, fragment) in cases.items():
+            with self.subTest(name):
+                report = pa.write_scope(source.read_bytes(), self.edited(name.replace(' ', '-'), edit, source),
+                                        [self.fixed])
                 self.assertEqual(report['status'], 'refused')
                 self.assertTrue(any(fragment in v for v in report['violations']), report['violations'])
 
@@ -778,6 +952,7 @@ class ReceiptIterationTest(unittest.TestCase):
     def test_helper_failure_leaves_iteration_incomplete_without_substitution(self):
         write_json(self.source / POLICY, {**read_json(self.source / POLICY), 'step_budget': 1})
         shutil.copyfile(self.source / POLICY, self.design / POLICY)
+        self.manifest['files'][POLICY] = digest(self.source / POLICY)
         with self.assertRaisesRegex(ValueError, 'placement helper failed .*no default placement substituted'):
             self.iterate()
         self.assertUnadopted()
@@ -816,6 +991,7 @@ class ReceiptIterationTest(unittest.TestCase):
         self.assertEqual(self.state['stage_receipts'], {})
 
     def test_cancelled_helper_is_retained_and_never_adopted(self):
+        from unittest.mock import patch
         from agent_ee.executor import Cancellation
         cancellation = Cancellation()
         popen = subprocess.Popen
@@ -839,7 +1015,8 @@ class ReceiptIterationTest(unittest.TestCase):
         record = read_json(self.work / 'placement-adapter.json')
         self.assertEqual(record['status'], 'cancelled')
         receipt = self.receipts.validate_receipt(self.work / record['helper']['receipt'])
-        self.assertEqual(receipt['status'], 'cancelled')
+        self.assertEqual((receipt['status'], receipt['execution']['execution']), ('cancelled', 'interrupted'))
+        self.assertEqual((record['helper']['status'], record['helper']['receipt_id']), ('cancelled', receipt['receipt_id']))
         self.assertIn('1', self.state['stage_receipts'])
 
     def test_legacy_state_other_stage_and_exhausted_deadline_run_no_helper(self):

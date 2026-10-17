@@ -296,6 +296,11 @@ def _identity_tree(source):
     return {'sha256': identity(entries), 'files': len(entries)}
 
 
+def tree_identity(source):
+    """Identity of a retained tool tree in the form a receipt records it."""
+    return _identity_tree(source)
+
+
 def _host_path(spec, sandbox_path):
     for mount in spec['mounts']:
         if _under(sandbox_path, mount['at']):
@@ -829,8 +834,12 @@ def bind_implementation(work, design, implementation, source_candidate_id):
     return digest(work / 'stage-receipts.json')
 
 
-def verify_implementation(work, anchor, implementation, source_candidate_id, *, captured=None, steps=None):
-    """Verify one anchored index; captured is the next run's candidate file map, if any."""
+def verify_implementation(work, anchor, implementation, source_candidate_id, *, captured=None, steps=None,
+                          complete=False):
+    """Verify one anchored index; captured is the next run's candidate file map, if any.
+
+    steps is the ordered expected step list; retained receipts must be a prefix of it, or all
+    of it when complete is true (a delivered proposal implies every planned step ran)."""
     work = Path(work)
     path = work / 'stage-receipts.json'
     if not path.is_file() or digest(path) != anchor:
@@ -848,6 +857,8 @@ def verify_implementation(work, anchor, implementation, source_candidate_id, *, 
         specs = [read_json(work / link['path'])['spec'] for link in stored['receipts']]
         if len(specs) > len(steps) or specs != [validate_step(s, host=False) for s in steps[:len(specs)]]:
             raise ValueError('stage receipt step differs from the campaign declaration')
+        if complete and len(specs) != len(steps):
+            raise ValueError('delivered proposal lacks a receipt for a planned stage step')
     if captured is not None and captured != stored['delivered']:
         for link in stored['receipts']:
             if link['applicability'] == 'applicable':
@@ -856,8 +867,11 @@ def verify_implementation(work, anchor, implementation, source_candidate_id, *, 
     return stored
 
 
-def verify_campaign_receipts(root, state, steps=None):
-    """Campaign-level anchors; legacy campaigns without receipts keep verifying."""
+def verify_campaign_receipts(root, state, steps=None, plans=None):
+    """Campaign-level anchors; legacy campaigns without receipts keep verifying.
+
+    plans, when given, maps each implementation name to its own expected ordered step list,
+    as re-derived by the campaign verifier; otherwise every implementation shares steps."""
     root = Path(root)
     anchors = state.get('stage_receipts')
     implementations = sorted((root / 'implementations').glob('*'), key=lambda p: p.name)
@@ -881,4 +895,6 @@ def verify_campaign_receipts(root, state, steps=None):
             proposal = read_json(Path(history[number]['run']) / 'candidate.json')
             if proposal.get('scope_path') == str(work / 'proposal.scope.json'):
                 captured = proposal['files']
-        verify_implementation(work, anchor, number, source['candidate_id'], captured=captured, steps=steps)
+        expected = steps if plans is None else plans[name]
+        verify_implementation(work, anchor, number, source['candidate_id'], captured=captured, steps=expected,
+                              complete=plans is not None and (work / 'proposal.scope.json').exists())

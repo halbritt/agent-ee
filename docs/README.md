@@ -99,13 +99,13 @@ conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
 - [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement through a registered check.
-- [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
+- [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; the placement writer is integrated with staged campaigns.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison used by the supplier/native check.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
 - [Native schematic emission](schematic-emitter.md) and [forward annotation](forward-annotation.md) — captured-intent generation and native-netlist board updates; full campaign integration remains pending.
-- [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
 - [kicad-route routing adapter](routing-adapter.md) — pinned read-only routing attempts, exit semantics and retained reports; campaign integration with AGENTEE-95 remains pending.
+- [Placement campaign adapter](placement-adapter.md) — placement turns of a staged campaign: writer context, coordinator-run placer step, placement-only structural write scope with qualified side flips, and retained verification.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
 - [Large-symbol capture](symbol-capture.md) — bounded extraction of selected symbols from libraries above the shared reader limit, with source-bound provenance.

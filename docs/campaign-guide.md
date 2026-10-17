@@ -36,7 +36,8 @@ The configuration schema is `agent-ee.campaign/1`:
 | `implementation` | One harness/model/effort/timeout definition using the profile adjudicator fields |
 | `max_iterations` | Integer 1–100, excluding booleans; counts reviewed candidates, including the initial candidate |
 | `max_seconds` | Finite number 1–86400; monotonic campaign work budget |
-| `implementation_steps` | Optional list of `agent-ee.stage-step/1` declarations, run by the coordinator after each writer session; see [stage receipts](stage-receipts.md) |
+| `implementation_steps` | Optional list of `agent-ee.stage-step/1` declarations, run by the coordinator after each writer session; in a staged campaign only the earliest failing stage's steps run; see [stage receipts](stage-receipts.md) |
+| `placement_adapter` | Optional `agent-ee.placement-adapter/1` declaration for staged scopes with a placement stage; see [placement adapter](placement-adapter.md) |
 
 See the [complete executable configuration](../fixtures/closed-loop/campaign.json)
 and [profile field rules](reviewer-profiles.md). The implementation call always
