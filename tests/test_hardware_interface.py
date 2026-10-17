@@ -32,6 +32,23 @@ def wire(a, b, tag):
             f'(uuid "{generator.uid(tag)}"))')
 
 
+def powered():
+    """The disconnect fixture plus an owned power symbol named by its Value."""
+    definition = ('(symbol "PowerOwned:Rail" (power) (pin_names (offset 0)) (in_bom yes) (on_board yes) '
+                  + generator.property_('Reference', '#PWR') + generator.property_('Value', 'Rail')
+                  + '(symbol "Rail_0_1" (pin power_in line (at 0 0 90) (length 0) hide '
+                  '(name "Rail" (effects (font (size 1 1)))) (number "1" (effects (font (size 1 1)))))))')
+    return generator.schematic('disconnect').replace('(lib_symbols ', '(lib_symbols ' + definition, 1)
+
+
+def rail(x, y, value=NC_PROBE[0]):
+    return (f'(symbol (lib_id "PowerOwned:Rail") (at {x} {y} 0) (unit 1) (in_bom yes) (on_board yes) '
+            f'(dnp no) (uuid "{generator.uid("rail")}")' + generator.property_('Reference', '#PWR01')
+            + generator.property_('Value', value) + f'(pin "1" (uuid "{generator.uid("rail-pin")}"))'
+            + f'(instances (project "interface" (path "/{generator.uid("root")}" '
+            '(reference "#PWR01") (unit 1)))))')
+
+
 def placed(items, name):
     """Expand '{label}(x, y)' placeholders into one global label spelling."""
     out = []
@@ -115,6 +132,35 @@ class InterfaceTests(unittest.TestCase):
         # Unmodelled items elsewhere cannot break an exact native route.
         self.assertEqual(classify('(rule_area (polyline (pts (xy 0 0) (xy 1 1))))'
                                   + global_label(NC_PROBE[0], 120, 50, 'on-pin'))[0], 'connected')
+
+    def test_generated_singleton_name_is_judged_by_geometry_not_source_text(self):
+        from agent_ee.hardware_interface import qualify_global_names
+        from agent_ee.symbol_library import parse_sexpr
+        probe = {'sheet': '/', 'reference': 'PROBE', 'uuid': generator.uid('PROBE'),
+                 'symbol': 'ConnectorOwned:Probe'}
+        def qualify(items, pins=(('PROBE', '1'),)):
+            inventory = {'components': {('/', 'PROBE'): probe}, 'memberships': {('PROBE', '1'): '9'},
+                         'nets': {'9': NC_PROBE[0]}, 'disconnected': {('PROBE', '1')},
+                         'unresolved': {}, 'sources': {}}
+            source = parse_sexpr((powered()[:-2] + ''.join(items) + ')\n').encode())
+            return qualify_global_names(inventory, {'interface.kicad_sch': source}, generator.uid('root'), set(pins))
+        # No literal source spelling equals the exported name; the label still touches the pin.
+        dynamic = 'unconnected-(${PROBE:REFERENCE}-Pad1)'
+        for items in ([global_label(dynamic, 120, 50, 'dyn')], [rail(120, 50, dynamic)]):
+            inventory = qualify(items)
+            self.assertNotIn(('PROBE', '1'), inventory['disconnected'])
+            self.assertIn('may touch PROBE pin 1', inventory['unresolved'][('PROBE', '1')])
+            self.assertEqual(inventory['sources'][('PROBE', '1')]['status'], 'unknown')
+        # Isolation is proved from geometry whatever the far item's spelling.
+        inventory = qualify([global_label(dynamic, 140, 80, 'dyn')])
+        self.assertEqual((inventory['disconnected'], inventory['unresolved'], inventory['sources']),
+                         ({('PROBE', '1')}, {}, {}))
+        # An unmodelled item anywhere in the owning file leaves isolation unproven.
+        inventory = qualify(['(rule_area (polyline (pts (xy 0 0) (xy 1 1))))'])
+        self.assertIn('unsupported native schematic item', inventory['unresolved'][('PROBE', '1')])
+        # Only declared terminals are judged; others are neither poisoned nor reported.
+        inventory = qualify([global_label(dynamic, 120, 50, 'dyn')], pins=())
+        self.assertEqual((inventory['unresolved'], inventory['sources']), ({}, {}))
 
 
 class NativeInterfaceTests(unittest.TestCase):
@@ -353,26 +399,59 @@ class NativeInterfaceTests(unittest.TestCase):
                                               names=['/OUT'])
         self.assertEqual((check['outcome'], records['probe-name']['status']), ('defect', 'violation'), check)
         # A power symbol also names a net without a sheet prefix; only labels are modelled.
-        definition = ('(symbol "PowerOwned:Rail" (power) (pin_names (offset 0)) (in_bom yes) (on_board yes) '
-                      + generator.property_('Reference', '#PWR') + generator.property_('Value', 'Rail')
-                      + '(symbol "Rail_0_1" (pin power_in line (at 0 0 90) (length 0) hide '
-                      '(name "Rail" (effects (font (size 1 1)))) (number "1" (effects (font (size 1 1)))))))')
-        def rail(x, y):
-            return (f'(symbol (lib_id "PowerOwned:Rail") (at {x} {y} 0) (unit 1) (in_bom yes) (on_board yes) '
-                    f'(dnp no) (uuid "{generator.uid("rail")}")' + generator.property_('Reference', '#PWR01')
-                    + generator.property_('Value', NC_PROBE[0]) + f'(pin "1" (uuid "{generator.uid("rail-pin")}"))'
-                    + f'(instances (project "interface" (path "/{generator.uid("root")}" '
-                    '(reference "#PWR01") (unit 1)))))')
-        powered = generator.schematic('disconnect').replace('(lib_symbols ', '(lib_symbols ' + definition, 1)
-        net, check, records = self.global_probe([rail(120, 50)], schematic=powered)
+        net, check, records = self.global_probe([rail(120, 50)], schematic=powered())
         self.assertEqual((net, check['outcome']), (NC_PROBE[0], 'unknown'), check)
         self.assertIn('pin may touch PROBE pin 1', records['probe-name']['actual']['reason'])
-        net, check, _ = self.global_probe([rail(140, 80)], schematic=powered)
+        net, check, _ = self.global_probe([rail(140, 80)], schematic=powered())
         self.assertEqual((net, check['outcome']), (NC_PROBE[0], 'defect'), check)
         # Coordinates finer than the native unit are not modelled.
         _, check, records = self.global_probe([global_label(NC_PROBE[0], 140.00005, 80, 'fine')])
         self.assertEqual(check['outcome'], 'unknown', check)
         self.assertIn('whole native schematic unit', records['probe-name']['actual']['reason'])
+
+    def test_text_variable_names_require_isolating_source_geometry(self):
+        # Exact independent-review counterexample: native expands ${REF:FIELD} and
+        # ${UUID:FIELD} before naming the net, so raw source text never matches.
+        net, check, _ = self.global_probe([global_label('TIP_${PROBE:REFERENCE}', 120, 50, 'variable-control')],
+                                          names=['TIP_PROBE'])
+        self.assertEqual((net, check['outcome']), ('TIP_PROBE', 'pass'), check)
+        dynamic = {'reference': 'unconnected-(${PROBE:REFERENCE}-Pad1)',
+                   'uuid': 'unconnected-(${' + generator.uid('PROBE') + ':REFERENCE}-Pad1)'}
+        def unknown(items, reason, schematic=None):
+            net, check, records = self.global_probe(items, relation=True, schematic=schematic)
+            self.assertEqual(net, NC_PROBE[0])
+            self.assertEqual((check['execution'], check['outcome']), ('unsupported', 'unknown'), check)
+            self.assertEqual(records['probe-name']['status'], 'not_evaluated', records)
+            self.assertEqual(records['probe-isolated']['status'], 'not_evaluated', records)
+            self.assertIn(reason, records['probe-name']['actual']['reason'])
+            self.assertEqual(records['probe-name']['actual']['global_label_sources'][0]['status'], 'unknown')
+            self.assertFalse(any('global_label' in l for l in records['probe-name']['locators']), records)
+            # A singleton shares no conductor under either hypothesis.
+            self.assertEqual(records['probe-wire']['status'], 'violation')
+            self.assertEqual(records['load-present']['status'], 'satisfied')
+        for kind, name in dynamic.items():
+            with self.subTest(source=kind, at='pin'):
+                unknown([global_label(name, 120, 50, 'variable-nc')], 'global_label may touch PROBE pin 1')
+        name = dynamic['reference']
+        with self.subTest(source='wired'):
+            unknown([wire((120, 50), (120, 70), 'down'), global_label(name, 120, 70, 'variable-wired')],
+                    'global_label may touch PROBE pin 1')
+        with self.subTest(source='near'):
+            unknown([global_label(name, 120.01, 50, 'variable-near')], 'global_label may touch PROBE pin 1')
+        with self.subTest(source='far'):
+            net, check, records = self.global_probe([global_label(name, 140, 80, 'variable-far')], relation=True)
+            self.assertEqual(net, NC_PROBE[0])
+            self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'), check)
+            self.assertCountEqual(check['details']['violations'], ['probe-name', 'probe-isolated', 'probe-wire'])
+            self.assertNotIn('global_label_sources', records['probe-name']['actual'])
+        # Power symbols name nets through their Value, which native also expands.
+        net, check, _ = self.global_probe([rail(120, 50, 'RAIL_${PROBE:REFERENCE}')], names=['RAIL_PROBE'],
+                                          schematic=powered())
+        self.assertEqual((net, check['outcome']), ('RAIL_PROBE', 'pass'), check)
+        with self.subTest(source='power'):
+            unknown([rail(120, 50, name)], 'pin may touch PROBE pin 1', schematic=powered())
+        net, check, _ = self.global_probe([rail(140, 80, name)], schematic=powered())
+        self.assertEqual((net, check['outcome']), (NC_PROBE[0], 'defect'), check)
 
     def test_global_label_source_pin_transforms_match_native(self):
         # Native offsets for lib pin (1.27, 3.81) observed with kicad-cli 10.0.7.

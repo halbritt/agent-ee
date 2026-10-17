@@ -79,30 +79,38 @@ A global label is unqualified, so it can deliberately name a singleton conductor
 with exactly the generated spelling. KiCad still generates that spelling for a
 truly disconnected pin when an identically spelled global label exists elsewhere.
 Power symbols also name nets without a sheet prefix, through their Value.
-Label text anywhere in the hierarchy is therefore never evidence. When a native
-singleton carries a generated no-connect spelling that some captured global
-label, power symbol Value or power pin name also uses, the check reads the
-sheet file that owns the native component with the existing bounded
-S-expression reader. The native component UUID must resolve to
+kicad-cli 10.0.7 expands text variables such as `${PROBE:REFERENCE}` or
+`${<symbol UUID>:REFERENCE}` in both global labels and power Values before it
+names the net, so `unconnected-(${PROBE:REFERENCE}-Pad1)` on the pin exports
+`unconnected-(PROBE-Pad1)`. Source text anywhere in the hierarchy, present or
+absent, is therefore never evidence. Whenever a declared terminal's native
+singleton carries a generated no-connect spelling, whatever the source text, the
+check reads the sheet file that owns the native component with the existing
+bounded S-expression reader. The native component UUID must resolve to
 exactly one source symbol whose hierarchical instance reference and `lib_id`
 match the XML. The pin connection point comes from the embedded library pin,
 rotated counterclockwise by 0, 90, 180 or 270 degrees and then mirrored about
 `x` or `y`. All twelve orientations are checked against kicad-cli 10.0.7. The
 result has three states:
 
-- **Connected.** The label is exactly on the visible pin, or exactly on a wire
+- **Connected.** A global label whose literal source text equals the exported
+  name is exactly on the visible pin, or exactly on a wire
   reached through exact shared wire endpoints or junctions on both wires. The
   conductor is kept and the report cites the label, its position, UUID and route
   wires. Unmodelled items elsewhere in the file cannot break such an exact route.
 - **Disconnected.** No such route exists, every top-level item in that sheet file
   is a modelled kind, and the conservative closure contains only wires, junctions
   and no-connect markers. That closure joins every item within 10 µm of the pin
-  or of an item already joined. The label is reported as not reaching the pin,
-  and the pin stays disconnected.
+  or of an item already joined. Isolation does not depend on any item's
+  spelling, so a far-away label or power symbol with a text variable cannot
+  rescue the pin. Any literally matching label is reported as not reaching the
+  pin, and the pin stays disconnected.
 - **Unknown.** Every other case. This includes labels, sheet pins, hierarchical
   ports, directive labels, buses, bus entries or other pins within the margin.
   A power symbol on the pin is therefore unknown, because only global labels are
-  modelled as positive sources. It also includes unmodelled item kinds,
+  modelled as positive sources. So is a label with text variables on or near the
+  pin's conductor: its expansion is not reimplemented, so it never proves a
+  connection. It also includes unmodelled item kinds,
   coordinates finer than the native 100 nm unit, oblique rotations, `extends`
   symbols and hidden or `no_connect` pins. Multi-unit components whose native
   UUIDs resolve to several placed symbols are also unknown.
@@ -114,6 +122,10 @@ unknown, not proved either way. An unknown pin is judged under both hypotheses.
 A predicate that fails even if the label connects, such as `same_net` with a
 singleton or a `named_net` that does not list the spelling, is a violation.
 Otherwise the predicate is `not_evaluated`, so the check is `unsupported/unknown`.
+This applies to every declared generated singleton, labelled or not: one in a
+sheet file with unmodelled items, on a hidden pin or on a multi-unit component
+leaves `different_net` `not_evaluated`, while `same_net` and unlisted names
+still fail. Undeclared pins are not classified.
 Global-label connectivity through hierarchical ports is outside this qualified
 domain. A spelling attached to a different conductor makes kicad-cli emit two
 nets with one name. The reader refuses that as duplicate inventory instead of
