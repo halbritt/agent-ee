@@ -1,7 +1,7 @@
 """Pure, parameter-aware capability descriptions for explicit scope/3 audits.
 
 These predicates establish executable coverage, not physics qualification or
-runtime success. No tool execution, model inference, or live input reads occur.
+runtime success. No tool execution, model inference, or uncaptured input reads occur.
 """
 
 import copy
@@ -13,7 +13,7 @@ from .storage import identity
 
 
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
-                   'measurements', 'coupled_margins'))
+                   'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -158,7 +158,7 @@ def _coupled_margins(params, prerequisite):
     return predicates
 
 
-def describe_check(spec, *, check_specs, files, scope):
+def describe_check(spec, *, check_specs, files, scope, inputs=None):
     """Return a supported descriptor or explicit unsupported reasons.
 
     Immutable input names must resolve in the captured inventory. Dependencies
@@ -219,6 +219,45 @@ def describe_check(spec, *, check_specs, files, scope):
             result['predicates'] = _measurements(params, captured)
         elif kind == 'coupled_margins':
             result['predicates'] = _coupled_margins(params, prerequisite)
+        elif kind in ('datasheet_facts', 'pin_map'):
+            from .datasheet_facts import load_facts, validate_extractor
+            if inputs is None:
+                raise ValueError('datasheet capability requires captured inputs')
+            source = spec if kind == 'datasheet_facts' else prerequisite(
+                params.get('facts_check'), ('datasheet_facts',))
+            source_params = source['params']
+            captured(source_params['facts'], immutable=True)
+            validate_extractor(source_params['extractor'])
+            facts = load_facts(inputs, source_params['facts'])
+            for fact in facts:
+                captured(fact['source']['path'], immutable=True)
+            if kind == 'pin_map':
+                prerequisite(params.get('netlist_check'), ('netlist',))
+                symbols = params.get('symbols')
+                if not isinstance(symbols, list) or not symbols:
+                    raise ValueError('pin_map requires explicit symbol applicability')
+                by_id = {f['id']: f for f in facts}
+                refs = set()
+                for symbol in symbols:
+                    if not isinstance(symbol, dict) or set(symbol) != {'reference', 'part_number', 'facts'}:
+                        raise ValueError('symbol needs reference, part_number and facts')
+                    ref = text(symbol['reference'], 'reference')
+                    part = text(symbol['part_number'], 'part_number')
+                    if ref in refs:
+                        raise ValueError('duplicate symbol applicability')
+                    refs.add(ref)
+                    selected = symbol['facts']
+                    if not isinstance(selected, list) or not selected:
+                        raise ValueError('symbol requires pin facts')
+                    pins = set()
+                    for fid in selected:
+                        fact = by_id[text(fid, 'fact id')]
+                        if fact['kind'] != 'pin_function' or fact['part_number'] != part:
+                            raise ValueError('pin fact is inapplicable')
+                        if fact['pin'] in pins:
+                            raise ValueError('duplicate pin fact')
+                        pins.add(fact['pin'])
+                        result['predicates'].append(f"pin-map:{ref}:{fact['pin']}")
     except (ValueError, KeyError, TypeError, AttributeError, StopIteration, OverflowError) as exc:
         result.update(status='unsupported', predicates=[], unsupported_reasons=[{
             'code': 'unknown_kind' if kind not in KINDS else 'invalid_contract',
@@ -228,9 +267,9 @@ def describe_check(spec, *, check_specs, files, scope):
     return result
 
 
-def compile_coverage(scope, files):
+def compile_coverage(scope, files, inputs=None):
     specs = scope['checks']
-    checks = {s['id']: describe_check(s, check_specs=specs, files=files, scope=scope) for s in specs}
+    checks = {s['id']: describe_check(s, check_specs=specs, files=files, scope=scope, inputs=inputs) for s in specs}
     for cid, descriptor in checks.items():
         if descriptor['status'] != 'supported':
             raise ValueError(f"unsupported capability {cid}: {descriptor['unsupported_reasons']}")

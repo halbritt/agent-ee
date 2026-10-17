@@ -59,12 +59,16 @@ def verification_inputs(scope, inputs):
     return paths
 
 
-def verify_extractor(tool):
+def validate_extractor(tool):
     if (not isinstance(tool, dict) or set(tool) != {'path', 'sha256', 'version'} or
             tool['path'] != EXTRACTOR or not isinstance(tool['version'], str) or
             not tool['version'].startswith('pdftotext version ') or
             not isinstance(tool['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', tool['sha256'])):
         raise ValueError('extractor requires /usr/bin/pdftotext, sha256 and version')
+
+
+def verify_extractor(tool):
+    validate_extractor(tool)
     if not Path(EXTRACTOR).is_file():
         raise ValueError('installed pdftotext unavailable')
     if digest(EXTRACTOR) != tool['sha256']:

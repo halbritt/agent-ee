@@ -74,3 +74,14 @@ agent-ee verify build/swapped-pins
 Checks-only execution exits 1 because independent review is unfinished. Inspect
 `checks/pin-map.json` for the declared defect and the retained native reports
 for the clean ERC/DRC results.
+
+## Scope/3 coverage
+
+The facts check verifies citations and is not defect-capable. It cannot alone
+satisfy an acceptance requirement. A pin-map declaration can provide executable
+coverage for its explicitly selected reference/pin comparisons, provided its
+facts and netlist prerequisites precede it. Capture rejects missing or
+inapplicable fact IDs, repeated pins, empty symbol selections and unpinned
+extractors. Facts and all referenced PDFs remain immutable verification inputs.
+This audit checks the declared contract; actual PDF extraction and native pin
+comparison must still execute successfully.

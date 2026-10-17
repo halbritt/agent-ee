@@ -57,7 +57,7 @@ def compile_baseline(scope, files, inputs=None):
     coverage = None
     if audited:
         from .capabilities import compile_coverage
-        coverage = compile_coverage(scope, files)
+        coverage = compile_coverage(scope, files, inputs)
         for descriptor in coverage["checks"].values():
             paths.update(descriptor["immutable_inputs"])
     for spec in checks.values():

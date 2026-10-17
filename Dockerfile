@@ -19,6 +19,7 @@ ARG KICAD_VERSION=10.0.7~ubuntu24.04.1
 ARG NGSPICE_VERSION=42+ds-3build1
 ARG BUBBLEWRAP_VERSION=0.9.0-1ubuntu0.3
 ARG PYTHON3_VERSION=3.12.3-0ubuntu2.1
+ARG POPPLER_VERSION=24.02.0-1ubuntu9.10
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -54,8 +55,9 @@ RUN set -eu; \
         "kicad-templates=${KICAD_VERSION}" \
         "ngspice=${NGSPICE_VERSION}" \
         "bubblewrap=${BUBBLEWRAP_VERSION}" \
+        "poppler-utils=${POPPLER_VERSION}" \
         git; \
-    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-templates ngspice bubblewrap; \
+    apt-mark hold python3 kicad kicad-symbols kicad-footprints kicad-templates ngspice bubblewrap poppler-utils; \
     rm -rf /var/lib/apt/lists/*
 
 # Refuse an image whose tools do not report the demonstrated versions, or whose
