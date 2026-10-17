@@ -7,11 +7,13 @@ scope into a temporary run directory with agent_ee.candidate.capture and drives 
 """
 
 import json
+import math
 import shutil
 import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -95,6 +97,61 @@ class ControlFixtureTest(unittest.TestCase):
     def test_geometry_console_has_no_via_width_assert(self):
         console = (self.run_dir / "work/geometry/console.log").read_text()
         self.assertNotIn("PCB_VIA::GetWidth called without a layer argument", console)
+
+
+class RCDefaultTest(unittest.TestCase):
+    def test_native_default_matches_explicit_and_analytic_response(self):
+        with tempfile.TemporaryDirectory(prefix="agent-ee-rc-default-") as tmp:
+            root = Path(tmp)
+            conditions = []
+            identities = []
+            for index, amplitude in enumerate((None, 1.0, 1, "1.00", 2.0)):
+                with self.subTest(amplitude=amplitude):
+                    scope = json.loads((FIXTURES / "control.scope.json").read_text())
+                    for item in scope["inputs"]:
+                        item["path"] = str((FIXTURES / item["path"]).resolve())
+                    scope["checks"] = [c for c in scope["checks"]
+                                       if c["kind"] in ("netlist", "rc_transient")]
+                    params = scope["checks"][1]["params"]
+                    params.pop("step_v")
+                    if amplitude is not None:
+                        params["step_v"] = amplitude
+                    effective = float(amplitude) if amplitude is not None else 1.0
+                    params["measurements"] = [{"name": "vout", "at_ms": "1.00",
+                                               "min": 0.62 * effective,
+                                               "max": 0.65 * effective}]
+                    scope_path = root / f"scope-{index}.json"
+                    scope_path.write_text(json.dumps(scope))
+                    run_dir = root / f"run-{index}"
+                    run_dir.mkdir()
+                    manifest = candidate.capture(scope_path, run_dir)
+                    results = checks.run_checks(run_dir, time.monotonic() + 120)
+                    result = results[-1]
+                    self.assertEqual((result["execution"], result["outcome"]),
+                                     ("ok", "pass"), result)
+                    metric = result["details"]["metrics"]["vout"]
+                    # Independent RC oracle: fixture R=10 kohm, C=100 nF, t=1 ms.
+                    expected = effective * (1 - math.exp(-0.001 / (10000 * 100e-9)))
+                    self.assertAlmostEqual(metric["value"], expected, delta=effective * 0.0001)
+                    self.assertEqual(result["details"]["step_v"], effective)
+                    self.assertEqual(manifest["scope"]["checks"][1]["params"], params)
+                    conditions.append(metric["condition"])
+                    identities.append(manifest["candidate_id"])
+                    if amplitude is None:
+                        ctx = checks.Ctx(run_dir, manifest, scope["checks"][1],
+                                         time.monotonic() + 120)
+                        with patch.object(ctx, "execute", side_effect=checks.CheckError(
+                                "failed", "injected simulator execution failure")):
+                            with self.assertRaises(checks.CheckError):
+                                checks.check_rc_transient(ctx)
+                        self.assertEqual(ctx.result["outcome"], "unknown")
+                        self.assertNotIn("metrics", ctx.result["details"])
+            self.assertEqual(conditions, ["ideal-unloaded-1.0V-step-at-1.0ms",
+                                          "ideal-unloaded-1.0V-step-at-1.0ms",
+                                          "ideal-unloaded-1V-step-at-1.0ms",
+                                          "ideal-unloaded-1.00V-step-at-1.0ms",
+                                          "ideal-unloaded-2.0V-step-at-1.0ms"])
+            self.assertNotEqual(identities[0], identities[1])
 
 
 class SeededFixtureTest(unittest.TestCase):
@@ -361,8 +418,9 @@ class DeckBuilderTest(unittest.TestCase):
                                 measurements=[{"name": "m", "at_ms": 9.0}])
 
     def test_nonpositive_or_nonfinite_stimulus_is_unsupported(self):
-        self.assert_unsupported(regex="step_v", step_v=0.0)
-        self.assert_unsupported(regex="step_v", step_v=float("nan"))
+        for amplitude in (0.0, -1.0, float("nan"), float("inf"), float("-inf"), "bad", None):
+            with self.subTest(amplitude=amplitude):
+                self.assert_unsupported(regex="step_v", step_v=amplitude)
         self.assert_unsupported(regex="stop_ms", stop_ms=-1.0)
 
     def test_nonfinite_limit_is_unsupported(self):

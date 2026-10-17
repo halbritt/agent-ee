@@ -489,7 +489,8 @@ def validate_sim_params(params):
         if lo is not None and hi is not None and float(lo) > float(hi):
             raise CheckError("unsupported", f"measurement {name!r} has min {lo} > max {hi}")
         wanted.append({"name": name, "at_ms": at_ms, "min": lo, "max": hi})
-    return step_v, stop_ms, wanted
+    return {**params, "step_v": step_v, "stop_ms": stop_ms, "measurements": wanted,
+            "condition_step_v": str(params.get("step_v", 1.0))}
 
 
 def build_deck(conn, params):
@@ -500,7 +501,12 @@ def build_deck(conn, params):
     returned separately; connectors and power flags carry no two-terminal
     element and are ignored. Anything else is honestly unsupported.
     """
-    step_v, stop_ms, wanted = validate_sim_params(params)
+    return _build_deck(conn, validate_sim_params(params))
+
+
+def _build_deck(conn, params):
+    """Build from validated parameters, shared with measured-result generation."""
+    step_v, stop_ms, wanted = params["step_v"], params["stop_ms"], params["measurements"]
     nets = conn["nets"]
     for key in ("input_net", "output_net", "ground_net"):
         if params[key] not in nets:
@@ -667,7 +673,8 @@ def check_rc_transient(ctx):
     ctx.result["evidence"].append(f"work/{nid}/design.xml")
     ctx.result["evidence"].append(f"work/{nid}/connectivity.json")
 
-    deck, elements, ignored, excluded_dnp, nodes, wanted = build_deck(conn, ctx.params)
+    params = validate_sim_params(ctx.params)
+    deck, elements, ignored, excluded_dnp, nodes, wanted = _build_deck(conn, params)
     (ctx.work / "deck.cir").write_text(deck)
     (ctx.work / "control.sp").write_text(
         "* agent-ee generated ngspice control script\n"
@@ -683,7 +690,7 @@ def check_rc_transient(ctx):
     ctx.result["details"].update({
         "elements": elements, "ignored_components": sorted(ignored),
         "excluded_dnp": sorted(excluded_dnp),
-        "node_map": nodes,
+        "node_map": nodes, "step_v": params["step_v"],
         "method": "ngspice -n -b -o <log> <control.sp>; -b -r is not used because it "
                   "silently skips .meas",
     })
@@ -704,7 +711,7 @@ def check_rc_transient(ctx):
     ctx.result["details"]["raw"] = raw
     ctx.result["details"]["measurements"] = checks
     metrics = {name: {"value": m["measured"], "unit": "V",
-        "condition": f"ideal-unloaded-{ctx.params['step_v']}V-step-at-{m['at_ms']}ms"}
+        "condition": f"ideal-unloaded-{params['condition_step_v']}V-step-at-{m['at_ms']}ms"}
         for name, m in checks.items()}
     ctx.result["details"].update(metrics=metrics, producer={"tool": "ngspice", "domain": "electrical"})
     ctx.result["execution"] = "ok"

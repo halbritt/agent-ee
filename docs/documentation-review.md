@@ -69,12 +69,17 @@ are the maintained diagrams.
 ## Implementation limits made explicit
 
 This audit documented the following execution observations without changing
-implementation behavior. The second observation was subsequently corrected:
+implementation behavior. Both observations were subsequently corrected:
 
 1. RC deck validation defaults an omitted `step_v`, but metric-condition creation
    reads the original parameter directly. With measurements requested, specify
    `step_v` explicitly to avoid a post-simulation `KeyError`. A real native run
    reproduced the error in `build/docs-verification/omitted-step-run/`.
+   **AGENTEE-2 correction:** deck and metric generation now share validated
+   parameters, and omitted `step_v` completes with the 1.0 V default. Native
+   regression tests compare the measured response against the analytic RC
+   response and preserve historical explicit condition spellings. See
+   [coverage](coverage.md) for identity and observation compatibility.
 2. **Correction:** standalone `bench-review` preserves external profiles too.
    `capture` embeds their parsed content in `candidate.json` under
    `scope.review_profile`; `bench_review` copies that scope into the new review.
