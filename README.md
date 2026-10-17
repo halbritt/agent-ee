@@ -1,202 +1,200 @@
 # agent-ee
 
-`agent-ee` reviews a captured KiCad candidate with native checks and complementary
-fresh agent judgments. It retains evidence, unresolved claims and correction
-history. Review never changes the source design.
+**agent-ee is an evidence-driven review and repair workflow for KiCad electronics
+projects.** It combines native electrical and board checks, simulation, and
+independent AI reviewers to find requirement violations, preserve the evidence,
+and verify that a repair actually fixes them.
 
-The [full manual](docs/README.md) covers installation, operator workflows, every
-CLI command and scope field, native/engineering checks, result formats,
-isolation, troubleshooting, extension and evidence reproduction. For the closed
-loop, read the [campaign guide](docs/campaign-guide.md),
-[measurement adapters](docs/measurement-adapters.md), and
-[bench-feedback guide](docs/bench-feedback.md). The
-[architecture diagrams](docs/architecture.md) show the writer and review boundaries.
+It is for engineers using coding agents to help with circuit and PCB work who
+need a repeatable answer to three questions: **What is wrong? What proves it?
+Did the change fix it without breaking something else?**
 
-```sh
-cd ~/git/agent-ee
-./scripts/install.sh
-agent-ee doctor
-agent-ee review scopes/donor-case-alias.json --profile profiles/codex-baseline.json --out build/donor-review --max-seconds 3600
-agent-ee inspect build/donor-review
-agent-ee verify build/donor-review
-```
+## Why this project exists
 
-The installer links the CLI into `~/.local/bin` and its skill into existing agent
-discovery locations. It refuses to replace unrelated files. No Python packages
-are needed; `/usr/bin/python3` must provide the installed KiCad `pcbnew` bindings.
-The editable Python package entry point is also available from `pyproject.toml`.
+A board can pass electrical rule checks and design rule checks while still doing
+the wrong thing. A connected, legally routed filter can have the wrong cutoff
+frequency. A component substitution can change a circuit's response. A layout
+change that helps one constraint can consume margin in another.
 
-Source remote: [halbritt/agent-ee](https://github.com/halbritt/agent-ee), private.
-Clone and authentication prerequisites are in [installation](docs/installation.md).
+AI review adds another problem: a persuasive explanation is easy to produce,
+but it may describe the wrong revision, assume an unstated requirement, or claim
+that a simulation proves something it never measured. Asking the same agent to
+make a change and approve its own work leaves those assumptions unchallenged.
 
-Select every reviewer and the adjudicator explicitly using a
-[versioned profile](docs/reviewer-profiles.md). There is no implicit model default.
-The [actual three-harness evaluation](evidence/MODEL-SELECTION.md) supports a
-provisional Codex starting profile and records timeouts, overclaims and failed
-automatic adjudications. The [tool-enabled donor follow-up](evidence/MODEL-BASELINE.md)
-reports new component-identity and interface findings.
+agent-ee makes the review an explicit engineering process. It captures the design
+and its requirements, runs declared checks, asks independent reviewers to examine
+the same evidence, and validates a central adjudication of their findings. An
+optional repair campaign gives one implementation agent a disposable design copy,
+then submits every proposed change to a fresh review. The resulting record tells
+you which candidate was evaluated, against which requirements, using which tools,
+and why a finding was accepted or left unresolved.
 
-## Prerequisites and integration
+The purpose is to make agent-assisted electronics work inspectable and repeatable.
+The engineer still defines the requirements, supplies applicable models, and owns
+physical validation.
+
+## A concrete example
+
+The repository includes a small RC low-pass filter with a declared requirement:
+after a 1 V step, its output at 1 ms must be between 0.62 V and 0.65 V.
+
+In the [recorded demonstration](evidence/README.md), a deliberately wrong resistor
+value passed native ERC and DRC. Simulation using the actual schematic's
+connectivity and component values produced about **0.095 V** at 1 ms. Reviewers
+identified the response violation from that evidence. A repair in a disposable
+copy then passed fresh checks and independent review. The original defective
+candidate and its evidence remained available.
+
+This is the distinction agent-ee is built around: valid connections and geometry
+are necessary checks, but functional requirements need their own measurements.
+The RC example is a small demonstrated case; larger designs need their own
+requirements, checks and models.
+
+## How the workflow works
+
+1. **Define the engineering question.** A scope selects the native design files,
+   dependencies, requirements, operating conditions and acceptance checks.
+   Scope/2 binds requirements, target specifications and reference architecture
+   sources into an immutable baseline.
+2. **Capture one design candidate.** Inputs are copied and hashed. Every check
+   and review refers to those exact bytes, including selected uncommitted files.
+3. **Produce tool evidence.** KiCad, ngspice and configured measurement tools
+   generate retained reports, traces and metrics. A failed tool invocation is
+   recorded as missing coverage, never as a passing design.
+4. **Review independently.** Fresh circuit and physical-design reviewers receive
+   the same candidate, requirements and check evidence. They cannot read each
+   other's initial judgments. Calls currently run sequentially in separate
+   contexts and workspaces.
+5. **Adjudicate centrally.** Findings get explicit dispositions. Under scope/2,
+   an accepted defect must be a coordinator check finding backed by sealed
+   evidence and a mapped requirement violation. Reviewer hypotheses need
+   reproduction or remain concerns; agreement alone cannot establish a defect.
+6. **Repair and recheck when authorized.** One implementation agent may edit
+   declared design files in a disposable copy. A new candidate goes through the
+   checks and independent reviews again. Requirements and verification inputs
+   cannot be edited to make the repair pass.
+
+The [architecture diagrams](docs/architecture.md) show the information and write
+boundaries. Native tools and agents run in Bubblewrap sandboxes; supported writers
+also acquire process leases to prevent concurrent campaign mutations.
+
+## Beyond a single review
+
+| Capability | What it is for |
+| --- | --- |
+| [Bounded repair campaigns](docs/campaign-guide.md) | Turn established defects into implementation work, protect previously passing criteria, detect repeated designs and regressions, and stop on stalled progress or exhausted budgets. A stop diagnostic preserves the competing constraints for an engineering decision. |
+| [Measurement adapters](docs/measurement-adapters.md) | Connect an installed analysis tool and a captured parser to the same requirement and evidence contracts. The coordinator records the tool identity and raw outputs, then evaluates declared bounds. |
+| [Cross-domain checks](docs/measurement-adapters.md#cross-domain-coupling) | Evaluate electrical, thermal, parasitic or manufacturing margins together at the same operating condition so a local improvement cannot hide a failed coupled limit. The supplied tools must calculate the relevant physics. |
+| [Bench feedback](docs/bench-feedback.md) | Bind prototype observations to the measured candidate, retain raw samples, and feed simulation-to-bench discrepancies back into subsequent acceptance checks and fresh reviews. |
+| [Historical verification](docs/result-reference.md) | Check that retained evidence still belongs to the captured inputs and policy. Changed sources do not inherit an old candidate's passing review. |
+
+Campaigns are designed to terminate with satisfied criteria, an explicit
+escalation, or an incomplete execution. They do not promise that an arbitrary
+set of physical constraints has a feasible solution. Bench feedback updates
+empirical correction envelopes; it does not automatically discover a new physical
+model or acquire measurements from instruments.
+
+## What is implemented today
+
+Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
+saved-board geometry, and an ideal passive R/C/L transient simulation through
+ngspice. Generic producer/parser interfaces support additional measurements and
+coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
+their subscription CLIs; authentication or quota failures stop the affected call
+without a provider fallback.
+
+Thermal solvers, post-layout parasitic extraction, DFM/DFA/DFT analysis and BOM
+lifecycle services are **not bundled**. They need separately qualified tools,
+models and adapters. The built-in passive simulation is not a general active
+circuit simulator. The [coverage guide](docs/coverage.md) spells out these limits.
+
+A passing result applies to the declared criteria for one captured candidate.
+It is not manufacturing approval, EMC certification or proof of hardware safety.
+Review and repair do not modify the source checkout, order components or approve
+fabrication. The engineer retains those decisions.
+
+## Try the included design
 
 The demonstrated environment is Linux with KiCad 10.0.7, ngspice 42, Bubblewrap
-0.9.0 and native subscription CLIs: Claude Code 2.1.302, Codex 0.163.0 and Agy 1.4.0. The CLI uses only
-explicit Claude, Codex or Agy subscription profiles; an auth/quota error stops that call
-and leaves the review incomplete. It does not fall back to another provider.
-Native prerequisite/version probes are separate from integration proof.
+0.9.0 and system Python with KiCad's `pcbnew` bindings. The Python CLI itself has
+no third-party package dependencies. See [installation](docs/installation.md)
+for prerequisites, subscription setup and installation details.
 
-KiCad supports JSON ERC/DRC and schematic parity checks; this project records
-their native output and validates coverage instead of interpreting exit 0 alone
-as acceptance. See the [KiCad 10 CLI manual](https://docs.kicad.org/10.0/en/cli/cli.html).
-ngspice conclusions require applicable models, explicit stimulus and finite,
-present measurements; see its [manual index](https://ngspice.sourceforge.io/docs.html).
-
-The concurrent FOME-MC setup supplied useful validated wrapper patterns and an
-RC fixture. `agent-ee` adapts those methods without importing the changing live
-toolchain or writing to its build directory. KiBot and kicad-happy remain
-available specialist tools; the initial bounded checks do not require them.
-Their presence does not count as exercised review coverage.
-
-## Declaring a scope
-
-Use `agent-ee.scope/2` for requirements-bound reviews and campaigns; legacy
-`agent-ee.scope/1` remains supported for bounded reviews. See the
-[closed-loop contract](docs/closed-loop.md) and executable
-[version-2 control](fixtures/closed-loop/control.scope.json). `docs/contracts.md` describes the fields;
-the examples under `scopes/` and `fixtures/` are executable configurations.
-Paths are relative to the scope file unless absolute or beginning with `~`.
-`inputs` declares source trees/files and their destinations inside the candidate.
-Everything selected is copied and hashed, including uncommitted files. Declare
-external libraries explicitly at their effective native library-table paths.
-Undeclared live symlinks and overlapping destinations are refused.
-
-The operator owns input completeness. Include requirements, models, library
-tables, libraries, native project settings and custom rules that affect the
-scope. Omitted external behavior remains unreviewed. Native KiCad files remain
-authoritative; exported connectivity and geometry retain source paths/hashes.
-
-`packet_inputs` chooses relevant native text for the initial agent reviewers.
-`requirements` supplies captured requirement files. Text limits and binary
-omissions are recorded in the packet and report. A scope should be narrow enough
-for its declared evidence and coverage; broaden it by adding checks and sources,
-not by changing the meaning of a passing result.
-
-## Results and failure handling
-
-Each fresh output directory contains the captured `inputs/`, `candidate.json`,
-native `work/` outputs and commands, validated `checks/`, initial `reviews/`,
-review execution records, `packet.json`, disposition `events/`, `result.json`
-and `REPORT.md`. Findings remain traceable to the saved candidate. Initial
-reviewers see the same evidence packet under different lenses and cannot read
-each other's output. The adjudicator sees all claims and must explain each
-disposition through evidence. No majority vote removes a finding.
-
-`accepted` means an established defect. `noted` preserves a supported minor/info
-observation that violates no declared criterion; it does not block satisfaction
-of those criteria. Major/blocking concerns stay deferred until evidence resolves
-them. Defects cannot be hidden as noted observations or duplicates of them.
-
-| Result | Meaning |
-| --- | --- |
-| `criteria_satisfied` | Applicable declared execution and reviews completed; no accepted defects or unresolved findings remain. Noted observations may remain. |
-| `defects_or_unresolved` | Review completed with defects or open questions. |
-| `incomplete` | Execution, evidence, review, adjudication or budget left work unfinished. |
-
-Check `execution` and design `outcome` are separate. A successful tool reporting
-a violation is `ok` / `defect`; missing tools, malformed output, timeout and
-solver failure are unknown coverage. A checks-only run is always incomplete as
-an adversarial review. For `review` and `resume`, exit 0 means
-`criteria_satisfied`, exit 1 another review outcome, and exit 2 an invocation
-refusal. `verify` checks freshness: exit 0 means its integrity/freshness checks
-passed, including for an honestly incomplete or defective review. Check the
-printed outcome or `result.json`; freshness alone is not acceptance. A freshness
-refusal exits 2.
-
-Inspect partial work with `agent-ee inspect RUN`. Interrupting or exhausting the
-wall-clock budget preserves useful completed records. `agent-ee resume RUN
---out NEW` recaptures and reruns all checks and reviewers. This intentionally
-spends more work than selectively reusing results, while avoiding stale evidence.
-Standalone reviews do not retry or repair. The explicit `campaign` command
-authorizes bounded repairs in disposable copies, with one implementation agent
-and fresh independent reviews for each proposal.
-
-`verify RUN` checks the captured input identity, current declared sources and
-scope, implementation hashes, and retained evidence hashes. Source changes make
-old evidence historical, never acceptance of the new source. `verify RUN
---snapshot-only` checks a preserved historical candidate without requiring the
-old source tree still exist unchanged.
-
-`packet_artifacts` optionally names required generated evidence to place early
-in a reviewer packet. Each path must be among the evidence actually produced by
-this run's checks. A missing required artifact makes the run incomplete before
-reviewers are invoked; correct the scope or failed prerequisite and use a fresh
-run. With no such declaration, failed checks remain visible in the packet and
-reviewers can investigate the evidence that is available.
-
-## Isolation guarantees
-
-Every native tool and reviewer subprocess runs in Bubblewrap. Captured inputs,
-application code and system tool directories are mounted read-only; only that
-invocation's scratch is writable. The sandbox omits the host home directory,
-other reviewers' work directories, host `/tmp` and runtime sockets. Native tools
-have no network. Reviewers have ordinary investigation tools and network access, with fresh settings
-and separate workspaces. The installed system tools are used; no hermetic environment
-is claimed. The subscription credential is a read-only
-mount during the call; its contents are never copied into the retained run.
-
-This protects inputs from these subprocesses. It does not constrain the owner,
-another privileged host process, a compromised provider or kernel. Before/after
-hash checks detect captured/source changes at verification boundaries; they do
-not make a multi-file capture an atomic filesystem transaction. A stable copied
-candidate is the thing reviewed. Arbitrary intentionally hostile inputs and
-undisclosed dependencies are outside the demonstrated assurance.
-
-## Findings and correction closure
-
-Read original source/check evidence when disputing a finding. Schema validation
-checks provenance and record consistency; it cannot prove an electrical claim.
-Use the decision format in `docs/contracts.md` and run:
+From the repository root:
 
 ```sh
-agent-ee adjudicate RUN decisions.json
-agent-ee close-correction OLD_RUN NEW_RUN \
-  --finding 'check/response' --checks 'erc,drc,response' \
-  --reason 'Saved component value restored; fresh native and response checks pass.'
+./scripts/install.sh
+agent-ee doctor
+agent-ee review fixtures/closed-loop/control.scope.json \
+  --out build/first-checks --checks-only
+agent-ee inspect build/first-checks
+agent-ee verify build/first-checks
 ```
 
-Closure requires a distinct candidate, an accepted old finding, unchanged
-requirements/check criteria, a completed passing new review and fresh passing
-affected checks. It appends a correction link; the old defect remains true of
-the old candidate. For repair, copy to an isolated disposable candidate and
-change its native files only with authorization. A campaign may rewrite only declared mutable design files in disposable copies.
-It does not modify the source design, order parts or approve fabrication.
+This first run exercises the included design and native tools without model
+calls. **The review command intentionally exits 1:** checks-only execution leaves
+the independent review unfinished, even when all checks pass. `verify` checks
+integrity and freshness; its success does not mean the design was accepted.
+Every run needs a new output directory.
 
-## Extending and testing
+To include independent reviewers and adjudication, authenticate the selected
+subscription CLI and pass an explicit profile:
 
-Add a check kind in `checks.py`, its explicit parameters/limits in a scope, and
-independent expected outcomes and failure cases in tests. Preserve native/source
-locators, simulator/model limitations and execution-vs-design status. Reviewer
-instructions, executable rules and limits are part of run identity; changing
-them invalidates acceptance under the old implementation.
-See [coverage and extension instructions](docs/coverage.md) for current check
-parameters, reviewer configuration, packet limits and unsupported coverage.
+```sh
+agent-ee review fixtures/closed-loop/control.scope.json \
+  --profile profiles/codex-baseline.json \
+  --out build/first-review --max-seconds 3600
+```
+
+This spends subscription inference. Profiles have no implicit model defaults;
+see [profile configuration](docs/reviewer-profiles.md) and the
+[recorded model evaluation](evidence/MODEL-SELECTION.md) before choosing an
+allocation. To enable automatic design edits, use an explicit
+[campaign configuration](docs/campaign-guide.md) within your authorized repair
+scope.
+
+For your own board, adapt a [scope](docs/scope-reference.md) to capture its native
+project, libraries, custom rules, requirements and models. Include functional
+checks for the behavior you want to establish. The fixture's requirements are
+specific to that filter and should not be copied as generic acceptance criteria.
+
+## What you get back
+
+Each run retains a human-readable `REPORT.md`, machine-readable `result.json`,
+the captured inputs, tool commands and raw outputs, reviewer judgments and finding
+dispositions. Campaigns additionally retain candidate history, implementation
+attempts and convergence decisions. You can inspect a failure without erasing it
+when a later candidate succeeds.
+
+| Review outcome | Meaning |
+| --- | --- |
+| `criteria_satisfied` | Required checks and reviews completed with no accepted defects or unresolved findings; noted nonblocking observations may remain. |
+| `defects_or_unresolved` | Review completed with defects or open questions. |
+| `incomplete` | A tool, reviewer, evidence gate, adjudication or work budget left required work unfinished. |
+
+See the [operator guide](docs/operator-guide.md) for interpreting findings and
+closing corrections, and [troubleshooting](docs/troubleshooting.md) for refusals
+and partial runs.
+
+## Evidence, development and documentation
+
+The project has 98 tests covering native checks, evidence integrity, isolated
+review contexts, single-writer ownership, regression detection and empirical
+feedback. The original RC defect-and-repair demonstration used actual agent
+reviews. The newer complete campaign and bench-feedback loops are exercised with
+scripted agent responses and synthetic bench samples. A live subscription
+campaign demonstrated independent review and rejection of an invalid adjudicator
+citation; it did not complete an automatic repair. These are distinct levels of
+evidence, recorded in the [closed-loop verification report](docs/closed-loop.md).
 
 ```sh
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
+python3 scripts/check_docs.py
 ```
 
-The [evaluation plan](docs/evaluation-plan.md) records the independent expected
-control and seeded responses before code. Recorded demonstrations, the donor
-baseline and implementation decisions are indexed in
-[recorded acceptance evidence](evidence/README.md) and [decisions](docs/decisions.md).
-This small exercise demonstrates observed behavior; it is not a general hardware
-correctness benchmark. Prototype and bench validation remain necessary.
-
-Recorded input trees are stored in compressed archives alongside readable reports
-and check/reviewer records. Restore a group in a fresh checkout with
-`python3 scripts/evidence_archive.py restore rc-verified` (or `donor-verified`).
-Restoration checks the archive checksum and refuses to overwrite changed files.
-The archive manifest pins each group's implementation commit and recorded
-outcomes; historical failure attempts remain incomplete. Use a matching source
-version when replaying their integrity checks. To run the actual control, seed
-and disposable repair demonstration again, use
-`python3 scripts/demo.py --profile profiles/claude.json --out build/my-demo` from the repository root.
+The [full manual](docs/README.md) is the entry point for command, scope, tool and
+state contracts. The [maintainer guide](docs/maintainer-guide.md) covers extension
+interfaces and tests; [security](docs/security.md) explains sandbox and trust
+limits; [evidence reproduction](docs/reproducing-evidence.md) describes replaying
+historical demonstrations. [Independent review dispositions](docs/closed-loop-review.md)
+record Fable and Argon's findings on the closed-loop implementation.
