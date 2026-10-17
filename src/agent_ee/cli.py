@@ -433,6 +433,10 @@ def main(argv=None):
     feedback.add_argument("report")
     feedback.add_argument("--out", required=True)
     feedback.add_argument("--max-seconds", type=float, default=1200)
+    diagnosis = sub.add_parser("diagnose", help="read-only advisory run or campaign diagnosis")
+    diagnosis.add_argument("path")
+    diagnosis.add_argument("--json", action="store_true", dest="machine")
+    diagnosis.add_argument("--snapshot-only", action="store_true")
     campaign_verify = sub.add_parser("verify-campaign", help="verify all candidate history links and convergence state")
     campaign_verify.add_argument("campaign")
     campaign = sub.add_parser("campaign", help="run a bounded single-writer implementation/review campaign")
@@ -464,6 +468,11 @@ def main(argv=None):
     closure.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "diagnose":
+            from .diagnostics import diagnose, render_diagnosis
+            report = diagnose(args.path, current_source=not args.snapshot_only)
+            print(json.dumps(report, indent=2) if args.machine else render_diagnosis(report))
+            return 0
         if args.command == "doctor":
             checks = {}
             for name, command in {"kicad-cli": ["kicad-cli", "version"],

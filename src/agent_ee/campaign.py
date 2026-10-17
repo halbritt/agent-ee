@@ -165,68 +165,74 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
 
 
 def verify_campaign(root):
+    root = Path(root).resolve()
+    with writer_lock(root):
+        return verify_campaign_records(root)
+
+
+def verify_campaign_records(root):
+    """Existing integrity decisions; caller establishes coherent reads if needed."""
     from .cli import verify
 
     root = Path(root).resolve()
-    with writer_lock(root):
-        state = read_json(root / "state.json")
-        config = read_json(root / "config.json")
-        if digest(root / "config.json") != state["config_sha256"]:
-            raise ValueError("campaign configuration changed")
-        if read_json(root / "profile.json") != config["review_profile"]:
-            raise ValueError("campaign profile changed")
-        history = []
-        diagnostic = {"state": "running"}
-        feedback_seen = False
-        for index, stored in enumerate(state["history"], 1):
-            run = root / "runs" / str(index)
-            snapshot = root / "history" / f"{index}.json"
-            if (str(run) != stored["run"] or str(snapshot) != stored["result_snapshot"] or
-                    digest(snapshot) != stored["result_sha256"]):
+    state = read_json(root / "state.json")
+    config = read_json(root / "config.json")
+    if digest(root / "config.json") != state["config_sha256"]:
+        raise ValueError("campaign configuration changed")
+    if read_json(root / "profile.json") != config["review_profile"]:
+        raise ValueError("campaign profile changed")
+    history = []
+    diagnostic = {"state": "running"}
+    feedback_seen = False
+    for index, stored in enumerate(state["history"], 1):
+        run = root / "runs" / str(index)
+        snapshot = root / "history" / f"{index}.json"
+        if (str(run) != stored["run"] or str(snapshot) != stored["result_snapshot"] or
+                digest(snapshot) != stored["result_sha256"]):
+            raise ValueError("campaign history result link changed")
+        current = verify(run, current_source=False)
+        result = read_json(snapshot)
+        if current != result:
+            # Bench registration appends facts without rewriting the original
+            # judgment. Arbitrary post-hoc adjudication is not a feedback epoch.
+            allowed = {"empirical_feedback", "artifact_hashes", "outcome"}
+            if (not current.get("empirical_feedback") or
+                    {k: v for k, v in current.items() if k not in allowed} !=
+                    {k: v for k, v in result.items() if k not in allowed}):
                 raise ValueError("campaign history result link changed")
-            current = verify(run, current_source=False)
-            result = read_json(snapshot)
-            if current != result:
-                # Bench registration appends facts without rewriting the original
-                # judgment. Arbitrary post-hoc adjudication is not a feedback epoch.
-                allowed = {"empirical_feedback", "artifact_hashes", "outcome"}
-                if (not current.get("empirical_feedback") or
-                        {k: v for k, v in current.items() if k not in allowed} !=
-                        {k: v for k, v in result.items() if k not in allowed}):
-                    raise ValueError("campaign history result link changed")
-                if index == len(state["history"]):
-                    feedback_seen = True
-            manifest = read_json(run / "candidate.json")
-            if load_baseline(run) != state["baseline"]:
-                raise ValueError("campaign history baseline changed")
-            empirical = manifest["scope"].get("empirical")
-            calibration_id = manifest["files"].get(empirical) if empirical else None
-            if stored["calibration_id"] != calibration_id:
-                raise ValueError("campaign epoch calibration identity changed")
-            if not history:
-                if state["mutable_inputs"] != mutable_inputs(manifest, state["baseline"]):
-                    raise ValueError("campaign mutable_inputs differ from captured write authority")
-                if stored["epoch"] != 0:
-                    raise ValueError("campaign must begin at epoch zero")
-            elif stored["epoch"] != history[-1]["epoch"]:
-                previous = history[-1]
-                previous_result = read_json(Path(previous["run"]) / "result.json")
-                transitions = previous_result.get("empirical_feedback", [])
-                if (stored["epoch"] != previous["epoch"] + 1 or calibration_id == previous["calibration_id"] or
-                        not any(e["bundle_sha256"] == calibration_id and e["review"] == str(run) for e in transitions)):
-                    raise ValueError("campaign epoch lacks a bound physical feedback transition")
-            elif history[-1]["calibration_id"] != calibration_id:
-                raise ValueError("calibration changed without an empirical epoch transition")
-            comparable = [h for h in history if h["epoch"] == stored["epoch"]]
-            budget = config["max_iterations"] - (len(history) - len(comparable))
-            record, diagnostic = advance(comparable, result, manifest, budget)
-            metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id"}
-            if record != {k: v for k, v in stored.items() if k not in metadata}:
-                raise ValueError("campaign history projection differs from evidence")
-            history.append(stored)
-        if state["state"] != diagnostic["state"] and not (state["state"] == "incomplete" and state.get("error")):
-            raise ValueError("campaign terminal state contradicts convergence history")
-        return {**state, "state": "empirical_superseded"} if feedback_seen else state
+            if index == len(state["history"]):
+                feedback_seen = True
+        manifest = read_json(run / "candidate.json")
+        if load_baseline(run) != state["baseline"]:
+            raise ValueError("campaign history baseline changed")
+        empirical = manifest["scope"].get("empirical")
+        calibration_id = manifest["files"].get(empirical) if empirical else None
+        if stored["calibration_id"] != calibration_id:
+            raise ValueError("campaign epoch calibration identity changed")
+        if not history:
+            if state["mutable_inputs"] != mutable_inputs(manifest, state["baseline"]):
+                raise ValueError("campaign mutable_inputs differ from captured write authority")
+            if stored["epoch"] != 0:
+                raise ValueError("campaign must begin at epoch zero")
+        elif stored["epoch"] != history[-1]["epoch"]:
+            previous = history[-1]
+            previous_result = read_json(Path(previous["run"]) / "result.json")
+            transitions = previous_result.get("empirical_feedback", [])
+            if (stored["epoch"] != previous["epoch"] + 1 or calibration_id == previous["calibration_id"] or
+                    not any(e["bundle_sha256"] == calibration_id and e["review"] == str(run) for e in transitions)):
+                raise ValueError("campaign epoch lacks a bound physical feedback transition")
+        elif history[-1]["calibration_id"] != calibration_id:
+            raise ValueError("calibration changed without an empirical epoch transition")
+        comparable = [h for h in history if h["epoch"] == stored["epoch"]]
+        budget = config["max_iterations"] - (len(history) - len(comparable))
+        record, diagnostic = advance(comparable, result, manifest, budget)
+        metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id"}
+        if record != {k: v for k, v in stored.items() if k not in metadata}:
+            raise ValueError("campaign history projection differs from evidence")
+        history.append(stored)
+    if state["state"] != diagnostic["state"] and not (state["state"] == "incomplete" and state.get("error")):
+        raise ValueError("campaign terminal state contradicts convergence history")
+    return {**state, "state": "empirical_superseded"} if feedback_seen else state
 
 
 def campaign_feedback(root, report, out, max_seconds):
