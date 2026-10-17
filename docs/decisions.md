@@ -126,3 +126,122 @@ probe verified the behavior. No hermetic runtime or provider fallback was added.
 Correction closure now requires changed captured input bytes in addition to a
 new candidate identity, fresh passing evidence and unchanged criteria. Changing
 only reviewer allocation cannot be represented as a saved-design repair.
+
+## Generator direction (2026-10-17)
+
+The owner set the direction below for turning agent-ee, kicad-route and FOME-MC
+into one AI-driven PCB generator: the user describes a board, discusses parts,
+says "go" and receives a JLCPCB-ready package in which every step is
+tool-verified. The coordinator (`agent-423`) recorded the decisions; the
+[generator roadmap](generator-roadmap.md) turns them into stages, a benchmark
+ladder and Plane epics AGENTEE-78 to AGENTEE-84. The owner directive is the
+authority for these decisions. An objection is filed as a Plane item for the
+owner, not made as an edit to this section or as a change of direction in code.
+
+Each decision below quotes the owner directive, then states what it preserves
+and what it excludes.
+
+### 1. Generation is a repair campaign from an empty candidate
+
+> Generation is a repair campaign started from an empty candidate. The existing
+> writer/reviewer/adjudicator/check loop is the engine. "Done" means the scope/2
+> check set passes and the fab exports exist. No second architecture.
+
+Preserves the single implementation writer, captured immutable candidates,
+independent initial reviews, central adjudication and the convergence reducer
+described in the [campaign guide](campaign-guide.md). Acceptance stays the
+recorded `criteria_satisfied` state of a verified campaign.
+
+Excludes a separate generation pipeline with its own acceptance logic, a
+generator that writes into the source checkout, and any "done" that is not the
+declared check set passing plus fab exports present as checked artifacts.
+
+### 2. Boards are composed from verified reference blocks
+
+> Boards are composed from a library of verified reference blocks (power, MCU
+> core, CAN, wideband channel, drivers), each captured with its evidence, then
+> adapted; not synthesized part by part. fome-mc's history (carrier + wideband
+> Rev C + H7 core) is the model.
+
+Preserves the evidence a block already earned: its captured bytes, check
+results and review records stay bound to the block, and adapting it to a board
+is an ordinary repair with fresh checks.
+
+Excludes part-by-part synthesis of a whole board as the default route, and
+treating a block as verified because it was copied from a verified source
+without its evidence.
+
+### 3. Pipeline stages, each a verified step
+
+> Pipeline stages, each a verified step: requirements, parts (JLCPCB/LCSC stock
+> and footprint data captured as evidence), schematic, placement, routing,
+> verification, fab package. kicad-route is the routing stage and runs as a
+> sandboxed writer. KRT is the default because it is deterministic; Freerouting
+> runs are attempts, not measurements.
+
+Preserves native KiCad files as the design authority and native KiCad grading
+as the judge of routed copper. Each stage's output is a captured input of the
+next stage.
+
+Excludes live catalogue or stock queries during checks, routing inside
+agent-ee's own code, and citing a Freerouting run as a reproducible
+measurement. A Freerouting candidate is graded like any other attempt.
+
+### 4. Placement is a new writer-proposes, checks-grade stage
+
+> Placement is the one stage with no tool anywhere. Make it a new stage: a
+> writer proposes placements, checks grade them (courtyard DRC, ratsnest
+> length, keepouts, connector-on-edge), the campaign loop iterates.
+
+Preserves the rule that a writer's summary is never evidence: positions count
+only after capture, and grades come from coordinator checks.
+
+Excludes a placement optimizer whose own score accepts a board, and placement
+inside the routing tool.
+
+### 5. The evidence model is non-negotiable
+
+> The evidence model is non-negotiable: hashed inputs, recorded tool versions,
+> sandboxed execution, independent reviewers, adjudication gated on tool
+> evidence. Every new stage inherits it. Tool failure is missing coverage,
+> never a pass.
+
+Preserves every boundary in the [closed-loop overview](closed-loop.md),
+including execution/outcome separation and the rule that only sealed check
+findings become accepted scope/2 defects.
+
+Excludes stage-specific shortcuts: a stage without hashed inputs, recorded
+versions or sandboxed execution is not a verified stage, and an unavailable
+tool cannot be recorded as a pass.
+
+### 6. Tools stay upstream
+
+> Tools stay upstream, never vendored. Record versions and hashes per run. GPL
+> tools are called as processes, never linked.
+
+Preserves the existing practice of calling installed native tools directly
+and recording their identity. kicad-route's `vendor/` directory is a
+gitignored install location under its state directory, not a vendored copy;
+kicad-route records backend versions in every `result.json`. That complies.
+
+Excludes copying upstream source into agent-ee, importing GPL code into
+agent-ee's process, and runs whose tool versions cannot be reconstructed.
+
+### Placement lives in agent-ee
+
+The coordinator placed the placement stage in agent-ee rather than kicad-route,
+for three reasons:
+
+1. Decision 1 makes the campaign loop the engine, and placement is exactly
+   "writer proposes, checks grade".
+2. kicad-route's contract is to preserve footprints, outline, zones and rules
+   unchanged and to grade only copper it added (its `footprints` and
+   `board_outline` preservation checks). Moving footprints would contradict
+   those invariants.
+3. The grading checks (courtyard DRC through `kicad-cli`, ratsnest length and
+   keepouts through the pcbnew probe, connector-on-edge geometry) are
+   native-tool checks of the kind agent-ee already runs in its sandbox.
+
+kicad-route contributes routability evidence: its blocked-by receipts and
+`kicad-route blocked` output are inputs the placement stage consumes as check
+evidence. It does not move footprints.

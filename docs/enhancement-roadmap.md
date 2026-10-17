@@ -35,6 +35,9 @@ corners. Evidence replay, interrupted bench recovery, packet indexing and PCB
 DC-resistance extraction remain under implementation or review. A source change
 and passing tests do not replace the owner's acceptance review.
 
+The next direction, generating boards from an empty candidate through the same
+campaign loop, is planned in the [generator roadmap](generator-roadmap.md).
+
 ## Preserved engineering contract
 
 Requirements, targets and reference architectures remain immutable captured ground truth. Each candidate receives independent initial reviews before centralized adjudication. Only sealed coordinator checks establish accepted scope/2 defects. Implementation is the sole design writer; bounded convergence and empirical supersession remain enforced. Synthetic and scripted harness tests are not live-model reliability or physical validation. The planning contracts below do not confer hardware release authority.
