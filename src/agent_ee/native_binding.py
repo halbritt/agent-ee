@@ -6,6 +6,7 @@ pin inventory and pad parity reuse ``footprint_library``. Run
 docs/native-binding.md for the exporter semantics these rules depend on.
 """
 import hashlib
+import posixpath
 
 from .footprint_library import (FootprintError, _seal, _symbol_inventory, check_assignments, digest,
                                 validate_declaration)
@@ -23,45 +24,127 @@ def native_pin_name(name):
     return '' if name == '~' else name.replace(' ', '_')
 
 
-def virtual_symbols(schematics):
-    """Instances the native exporter omits: any reference that begins with '#'.
+MAX_OCCURRENCES = 4096
+# Occurrence identities left unestablished; each makes board scope unproved.
+OCCURRENCE_PROBLEMS = {
+    'ambiguous_occurrence_identity': 'omitted occurrence has instance entries with different references',
+    'missing_occurrence_identity': 'omitted occurrence has no instance entry of its own',
+    'duplicate_occurrence_reference': 'reference names more than one omitted occurrence',
+    'unexplained_omission': 'native export omits an occurrence whose reference does not begin with #',
+    'occurrence_identity_conflict': 'native reference differs from the occurrence instance entries',
+    'native_identity_unmatched': 'native component identity is not an occurrence of the captured hierarchy',
+    'hierarchy_mismatch': 'native sheets differ from the captured hierarchy occurrences',
+    'legacy_symbol_instances': 'legacy symbol_instances block is not qualified',
+}
 
-    ``schematics`` maps captured sheet paths to bytes. Each omitted instance
-    records whether its embedded definition, which KiCad exports from, is power.
+
+def _sheet(path, root):
+    """Embedded definitions, placed symbols and child sheets of one captured file."""
+    from .symbol_library import LibraryError, children, field
+    if root[0] != 'kicad_sch':
+        raise LibraryError('expected kicad_sch')
+    caches = children(root, 'lib_symbols')
+    if len(caches) > 1:
+        raise LibraryError('duplicate embedded symbol cache')
+    embedded = {}
+    for node in children(caches[0], 'symbol') if caches else []:
+        if len(node) < 2 or not isinstance(node[1], str) or node[1] in embedded:
+            raise LibraryError('invalid or duplicate embedded symbol')
+        embedded[node[1]] = node
+    symbols, uuids = [], set()
+    for node in children(root, 'symbol'):
+        lib_id = field(node, 'lib_id', 1)[0]
+        key = field(node, 'lib_name', 1)[0] if children(node, 'lib_name') else lib_id
+        uuid = field(node, 'uuid', 1)[0]
+        if uuid in uuids:
+            raise LibraryError('duplicate symbol UUID')
+        uuids.add(uuid)
+        # Document order across every project: the exporter's own reading order.
+        entries = [(entry[1], field(entry, 'reference', 1)[0])
+                   for instances in children(node, 'instances')
+                   for project in children(instances, 'project')
+                   for entry in children(project, 'path')]
+        if any(not isinstance(p, str) or not isinstance(r, str) for p, r in entries):
+            raise LibraryError('invalid symbol instance entry')
+        definition = embedded.get(key)
+        symbols.append(dict(uuid=uuid, lib_id=lib_id, entries=entries,
+                            embedded_power=definition is not None and bool(children(definition, 'power'))))
+    sheets = []
+    for node in children(root, 'sheet'):
+        files = [p[2] for p in children(node, 'property')
+                 if len(p) > 2 and p[1] in ('Sheetfile', 'Sheet file')]
+        if len(files) != 1 or not isinstance(files[0], str):
+            raise LibraryError('sheet needs exactly one Sheetfile')
+        sheets.append((field(node, 'uuid', 1)[0], posixpath.normpath(
+            posixpath.join(posixpath.dirname(path), files[0]))))
+    return dict(uuid=field(root, 'uuid', 1)[0], symbols=symbols, sheets=sheets,
+                legacy=bool(children(root, 'symbol_instances')))
+
+
+def virtual_symbols(schematics, root, graph):
+    """Exporter-omitted symbol occurrences of the captured hierarchy under ``root``.
+
+    ``schematics`` maps every captured sheet path to bytes; ``graph`` is the
+    strict native inventory exported from them. An occurrence is one sheet
+    instance path and symbol UUID. Exported occurrences take the native
+    reference. An omitted one takes the reference of its own instance entries,
+    whatever their project. Entries for other paths never apply. Records with
+    ``problem`` leave an identity unestablished. Each resolved record says
+    whether the embedded definition, which KiCad exports from, is power.
     """
-    from .symbol_library import LibraryError, children, field, parse_sexpr
+    from .symbol_library import LibraryError, parse_sexpr
     records = []
     try:
-        for path in sorted(schematics):
-            root = parse_sexpr(schematics[path])
-            if root[0] != 'kicad_sch':
-                raise LibraryError('expected kicad_sch')
-            caches = children(root, 'lib_symbols')
-            if len(caches) > 1:
-                raise LibraryError('duplicate embedded symbol cache')
-            embedded = {}
-            for node in children(caches[0], 'symbol') if caches else []:
-                if len(node) < 2 or not isinstance(node[1], str) or node[1] in embedded:
-                    raise LibraryError('invalid or duplicate embedded symbol')
-                embedded[node[1]] = node
-            for node in children(root, 'symbol'):
-                lib_id = field(node, 'lib_id', 1)[0]
-                key = field(node, 'lib_name', 1)[0] if children(node, 'lib_name') else lib_id
-                refs = [p[2] for p in children(node, 'property') if len(p) > 2 and p[1] == 'Reference']
-                for instances in children(node, 'instances'):
-                    for project in children(instances, 'project'):
-                        for instance in children(project, 'path'):
-                            refs.extend(r[1] for r in children(instance, 'reference') if len(r) > 1)
-                if any(not isinstance(r, str) for r in refs):
-                    raise LibraryError('invalid symbol reference')
-                virtual = sorted({r for r in refs if r.startswith('#')})
-                if virtual:
-                    definition = embedded.get(key)
-                    records.append(dict(file=path, lib_id=lib_id, references=virtual,
-                        uuid=field(node, 'uuid', 1)[0] if children(node, 'uuid') else None,
-                        embedded_power=definition is not None and bool(children(definition, 'power'))))
+        files = {path: _sheet(path, parse_sexpr(data)) for path, data in schematics.items()}
+        if root not in files:
+            raise LibraryError('root sheet not captured')
+        occurrences, pending = [], [(root, '/' + files[root]['uuid'], '/', ())]
+        while pending:
+            path, instance, sheet, trail = pending.pop()
+            if path in trail:
+                raise LibraryError('sheet hierarchy cycle')
+            occurrences.append((path, instance, sheet))
+            if len(occurrences) > MAX_OCCURRENCES:
+                raise LibraryError('sheet occurrence limit exceeded')
+            for uuid, child in reversed(files[path]['sheets']):
+                if child not in files:
+                    raise LibraryError(f'sheet {child!r} not captured')
+                pending.append((child, instance + '/' + uuid, sheet + uuid + '/', trail + (path,)))
+        sheets = [sheet for _, _, sheet in occurrences]
+        if len(sheets) != len(set(sheets)) or {p for p, _, _ in occurrences} != files.keys():
+            raise LibraryError('captured sheets differ from one hierarchy')
     except (LibraryError, IndexError, TypeError) as exc:
         raise FootprintError('exporter-omission audit failed: ' + str(exc)) from exc
+    native = {(c['sheet'], uuid): ref for ref, c in graph['components'].items()
+              for uuid in c['uuid'].split()}
+    if sorted(sheets) != sorted(graph['sheets']):
+        records.append(dict(file=root, references=[], problem='hierarchy_mismatch', captured=sorted(sheets),
+                            native=sorted(graph['sheets'])))
+    records.extend(dict(file=path, references=[], problem='legacy_symbol_instances')
+                   for path in sorted(files) if files[path]['legacy'])
+    seen = set()
+    for path, instance, sheet in occurrences:
+        for symbol in files[path]['symbols']:
+            own = sorted({ref for entry, ref in symbol['entries'] if entry == instance})
+            record = dict(file=path, sheet=sheet, uuid=symbol['uuid'], lib_id=symbol['lib_id'],
+                          references=own, embedded_power=symbol['embedded_power'])
+            exported = native.get((sheet, symbol['uuid']))
+            if exported is not None:
+                seen.add((sheet, symbol['uuid']))
+                if exported.startswith('#') or (own and exported not in own):
+                    records.append(dict(record, problem='occurrence_identity_conflict', native=exported))
+            elif len(own) != 1:
+                records.append(dict(record, problem='ambiguous_occurrence_identity' if own
+                                    else 'missing_occurrence_identity'))
+            else:
+                records.append(record if own[0].startswith('#') else dict(record, problem='unexplained_omission'))
+    records.extend(dict(file=None, sheet=sheet, uuid=uuid, references=[ref],
+                        problem='native_identity_unmatched')
+                   for (sheet, uuid), ref in sorted(native.items()) if (sheet, uuid) not in seen)
+    resolved = [r['references'][0] for r in records if 'problem' not in r]
+    for record in records:
+        if 'problem' not in record and resolved.count(record['references'][0]) > 1:
+            record['problem'] = 'duplicate_occurrence_reference'
     return records
 
 
@@ -91,7 +174,7 @@ def bind_native_assignments(manifest, captured_files, declaration, graph, virtua
     """Bind every native board component to an exact declaration and captured library.
 
     ``graph`` is a strict native inventory; ``virtual`` comes from
-    ``virtual_symbols`` over the same candidate's captured sheets.
+    ``virtual_symbols`` over the same candidate's captured sheets and graph.
     """
     result = dict(schema=SCHEMA, predicate=PREDICATE, execution='ok', outcome='unknown',
                   coverage='complete', native_xml_sha256=native_xml_sha256, declaration_sha256=None,
@@ -109,7 +192,11 @@ def bind_native_assignments(manifest, captured_files, declaration, graph, virtua
     native = graph['components']
     virtual_refs, unresolved = {}, False
     for record in virtual:
-        if record['embedded_power']:
+        if 'problem' in record:
+            unresolved = True
+            result['findings'].append(dict(record, code=record['problem'],
+                                           message=OCCURRENCE_PROBLEMS[record['problem']]))
+        elif record['embedded_power']:
             result['exclusions'].append(dict(record, kind='exporter_virtual', reason=VIRTUAL_EXCLUSION))
             virtual_refs.update(dict.fromkeys(record['references'], record))
         else:
@@ -214,7 +301,7 @@ def main(argv=None):
     parser.add_argument('--captures', required=True)
     parser.add_argument('--assignments', required=True)
     parser.add_argument('--native-xml', required=True, help='retained native netlist producer XML')
-    parser.add_argument('--schematic', required=True, nargs='+', help='captured sheet paths')
+    parser.add_argument('--schematic', required=True, nargs='+', help='every captured sheet path, root first')
     parser.add_argument('--out', required=True, help='new output JSON file')
     args = parser.parse_args(argv)
     try:
@@ -234,7 +321,8 @@ def main(argv=None):
             paths = [m['path'] for _, m in _members(manifest)]
             paths += [lib['path'] for lib in declaration['libraries']]
             captures = read_captures(args.captures, paths)
-            virtual = virtual_symbols(read_captures(args.captures, args.schematic))
+            sheets = read_captures(args.captures, args.schematic)
+            virtual = virtual_symbols(sheets, args.schematic[0], graph)
             result = bind_native_assignments(manifest, captures, declaration, graph, virtual, sha)
         except OSError as exc:
             result = _failure('failed', 'captured_input', str(exc), sha)

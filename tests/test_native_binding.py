@@ -41,6 +41,15 @@ def component(decl, ref):
     return next(c for c in decl['components'] if c['reference'] == ref)
 
 
+def declared(decl, *refs):
+    """Add declarations: '#' references are GND power, others child-sheet resistors."""
+    for ref in refs:
+        lib_id, footprint = ('Owned:GND', '') if ref.startswith('#') else ('Owned:R', 'Owned:R2')
+        decl['components'].append({'reference': ref, 'lib_id': lib_id, 'footprint': footprint,
+                                   'assembly': 'smd', 'connector': None})
+    return decl
+
+
 def captures():
     files = GEN.footprints()
     files['Owned.kicad_sym'] = GEN.library()
@@ -127,26 +136,100 @@ class AdapterTests(unittest.TestCase):
                     read_native_inventory(self.mutated(mutate))
 
 
+def audit(sheets, graph=None):
+    from agent_ee.native_binding import virtual_symbols
+    if isinstance(sheets, str):
+        sheets = {'binding.kicad_sch': sheets}
+    return virtual_symbols({k: v.encode() for k, v in sheets.items()}, 'binding.kicad_sch',
+                           graph or native_graph())
+
+
 class VirtualSymbolTests(unittest.TestCase):
+    """Exporter-omitted occurrences resolved per actual (sheet occurrence, UUID)."""
+
+    def resolved(self, records):
+        return [(r['references'], r['embedded_power']) for r in records if 'problem' not in r]
+
+    def problems(self, records):
+        return sorted((r['problem'], tuple(r['references'])) for r in records if 'problem' in r)
+
     def test_exporter_omitted_references_are_audited_by_embedded_definition(self):
-        from agent_ee.native_binding import virtual_symbols
-        control = virtual_symbols({'binding.kicad_sch': GEN.schematic().encode()})
-        self.assertEqual([(r['references'], r['embedded_power']) for r in control], [(['#PWR01'], True)])
-        seeded = virtual_symbols({'binding.kicad_sch': GEN.schematic('virtual-nonpower').encode()})
+        control = audit(GEN.schematic())
+        self.assertEqual(self.resolved(control), [(['#PWR01'], True)])
+        self.assertEqual(self.problems(control), [])
+        self.assertEqual((control[0]['sheet'], control[0]['uuid']), ('/', GEN.uid('#PWR01')))
+        seeded = audit(GEN.schematic('virtual-nonpower'))
         self.assertEqual({r['references'][0]: r['embedded_power'] for r in seeded},
                          {'#PWR01': True, '#X1': False})
+
+    def test_archived_project_paths_are_not_occurrences(self):
+        records = audit(GEN.schematic('archived-alias'))
+        self.assertEqual(self.resolved(records), [(['#PWR01'], True)])
+        self.assertEqual(self.problems(records), [])
+
+    def test_same_path_aliases_are_ambiguous_whatever_their_order(self):
+        for variant in ('archived-same-path', 'archived-same-path-first'):
+            with self.subTest(variant=variant):
+                records = audit(GEN.schematic(variant))
+                self.assertEqual(self.resolved(records), [])
+                self.assertEqual(self.problems(records),
+                                 [('ambiguous_occurrence_identity', ('#GHOST', '#PWR01'))])
+
+    def test_reference_property_is_not_an_occurrence_identity(self):
+        records = audit(GEN.schematic('reference-property-alias'))
+        self.assertEqual(self.resolved(records), [(['#PWR01'], True)])
+        self.assertEqual(self.problems(records), [])
+
+    def test_distinct_symbols_sharing_an_omitted_reference_are_unknown(self):
+        records = audit(GEN.schematic('virtual-nonpower').replace('"#X1"', '"#PWR01"'))
+        self.assertEqual(self.resolved(records), [])
+        self.assertEqual(self.problems(records), [('duplicate_occurrence_reference', ('#PWR01',))] * 2)
+
+    def test_missing_own_entry_is_unknown_even_with_a_fallback(self):
+        # KiCad falls back to another path's reference; that is not this occurrence's identity.
+        other = GEN.schematic().replace(f'(path "/{GEN.uid("root")}" (reference "#PWR01")',
+                                        f'(path "/{GEN.ARCHIVED_ROOT}" (reference "#PWR01")')
+        self.assertEqual(self.problems(audit(other)), [('missing_occurrence_identity', ())])
+
+    def test_native_and_captured_identities_must_agree(self):
+        graph = native_graph()
+        del graph['components']['R1']
+        self.assertEqual(self.problems(audit(GEN.schematic(), graph)), [('unexplained_omission', ('R1',))])
+        graph = native_graph()
+        graph['components']['R1']['uuid'] = GEN.uid('elsewhere')
+        self.assertEqual(self.problems(audit(GEN.schematic(), graph)),
+                         [('native_identity_unmatched', ('R1',)), ('unexplained_omission', ('R1',))])
+        graph = native_graph()
+        graph['components']['ZR1'] = graph['components'].pop('R1')
+        self.assertEqual(self.problems(audit(GEN.schematic(), graph)), [('occurrence_identity_conflict', ('R1',))])
+        graph = native_graph()
+        graph['sheets'] = ['/', f'/{GEN.uid("sheet-a")}/']
+        self.assertIn('hierarchy_mismatch', {p for p, _ in self.problems(audit(GEN.schematic(), graph))})
+
+    def test_hierarchy_duplicate_and_unreachable_sheets(self):
+        from agent_ee.footprint_library import FootprintError
+        graph = native_graph()
+        graph['sheets'] = ['/'] + [f'/{sheet}/' for _, sheet in GEN.SHEETS]
+        records = audit(GEN.hierarchy('hierarchy-duplicate'), graph)
+        self.assertIn(('duplicate_occurrence_reference', ('#PWR11',)), self.problems(records))
+        with self.assertRaises(FootprintError):
+            audit(dict(GEN.hierarchy(), **{'stray.kicad_sch': GEN.schematic()}), graph)
+        with self.assertRaises(FootprintError):
+            audit({'binding.kicad_sch': GEN.hierarchy()['binding.kicad_sch']}, graph)
+        legacy = GEN.schematic().rstrip()[:-1] + '(symbol_instances))\n'
+        self.assertEqual(self.problems(audit(legacy)), [('legacy_symbol_instances', ())])
 
 
 class BindingTests(unittest.TestCase):
     """Pure binding over the committed native export, with in-memory seeds."""
 
     def bind(self, decl=None, graph=None, schematic='control', files=None):
-        from agent_ee.native_binding import bind_native_assignments, virtual_symbols
+        from agent_ee.native_binding import bind_native_assignments
         manifest, captured = captures()
         captured.update(files or {})
-        virtual = virtual_symbols({'binding.kicad_sch': GEN.schematic(schematic).encode()})
-        return bind_native_assignments(manifest, captured, decl or declaration(),
-                                       graph or native_graph(), virtual)
+        graph = graph or native_graph()
+        virtual = audit(GEN.schematic(schematic), graph)
+        return bind_native_assignments(manifest, captured, decl or declaration(), graph, virtual)
 
     def statuses(self, report):
         return {b['reference']: b['status'] for b in report['bindings']}
@@ -250,6 +333,23 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(report['outcome'], 'defect')
         self.assertEqual(self.codes(report, '#PWR01'), {'lib_id_mismatch'})
 
+    def test_archived_alias_is_never_an_excluded_identity(self):
+        report = self.bind(declared(declaration(), '#GHOST'), schematic='archived-alias')
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(self.codes(report, '#GHOST'), {'ghost_declaration'})
+        report = self.bind(declared(declaration(), '#PWR01'), schematic='archived-alias')
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report['findings'])
+        self.assertEqual(self.statuses(report)['#PWR01'], 'excluded')
+
+    def test_ambiguous_occurrence_refuses_either_declared_identity(self):
+        for ref in ('#GHOST', '#PWR01'):
+            with self.subTest(ref=ref):
+                report = self.bind(declared(declaration(), ref), schematic='archived-same-path')
+                self.assertEqual((report['execution'], report['outcome']), ('unsupported', 'unknown'))
+                self.assertNotEqual(self.statuses(report)[ref], 'excluded')
+                self.assertEqual([e for e in report['exclusions'] if e['kind'] == 'exporter_virtual'], [])
+                self.assertIn('ambiguous_occurrence_identity', {f['code'] for f in report['findings']})
+
     def test_malformed_declaration_is_malformed(self):
         decl = declaration()
         decl['components'].append(dict(decl['components'][0]))
@@ -267,9 +367,8 @@ class NativeBindingPipelineTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.counter = 0
 
-    def scope(self, case, decl, checks=None):
-        from agent_ee.storage import write_json
-        names = ['binding.kicad_sch', 'Owned.kicad_sym', 'manifest.json', 'assignment.json',
+    def scope(self, case, decl, checks=None, sheets=()):
+        names = ['binding.kicad_sch', *sheets, 'Owned.kicad_sym', 'manifest.json', 'assignment.json',
                  'requirements.md', *GEN.footprints()]
         params = {'manifest': 'manifest.json', 'declaration': 'assignment.json', 'netlist_check': 'netlist',
                   'assembly_intent': [{k: c[k] for k in ('reference', 'assembly', 'connector')}
@@ -284,7 +383,7 @@ class NativeBindingPipelineTests(unittest.TestCase):
                     'intent': 'acceptance'}], 'targets': ['requirements.md'],
                     'reference_architectures': ['requirements.md']}}
 
-    def run_variant(self, variant='control', decl=None, case=None, schematic=None):
+    def run_variant(self, variant='control', decl=None, case=None, schematic=None, sheets=None):
         import time
         from agent_ee.candidate import capture
         from agent_ee.checks import run_checks
@@ -300,9 +399,13 @@ class NativeBindingPipelineTests(unittest.TestCase):
                 (case / path).write_bytes(data)
             write_json(case / 'manifest.json', manifest)
             (case / 'requirements.md').write_text('Every board symbol shall have a valid footprint.\n')
-        (case / 'binding.kicad_sch').write_text(schematic or GEN.schematic(variant))
+        sheets = dict(sheets or {'binding.kicad_sch': schematic or GEN.schematic(variant)})
+        for path, text in sheets.items():
+            (case / path).parent.mkdir(parents=True, exist_ok=True)
+            (case / path).write_text(text)
         write_json(case / 'assignment.json', decl)
-        write_json(case / 'scope.json', self.scope(case, decl))
+        children = sorted(set(sheets) - {'binding.kicad_sch'})
+        write_json(case / 'scope.json', self.scope(case, decl, sheets=children))
         run = case / f'run-{variant}-{len(list(case.glob("run-*")))}'
         run.mkdir()
         capture(case / 'scope.json', run)
@@ -369,6 +472,62 @@ class NativeBindingPipelineTests(unittest.TestCase):
                 if variant == 'shared-bad':
                     self.assertEqual(sorted(f['reference'] for f in report['findings']
                                             if f['code'] == 'pad_pin_parity'), ['R1', 'R2'])
+
+    def test_actual_occurrence_identity_variants(self):
+        from agent_ee.native_netlist import read_native_inventory
+        hierarchy = declared(declaration(), 'R11', 'R12')
+        cases = [
+            ('archived-alias', declaration(), ('ok', 'pass'), None),
+            ('archived-alias', declared(declaration(), '#PWR01'), ('ok', 'pass'), ('#PWR01', None)),
+            ('archived-alias', declared(declaration(), '#GHOST'), ('ok', 'defect'), ('#GHOST', 'ghost_declaration')),
+            ('archived-same-path', declared(declaration(), '#GHOST'), ('unsupported', 'unknown'), None),
+            ('archived-same-path', declared(declaration(), '#PWR01'), ('unsupported', 'unknown'), None),
+            ('archived-same-path-first', declared(declaration(), '#PWR01'), ('unsupported', 'unknown'), None),
+            ('archived-same-path-first', declared(declaration(), '#GHOST'), ('unsupported', 'unknown'), None),
+            ('reference-property-alias', declared(declaration(), '#GHOST'), ('ok', 'defect'),
+             ('#GHOST', 'ghost_declaration')),
+            ('reference-property-alias', declared(declaration(), '#PWR01'), ('ok', 'pass'), ('#PWR01', None)),
+            ('archived-same-path-exported', declaration(), ('unsupported', 'unknown'),
+             ('PW9', 'undeclared_native_component')),
+            ('archived-same-path-exported', declared(declaration(), '#PWR01'), ('unsupported', 'unknown'),
+             ('PW9', 'undeclared_native_component')),
+            ('hierarchy', hierarchy, ('ok', 'pass'), None),
+            ('hierarchy', declared(copy.deepcopy(hierarchy), '#PWR11', '#PWR12'), ('ok', 'pass'), ('#PWR12', None)),
+            ('hierarchy-duplicate', declared(copy.deepcopy(hierarchy), '#PWR11'), ('unsupported', 'unknown'), None),
+            ('hierarchy-missing', hierarchy, ('unsupported', 'unknown'), None),
+            ('hierarchy-archived', hierarchy, ('ok', 'pass'), None),
+            ('hierarchy-archived', declared(copy.deepcopy(hierarchy), '#GHOST'), ('ok', 'defect'),
+             ('#GHOST', 'ghost_declaration')),
+        ]
+        for variant, decl, expected, finding in cases:
+            with self.subTest(variant=variant, declared=sorted(c['reference'] for c in decl['components'])):
+                sheets = GEN.hierarchy(variant) if variant.startswith('hierarchy') else None
+                run, checks = self.run_variant(variant, decl, schematic=None if sheets else GEN.schematic(variant),
+                                               sheets=sheets)
+                self.assertEqual(checks[0]['execution'], 'ok', checks)
+                native = read_native_inventory(run / 'work/netlist/design.xml')
+                self.assertEqual(len(native['sheets']), 3 if sheets else 1)
+                self.assertNotIn('#GHOST', native['components'])
+                self.assertEqual('PW9' in native['components'], variant == 'archived-same-path-exported')
+                fp = checks[1]
+                self.assertEqual((fp['execution'], fp['outcome']), expected, fp)
+                report = fp['details']['report']
+                statuses = {b['reference']: b['status'] for b in report['bindings']}
+                excluded = sorted(r for e in report['exclusions'] if e['kind'] == 'exporter_virtual'
+                                  for r in e['references'])
+                if expected[0] != 'ok':
+                    self.assertNotIn('excluded', {statuses.get(r) for r in ('#GHOST', '#PWR01', '#PWR11')})
+                    self.assertEqual(fp['details']['evaluated_predicates'], [])
+                if finding and finding[1] is None:
+                    self.assertEqual(statuses[finding[0]], 'excluded')
+                elif finding:
+                    binding = next(b for b in report['bindings'] if b['reference'] == finding[0])
+                    self.assertIn(finding[1], {f['code'] for f in binding['findings']}, binding)
+                    self.assertNotEqual(binding['status'], 'excluded')
+                if variant == 'hierarchy':
+                    self.assertEqual(excluded, ['#PWR01', '#PWR11', '#PWR12'])
+                if variant in ('archived-alias', 'hierarchy-archived', 'reference-property-alias'):
+                    self.assertNotIn('#GHOST', excluded)
 
     def test_scope3_seal_witness_drift_and_fresh_corrected_candidate(self):
         from agent_ee.baseline import freeze_evidence, validate_witnesses, verify_evidence
