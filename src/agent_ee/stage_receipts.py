@@ -296,6 +296,11 @@ def _identity_tree(source):
     return {'sha256': identity(entries), 'files': len(entries)}
 
 
+def tree_identity(source):
+    """Identity of a retained tool tree in the form a receipt records it."""
+    return _identity_tree(source)
+
+
 def _host_path(spec, sandbox_path):
     for mount in spec['mounts']:
         if _under(sandbox_path, mount['at']):

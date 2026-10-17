@@ -589,6 +589,14 @@ def tool_snapshot(destination):
     return destination
 
 
+def verify_snapshot(tool_dir, source_files):
+    """Refuse a helper source snapshot that is not exactly the campaign's pinned agent_ee sources."""
+    expected = {f'agent_ee/{name}': sha for name, sha in source_files.items()}
+    expected['launch.py'] = hashlib.sha256(LAUNCHER.encode()).hexdigest()
+    if _files(tool_dir) != dict(sorted(expected.items())):
+        raise ValueError('placement helper source snapshot differs from the campaign source pin')
+
+
 def step_declaration(step_dir, bound):
     """The one placement stage-step declaration for a coordinator step directory."""
     step_dir = Path(step_dir)
@@ -684,6 +692,8 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
             name = _receipt_name(receipt_index)
             step_dir = work / 'placement' / str(receipt_index)
             spec, request = prepare_step(step_dir, (design / board).read_bytes(), policy, bound, refs)
+            if 'launch_environment' in state:
+                verify_snapshot(step_dir / 'tool', state['launch_environment']['policy_files'])
             receipt_dir = work / name
             record['helper'] = {'receipt': name, 'request_sha256': identity(request), 'status': None}
             ran = True
@@ -748,7 +758,7 @@ def _stored(work, kind):
     return stored
 
 
-def _helper_receipt(work, bound, manifest, receipts, receipt_index):
+def _helper_receipt(work, bound, manifest, receipts, receipt_index, source_files=None):
     """Validated coordinator receipt, its step directory and the coordinator-derived step."""
     name = _receipt_name(receipt_index)
     receipt_dir = Path(work) / name
@@ -760,11 +770,16 @@ def _helper_receipt(work, bound, manifest, receipts, receipt_index):
     step_dir = Path(work) / 'placement' / str(receipt_index)
     if receipt['spec'] != receipts.validate_step(step_declaration(step_dir, bound), host=False):
         raise ValueError('placement receipt step differs from the placement declaration')
+    # The retained tool snapshot is the receipt's observed source tree, byte for byte.
+    if receipt['tool']['source_tree'] != {'path': TOOL_AT, **receipts.tree_identity(step_dir / 'tool')}:
+        raise ValueError('placement helper source snapshot differs from its receipt')
+    if source_files is not None:
+        verify_snapshot(step_dir / 'tool', source_files)
     return name, receipt_dir, receipt, step_dir
 
 
 def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, mutable_inputs, *, receipts=None,
-                  receipt_index=1):
+                  receipt_index=1, source_files=None):
     """Recompute a proposed placement record from retained receipts and the captured proposal.
 
     Every field is re-derived; none is copied from the stored record. The captured proposal
@@ -789,7 +804,8 @@ def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, m
             raise ValueError('placement record lacks the declared helper receipt')
         if helper['receipt'] != _receipt_name(receipt_index):
             raise ValueError('placement record names no coordinator placement receipt')
-        name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index)
+        name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index,
+                                                               source_files)
         # The writer's delivered design is the receipt's retained input copy.
         expected['writer_scope'] = proposal_scope(source_inputs, receipt_dir / 'inputs', bound['board'], protected)
         if expected['writer_scope']['status'] != 'allowed':
@@ -812,7 +828,7 @@ def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, m
 
 
 def verify_attempt(work, source_inputs, design, manifest, declaration, mutable_inputs, *, receipts=None,
-                   receipt_index=1):
+                   receipt_index=1, source_files=None):
     """Verify the retained record of an incomplete placement iteration.
 
     Asserts nothing about adoption or completion. The bindings, protected set, any helper
@@ -838,7 +854,8 @@ def verify_attempt(work, source_inputs, design, manifest, declaration, mutable_i
         receipt_dir = work / name
         step_dir = work / 'placement' / str(receipt_index)
         if (receipt_dir / 'receipt.json').exists():
-            name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index)
+            name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index,
+                                                                   source_files)
             delivered = receipt_dir / 'inputs'
         elif receipt_dir.exists() or receipt_dir.is_symlink():
             raise ValueError('placement attempt receipt directory without a coordinator receipt')

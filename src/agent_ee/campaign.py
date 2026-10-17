@@ -468,6 +468,7 @@ def verify_campaign_plans(root, state, config):
             raise ValueError("placement adapter record differs from its campaign anchor")
         index = next(e["receipt_index"] for e in plan if e["kind"] == "placement") or 1
         args = (config["placement_adapter"], state["mutable_inputs"])
+        pinned = {"receipt_index": index, "source_files": state["launch_environment"]["policy_files"]}
         design = work / "review-work/implementation/design"
         if read_json(record).get("status") == "proposed":
             captured = design
@@ -476,11 +477,11 @@ def verify_campaign_plans(root, state, config):
                 if read_json(proposal / "candidate.json").get("scope_path") != str(work / "proposal.scope.json"):
                     raise ValueError("next campaign run was not captured from this placement proposal")
                 captured = proposal / "inputs"
-            verify_record(work, source / "inputs", captured, manifest, *args, receipt_index=index)
+            verify_record(work, source / "inputs", captured, manifest, *args, **pinned)
         else:
             if complete or number != len(history) or state["state"] != "incomplete":
                 raise ValueError("incomplete placement attempt is not the campaign's final incomplete step")
-            verify_attempt(work, source / "inputs", design, manifest, *args, receipt_index=index)
+            verify_attempt(work, source / "inputs", design, manifest, *args, **pinned)
     if set(anchors) - placed:
         raise ValueError("placement record anchors name no placement implementation")
     return plans

@@ -400,6 +400,66 @@ class RefusalCampaignTest(PlacementCampaignFixture):
         self.refused({'flip': ['R1'], 'rotate': {'R1': 135}}, 'after the side flip is not a quarter turn')
 
 
+    def test_planted_links_refuse_before_the_adapter(self):
+        edit_board(self.source / BOARD, move={'R1': (109, 100)})
+        original = self.agent
+        def writer(run, label, *args, **kwargs):
+            reply = original(run, label, *args, **kwargs)
+            if label == 'implementation':
+                design = Path(run) / 'review-work/implementation/design/project'
+                (design / 'board-link.kicad_pcb').symlink_to(design / 'rc_filter.kicad_pcb')
+            return reply
+        patch('agent_ee.reviewers.dispatch', side_effect=writer).start()
+        status, state = self.campaign(self.declaration())
+        self.assertEqual(status, 1)
+        self.assertNoNextCandidate(state, 'implementation introduced a live link')
+        self.assertFalse((self.out / 'implementations/1/placement-adapter.json').exists())
+
+
+class StepPlanTest(unittest.TestCase):
+    """The pure plan derivation shared by dispatch and verification."""
+
+    def setUp(self):
+        from agent_ee.campaign import STEP_PLAN, step_plan
+        self.plan, self.version = step_plan, STEP_PLAN
+        def step(stage):
+            return {'schema': 'agent-ee.stage-step/1', 'stage': stage, 'step': f'{stage}-step',
+                    'argv': ['/usr/bin/true'], 'writes': {'board': 'design/board'}}
+        self.steps = [step('schematic'), step('routing'), step('schematic')]
+        self.config = {'implementation_steps': self.steps, 'placement_adapter': {
+            'schema': pa.ADAPTER_SCHEMA, 'helper': 'agent-ee.placer/1', 'policy': POLICY, 'fixed_footprints': [],
+            'timeout_s': 60}}
+        self.staged = {'scope': {'stages': {'schema': 'agent-ee.stages/1'}}}
+
+    def kinds(self, plan):
+        return [(e['kind'], e['spec']['stage'] if e['kind'] == 'step' else None, e['receipt_index']) for e in plan]
+
+    def test_staged_plan_selects_the_earliest_failing_stage_only(self):
+        expected = {'schematic': [('step', 'schematic', 1), ('step', 'schematic', 2)],
+                    'placement': [('placement', None, 1)], 'routing': [('step', 'routing', 1)], None: []}
+        for stage, entries in expected.items():
+            with self.subTest(stage=stage):
+                plan = self.plan(self.config, self.staged, {'earliest_failing_stage': stage}, self.version)
+                self.assertEqual(self.kinds(plan), entries)
+        writer_only = {**self.config, 'placement_adapter': {**self.config['placement_adapter'], 'helper': None,
+                                                            'policy': None}}
+        plan = self.plan(writer_only, self.staged, {'earliest_failing_stage': 'placement'}, self.version)
+        self.assertEqual(self.kinds(plan), [('placement', None, None)])
+
+    def test_unstaged_and_legacy_plans_keep_every_step_and_refuse_the_adapter(self):
+        legacy = {'implementation_steps': self.steps}
+        for manifest, version in (({'scope': {}}, self.version), (self.staged, None)):
+            with self.subTest(version=version):
+                plan = self.plan(legacy, manifest, {'earliest_failing_stage': 'routing'}, version)
+                self.assertEqual([e['receipt_index'] for e in plan], [1, 2, 3])
+        with self.assertRaisesRegex(ValueError, 'requires a staged scope'):
+            self.plan(self.config, {'scope': {}}, {}, self.version)
+        with self.assertRaisesRegex(ValueError, 'requires a campaign step plan'):
+            self.plan(self.config, self.staged, {'earliest_failing_stage': 'placement'}, None)
+        with self.assertRaisesRegex(ValueError, 'unknown campaign step plan'):
+            self.plan(legacy, self.staged, {}, 'agent-ee.step-plan/0')
+
+
 class BindingAdmissionTest(PlacementCampaignFixture):
     def test_envelope_reference_missing_from_the_board_refuses_binding_before_any_writer(self):
         envelope = read_json(self.source / ENVELOPE)
@@ -457,6 +517,29 @@ class FailureCampaignTest(PlacementCampaignFixture):
         _, record = self.failed('placement helper failed', receipt_status='failed')
         result = self.out / 'implementations/1' / record['helper']['receipt'] / 'run/placement/placement-result.json'
         self.assertEqual(read_json(result)['status'], 'packing_budget_exhausted')
+
+    def test_incomplete_attempt_records_are_reverified(self):
+        edit_board(self.source / BOARD, move={'R1': (109, 100)})
+        write_json(self.source / POLICY, {**read_json(self.source / POLICY), 'step_budget': 1})
+        _, record = self.failed('placement helper failed', receipt_status='failed')
+        path, state_path = self.out / 'implementations/1/placement-adapter.json', self.out / 'state.json'
+        saved = read_json(state_path)
+        cases = {'relabelled refused': ({'status': 'refused'}, 'has no refused scope proof'),
+                 'relabelled cancelled': ({'status': 'cancelled'}, 'not an incomplete placement attempt'),
+                 'helper claimed completed': ({'helper': {**record['helper'], 'status': 'completed'}},
+                                              'attempt record differs'),
+                 'protection emptied': ({'protected': [], 'protected_refs': []}, 'attempt record differs'),
+                 'claimed proposal': ({'status': 'proposed', 'error': None}, 'lacks the declared helper receipt'),
+                 'error cleared': ({'error': None}, 'not an incomplete placement attempt')}
+        for name, (changes, fragment) in cases.items():
+            with self.subTest(name):
+                write_json(path, {**record, **changes})
+                write_json(state_path, {**saved, 'placement_records': {'1': digest(path)}})
+                with self.assertRaisesRegex(ValueError, fragment):
+                    verify_campaign(self.out)
+        write_json(path, record)
+        write_json(state_path, saved)
+        self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
 
     def test_helper_crash(self):
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
@@ -551,6 +634,8 @@ class TamperCampaignTest(PlacementCampaignFixture):
                                        'differs from retained receipts or captured proposal'),
             'request rewritten': (lambda: write_json(request, {**read_json(request), 'policy': {
                 **read_json(request)['policy'], 'fixed_refs': []}}), 'request differs from the coordinator derivation'),
+            'helper source snapshot edited': (lambda: (work / 'placement/1/tool/agent_ee/placer.py').write_text('#'),
+                                              'source snapshot differs from its receipt'),
             'helper output rewritten': (lambda: output.write_bytes(output.read_bytes() + b'\n'),
                                         'stage receipt outputs changed'),
             'extra helper receipt': (lambda: shutil.copytree(receipt, work / 'receipts/2-agent-ee-placer'),
