@@ -33,6 +33,62 @@ class HierarchyTests(unittest.TestCase):
         self.assertEqual(len(result['local_nets']), 2)
         self.assertEqual({c['sheet'] for c in result['components']}, {'root', 'child'})
 
+    def test_child_port_cannot_alias_distinct_local_physical_class(self):
+        raw = hierarchy_intent()
+        raw['no_connects'] = []
+        raw['nets'] += [dict(sheet=s, id='other', name='LOCAL',
+                            terminals=[dict(component='r', pin={'number': '2'})])
+                        for s in ('root', 'child')]
+        raw['ports'].append(dict(raw['ports'][0], id='q', name='OTHER',
+                                 parent_net='other', child_net='other'))
+        validate_resolved(self.resolve(raw))
+        raw['ports'][0]['name'] = 'LOCAL'
+        result = self.resolve(raw)
+        self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                         ('ok', 'defect', 'complete'), result)
+        self.assertIn('distinct physical net', result['findings'][0]['message'])
+
+    def test_generated_label_collision_and_rehashed_record_are_rejected(self):
+        raw = hierarchy_intent()
+        raw['components'].append(dict(raw['components'][1], id='internal', reference='R3'))
+        raw['nets'].append(dict(sheet='child', id='internal', name='', terminals=[
+            dict(component='internal', pin={'number': n}) for n in ('1', '2')]))
+        record = self.resolve(raw)
+        validate_resolved(record)
+        generated = next(n['label'] for n in record['local_nets'] if n['id'] == 'internal')
+        for name in (generated, 'LOCAL'):
+            candidate = copy.deepcopy(raw)
+            if name == 'LOCAL':
+                candidate['nets'][-1]['name'] = name
+            passing = self.resolve(candidate)
+            validate_resolved(passing)
+            passing['ports'][0]['name'] = name
+            passing.pop('canonical_sha256')
+            passing['canonical_sha256'] = hashlib.sha256(canonical_resolved(passing)).hexdigest()
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, 'distinct physical net'):
+                    validate_resolved(passing)
+                candidate['ports'][0]['name'] = name
+                result = self.resolve(candidate)
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('ok', 'defect', 'complete'), result)
+
+    def test_port_alias_own_class_and_unrelated_sheet_labels_are_allowed(self):
+        raw = hierarchy_intent()
+        # The child port may alias its own generated label.
+        raw['nets'][1]['name'] = ''
+        result = self.resolve(raw)
+        generated = next(n['label'] for n in result['local_nets'] if n['sheet'] == 'child')
+        raw['ports'][0]['name'] = generated
+        validate_resolved(self.resolve(raw))
+        # A different physical class on the parent is outside the child label scope.
+        raw = hierarchy_intent()
+        raw['components'].append(dict(raw['components'][0], id='internal', reference='R3'))
+        raw['nets'].append(dict(sheet='root', id='internal', name='PARENT_ONLY', terminals=[
+            dict(component='internal', pin={'number': n}) for n in ('1', '2')]))
+        raw['ports'][0]['name'] = 'PARENT_ONLY'
+        validate_resolved(self.resolve(raw))
+
     def test_port_only_leaf_cannot_be_decorative(self):
         raw = hierarchy_intent()
         raw['nets'][0]['terminals'].append(dict(component='r', pin={'number': '2'}))
@@ -96,7 +152,8 @@ class HierarchyTests(unittest.TestCase):
         for sheet in ('root', 'child'):
             raw['nets'].append(dict(sheet=sheet, id='second', name='SECOND', terminals=[dict(component='r', pin={'number': '2'})]))
         raw['no_connects'] = []
-        raw['ports'].append(dict(raw['ports'][0], id='q', name='SECOND', parent_net='second', child_net='second'))
+        raw['ports'].append(dict(raw['ports'][0], id='q', name='PORT_SECOND', parent_net='second', child_net='second'))
+        raw['ports'][0]['name'] = 'PORT_FIRST'
         first = self.resolve(raw)
         validate_resolved(first)
         for key in ('libraries', 'components', 'nets', 'hierarchy', 'ports', 'no_connects'):
@@ -313,3 +370,28 @@ class HierarchyTests(unittest.TestCase):
         raw = hierarchy_intent()
         raw['ports'] *= 10001
         self.assertEqual(self.resolve(raw)['execution'], 'unsupported')
+
+
+class NativeHierarchyLabelTests(unittest.TestCase):
+    def test_native_child_label_alias_collision_and_positive_control(self):
+        from unittest.mock import patch
+        import xml.etree.ElementTree as ET
+        from test_hardware_interface import NativeInterfaceTests, generator
+
+        fixture = NativeInterfaceTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        original = generator.schematic('disconnect').replace('(label "OUT"', '(label "LOCAL_SAME"')
+        for name, joined in (('LOCAL_SAME', True), ('INDEPENDENT', False)):
+            schematic = original[:-2] + (
+                f'(hierarchical_label "{name}" (shape passive) (at 120 50 0) '
+                f'(effects (font (size 1 1))) (uuid "{generator.uid("collision-hlabel")}")))\n')
+            with self.subTest(name=name), patch.object(generator, 'schematic', return_value=schematic):
+                run, checks = fixture.run_variant()
+                self.assertEqual(checks['netlist']['execution'], 'ok', checks)
+                root = ET.parse(run / 'work/netlist/design.xml').getroot()
+                probe_nets = [n for n in root.findall('./nets/net')
+                              if any(p.get('ref') == 'PROBE' for p in n.findall('node'))]
+                self.assertEqual(len(probe_nets), 1)
+                refs = {n.get('ref') for n in probe_nets[0].findall('node')}
+                self.assertEqual(refs, {'PROBE', 'R1', 'C1', 'RLOAD', 'X1'} if joined else {'PROBE'})

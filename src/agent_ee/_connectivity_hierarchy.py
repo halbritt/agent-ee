@@ -145,6 +145,7 @@ def validate_intent(raw):
             raise ValueError('duplicate boundary port id/name')
         ids.add((child['id'], port['id']))
         names.add((child['id'], port['name']))
+    _classes(raw['hierarchy'], raw['nets'], raw['ports'])
     return sheets
 
 
@@ -185,6 +186,13 @@ def _classes(hierarchy, local_nets, ports):
         if boundary in boundaries:
             raise BoundaryDefect('multiple ports for one boundary physical net')
         boundaries.add(boundary)
+    labels = {(net['sheet'], _label(net)): mapping[(net['sheet'], net['id'])]
+              for net in local_nets}
+    for port in ports:
+        identity = mapping[(port['child'], port['child_net'])]
+        alias = labels.get((port['child'], port['name']))
+        if alias is not None and alias != identity:
+            raise BoundaryDefect('child port emitted name aliases a distinct physical net')
     return mapping
 
 
