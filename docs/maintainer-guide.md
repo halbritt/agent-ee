@@ -40,7 +40,8 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src /usr/bin/python3 -m unittest discove
 ```
 
 The test-only preflight uses the production sandbox command without network
-access. Unexpected probe errors fail the suite. This mode changes only tests;
+access. Only recognized namespace-denial diagnostics and explicit missing-tool
+results can skip; malformed commands and other probe failures fail the suite. This mode changes only tests;
 production execution still records unavailable/failed tools as incomplete work.
 
 | Test module | Protection |
