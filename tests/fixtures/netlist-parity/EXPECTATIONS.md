@@ -15,3 +15,7 @@ unconnected singleton carrying `pintype=...+no_connect` may be ignored only for 
 compatible declared no-connect physical pin. An unmarked off-pin label singleton
 must remain a missing binding. Declaring NC on port3 and shunt2, with no ground
 net, is a valid two-net topology and must pass an actual native export.
+
+`resolved.json` is not an authored expectation. It is the exact output of
+`connectivity_ir.resolve_intent(intent.json, {Owned.kicad_sym})`, and the
+`resolved` adapter rederives and compares it byte-for-byte at check time.

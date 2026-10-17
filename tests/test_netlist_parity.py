@@ -172,8 +172,9 @@ class NativeParityTests(unittest.TestCase):
         (case / 'golden.xml').write_bytes((FIXTURE / golden_fixture).read_bytes())
         if policy_source := (params or {}).get('source'):
             if policy_source['kind'] in ('intent', 'resolved'):
-                (case / policy_source['path']).write_bytes((FIXTURE / policy_source['path']).read_bytes())
-                (case / 'Owned.kicad_sym').write_bytes((FIXTURE / 'Owned.kicad_sym').read_bytes())
+                for name in [policy_source['path'], policy_source.get('intent'), 'Owned.kicad_sym']:
+                    if name:
+                        (case / name).write_bytes((FIXTURE / name).read_bytes())
         (case / 'requirements.md').write_text('Parity shall preserve the declared topology.\n')
         policy = {'source': {'kind': 'golden_xml', 'path': 'golden.xml'}, 'predicate': 'topology',
                   'multiset': 'exactly', 'netlist_check': 'netlist', **(params or {})}
@@ -189,6 +190,8 @@ class NativeParityTests(unittest.TestCase):
                 'targets': ['requirements.md'], 'reference_architectures': ['golden.xml']}}
         if policy['source']['kind'] in ('intent', 'resolved'):
             scope['inputs'] += [{'path': n, 'at': n} for n in [policy['source']['path'], 'Owned.kicad_sym']]
+        if 'intent' in policy['source']:
+            scope['inputs'].append({'path': policy['source']['intent'], 'at': policy['source']['intent']})
         write_json(case / 'scope.json', scope)
         run = case / 'run'
         run.mkdir()
@@ -287,9 +290,10 @@ class NativeParityTests(unittest.TestCase):
     def test_actual39_intent_and_resolved_adapters_pass_native_exports(self):
         from agent_ee.baseline import freeze_evidence, verify_evidence, load_baseline
         from agent_ee.storage import read_json
-        for kind, name in [('intent', 'intent.json'), ('resolved', 'resolved.json')]:
-            with self.subTest(kind=kind):
-                run, checks = self.run_variant(params={'source': {'kind': kind, 'path': name}})
+        for source in [{'kind': 'intent', 'path': 'intent.json'},
+                       {'kind': 'resolved', 'path': 'resolved.json', 'intent': 'intent.json'}]:
+            with self.subTest(kind=source['kind']):
+                run, checks = self.run_variant(params={'source': source})
                 self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', 'pass'), checks)
                 self.assertEqual(checks[1]['details']['scores']['jaccard'], 1.0)
                 resolved = read_json(run / 'work/parity/resolved-intent.json')
@@ -297,8 +301,91 @@ class NativeParityTests(unittest.TestCase):
                 validate_resolved(resolved)
                 self.assertEqual(checks[1]['details']['intent_sha256'], resolved['intent_sha256'])
                 self.assertIn('Owned.kicad_sym', load_baseline(run)['files'])
+                self.assertIn('intent.json', load_baseline(run)['files'])
+                self.assertEqual(checks[1]['details']['source_provenance'],
+                                 'resolved_from_captured_intent' if source['kind'] == 'intent'
+                                 else 'captured_resolution_rederived_from_captured_intent')
                 freeze_evidence(run, checks)
                 verify_evidence(run, checks, required=True)
+
+    def test_authored_resigned_resolution_cannot_supply_graph_authority(self):
+        # Independent of the original provenance probe: a structurally valid,
+        # self-hash-consistent record that the captured intent does not derive.
+        import hashlib
+        import time
+        from agent_ee.baseline import freeze_evidence, validate_witnesses
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        from agent_ee.connectivity_ir import canonical_resolved, validate_resolved
+        from agent_ee.storage import read_json, write_json
+        source = {'kind': 'resolved', 'path': 'resolved.json', 'intent': 'intent.json'}
+        run, checks = self.run_variant(params={'source': source})
+        self.assertEqual(checks[1]['outcome'], 'pass', checks)
+        def resign(record):
+            payload = {k: v for k, v in record.items() if k != 'canonical_sha256'}
+            record['canonical_sha256'] = hashlib.sha256(canonical_resolved(payload)).hexdigest()
+            return validate_resolved(record)
+        def value(record):
+            record['components'][0]['value'] = 'AUTHORED-WRONG-VALUE'
+        def pin_type(record):
+            record['components'][0]['pins'][0]['electrical_type'] = 'power_in'
+        def net_order(record):
+            record['nets'].reverse()
+        for mutate in [value, pin_type, net_order]:
+            with self.subTest(mutation=mutate.__name__):
+                record = read_json(FIXTURE / 'resolved.json')
+                mutate(record)
+                write_json(run.parent / 'resolved.json', resign(record))
+                forged = run.parent / f'forged-{mutate.__name__}'
+                forged.mkdir()
+                capture(run.parent / 'scope.json', forged)
+                checks = run_checks(forged, time.monotonic() + 90)
+                self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('malformed', 'unknown'), checks)
+                self.assertIn('rederivation', checks[1]['summary'])
+                self.assertEqual(checks[1]['details'].get('evaluated_predicates', []), [])
+                freeze_evidence(forged, checks)
+                with self.assertRaises(ValueError):
+                    validate_witnesses(forged, [{'requirement_id': 'parity', 'check_id': 'parity'}],
+                                       [{'path': 'checks/parity.json', 'locator': 'missing_components'}])
+
+    def test_resolved_source_without_captured_intent_is_not_supported(self):
+        from agent_ee.baseline import compile_baseline
+        from agent_ee.netlist_parity import validate_policy
+        good = {'predicate': 'topology', 'netlist_check': 'netlist', 'multiset': 'exactly'}
+        with self.assertRaisesRegex(ValueError, 'captured intent'):
+            validate_policy({**good, 'source': {'kind': 'resolved', 'path': 'resolved.json'}})
+        for kind in ('golden_xml', 'intent'):
+            with self.assertRaises(ValueError):
+                validate_policy({**good, 'source': {'kind': kind, 'path': 'x', 'intent': 'intent.json'}})
+        source = {'kind': 'resolved', 'path': 'resolved.json', 'intent': 'intent.json'}
+        run, _ = self.run_variant(params={'source': source})
+        from agent_ee.storage import read_json
+        manifest = read_json(run / 'candidate.json')
+        files = dict(manifest['files'])
+        del files['intent.json']
+        with self.assertRaisesRegex(ValueError, 'captured'):
+            compile_baseline(manifest['scope'], files, run / 'inputs')
+
+    def test_captured_intent_or_library_drift_is_rejected_by_snapshot_and_rederivation(self):
+        import time
+        from agent_ee.candidate import verify_snapshot
+        from agent_ee.checks import Ctx, CheckError
+        from agent_ee.netlist_parity import check_netlist_parity
+        from agent_ee.storage import read_json, write_json
+        source = {'kind': 'resolved', 'path': 'resolved.json', 'intent': 'intent.json'}
+        run, checks = self.run_variant(params={'source': source})
+        self.assertEqual(checks[1]['outcome'], 'pass', checks)
+        intent = read_json(run / 'inputs/intent.json')
+        intent['components'][0]['value'] = 'changed'
+        write_json(run / 'inputs/intent.json', intent)
+        with self.assertRaises(ValueError):
+            verify_snapshot(run)
+        manifest = read_json(run / 'candidate.json')
+        ctx = Ctx(run, manifest, manifest['scope']['checks'][1], time.monotonic() + 30)
+        with self.assertRaises(CheckError) as raised:
+            check_netlist_parity(ctx)
+        self.assertEqual(raised.exception.execution, 'malformed')
+        self.assertEqual(ctx.result['outcome'], 'unknown')
 
     def test_actual39_corrupt_library_is_failed_unknown_with_resolution_evidence(self):
         import time

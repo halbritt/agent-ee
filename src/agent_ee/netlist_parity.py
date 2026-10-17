@@ -270,9 +270,14 @@ def validate_policy(params):
             'anchors', 'instance_components', 'max_search'}:
         raise ValueError('expected source, netlist_check, predicate and multiset policy')
     source = params['source']
-    if not isinstance(source, dict) or set(source) != {'kind', 'path'} or source['kind'] not in (
-            'resolved', 'intent', 'golden_xml'):
+    if not isinstance(source, dict) or source.get('kind') not in ('resolved', 'intent', 'golden_xml'):
         raise ValueError('source requires explicit resolved, intent or golden_xml adapter')
+    if source['kind'] == 'resolved' and set(source) != {'kind', 'path', 'intent'}:
+        # A self-hashed resolution proves only its own structure, not that the
+        # captured libraries produced it; its origin must be rederived.
+        raise ValueError('resolved source requires the captured intent it was derived from')
+    if source['kind'] != 'resolved' and set(source) != {'kind', 'path'}:
+        raise ValueError('intent and golden_xml sources take exactly kind and path')
     if params['predicate'] not in ('topology', 'components', 'instance'):
         raise ValueError('unsupported parity predicate')
     if params['multiset'] not in ('exactly', 'at_least'):
@@ -307,12 +312,14 @@ def validate_policy(params):
 def capability(params, scope, files, inputs, check_id):
     from .candidate import safe_relative
     policy = validate_policy(params)
-    rel = str(safe_relative(policy['source']['path']))
-    if inputs is None or rel not in files:
-        raise ValueError('parity source must be captured')
-    immutable = [rel]
-    if policy['source']['kind'] != 'golden_xml':
-        record = read_json_source(Path(inputs) / rel)
+    source = policy['source']
+    immutable = [str(safe_relative(source[key])) for key in ('path', 'intent') if key in source]
+    if inputs is None or any(rel not in files for rel in immutable):
+        raise ValueError('parity source and its intent must be captured')
+    if source['kind'] != 'golden_xml':
+        # Library dependencies come from the captured intent, never from an
+        # authored resolution's own library claims.
+        record = read_json_source(Path(inputs) / immutable[-1])
         for library in record['libraries']:
             path = str(safe_relative(library['path']))
             if path not in files or files[path] != library['sha256']:
@@ -330,28 +337,41 @@ def capability(params, scope, files, inputs, check_id):
             'predicates': ['netlist-parity:' + policy['predicate']]}
 
 
+def _resolve_captured_intent(inputs, rel):
+    from .connectivity_ir import resolve_intent
+    record = read_json_source(Path(inputs) / rel)
+    if len(record['components']) > MAX_COMPONENTS:
+        raise Unsupported('component inventory limit exceeded before resolution')
+    captures, remaining = {}, MAX_LIBRARY_BYTES
+    for library in record['libraries']:
+        with (Path(inputs) / library['path']).open('rb') as stream:
+            raw = stream.read(remaining + 1)
+        remaining -= len(raw)
+        if remaining < 0:
+            raise Unsupported('captured library byte limit exceeded')
+        captures[library['path']] = raw
+    return resolve_intent(record, captures)
+
+
 def _source_inventory(inputs, policy):
     from .native_netlist import read_native_inventory
-    path = Path(inputs) / policy['source']['path']
-    if policy['source']['kind'] == 'golden_xml':
-        return read_native_inventory(path), None
-    from .connectivity_ir import resolve_intent
-    record = read_json_source(path)
-    if policy['source']['kind'] == 'intent':
-        if len(record['components']) > MAX_COMPONENTS:
-            raise Unsupported('component inventory limit exceeded before resolution')
-        captures, remaining = {}, MAX_LIBRARY_BYTES
-        for library in record['libraries']:
-            with (Path(inputs) / library['path']).open('rb') as stream:
-                raw = stream.read(remaining + 1)
-            remaining -= len(raw)
-            if remaining < 0:
-                raise Unsupported('captured library byte limit exceeded')
-            captures[library['path']] = raw
-        record = resolve_intent(record, captures)
+    source = policy['source']
+    if source['kind'] == 'golden_xml':
+        return read_native_inventory(Path(inputs) / source['path']), None
+    record = _resolve_captured_intent(inputs, source.get('intent', source['path']))
     if (record.get('execution'), record.get('outcome'), record.get('coverage')) != ('ok', 'pass', 'complete'):
         return None, record
+    if source['kind'] == 'resolved':
+        from .connectivity_ir import canonical_resolved
+        captured = read_json_source(Path(inputs) / source['path'])
+        if canonical_resolved(captured) != canonical_resolved(record):
+            raise ValueError('captured resolved record differs from coordinator rederivation '
+                             'of its captured intent and libraries')
     return resolved_inventory(record), record
+
+
+PROVENANCE = {'golden_xml': 'captured_golden_native_xml', 'intent': 'resolved_from_captured_intent',
+              'resolved': 'captured_resolution_rederived_from_captured_intent'}
 
 
 def check_netlist_parity(ctx):
@@ -385,7 +405,10 @@ def check_netlist_parity(ctx):
         report = compare(expected, actual, descriptor['policy'])
         report.update(schema='agent-ee.netlist-parity-result/1', candidate_id=ctx.manifest['candidate_id'],
             source_sha256=digest(ctx.inputs / ctx.params['source']['path']), native_xml_sha256=digest(xml),
-            intent_sha256=resolution['intent_sha256'] if resolution else None)
+            intent_sha256=resolution['intent_sha256'] if resolution else None,
+            source_provenance=PROVENANCE[ctx.params['source']['kind']],
+            intent_source_sha256=digest(ctx.inputs / ctx.params['source']['intent'])
+                if 'intent' in ctx.params['source'] else None)
         # Check results must equal their JSON receipt at sealing, including arrays.
         report = json.loads(json.dumps(report))
         write_json(ctx.work / 'parity.json', report)
