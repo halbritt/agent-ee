@@ -312,6 +312,17 @@ schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
 
+## Captured symbol pin references
+
+`symbol_pins` takes one captured `declaration` (an `agent-ee.symbol-query/1`
+reference list) and checks that each `(reference, lib_id, pin)` names a pin that
+exists exactly, by name or number, on the selected symbol in the declared
+captured libraries. A missing pin is a defect listing the actual pins; there is
+no case, glob or nearest-name substitution. A missing symbol, missing library or
+changed hash gives failed/unknown. The libraries are immutable inputs. See
+[symbol context](symbol-context.md) for the query schema and the offline
+`find-symbol`, `list-pins` and `find-footprint` tools.
+
 ## Supplier land patterns
 
 `land_pattern` takes a captured `criteria` path that binds supplier provenance,
