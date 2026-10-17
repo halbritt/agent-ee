@@ -812,21 +812,74 @@ def json_object_start(path):
     return False
 
 
-def captured_envelopes(files, inputs):
-    """Every captured file (at most MAX_BYTES) that parses as an envelope/1 object, declared or not."""
-    found = []
-    for rel in sorted(files):
-        path = Path(inputs) / rel
+# Envelope-derived documents a scope can consume, besides the envelope itself.
+DERIVED = ('agent-ee.envelope-validation/1', 'agent-ee.envelope-requirements/1')
+
+
+def consumed_paths(scope):
+    """Paths the scope uses as authority: {path: [use, ...]} and the check-envelope paths.
+
+    These are check `envelope` parameters, baseline requirement sources and
+    targets, and packet requirement documents. Reference architectures and other
+    captured inputs are informative: their content is never read for envelope
+    authority, so a reference example is not promoted into a constraint.
+    """
+    uses, checked = {}, set()
+
+    def use(rel, label):
+        # Normalized like compile_baseline's paths; a malformed value is kept
+        # only as a label, and its own validator refuses it later.
         try:
-            if (path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_BYTES
-                    or not json_object_start(path)):
-                continue
-            value = json.loads(path.read_bytes().decode('utf-8'))
-        except (OSError, UnicodeError, ValueError, RecursionError):
-            continue
-        if isinstance(value, dict) and value.get('schema') == SCHEMA:
-            found.append(rel)
-    return found
+            rel = str(safe_relative(rel)) if isinstance(rel, str) else repr(rel)
+        except ValueError:
+            pass
+        uses.setdefault(rel, []).append(label)
+        return rel
+    listed = lambda value: value if isinstance(value, list) else []
+    for spec in listed(scope.get('checks')):
+        params = spec.get('params') if isinstance(spec, dict) and isinstance(spec.get('params'), dict) else {}
+        if 'envelope' in params:
+            checked.add(use(params['envelope'], f"check {spec.get('id')} envelope"))
+    baseline = scope.get('baseline') if isinstance(scope.get('baseline'), dict) else {}
+    for req in listed(baseline.get('requirements')):
+        source = req.get('source') if isinstance(req, dict) and isinstance(req.get('source'), dict) else {}
+        if 'path' in source:
+            use(source['path'], f"requirement {req.get('id')} source")
+    for rel in listed(baseline.get('targets')):
+        use(rel, 'baseline target')
+    for rel in listed(scope.get('requirements')):
+        use(rel, 'packet requirement')
+    return uses, checked
+
+
+def envelope_document(files, inputs, rel):
+    """(kind, value) for a consumed captured file carrying envelope authority, else None.
+
+    kind is 'envelope' (agent-ee.envelope/1), 'derived' (its validation or
+    requirements record) or 'stage_one' (agent-ee.requirements/1 holding
+    R-envelope- obligations). Only the scope's own consumed paths are read.
+    """
+    if inputs is None or not isinstance(rel, str) or rel not in files:
+        return None
+    from .routing_rules import captured_file
+    path = captured_file(inputs, files, rel)
+    try:
+        if not json_object_start(path):
+            return None
+        value = json.loads(path.read_bytes().decode('utf-8'))
+    except (UnicodeError, ValueError, RecursionError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    if value.get('schema') == SCHEMA:
+        return 'envelope', value
+    if value.get('schema') in DERIVED:
+        return 'derived', value
+    if value.get('schema') == 'agent-ee.requirements/1' and isinstance(value.get('requirements'), list) and any(
+            isinstance(r, dict) and isinstance(r.get('id'), str) and r['id'].startswith('R-envelope-')
+            for r in value['requirements']):
+        return 'stage_one', value
+    return None
 
 
 def captured_bytes(files, inputs, rel, label):
@@ -840,17 +893,29 @@ def captured_bytes(files, inputs, rel, label):
 def baseline_envelope(scope, files, inputs):
     """Capture-time envelope integration for compile_baseline; None without one.
 
-    Re-derives obligations and profile support from captured bytes, so no caller
-    document or flag is trusted. Returns the immutable paths and the record that
-    becomes part of the baseline identity.
+    Authority comes from the declaration and the scope's consumed paths only; an
+    uncited or reference-only envelope is never promoted. A consumed envelope,
+    envelope record or stage-one obligation set without a declaration, or one
+    that disagrees with it, is refused. Re-derives obligations and profile
+    support from captured bytes, so no caller document or flag is trusted.
+    Returns the immutable paths and the record that becomes part of the baseline
+    identity.
     """
     declared = scope.get('envelope')
     ids = [r.get('id') for r in scope.get('baseline', {}).get('requirements', []) if isinstance(r, dict)]
-    found = captured_envelopes(files, inputs) if inputs is not None else []
+    uses, checked = consumed_paths(scope)
+    consumed = {}
+    for rel in sorted(uses):
+        if rel in checked:
+            consumed[rel] = ('envelope', None, uses[rel])
+        elif (document := envelope_document(files, inputs, rel)) is not None:
+            consumed[rel] = (*document, uses[rel])
     if declared is None:
-        if found or any(isinstance(i, str) and i.startswith('R-envelope-') for i in ids):
-            raise ValueError(f'captured envelope or envelope requirement without a scope envelope declaration: '
-                             f'{found or sorted(i for i in ids if isinstance(i, str) and i.startswith("R-envelope-"))}')
+        named = sorted(i for i in ids if isinstance(i, str) and i.startswith('R-envelope-'))
+        if consumed or named:
+            raise ValueError('consumed envelope or envelope requirement without a scope envelope declaration: '
+                             + '; '.join([f"{rel} ({kind}; {', '.join(uses)})"
+                                          for rel, (kind, _, uses) in consumed.items()] + named))
         return None
     if scope.get('schema') != 'agent-ee.scope/3':
         raise ValueError('a scope envelope requires agent-ee.scope/3 executable coverage')
@@ -861,8 +926,14 @@ def baseline_envelope(scope, files, inputs):
     if not isinstance(path, str):
         raise ValueError('scope envelope path must be a captured input path')
     raw = captured_bytes(files, inputs, path, 'path')
-    if found != [path]:
-        raise ValueError(f'scope must declare exactly the one captured envelope; captured {found}')
+    other = sorted(rel for rel, (kind, _, _) in consumed.items() if kind == 'envelope' and rel != path)
+    if other:
+        raise ValueError(f'scope consumes envelopes other than the declared {path}: {other}')
+    sha256 = hashlib.sha256(raw).hexdigest()
+    stale = sorted(rel for rel, (kind, value, _) in consumed.items()
+                   if kind == 'derived' and value.get('envelope_sha256') != sha256)
+    if stale:
+        raise ValueError(f'consumed envelope records describe bytes other than the declared envelope: {stale}')
     profile = None
     if declared['profile'] is not None:
         profile = captured_bytes(files, inputs, declared['profile'], 'profile')
@@ -870,18 +941,26 @@ def baseline_envelope(scope, files, inputs):
     if record['fab_profile'].get('bytes') == 'not_supplied':
         raise ValueError('envelope references a fab profile; declare its captured path')
     requirements = derive_requirements(record, path)
+    derived = {r['id'] for r in requirements['requirements']}
+    generic = sorted(r['id'] for r in scope['baseline']['requirements']
+                     if str(safe_relative(r['source']['path'])) == path and r['id'] not in derived)
+    if generic:
+        raise ValueError(f'requirements cite the declared envelope but are not its derived obligations: {generic}')
     dependencies = {path} | ({declared['profile']} if profile is not None else set())
     dependencies.update(record['fab_profile'].get('source_paths', []))
+    from .design_dialog import validate_requirements
+    expected = dialog_requirements(requirements)['requirements']
+    stage_one = sorted(rel for rel, (kind, _, _) in consumed.items() if kind == 'stage_one')
     if declared['dialog'] is not None:
-        from .design_dialog import validate_requirements
-        captured = validate_requirements(captured_bytes(files, inputs, declared['dialog'], 'dialog'))
-        by_id = {r['id']: r for r in captured}
-        expected = dialog_requirements(requirements)['requirements']
-        extra = sorted(i for i in by_id if i.startswith('R-envelope-') and i not in {r['id'] for r in expected})
-        if extra or any(by_id.get(r['id']) != r for r in expected):
-            raise ValueError('captured stage-one dialog requirements do not carry exactly these envelope '
-                             'obligations and envelope hash' + (f'; extra {extra}' if extra else ''))
         dependencies.add(declared['dialog'])
+        stage_one = sorted(set(stage_one) | {declared['dialog']})
+    for rel in stage_one:
+        captured = validate_requirements(captured_bytes(files, inputs, rel, 'stage-one requirements'))
+        by_id = {r['id']: r for r in captured}
+        extra = sorted(i for i in by_id if i.startswith('R-envelope-') and i not in derived)
+        if extra or any(by_id.get(r['id']) != r for r in expected):
+            raise ValueError(f'captured stage-one requirements {rel} do not carry exactly these envelope '
+                             'obligations and envelope hash' + (f'; extra {extra}' if extra else ''))
     coverage = require_obligations(scope, requirements, record, files)
     return {'inputs': sorted(dependencies), 'record': {
         'schema': 'agent-ee.envelope-baseline/1', **declared,

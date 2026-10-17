@@ -946,7 +946,67 @@ class EnvelopeBaselineTests(unittest.TestCase):
             self.assertNotIn('requirements/dialog-requirements.json',
                              json.loads((run / 'baseline.json').read_text())['files'])
 
-    def test_undeclared_duplicate_and_unaudited_envelopes_are_refused(self):
+    def test_declared_envelope_is_the_only_consumed_envelope_and_copies_stay_inert(self):
+        kinds, bindings = self.stand_in()
+        moved = profiled(self.profile)
+        moved['fixed_footprints'][0]['position_mm'] = 9
+        stale = derive(raw(moved), source_path=ENVELOPE_PATH)
+        _, stale_dialog = stage_one_dialog(stale['dialog-requirements.json'])
+        current = derive(self.envelope, source_path=ENVELOPE_PATH)
+
+        def with_target(name, scope=None):
+            scope = scope or self.scope()
+            scope['baseline']['targets'].append(f'requirements/{name}')
+            return scope
+        with kinds, bindings:
+            self.document = json.loads(derive(self.envelope, source_path=ENVELOPE_PATH,
+                                              profile=self.profile)['envelope-requirements.json'])
+            run, _ = self.capture(self.scope())
+            baseline = json.loads((run / 'baseline.json').read_text())
+            # Unreferenced copies, including a whitespace-padded one, add no authority or file.
+            for name, data in (('copy.json', self.envelope), ('padded.txt', b' \n' * 3000 + self.envelope),
+                               ('stale-requirements.json', stale['envelope-requirements.json']),
+                               ('current-requirements.json', current['envelope-requirements.json']),
+                               ('stale-stage-one.json', stale_dialog['requirements.json'])):
+                (self.requirements / name).write_bytes(data)
+            run, _ = self.capture(self.scope())
+            self.assertEqual(json.loads((run / 'baseline.json').read_text()), baseline)
+            # A reference architecture is informative: captured, but never the envelope.
+            scope = self.scope()
+            scope['baseline']['reference_architectures'].append('requirements/copy.json')
+            run, _ = self.capture(scope)
+            referenced = json.loads((run / 'baseline.json').read_text())
+            self.assertIn('requirements/copy.json', referenced['files'])
+            self.assertEqual(referenced['envelope'], baseline['envelope'])
+            # A consumed record of these exact bytes, and the matching stage-one set, are admitted.
+            for name in ('current-requirements.json', 'dialog-requirements.json'):
+                with self.subTest(name):
+                    run, _ = self.capture(with_target(name, self.scope(dialog=False)))
+                    self.assertIn(f'requirements/{name}', json.loads((run / 'baseline.json').read_text())['files'])
+            connector = self.scope()
+            connector['checks'][1]['params']['envelope'] = 'requirements/copy.json'
+            cited = self.scope()
+            cited['baseline']['requirements'].append({
+                'id': 'R-mechanics', 'statement': 'The board meets its envelope.', 'intent': 'acceptance',
+                'checks': ['drc'], 'source': {'path': 'requirements/copy.json', 'locator': '/'}})
+            generic = self.scope()
+            generic['baseline']['requirements'].append({
+                'id': 'R-mechanics', 'statement': 'The outline is as captured.', 'intent': 'acceptance',
+                'checks': ['drc'], 'source': {'path': ENVELOPE_PATH, 'locator': '/outline'}})
+            for label, scope, message in (
+                    ('check over a copy', connector, r"other than the declared .*\['requirements/copy.json'\]"),
+                    ('requirement citing a copy', cited, r"other than the declared .*\['requirements/copy.json'\]"),
+                    ('target copy', with_target('copy.json'), r"other than the declared .*\['requirements/copy.json'\]"),
+                    ('generic ID citing the envelope', generic, r"not its derived obligations: \['R-mechanics'\]"),
+                    ('record of other bytes', with_target('stale-requirements.json'),
+                     r"bytes other than the declared envelope: \['requirements/stale-requirements.json'\]"),
+                    ('stale stage-one set', with_target('stale-stage-one.json', self.scope(dialog=False)),
+                     'stage-one requirements requirements/stale-stage-one.json do not carry exactly')):
+                with self.subTest(label), self.assertRaisesRegex(ValueError, message):
+                    self.capture(scope)
+                self.assertFalse((self.root / f'run{self.runs}' / 'baseline.json').exists())
+
+    def test_undeclared_and_unaudited_envelopes_are_refused(self):
         cases = [('undeclared', self.scope(envelope=False), 'without a scope envelope declaration'),
                  ('scope/2', self.scope(schema='agent-ee.scope/2'), 'requires agent-ee.scope/3'),
                  ('scope/2 undeclared', self.scope(schema='agent-ee.scope/2', envelope=False),
@@ -959,12 +1019,6 @@ class EnvelopeBaselineTests(unittest.TestCase):
         for label, scope, message in cases:
             with self.subTest(label), self.assertRaisesRegex(ValueError, message):
                 self.capture(scope)
-        # A second envelope is found by content, whatever its name or leading whitespace.
-        for name, data in (('copy.json', self.envelope), ('padded.txt', b' \n' * 3000 + self.envelope)):
-            (self.requirements / name).write_bytes(data)
-            with self.subTest(name), self.assertRaisesRegex(ValueError, 'exactly the one captured envelope'):
-                self.capture(self.scope())
-            (self.requirements / name).unlink()
         scope = self.scope()
         scope['envelope']['profile'] = None
         with self.assertRaisesRegex(ValueError, 'declare its captured path'):
@@ -976,6 +1030,81 @@ class EnvelopeBaselineTests(unittest.TestCase):
         from agent_ee.baseline import compile_baseline
         with self.assertRaisesRegex(ValueError, 'requires agent-ee.scope/3'):
             compile_baseline({'schema': 'agent-ee.scope/1', 'envelope': {}, 'checks': []}, {})
+
+
+class EnvelopeAuthorityTests(unittest.TestCase):
+    """Only a declared or consumed envelope is authority; a captured reference is inert."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / 'requirements.md').write_text('Owned ERC requirement, no mechanical declaration.')
+        (self.root / 'reference-envelope.json').write_bytes(RC_ENVELOPE.read_bytes())
+
+    def compile(self, *, source='requirements.md', targets=('requirements.md',),
+                references=('requirements.md',), packet=(), checks=()):
+        """Astra's AGENTEE-85 probe scope: ordinary scope/2 ERC, optionally consuming more paths."""
+        from agent_ee.baseline import compile_baseline
+        files = {p.name: digest(p) for p in self.root.iterdir()}
+        scope = {'schema': 'agent-ee.scope/2', 'checks': [{'id': 'erc', 'kind': 'erc'}, *checks],
+                 'requirements': list(packet), 'baseline': {
+                     'requirements': [{'id': 'R-erc', 'statement': 'ERC only',
+                                       'source': {'path': source, 'locator': 'all'},
+                                       'checks': ['erc', *(c['id'] for c in checks)]}],
+                     'targets': list(targets), 'reference_architectures': list(references)}}
+        return compile_baseline(scope, files, self.root)
+
+    def test_unrelated_captured_reference_envelope_does_not_change_an_erc_baseline(self):
+        # Before the repair this raised: captured envelope ... without a scope envelope declaration.
+        baseline = self.compile()
+        self.assertEqual(baseline['schema'], 'agent-ee.baseline/1')
+        self.assertNotIn('envelope', baseline)
+        self.assertEqual(set(baseline['files']), {'requirements.md'})
+        (self.root / 'reference-envelope.json').unlink()
+        self.assertEqual(self.compile()['baseline_id'], baseline['baseline_id'])
+        (self.root / 'reference-envelope.json').write_bytes(RC_ENVELOPE.read_bytes())
+        # Several reference examples, listed as reference architectures, stay informative.
+        (self.root / 'second-envelope.json').write_bytes(RC_ENVELOPE.read_bytes())
+        referenced = self.compile(references=('requirements.md', 'reference-envelope.json', 'second-envelope.json'))
+        self.assertNotIn('envelope', referenced)
+        self.assertEqual(set(referenced['files']), {'requirements.md', 'reference-envelope.json',
+                                                    'second-envelope.json'})
+
+    def test_consumed_envelope_without_a_declaration_is_refused_under_any_name_or_size(self):
+        artifacts = derive(RC_ENVELOPE.read_bytes(), source_path='reference-envelope.json')
+        (self.root / 'envelope-requirements.json').write_bytes(artifacts['envelope-requirements.json'])
+        # Larger than the record bound and not named .json: found because it is consumed.
+        (self.root / 'mechanics.txt').write_bytes(b' \n' * 600000 + RC_ENVELOPE.read_bytes())
+        connector = {'id': 'connector', 'kind': 'placement',
+                     'params': {'criterion': 'connector-edge/1', 'drc_check': 'erc', 'envelope': 'reference-envelope.json'}}
+        for label, kwargs, message in (
+                ('requirement source', {'source': 'reference-envelope.json'}, 'requirement R-erc source'),
+                ('padded source', {'source': 'mechanics.txt'}, r'mechanics.txt \(envelope; requirement R-erc source'),
+                ('target', {'targets': ('requirements.md', 'reference-envelope.json')}, 'baseline target'),
+                ('packet requirement', {'packet': ('reference-envelope.json',)}, 'packet requirement'),
+                ('check parameter', {'checks': (connector,)}, 'check connector envelope'),
+                ('derived record', {'targets': ('requirements.md', 'envelope-requirements.json')},
+                 r'envelope-requirements.json \(derived; baseline target')):
+            with self.subTest(label), self.assertRaisesRegex(
+                    ValueError, 'consumed envelope or envelope requirement without a scope envelope declaration: '
+                                '.*' + message):
+                self.compile(**kwargs)
+
+    def test_consumed_stage_one_envelope_obligations_cannot_be_omitted(self):
+        from agent_ee.design_intent import import_record
+        artifacts = derive(RC_ENVELOPE.read_bytes(), source_path='requirements/envelope.json')
+        _, dialog = stage_one_dialog(artifacts['dialog-requirements.json'])
+        (self.root / 'stage-one.json').write_bytes(dialog['requirements.json'])
+        (self.root / 'intent-only.json').write_bytes(import_record(INTENT)['requirements.json'])
+        # Stage one carries the envelope obligations; a scope that consumes it drops them all.
+        with self.assertRaisesRegex(ValueError, r'without a scope envelope declaration: stage-one.json '
+                                                r'\(stage_one; requirement R-erc source\)'):
+            self.compile(source='stage-one.json')
+        with self.assertRaisesRegex(ValueError, r'stage-one.json \(stage_one; baseline target\)'):
+            self.compile(targets=('stage-one.json',))
+        # The same schema without envelope obligations, or stage one only as a reference, is not envelope authority.
+        self.assertNotIn('envelope', self.compile(source='intent-only.json', targets=('intent-only.json',)))
+        self.assertNotIn('envelope', self.compile(references=('stage-one.json',)))
 
 
 class EnvelopeNativeBaselineTests(unittest.TestCase):

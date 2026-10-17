@@ -221,21 +221,14 @@ before the coverage audit, capture:
    trusted;
 3. if `dialog` is set, refuses a decision record that lacks an obligation, holds
    different text (for example from other envelope bytes) or carries an extra
-   `R-envelope-` ID;
+   `R-envelope-` ID. Every other consumed stage-one set gets the same test (see
+   [Consumed envelopes](#consumed-envelopes));
 4. applies `require_obligations` to the scope's baseline;
 5. freezes the envelope, profile, verified profile sources and dialog as
    immutable baseline files. A campaign's `mutable_inputs` cannot include them;
 6. records `envelope` in `agent-ee.baseline/2`: the declaration, the validation
    record, the derived requirements and the per-obligation coverage. These are
    part of `baseline_id`, so verification recompiles and compares them.
-
-For scope/2 and scope/3, capture also scans every captured file of at most
-1 MiB that starts with `{` and parses as JSON, whatever its name. It refuses:
-
-- an envelope field on scope/1 or scope/2;
-- a captured `agent-ee.envelope/1` file or an `R-envelope-` requirement without
-  a declaration;
-- a second captured envelope.
 
 Today no envelope scope can be captured. Its outline, layer count and stackup
 have no binding, nor do any holes or keepouts. Capture refuses and names those
@@ -254,6 +247,49 @@ full DRC:
 - the sealed result witnesses `R-envelope-rc-filter-fixed-J1`, and only that
   obligation;
 - once the stand-in is gone, the same retained run fails baseline verification.
+
+### Consumed envelopes
+
+Envelope authority comes only from what a scope declares or consumes, never from
+whatever happens to be captured. For scope/2 and scope/3, capture reads the
+paths the scope consumes:
+
+- any check's `envelope` parameter;
+- each baseline requirement's `source.path`;
+- each baseline target;
+- each packet `requirements` document.
+
+A consumed path, whatever its name or size, carries envelope authority when it
+starts with `{` and parses as one of these JSON objects:
+
+- an `agent-ee.envelope/1` envelope;
+- an `agent-ee.envelope-validation/1` or `agent-ee.envelope-requirements/1`
+  record derived from one;
+- a stage-one `agent-ee.requirements/1` set that holds `R-envelope-`
+  obligations, such as the dialog's `requirements.json`.
+
+A check `envelope` parameter is envelope use whatever the file holds. Capture
+refuses:
+
+- an envelope field on scope/1 or scope/2;
+- a consumed envelope, envelope record or stage-one envelope obligation, or an
+  `R-envelope-` requirement, without a declaration. So a scope can't take its
+  requirements from a stage-one set while dropping its envelope obligations;
+- a consumed envelope at any path other than the declared one, including a
+  byte-identical copy;
+- a consumed envelope record whose `envelope_sha256` is not the declared
+  envelope's;
+- a consumed stage-one set that doesn't carry exactly the declared envelope's
+  obligations (the same test as `dialog`);
+- a requirement that cites the declared envelope as its source but isn't one of
+  its derived obligations, whatever its ID.
+
+Other captured files are not read for envelope authority. These include
+`reference_architectures`, inputs no requirement or check cites, and extra
+copies of the envelope. Such a file is an informative reference example, and
+its content never becomes an obligation. An uncited file leaves the baseline
+exactly as if it were absent. A reference architecture is hashed into the
+baseline like any reference, but adds no envelope record or obligation.
 
 ## Board round trip
 
@@ -309,6 +345,7 @@ This record states obligations; it does not check placement, courtyards,
 clearances or fabrication. Arcs, cutouts, slots, multiple outlines and oblique
 connector edges are not supported. Outline, keepout, hole, layer-count and
 stackup bindings do not exist yet (layer count and stackup await AGENTEE-94), so
-an envelope scope/3 is refused at capture until they land. The envelope scan covers captured files up to 1 MiB that start
-with `{`. Profile support means only that the typed, source-quoted minimum
+an envelope scope/3 is refused at capture until they land. Capture reads only
+consumed paths for envelope authority, so an envelope a scope never cites stays
+unenforced. To make an envelope binding, declare it. Profile support means only that the typed, source-quoted minimum
 limits admit the declared values, not that a fabricator accepts the board.
