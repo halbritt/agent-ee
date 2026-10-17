@@ -4,13 +4,16 @@
   "scope": "Synthetic structural interface and loaded passive response.",
   "inputs": [
     {
-      "path": ".",
-      "at": ".",
-      "include": [
-        "interface.kicad_sch",
-        "requirements.md",
-        "contract.json"
-      ]
+      "path": "interface.kicad_sch",
+      "at": "interface.kicad_sch"
+    },
+    {
+      "path": "requirements.md",
+      "at": "requirements.md"
+    },
+    {
+      "path": "contract.json",
+      "at": "contract.json"
     }
   ],
   "schematic": "interface.kicad_sch",
@@ -29,6 +32,24 @@
         "contract": "contract.json",
         "netlist_check": "netlist"
       }
+    },
+    {
+      "id": "response",
+      "kind": "rc_transient",
+      "params": {
+        "netlist_check": "netlist",
+        "input_net": "/IN",
+        "output_net": "/OUT",
+        "ground_net": "/GND",
+        "measurements": [
+          {
+            "name": "vout_1ms",
+            "at_ms": 1,
+            "min": 0.62,
+            "max": 0.65
+          }
+        ]
+      }
     }
   ],
   "baseline": {
@@ -43,6 +64,18 @@
         "checks": [
           "netlist",
           "interface"
+        ],
+        "intent": "acceptance"
+      },
+      {
+        "id": "response",
+        "statement": "Loaded step at 1 ms is 0.62..0.65 V.",
+        "source": {
+          "path": "requirements.md",
+          "locator": "Functional response"
+        },
+        "checks": [
+          "response"
         ],
         "intent": "acceptance"
       }

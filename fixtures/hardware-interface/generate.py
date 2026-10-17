@@ -24,17 +24,17 @@ def schematic(variant='control', resistor='10k'):
         definitions.append(f'(symbol "Owned:{name}" (pin_names (offset 0)) (in_bom yes) (on_board yes) '
             + property_('Reference', name) + property_('Value', name) + f'(symbol "{name}_1_1" {pins}))')
     # Device:R/C identity is needed only by the existing passive simulator.
-    definitions = [d.replace('Owned:R', 'Device:R').replace('Owned:C', 'Device:C') for d in definitions]
-    specs = [('X1', 'Owned:Port', 'port', ['IN', 'OUT', 'GND']),
+    definitions = [d.replace('Owned:R', 'Device:R').replace('Owned:C', 'Device:C').replace('Owned:Port', 'ConnectorOwned:Port').replace('Owned:Probe', 'ConnectorOwned:Probe') for d in definitions]
+    specs = [('X1', 'ConnectorOwned:Port', 'port', ['IN', 'OUT', 'GND']),
              ('R1', 'Device:R', resistor, ['IN', 'OUT']),
              ('C1', 'Device:C', '100n', ['OUT', 'GND']),
-             ('LOAD', 'Device:R', '1Meg', ['OUT', 'GND']),
-             ('PROBE', 'Owned:Probe', 'probe', ['OUT']),
+             ('RLOAD', 'Device:R', '1Meg', ['OUT', 'GND']),
+             ('PROBE', 'ConnectorOwned:Probe', 'probe', ['OUT']),
              ('R2', 'Device:R', '0', ['AUX', None]),
              ('R3', 'Device:R', '1k', [None, 'GND'])]
     symbols = []
     for index, (ref, lib, value, labels) in enumerate(specs):
-        if variant == 'delete-load' and ref == 'LOAD' or variant == 'delete-probe' and ref == 'PROBE':
+        if variant == 'delete-load' and ref == 'RLOAD' or variant == 'delete-probe' and ref == 'PROBE':
             continue
         if variant == 'swapped' and ref == 'X1':
             labels = ['OUT', 'IN', 'GND']
@@ -42,7 +42,7 @@ def schematic(variant='control', resistor='10k'):
         # R2.2 -- R3.1 is an anonymous direct conductor, independent of generated net names.
         if ref == 'R3':
             y = 52.54
-        dnp = 'yes' if variant == 'dnp-load' and ref == 'LOAD' else 'no'
+        dnp = 'yes' if variant == 'dnp-load' and ref == 'RLOAD' else 'no'
         pins = ''.join(f'(pin "{i+1}" (uuid "{uid(ref+str(i))}"))' for i in range(len(labels)))
         symbols.append(f'(symbol (lib_id "{lib}") (at {x} {y} 0) (unit 1) '
             f'(in_bom yes) (on_board yes) (dnp {dnp}) (uuid "{uid(ref)}")'
