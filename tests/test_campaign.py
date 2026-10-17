@@ -58,11 +58,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "review_profile": self.profile, "implementation": definition, "max_iterations": 3, "max_seconds": 60})
         self.calls = []
         self.addCleanup(patch.stopall)
-        patch('agent_ee.reviewers.reviewer_call', side_effect=self.agent).start()
+        patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
         # Avoid platform fingerprint probes; sandbox tool execution is real.
-        patch('agent_ee.cli.runtime_files', return_value={"test": "fixed"}).start()
+        patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')}).start()
 
-    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None):
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         run = Path(run)
         self.calls.append(label)
         if label == "implementation":
@@ -120,12 +121,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "observed_utc": "2026-10-17T00:00:00Z", "artifacts": [{"path": "instrument.json",
                 "sha256": digest(self.root / "instrument.json")}],
             "observations": [{**sample, "artifact": "instrument.json", "locator": "0"}]})
-        def calibrated_repair(run, label, definition, prompt, schema, timeout, *, cancellation=None):
+        def calibrated_repair(run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
             reply = self.agent(run, label, definition, prompt, schema, timeout)
             if label == "implementation":
                 write_json(Path(run) / "review-work/implementation/design/design/design.json", {"value": 1})
             return reply
-        with patch('agent_ee.reviewers.reviewer_call', side_effect=calibrated_repair):
+        with patch('agent_ee.reviewers.dispatch', side_effect=calibrated_repair):
             with contextlib.redirect_stdout(io.StringIO()):
                 status = campaign_feedback(self.root / "campaign", self.root / "bench.json",
                                            self.root / "feedback", 60)
@@ -146,14 +147,14 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def test_implementation_cannot_change_verification_inputs_or_add_files(self):
         for attack in ("modify", "plant"):
             with self.subTest(attack=attack):
-                def attacking_agent(run, label, definition, prompt, schema, timeout, *, cancellation=None):
+                def attacking_agent(run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
                     reply = self.agent(run, label, definition, prompt, schema, timeout)
                     if label == "implementation":
                         design = Path(run) / "review-work/implementation/design/design"
                         target = design / ("model" if attack == "modify" else "planted-history.txt")
                         target.write_text("untrusted change")
                     return reply
-                with patch('agent_ee.reviewers.reviewer_call', side_effect=attacking_agent):
+                with patch('agent_ee.reviewers.dispatch', side_effect=attacking_agent):
                     with contextlib.redirect_stdout(io.StringIO()):
                         status = run_campaign(self.root / "campaign.json", self.root / attack)
                 state = read_json(self.root / attack / "state.json")
@@ -252,3 +253,91 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.scope = convert_scope(self.scope)
         write_json(self.root / 'scope.json', self.scope)
         self.test_implementation_cannot_change_verification_inputs_or_add_files()
+
+    @toolchain_test
+    def test_implementation_drift_refuses_writer_with_original_scratch_context(self):
+        from agent_ee.campaign import implement as real_implement
+        from agent_ee.cli import runtime_files
+        original_runtime = runtime_files()
+        def drift(root, previous, definition, state, deadline):
+            with patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}}):
+                return real_implement(root, previous, definition, state, deadline)
+        with patch('agent_ee.campaign.implement', side_effect=drift), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        self.assertNotIn('implementation', self.calls)
+        work = self.root / 'campaign/implementations/1'
+        record = read_json(work / 'implementation-execution.json')
+        self.assertEqual(record['execution'], 'not_run')
+        self.assertIn('runtime_drift', record['error'])
+        self.assertFalse((work / 'proposal.scope.json').exists())
+        self.assertFalse((work / 'candidate.json').exists())
+        self.assertFalse((work / 'result.json').exists())
+        self.assertEqual(read_json(work / 'review-work/implementation/design/design/design.json'), {'value': 15})
+        self.assertEqual(read_json(self.root / 'campaign/state.json')['state'], 'incomplete')
+        verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_adjudication_drift_has_zero_adjudicator_dispatches(self):
+        from agent_ee.reviewers import adjudicator_call as real_adjudicator
+        from agent_ee.cli import runtime_files
+        original_runtime = runtime_files()
+        def drift(*args, **kwargs):
+            with patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}}):
+                return real_adjudicator(*args, **kwargs)
+        with patch('agent_ee.reviewers.adjudicator_call', side_effect=drift), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+        self.assertCountEqual(self.calls, ['circuit', 'physical'])
+        result = verify(self.root / 'run')
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertFalse(result['adjudicated'])
+        record = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertIn('runtime_drift', record['error'])
+
+    @toolchain_test
+    def test_drift_after_checks_prevents_all_initial_dispatches(self):
+        from agent_ee.checks import run_checks as real_checks
+        from agent_ee.cli import runtime_files
+        original_runtime = runtime_files()
+        # The deterministic check completes normally; subsequent observation sees drift.
+        runtime_patch = patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}})
+        def checks(*args, **kwargs):
+            result = real_checks(*args, **kwargs)
+            runtime_patch.start()
+            self.addCleanup(runtime_patch.stop)
+            return result
+        with patch('agent_ee.checks.run_checks', side_effect=checks), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+        self.assertEqual(self.calls, [])
+        result = read_json(self.root / 'run/result.json')
+        self.assertEqual(result['checks'][0]['execution'], 'ok')
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertTrue(any('runtime_drift' in record.get('error', '') for record in result['review_executions']))
+
+    @toolchain_test
+    def test_campaign_verification_requires_separate_implementation_receipt(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+        root = self.root / 'campaign'
+        verify_campaign(root)
+        receipt = root / 'implementations/1/review-work/implementation/preflight/receipt.json'
+        receipt.unlink()
+        with self.assertRaises((ValueError, OSError)):
+            verify_campaign(root)
+
+    @toolchain_test
+    def test_tampered_initial_receipt_prevents_adjudication_and_completion(self):
+        def tamper(*args, **kwargs):
+            record, response = self.agent(*args, **kwargs)
+            run, label = Path(args[0]), args[1]
+            if label == 'circuit':
+                path = run / 'review-work/circuit/preflight/receipt.json'
+                receipt = read_json(path)
+                receipt['baseline_id'] = 'foreign'
+                write_json(path, receipt)
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=tamper), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+        self.assertNotIn('adjudicator', self.calls)
+        result = read_json(self.root / 'run/result.json')
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertIn('preflight receipt changed', result['error'])

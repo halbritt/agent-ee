@@ -355,3 +355,47 @@ and one of its audited defect-capable mapped checks. Informational mappings neve
 establish an accepted defect. Capture and verification reconstruct coverage;
 a retained flag cannot promote an unsupported check. See the
 [scope contract](scope-reference.md#version-3-executable-acceptance-coverage).
+
+## Pre-inference environment receipts
+
+New reviews retain an `agent-ee.launch-expectation/1` object in
+`result.json.launch_expectation`, captured before deterministic checks. It binds
+run, candidate and baseline identities, profile and role definitions, the loaded
+policy/runtime inventories, native prerequisites of the declared checks and
+declared measurement producer pins. Every admitted
+initial reviewer, adjudicator and implementation call compares those expectations
+with fresh local observations before provider dispatch.
+
+`review-work/<role>/preflight/receipt.json` uses `agent-ee.preflight/1`. It records
+a unique invocation, boundary, role, expectation identity, observed inventories,
+probe execution and `ok` or `refused` with diagnostics. The execution record's
+`preflight` link carries its run-relative path and SHA-256. Probe stdout, stderr
+and command records remain under `preflight/probe/`. Each role owns a separate
+probe workspace; receipts and prior judgments are absent from initial prompts.
+The probe runs `/usr/bin/true` through the native Bubblewrap executor with its
+network disabled. It checks namespace/execution availability and consumes the
+call's wall-clock budget. Cancellation applies to the probe's process group.
+
+Missing prerequisites, observable drift, invalid expectations, duplicate receipts
+and unsuccessful or malformed probes refuse inference. A refusal records
+`execution: not_run` and leaves the review or campaign incomplete. It adds no
+design finding and grants no adjudication or repair authority. Verification
+requires the linked receipts for attempted calls under the new policy and checks
+their retained identities and probe artifacts. Automatic review validates these
+links before adjudication and completion; implementation validates its receipt
+before emitting a proposal. Verification does not rerun a historical probe or synthesize receipts for old policies.
+
+Campaigns pin their runtime/policy and implementation definition at creation.
+Implementation receives explicit expectations for the original reviewed candidate,
+retained in `implementations/<n>/launch-expectation.json`; writable repair scratch
+is not a captured candidate. Campaign verification checks the separate
+implementation execution/receipt link and probe artifacts. An older campaign
+without original launch expectations must start a fresh campaign to invoke an
+implementation under this policy.
+
+Preflight observes an environment boundary. Upgrades after observation can still
+race dispatch; existing snapshot and final environment checks remain necessary.
+No model call, authentication/quota canary, numerical simulator canary or provider
+fallback is performed. An `ok` receipt establishes neither subscription quota nor
+engineering acceptance. Only declared tool identities are covered; arbitrary
+transitive dependencies are not discovered.

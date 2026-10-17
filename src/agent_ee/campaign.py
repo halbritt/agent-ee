@@ -35,9 +35,20 @@ def implement(root, previous, definition, state, deadline):
         json.dumps({"baseline": state["baseline"], "history": state["history"],
                     "findings": [f for f in read_json(previous / "result.json")["findings"]
                                  if f.get("source") == "check" and f.get("status") == "accepted"]}))
+    from .preflight import capture_expectation
+    original = read_json(previous / 'result.json')
+    campaign_environment = state.get('launch_environment')
+    if not campaign_environment:
+        raise ValueError('campaign missing original launch environment; start a fresh campaign')
+    expected = capture_expectation({**original, **campaign_environment}, manifest,
+                                   [state['implementation_definition']])
+    write_json(work / 'launch-expectation.json', expected)
     record, response = reviewer_call(work, "implementation", {**definition, "tool_mode": "investigate"},
-        prompt, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())))
+        prompt, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
+        launch_context={'expected': expected, 'boundary': 'implementation', 'deadline': deadline})
     write_json(work / "implementation-execution.json", record)
+    from .preflight import verify_receipt
+    verify_receipt(work, record, expected, "implementation", "implementation")
     if record["execution"] != "ok" or response is None:
         raise ValueError("implementation execution failed; no retry or provider fallback")
     actual = {}
@@ -67,7 +78,7 @@ def implement(root, previous, definition, state, deadline):
 
 
 def run_campaign(config_path, out):
-    from .cli import run_review, verify
+    from .cli import run_review, verify, policy_files, runtime_files
     from .measurements import finite
 
     config_path = Path(config_path).resolve()
@@ -94,7 +105,9 @@ def run_campaign(config_path, out):
         write_json(root / "config.json", config)
         write_json(root / "profile.json", profile)
         state = {"schema": "agent-ee.campaign-state/1", "state": "running", "history": [],
-                 "config_sha256": digest(root / "config.json")}
+                 "config_sha256": digest(root / "config.json"),
+                 "launch_environment": {"policy_files": policy_files(), "runtime_files": runtime_files()},
+                 "implementation_definition": {**config["implementation"], "tool_mode": "investigate"}}
         write_json(root / "state.json", state)
         return continue_campaign(root, state, scope_path, time.monotonic() + seconds)
 
@@ -181,6 +194,19 @@ def verify_campaign_records(root):
         raise ValueError("campaign configuration changed")
     if read_json(root / "profile.json") != config["review_profile"]:
         raise ValueError("campaign profile changed")
+    from .preflight import capture_expectation, verify_receipt
+    if 'launch_environment' in state and state.get('implementation_definition') != {**config['implementation'], 'tool_mode': 'investigate'}:
+        raise ValueError('campaign implementation definition changed')
+    for work in (root / 'implementations').glob('*'):
+        if (work / 'implementation-execution.json').is_file() and 'launch_environment' in state:
+            expected = read_json(work / 'launch-expectation.json')
+            source = Path(state['history'][int(work.name) - 1]['run'])
+            original = read_json(source / 'result.json')
+            wanted = capture_expectation({**original, **state['launch_environment']},
+                read_json(source / 'candidate.json'), [{**config['implementation'], 'tool_mode': 'investigate'}])
+            if expected != wanted:
+                raise ValueError('implementation launch expectation changed')
+            verify_receipt(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation')
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
