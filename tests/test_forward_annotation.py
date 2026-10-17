@@ -19,7 +19,6 @@ import unittest
 import uuid
 from pathlib import Path
 
-from agent_ee.executor import execute
 from agent_ee.schematic_emitter import emit_schematic
 from agent_ee.symbol_library import children, parse_sexpr
 from test_schematic_emitter import PROJECT, ROOT, captures, load, run_native, tables

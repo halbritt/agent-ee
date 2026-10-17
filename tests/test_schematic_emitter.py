@@ -5,10 +5,8 @@ Transformed endpoints below are hand-derived from KiCad's sheet convention
 sheet after rotation), not computed by the emitter. Native tests judge emitted
 files only through kicad-cli 10.0.7 ERC, XML netlist export and upgrade.
 """
-import copy
 import hashlib
 import json
-import re
 import shutil
 import tempfile
 import unittest
