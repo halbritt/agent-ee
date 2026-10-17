@@ -118,6 +118,9 @@ Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
 series/parallel networks; unsupported conductors leave coverage incomplete.
+The [netclass completeness check](docs/netclass-completeness.md) checks captured
+Default netclass field presence for the qualified KiCad settings schema. It does
+not establish that the declared clearance or track-width values are suitable.
 
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
