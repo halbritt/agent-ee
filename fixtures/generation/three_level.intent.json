@@ -1,0 +1,173 @@
+{
+  "schema": "agent-ee.connectivity-intent/2",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    }
+  ],
+  "hierarchy": [
+    {
+      "id": "root",
+      "parent": null,
+      "local_id": "root",
+      "file": "three_level.kicad_sch"
+    },
+    {
+      "id": "mid",
+      "parent": "root",
+      "local_id": "mid",
+      "file": "mid.kicad_sch"
+    },
+    {
+      "id": "leaf",
+      "parent": "mid",
+      "local_id": "leaf",
+      "file": "leaf.kicad_sch"
+    },
+    {
+      "id": "side",
+      "parent": "root",
+      "local_id": "side",
+      "file": "side.kicad_sch"
+    }
+  ],
+  "components": [
+    {
+      "sheet": "root",
+      "id": "a",
+      "reference": "C1",
+      "lib_id": "OwnedGen:CAP",
+      "value": "1u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "sheet": "leaf",
+      "id": "b",
+      "reference": "C2",
+      "lib_id": "OwnedGen:CAP",
+      "value": "2u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "sheet": "side",
+      "id": "d",
+      "reference": "C3",
+      "lib_id": "OwnedGen:CAP",
+      "value": "3u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "sheet": "root",
+      "id": "x",
+      "name": "X",
+      "terminals": [
+        {
+          "component": "a",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "root",
+      "id": "y",
+      "name": "Y",
+      "terminals": [
+        {
+          "component": "a",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "mid",
+      "id": "thru",
+      "name": "THRU",
+      "terminals": []
+    },
+    {
+      "sheet": "leaf",
+      "id": "thru",
+      "name": "THRU",
+      "terminals": [
+        {
+          "component": "b",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "sheet": "side",
+      "id": "y",
+      "name": "Y",
+      "terminals": [
+        {
+          "component": "d",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": [
+    {
+      "sheet": "leaf",
+      "component": "b",
+      "pin": {
+        "number": "2"
+      }
+    },
+    {
+      "sheet": "side",
+      "component": "d",
+      "pin": {
+        "number": "2"
+      }
+    }
+  ],
+  "ports": [
+    {
+      "child": "mid",
+      "id": "p",
+      "name": "THRU",
+      "direction": "passive",
+      "parent_net": "x",
+      "child_net": "thru"
+    },
+    {
+      "child": "leaf",
+      "id": "p",
+      "name": "THRU",
+      "direction": "passive",
+      "parent_net": "thru",
+      "child_net": "thru"
+    },
+    {
+      "child": "side",
+      "id": "p",
+      "name": "Y",
+      "direction": "passive",
+      "parent_net": "y",
+      "child_net": "y"
+    }
+  ]
+}

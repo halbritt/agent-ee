@@ -1,11 +1,11 @@
 # Schematic emitter
 
-`agent_ee.schematic_emitter` (AGENTEE-40) writes a flat, wire-free KiCad 10
-schematic and project file from captured connectivity intent. It is a helper of
-the sole implementation writer, not a check: its receipt is diagnostic, and
-native ERC, netlist export and parity checks on the captured output decide
-whether the output is correct. Hierarchy is not supported yet (see
-[Limits](#limits)).
+`agent_ee.schematic_emitter` (AGENTEE-40) writes wire-free KiCad 10
+schematics and a project file from captured connectivity intent: one file for
+a flat design, or one file per sheet for a hierarchical design (see
+[Hierarchy](#hierarchy)). It is a helper of the sole implementation writer, not
+a check: its receipt is diagnostic, and native ERC, netlist export and parity
+checks on the captured output decide whether the output is correct.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.schematic_emitter intent.json \
@@ -20,7 +20,7 @@ existing output directory is refused. The emitter reads only the declared
 
 ## Inputs
 
-- Raw `agent-ee.connectivity-intent/1` ([connectivity intent](connectivity-ir.md)).
+- Raw `agent-ee.connectivity-intent/1` or `/2` ([connectivity intent](connectivity-ir.md)).
   The emitter resolves it with `connectivity_ir.resolve_intent` in the same call.
   Anything other than a complete, passing resolution is refused, with the
   resolver findings prefixed `resolution_`. An authored resolved record is
@@ -39,7 +39,9 @@ existing output directory is refused. The emitter reads only the declared
 ```
 
 `namespace` is a canonical lowercase UUID chosen once per project. `project`
-is the file stem. `transforms` is optional and keyed by logical component ID;
+is the file stem. `transforms` is optional and keyed by logical component ID
+(for a hierarchical intent, the resolver's scoped ID, such as
+`["filter","c_in"]`);
 rotation is 0, 90, 180 or 270 degrees counter-clockwise, and mirror is `null`,
 `"x"` or `"y"`, applied on the sheet after rotation. Equivalent spellings are
 written the way KiCad writes them (for example mirror `x` at 180 becomes mirror
@@ -88,13 +90,60 @@ component leaves every existing symbol, pin and root UUID unchanged. Instance
 paths are `/<root uuid>`. Repeating an emission, or emitting from reordered
 input, gives identical bytes.
 
+## Hierarchy
+
+A `connectivity-intent/2` design resolves to `resolved-connectivity/2`
+(AGENTEE-39). The emitter reads its `hierarchy`, `ports`, per-sheet components
+and `local_nets` segments with their resolved labels. It does not join, rename
+or infer anything from names, and it never flattens. Each sheet occurrence
+becomes its own file, named by the occurrence's `file`:
+
+- Symbols, labels and no-connect markers of a sheet are placed in that sheet
+  as in a flat design. A segment's label is its `local_nets` label.
+- Each declared port becomes one pin on the child's sheet symbol in the parent
+  file, with the port's name and direction. Pins sit on the left edge of the
+  sheet symbol in name order. The parent segment's label is placed on the pin's
+  connection point. A segment with no pins of its own (a pass-through) is
+  labelled only at its children's sheet pins.
+- The child segment a port binds is labelled with hierarchical labels, named
+  after the port, on every connection point of that segment. All other
+  segments use local labels, so internal nets with the same name on different
+  sheets stay separate.
+- The root file is `<project>.kicad_sch` and holds the `sheet_instances`
+  record. Pages are numbered depth first, children in local ID order.
+
+Identity follows the frozen AGENTEE-39 contract:
+
+| Object | Name array |
+| --- | --- |
+| Sheet document (root UUID for the root file) | `["document", file]` |
+| Child sheet symbol | `["sheet", parent file, child local_id]` |
+| Sheet pin, and the parent label on it | `["sheet_pin", parent file, child local_id, port id]` and `[kind, "sheet_pin", parent file, child local_id, port id]` |
+| Symbol, pin, label, marker | As above, with `file, local_id` in place of `id` |
+
+A symbol's instance path is the root UUID followed by the sheet-symbol UUIDs of
+its ancestors, so the native netlist sheet path of `filter` above is
+`/<sheet uuid>/`.
+
+Hierarchical refusals, in addition to the resolver's own (repeated sheet
+files, hierarchical power symbols, undeclared or duplicate ports, singleton or
+port-only nets, and port names that alias another class's label):
+
+| Code | Condition |
+| --- | --- |
+| `port_label_alias` | A port name differs from its child segment's label. One segment would carry two names, so it is refused rather than renamed |
+| `hierarchy_file_unsupported` | A sheet file is not a flat, safe `name.kicad_sch` in the project directory |
+| `layout_schema` | The root sheet file is not `<project>.kicad_sch` |
+| `malformed_sheet_name` | A child local ID cannot be a sheet name |
+| `unanchored_segment` | A segment has no pin and no child sheet pin to carry its label |
+
 ## Refusals
 
 Generation either succeeds completely or writes nothing:
 
 | Code | Condition |
 | --- | --- |
-| `resolution_*` | The resolver rejected the intent: unknown symbol or library, duplicate component or reference, unknown or unaccounted pin, missing or changed captured library (execution `failed`), or hierarchy (execution `unsupported`) |
+| `resolution_*` | The resolver rejected the intent: unknown symbol or library, duplicate component or reference, unknown or unaccounted pin, missing or changed captured library (execution `failed`), or a version 1 intent with hierarchy (execution `unsupported`) |
 | `resolved_mismatch` | A supplied resolved record differs from the fresh resolution |
 | `layout_schema` | Malformed layout or table rows, or a transform for an unknown component |
 | `derived_symbol_unsupported` | The symbol uses `extends`; KiCad's flattening into `lib_symbols` is not natively qualified here |
@@ -128,12 +177,34 @@ executor with networking unshared:
   identical part and changed UUIDs each fail the matching predicate. The
   AGENTEE-41 modules are imported directly, so their absence is an error,
   never a skip.
+- `tests/test_schematic_hierarchy.py` emits an original two-level design
+  (`two_level.*`): a root connector and capacitor, and a `filter` child with
+  three capacitors. It has two shared nets, an internal `LOCAL_SAME` net on each
+  sheet and one explicit no-connect. Its expectations were written before any
+  hierarchical output existed. Native ERC reports no violations of any
+  severity on either sheet, so there is no `hier_label_mismatch`. The native
+  netlist equals the expected physical nets, and the two `LOCAL_SAME` nets stay
+  separate. The sheet symbol has exactly one pin per shared net. Every connected
+  pin and sheet pin carries exactly one label, on independently computed
+  coordinates, and hierarchical labels appear only on port segments. Native
+  sheet paths and symbol UUIDs follow the identity contract. Both files need no
+  upgrade, and a forced native re-save reproduces them apart from the generator
+  name. Deleting a sheet pin or adding an undeclared one produces a native
+  `hier_label_mismatch`. A three-level design (`three_level.*`) with a
+  pass-through middle sheet that has no parts, plus a sibling, has no ERC
+  violations on any of its four sheets.
+- The two-level export passes AGENTEE-41 topology, components and instance
+  parity against a fresh resolution, with anchors computed from the identity
+  contract. Swapped anchors fail the instance predicate. Shorting the child's
+  internal label onto its hierarchical net, or deleting a sheet pin, fails
+  topology. The three-level export passes topology and components.
 
 ## Limits
 
-- Flat designs only. Two-level hierarchy (one sheet pin per shared net, no
-  `hier_label_mismatch`) needs a coordinated extension of the shared
-  connectivity intent and stays an open AGENTEE-40 criterion.
+- Repeated sheet files (one file instantiated more than once) and power
+  symbols in multi-sheet designs are refused by the resolver until their native
+  semantics are qualified. Sheet files must sit in the project directory.
+- A port's name must equal its child segment's label.
 - Derived (`extends`) symbols, alternate body styles with pins, arcs and other
   graphics without qualified bounds are refused.
 - Power and flag symbols are intent components, and the resolver lists them

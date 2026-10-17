@@ -25,6 +25,13 @@ the AGENTEE-40 schematic emitter and AGENTEE-52 forward-annotation tests on
   for multi-unit binding) were added later. `footprints.manifest.json` declares
   every owned footprint with its hash. `DUAL_6PAD.kicad_mod` was normalised
   with `kicad-cli fp upgrade --force` like the other footprints.
+- `two_level.*` (AGENTEE-40 hierarchy, `connectivity-intent/2`): a root sheet
+  and one `filter` child with two declared ports and an internal net of the
+  same name on each sheet. `two_level.expected.json` gives the physical nets,
+  labels and sheet pins and was written before any hierarchical emitter output
+  existed. `three_level.*` adds a pass-through middle sheet with no parts and a
+  sibling sheet; it has no hand-written expectations, and its tests compare
+  against the fresh resolution through AGENTEE-41 parity and native ERC.
 - `regulator.kicad_pcb`: an owned 30 x 20 mm two-layer board built once with
   pcbnew 10.0.7 by a scratch script. It places J1, U1 and C1 from the owned
   footprints, with native paths derived from the regulator layout namespace

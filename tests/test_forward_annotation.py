@@ -453,6 +453,35 @@ class ForwardAnnotationTests(unittest.TestCase):
         _, dnp = self.project(self.intent(), 'flags-dnp', edit=flagged((b'(dnp no)', b'(dnp yes)')))
         self.assertEqual([f['code'] for f in plan(dnp.read_bytes())['findings']], ['dnp_unsupported'])
 
+    def test_hierarchical_native_paths_bind_by_sheet_and_unit(self):
+        """A child-sheet symbol binds only under its full native sheet path."""
+        project, xml = self.project(load('two_level.intent.json'), 'hierarchy', name='two_level')
+        captured = {m['path']: (PROJECT / m['path']).read_bytes()
+                    for lib in self.manifest['libraries'] for m in lib['members']}
+        empty = dict(footprints=[], tracks=[], zones=[], edge_bbox_nm=[0, 0, 10000000, 10000000])
+        namespace = uuid.UUID(load('two_level.layout.json')['namespace'])
+        ident = lambda *parts: str(uuid.uuid5(namespace, json.dumps(list(parts), separators=(',', ':'))))
+        sheet = '/' + ident('sheet', 'two_level.kicad_sch', 'filter') + '/'
+        local = ident('symbol', 'filter.kicad_sch', 'c_in', 1)
+        plan = fa.build_plan(xml.read_bytes(), '0' * 64, empty, self.manifest, captured)
+        self.assertEqual(plan['execution'], 'ok', plan['findings'])
+        self.assertEqual({a['reference']: a['path'] for a in plan['add']}, {
+            'J1': '/' + ident('symbol', 'two_level.kicad_sch', 'j_in', 1),
+            'C1': '/' + ident('symbol', 'two_level.kicad_sch', 'c_bulk', 1),
+            'C2': sheet + local, 'C3': sheet + ident('symbol', 'filter.kicad_sch', 'c_gnd', 1),
+            'C4': sheet + ident('symbol', 'filter.kicad_sch', 'c_local', 1)})
+        def footprint(path):
+            return dict(uuid='f-1', path=path, reference='C2', value='100n', fpid='OwnedFP:CAP_2PAD',
+                        position_nm=[0, 0], orientation_deg=0.0, layer='F.Cu', fields={},
+                        pads=[dict(number=str(n), net='', position_nm=[0, n]) for n in (1, 2)])
+        bound = fa.build_plan(xml.read_bytes(), '0' * 64, dict(empty, footprints=[footprint(sheet + local)]),
+                              self.manifest, captured)
+        self.assertEqual((bound['counts']['retain'], bound['counts']['add'], bound['counts']['remove']), (1, 4, 0))
+        # The same local UUID under the root path is a different occurrence: removed, never adopted.
+        stray = fa.build_plan(xml.read_bytes(), '0' * 64, dict(empty, footprints=[footprint('/' + local)]),
+                              self.manifest, captured)
+        self.assertEqual((stray['counts']['retain'], stray['counts']['add'], stray['counts']['remove']), (0, 5, 1))
+
     def test_publication_never_follows_planted_paths(self):
         """Every output, backup and staging path is created privately; links are never followed."""
         project, xml = self.project(self.intent(), 'publish')

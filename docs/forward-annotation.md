@@ -159,6 +159,8 @@ raw copper S-expressions for independent extraction, the tests show:
   explicit end tag. The shared reader accepts each spelling as the same
   document. A field whose text mentions the flag is not refused. An actual
   do-not-populate export is refused as `dnp_unsupported`.
+- For the native export of the emitted two-level design, child-sheet symbols
+  bind only under their full native sheet path plus unit UUID.
 - Publication leaves a planted link or file at the former fixed staging name
   untouched, refuses a live or dangling link at the output name, refuses a
   link in an output or backup ancestor and a linked in-place board, and
@@ -172,8 +174,10 @@ skip.
 ## Limits
 
 - Changing a footprint for a retained component, DNP and board exclusion are
-  refused. Binding handles hierarchical sheet paths, but no hierarchical design
-  has been tested, because the emitter is flat only.
+  refused. Planning against the native export of an emitted two-level design
+  binds child symbols by their full sheet path, and the same symbol UUID under
+  another sheet path is not adopted. Applying to a hierarchical board has not
+  been tested natively.
 - Staging is not placement. Placement and routing quality, and fab readiness,
   are outside this helper.
 - Net renames need an exact one-to-one match on retained pad membership.

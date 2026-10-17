@@ -1,12 +1,14 @@
-"""Deterministic, wire-free flat KiCad 10 schematic emission from captured intent.
+"""Deterministic, wire-free KiCad 10 schematic emission from captured intent.
 
 Run ``python -m agent_ee.schematic_emitter --help`` for the standalone boundary.
 The emitter resolves raw intent against captured library bytes in the same
 invocation (AGENTEE-39) and never accepts an authored resolved record as pin
-geometry. Every pin endpoint receives a local net label or an explicit
-no-connect marker; no wires are drawn. Its receipt is diagnostic: native ERC,
+geometry. Every pin endpoint receives a net label or an explicit no-connect
+marker; no wires are drawn. Hierarchical (connectivity-intent/2) designs get
+one file per sheet occurrence: a declared port becomes one sheet pin on the
+child's sheet symbol and hierarchical labels on its child segment, and every
+other segment uses local labels. Its receipt is diagnostic: native ERC,
 netlist export and parity checks on the captured output decide correctness.
-Hierarchy is refused until the shared connectivity contract resolves it.
 """
 import argparse
 import hashlib
@@ -22,6 +24,7 @@ from .symbol_library import LibraryError, children, parse_sexpr
 
 LAYOUT_SCHEMA = 'agent-ee.schematic-layout/1'
 RESULT_SCHEMA = 'agent-ee.schematic-emission/1'
+HIERARCHY_SCHEMA = 'agent-ee.resolved-connectivity/2'  # AGENTEE-39 hierarchical record.
 # KiCad 10.0 native schematic format, as written by eeschema/kicad-cli 10.0.7.
 SCH_VERSION = '20260306'
 GENERATOR = 'agent-ee-schematic-emitter'
@@ -37,6 +40,9 @@ BORDER = 15240000       # Frame clearance on every side.
 TITLE_RESERVE = 40640000  # Bottom band kept free for the title block.
 GAP = 5080000           # Clearance between reserved cells.
 NAME = re.compile(r'[A-Za-z0-9_+\-.]{1,64}')
+# AGENTEE-39's deterministic label for an unnamed hierarchical segment.
+GENERATED = re.compile(r'__agent_ee_[0-9a-f]{64}')
+SHEET_FILE = re.compile(r'[A-Za-z0-9_\-]{1,64}\.kicad_sch')
 REFERENCE = re.compile(r'#?[A-Za-z_]{1,16}[0-9]{1,6}')
 FOOTPRINT = re.compile(r'[A-Za-z0-9_+\-.]{1,128}:[A-Za-z0-9_+\-.,]{1,256}')
 TEXT = re.compile(r'[\x20-\x7e\u00a0-\uffff]{0,256}')
@@ -309,7 +315,7 @@ def _plan(resolved, captured, intent_libraries, transforms):
     trees, units, net_of, nc = {}, [], {}, set()
     for net in resolved['nets']:
         location = '/nets/' + net['id']
-        if not isinstance(net['name'], str) or not NAME.fullmatch(net['name']):
+        if not isinstance(net['name'], str) or not (NAME.fullmatch(net['name']) or GENERATED.fullmatch(net['name'])):
             raise EmissionError('malformed_net_name', 'net label requires a nonempty safe name', location)
         if net['name'] in {n['name'] for n in resolved['nets'] if n['id'] != net['id']}:
             raise EmissionError('duplicate_net_name', 'distinct nets would merge by label name', location)
@@ -439,80 +445,248 @@ def _item_uuid(node):
     return children(node, 'uuid')[0][1]
 
 
-def _emit(resolved, units, global_nets, namespace, project):
-    root = _uuid(namespace, 'sheet', '/')
-    paper, placed = _pack(units)
-    endpoints = {}
-    lib_symbols, symbols, labels, markers = {}, [], [], []
-    for item, anchor in placed:
-        comp, unit = item['comp'], item['unit']
-        lib_symbols[comp['lib_id']] = item['embedded']
-        instance = ['symbol', ['lib_id', Q(comp['lib_id'])],
-                    ['at', _mm(anchor[0]), _mm(anchor[1]), str(item['rotation'])]]
-        if item['mirror']:
-            instance.append(['mirror', item['mirror']])
-        instance += [['unit', str(unit)], ['body_style', '1']]
-        instance += [[key, item['flags'][key]] for key, _ in INSTANCE_FLAGS]
-        instance += [['dnp', 'no'], ['uuid', Q(_uuid(namespace, 'symbol', comp['id'], unit))]]
-        values = {'Reference': comp['reference'], 'Value': comp['value'], 'Footprint': comp['footprint']}
-        for prop in item['properties']:
-            if prop[1].startswith('ki_'):
-                continue
-            instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'],
-                                      item['rotation']))
-        instance += [['pin', Q(n), ['uuid', Q(_uuid(namespace, 'pin', comp['id'], unit, n))]]
-                     for n in item['pin_numbers']]
-        instance.append(['instances', ['project', Q(project), ['path', Q('/' + root),
-                                                               ['reference', Q(comp['reference'])],
-                                                               ['unit', str(unit)]]]])
-        symbols.append(instance)
-        for pin, net, x, y, away in item['labels']:
-            point = (anchor[0] + x, anchor[1] + y)
-            owner = (comp['id'], pin['number'])
-            # Distinct physical pins may never share a connection point.
-            if point in endpoints and endpoints[point] != owner:
-                raise EmissionError('impossible_pin_endpoint', 'two pins share one connection point',
-                                    '/components/' + comp['id'] + '/pins/' + pin['number'])
-            endpoints[point] = owner
-            ident = (comp['id'], unit, pin['number'])
-            if net is None:
-                markers.append(['no_connect', ['at', _mm(point[0]), _mm(point[1])],
-                                ['uuid', Q(_uuid(namespace, 'no_connect', *ident))]])
-            else:
-                side = 'left' if away in (0, 90) else 'right'
-                at = ['at', _mm(point[0]), _mm(point[1]), str(away)]
-                if net['id'] in global_nets:
-                    labels.append(['global_label', Q(net['name']), ['shape', 'passive'], at,
-                                   ['fields_autoplaced', 'yes'],
-                                   ['effects', ['font', ['size', '1.27', '1.27']], ['justify', side]],
-                                   ['uuid', Q(_uuid(namespace, 'global_label', *ident))],
-                                   ['property', Q('Intersheetrefs'), Q('${INTERSHEET_REFS}'), at,
-                                    ['hide', 'yes'], ['show_name', 'no'], ['do_not_autoplace', 'no'],
-                                    ['effects', ['font', ['size', '1.27', '1.27']], ['justify', side]]]])
-                else:
-                    labels.append(['label', Q(net['name']), at,
-                                   ['effects', ['font', ['size', '1.27', '1.27']], ['justify', side, 'bottom']],
-                                   ['uuid', Q(_uuid(namespace, 'label', *ident))]])
-    sheet = ['kicad_sch', ['version', SCH_VERSION], ['generator', Q(GENERATOR)],
-             ['generator_version', Q(GENERATOR_VERSION)], ['uuid', Q(root)], ['paper', Q(paper)],
+FONT_EFFECTS = ['font', ['size', '1.27', '1.27']]
+
+
+def _label(net, point, away, uid):
+    """Local, global or hierarchical label for one net at one connection point."""
+    side = 'left' if away in (0, 90) else 'right'
+    at = ['at', _mm(point[0]), _mm(point[1]), str(away)]
+    if net.get('port'):
+        return ['hierarchical_label', Q(net['name']), ['shape', net['port']['direction']], at,
+                ['effects', FONT_EFFECTS, ['justify', side]], ['uuid', Q(uid('hierarchical_label'))]]
+    if net.get('global'):
+        return ['global_label', Q(net['name']), ['shape', 'passive'], at, ['fields_autoplaced', 'yes'],
+                ['effects', FONT_EFFECTS, ['justify', side]], ['uuid', Q(uid('global_label'))],
+                ['property', Q('Intersheetrefs'), Q('${INTERSHEET_REFS}'), at, ['hide', 'yes'],
+                 ['show_name', 'no'], ['do_not_autoplace', 'no'], ['effects', FONT_EFFECTS, ['justify', side]]]]
+    return ['label', Q(net['name']), at, ['effects', FONT_EFFECTS, ['justify', side, 'bottom']],
+            ['uuid', Q(uid('label'))]]
+
+
+def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets):
+    """One placed unit: its instance node, plus a label or marker on every pin endpoint.
+
+    ``key`` is the unit's identity prefix for every derived UUID, and ``path``
+    is its native sheet-occurrence path.
+    """
+    comp, unit = item['comp'], item['unit']
+    instance = ['symbol', ['lib_id', Q(comp['lib_id'])], ['at', _mm(anchor[0]), _mm(anchor[1]), str(item['rotation'])]]
+    if item['mirror']:
+        instance.append(['mirror', item['mirror']])
+    instance += [['unit', str(unit)], ['body_style', '1']]
+    instance += [[k, item['flags'][k]] for k, _ in INSTANCE_FLAGS]
+    instance += [['dnp', 'no'], ['uuid', Q(_uuid(namespace, 'symbol', *key, unit))]]
+    values = {'Reference': comp['reference'], 'Value': comp['value'], 'Footprint': comp['footprint']}
+    for prop in item['properties']:
+        if prop[1].startswith('ki_'):
+            continue
+        instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation']))
+    instance += [['pin', Q(n), ['uuid', Q(_uuid(namespace, 'pin', *key, unit, n))]] for n in item['pin_numbers']]
+    instance.append(['instances', ['project', Q(project), ['path', Q(path), ['reference', Q(comp['reference'])],
+                                                           ['unit', str(unit)]]]])
+    labels, markers = [], []
+    for pin, net, x, y, away in item['labels']:
+        point = (anchor[0] + x, anchor[1] + y)
+        owner = (comp['id'], pin['number'])
+        # Distinct physical pins may never share a connection point.
+        if point in endpoints and endpoints[point] != owner:
+            raise EmissionError('impossible_pin_endpoint', 'two pins share one connection point',
+                                '/components/' + comp['id'] + '/pins/' + pin['number'])
+        endpoints[point] = owner
+        ident = (*key, unit, pin['number'])
+        if net is None:
+            markers.append(['no_connect', ['at', _mm(point[0]), _mm(point[1])],
+                            ['uuid', Q(_uuid(namespace, 'no_connect', *ident))]])
+        else:
+            kind = dict(net, **{'global': net['id'] in global_nets})
+            labels.append(_label(kind, point, away, lambda tag: _uuid(namespace, tag, *ident)))
+    return instance, labels, markers
+
+
+def _document(uid, paper, lib_symbols, markers, labels, symbols, sheets=(), root=False):
+    # Native order: item type, then UUID (KiCad's SCH_ITEM::cmp_items).
+    nodes = ['kicad_sch', ['version', SCH_VERSION], ['generator', Q(GENERATOR)],
+             ['generator_version', Q(GENERATOR_VERSION)], ['uuid', Q(uid)], ['paper', Q(paper)],
              ['lib_symbols', *[lib_symbols[k] for k in sorted(lib_symbols)]],
-             # Native order: item type, then UUID (KiCad's SCH_ITEM::cmp_items).
-             *sorted(markers, key=_item_uuid),
-             *sorted([x for x in labels if x[0] == 'label'], key=_item_uuid),
-             *sorted([x for x in labels if x[0] == 'global_label'], key=_item_uuid),
-             *sorted(symbols, key=_item_uuid),
-             ['sheet_instances', ['path', Q('/'), ['page', Q('1')]]]]
-    schematic = ('\n'.join(_dump(sheet)) + '\n').encode('utf-8')
+             *sorted(markers, key=_item_uuid)]
+    for kind in ('label', 'global_label', 'hierarchical_label'):
+        nodes += sorted([x for x in labels if x[0] == kind], key=_item_uuid)
+    nodes += sorted(symbols, key=_item_uuid) + sorted(sheets, key=_item_uuid)
+    if root:
+        nodes.append(['sheet_instances', ['path', Q('/'), ['page', Q('1')]]])
+    return ('\n'.join(_dump(nodes)) + '\n').encode('utf-8')
+
+
+def _project_file(project, root, sheets):
     project_file = dict(board=dict(design_settings=dict(defaults={}, diff_pair_dimensions=[], drc_exclusions=[],
                                                         rules={}, track_widths=[], via_dimensions=[])),
                         boards=[], libraries=dict(pinned_footprint_libs=[], pinned_symbol_libs=[]),
                         meta=dict(filename=project + '.kicad_pro', version=1),
                         net_settings=dict(classes=[], meta=dict(version=0)),
-                        pcbnew=dict(page_layout_descr_file=''), sheets=[[root, 'Root']], text_variables={},
+                        pcbnew=dict(page_layout_descr_file=''), sheets=sheets, text_variables={},
                         schematic=dict(top_level_sheets=[dict(filename=project + '.kicad_sch', name=project,
                                                               uuid=root)]))
-    pro = (json.dumps(project_file, indent=2, sort_keys=True) + '\n').encode('utf-8')
+    return (json.dumps(project_file, indent=2, sort_keys=True) + '\n').encode('utf-8')
+
+
+def _emit(resolved, units, global_nets, namespace, project):
+    root = _uuid(namespace, 'sheet', '/')
+    paper, placed = _pack(units)
+    endpoints, lib_symbols, symbols, labels, markers = {}, {}, [], [], []
+    for item, anchor in placed:
+        lib_symbols[item['comp']['lib_id']] = item['embedded']
+        symbol, unit_labels, unit_markers = _symbol(item, anchor, namespace, (item['comp']['id'],), project,
+                                                    '/' + root, endpoints, global_nets)
+        symbols.append(symbol)
+        labels += unit_labels
+        markers += unit_markers
+    schematic = _document(root, paper, lib_symbols, markers, labels, symbols, root=True)
+    pro = _project_file(project, root, [[root, 'Root']])
     return {project + '.kicad_pro': pro, project + '.kicad_sch': schematic}, root, paper
+
+
+def _sheet_symbol(child, pins, parent_file):
+    """Packing item for one child sheet symbol: ports become left-edge pins in name order."""
+    width = max(4 * GRID, -(-(max((len(p['name']) for p, _ in pins), default=0) + 2) * FONT // GRID) * GRID)
+    height = max(2, len(pins) + 1) * GRID
+    points = [(0, -2 * FONT), (max(width, (len(child['local_id']) + 1) * FONT), 0),
+              (max(width, (len(child['file']) + 1) * FONT), height + 2 * FONT)]
+    placed_pins = []
+    for index, (port, net) in enumerate(pins):
+        y = (index + 1) * GRID
+        length = (len(net['name']) + 3) * FONT  # The parent's label runs left from the pin.
+        points += [(-length - FONT * 2, y - FONT * 2), (FONT * 2, y + FONT * 2)]
+        placed_pins.append((port, net, y))
+    return dict(child=child, parent_file=parent_file, size=(width, height), pins=placed_pins, box=_box(points))
+
+
+def _sheet(item, anchor, namespace, project, path, page, endpoints):
+    """Native sheet symbol node, plus the parent segment's label on each sheet pin."""
+    child, (width, height) = item['child'], item['size']
+    x, y = anchor
+    key = (item['parent_file'], child['local_id'])
+    node = ['sheet', ['at', _mm(x), _mm(y)], ['size', _mm(width), _mm(height)],
+            ['exclude_from_sim', 'no'], ['in_bom', 'yes'], ['on_board', 'yes'], ['dnp', 'no'],
+            ['fields_autoplaced', 'yes'], ['stroke', ['width', '0.1524'], ['type', 'solid']],
+            ['fill', ['color', '0', '0', '0', '0']], ['uuid', Q(_uuid(namespace, 'sheet', *key))],
+            ['property', Q('Sheetname'), Q(child['local_id']), ['at', _mm(x), _mm(y - 711200), '0'],
+             ['show_name', 'no'], ['do_not_autoplace', 'no'], ['effects', FONT_EFFECTS, ['justify', 'left', 'bottom']]],
+            ['property', Q('Sheetfile'), Q(child['file']), ['at', _mm(x), _mm(y + height + 584200), '0'],
+             ['show_name', 'no'], ['do_not_autoplace', 'no'], ['effects', FONT_EFFECTS, ['justify', 'left', 'top']]]]
+    labels = []
+    for port, net, offset in item['pins']:
+        point = (x, y + offset)
+        owner = ('sheet_pin', child['id'], port['id'])
+        if point in endpoints and endpoints[point] != owner:
+            raise EmissionError('impossible_pin_endpoint', 'a sheet pin shares a connection point',
+                                '/ports/' + child['id'] + '/' + port['id'])
+        endpoints[point] = owner
+        node.append(['pin', Q(port['name']), port['direction'], ['at', _mm(point[0]), _mm(point[1]), '180'],
+                     ['uuid', Q(_uuid(namespace, 'sheet_pin', *key, port['id']))],
+                     ['effects', FONT_EFFECTS, ['justify', 'left']]])
+        labels.append(_label(net, point, 180, lambda tag: _uuid(namespace, tag, 'sheet_pin', *key, port['id'])))
+    node.append(['instances', ['project', Q(project), ['path', Q(path), ['page', Q(str(page))]]]])
+    return node, labels
+
+
+def _hierarchy(resolved, captured, intent_libraries, transforms, project):
+    """Per-sheet plans for a resolved-connectivity/2 record, validated before any output.
+
+    Segments come from ``local_nets`` with their AGENTEE-39 labels; the only
+    connections between sheets are declared ports. A port's name is also its
+    child segment's hierarchical label, so it must equal that segment's label.
+    """
+    sheets = {s['id']: s for s in resolved['hierarchy']}
+    root = next(s for s in sheets.values() if s['parent'] is None)
+    if root['file'] != project + '.kicad_sch':
+        raise EmissionError('layout_schema', 'the root sheet file must be the project schematic',
+                            '/hierarchy/' + root['id'])
+    for sheet in sheets.values():
+        location = '/hierarchy/' + sheet['id']
+        if not SHEET_FILE.fullmatch(sheet['file']):
+            raise EmissionError('hierarchy_file_unsupported', 'sheet files must be flat safe project files', location)
+        if sheet['parent'] is not None and not NAME.fullmatch(sheet['local_id']):
+            raise EmissionError('malformed_sheet_name', 'sheet name requires a safe local ID', location)
+    up = {(p['child'], p['child_net']): p for p in resolved['ports']}
+    views = {sid: dict(nets=[], no_connects=[], components=[], libraries=resolved['libraries'])
+             for sid in sheets}
+    nets = {}
+    for segment in resolved['local_nets']:
+        location = '/local_nets/' + segment['sheet'] + '/' + segment['id']
+        port = up.get((segment['sheet'], segment['id']))
+        if port is not None:
+            if not NAME.fullmatch(port['name']):
+                raise EmissionError('malformed_net_name', 'port name requires a safe label', location)
+            if port['name'] != segment['label']:
+                raise EmissionError('port_label_alias', 'a port must carry its child segment label; '
+                                    'two names for one segment are not emitted', location)
+        net = dict(id=segment['id'], name=segment['label'], terminals=segment['terminals'], port=port)
+        views[segment['sheet']]['nets'].append(net)
+        nets[segment['sheet'], segment['id']] = net
+    sheet_of = {}
+    for comp in resolved['components']:
+        views[comp['sheet']]['components'].append(comp)
+        sheet_of[comp['id']] = comp['sheet']
+    for nc in resolved['no_connects']:
+        views[sheet_of[nc['component']]]['no_connects'].append(nc)
+    plans, kids = {}, {}
+    for sid, view in views.items():
+        plans[sid] = _plan(view, captured, intent_libraries, transforms)
+        kids[sid] = sorted((s for s in sheets.values() if s['parent'] == sid), key=lambda s: s['local_id'])
+    below = {(sheets[p['child']]['parent'], p['parent_net']) for p in resolved['ports']}
+    for sid, view in views.items():
+        for net in view['nets']:
+            if not net['terminals'] and (sid, net['id']) not in below:
+                raise EmissionError('unanchored_segment', 'segment has no pin or sheet pin to carry its label',
+                                    '/local_nets/' + sid + '/' + net['id'])
+    items = {}
+    for sid in sheets:
+        items[sid] = [_sheet_symbol(child, sorted(((p, nets[sid, p['parent_net']]) for p in resolved['ports']
+                                                   if p['child'] == child['id']), key=lambda pn: pn[0]['name']),
+                                    sheets[sid]['file'])
+                      for child in kids[sid]]
+    return root, sheets, kids, plans, items
+
+
+def _emit_hierarchy(root, sheets, kids, plans, items, namespace, project):
+    """One native file per sheet; occurrence paths chain ancestor sheet-symbol UUIDs."""
+    root_uuid = _uuid(namespace, 'document', root['file'])
+    files, order, paths = {}, [], {root['id']: '/' + root_uuid}
+    pending = [root]
+    while pending:  # Pages in depth-first order, children by local ID.
+        sheet = pending.pop()
+        order.append(sheet)
+        for child in kids[sheet['id']]:
+            paths[child['id']] = paths[sheet['id']] + '/' + _uuid(namespace, 'sheet', sheet['file'], child['local_id'])
+        pending.extend(reversed(kids[sheet['id']]))
+    pages = {sheet['id']: index + 1 for index, sheet in enumerate(order)}
+    papers = {}
+    for sheet in order:
+        units, global_nets = plans[sheet['id']]
+        paper, placed = _pack(units + items[sheet['id']])
+        papers[sheet['file']] = paper
+        endpoints, lib_symbols, symbols, labels, markers, nodes = {}, {}, [], [], [], []
+        for item, anchor in placed:
+            if 'child' in item:
+                node, sheet_labels = _sheet(item, anchor, namespace, project, paths[sheet['id']],
+                                            pages[item['child']['id']], endpoints)
+                nodes.append(node)
+                labels += sheet_labels
+                continue
+            lib_symbols[item['comp']['lib_id']] = item['embedded']
+            key = (sheet['file'], item['comp']['local_id'])
+            symbol, unit_labels, unit_markers = _symbol(item, anchor, namespace, key, project, paths[sheet['id']],
+                                                        endpoints, global_nets)
+            symbols.append(symbol)
+            labels += unit_labels
+            markers += unit_markers
+        uid = root_uuid if sheet is root else _uuid(namespace, 'document', sheet['file'])
+        files[sheet['file']] = _document(uid, paper, lib_symbols, markers, labels, symbols, nodes,
+                                         root=sheet is root)
+    listed = [[root_uuid, 'Root']] + [[paths[s['id']].rsplit('/', 1)[1], s['local_id']] for s in order[1:]]
+    files[project + '.kicad_pro'] = _project_file(project, root_uuid, listed)
+    return files, root_uuid, papers[root['file']]
 
 
 def _table(kind, uris):
@@ -565,8 +739,12 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
             raise EmissionError('resolved_mismatch', 'supplied resolved record differs from fresh resolution')
         components = {c['id']: c for c in resolved['components']}
         namespace, project, transforms = _validate_layout(layout, components)
-        units, global_nets = _plan(resolved, captured_libraries, raw['libraries'], transforms)
-        files, root, paper = _emit(resolved, units, global_nets, namespace, project)
+        if resolved['schema'] == HIERARCHY_SCHEMA:
+            files, root, paper = _emit_hierarchy(*_hierarchy(resolved, captured_libraries, raw['libraries'],
+                                                             transforms, project), namespace, project)
+        else:
+            units, global_nets = _plan(resolved, captured_libraries, raw['libraries'], transforms)
+            files, root, paper = _emit(resolved, units, global_nets, namespace, project)
         if symbol_table is not None:
             files['sym-lib-table'] = _table('symbol', symbol_table)
         if footprint_table is not None:
