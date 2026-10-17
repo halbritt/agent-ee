@@ -204,3 +204,40 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(connection.execute(
                 'SELECT lcsc,resistance_min,resistance_max FROM resistor').fetchall(),
                 [('C1', '990', '1010')])
+
+    def test_sqlite_generated_extra_columns_are_not_silently_ignored(self):
+        import sqlite3
+        from agent_ee.catalog import COLUMNS
+        source = self.source()
+        with (self.root / 'owned.csv').open() as stream:
+            row = next(csv.DictReader(stream))
+        database = self.root / 'generated.sqlite3'
+        with sqlite3.connect(database) as connection:
+            connection.execute('CREATE TABLE components (' + ','.join(column + ' TEXT' for column in COLUMNS)
+                               + ", ignored TEXT GENERATED ALWAYS AS ('extra') VIRTUAL)")
+            connection.execute('INSERT INTO components (' + ','.join(COLUMNS) + ') VALUES ('
+                               + ','.join('?' for _ in COLUMNS) + ')', tuple(row.values()))
+        source['volumes'] = [dict(path=database.name, sha256=digest(database), size_bytes=database.stat().st_size, format='sqlite')]
+        with self.assertRaisesRegex(ValueError, 'columns'):
+            capture_catalog(source, self.root, self.root / 'generated')
+
+    def test_rehashed_corrupt_sqlite_and_inconsistent_derived_table_are_unknown(self):
+        import sqlite3
+        from agent_ee.catalog import catalog_check
+        destination = self.root / 'snapshot'
+        capture_catalog(self.source(), self.root, destination)
+        database = destination / 'catalog.sqlite3'
+        manifest_path = destination / 'manifest.json'
+        for corrupt in (False, True):
+            with self.subTest(corrupt=corrupt):
+                if corrupt:
+                    database.write_bytes(b'not a SQLite database')
+                else:
+                    with sqlite3.connect(database) as connection:
+                        connection.execute("UPDATE resistor SET resistance_min='1'")
+                manifest = json.loads(manifest_path.read_text())
+                manifest['database'].update(sha256=digest(database), size_bytes=database.stat().st_size)
+                manifest_path.write_text(json.dumps(manifest))
+                result = catalog_check(destination, digest(manifest_path))
+                self.assertEqual(result['execution'], 'failed')
+                self.assertEqual(result['outcome'], 'unknown')

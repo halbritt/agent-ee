@@ -1,6 +1,7 @@
 """Pinned local catalog capture and offline, content-bound snapshot reads."""
 import csv
 import ctypes
+from contextlib import closing
 from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
@@ -226,15 +227,15 @@ def csv_rows(payload):
 
 
 def sqlite_rows(payload):
-    with sqlite3.connect(':memory:') as connection:
+    with closing(sqlite3.connect(':memory:')) as connection:
         connection.deserialize(payload)
         connection.execute('PRAGMA trusted_schema=OFF')
         if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
             raise ValueError('corrupt source SQLite')
         if connection.execute("SELECT type FROM sqlite_master WHERE name='components'").fetchall() != [('table',)]:
             raise ValueError('source requires components table')
-        columns = connection.execute('PRAGMA table_info(components)').fetchall()
-        if tuple(column[1] for column in columns) != COLUMNS:
+        columns = connection.execute('PRAGMA table_xinfo(components)').fetchall()
+        if tuple(column[1] for column in columns) != COLUMNS or any(column[6] for column in columns):
             raise ValueError('missing or unsupported SQLite columns/order')
         for cells in connection.execute('SELECT * FROM components ORDER BY lcsc'):
             if any(not isinstance(cell, str) for cell in cells):
@@ -299,7 +300,7 @@ def row_counts(rows):
 
 def write_database(path, rows):
     declarations = ','.join(f'{key} ' + ('INTEGER' if key in ('stock', 'is_basic', 'is_preferred') else 'TEXT') for key in DERIVED_COLUMNS)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         connection.execute('PRAGMA page_size=4096')
         connection.execute('CREATE TABLE component_base (' + declarations + ', PRIMARY KEY(lcsc))')
         placeholders = ','.join('?' for _ in DERIVED_COLUMNS)
@@ -353,7 +354,7 @@ def capture_catalog(source_manifest, source_root, destination):
 
 
 def read_database(payload):
-    with sqlite3.connect(':memory:') as connection:
+    with closing(sqlite3.connect(':memory:')) as connection:
         connection.deserialize(payload)
         connection.execute('PRAGMA trusted_schema=OFF')
         if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
@@ -364,7 +365,7 @@ def read_database(payload):
             raise ValueError('unsupported snapshot tables')
         for table in sorted(expected):
             columns = DERIVED_COLUMNS if table == 'component_base' else DERIVED_COLUMNS + category_columns(table)
-            if tuple(column[1] for column in connection.execute(f'PRAGMA table_info({table})')) != columns:
+            if tuple(column[1] for column in connection.execute(f'PRAGMA table_xinfo({table})')) != columns:
                 raise ValueError('missing snapshot columns')
         rows = []
         for cells in connection.execute('SELECT * FROM component_base ORDER BY CAST(substr(lcsc,2) AS INTEGER)'):
