@@ -12,14 +12,16 @@ The qualified profile is KiCad 10.0.7, `net_settings.meta.version == 5`.
 The [empty native project](../fixtures/netclass-completeness/native.kicad_pro)
 was generated through `pcbnew.SETTINGS_MANAGER.LoadProject/SaveProject` using
 10.0.7-10.0.7~ubuntu24.04.1. Its [generator](../fixtures/netclass-completeness/generate.py)
-uses no third-party design. Qualification records its hash and the exact primary
+uses no third-party design; `LoadProject` reports false for the new, absent project,
+so only the save result is checked. Qualification records its hash and the exact primary
 source hashes. The writer and loader are in
 [common/project/net_settings.cpp](https://github.com/KiCad/kicad/blob/10.0.7/common/project/net_settings.cpp)
 (lines 38, 65–224); the initialized defaults are in
 [common/netclass.cpp](https://github.com/KiCad/kicad/blob/10.0.7/common/netclass.cpp)
 (lines 58–99). Downloaded source is not redistributed.
 
-Default is selected by exact name, independent of list order. Every native
+Default is selected by exact, case-sensitive name, independent of list order: a
+later Default is still judged and a first class named `default` is not. Every native
 writer field is required on Default. Missing Default violates this explicit
 completeness policy, even though KiCad can supply implicit defaults in a new
 project. Custom classes may omit inherited fields. Duplicate names and invalid
@@ -32,8 +34,9 @@ per-class missing keys. Existing coordinator evidence sealing and public
 verification cover this report. Unreadable or malformed projects produce
 `execution=malformed`, `outcome=unknown`; they cannot establish a defect witness.
 
-The tests exercise the native fixture, each missing Default field, zero width,
-reordering and inheritance, missing/duplicate Default, malformed bytes,
+The tests regenerate the fixture with the host's native writer and require
+identical bytes (toolchain-gated). They exercise each missing Default field, zero width,
+a non-first Default, case-sensitive naming, inheritance, missing/duplicate Default, malformed bytes,
 unsupported versions, mutable project/immutable policy ownership and tampering.
 They establish structural conformance. Junction stripping, wire plotting and
 absence of native ERC findings have not been reproduced by this qualification.
