@@ -140,7 +140,13 @@ coordinator. It runs the declared tool itself without network access and stores 
 receipt outside the writer's writable mount. Writer statements and writer-made
 files are never receipts. A receipt is provenance only: it neither satisfies a
 check nor replaces the fresh checks of the captured proposal. An unknown tool version
-is recorded as unknown.
+is recorded as unknown. The coordinator never follows a link or opens a special entry that
+the tool planted in its scratch directory. Write sources, artifacts, backend reports, executor
+records and adopted outputs are opened one component at a time without following links. A host
+file is therefore never hashed or copied into the design through such a link
+([details](stage-receipts.md#links-and-special-files-planted-by-the-tool)). The shared executor
+still writes its own record files through a link planted at their paths. The receipt refuses that
+step, but the write itself happens in the executor.
 
 The implementation call receives baseline and campaign history in its prompt.
 That is additional inference exposure compared with an initial reviewer. The
