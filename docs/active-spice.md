@@ -48,7 +48,8 @@ explicitly inventoried as excluded. All other populated components need models.
 voltage must equal DC bias. This is a finite-rise, piecewise-linear step, not an
 instantaneous mathematical discontinuity. Supply names do not imply voltages.
 
-`analyses` has unique safe IDs and at least one measurement per analysis:
+`analyses` has unique safe IDs (`models` and `version` are reserved) and at
+least one measurement per analysis:
 
 | Kind | Analysis fields | Supported measurement |
 | --- | --- | --- |
