@@ -122,9 +122,9 @@ def _assignments(candidates, budget):
             return
         cid = order[index]
         for native in candidates[cid]:
-            budget['steps'] += 1
-            if budget['steps'] > budget['limit']:
+            if budget['steps'] >= budget['limit']:
                 raise Unsupported('exact graph search limit exhausted')
+            budget['steps'] += 1
             if native in used:
                 continue
             mapping[cid] = native
@@ -209,6 +209,7 @@ def compare(expected, actual, policy):
     candidates = {cid: sorted(nid for nid, native in actual['components'].items()
                   if comparison_key(comp) == comparison_key(native) and comp['pins'] == native['pins'])
                   for cid, comp in expected['components'].items()}
+    budget = {'steps': 0, 'limit': policy.get('max_search', MAX_SEARCH)}
     try:
         for cid, anchor in policy['anchors'].items():
             if cid not in candidates:
@@ -217,7 +218,6 @@ def compare(expected, actual, policy):
                 if all(actual['components'][nid].get(k) == v for k, v in anchor.items())]
         if any(not matches for matches in candidates.values()):
             raise Unsupported('unresolvable component key, physical pin inventory or anchor')
-        budget = {'steps': 0, 'limit': policy.get('max_search', MAX_SEARCH)}
         expected_colors, native_colors = _refined_colors(expected, actual)
         refined = {cid: [nid for nid in matches if expected_colors[cid] == native_colors[nid]]
                    for cid, matches in candidates.items()}
@@ -250,7 +250,7 @@ def compare(expected, actual, policy):
         report['correspondence_evaluated'] = predicate == 'instance' and report['execution'] == 'ok'
         report['search_steps'] = budget['steps']
     except Unsupported as exc:
-        report.update(execution='unsupported', outcome='unknown', reason=str(exc))
+        report.update(execution='unsupported', outcome='unknown', reason=str(exc), search_steps=budget['steps'])
     return report
 
 
