@@ -273,8 +273,9 @@ class DeclarationAndContextTest(unittest.TestCase):
             checks = [{'id': 'place', 'kind': 'placement', 'execution': 'ok', 'outcome': 'defect', 'summary': 's',
                        'details': {'hard_failures': [1]}, 'evidence': []},
                       {'id': 'drc', 'kind': 'drc', 'execution': 'ok', 'outcome': 'defect'}]
-            findings = [{'source': 'check', 'status': 'accepted', 'local_id': 'place'},
-                        {'source': 'check', 'status': 'accepted', 'local_id': 'drc'},
+            findings = [{'id': 'check/place', 'source': 'check', 'status': 'accepted', 'local_id': 'place'},
+                        {'id': 'check/drc', 'source': 'check', 'status': 'accepted', 'local_id': 'drc'},
+                        {'id': 'check/drc', 'source': 'check', 'status': 'accepted', 'local_id': 'place'},
                         {'source': 'reviewer', 'status': 'accepted', 'local_id': 'place'}]
             write_json(run / 'result.json', {'checks': checks, 'findings': findings, 'artifact_hashes': {
                 'work/place/placement-probe.json': digest(run / 'work/place/placement-probe.json')}})
@@ -321,7 +322,8 @@ class WriterOnlyRecordTest(unittest.TestCase):
             (tree / SCHEMATIC).write_text('(kicad_sch)')
         self.work = root / 'implementations/1'
         self.work.mkdir(parents=True)
-        self.manifest = {'candidate_id': 'c' * 64, 'files': {BOARD: 'a', SCHEMATIC: 'b'},
+        self.manifest = {'candidate_id': 'c' * 64, 'files': {BOARD: digest(self.source / BOARD),
+                                                             SCHEMATIC: digest(self.source / SCHEMATIC)},
                          'scope': {'board': BOARD, 'schematic': SCHEMATIC, 'stages': {'schema': 'agent-ee.stages/1'}}}
         self.declaration = {'schema': pa.ADAPTER_SCHEMA, 'helper': None, 'policy': None,
                             'fixed_footprints': [FP_J], 'timeout_s': 10}
@@ -778,6 +780,7 @@ class ReceiptIterationTest(unittest.TestCase):
     def test_helper_failure_leaves_iteration_incomplete_without_substitution(self):
         write_json(self.source / POLICY, {**read_json(self.source / POLICY), 'step_budget': 1})
         shutil.copyfile(self.source / POLICY, self.design / POLICY)
+        self.manifest['files'][POLICY] = digest(self.source / POLICY)
         with self.assertRaisesRegex(ValueError, 'placement helper failed .*no default placement substituted'):
             self.iterate()
         self.assertUnadopted()

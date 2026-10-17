@@ -22,11 +22,14 @@ from .symbol_library import LibraryError, children, parse_sexpr
 
 ADAPTER_SCHEMA = 'agent-ee.placement-adapter/1'
 SCOPE_SCHEMA = 'agent-ee.placement-write-scope/1'
-RECORD_SCHEMA = 'agent-ee.placement-adapter-record/1'
+RECORD_SCHEMA = 'agent-ee.placement-adapter-record/2'
+BINDING_SCHEMA = 'agent-ee.placement-binding/1'
 CONTEXT_SCHEMA = 'agent-ee.placement-writer-context/1'
 DRIVER_SCHEMA = 'agent-ee.placement-driver/1'
-RECORD_KEYS = {'schema', 'implementation', 'source_candidate_id', 'stage', 'declaration_sha256', 'board',
-               'protected', 'helper', 'proposal_scope', 'status', 'error', 'authority'}
+RECORD_KEYS = {'schema', 'implementation', 'source_candidate_id', 'stage', 'declaration_sha256', 'binding_sha256',
+               'board', 'protected', 'protected_refs', 'helper', 'writer_scope', 'proposal_scope', 'status',
+               'error', 'authority'}
+ATTEMPT_STATUSES = ('incomplete', 'refused', 'cancelled')
 HELPER_KEYS = {'receipt', 'request_sha256', 'receipt_id', 'status', 'receipt_sha256', 'result_sha256', 'scope'}
 HELPERS = ('agent-ee.placer/1',)
 STEP = 'agent-ee-placer'
@@ -41,6 +44,8 @@ MAX_PLACES = 32
 FULL_TURN = 360 * 10 ** MAX_PLACES
 QUARTER_TURNS = tuple(turn * 10 ** MAX_PLACES for turn in (0, 90, 180, 270))
 MAX_TOKEN = 128
+# The exact transform family a placement iteration may apply; anything else is refused.
+TRANSFORMS = 'translations and quarter-turn rotations (0, 90, 180 or 270 degrees)'
 # Only plain decimal and exponent forms, as pcbnew saves them, are read as numbers. Decimal()
 # alone would also accept forms such as `9_0`, ` 90` or `nan` that KiCad's parser reads differently.
 NUMBER = re.compile(r'-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?\Z')
@@ -106,6 +111,65 @@ def bind_declaration(declaration, manifest, mutable_inputs):
         if declaration['policy'] not in files or declaration['policy'] in mutable_inputs:
             raise ValueError('placement policy must be a captured immutable input')
     return {**declaration, 'board': board, 'schematic': schematic}
+
+
+def envelope_fixed(manifest, inputs, mutable_inputs):
+    """Fixed references of every captured envelope that a placement check consumes.
+
+    Read from the captured envelope bytes, never from an authored list, so an incomplete
+    fixed_footprints declaration cannot leave an envelope-fixed connector movable."""
+    from .board_envelope import validate
+    found = {}
+    for spec in manifest['scope'].get('checks', []):
+        params = spec.get('params') if isinstance(spec.get('params'), dict) else {}
+        rel = params.get('envelope') if spec.get('kind') == 'placement' else None
+        if rel is None or rel in found:
+            continue
+        if not isinstance(rel, str) or rel not in manifest['files'] or rel in mutable_inputs:
+            raise ValueError(f'placement envelope {rel!r} must be a captured immutable input')
+        path = Path(inputs) / rel
+        if path.is_symlink() or not path.is_file() or digest(path) != manifest['files'][rel]:
+            raise ValueError(f'captured placement envelope {rel!r} changed')
+        record = validate(path.read_bytes())
+        found[rel] = {'path': rel, 'sha256': manifest['files'][rel], 'envelope_id': record['envelope_id'],
+                      'references': sorted(f['reference'] for f in record['fixed_footprints'])}
+    return [found[rel] for rel in sorted(found)]
+
+
+def _policy(inputs, bound, manifest):
+    if bound['policy'] is None:
+        return {'fixed_refs': []}
+    path = Path(inputs) / bound['policy']
+    if path.is_symlink() or not path.is_file() or digest(path) != manifest['files'][bound['policy']]:
+        raise ValueError('captured placement policy changed')
+    policy = read_json(path)
+    if (not isinstance(policy, dict) or not isinstance(policy.get('fixed_refs'), list) or
+            any(not isinstance(r, str) for r in policy['fixed_refs'])):
+        raise ValueError('placement policy must be an agent-ee.packing-policy/1 object with fixed_refs')
+    return policy
+
+
+def binding(declaration, manifest, inputs, mutable_inputs):
+    """Coordinator binding of the declaration to one captured candidate's immutable inputs.
+
+    Returns (binding record, bound declaration, policy, protected UUIDs, protected references).
+    Every declared UUID, policy reference and envelope-fixed reference must resolve to exactly
+    one footprint of the captured source board, or the binding is refused."""
+    bound = bind_declaration(declaration, manifest, mutable_inputs)
+    inputs = Path(inputs)
+    policy = _policy(inputs, bound, manifest)
+    envelopes = envelope_fixed(manifest, inputs, mutable_inputs)
+    board = inputs / bound['board']
+    if board.is_symlink() or not board.is_file() or digest(board) != manifest['files'][bound['board']]:
+        raise ValueError('captured placement board changed')
+    refs = sorted(set(policy['fixed_refs']) | {r for e in envelopes for r in e['references']})
+    protected, protected_refs = protected_footprints(board.read_bytes(), bound['fixed_footprints'], refs)
+    record = {'schema': BINDING_SCHEMA, 'declaration_sha256': identity(validate_declaration(declaration)),
+              'board': bound['board'], 'schematic': bound['schematic'],
+              'policy': None if bound['policy'] is None else {
+                  'path': bound['policy'], 'sha256': manifest['files'][bound['policy']]},
+              'envelopes': envelopes, 'policy_fixed_refs': sorted(set(policy['fixed_refs']))}
+    return record, bound, policy, protected, protected_refs
 
 
 # Strict structural comparison of complete saved boards.
@@ -439,44 +503,62 @@ def qualify_receipt(receipt_dir, receipt, board, protected):
     return {'result_sha256': digest(result_path), 'scope': scope}
 
 
+def _record(work, manifest, declaration, binding_record, bound, protected, refs):
+    return {'schema': RECORD_SCHEMA, 'implementation': int(Path(work).name),
+            'source_candidate_id': manifest['candidate_id'], 'stage': 'placement',
+            'declaration_sha256': identity(validate_declaration(declaration)),
+            'binding_sha256': identity(binding_record), 'board': bound['board'], 'protected': protected,
+            'protected_refs': refs, 'helper': None, 'writer_scope': None, 'proposal_scope': None,
+            'status': 'incomplete', 'error': None, 'authority': 'provenance-only'}
+
+
+def _receipt_name(index):
+    if isinstance(index, bool) or not isinstance(index, int) or index < 1:
+        raise ValueError('placement receipt index must be a positive integer')
+    return f'receipts/{index}-{STEP}'
+
+
 def run_placement_iteration(work, design, source_inputs, manifest, state, declaration, deadline, *,
-                            receipts=None, cancellation=None):
-    """Run the declared helper once, adopt only a qualified proposal, then prove the write scope.
+                            receipts=None, cancellation=None, receipt_index=1):
+    """Guard the writer's proposal, run the declared helper once, adopt only a qualified proposal,
+    then prove the original-to-final write scope.
 
     Called by the campaign under its existing writer lease, after the writer session and
-    the existing inventory checks. Any refusal, failure, timeout or cancellation raises and
-    leaves the iteration incomplete; the retained record and receipt index stay anchored.
+    the existing inventory checks. The writer's own delivered board is held to the placement
+    scope before any helper runs, so a helper cannot overwrite and conceal an illegal edit.
+    `receipt_index` comes from the campaign's one step-plan allocator. Any refusal, failure,
+    timeout or cancellation raises and leaves the iteration incomplete; the retained record
+    keeps the original exception, and a failure to write the record never replaces it.
     """
-    work, design = Path(work), Path(design)
+    work, design, source_inputs = Path(work), Path(design), Path(source_inputs)
     if not is_placement_iteration(state, manifest):
         raise ValueError('placement adapter runs only when the earliest failing stage is placement')
-    bound = bind_declaration(declaration, manifest, state['mutable_inputs'])
+    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs,
+                                                             state['mutable_inputs'])
     board = bound['board']
-    source_board = (Path(source_inputs) / board).read_bytes()
-    policy = read_json(Path(source_inputs) / bound['policy']) if bound['policy'] else {'fixed_refs': []}
-    protected, refs = protected_footprints(source_board, bound['fixed_footprints'], policy['fixed_refs'])
-    record = {'schema': RECORD_SCHEMA, 'implementation': int(work.name),
-              'source_candidate_id': manifest['candidate_id'], 'stage': 'placement',
-              'declaration_sha256': identity(validate_declaration(declaration)), 'board': board,
-              'protected': protected, 'helper': None, 'proposal_scope': None,
-              'status': 'incomplete', 'error': None, 'authority': 'provenance-only'}
+    record = _record(work, manifest, declaration, binding_record, bound, protected, refs)
     ran = False
+    failure = None
     try:
+        record['writer_scope'] = proposal_scope(source_inputs, design, board, protected)
+        if record['writer_scope']['status'] != 'allowed':
+            record['status'] = 'refused'
+            raise ValueError('placement writer proposal changed more than footprint transforms: '
+                             f"{record['writer_scope']['violations']}")
         if bound['helper'] is not None:
             if receipts is None:
                 from . import stage_receipts as receipts
             if 'stage_receipts' not in state:
                 raise ValueError('campaign predates stage receipts; start a fresh campaign to run placement helpers')
-            index = len(list((work / 'receipts').glob('*'))) + 1 if (work / 'receipts').exists() else 1
-            step_dir = work / 'placement' / str(index)
+            name = _receipt_name(receipt_index)
+            step_dir = work / 'placement' / str(receipt_index)
             spec, request = prepare_step(step_dir, (design / board).read_bytes(), policy, bound, refs)
-            receipt_dir = work / 'receipts' / f'{index}-{STEP}'
-            record['helper'] = {'receipt': receipt_dir.relative_to(work).as_posix(),
-                                'request_sha256': identity(request), 'status': None}
+            receipt_dir = work / name
+            record['helper'] = {'receipt': name, 'request_sha256': identity(request), 'status': None}
             ran = True
             receipt = receipts.run_step(receipt_dir, design, spec, {
                 'implementation': record['implementation'], 'source_candidate_id': manifest['candidate_id'],
-                'receipt_index': index}, deadline=deadline, cancellation=cancellation)
+                'receipt_index': receipt_index}, deadline=deadline, cancellation=cancellation)
             record['helper'].update(receipt_id=receipt['receipt_id'], status=receipt['status'],
                                     receipt_sha256=digest(receipt_dir / 'receipt.json'))
             record['helper'].update(qualify_receipt(receipt_dir, receipt, board, protected))
@@ -487,61 +569,84 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
             record['status'] = 'refused'
             raise ValueError(f"placement iteration changed more than footprint transforms: {scope['violations']}")
         record['status'] = 'proposed'
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
+        failure = exc
         record.update(status='cancelled', error='KeyboardInterrupt')
         raise
     except (ValueError, OSError, KeyError, TypeError) as exc:
+        failure = exc
         record['error'] = f'{type(exc).__name__}: {exc}'
         raise
     finally:
-        write_json(work / 'placement-adapter.json', record)
+        try:
+            write_json(work / 'placement-adapter.json', record)
+        except OSError as exc:
+            if failure is None:
+                raise
+            # The original failure stays the reported cause; the missing record is verified as absent.
+            failure.add_note(f'placement adapter record not retained: {type(exc).__name__}: {exc}')
         if ran:
             state['stage_receipts'][work.name] = receipts.bind_implementation(
                 work, design, record['implementation'], manifest['candidate_id'])
     return record
 
 
-def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, mutable_inputs, *, receipts=None):
+def _stored(work, kind):
+    path = Path(work) / 'placement-adapter.json'
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('placement adapter record missing')
+    stored = read_json(path)
+    if (not isinstance(stored, dict) or set(stored) != RECORD_KEYS or stored['schema'] != RECORD_SCHEMA or
+            stored['authority'] != 'provenance-only'):
+        raise ValueError(f'placement record is not {kind}')
+    return stored
+
+
+def _helper_receipt(work, bound, manifest, receipts, receipt_index):
+    """Validated coordinator receipt, its step directory and the coordinator-derived step."""
+    name = _receipt_name(receipt_index)
+    receipt_dir = Path(work) / name
+    receipt = receipts.validate_receipt(receipt_dir, binding={
+        'implementation': int(Path(work).name), 'source_candidate_id': manifest['candidate_id'],
+        'receipt_index': receipt_index})
+    step_dir = Path(work) / 'placement' / str(receipt_index)
+    if receipt['spec'] != receipts.validate_step(step_declaration(step_dir, bound), host=False):
+        raise ValueError('placement receipt step differs from the placement declaration')
+    return name, receipt_dir, receipt, step_dir
+
+
+def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, mutable_inputs, *, receipts=None,
+                  receipt_index=1):
     """Recompute a proposed placement record from retained receipts and the captured proposal.
 
     Every field is re-derived; none is copied from the stored record. The captured proposal
-    must be inside the placement write scope now, whatever the record claims.
+    must be inside the placement write scope now, whatever the record claims, and so must the
+    writer's own delivered design that the helper started from.
     """
-    work = Path(work)
-    stored = read_json(work / 'placement-adapter.json')
-    bound = bind_declaration(declaration, manifest, mutable_inputs)
-    if (not isinstance(stored, dict) or set(stored) != RECORD_KEYS or stored['schema'] != RECORD_SCHEMA or
-            stored['status'] != 'proposed' or stored['error'] is not None or
-            stored['authority'] != 'provenance-only'):
+    work, source_inputs = Path(work), Path(source_inputs)
+    stored = _stored(work, 'a proposed placement iteration')
+    if stored['status'] != 'proposed' or stored['error'] is not None:
         raise ValueError('placement record is not a proposed placement iteration')
-    source_board = (Path(source_inputs) / bound['board']).read_bytes()
-    policy = read_json(Path(source_inputs) / bound['policy']) if bound['policy'] else {'fixed_refs': []}
-    protected, refs = protected_footprints(source_board, bound['fixed_footprints'], policy['fixed_refs'])
+    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs)
     scope = proposal_scope(source_inputs, proposal_inputs, bound['board'], protected)
     if scope['status'] != 'allowed' or scope['violations']:
         raise ValueError(f"captured proposal is outside the placement write scope: {scope['violations']}")
-    expected = {'schema': RECORD_SCHEMA, 'implementation': int(work.name),
-                'source_candidate_id': manifest['candidate_id'], 'stage': 'placement',
-                'declaration_sha256': identity(validate_declaration(declaration)), 'board': bound['board'],
-                'protected': protected, 'helper': None, 'proposal_scope': scope,
-                'status': 'proposed', 'error': None, 'authority': 'provenance-only'}
+    expected = {**_record(work, manifest, declaration, binding_record, bound, protected, refs),
+                'writer_scope': scope, 'proposal_scope': scope, 'status': 'proposed'}
     if bound['helper'] is not None:
         if receipts is None:
             from . import stage_receipts as receipts
         helper = stored['helper']
         if not isinstance(helper, dict) or set(helper) != HELPER_KEYS:
             raise ValueError('placement record lacks the declared helper receipt')
-        index, _, step = str(helper['receipt']).removeprefix('receipts/').partition('-')
-        if (helper['receipt'] != f'receipts/{index}-{STEP}' or step != STEP or not index.isdigit() or
-                index.startswith('0')):
+        if helper['receipt'] != _receipt_name(receipt_index):
             raise ValueError('placement record names no coordinator placement receipt')
-        receipt_dir = work / helper['receipt']
-        receipt = receipts.validate_receipt(receipt_dir, binding={
-            'implementation': int(work.name), 'source_candidate_id': manifest['candidate_id'],
-            'receipt_index': int(index)})
-        step_dir = work / 'placement' / index
-        if receipt['spec'] != receipts.validate_step(step_declaration(step_dir, bound), host=False):
-            raise ValueError('placement receipt step differs from the placement declaration')
+        name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index)
+        # The writer's delivered design is the receipt's retained input copy.
+        expected['writer_scope'] = proposal_scope(source_inputs, receipt_dir / 'inputs', bound['board'], protected)
+        if expected['writer_scope']['status'] != 'allowed':
+            raise ValueError('placement writer proposal before the helper is outside the placement write scope: '
+                             f"{expected['writer_scope']['violations']}")
         # The request is re-derived from the receipt's retained input board, never trusted.
         request = helper_request((receipt_dir / 'inputs' / bound['board']).read_bytes(), policy, refs)
         if read_json(step_dir / 'request' / 'request.json') != request:
@@ -549,12 +654,72 @@ def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, m
         # The captured proposal is exactly the adopted helper output over the delivered design.
         if {**receipt['inputs'], **receipt['outputs']} != _files(proposal_inputs):
             raise ValueError('captured proposal differs from the adopted placement helper output')
-        expected['helper'] = {'receipt': helper['receipt'], 'request_sha256': identity(request),
+        expected['helper'] = {'receipt': name, 'request_sha256': identity(request),
                               'receipt_id': receipt['receipt_id'], 'status': receipt['status'],
                               'receipt_sha256': digest(receipt_dir / 'receipt.json'),
                               **qualify_receipt(receipt_dir, receipt, bound['board'], protected)}
     if expected != stored:
         raise ValueError('placement record differs from retained receipts or captured proposal')
+    return stored
+
+
+def verify_attempt(work, source_inputs, design, manifest, declaration, mutable_inputs, *, receipts=None,
+                   receipt_index=1):
+    """Verify the retained record of an incomplete placement iteration.
+
+    Asserts nothing about adoption or completion. The bindings, protected set, any helper
+    receipt and every scope proof are recomputed from retained coordinator records and the
+    unchanged scratch design; a forged or relabelled outcome is refused.
+    """
+    work, source_inputs, design = Path(work), Path(source_inputs), Path(design)
+    stored = _stored(work, 'an incomplete placement attempt')
+    if (stored['status'] not in ATTEMPT_STATUSES or not isinstance(stored['error'], str) or
+            not stored['error'] or (stored['status'] == 'cancelled') != (stored['error'] == 'KeyboardInterrupt')):
+        raise ValueError('placement record is not an incomplete placement attempt')
+    binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs)
+    expected = {**_record(work, manifest, declaration, binding_record, bound, protected, refs),
+                'status': stored['status'], 'error': stored['error']}
+    helper = stored['helper']
+    receipt = None
+    if helper is not None:
+        if bound['helper'] is None or not isinstance(helper, dict):
+            raise ValueError('placement attempt names an undeclared helper')
+        if receipts is None:
+            from . import stage_receipts as receipts
+        name = _receipt_name(receipt_index)
+        receipt_dir = work / name
+        step_dir = work / 'placement' / str(receipt_index)
+        if (receipt_dir / 'receipt.json').exists():
+            name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index)
+            delivered = receipt_dir / 'inputs'
+        elif receipt_dir.exists() or receipt_dir.is_symlink():
+            raise ValueError('placement attempt receipt directory without a coordinator receipt')
+        else:
+            # The step never launched (for example an exhausted deadline); nothing was adopted.
+            delivered = design
+        request = helper_request((delivered / bound['board']).read_bytes(), policy, refs)
+        if read_json(step_dir / 'request' / 'request.json') != request:
+            raise ValueError('placement helper request differs from the coordinator derivation')
+        expected['helper'] = {'receipt': name, 'request_sha256': identity(request), 'status': None}
+        if receipt is not None:
+            expected['helper'].update(receipt_id=receipt['receipt_id'], status=receipt['status'],
+                                      receipt_sha256=digest(receipt_dir / 'receipt.json'))
+            try:
+                expected['helper'].update(qualify_receipt(receipt_dir, receipt, bound['board'], protected))
+            except ValueError:
+                pass
+        expected['writer_scope'] = proposal_scope(source_inputs, delivered, bound['board'], protected)
+    elif stored['writer_scope'] is not None:
+        expected['writer_scope'] = proposal_scope(source_inputs, design, bound['board'], protected)
+    if stored['proposal_scope'] is not None:
+        expected['proposal_scope'] = proposal_scope(source_inputs, design, bound['board'], protected)
+    if stored['status'] == 'refused' and not any(
+            s is not None and s['status'] == 'refused' for s in (expected['writer_scope'], expected['proposal_scope'])):
+        raise ValueError('refused placement attempt has no refused scope proof')
+    if expected['proposal_scope'] is not None and expected['proposal_scope']['status'] == 'allowed':
+        raise ValueError('placement attempt with an allowed final scope is not incomplete')
+    if expected != stored:
+        raise ValueError('placement attempt record differs from retained receipts or scratch design')
     return stored
 
 
@@ -575,8 +740,10 @@ def writer_context(run, manifest):
             entry['probe'] = read_json(run / probe)
         checks.append(entry)
     ids = {c['id'] for c in checks}
+    # A collected check finding carries id `check/<check id>` and local_id `<check id>`.
     findings = [f for f in result.get('findings', []) if f.get('source') == 'check' and
-                f.get('status') == 'accepted' and f.get('local_id') in ids]
+                f.get('status') == 'accepted' and f.get('local_id') in ids and
+                f.get('id') == f"check/{f['local_id']}"]
     return {'schema': CONTEXT_SCHEMA, 'stage': 'placement', 'checks': checks, 'findings': findings,
             'routing_feedback': {'status': 'unavailable',
                                  'reason': 'no captured AGENTEE-93 routed-attempt receipt is integrated'},
