@@ -51,43 +51,51 @@ jobs:
       - name: Documentation check
         run: docker run --rm --network none -w /opt/agent-ee "$IMAGE" python3 scripts/check_docs.py
 
-      - name: RC control, checks-only (all checks must pass)
-        id: control
-        uses: ./
-        with:
-          scope: fixtures/rc/control.scope.json
-          output-directory: build/ci/rc-control
-          max-seconds: "900"
-          artifact-name: rc-control-run
-          image: ${{ env.IMAGE }}
-
-      - name: RC seeded defect, checks-only (expected to fail)
-        id: seeded
-        continue-on-error: true
-        uses: ./
-        with:
-          scope: fixtures/rc/seeded.scope.json
-          output-directory: build/ci/rc-seeded
-          max-seconds: "900"
-          artifact-name: rc-seeded-run
-          image: ${{ env.IMAGE }}
-
-      - name: Assert fixture verdicts from result.json
-        env:
-          CONTROL_VERDICT: ${{ steps.control.outputs.verdict }}
-          SEEDED_OUTCOME: ${{ steps.seeded.outcome }}
-          SEEDED_VERDICT: ${{ steps.seeded.outputs.verdict }}
+      # Run directories hold copies of the candidate inputs, including third-party
+      # design files (the FOME-MC-origin RC fixture and stock KiCad library
+      # captures). This public repository's CI judges them in place and uploads
+      # no run payload while publication rights for that material are unresolved,
+      # so it does not call action.yml, which always uploads the run directory.
+      - name: RC control and seeded fixtures, checks-only, judged in place
         run: |
-          set -euo pipefail
-          test "$CONTROL_VERDICT" = checks_passed
-          test "$SEEDED_OUTCOME" = failure
-          test "$SEEDED_VERDICT" = check_failed
+          # GitHub runs bash with -e; review and verify exit statuses are
+          # recorded and judged by the gate, not treated as step failures.
+          set +e -uo pipefail
           workspace=$(realpath "$GITHUB_WORKSPACE")
-          gate() {
-            docker run --rm --network none --user "$(id -u):$(id -g)" -v "$workspace:$workspace" "$IMAGE" \
-              python3 /opt/agent-ee/scripts/action_gate.py "$@" > /dev/null
+          run_image() {
+            docker run --rm $SANDBOX_OPTS --user "$(id -u):$(id -g)" -e HOME=/tmp \
+              -v "$workspace:$workspace" -w "$workspace" "$IMAGE" "$@"
           }
-          gate "$workspace/build/ci/rc-control" --expect checks_passed
-          # The seeded fixture must fail its functional check while every other check executes.
-          gate "$workspace/build/ci/rc-seeded" --expect check_failed --expect-check rc-step=defect \
-            --expect-check erc=pass --expect-check drc=pass --expect-check geometry=pass
+          # fixture SCOPE OUT GATE-EXPECTATIONS...: review, verify, then judge
+          # result.json with the action's gate and append its report to the summary.
+          fixture() {
+            local scope=$workspace/$1 out=$workspace/$2 summary
+            shift 2
+            if [ -e "$out" ]; then
+              echo "::error::run directory already exists: $out"
+              return 1
+            fi
+            run_image agent-ee review "$scope" --out "$out" --checks-only --max-seconds 900
+            local review_exit=$? verify_exit=2
+            if [ -f "$out/result.json" ]; then
+              run_image agent-ee verify "$out"
+              verify_exit=$?
+            fi
+            echo "review exited $review_exit; verify exited $verify_exit"
+            summary=$(mktemp "$RUNNER_TEMP/agent-ee-gate-XXXXXX.md")
+            docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+              -v "$workspace:$workspace" "$IMAGE" python3 /opt/agent-ee/scripts/action_gate.py "$out" \
+              --review-exit "$review_exit" --verify-exit "$verify_exit" "$@" > "$summary"
+            local gate_exit=$?
+            cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+            head -n 1 "$summary"
+            return "$gate_exit"
+          }
+          status=0
+          # Every control check must execute and pass.
+          fixture fixtures/rc/control.scope.json build/ci/rc-control --expect checks_passed || status=1
+          # The seeded fixture must fail its functional check while every other check executes and passes.
+          fixture fixtures/rc/seeded.scope.json build/ci/rc-seeded --expect check_failed \
+            --expect-check rc-step=defect --expect-check erc=pass --expect-check drc=pass \
+            --expect-check geometry=pass || status=1
+          exit "$status"
