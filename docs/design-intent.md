@@ -41,8 +41,9 @@ exact source token is the target text, so `1.0000000000000001`, `1e-400` and
 `9007199254740993.0` keep their declared values. `raw` writes that same token
 unchanged, and `volts` lists exact decimal text, removing only trailing fraction
 zeros. Exponents beyond Python decimal limits yield unknown in either encoding.
-Integer tokens over Python's 4300-digit conversion limit refuse the whole record. Prose parsing is deliberately limited to explicit counts followed by
-exact declared part names; synonyms and semantic contradictions need dialog review.
+Integer tokens over Python's 4300-digit conversion limit refuse the whole record.
+Prose parsing is deliberately limited to explicit counts followed by exact
+declared part names; synonyms and semantic contradictions need dialog review.
 A lint pass is not proof that all prose is consistent or that a circuit works.
 `--out-justification TEXT` records an owner waiver for the exact `OUT` net only;
 there is no global or ID-only implicit allowlist.
