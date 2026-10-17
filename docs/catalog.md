@@ -113,8 +113,26 @@ manifest records no capture-execution receipt or producer attestation.
 and derivation consistency only. Successful results retain snapshot manifest/DB
 hashes and date. Consumers must capture both
 files into their immutable candidate and invoke this reader inside the existing
-networkless sandbox. This focused module does not register a new acceptance
-check or expand reviewer/implementation permissions.
+networkless sandbox. The `catalog` check registers this reader as informational
+scope/3 coverage.
+It cannot satisfy an acceptance requirement; it does not expand reviewer or
+implementation permissions.
 
 All availability and prices are **as of `snapshot_date`**. No result establishes
 live inventory, order-time price, datasheet correctness, or assembly acceptance.
+
+## CLI and captured check integration
+
+`agent-ee capture-catalog SOURCE_JSON --source-root LOCAL_DIRECTORY --out NEW`
+prepares a local snapshot and prints its manifest SHA-256. It performs no
+network acquisition or upstream authentication. Bad source pins publish nothing.
+
+A check with `kind: "catalog"` takes exactly `snapshot` (a candidate-relative
+directory) and `manifest_sha256`. Capture both `manifest.json` and
+`catalog.sqlite3` from that directory. Scope/2 and scope/3 baselines bind both
+files, and the check invokes the existing reader in the networkless sandbox.
+Retained `work/CHECK_ID/catalog.json` and execution records use the ordinary
+coordinator evidence seal. Corrupt or unavailable bytes produce failed/unknown.
+The application policy identity hashes `catalog.py`, `part_selection.py` and
+the adapter along with the rest of the Python package; changing normalization
+code invalidates public verification of earlier policy identity.

@@ -12,6 +12,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
+| `capture-catalog` | `MANIFEST --source-root LOCAL --out NEW` | Prepare a pinned local catalog and print its manifest hash; no source authentication |
 | `evidence-request` | `RUN --finding ID --spec FILE [--script FILE] --out NEW` | Export a standalone nonauthoritative concern request |
 | `evidence-replay` | `REQUEST --out NEW` | Replay the supported bounded networkless Python contract; no acceptance authority |
 | `evidence-graduation` | `REQUEST --proposal FILE [--replay REPLAY] --out NEW` | Export an inert proposed check bundle |
