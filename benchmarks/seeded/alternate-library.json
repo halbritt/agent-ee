@@ -1,0 +1,15 @@
+{
+  "schema": "agent-ee.benchmark-library-provenance/1",
+  "library": "Connector_PinHeader_1.27mm.pretty",
+  "distribution_package": "kicad-footprints",
+  "package_version": "10.0.7~ubuntu24.04.1",
+  "source_commit": null,
+  "source_commit_status": "Not independently recovered from binary package; exact footprint bytes are pinned per mutation and package/image versions are retained.",
+  "upstream": "https://gitlab.com/kicad/libraries/kicad-footprints",
+  "attribution": "KiCad library community contributors",
+  "license": "CC-BY-SA-4.0 with KiCad design-use exception; original license governs",
+  "license_path": "/usr/share/doc/kicad-footprints/LICENSE.md",
+  "license_sha256": "45d2bce75e5a4208f5afb01b8fb2c406e700371c4fe2b5f5cd5c443d46db4d8f",
+  "publication_authorized": false,
+  "note": "License/attribution supplement only. No mutation, numerical expectation, selector or prediction changed after preregistration."
+}

@@ -1,0 +1,12 @@
+{
+  "acquisition_metadata_sha256": "3461139b0bdd2d5cc07a1e39f976874ee3b84920492d54ce0bbedc4c1b3df22d",
+  "benchmark_detector_runs_before_expectation_commit": 0,
+  "dependency_inventory_sha256": "694c3cddbb2a25ad18136a6f80767185f05c4ac7c4445493d8a92403f0d2d0ae",
+  "feasibility_sha256": "9a92a5329297c93198fc46fe5feb90d4879cf4a896a18f5f36fcb8569017abd0",
+  "pin_wire_inventory_sha256": "b0d65b6c792c7e6a1ecb9dec02d9cb988f64347f97e685bbc23dbcd2666ed60d",
+  "plan": "astra-benchmark-plan.md",
+  "preparation_only": true,
+  "proposal_sha256": "a26d58d380b8b2cb0f1f454761b8dc328232cf36f3cc19a348044fb308877999",
+  "source_inventory_sha256": "96cd86637fc2c669892b8cb91d69da80bb8d72972e39125dab93bc51e1b29fdf",
+  "upstream_metadata_sha256": "8d92eb16b564a3b7e6f4b405dcc8c1853f3765097c874d680c230adc8f320a12"
+}

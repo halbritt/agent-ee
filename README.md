@@ -80,6 +80,11 @@ The [architecture diagrams](docs/architecture.md) show the information and write
 boundaries. Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 
+The [synthetic benchmark utilities](docs/seeded-benchmark.md) preregister five
+pinned public boards and 30 assembly, schematic-wiring and pad-geometry mutations.
+Sources and generated designs remain outside the repository; dependency closure
+and owner review are outstanding.
+
 ## Beyond a single review
 
 | Capability | What it is for |
