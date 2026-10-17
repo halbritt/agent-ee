@@ -57,6 +57,10 @@ def normalize(reports, rules):
                 'native': finding})
     evaluations = []
     for rule in rules:
+        if 'adapter' in rule:
+            from .happy_adapters import evaluate
+            evaluations.append(evaluate(reports, rule))
+            continue
         matches = [f for f in findings if f['analyzer'] == rule['analyzer']
             and f['rule_id'] == rule['rule_id']
             and sorted(f['native_locator']['components']) == sorted(rule['components'])]
@@ -84,7 +88,8 @@ def declarations(params):
         raise ValueError('rules, counted_rules and blocking_rules must be explicit lists')
     ids = []
     for rule in rules:
-        if not isinstance(rule, dict) or set(rule) - {'id', 'analyzer', 'rule_id', 'components', 'field', 'min', 'max'}:
+        if not isinstance(rule, dict) or set(rule) - {'id', 'analyzer', 'rule_id', 'components', 'field', 'min', 'max',
+                'adapter', 'assumptions', 'assumptions_source'}:
             raise ValueError('invalid rule declaration')
         for key in ('id', 'analyzer', 'rule_id'):
             if not isinstance(rule.get(key), str) or not rule[key]:
@@ -95,7 +100,10 @@ def declarations(params):
                 or any(not isinstance(c, str) or not c for c in rule['components'])
                 or len(set(rule['components'])) != len(rule['components'])):
             raise ValueError('rule requires unique native component references')
-        if not isinstance(rule.get('field'), str) or not {'min', 'max'} & rule.keys():
+        if 'adapter' in rule:
+            from .happy_adapters import validate
+            validate(rule)
+        elif not isinstance(rule.get('field'), str) or not {'min', 'max'} & rule.keys():
             raise ValueError('rule requires a calculation field and bounds')
         for key in ('min', 'max'):
             if key in rule and (isinstance(rule[key], bool) or not isinstance(rule[key], (int, float))
@@ -115,6 +123,12 @@ def check_kicad_happy(ctx):
     from .checks import CheckError, verified_hierarchy
     try:
         rules, counted, blocking = declarations(ctx.params)
+        for rule in rules:
+            if 'adapter' in rule:
+                source = rule['assumptions_source']['path']
+                if source not in ctx.scope.get('requirements', []):
+                    raise ValueError('adapter assumptions source must be a captured immutable requirement')
+                ctx.candidate_path(source)
         root = Path(ctx.params['installation']).expanduser().resolve()
         if not (root / '.claude-plugin/plugin.json').is_file():
             raise CheckError('unavailable', 'kicad-happy installation not found')
