@@ -37,7 +37,7 @@ def qualify(directory):
     groups = [[json.loads(line) for line in source['pcbbench.jsonl'].splitlines()],
               json.loads(source['ose_165_task_specs.json'])]
     require([len(g) for g in groups] == [62, 165], 'unexpected corpus counts')
-    ids, unknown, placeholders = set(), [], set()
+    ids, unknown, placeholders, waivers = set(), [], set(), []
     for group in groups:
         for record in group:
             rid = str(record['id'])
@@ -63,14 +63,17 @@ def qualify(directory):
                 stub = json.loads(artifacts['hardware-interface.stub.json'])
                 require(stub['required_nets'] == ['CANH', 'CANL', 'RXD', 'TXD'], 'id37 interface')
                 require(counts == {'SN65HVD230': 1} and report['findings'] == [], 'id37 components/lint')
+            if rid == '182':
+                require(counts.get('TDA1517P/N3,112') == 1 and '112' not in counts, 'comma-in-name split')
             if rid == '196':
                 require(any(f['code'] == 'component_count_mismatch' and f['part'] == 'Q_NPN_CBE'
                             for f in report['findings']), 'id196 mismatch missed')
             if rid == '15':
                 require(report['waivers'] and not report['findings'], 'id15 waiver missing or invalid')
+                waivers.append({'record_id': rid, 'source_sha256': report['source_sha256'], 'waivers': report['waivers']})
     require(OUT_IDS <= placeholders, 'OUT negative corpus was not completely flagged')
     return {'schema': 'agent-ee.intent-corpus-qualification/1', 'revision': REVISION,
-            'records_imported': len(ids), 'out_placeholder_ids': sorted(OUT_IDS), 'additional_out_warnings': sorted(placeholders - OUT_IDS),
+            'records_imported': len(ids), 'recorded_waivers': waivers, 'out_placeholder_ids': sorted(OUT_IDS), 'additional_out_warnings': sorted(placeholders - OUT_IDS),
             'unknown_ids': sorted(unknown), 'source_hashes': {n: spec[1] for n, spec in FILES.items()},
             'license': 'MIT source declaration and pinned LICENSE verified; no publication authorized',
             'outcome': 'pass', 'meaning': 'import/lint qualification only; not design acceptance'}
@@ -83,6 +86,8 @@ def main():
     args = parser.parse_args()
     try:
         if args.fetch:
+            if args.directory.resolve().is_relative_to(Path(__file__).resolve().parents[1]):
+                raise ValueError('private corpus destination must be outside the source checkout')
             args.directory.mkdir(exist_ok=False)
             for name, (remote, expected) in FILES.items():
                 url = f'https://huggingface.co/datasets/Hzou9/PCBSchemaGen-Benchmarks/resolve/{REVISION}/{remote}'

@@ -62,7 +62,10 @@ def voltage_targets(value):
             raise ValueError('unparseable voltage') from exc
         if not number.is_finite() or number == 0:
             raise ValueError('zero or non-finite voltage')
-        values.append(str(number.normalize()))
+        normalized = str(number)
+        if '.' in normalized and 'E' not in normalized:
+            normalized = normalized.rstrip('0').rstrip('.')
+        values.append(normalized)
     return values
 
 
@@ -92,6 +95,7 @@ def import_record(raw, *, out_justification=None):
         items = [part.strip() for part in text(value).split(',')] if isinstance(value, str) else value
         if not isinstance(items, list) or not items or any(not isinstance(n, str) or not n.strip() for n in items):
             raise ValueError('interface nodes must be nonempty names')
+        items = [name.strip() for name in items]
         nodes[field] = items
         if len(set(items)) != len(items):
             findings.append({'code': 'duplicate_interface_net', 'field': field})
@@ -127,6 +131,9 @@ def import_record(raw, *, out_justification=None):
             'interfaces': nodes, 'unresolved': ['native components', 'terminal pin identities',
                                              'owner invariants', 'executable requirement coverage']}
     return {'source-record.json': raw, 'requirements.md': task.encode('utf-8'),
+            'requirements.json': canonical({'schema': 'agent-ee.requirements/1', 'requirements': [
+                {'id': 'R-intent-' + hashlib.sha256(str(rid).encode()).hexdigest(),
+                 'text': task, 'source_question_ids': []}]}) + b'\n',
             'intent.json': canonical(report) + b'\n',
             'hardware-interface.stub.json': canonical(stub) + b'\n',
             'component-expectation.json': canonical({'schema': 'agent-ee.component-expectation/1',

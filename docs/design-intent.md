@@ -16,7 +16,12 @@ counts), or comma-and-whitespace separated names with optional `Nx ` counts.
 A comma without following whitespace stays inside a name. No parts are selected.
 
 Artifacts are deterministic and preserve the exact original JSON bytes in
-`source-record.json` and exact task prose in `requirements.md`. `intent.json`
+`source-record.json` and exact task prose in `requirements.md`.
+`requirements.json` adds one structured original requirement with an ID formed
+from `R-intent-` plus the SHA-256 of the string form of the source record ID.
+The ID stays stable for revisions of that record; merging records with identical
+IDs requires the owner to supply distinct source identities first. This file
+feeds dialog capture directly without changing the original prose. `intent.json`
 records the source SHA-256, unchanged module name, numeric operating targets,
 findings and explicit waivers. `component-expectation.json` records the required
 multiset. `hardware-interface.stub.json` lists the required nets under a distinct

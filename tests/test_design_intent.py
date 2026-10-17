@@ -93,3 +93,24 @@ class DesignIntentTests(unittest.TestCase):
             source.write_bytes(record(input_voltage='0'))
             third = subprocess.run(argv[:-1] + [str(root / 'unknown')], capture_output=True, env=os.environ)
             self.assertEqual(third.returncode, 1, third.stderr)
+
+    def test_voltage_targets_preserve_precision_without_decimal_context_overflow(self):
+        from agent_ee.design_intent import voltage_targets
+        value = '1.23456789012345678901234567890123456789'
+        self.assertEqual(voltage_targets(value), [value])
+        self.assertEqual(voltage_targets('1e999999999999999999'), ['1E+999999999999999999'])
+
+    def test_list_net_whitespace_cannot_hide_placeholders_or_duplicates(self):
+        for changes, code in [({'output_nodes': [' OUT ']}, 'placeholder_interface_net'),
+                              ({'input_nodes': ['TXD', ' TXD ']}, 'duplicate_interface_net')]:
+            report = json.loads(import_record(record(**changes))['intent.json'])
+            self.assertEqual(report['outcome'], 'unknown')
+            self.assertIn(code, [finding['code'] for finding in report['findings']])
+
+    def test_requirement_id_tracks_record_identity_and_preserves_original_text(self):
+        first = json.loads(import_record(record())['requirements.json'])['requirements'][0]
+        second = json.loads(import_record(record(task='Revised wording.'))['requirements.json'])['requirements'][0]
+        third = json.loads(import_record(record(id='other'))['requirements.json'])['requirements'][0]
+        self.assertEqual(first['text'], 'Use 1x OWN_CAN and 2x R_Small.')
+        self.assertEqual(first['id'], second['id'])
+        self.assertNotEqual(first['id'], third['id'])
