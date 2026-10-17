@@ -79,3 +79,33 @@ def toolchain_test(test):
         require_toolchain()
         return test(*args, **kwargs)
     return gated
+
+
+def require_kicad_route():
+    """The configured kicad-route checkout, qualified against the adapter's pin.
+
+    An unset AGENT_EE_KICAD_ROUTE_CHECKOUT is an absent optional tool: a skip,
+    or a failure under AGENT_EE_REQUIRE_TOOLCHAIN=1. A configured checkout whose
+    pin, code, state or KRT runtime does not qualify always fails."""
+    configured = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT')
+    if not configured:
+        reason = 'toolchain prerequisite: AGENT_EE_KICAD_ROUTE_CHECKOUT is unset (no pinned kicad-route checkout)'
+        if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+            raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: ' + reason)
+        raise unittest.SkipTest(reason)
+    from agent_ee import routing_adapter
+    check = routing_adapter.preflight(configured)
+    if check['problems']:
+        raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured} does not qualify: '
+                             + '; '.join(check['problems']))
+    state = Path(check['state'])
+    # KRT's runtime imports, as its startup checks spell them; -B writes no bytecode.
+    result = subprocess.run([str(state / '.venv-krt/bin/python'), '-I', '-B', '-c',
+                             'import sys; sys.path.insert(0, "rust_router"); import grid_router, numpy; '
+                             'from scipy.optimize import linear_sum_assignment; '
+                             'from shapely.geometry import Polygon'],
+                            cwd=state / 'vendor/krt', capture_output=True, text=True, timeout=60)
+    if result.returncode:
+        raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured}: KRT runtime import failed: '
+                             + result.stderr.strip()[-2000:])
+    return Path(check['checkout'])

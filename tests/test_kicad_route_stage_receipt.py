@@ -1,9 +1,8 @@
 """The routing adapter's step declaration under AGENTEE-95 coordinator stage receipts.
 
-These tests run once agent_ee.stage_receipts is integrated. The router is the
-policy fixture from kicad_route_fixture.py, reached through a test driver that
-supplies the fixture's pin; the step's mounts, writes, artifacts and adoptable
-exits are the ones routing_adapter.step() declares.
+The router is the policy fixture from kicad_route_fixture.py, reached through a
+test driver that supplies the fixture's pin; the step's mounts, writes,
+artifacts and adoptable exits are the ones routing_adapter.step() declares.
 """
 import json
 import tempfile
@@ -13,13 +12,9 @@ from unittest.mock import patch
 
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
+from agent_ee import stage_receipts
 from kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
 from toolchain import require_toolchain
-
-try:
-    from agent_ee import stage_receipts
-except ImportError:  # AGENTEE-95 lands separately; root integrates both.
-    stage_receipts = None
 
 DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'import kicad_route_attempt as a\n'
@@ -29,7 +24,6 @@ DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'sys.exit(a.main(sys.argv[1:], layout))\n')
 
 
-@unittest.skipIf(stage_receipts is None, 'AGENTEE-95 agent_ee.stage_receipts is not integrated on this branch')
 class StageReceiptRoutingTest(unittest.TestCase):
     def setUp(self):
         require_toolchain()

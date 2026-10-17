@@ -104,6 +104,9 @@ reinterprets a check, reviewer, adjudicator or convergence result.
   experimental status in the schema name only.
 
 Tests: `PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_generate -v`.
-The integration test runs stages 1 to 5 and 7 with `--skip-review` and skips
-without the toolchain, the builder modules, `kicad-route` or the live BOM.
+The integration test runs stages 1 to 5 and 7 with `--skip-review` over the
+tests' owned synthetic catalog, committed to a throwaway git checkout, never the
+owner's live fome-mc BOM. Stage 5 runs the pinned kicad-route named by
+`AGENT_EE_KICAD_ROUTE_CHECKOUT`, put first on `PATH`. Without the toolchain or
+that variable the test skips, and under `AGENT_EE_REQUIRE_TOOLCHAIN=1` it fails.
 Tests never run stage 6 with inference.
