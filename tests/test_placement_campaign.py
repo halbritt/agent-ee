@@ -7,12 +7,16 @@ accepts every check defect, and the implementation writer applies a scripted pcb
 edit. These tests establish orchestration and evidence contracts, not live-model
 repair quality.
 
+The consuming scopes declare their envelope under AGENTEE-85. Full campaign
+qualification remains blocked by the envelope obligations without executable
+coverage; these tests must not bypass that authority gate to exercise later turns.
+
 The starting boards are owned variants of the RC control fixture: tracks and zones
 removed, every pad made rectangular, with project-local footprint libraries rebuilt
 from the stock KiCad footprints at test time so that native DRC compares against the
 same rectangular pads. They are not AGENTEE-52 forward-annotated scaffolds. The
-unchanged AGENTEE-54 packer supports only rectangular pads; the unmodified RC pads
-are used below to show that limitation as an incomplete iteration.
+stock-pad refusal scenario predates AGENTEE-109. Its expected outcome also needs
+reconciliation once the envelope permits capture and the helper can run.
 """
 import contextlib
 import io
@@ -25,6 +29,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_ee import placement_adapter as pa
+from agent_ee.board_envelope import derive_requirements, validate
 from agent_ee.campaign import run_campaign, verify_campaign
 from agent_ee.cli import verify
 from agent_ee.storage import digest, read_json, write_json
@@ -183,7 +188,17 @@ class PlacementCampaignFixture(unittest.TestCase):
         requirements = [{'id': f"R-{c['id']}", 'statement': f"Owned requirement for {c['id']}",
                          'source': {'path': 'requirements/placement.md', 'locator': c['id']},
                          'checks': [c['id']], 'intent': 'acceptance'} for c in specs]
+        record = validate((self.source / ENVELOPE).read_bytes())
+        obligations = derive_requirements(record, ENVELOPE)['requirements']
+        for spec in specs:
+            if (spec['kind'] == 'placement' and
+                    spec.get('params', {}).get('criterion') == 'connector-edge/1'):
+                requirements = [r for r in requirements if r['checks'] != [spec['id']]]
+                requirements.extend({**{key: item[key] for key in ('id', 'statement', 'source')},
+                                     'intent': 'acceptance', 'checks': [spec['id']]}
+                                    for item in obligations if item['source']['locator'].startswith('/fixed_footprints/'))
         return {'schema': 'agent-ee.scope/3', 'name': 'placement-campaign', 'scope': 'owned RC placement campaign',
+                'envelope': {'path': ENVELOPE, 'profile': None, 'dialog': None},
                 'board': BOARD, 'schematic': SCHEMATIC,
                 'inputs': [{'path': str(self.source / 'project'), 'at': 'project'},
                            {'path': str(self.source / 'requirements'), 'at': 'requirements'}, *STOCK],
