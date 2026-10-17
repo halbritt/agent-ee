@@ -140,12 +140,12 @@ convergence tests remain unchanged.
 
 A complete native RC ladder is unmet: these snapshots do not supply ERC-clean
 connectivity, native footprint closure, schematic/PCB parity, placement acceptance,
-qualified simulation or a sealed fabrication-package gate. The production scaffold,
-placement/routing writer constraints and AGENTEE-95 implementation-step receipt
-integration remain separate lanes. The writer prompt limits work to the earliest
+qualified simulation or a sealed fabrication-package gate. The production scaffold
+and routing writer constraints remain separate lanes. The writer prompt limits work to the earliest
 failing stage; arbitrary writer investigative commands are not a stage-specific
-OS allowlist. Coordinator helper execution must honor the same gate when root
-integrates those lanes. Owner convergence-contract acceptance remains outstanding.
+OS allowlist. Coordinator-run steps honor the same gate: a staged campaign's step plan holds
+only the earliest failing stage's [implementation steps](stage-receipts.md#campaign-integration),
+and the [placement adapter](placement-adapter.md) runs only on placement turns. Owner convergence-contract acceptance remains outstanding.
 
 The ordered scheduler changes the identity of `checks.py`, which the existing
 passive-corner contract pins as its parser module. Requalification compared the

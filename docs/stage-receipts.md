@@ -129,8 +129,13 @@ delivered design, each receipt is classified as follows:
 
 `agent-ee.campaign/1` accepts an optional `implementation_steps` list of step
 declarations. Every declaration is validated before the campaign directory is created, and the list is part of the
-hashed `config.json`. After the writer session, the coordinator first applies the existing
-proposal checks to the writer's design. It then runs each step on that design, and checks that every write target
+hashed `config.json`. Each implementation runs its own step plan (`agent-ee.step-plan/1`),
+which the coordinator derives from the frozen configuration and the verified source run.
+In a staged campaign the plan holds only the steps of the earliest failing stage, followed by the
+[placement adapter](placement-adapter.md) on placement turns. Unstaged campaigns, and campaigns
+created before the plan existed, run every declared step as before. Receipt indexes follow the
+plan's order. After the writer session, the coordinator first applies the existing
+proposal checks to the writer's design. It then runs each planned step on that design, and checks that every write target
 is in `mutable_inputs` before launch. An adoptable step's exact outputs are copied back only
 while the design still equals the receipt's inputs. An unadoptable step stops the repair as
 `incomplete`. No default output is substituted and no proposal is captured. Afterwards the
@@ -143,7 +148,8 @@ sha256 and applicability, together with the delivered design tree. Its digest is
 
 - a missing, changed or unanchored index, or a receipt directory that is not indexed;
 - a receipt that fails validation, is bound to a different implementation or source candidate, or
-  does not match the campaign's declared step;
+  does not match the step that the re-derived plan puts at its index;
+- a delivered proposal without a receipt for every planned step;
 - recorded applicability that differs from the recomputed applicability;
 - a delivered tree that differs from the next run's captured proposal. A receipt that claims to apply
   while its outputs differ from the captured proposal fails with that message.
@@ -156,9 +162,10 @@ Campaigns created before this change have no anchors and no index, and they veri
   own sandbox produces no receipt. Its effect counts only after capture, as before.
 - Mount and source tree identities are observations at execution time. A later host
   change is not rechecked against retained bytes, because tool trees are not copied.
-- No production scaffold (AGENTEE-87), placement helper (AGENTEE-54/55) or kicad-route
-  attempt (AGENTEE-93) is wired yet. The tests use an original test step program. The
-  rung 1 record (AGENTEE-96) still needs real receipts for those three steps.
+- No production scaffold (AGENTEE-87) or kicad-route attempt (AGENTEE-93) is wired yet. The
+  AGENTEE-54 placer runs through the [placement adapter](placement-adapter.md). The generic step tests
+  use an original test step program. The rung 1 record (AGENTEE-96) still needs real receipts for the
+  scaffold and routing steps.
 - Whether kicad-route exits 1 and 4 should leave the writer's unrouted board as the proposal, rather than
   stopping the repair, is a decision for AGENTEE-93 and AGENTEE-88.
 - A completed receipt with all writes present but missing declared artifacts or an unknown backend is still

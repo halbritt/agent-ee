@@ -21,7 +21,7 @@ from .storage import digest, identity, read_json, write_json
 from .symbol_library import LibraryError, children, parse_sexpr
 
 ADAPTER_SCHEMA = 'agent-ee.placement-adapter/1'
-SCOPE_SCHEMA = 'agent-ee.placement-write-scope/1'
+SCOPE_SCHEMA = 'agent-ee.placement-write-scope/2'
 RECORD_SCHEMA = 'agent-ee.placement-adapter-record/2'
 BINDING_SCHEMA = 'agent-ee.placement-binding/1'
 CONTEXT_SCHEMA = 'agent-ee.placement-writer-context/1'
@@ -45,7 +45,26 @@ FULL_TURN = 360 * 10 ** MAX_PLACES
 QUARTER_TURNS = tuple(turn * 10 ** MAX_PLACES for turn in (0, 90, 180, 270))
 MAX_TOKEN = 128
 # The exact transform family a placement iteration may apply; anything else is refused.
-TRANSFORMS = 'translations and quarter-turn rotations (0, 90, 180 or 270 degrees)'
+TRANSFORM_FAMILY = 'agent-ee.placement-transforms/2'
+TRANSFORMS = ('translations, quarter-turn rotations (0, 90, 180 or 270 degrees) and front/back side '
+              'flips as pcbnew saves them (footprints without arcs, custom, chamfered, trapezoid or '
+              'offset-drill pads, or vertically justified text)')
+HALF_TURN = 180 * 10 ** MAX_PLACES
+# Side flips, qualified against KiCad 10.0.7 FOOTPRINT::Flip in both directions from every
+# quarter turn: footprint-local points are saved mirrored in y, front/back layers swap, the
+# footprint angle is negated plus a quarter turn, and texts gain or lose `justify mirror`.
+FLIP_LAYERS = {f'F.{n}': f'B.{n}' for n in ('Cu', 'Adhes', 'Paste', 'SilkS', 'Mask', 'CrtYd', 'Fab')}
+FLIP_LAYERS.update({back: front for front, back in list(FLIP_LAYERS.items())})
+SIDE_NEUTRAL_LAYERS = ('*.Cu', '*.Mask')
+FLIP_GRAPHICS = ('fp_line', 'fp_rect', 'fp_circle', 'fp_poly')
+FLIP_TEXTS = ('property', 'fp_text')
+POINT_TAGS = ('start', 'end', 'center', 'xy')
+FLIP_PAD_SHAPES = ('rect', 'roundrect', 'circle', 'oval')
+# pcbnew re-derives arcs on a flip (endpoints swapped, midpoint recomputed), and these pad
+# features are not stored as a plain mirror; a flip of a footprint using them is refused.
+FLIP_UNSUPPORTED = ('fp_arc', 'offset', 'rect_delta', 'chamfer', 'chamfer_ratio', 'primitives', 'options')
+JUSTIFY = ('left', 'right', 'top', 'bottom', 'mirror')
+H_SWAP = {'left': 'right', 'right': 'left'}
 # Only plain decimal and exponent forms, as pcbnew saves them, are read as numbers. Decimal()
 # alone would also accept forms such as `9_0`, ` 90` or `nan` that KiCad's parser reads differently.
 NUMBER = re.compile(r'-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?\Z')
@@ -305,13 +324,116 @@ def _child_follows(before, after, rotation):
             _turn(a_at[2] - b_at[2] - rotation) == 0)
 
 
+def _flip_layer(name):
+    return FLIP_LAYERS.get(name, name if name in SIDE_NEUTRAL_LAYERS else None)
+
+
+def _same_number(a, b):
+    return isinstance(a, str) and isinstance(b, str) and _number(a) is not None and _number(a) == _number(b)
+
+
+def _opposite_number(a, b):
+    return isinstance(a, str) and isinstance(b, str) and _number(a) is not None and _number(b) is not None and \
+        _number(a) == -_number(b)
+
+
+def _uses(node, tags):
+    return isinstance(node, list) and bool(node) and (node[0] in tags or any(_uses(c, tags) for c in node[1:]))
+
+
+def _mirrored(before, after):
+    """Whether after is before with every layer swapped and every point mirrored in y, exactly."""
+    if isinstance(before, str) or isinstance(after, str):
+        return before == after
+    if len(before) != len(after) or not before or before[0] != after[0] or before[0] == 'at':
+        return False
+    tag = before[0]
+    if tag == 'layer':
+        return len(before) == 2 and _flip_layer(before[1]) == after[1]
+    if tag == 'layers':
+        return all(isinstance(b, str) and _flip_layer(b) == a for b, a in zip(before[1:], after[1:]))
+    if tag in POINT_TAGS:
+        return len(before) == 3 and _same_number(before[1], after[1]) and _opposite_number(before[2], after[2])
+    return all(_mirrored(b, a) for b, a in zip(before[1:], after[1:]))
+
+
+def _mirrored_at(before, after):
+    """(before angle, after angle) when the local x/y are mirrored exactly, else None."""
+    b_at, a_at = _at(before), _at(after)
+    if b_at is None or a_at is None or b_at[3] or a_at[3] or b_at[0] != a_at[0] or b_at[1] != -a_at[1]:
+        return None
+    return b_at[2], a_at[2]
+
+
+def _justify(effects):
+    found = children(effects, 'justify')
+    if not found:
+        return set()
+    tokens = found[0][1:]
+    if len(found) != 1 or any(t not in JUSTIFY for t in tokens) or len(set(tokens)) != len(tokens):
+        return None
+    return set(tokens)
+
+
+def _flip_text(before, after, turn):
+    angles = _mirrored_at(before, after)
+    rest = [[c for c in node if not (isinstance(c, list) and c and c[0] in ('at', 'effects'))]
+            for node in (before, after)]
+    effects = [children(node, 'effects') for node in (before, after)]
+    if angles is None or not _mirrored(*rest) or len(effects[0]) != 1 or len(effects[1]) != 1:
+        return False
+    plain = [[c for c in e[0][1:] if not (isinstance(c, list) and c and c[0] == 'justify')] for e in effects]
+    old, new = _justify(effects[0][0]), _justify(effects[1][0])
+    # Vertical justification under a flip is not qualified.
+    if plain[0] != plain[1] or old is None or new is None or old & {'top', 'bottom'}:
+        return False
+    mirrored = old ^ {'mirror'}
+    expected = _turn(HALF_TURN - angles[0] + turn)
+    # KiCad may also keep the flipped text upright: a further half turn with left/right swapped.
+    return ((_turn(angles[1] - expected) == 0 and new == mirrored) or
+            (_turn(angles[1] - expected - HALF_TURN) == 0 and new == {H_SWAP.get(t, t) for t in mirrored}))
+
+
+def _flip_pad(before, after, theta, theta_after):
+    if len(before) < 4 or before[1:4] != after[1:4] or before[3] not in FLIP_PAD_SHAPES:
+        return False
+    angles = _mirrored_at(before, after)
+    rest = [[c for c in node if not (isinstance(c, list) and c and c[0] == 'at')] for node in (before, after)]
+    # The saved pad angle is footprint plus local angle; a flip negates the local angle.
+    return (angles is not None and _mirrored(*rest) and
+            _turn(angles[1] - theta_after + angles[0] - theta) == 0)
+
+
+def _flip_unsupported(before, after):
+    """Whether a keyed child lies outside the qualified side-flip family."""
+    if before[0] not in (*FLIP_GRAPHICS, *FLIP_TEXTS, 'pad') or any(_uses(n, FLIP_UNSUPPORTED) for n in (before, after)):
+        return True
+    return before[0] in FLIP_TEXTS and any((_justify(e) or set()) & {'top', 'bottom'}
+                                            for e in children(before, 'effects'))
+
+
+def _flip_follows(before, after, theta, theta_after):
+    """Whether a keyed child is exactly the side-flipped form of before."""
+    if _flip_unsupported(before, after):
+        return False
+    if before[0] in FLIP_GRAPHICS:
+        return _mirrored(before, after)
+    if before[0] in FLIP_TEXTS:
+        return _flip_text(before, after, _turn(theta_after + theta))
+    if before[0] == 'pad':
+        return _flip_pad(before, after, theta, theta_after)
+    return False
+
+
 def _footprint(key, before, after, protected, violations):
     label = f'footprint {key} ({_reference(before) or "no reference"})'
     count = len(violations)
     if [t for t in before[1:] if isinstance(t, str)] != [t for t in after[1:] if isinstance(t, str)]:
         violations.append(f'{label}: library identity or header changed')
-    if children(before, 'layer') != children(after, 'layer'):
-        violations.append(f'{label}: side or layer changed; side flips are not supported')
+    sides = children(before, 'layer'), children(after, 'layer')
+    flipped = sides[0] != sides[1]
+    if flipped and sorted(map(_canonical, sides)) != [_canonical([['layer', 'B.Cu']]), _canonical([['layer', 'F.Cu']])]:
+        violations.append(f'{label}: layer changed other than a front/back side flip')
     try:
         b_at, a_at = _at(before), _at(after)
     except ValueError as exc:
@@ -320,15 +442,18 @@ def _footprint(key, before, after, protected, violations):
     if b_at is None or a_at is None:
         violations.append(f'{label}: missing or malformed footprint position')
         return None
-    rotation = _turn(a_at[2] - b_at[2])
-    moved = b_at[:2] != a_at[:2] or rotation != 0
+    # A flip negates the saved footprint angle; what remains must be a quarter turn.
+    rotation = _turn(a_at[2] + b_at[2]) if flipped else _turn(a_at[2] - b_at[2])
+    moved = b_at[:2] != a_at[:2] or rotation != 0 or flipped
     if b_at[3] != a_at[3]:
         violations.append(f'{label}: position tokens changed')
-    if key in protected and children(before, 'at') != children(after, 'at'):
+    if key in protected and (flipped or children(before, 'at') != children(after, 'at')):
         violations.append(f'{label}: protected footprint transform changed')
     if rotation not in QUARTER_TURNS:
-        violations.append(f'{label}: rotation delta {_degrees(rotation)} is not a quarter turn')
-    unkeyed = [[c for c in node[1:] if isinstance(c, list) and c and c[0] != 'at' and _uuid(c) is None]
+        violations.append(f'{label}: rotation delta {_degrees(rotation)}{" after the side flip" if flipped else ""} '
+                          'is not a quarter turn')
+    skip = ('at', 'layer') if flipped else ('at',)
+    unkeyed = [[c for c in node[1:] if isinstance(c, list) and c and c[0] not in skip and _uuid(c) is None]
                for node in (before, after)]
     violations += _sequence_violations(*unkeyed, label)
     keyed = []
@@ -343,16 +468,22 @@ def _footprint(key, before, after, protected, violations):
     for item in sorted(keyed[0].keys() ^ keyed[1].keys()):
         violations.append(f'{label}: {"removed" if item in keyed[0] else "added"} {item[0]} {item[1]}')
     for item in sorted(keyed[0].keys() & keyed[1].keys()):
+        b_child, a_child = keyed[0][item], keyed[1][item]
         try:
-            if _child_follows(keyed[0][item], keyed[1][item], rotation):
+            if (_flip_follows(b_child, a_child, b_at[2], a_at[2]) if flipped else
+                    _child_follows(b_child, a_child, rotation)):
                 continue
         except ValueError as exc:
             violations.append(f'{label}: {item[0]} {item[1]} {exc}')
             continue
-        violations.append(f'{label}: {item[0]} {item[1]} changed beyond the footprint transform')
+        if flipped and _flip_unsupported(b_child, a_child):
+            violations.append(f'{label}: {item[0]} {item[1]} is not supported under a side flip')
+        else:
+            violations.append(f'{label}: {item[0]} {item[1]} changed beyond the footprint transform')
     if len(violations) != count or not moved:
         return None
     return {'uuid': key, 'reference': _reference(before), 'rotation_deg': rotation // 10 ** MAX_PLACES,
+            'flipped': flipped, 'side': 'back' if sides[1] == [['layer', 'B.Cu']] else 'front',
             'from': [str(b_at[0]), str(b_at[1]), _degrees(b_at[2])],
             'to': [str(a_at[0]), str(a_at[1]), _degrees(a_at[2])]}
 
@@ -360,7 +491,7 @@ def _footprint(key, before, after, protected, violations):
 def write_scope(before, after, protected=()):
     """Compare complete saved boards; only movable footprint transforms are allowed."""
     protected = sorted(set(protected))
-    report = {'schema': SCOPE_SCHEMA, 'before_sha256': hashlib.sha256(before).hexdigest(),
+    report = {'schema': SCOPE_SCHEMA, 'family': TRANSFORM_FAMILY, 'before_sha256': hashlib.sha256(before).hexdigest(),
               'after_sha256': hashlib.sha256(after).hexdigest(), 'protected': protected,
               'transforms': [], 'violations': []}
     violations = report['violations']
@@ -425,7 +556,7 @@ def proposal_scope(source_inputs, design, board, protected):
                    if rel != board and before[rel] != after[rel]]
     if board not in before or board not in after:
         violations.append(f'board missing: {board}')
-        report = {'schema': SCOPE_SCHEMA, 'status': 'refused', 'protected': sorted(protected),
+        report = {'schema': SCOPE_SCHEMA, 'family': TRANSFORM_FAMILY, 'status': 'refused', 'protected': sorted(protected),
                   'transforms': [], 'violations': []}
     else:
         report = write_scope((source_inputs / board).read_bytes(), (design / board).read_bytes(), protected)
@@ -578,6 +709,9 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
         record['error'] = f'{type(exc).__name__}: {exc}'
         raise
     finally:
+        if ran and record['helper'].get('receipt_id') is None:
+            # The step raised (for example on cancellation) after retaining its receipt.
+            _retained_helper(record['helper'], work, receipts)
         try:
             write_json(work / 'placement-adapter.json', record)
         except OSError as exc:
@@ -589,6 +723,18 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
             state['stage_receipts'][work.name] = receipts.bind_implementation(
                 work, design, record['implementation'], manifest['candidate_id'])
     return record
+
+
+def _retained_helper(helper, work, receipts):
+    receipt_dir = Path(work) / helper['receipt']
+    if receipt_dir.is_symlink() or not (receipt_dir / 'receipt.json').is_file():
+        return
+    try:
+        receipt = receipts.validate_receipt(receipt_dir)
+    except (ValueError, OSError):
+        return
+    helper.update(receipt_id=receipt['receipt_id'], status=receipt['status'],
+                  receipt_sha256=digest(receipt_dir / 'receipt.json'))
 
 
 def _stored(work, kind):
@@ -606,6 +752,8 @@ def _helper_receipt(work, bound, manifest, receipts, receipt_index):
     """Validated coordinator receipt, its step directory and the coordinator-derived step."""
     name = _receipt_name(receipt_index)
     receipt_dir = Path(work) / name
+    if receipt_dir.is_symlink() or not (receipt_dir / 'receipt.json').is_file():
+        raise ValueError('placement helper receipt missing')
     receipt = receipts.validate_receipt(receipt_dir, binding={
         'implementation': int(Path(work).name), 'source_candidate_id': manifest['candidate_id'],
         'receipt_index': receipt_index})
