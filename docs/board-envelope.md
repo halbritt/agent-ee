@@ -61,8 +61,10 @@ it is an `axis_aligned_rectangle`.
 References, hole IDs and keepout IDs share one namespace, because KiCad
 mounting holes are footprints. Duplicate names are refused. So are unknown or
 missing fields at any level, duplicate JSON keys, `NaN` and `Infinity`, booleans
-or strings used as numbers, values finer than 1 nm, and non-UTF-8 bytes. A
-refusal never produces a partial validation record.
+or strings used as numbers, values finer than 1 nm, and non-UTF-8 bytes.
+Records over 1 MiB, polygons over 1024 vertices and lists over 1024 entries are
+refused before the exact quadratic polygon checks. A refusal never produces a
+partial validation record.
 
 ## Fabricator profile
 
@@ -145,7 +147,8 @@ reader. It checks:
 - `(general (thickness))`, and per-layer thicknesses when the board saves a
   stackup;
 - each fixed footprint's layer, origin within `tolerance_mm`, and exact
-  rotation.
+  rotation modulo 360 degrees. The reference must match exactly one board
+  footprint; a missing or duplicated fixed reference is a mismatch.
 
 Copper weight is always `not_in_board`, because KiCad saves only copper
 thickness. Holes and keepouts are `not_compared` in version 1. An independent
