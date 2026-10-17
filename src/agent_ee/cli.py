@@ -357,6 +357,8 @@ def link_correction(previous, current, finding_id, check_ids, reason):
     if source is None or finding_status(source) != "accepted":
         raise ValueError("closure requires an accepted finding")
     om, nm = read_json(previous / "candidate.json"), read_json(current / "candidate.json")
+    if om["files"] == nm["files"]:
+        raise ValueError("closure requires changed captured input bytes, not only a reviewer profile or scope identity")
     if om["scope"]["checks"] != nm["scope"]["checks"]:
         raise ValueError("verification criteria changed; cannot silently close under different rules")
     if om["scope"].get("requirements", []) != nm["scope"].get("requirements", []):

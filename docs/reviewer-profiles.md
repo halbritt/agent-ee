@@ -15,6 +15,9 @@ agent-ee review scopes/donor-case-alias.json \
 The external profile path and SHA-256 are recorded. Its parsed content is part
 of candidate identity. Editing it invalidates live-source verification; resume
 recaptures its current contents. Historical evidence is not silently upgraded.
+Changing only a profile cannot count as a repair: correction closure also requires
+changed captured input bytes and fresh passing checks/review.
+
 Old scopes using top-level `reviewers` must migrate to `review_profile` or pass
 an explicit profile. Checks-only runs do not require a profile.
 

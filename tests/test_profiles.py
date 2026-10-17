@@ -64,3 +64,22 @@ class StructuredOutputTests(unittest.TestCase):
               'response':'Review is complete.', 'structured_output':{'findings':[]}}}]
         value, _ = parse_stream('agy','\n'.join(map(json.dumps,events)),'gemini-4-argon-high')
         self.assertEqual(value, {'findings':[]})
+
+class CorrectionIdentityTests(unittest.TestCase):
+    def test_switching_only_reviewer_profile_cannot_count_as_design_repair(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from agent_ee.cli import link_correction
+        from agent_ee.storage import write_json
+        with tempfile.TemporaryDirectory() as temp:
+            old, new = Path(temp)/'old', Path(temp)/'new'
+            old.mkdir();new.mkdir()
+            manifest={'scope':{'checks':[],'requirements':[]},'files':{'board':'same-bytes'}}
+            write_json(old/'candidate.json',manifest);write_json(new/'candidate.json',manifest)
+            before={'candidate_id':'old-profile','run_id':'old-run','findings':[{'id':'circuit/flaw','status':'accepted'}]}
+            after={'candidate_id':'new-profile','run_id':'new-run','outcome':'criteria_satisfied','checks':[{'id':'native','execution':'ok','outcome':'pass'}]}
+            write_json(new/'result.json',after)
+            with patch('agent_ee.cli.verify',side_effect=[before,after]), patch('agent_ee.cli.save_result'):
+                with self.assertRaisesRegex(ValueError,'captured input'):
+                    link_correction(old,new,'circuit/flaw',['native'], 'Different reviewer called it acceptable')
