@@ -127,6 +127,33 @@ class CatalogIntegrationTests(unittest.TestCase):
         result = describe_check(spec, check_specs=[spec], files=files, scope={}, inputs=self.root)
         self.assertEqual(result['status'], 'unsupported')
 
+    def test_unreadable_requirements_keep_verified_snapshot_identity_in_sandbox(self):
+        from toolchain import require_toolchain
+        require_toolchain()
+        from agent_ee import executor
+        from agent_ee.storage import read_json
+        snapshot = read_json(self.root / 'snapshot/manifest.json')
+        work = self.root / 'work'
+        work.mkdir()
+        requirements = self.root / 'broken.json'
+        for name, payload in (('missing', None), ('invalid-json', b'{'),
+                              ('duplicate-json', b'{"parts":[],"parts":[]}'),
+                              ('invalid-utf8', b'\xff')):
+            with self.subTest(name=name):
+                if payload is not None:
+                    requirements.write_bytes(payload)
+                rec = executor.execute(self.root, work, ['/usr/bin/python3', '-m', 'agent_ee.catalog_checks',
+                    'part_selection', '/candidate/snapshot', self.params['manifest_sha256'],
+                    '--requirements', '/candidate/broken.json', '--out', '/work/report.json'], timeout=30)
+                self.assertEqual(rec['execution'], 'ok', rec)
+                report = read_json(work / 'report.json')
+                self.assertEqual((report['execution'], report['outcome'], report['parts']),
+                                 ('failed', 'unknown', []), report)
+                self.assertEqual(report['snapshot_date'], snapshot['snapshot_date'])
+                self.assertEqual(report['snapshot_sha256'], snapshot['database']['sha256'])
+                self.assertEqual(report['snapshot_manifest_sha256'], self.params['manifest_sha256'])
+                self.assertTrue(report['details']['error'])
+
     def test_preparation_cli_is_local_and_bad_pin_publishes_nothing(self):
         import contextlib
         import io

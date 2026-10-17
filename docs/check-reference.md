@@ -26,6 +26,8 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `erc` | `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 900 s |
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
+| `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json`; [snapshot integrity](catalog.md) only | 120 s |
+| `part_selection` | Same runner with `part_selection` and `--requirements /candidate/REQUIREMENTS`; [declared catalog constraints](part-selection.md) | 120 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
@@ -38,6 +40,11 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
+
+Catalog reports bind the snapshot manifest pin, DB hash and as-of date.
+Selection retains that verified identity when requirements loading fails;
+unverifiable snapshots return failed/unknown with null date and DB hash.
+Neither catalog check acquires data or establishes current supplier inventory.
 
 ## Hierarchy validation
 

@@ -1,10 +1,11 @@
 """Deterministic generic-part selection from a pinned offline catalog."""
 from collections import Counter
 from decimal import Decimal, localcontext
+from pathlib import Path
 import sqlite3
 
 from .catalog import (CATEGORY_ATTRIBUTES, UNITS, attribute_interval, decimal_number,
-                      decimal_text, exact_fields, load_catalog, nonempty, quantity)
+                      decimal_text, exact_fields, load_catalog, nonempty, quantity, strict_json)
 from .storage import identity
 
 RANK_ORDER = ['library_tier:Basic,Preferred,Extended', 'known_price_before_unknown',
@@ -198,10 +199,12 @@ def _select_snapshot(snapshot, expected_manifest_sha256, requirements):
 
 
 def selection_check(snapshot_directory, expected_manifest_sha256, requirements):
-    """Invalid input and unavailable snapshot are missing coverage, never fallback parts."""
+    """Check a requirements object or captured Path, retaining verified snapshot identity."""
     snapshot = None
     try:
         snapshot = load_catalog(snapshot_directory, expected_manifest_sha256)
+        if isinstance(requirements, Path):
+            requirements = strict_json(requirements.read_text(encoding='utf-8'))
         return _select_snapshot(snapshot, expected_manifest_sha256, requirements)
     except (OSError, ValueError, sqlite3.Error, TypeError, KeyError) as exc:
         return {'schema': 'agent-ee.selection/1', 'execution': 'failed', 'outcome': 'unknown',

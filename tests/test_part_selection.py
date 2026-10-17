@@ -204,6 +204,26 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(failure['snapshot_date'], '2026-10-17')
         self.assertEqual(failure['snapshot_sha256'], json.loads((snapshot / 'manifest.json').read_text())['database']['sha256'])
 
+    def test_captured_requirements_path_uses_the_same_selection_and_failure_contract(self):
+        from agent_ee.part_selection import selection_check
+        snapshot, expected = self.snapshot([self.row()])
+        requirements = self.root / 'requirements.json'
+        requirements.write_text(json.dumps(self.requirements()), encoding='utf-8')
+        self.assertEqual(canonical(selection_check(snapshot, expected, requirements)),
+                         canonical(selection_check(snapshot, expected, self.requirements())))
+        requirements.unlink()
+        failure = selection_check(snapshot, expected, requirements)
+        self.assertEqual((failure['execution'], failure['outcome'], failure['parts']),
+                         ('failed', 'unknown', []))
+        self.assertEqual(failure['snapshot_date'], '2026-10-17')
+        self.assertEqual(failure['snapshot_manifest_sha256'], expected)
+        (snapshot / 'catalog.sqlite3').write_bytes(b'corrupt')
+        failure = selection_check(snapshot, expected, requirements)
+        self.assertEqual((failure['execution'], failure['outcome'], failure['parts']),
+                         ('failed', 'unknown', []))
+        self.assertIsNone(failure['snapshot_date'])
+        self.assertIsNone(failure['snapshot_sha256'])
+
     def test_repinned_interval_contradicting_raw_tolerance_never_selects(self):
         from agent_ee.part_selection import selection_check
         from catalog_repin import repin, set_derived
