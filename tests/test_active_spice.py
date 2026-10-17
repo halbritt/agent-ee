@@ -1,0 +1,348 @@
+"""Captured-model validation and real native active-device simulation."""
+import copy
+import math
+import shutil
+import tempfile
+import time
+import unittest
+from array import array
+from pathlib import Path
+
+from agent_ee.active_spice import (bind_design, capability, capture_models, extract_metrics,
+                                   read_trace, validate_params)
+from agent_ee.baseline import compile_baseline, freeze_evidence, validate_witnesses, verify_evidence
+from agent_ee.candidate import capture, verify_snapshot
+from agent_ee.checks import Ctx, check_active_spice, CheckError, run_checks
+from agent_ee.storage import digest, read_json, write_json
+from toolchain import require_toolchain
+
+FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures' / 'active-spice'
+
+
+class ModelTests(unittest.TestCase):
+    def test_captured_include_closure_and_explicit_formals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'root.lib').write_text('.include "core.lib"\n')
+            (root / 'core.lib').write_text('.subckt buffer PLUS MINUS OUT\nE1 OUT 0 PLUS MINUS 1e6\n.ends buffer\n')
+            files = {p.name: digest(p) for p in root.iterdir()}
+            models = capture_models(root, files, ['root.lib', 'core.lib'])
+            self.assertEqual(models['subcircuits']['buffer']['formals'], ['PLUS', 'MINUS', 'OUT'])
+            self.assertEqual(models['files'], files)
+            self.assertEqual(models['staged']['core.lib'], (root / 'core.lib').read_text())
+
+    def test_unsafe_model_data_is_refused_before_solver(self):
+        bad = ['.control\nquit\n.endc', '.end', '.tran 1n 1m',
+               '.include /etc/passwd', '.include ../escape.lib',
+               '.include "missing.lib"', '.include "root.lib"',
+               '.subckt x a b\n+ .control\n.ends x',
+               '.subckt x a b\nB1 a b v=read(1)\n.ends x',
+               '.subckt x a b\nV1 a b PWL FILE=data\n.ends x',
+               '.model evil d file=x', '.model code arbitrary(foo=1)',
+               '.subckt x a a\n.ends x', '.subckt x a b\n.ends x\n.subckt X a b\n.ends X']
+        for text in bad:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'root.lib'
+                path.write_text(text + '\n')
+                with self.assertRaises(ValueError):
+                    capture_models(tmp, {'root.lib': digest(path)}, ['root.lib'])
+
+    def test_repeated_include_expansion_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'core.lib').write_text('.subckt x a b\nR1 a b 1k\n.ends x\n')
+            (root / 'root.lib').write_text('.include core.lib\n.include core.lib\n')
+            files = {p.name: digest(p) for p in root.iterdir()}
+            with self.assertRaisesRegex(ValueError, 'repeated model include'):
+                capture_models(root, files, list(files))
+
+    def test_changed_and_linked_models_are_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'core.lib'
+            path.write_text('.subckt x a b\nR1 a b 1k\n.ends x\n')
+            files = {'core.lib': digest(path)}
+            path.write_text(path.read_text() + '* changed\n')
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                capture_models(root, files, ['core.lib'])
+            (root / 'alias.lib').symlink_to(path)
+            with self.assertRaisesRegex(ValueError, 'linked'):
+                capture_models(root, {'alias.lib': digest(path)}, ['alias.lib'])
+
+
+class DeclarationTests(unittest.TestCase):
+    def setUp(self):
+        self.params = read_json(FIXTURE / 'control.scope.json')['checks'][1]['params']
+
+    def test_nonfinite_ranges_units_and_missing_bounds_refused(self):
+        mutations = [lambda p: p.update(sources=[None]),
+                     lambda p: p['sources'][0].update(unrecognized_waveform='custom'),
+                     lambda p: p.update(temperature_c=float('nan')),
+                     lambda p: p.update(temperature_c=10**400),
+                     lambda p: p['sources'][0]['step'].update(delay_s=1e308, rise_s=1e308),
+                     lambda p: p['sources'][0].update(dc_v=True),
+                     lambda p: p['analyses'][0].update(step_s=0),
+                     lambda p: p['analyses'][0]['measurements'][0].update(at_s=0.1),
+                     lambda p: p['analyses'][1].update(points_per_decade=1.5),
+                     lambda p: p['analyses'][1]['measurements'][0].update(unit='V'),
+                     lambda p: p['analyses'][1]['measurements'][0].update(min=1, max=0),
+                     lambda p: p['analyses'][1]['measurements'][0].update(max=float('inf'))]
+        for mutate in mutations:
+            p = copy.deepcopy(self.params)
+            mutate(p)
+            with self.subTest(params=p), self.assertRaises(ValueError):
+                validate_params(p)
+        p = copy.deepcopy(self.params)
+        del p['analyses'][0]['measurements'][0]['min']
+        del p['analyses'][0]['measurements'][0]['max']
+        with self.assertRaisesRegex(ValueError, 'informational'):
+            validate_params(p)
+        p['analyses'][0]['measurements'][0]['informational'] = True
+        validate_params(p)
+
+    def test_all_declared_model_files_enter_baseline(self):
+        scope = read_json(FIXTURE / 'control.scope.json')
+        params = scope['checks'][1]['params']
+        params['model_files'].append('design/nested.lib')
+        files = {'design/requirements.md': 'a', 'design/owned.lib': 'b', 'design/nested.lib': 'c'}
+        baseline = compile_baseline(scope, files)
+        self.assertEqual(baseline['files'], files)
+        self.assertEqual(capability(params, files)['bounded_metrics'], ['out_1ms', 'gain_100hz'])
+        changed = compile_baseline(scope, {**files, 'design/nested.lib': 'changed'})
+        self.assertNotEqual(baseline['baseline_id'], changed['baseline_id'])
+        from agent_ee.campaign import mutable_inputs
+        scope['mutable_inputs'] = ['design/nested.lib']
+        with self.assertRaisesRegex(ValueError, 'immutable baseline'):
+            mutable_inputs({'scope': scope, 'files': files}, baseline)
+        with self.assertRaisesRegex(ValueError, 'not captured'):
+            compile_baseline(scope, {'design/requirements.md': 'a'})
+
+    def test_pin_mapping_checks_complete_inventory_not_only_connected_subset(self):
+        conn = {'components': {'U1': {'value': 'owned', 'libsource': {'lib': 'test', 'part': 'amp'}}},
+                'nets': {'gnd': ['U1.1'], 'out': ['U1.2']}}
+        params = {'ground_net': 'gnd', 'active_parts': {'U1': {'model_file': 'x.lib',
+                    'subcircuit': 'test', 'pin_map': {'1': 'PLUS', '2': 'OUT'}}}}
+        model = {'subcircuits': {'test': {'path': 'x.lib', 'name': 'test', 'formals': ['OUT', 'PLUS']}},
+                 'files': {'x.lib': 'sha'}}
+        lines, binding = bind_design(conn, {'U1': ['1', '2']}, params, model)
+        self.assertEqual(lines, ['X0 n2 0 test'])  # formal order, not native pin order
+        self.assertEqual(binding['components']['U1']['mapping'][0]['pin'], '2')
+        for inventory in ({'U1': ['1', '2', '3']}, {'U1': None}):
+            with self.assertRaisesRegex(ValueError, 'inventory'):
+                bind_design(conn, inventory, params, model)
+        missing = copy.deepcopy(params)
+        missing['active_parts']['U1']['subcircuit'] = 'absent'
+        with self.assertRaisesRegex(ValueError, 'subcircuit absent'):
+            bind_design(conn, {'U1': ['1', '2']}, missing, model)
+        passive_conn = copy.deepcopy(conn)
+        passive_conn['components']['R1'] = {'value': '1e9999', 'libsource': {'lib': 'Device', 'part': 'R'}}
+        passive_conn['nets']['gnd'].append('R1.1')
+        passive_conn['nets']['out'].append('R1.2')
+        with self.assertRaisesRegex(ValueError, 'finite range'):
+            bind_design(passive_conn, {'U1': ['1', '2'], 'R1': ['1', '2']}, params, model)
+        params['active_parts']['U1']['pin_map']['1'] = 'NONEXISTENT'
+        with self.assertRaisesRegex(ValueError, 'existing formal'):
+            bind_design(conn, {'U1': ['1', '2']}, params, model)
+        conn['nets']['out'].append('U1.1')
+        with self.assertRaisesRegex(ValueError, 'duplicate native pin'):
+            bind_design(conn, {'U1': ['1', '2']}, params, model)
+
+
+class TraceTests(unittest.TestCase):
+    def trace(self, path, *, complex_data=False):
+        header = ('Title: owned test\nPlotname: ' + ('AC Analysis' if complex_data else 'Transient Analysis')
+                  + '\nFlags: ' + ('complex' if complex_data else 'real')
+                  + '\nNo. Variables: 3\nNo. Points: 2\nVariables:\n'
+                  + ('\t0\tfrequency\tfrequency grid=3\n' if complex_data else '\t0\ttime\ttime\n')
+                  + '\t1\tv(n1)\tvoltage\n\t2\tv(n2)\tvoltage\nBinary:\n')
+        values = ([10, 0, 0, 2, 1, 1, 20, 0, 0, 4, 2, 2] if complex_data
+                  else [0, 2, 1, 1, 4, 2])
+        path.write_bytes(header.encode() + array('d', values).tobytes())
+
+    def test_differential_complex_transfer_uses_complex_input_and_interpolates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'trace.raw'
+            self.trace(path, complex_data=True)
+            analysis = {'kind': 'ac', 'measurements': [{'name': 'ratio', 'observable': 'transfer_magnitude',
+                'input_positive_net': 'in', 'input_negative_net': 'gnd',
+                'output_positive_net': 'out', 'output_negative_net': 'in',
+                'at_hz': 15, 'unit': 'V/V', 'min': 0.7}]}
+            metrics, limits, raw = extract_metrics(path, analysis, {'gnd': '0', 'in': 'n1', 'out': 'n2'}, {})
+            self.assertAlmostEqual(metrics['ratio']['value'], math.sqrt(0.5))
+            self.assertEqual(raw['points'], 2)
+            analysis['measurements'][0]['input_negative_net'] = 'in'
+            with self.assertRaisesRegex(ValueError, 'zero AC'):
+                extract_metrics(path, analysis, {'gnd': '0', 'in': 'n1', 'out': 'n2'}, {})
+
+    def test_bad_shape_nan_wrong_analysis_and_out_of_trace_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'trace.raw'
+            self.trace(path)
+            original = path.read_bytes()
+            for payload in (original[:-8], original.replace(b'Flags: real', b'Flags: complex'),
+                            original[:-8] + array('d', [float('nan')]).tobytes(),
+                            original.replace(b'0\ttime\ttime', b'0\ttime\tvoltage'),
+                            original.replace(b'\t2\tv(n2)', b'\t1\tv(n2)')):
+                path.write_bytes(payload)
+                with self.assertRaises(ValueError):
+                    read_trace(path, 'transient')
+            path.write_bytes(original)
+            analysis = {'kind': 'transient', 'measurements': [{'name': 'v', 'unit': 'V',
+                'positive_net': 'in', 'negative_net': 'gnd', 'at_s': 2}]}
+            with self.assertRaisesRegex(ValueError, 'outside retained trace'):
+                extract_metrics(path, analysis, {'in': 'n1', 'out': 'n2', 'gnd': '0'}, {})
+
+
+class NativeActiveTests(unittest.TestCase):
+    def setUp(self):
+        require_toolchain(native=True)
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-active-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        shutil.copytree(FIXTURE, self.source)
+        self.scope = read_json(FIXTURE / 'control.scope.json')
+        self.scope['inputs'][0]['path'] = str(self.source)
+
+    def run_case(self):
+        write_json(self.root / 'scope.json', self.scope)
+        run = self.root / 'run'
+        run.mkdir()
+        capture(self.root / 'scope.json', run)
+        results = run_checks(run, time.monotonic() + 120)
+        self.assertEqual(results[0]['execution'], 'ok', results[0])
+        freeze_evidence(run, results)
+        return run, results
+
+    def test_native_control_against_independent_analytic_response(self):
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        metrics = result['details']['metrics']
+        gain = 1e6 / (1 + 1e6)
+        self.assertAlmostEqual(metrics['out_1ms']['value'], .1 * (1-math.exp(-1)) * gain, delta=3e-6)
+        self.assertAlmostEqual(metrics['gain_100hz']['value'], gain / math.sqrt(1+(2*math.pi*.1)**2), delta=1e-6)
+        for name in ('step/deck.cir', 'gain/result.raw', 'step/result.raw', 'models/design/owned.lib',
+                     'version/console.log', 'measurements.json', 'binding.json', 'model-manifest.json'):
+            self.assertIn('work/active/' + name, result['evidence'])
+        verify_evidence(run, results, required=True)
+
+    def test_seed_fails_both_bounds_and_sealed_witness_rejects_artifact_tampering(self):
+        path = self.source / 'active.kicad_sch'
+        path.write_text(path.read_text().replace('"10k"', '"100k"'))
+        board = self.source / 'active.kicad_pcb'
+        board.write_text(board.read_text().replace('"10k"', '"100k"'))
+        run, results = self.run_case()
+        result = results[-1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertTrue(all(bounds['min'] < 0 for bounds in result['details']['margins'].values()))
+        witnesses = [{'requirement_id': 'R-response', 'check_id': 'active'}]
+        evidence = [{'path': 'checks/active.json', 'locator': 'details.metrics'}]
+        validate_witnesses(run, witnesses, evidence)
+        for rel in ('step/deck.cir', 'gain/result.raw', 'measurements.json', 'models/design/owned.lib', 'binding.json'):
+            path = run / 'work/active' / rel
+            original = path.read_bytes()
+            path.write_bytes(original + b'changed')
+            with self.subTest(rel=rel), self.assertRaisesRegex(ValueError, 'tool evidence changed'):
+                validate_witnesses(run, witnesses, evidence)
+            with self.assertRaises(ValueError):
+                verify_evidence(run, results, required=True)
+            path.write_bytes(original)
+        path = run / 'inputs/design/owned.lib'
+        path.write_text(path.read_text() + '* changed model\n')
+        with self.assertRaisesRegex(ValueError, 'snapshot changed'):
+            verify_snapshot(run)
+
+    def test_missing_model_does_not_drop_active_component(self):
+        # A second unmodeled active component remains populated in the native export.
+        path = self.source / 'active.kicad_sch'
+        path.write_text(path.read_text().replace('"Device:R"', '"agent:Unknown"')
+                        .replace('"R_1_1"', '"Unknown_1_1"'))
+        run, results = self.run_case()
+        self.assertEqual((results[-1]['execution'], results[-1]['outcome']), ('unsupported', 'unknown'), results[-1])
+        self.assertIn('explicit model', results[-1]['summary'])
+        self.assertFalse((run / 'work/active/step').exists())
+
+    def test_nonexistent_formal_refused(self):
+        self.scope['checks'][1]['params']['active_parts']['U1']['pin_map']['3'] = 'DOES_NOT_EXIST'
+        run, results = self.run_case()
+        self.assertEqual(results[-1]['execution'], 'unsupported', results[-1])
+        self.assertIn('existing formal', results[-1]['summary'])
+
+    def test_outside_capture_include_refused_before_solver(self):
+        (self.source / 'owned.lib').write_text('.include /etc/passwd\n')
+        run, results = self.run_case()
+        self.assertEqual(results[-1]['execution'], 'unsupported', results[-1])
+        self.assertFalse((run / 'work/active/version').exists())
+
+    def test_actual_solver_failure_is_unknown_not_defect_and_retains_log(self):
+        (self.source / 'owned.lib').write_text('.subckt buffer INP INM VP VN OUT\n'
+            'V1 OUT 0 1\nV2 OUT 0 2\n.ends buffer\n')
+        run, results = self.run_case()
+        self.assertEqual((results[-1]['execution'], results[-1]['outcome']), ('failed', 'unknown'), results[-1])
+        self.assertIn('work/active/step/ngspice.log', results[-1]['evidence'])
+        self.assertNotIn('metrics', results[-1]['details'])
+
+    def test_wrong_candidate_or_wrong_kind_prerequisite_is_not_run(self):
+        run, results = self.run_case()
+        manifest = read_json(run / 'candidate.json')
+        spec = manifest['scope']['checks'][1]
+        for key, bad in (('candidate_id', 'wrong'), ('kind', 'geometry'), ('execution', 'failed')):
+            prior = {**results[0], key: bad}
+            write_json(run / 'checks/netlist.json', prior)
+            ctx = Ctx(run, manifest, spec, time.monotonic()+120)
+            with self.subTest(key=key), self.assertRaises(CheckError) as raised:
+                check_active_spice(ctx)
+            self.assertEqual(raised.exception.execution, 'not_run')
+
+    def test_nested_captured_model_closure_is_staged_and_sealed(self):
+        (self.source / 'core.lib').write_text((self.source / 'owned.lib').read_text())
+        (self.source / 'owned.lib').write_text('* retained comment\n.include "core.lib"\n')
+        self.scope['inputs'][0]['include'].append('core.lib')
+        params = self.scope['checks'][1]['params']
+        params['model_files'].append('design/core.lib')
+        params['active_parts']['U1']['model_file'] = 'design/core.lib'
+        run, results = self.run_case()
+        self.assertEqual((results[-1]['execution'], results[-1]['outcome']), ('ok', 'pass'), results[-1])
+        self.assertEqual((run / 'work/active/models/design/owned.lib').read_text(),
+                         '* retained comment\n.include /work/models/design/core.lib\n')
+        self.assertIn('design/core.lib', read_json(run / 'baseline.json')['files'])
+
+    def test_missing_named_subcircuit_is_unsupported(self):
+        self.scope['checks'][1]['params']['active_parts']['U1']['subcircuit'] = 'absent'
+        run, results = self.run_case()
+        self.assertEqual(results[-1]['execution'], 'unsupported', results[-1])
+        self.assertIn('subcircuit absent', results[-1]['summary'])
+
+    def test_later_ac_failure_cannot_promote_completed_transient_to_pass(self):
+        sources = self.scope['checks'][1]['params']['sources']
+        del sources[0]['ac_magnitude_v']
+        sources[1]['ac_magnitude_v'] = 1  # AC supply excitation; signal input is zero.
+        run, results = self.run_case()
+        self.assertEqual((results[-1]['execution'], results[-1]['outcome']), ('malformed', 'unknown'), results[-1])
+        self.assertIn('zero AC transfer', results[-1]['summary'])
+        self.assertIn('work/active/step/result.raw', results[-1]['evidence'])
+        self.assertIn('work/active/gain/result.raw', results[-1]['evidence'])
+        self.assertNotIn('metrics', results[-1]['details'])
+
+    def test_all_unbounded_measurements_are_explicitly_informational(self):
+        for analysis in self.scope['checks'][1]['params']['analyses']:
+            for measurement in analysis['measurements']:
+                del measurement['min'], measurement['max']
+                measurement['informational'] = True
+        run, results = self.run_case()
+        self.assertEqual((results[-1]['execution'], results[-1]['outcome']), ('ok', 'info'), results[-1])
+
+    def test_real_sandbox_deadline_failure_retains_execution(self):
+        from agent_ee.active_spice import run_analysis
+        write_json(self.root / 'scope.json', self.scope)
+        run = self.root / 'run'
+        run.mkdir()
+        manifest = capture(self.root / 'scope.json', run)
+        ctx = Ctx(run, manifest, self.scope['checks'][1], time.monotonic()+2)
+        with self.assertRaises(CheckError) as raised:
+            run_analysis(ctx, ctx.work / 'deadline', ['/usr/bin/python3', '-c', 'import time; time.sleep(10)'])
+        self.assertEqual(raised.exception.execution, 'interrupted')
+        execution = read_json(ctx.work / 'deadline/execution.json')
+        self.assertEqual(execution['execution'], 'timeout')
+        self.assertIn('work/active/deadline/execution.json', ctx.result['evidence'])

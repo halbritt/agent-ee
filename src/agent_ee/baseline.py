@@ -62,6 +62,10 @@ def compile_baseline(scope, files, inputs=None):
             paths.update(descriptor["immutable_inputs"])
     for spec in checks.values():
         params = spec.get("params", {})
+        if spec.get("kind") == "active_spice":
+            from .active_spice import capability
+            descriptor = capability(params, files)
+            paths.update(descriptor["immutable_inputs"])
         if spec.get("kind") == "measurements":
             paths.add(str(safe_relative(params["adapter"])))
             paths.update(str(safe_relative(p)) for p in params["tool"].get("inputs", []))

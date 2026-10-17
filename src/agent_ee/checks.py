@@ -811,9 +811,13 @@ def check_rc_transient(ctx):
 
 from .measurements import check_measurements, check_coupled_margins
 from .datasheet_facts import check_datasheet_facts, check_pin_map
+from .active_spice import check_active_spice
 
 
-CHECK_FUNCS = {"datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map, "measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
+CHECK_FUNCS = {"datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
+               "active_spice": check_active_spice, "measurements": check_measurements,
+               "coupled_margins": check_coupled_margins, "erc": check_erc,
+               "drc": check_drc, "netlist": check_netlist,
                "geometry": check_geometry, "rc_transient": check_rc_transient}
 
 

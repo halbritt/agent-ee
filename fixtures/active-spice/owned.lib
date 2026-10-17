@@ -1,0 +1,6 @@
+* Owned test model; deliberately synthetic, not a vendor qualification.
+.subckt buffer INP INM VP VN OUT
+E1 OUT 0 INP INM 1e6
+RVP VP 0 1e9
+RVN VN 0 1e9
+.ends buffer

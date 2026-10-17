@@ -178,3 +178,14 @@ selection. Engineer-owned check parameters select components and facts. Scope/2
 binds the facts and all referenced PDFs into immutable baseline files; the
 networkless installed extractor is hash/version declared and rechecked by verify.
 See [datasheet facts](datasheet-facts.md) for its limits.
+
+## Active SPICE model data
+
+The [active-device check](active-spice.md) validates captured model closures before
+ngspice: only explicitly declared immutable model files can be included, and
+control, analysis, file-I/O and unsupported directives/functions are refused.
+Generated model copies are mounted read-only in the existing networkless tool
+sandbox. This bounded dialect does not qualify arbitrary vendor model syntax,
+model accuracy or publication rights. Retained decks, traces and bindings use
+the existing coordinator evidence seal.
+
