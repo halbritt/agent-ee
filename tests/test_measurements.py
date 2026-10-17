@@ -7,6 +7,8 @@ from agent_ee.checks import Ctx, CheckError
 from agent_ee.measurements import check_measurements, check_coupled_margins, evaluate_limits
 from agent_ee.storage import digest, write_json
 
+from toolchain import toolchain_test
+
 
 class MeasurementTests(unittest.TestCase):
     def setUp(self):
@@ -55,6 +57,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "limits": {"peak": {"unit": "degC", "condition": "load", "max": 100}}}})
         return ctx
 
+    @toolchain_test
     def test_real_sandbox_adapter_execution_retains_raw_evidence(self):
         ctx = self.measurement_fixture()
         check_measurements(ctx)
@@ -62,6 +65,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertIn("work/thermal/tool/raw.txt", ctx.result["evidence"])
         self.assertEqual(ctx.result["details"]["margins"]["peak"]["max"], -1)
 
+    @toolchain_test
     def test_parser_cannot_overwrite_tool_evidence(self):
         ctx = self.measurement_fixture()
         adapter = self.run / "inputs/adapter.py"
@@ -71,6 +75,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             check_measurements(ctx)
         self.assertEqual((ctx.work / "tool/raw.txt").read_text(), "101")
 
+    @toolchain_test
     def test_parser_and_producer_cannot_forge_coordinator_request(self):
         for label, program in (("parser", "adapter.py"), ("producer", "solver.py")):
             with self.subTest(label=label):
@@ -88,6 +93,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 if label == "producer":
                     self.assertEqual(read_json(ctx.work / "tool/request.json")["parameters"], {"ambient": 85})
 
+    @toolchain_test
     def test_parser_cannot_relabel_domain_or_replace_raw_provenance(self):
         for attack in ("domain", "artifact"):
             with self.subTest(attack=attack):

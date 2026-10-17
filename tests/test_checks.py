@@ -1,8 +1,8 @@
 """Tests for agent_ee.checks against the RC fixtures, through the executor.
 
-Run: python3 -m unittest tests.test_checks  (from the repo root; pytest works
-too). Each class captures a fixture scope into a temporary run directory with
-agent_ee.candidate.capture and drives agent_ee.checks.run_checks for real
+Run: PYTHONPATH=src python3 -m unittest discover -s tests -p test_checks.py
+(from the repo root; pytest works too). Each native class captures a fixture
+scope into a temporary run directory with agent_ee.candidate.capture and drives agent_ee.checks.run_checks for real
 (kicad-cli, pcbnew and ngspice inside Bubblewrap), so a run takes ~1 min.
 """
 
@@ -19,6 +19,8 @@ sys.path.insert(0, str(REPO / "src"))
 
 from agent_ee import candidate, checks  # noqa: E402
 
+from toolchain import require_toolchain
+
 FIXTURES = REPO / "fixtures" / "rc"
 
 
@@ -34,6 +36,7 @@ class ControlFixtureTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        require_toolchain(native=True)
         cls.run_dir, cls.results = run_fixture("control")
 
     @classmethod
@@ -99,6 +102,7 @@ class SeededFixtureTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        require_toolchain(native=True)
         cls.run_dir, cls.results = run_fixture("seeded")
 
     @classmethod

@@ -16,6 +16,8 @@ from agent_ee.cli import run_review, verify
 from agent_ee.empirical import bench_review
 from agent_ee.storage import digest, read_json, write_json
 
+from toolchain import toolchain_test
+
 
 class CampaignIntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -80,6 +82,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "packet_sha256": packet["packet_sha256"], "role": label,
             "coverage": ["protocol"], "limitations": ["scripted test response"], "findings": []}
 
+    @toolchain_test
     def test_single_writer_repair_then_fresh_independent_reviews(self):
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(self.root / "campaign.json", self.root / "campaign")
@@ -100,6 +103,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "history result link"):
             verify_campaign(self.root / "campaign")
 
+    @toolchain_test
     def test_campaign_bench_epoch_repairs_without_erasing_original_history(self):
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):
@@ -136,6 +140,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "epoch lacks"):
             verify_campaign(self.root / "campaign")
 
+    @toolchain_test
     def test_implementation_cannot_change_verification_inputs_or_add_files(self):
         for attack in ("modify", "plant"):
             with self.subTest(attack=attack):
@@ -155,6 +160,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                 self.assertEqual(len(state["history"]), 1)
                 self.assertIn("implementation changed", state["error"])
 
+    @toolchain_test
     def test_retained_write_authority_cannot_be_broadened(self):
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):
@@ -179,6 +185,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertIn("lacks a pinned tool declaration", error.getvalue())
         self.assertNotIn("Traceback", error.getvalue())
 
+    @toolchain_test
     def test_bench_discrepancy_reenters_checks_and_adjudication(self):
         write_json(self.root / "source/design.json", {"value": 5})
         with contextlib.redirect_stdout(io.StringIO()):

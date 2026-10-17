@@ -1,0 +1,66 @@
+"""Test-only native prerequisites; check results and assertions are never caught."""
+import functools
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+from agent_ee.executor import sandbox_argv
+
+
+@functools.lru_cache(maxsize=None)
+def prerequisite_problem(native=False):
+    if shutil.which('bwrap') is None:
+        return 'bwrap not found on PATH'
+    with tempfile.TemporaryDirectory(prefix='agent-ee-prerequisites-') as tmp:
+        root = Path(tmp)
+        (root / 'inputs').mkdir()
+        (root / 'work').mkdir()
+        command = sandbox_argv(root / 'inputs', root / 'work', ['/usr/bin/true'])
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        if result.returncode:
+            return 'Bubblewrap/user namespaces unavailable: ' + result.stderr.strip()
+        if native:
+            # The sandbox has a fixed PATH, independent of the launching shell.
+            for tool in ('kicad-cli', 'ngspice'):
+                result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
+                    ['/bin/sh', '-c', f'command -v {tool}']),
+                    capture_output=True, text=True, timeout=15)
+                if result.returncode:
+                    return f'{tool} not found in native sandbox'
+            result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
+                ['/usr/bin/python3', '-c', 'import importlib.util; '
+                 'raise SystemExit(0 if importlib.util.find_spec("pcbnew") else 42)']),
+                capture_output=True, text=True, timeout=15)
+            if result.returncode == 42:
+                return 'pcbnew not installed for sandbox /usr/bin/python3'
+            if result.returncode:
+                raise AssertionError('pcbnew prerequisite probe failed: ' + result.stderr)
+            scope = Path(__file__).resolve().parents[1] / 'fixtures/rc/control.scope.json'
+            for item in json.loads(scope.read_text())['inputs']:
+                source = Path(item['path'])
+                if source.is_absolute():
+                    for pattern in item.get('include', []):
+                        if not any(source.glob(pattern)):
+                            return f'KiCad fixture library missing: {source / pattern}'
+    return None
+
+
+def require_toolchain(*, native=False):
+    problem = prerequisite_problem(native)
+    if problem:
+        reason = 'toolchain prerequisite: ' + problem
+        if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+            raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: ' + reason)
+        raise unittest.SkipTest(reason)
+
+
+def toolchain_test(test):
+    @functools.wraps(test)
+    def gated(*args, **kwargs):
+        require_toolchain()
+        return test(*args, **kwargs)
+    return gated
