@@ -124,8 +124,9 @@ not establish that the declared clearance or track-width values are suitable.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
-captured library pin references. These checks do not yet establish that an
-assignment declaration covers the actual schematic inventory.
+captured library pin references. The [native-bound mode](docs/native-binding.md)
+requires the declaration to match every native board component, its exact
+selection and its captured library pins; declared-only reports remain distinct.
 
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,

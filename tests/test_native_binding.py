@@ -300,6 +300,10 @@ class NativeBindingPipelineTests(unittest.TestCase):
         run, checks = self.run_variant()
         self.assertEqual(checks[0]['execution'], 'ok', checks)
         fresh, committed = (ET.parse(p).getroot() for p in (run / 'work/netlist/design.xml', FIXTURE / 'control.xml'))
+        for root in (fresh, committed):
+            # The exporter writes Sheetfile relative to its own working directory.
+            for prop in root.findall("./components/comp/property[@name='Sheetfile']"):
+                prop.set('value', Path(prop.get('value')).name)
         for tag in ('components', 'libparts', 'nets'):
             self.assertEqual(ET.tostring(fresh.find(tag)), ET.tostring(committed.find(tag)), tag)
         self.assertEqual(fresh.findtext('./design/tool'), committed.findtext('./design/tool'))
@@ -369,6 +373,14 @@ class NativeBindingPipelineTests(unittest.TestCase):
         self.assertNotIn('binding.kicad_sch', baseline['files'])
         self.assertEqual(baseline['coverage']['checks']['fp']['predicates'],
                          ['footprint:native-assignment-parity/1'])
+        from agent_ee.baseline import compile_baseline
+        manifest = read_json(run / 'candidate.json')
+        legacy = copy.deepcopy(manifest['scope'])
+        legacy['schema'] = 'agent-ee.scope/2'
+        del legacy['baseline']['requirements'][0]['intent']
+        legacy_files = compile_baseline(legacy, manifest['files'], run / 'inputs')['files']
+        self.assertIn('Owned.kicad_sym', legacy_files)
+        self.assertIn('Owned.pretty/SOT3.kicad_mod', legacy_files)
         freeze_evidence(run, checks)
         witness = [{'requirement_id': 'fp', 'check_id': 'fp'}]
         citation = [{'path': 'checks/fp.json', 'locator': 'outcome'}]
@@ -407,6 +419,7 @@ class NativeBindingPipelineTests(unittest.TestCase):
         manifest = read_json(run / 'candidate.json')
         scope = copy.deepcopy(manifest['scope'])
         scope['checks'] = scope['checks'][1:]
+        scope['baseline']['requirements'][0]['checks'] = ['fp']
         with self.assertRaisesRegex(ValueError, 'prerequisite'):
             compile_baseline(scope, manifest['files'], run / 'inputs')
         scope = copy.deepcopy(manifest['scope'])
@@ -432,10 +445,15 @@ class NativeBindingPipelineTests(unittest.TestCase):
         u1 = next(c for c in tree.getroot().findall('./components/comp') if c.get('ref') == 'U1')
         u1.append(copy.deepcopy(u1.find('footprint')))
         tree.write(xml, encoding='utf-8')
+        # Report outputs are write-once; rerun as a fresh check would.
+        (run / 'work/fp/native-assignments.json').unlink()
         ctx = Ctx(run, manifest, manifest['scope']['checks'][1], time.monotonic() + 60)
         with self.assertRaises(CheckError) as raised:
             check_footprint_assignment(ctx)
         self.assertEqual(raised.exception.execution, 'malformed')
+        report = read_json(run / 'work/fp/native-assignments.json')
+        self.assertEqual(report['findings'][0]['code'], 'native_inventory')
+        self.assertIn('footprint', report['findings'][0]['message'])
 
     def test_declared_only_mode_keeps_its_historical_predicate(self):
         from agent_ee.library_checks import capability

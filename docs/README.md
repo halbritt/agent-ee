@@ -84,4 +84,6 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
+- [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
+- [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
