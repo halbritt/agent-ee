@@ -142,20 +142,26 @@ def capability(params, scope, files, inputs, check_id):
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 
-def read_inventory(path):
+def read_inventory(path, *, global_labels=()):
     """Reject lossy identity maps before judging any missing terminal."""
     root = ET.parse(path).getroot()
     sheets = [text(sheet.get('tstamps')) for sheet in root.findall('./design/sheet')]
-    if not sheets or len(set(sheets)) != len(sheets) or '/' not in sheets:
+    if (not sheets or len(set(sheets)) != len(sheets) or '/' not in sheets
+            or any(not s.startswith('/') or not s.endswith('/')
+                   or (s != '/' and any(not segment for segment in s[1:-1].split('/')))
+                   for s in sheets)):
         raise ValueError('missing or ambiguous native hierarchy inventory')
     parts, components, refs, memberships, nets = {}, {}, {}, {}, {}
+    pin_names = {}
     uuids = set()
+    disconnected = set()
     for part in root.findall('./libparts/libpart'):
         key = (text(part.get('lib')), text(part.get('part')))
         pins = [text(p.get('num')) for p in part.findall('./pins/pin')]
         if key in parts or not pins or len(set(pins)) != len(pins):
             raise ValueError('missing or ambiguous symbol pin inventory')
         parts[key] = set(pins)
+        pin_names[key] = {p.get('num'): p.get('name') for p in part.findall('./pins/pin')}
     for comp in root.findall('./components/comp'):
         ref, sheet, lib = text(comp.get('ref')), comp.find('sheetpath'), comp.find('libsource')
         if sheet is None or lib is None:
@@ -168,25 +174,38 @@ def read_inventory(path):
             raise ValueError('ambiguous native component identity')
         if symbol not in parts:
             raise ValueError('missing native symbol pin inventory')
+        values = comp.findall('value')
+        if len(values) != 1:
+            raise ValueError('missing or ambiguous native component value')
         components[key] = {'sheet': sheet_id, 'reference': ref, 'uuid': uuid,
             'symbol': ':'.join(symbol), 'pins': sorted(parts[symbol]),
+            'pin_names': pin_names[symbol],
             'populated': not any(p.get('name') == 'dnp' for p in comp.findall('property')),
-            'value': comp.findtext('value') or ''}
+            'value': values[0].text or ''}
         refs[ref] = key
         uuids.add((sheet_id, uuid))
     if not components:
         raise ValueError('empty native inventory')
     for net in root.findall('./nets/net'):
         code, name = text(net.get('code')), text(net.get('name'))
-        if code in nets:
-            raise ValueError('duplicate native net code')
+        if code in nets or name in nets.values():
+            raise ValueError('duplicate native net code or name')
         nets[code] = name
-        for node in net.findall('node'):
+        nodes = net.findall('node')
+        for node in nodes:
             ref, pin = text(node.get('ref')), text(node.get('pin'))
             if ref not in refs or pin not in components[refs[ref]]['pins'] or (ref, pin) in memberships:
                 raise ValueError('ambiguous or unknown native terminal membership')
             memberships[(ref, pin)] = code
-    return {'components': components, 'memberships': memberships, 'nets': nets, 'sheets': sheets}
+        # Native generated singleton NC names have no sheet/name prefix. A
+        # local label is sheet-qualified; global labels require captured source.
+        if len(nodes) == 1:
+            pin_name = components[refs[ref]]['pin_names'][pin]
+            prefix = f'{pin_name}-' if pin_name and pin_name not in (pin, '~') else ''
+            if name == f'unconnected-({ref}-{prefix}Pad{pin})' and name not in global_labels:
+                disconnected.add((ref, pin))
+    return {'components': components, 'memberships': memberships, 'nets': nets,
+            'sheets': sheets, 'disconnected': disconnected}
 
 
 def resolve_components(contract, inventory):
@@ -239,7 +258,8 @@ def evaluate(contract, inventory):
             codes = [inventory['memberships'].get((n['reference'], pin)) for n, pin in zip(natives, pins)]
             record['actual']['terminals'] = [{'terminal': t, 'pin': pin, 'net_code': code,
                 'net_name': inventory['nets'].get(code)} for t, pin, code in zip(tids, pins, codes)]
-            connected = all(code is not None for code in codes)
+            connected = all(code is not None and (n['reference'], pin) not in inventory['disconnected']
+                            for n, pin, code in zip(natives, pins, codes))
             if kind == 'named_net':
                 satisfied = connected and inventory['nets'][codes[0]] in invariant['names']
             elif kind == 'same_net':
@@ -261,11 +281,27 @@ def check_hardware_interface(ctx):
         if specs.index(prior) >= specs.index(ctx.spec):
             raise ValueError('native netlist prerequisite must precede interface check')
         try:
-            inventory = read_inventory(xml)
+            from .symbol_library import parse_sexpr, children
+            from .checks import verified_hierarchy
+            files, _ = verified_hierarchy(ctx)
+            global_labels = {}
+            for rel in files:
+                schematic = parse_sexpr((ctx.inputs / rel).read_bytes())
+                if schematic[0] != 'kicad_sch':
+                    raise ValueError('expected native schematic for label qualification')
+                for label in children(schematic, 'global_label'):
+                    if len(label) < 2:
+                        raise ValueError('missing native global label name')
+                    name = text(label[1])
+                    global_labels.setdefault(name, []).append(f'{rel}: global_label {name}')
+            inventory = read_inventory(xml, global_labels=global_labels)
             native_result = read_json(ctx.run_dir / 'checks' / f"{prior['id']}.json")
             if len(inventory['sheets']) != native_result['details']['sheet_instances']:
                 raise ValueError('native XML hierarchy count differs from verified schematic hierarchy')
             records = evaluate(descriptor['contract'], inventory)
+            for record in records:
+                for terminal in record['actual'].get('terminals', []):
+                    record['locators'].extend(global_labels.get(terminal['net_name'], []))
         except (ValueError, KeyError, TypeError, ET.ParseError) as exc:
             records = [{'id': invariant['id'], 'expected': invariant,
                         'status': 'not_evaluated', 'actual': {'reason': str(exc)},

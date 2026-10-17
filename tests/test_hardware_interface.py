@@ -62,11 +62,11 @@ class NativeInterfaceTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.counter = 0
 
-    def run_variant(self, variant='control', *, resistor='10k', contract=None, mutate_xml=None):
+    def run_variant(self, variant='control', *, resistor='10k', contract=None, mutate_xml=None, schematic=None):
         self.counter += 1
         case = self.root / str(self.counter)
         case.mkdir()
-        (case / 'interface.kicad_sch').write_text(generator.schematic(variant, resistor))
+        (case / 'interface.kicad_sch').write_text(schematic if schematic is not None else generator.schematic(variant, resistor))
         (case / 'interface.kicad_pcb').write_bytes((FIXTURE / 'interface.kicad_pcb').read_bytes())
         (case / 'requirements.md').write_bytes((FIXTURE / 'requirements.md').read_bytes())
         write_json(case / 'contract.json', contract or read_json(FIXTURE / 'contract.json'))
@@ -119,6 +119,129 @@ class NativeInterfaceTests(unittest.TestCase):
                     self.assertAlmostEqual(measured,expected_voltage,delta=.001)
                 freeze_evidence(run, list(checks.values()))
                 verify_evidence(run, list(checks.values()), required=True)
+
+    def test_disconnected_terminal_cannot_satisfy_any_conductor_predicate(self):
+        contract = read_json(FIXTURE / 'contract.json')
+        contract['invariants'].append({
+            **copy.deepcopy(contract['invariants'][0]), 'id': 'probe-isolated',
+            'kind': 'different_net', 'terminals': ['in', 'probe-tip']})
+        del contract['invariants'][-1]['component']
+        del contract['invariants'][-1]['populated']
+        run, checks = self.run_variant('disconnect', contract=contract)
+        records = {r['id']: r for r in checks['interface']['details']['invariants']}
+        self.assertEqual(records['probe-isolated']['status'], 'violation')
+        self.assertEqual(records['probe-wire']['status'], 'violation')
+        inventory = read_inventory(run / 'work/netlist/design.xml')
+        code = inventory['memberships'][('PROBE', '1')]
+        self.assertEqual(inventory['nets'][code], 'unconnected-(PROBE-Pad1)')
+        self.assertEqual(records['probe-isolated']['actual']['terminals'][1]['net_code'], code)
+
+    def test_native_named_nc_lookalike_and_explicit_no_connect(self):
+        contract = read_json(FIXTURE / 'contract.json')
+        named = copy.deepcopy(contract['invariants'][3])
+        named.update(id='probe-name', terminal='probe-tip', names=['unconnected-(PROBE-Pad1)'])
+        contract['invariants'].append(named)
+        schematic = generator.schematic().replace('(label "OUT"', '(label "unconnected-(PROBE-Pad1)"')
+        # KiCad qualifies intentional local labels with the sheet path.
+        for invariant in contract['invariants']:
+            if invariant['kind'] == 'named_net' and '/OUT' in invariant['names']:
+                invariant['names'] = ['/unconnected-(PROBE-Pad1)']
+        contract['invariants'][-1]['names'] = ['/unconnected-(PROBE-Pad1)']
+        run, checks = self.run_variant(contract=contract, schematic=schematic)
+        self.assertEqual(checks['interface']['outcome'], 'pass', checks)
+        inventory = read_inventory(run / 'work/netlist/design.xml')
+        self.assertNotIn(('PROBE', '1'), inventory['disconnected'])
+        self.assertEqual(next(r for r in checks['interface']['details']['invariants']
+            if r['id'] == 'anonymous-wire')['status'], 'satisfied')
+        schematic = generator.schematic('disconnect')
+        schematic = schematic[:-2] + (
+            f'(no_connect (at 120 50) (uuid "{generator.uid("explicit-nc")}")))\n')
+        contract = read_json(FIXTURE / 'contract.json')
+        contract['invariants'].append({**named, 'names': ['unconnected-(PROBE-Pad1)']})
+        _, checks = self.run_variant(contract=contract, schematic=schematic)
+        records = {r['id']: r for r in checks['interface']['details']['invariants']}
+        self.assertEqual(records['probe-name']['status'], 'violation')
+        self.assertEqual(records['probe-wire']['status'], 'violation')
+
+    def test_native_global_label_exact_nc_name_is_a_conductor(self):
+        contract = read_json(FIXTURE / 'contract.json')
+        named = copy.deepcopy(next(i for i in contract['invariants'] if i['kind'] == 'named_net'))
+        named.update(id='probe-global', terminal='probe-tip', names=['unconnected-(PROBE-Pad1)'])
+        contract['invariants'] = [named]
+        contract['allowed_edits'] = []
+        schematic = generator.schematic('disconnect')
+        label = ('(global_label "unconnected-(PROBE-Pad1)" (shape input) (at 120 50 0) '
+                 f'(effects (font (size 1 1))) (uuid "{generator.uid("global-nc")}"))')
+        schematic = schematic[:-2] + label + ')\n'
+        _, checks = self.run_variant(contract=contract, schematic=schematic)
+        self.assertEqual(checks['interface']['outcome'], 'pass', checks)
+
+    def test_connected_anonymous_nc_lookalike_retains_membership(self):
+        def rename(root):
+            net = next(n for n in root.findall('./nets/net') if n.get('name').startswith('Net-'))
+            self.assertEqual(len(net.findall('node')), 2)
+            net.set('name', 'unconnected-(R2-Pad2)')
+        _, checks = self.run_variant(mutate_xml=rename)
+        self.assertEqual(checks['interface']['outcome'], 'pass', checks)
+        record = next(r for r in checks['interface']['details']['invariants'] if r['id'] == 'anonymous-wire')
+        self.assertEqual(record['status'], 'satisfied')
+        self.assertEqual(record['actual']['terminals'][0]['net_name'], 'unconnected-(R2-Pad2)')
+
+    def test_named_pin_disconnection_uses_native_symbol_pin_name(self):
+        contract = read_json(FIXTURE / 'contract.json')
+        relation = copy.deepcopy(next(i for i in contract['invariants'] if i['id'] == 'series-isolation'))
+        relation.update(id='probe-isolated', terminals=['in', 'probe-tip'])
+        contract['invariants'].append(relation)
+        schematic = generator.schematic('disconnect').replace('(name "1"', '(name "TIP"')
+        _, checks = self.run_variant(contract=contract, schematic=schematic)
+        record = next(r for r in checks['interface']['details']['invariants'] if r['id'] == 'probe-isolated')
+        self.assertEqual(record['status'], 'violation')
+        self.assertEqual(record['actual']['terminals'][1]['net_name'], 'unconnected-(PROBE-TIP-Pad1)')
+
+    def test_nc_normalization_never_hides_duplicate_or_unknown_nodes(self):
+        def duplicate(root):
+            net = next(n for n in root.findall('./nets/net') if n.get('name').startswith('unconnected-'))
+            root.findall('./nets/net')[0].append(copy.deepcopy(net.find('node')))
+        def unknown(root):
+            net = next(n for n in root.findall('./nets/net') if n.get('name').startswith('unconnected-'))
+            net.find('node').set('pin', '99')
+        for mutation in (duplicate, unknown):
+            _, checks = self.run_variant('disconnect', mutate_xml=mutation)
+            self.assertEqual(checks['interface']['outcome'], 'unknown', checks)
+
+    def test_value_inventory_distinguishes_missing_duplicate_and_empty(self):
+        def missing(root):
+            comp = root.find("./components/comp[@ref='R1']")
+            comp.remove(comp.find('value'))
+        def duplicate(root):
+            ET.SubElement(root.find("./components/comp[@ref='R1']"), 'value').text = '10k'
+        for mutation in (missing, duplicate):
+            with self.subTest(mutation=mutation.__name__):
+                _, checks = self.run_variant(mutate_xml=mutation)
+                self.assertEqual(checks['interface']['execution'], 'unsupported')
+                self.assertEqual(checks['interface']['outcome'], 'unknown')
+                self.assertTrue(all(r['status'] == 'not_evaluated'
+                    for r in checks['interface']['details']['invariants']))
+        def empty(root):
+            root.find("./components/comp[@ref='R1']/value").text = None
+        _, checks = self.run_variant(mutate_xml=empty)
+        self.assertEqual(checks['interface']['execution'], 'ok')
+        self.assertEqual(checks['interface']['details']['violations'], ['series-value'])
+
+    def test_duplicate_net_names_and_invalid_unused_sheet_paths_are_unknown(self):
+        def duplicate(root):
+            nets = root.findall('./nets/net')
+            nets[-1].set('name', nets[0].get('name'))
+        for mutation in [duplicate] + [
+                lambda root, path=path: ET.SubElement(root.find('design'), 'sheet', tstamps=path)
+                for path in ('unused', '/unused', 'unused/', '//', '/a//b/')]:
+            with self.subTest(mutation=mutation):
+                run, checks = self.run_variant(mutate_xml=mutation)
+                with self.assertRaises(ValueError):
+                    read_inventory(run / 'work/netlist/design.xml')
+                self.assertEqual(checks['interface']['outcome'], 'unknown')
+                self.assertTrue(all(r['status'] == 'not_evaluated'
+                    for r in checks['interface']['details']['invariants']))
 
     def test_sealed_failed_witness_and_tamper(self):
         run, checks = self.run_variant('delete-load')
