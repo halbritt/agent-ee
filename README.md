@@ -187,9 +187,10 @@ threshold, so that acceptance example remains unresolved.
 [Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
 URLs before offline checks, with byte limits, deadlines and per-part missing
 records. Explicit part manifests can preserve these obligations through capture
-and offline facts checks, including missing or uncited PDFs. Automatic propagation
-through the generation workflow remains pending; capturing a PDF does not verify
-its applicability or its engineering claims.
+and offline facts checks, including missing or uncited PDFs. The rung-1 driver
+captures every selected part's Datasheet in stage 2 and the emitter carries the URL
+onto the symbol; capturing a PDF does not verify its applicability or its
+engineering claims.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit and checks declared ports against the native sheet. It credits

@@ -253,6 +253,20 @@ class PartsTest(unittest.TestCase):
             self.assertEqual(manifest['parts']['R1'], {'Footprint': 'Resistor_SMD:R_0603_1608Metric', 'LCSC': 'C900001',
                                                        **missing})
             self.assertNotIn('MPN', manifest['parts']['R1'])
+            # The capture phase runs in stage 2 and keeps every URL-less part as an explicit missing record.
+            capture = json.loads((stage.dir / 'datasheets' / 'manifest.json').read_text())
+            self.assertEqual((capture['schema'], capture['outcome']), ('agent-ee.datasheet-capture/1', 'missing'))
+            self.assertEqual([(p['id'], p['url'], p['missing'], p['fetched_at'], p['sha256'], p['reason'])
+                              for p in capture['parts']],
+                             [(ref, None, True, None, None, 'no datasheet URL') for ref in ('C1', 'J1', 'R1')])
+            self.assertEqual(sorted(p.name for p in (stage.dir / 'datasheets').iterdir()), ['manifest.json'])
+            details = stage.receipt['details']['datasheets']
+            self.assertEqual((details['manifest'], details['outcome'], details['captured']),
+                             ('stages/2-parts/datasheets/manifest.json', 'missing', {}))
+            self.assertEqual(details['missing'], dict.fromkeys(('C1', 'J1', 'R1'), 'no datasheet URL'))
+            self.assertIn('stages/2-parts/datasheets/manifest.json', [o['path'] for o in stage.receipt['outputs']])
+            self.assertTrue(any('datasheet_facts' in item for item in stage.receipt['limitations']))
+            self.assertEqual(state['datasheets'], stage.dir / 'datasheets')
             self.assertEqual((stage.dir / 'catalog' / 'BOM-fome-mc.csv').read_text(), HEADER + '\n'.join(ROWS) + '\n')
             # A header with a catalog row cannot be silently excluded.
             shutil.rmtree(root / 'fome')

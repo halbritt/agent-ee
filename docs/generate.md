@@ -49,7 +49,7 @@ never starts after an earlier failure; it is recorded as `not_reached`.
 | Stage | What it does | Fails when |
 | --- | --- | --- |
 | 1 requirements | Extracts the RC parameters from the spec with fixed patterns (each must match exactly once), imports an intent record with `design_intent.import_record`, captures an empty-question dialog with `design_dialog.capture_dialog`, writes `requirements/{spec,system,targets,reference}.md` and compiles `scope/rung1.scope.json` from `fixtures/closed-loop/control.scope.json` | A parameter is missing or ambiguous, the topology is not the RC template, or the lint/dialog does not pass |
-| 2 parts | Reads the owner's fome-mc BOM `export/BOM-fome-mc.csv` as committed at `~/git/fome-mc` HEAD (working-tree edits by other sessions are recorded, not read), copies it into the run and writes `parts-manifest.json` | No exact-value row of the symbol's chip family has an LCSC number, a footprint is missing from the stock library, or pads differ from pins |
+| 2 parts | Reads the owner's fome-mc BOM `export/BOM-fome-mc.csv` as committed at `~/git/fome-mc` HEAD (working-tree edits by other sessions are recorded, not read), copies it into the run, writes `parts-manifest.json` and captures each part's Datasheet into `datasheets/` | No exact-value row of the symbol's chip family has an LCSC number, a footprint is missing from the stock library, or pads differ from pins |
 | 3 schematic | Writes the connectivity intent over captured `Device`, `power` and `Connector_Generic` libraries, resolves it with `connectivity_ir`, runs `agent_ee.schematic_emit` in the sandbox, then native ERC and XML netlist export | The intent does not resolve, the emitter refuses, ERC reports any violation, or the netlist nets or components differ from the intent |
 | 4 placement | Writes the envelope (50 x 30 mm outline at 100,100 mm; J1 fixed 2.54 mm inside the left edge) and packing policy, then runs `agent_ee.board_build` in the sandbox | `board_build` exits non-zero (its exit meanings are kept in the error) |
 | 5 routing | Runs `kicad-route --out stages/5-routing/out run --backend krt --budget 300` in a copy of the placed project and copies the candidate to `RUNDIR/design/` | kicad-route exits non-zero (0 is complete and valid) |
@@ -74,6 +74,15 @@ the BOM, so they are omitted, never invented. Every part also has an explicit
 `Datasheet` field: the raw catalog text when the catalog has a datasheet
 column, otherwise `null` with `datasheet_obligation:
 "missing:catalog_has_no_datasheet_column"`, so the obligation is never dropped.
+Stage 2 is also the capture phase: it passes every part's `Datasheet` to
+[`capture_datasheets`](datasheet-capture.md) and writes
+`stages/2-parts/datasheets/` (PDFs named by URL hash plus `manifest.json` with
+URL, fetch time and sha256 per part). The receipt lists the captured and missing
+parts; a missing datasheet is a stage limitation, not a stage failure, and later
+`datasheet_facts`/`pin_map` coverage for that part is unknown. Only this stage
+may touch the network, and only when a URL exists; the fome-mc BOM has no
+datasheet column, so the current run fetches nothing. Stage 3 copies a non-null
+`Datasheet` onto the emitted symbol.
 Each selection has a `selection_id`, the sha256 of the canonical JSON of its
 catalog sha256, catalog line, symbol, value and reference.
 

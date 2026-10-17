@@ -402,6 +402,59 @@ class OfflineNativeIntegrationTests(unittest.TestCase):
         self.assertEqual(checks['facts']['details']['qualification'], 'experimental-unqualified')
         self.assertEqual([r['reference'] for r in checks['facts']['details']['required_parts']], ['J1','R1'])
 
+    def test_selected_url_travels_through_rung1_emitter_and_native_netlist_into_capture(self):
+        import hashlib
+        import json
+        from agent_ee import generate as g
+        from agent_ee.connectivity_ir import resolve_intent
+        from agent_ee.datasheet_capture import bindings_from_native, capture_datasheets
+        from agent_ee.executor import execute
+        from agent_ee.schematic_emit import PARTS_SCHEMA, emit
+        from agent_ee.storage import read_json
+        fixture = self.capture_fixture
+        url = fixture.url + '/pdf'
+        params = g.parse_spec((Path(__file__).resolve().parents[1] / 'fixtures/rung1/spec.md').read_text())
+        # Stage-2 part records as a URL-bearing catalog would produce them; one URL shared by two picks.
+        parts = {'R1': {'Footprint': 'Resistor_SMD:R_0805_2012Metric', 'LCSC': 'C1', 'Datasheet': url},
+                 'C1': {'Footprint': 'Capacitor_SMD:C_0805_2012Metric', 'LCSC': 'C2', 'Datasheet': url},
+                 'J1': {'Footprint': 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical',
+                        'JLCPCB_Assembly': 'not_assembled', 'Datasheet': None,
+                        'datasheet_obligation': 'missing:catalog_has_no_datasheet_column'}}
+        libraries, captures = [], {}
+        for name in g.SYMBOL_LIBRARIES:
+            raw = (g.STOCK / 'symbols' / f'{name}.kicad_sym').read_bytes()
+            libraries.append({'name': name, 'path': f'{name}.kicad_sym', 'sha256': hashlib.sha256(raw).hexdigest()})
+            captures[f'{name}.kicad_sym'] = raw
+        resolved = resolve_intent(g.connectivity_intent(params, parts, libraries), captures)
+        self.assertEqual(resolved['outcome'], 'pass', resolved['findings'])
+        outputs = emit(json.dumps(resolved).encode(), captures,
+                       json.dumps({'schema': PARTS_SCHEMA, 'parts': parts}).encode(),
+                       (g.FIXTURE_PROJECT / 'rc_filter.kicad_pro').read_bytes(), 'rung1_rc')
+        project = self.root / 'emitted'
+        project.mkdir()
+        for name, data in outputs.items():
+            (project / name).write_bytes(data)
+        work = self.root / 'emitted-export'
+        result = execute(project, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                         '--output', '/work/design.xml', '/candidate/rung1_rc.kicad_sch'], timeout=120)
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertIn('--unshare-net', read_json(work / 'execution.json')['sandbox_argv'])
+        native = read_native_inventory(work / 'design.xml')['components']
+        # KiCad exports the stock library's '~' placeholder as empty text.
+        self.assertEqual({ref: c['datasheet'] for ref, c in native.items()}, {'R1': url, 'C1': url, 'J1': ''})
+        manifest = capture_datasheets(bindings_from_native(work / 'design.xml'), self.root / 'captured')
+        fixture.stop_server()
+        self.assertEqual(fixture.requests, ['/pdf'])  # One fetch per unique URL.
+        records = {p['id']: p for p in manifest['parts']}
+        digest = hashlib.sha256(fixture.pdf).hexdigest()
+        for ref in ('R1', 'C1'):
+            self.assertEqual((records[ref]['url'], records[ref]['sha256'], records[ref]['missing']), (url, digest, False))
+            self.assertIsNotNone(records[ref]['fetched_at'])
+        self.assertEqual((records['J1']['missing'], records['J1']['fetched_at'], records['J1']['reason']),
+                         (True, None, 'no datasheet URL'))
+        self.assertEqual((self.root / 'captured' / records['R1']['path']).read_bytes(), fixture.pdf)
+        self.assertEqual(manifest['outcome'], 'missing')
+
     def test_real_native_datasheet_and_population_flags(self):
         from test_native_binding import GEN
         from agent_ee.executor import execute

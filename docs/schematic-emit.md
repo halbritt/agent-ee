@@ -48,7 +48,9 @@ stderr. Argument errors exit 2.
   `parts` is either an object keyed by reference or a list of objects that each
   have a `reference`. An entry's fields are either at the top level or under a
   `fields` object. The emitter uses `Footprint` (required, `LIBRARY:NAME`),
-  `LCSC`, `MPN`, `Manufacturer` and `JLCPCB_Assembly`. The only value accepted
+  `Datasheet`, `LCSC`, `MPN`, `Manufacturer` and `JLCPCB_Assembly`. A
+  `Datasheet` string replaces the library's Datasheet field; `null` is an
+  explicit missing datasheet and keeps the library default. The only value accepted
   for `JLCPCB_Assembly` is `"not_assembled"`. Other keys are not emitted. They
   are listed in the receipt as `ignored_manifest_keys`. Every component in the
   record needs an entry, and an entry for an unknown reference is refused. The
