@@ -100,6 +100,32 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual([candidate['row']['lcsc'] for candidate in part['ranked']], ['C2', 'C10', 'C3', 'C4', 'C5'])
         self.assertEqual(part['tie_break']['deciding_key'], 'lcsc_number:ascending')
 
+    def test_capacitor_tier_decision_and_exact_stock_boundary(self):
+        attributes = json.dumps({'capacitance': '100 nF +/-10%', 'voltage': '25 V'})
+        snapshot, expected = self.snapshot([
+            self.row('C1', category='capacitor', attributes=attributes,
+                     is_basic='0', is_preferred='1', price1='0.001'),
+            self.row('C2', category='capacitor', attributes=attributes, stock='100', price1='0.1'),
+            self.row('C3', category='capacitor', attributes=attributes,
+                     is_basic='0', price1='0.0001')])
+        requirement = self.requirements(id='C1', category='capacitor', constraints={
+            'capacitance': {'kind': 'within', 'nominal': '100 nF', 'tolerance_percent': '10'},
+            'voltage': {'kind': 'at_least', 'min': '25 V'}})
+        for build_quantity, stock_floor, chosen, runner_up in (
+                (10, 100, 'C2', 'C1'), (10, 101, 'C1', 'C3'),
+                (100, 0, 'C2', 'C1'), (101, 0, 'C1', 'C3')):
+            with self.subTest(build_quantity=build_quantity, stock_floor=stock_floor):
+                requirement.update(build_quantity=build_quantity, stock_floor=stock_floor)
+                part = select_parts(snapshot, expected, requirement)['parts'][0]
+                self.assertEqual(part['chosen']['lcsc'], chosen)
+                self.assertEqual(part['tie_break'], {
+                    'winner': chosen, 'runner_up': runner_up,
+                    'deciding_key': 'library_tier:Basic,Preferred,Extended'})
+                self.assertEqual(part['exclusion_counts'], {} if chosen == 'C2' else {'low_stock': 1})
+                if chosen == 'C1':
+                    self.assertEqual(part['rejected'], [{'lcsc': 'C2', 'reasons': [{
+                        'code': 'low_stock', 'unknown': False, 'available': 100, 'required': 101}]}])
+
     def test_unknown_attributes_stock_and_empty_query_have_explanations(self):
         snapshot, expected = self.snapshot([
             self.row('C1', stock=''), self.row('C2', attributes='{"resistance":"10 kohm +/-1%","voltage":"unreadable"}'),
@@ -196,6 +222,36 @@ class SelectionTests(unittest.TestCase):
                                    capture_output=True, text=True, timeout=20)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), 'pass')
+
+    def test_canonical_bytes_match_across_sandbox_processes_and_hash_seeds(self):
+        import subprocess
+        from agent_ee.executor import sandbox_argv
+        from toolchain import require_toolchain
+        require_toolchain()
+        snapshot, expected = self.snapshot([
+            self.row('C10'), self.row('C2'), self.row('C3', attributes=json.dumps({
+                'resistance': '10 kohm +/-5%', 'voltage': '50 V'})),
+            self.row('C4', attributes=json.dumps({'resistance': 'unparseable', 'voltage': '50 V'}))])
+        requirement = self.requirements(id='Z-narrow')
+        requirement['parts'].append(dict(id='A-broad', category='resistor', package='0402',
+            quantity_per_board=1, constraints={
+                'resistance': {'kind': 'within', 'nominal': '10 kohm', 'tolerance_percent': '5'}}))
+        expected_bytes = canonical(select_parts(snapshot, expected, requirement))
+        program = ('import sys; from agent_ee.part_selection import select_parts; '
+                   'from agent_ee.storage import canonical; '
+                   f'sys.stdout.buffer.write(canonical(select_parts("/candidate", {expected!r}, {requirement!r})))')
+        for seed in ('1', '42'):
+            with self.subTest(seed=seed):
+                work = self.root / ('work-' + seed)
+                work.mkdir()
+                completed = subprocess.run(sandbox_argv(snapshot, work, [
+                    '/usr/bin/env', 'PYTHONHASHSEED=' + seed, '/usr/bin/python3', '-c', program]),
+                    capture_output=True, timeout=20)
+                self.assertEqual(completed.returncode, 0, completed.stderr.decode('utf-8'))
+                self.assertEqual(completed.stdout, expected_bytes)
+        selection = json.loads(expected_bytes)
+        self.assertEqual([part['id'] for part in selection['parts']], ['Z-narrow', 'A-broad'])
+        self.assertEqual(selection['allocations'], {'C2': 10, 'C3': 10})
 
     def test_requirement_failure_retains_verified_snapshot_date_and_hash(self):
         from agent_ee.part_selection import selection_check

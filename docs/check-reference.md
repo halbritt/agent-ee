@@ -47,6 +47,26 @@ Catalog reports bind the snapshot manifest pin, DB hash and as-of date.
 Selection retains that verified identity when requirements loading fails;
 unverifiable snapshots return failed/unknown with null date and DB hash.
 Neither catalog check acquires data or establishes current supplier inventory.
+## Captured catalog and part selection
+
+The [catalog check](catalog.md) takes exactly `snapshot` and `manifest_sha256`.
+It verifies the captured manifest and database and rederives normalized intervals
+from retained raw attributes. Its scope/3 coverage is informational.
+
+The [part-selection check](part-selection.md) also requires `requirements` and
+`requirement_id`, mapped to exactly one baseline requirement sourced from that
+requirements file. Capture both catalog files and the requirements file as
+immutable inputs. Eligible rows must meet every declared constraint and
+`max(build_quantity * quantity_per_board, stock_floor)` available stock. Ranking
+prefers Basic, then Preferred, then Extended, followed by known price, lower
+price, higher available stock and numeric LCSC ID. The report records matched
+intervals, rejection reasons, exclusion counts and the deciding rank key.
+
+An empty selection returns `execution: ok`, `outcome: unknown`, `chosen: null`
+and reason `no candidate`. Invalid requirements or snapshots return
+`execution: failed`, `outcome: unknown`. An unparseable attribute excludes its
+row as unknown. These results establish consistency with captured catalog
+claims; upstream authenticity and datasheet correctness require separate evidence.
 
 ## Hierarchy validation
 
