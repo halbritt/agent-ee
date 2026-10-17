@@ -75,6 +75,28 @@ class GateBoundaryTests(unittest.TestCase):
                 except unittest.SkipTest as exc:
                     self.fail(f'malformed probe was skipped: {exc}')
 
+    def test_real_shell_missing_native_executables(self):
+        from unittest.mock import patch
+        import toolchain
+        toolchain.require_toolchain()
+        original = toolchain.sandbox_argv
+        for missing in ('kicad-cli', 'ngspice'):
+            def absent_tool(inputs, work, command):
+                # Run the real shell in the real sandbox, selecting an absent binary.
+                command = [arg.replace('command -v ' + missing + ' ',
+                    'command -v agent_ee_definitely_absent_binary ') for arg in command]
+                return original(inputs, work, command)
+
+            for strict in ('0', '1'):
+                with self.subTest(tool=missing, strict=strict):
+                    toolchain.prerequisite_problem.cache_clear()
+                    self.addCleanup(toolchain.prerequisite_problem.cache_clear)
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
+                            patch('toolchain.sandbox_argv', side_effect=absent_tool):
+                        expected = AssertionError if strict == '1' else unittest.SkipTest
+                        with self.assertRaisesRegex(expected, missing + ' not found'):
+                            toolchain.require_toolchain(native=True)
+
     def test_unusable_namespace_reports_diagnostic(self):
         from unittest.mock import patch
         from toolchain import prerequisite_problem, require_toolchain
