@@ -1,0 +1,3 @@
+# Rung 1: RC low-pass board
+
+A passive first-order RC low-pass filter on its own board. A 3-pin header J1 carries the input /IN on pin 1, the output /OUT on pin 2 and GND on pin 3. A 10k resistor R1 connects /IN to /OUT, and a 100n capacitor C1 connects /OUT to GND. With an ideal unloaded 1 V step at /IN, /OUT at 1 ms must be between 0.62 V and 0.65 V inclusive. Native ERC and DRC must pass and the netlist must export. Copper tracks must be at least 0.20 mm wide. The board is a 2-layer 50 mm x 30 mm rectangle with J1 on the left edge. R1 and C1 are JLCPCB-assembled SMD parts; the through-hole header J1 is hand-soldered.
