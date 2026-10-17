@@ -84,3 +84,4 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
+- [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
