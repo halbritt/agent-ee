@@ -122,8 +122,8 @@ prerequisites, invalid tables, duplicate native properties, sealing and
 tampering, and a re-pinned snapshot whose stored intervals contradict its raw
 claims.
 
-Catalog/1 categories are resistor, capacitor, inductor, diode, LED, connector
-and regulator. A microcontroller such as the real `C1340704` cannot be a catalog
+Catalog/1 categories are `resistor`, `capacitor`, `inductor`, `diode`, `led`,
+`connector` and `regulator`. A microcontroller such as the real `C1340704` cannot be a catalog
 row, so the QFN-48 example uses a synthetic regulator row in that package. All
 stock, prices and attributes in the fixture are test values. Synthetic examples
 do not qualify a full catalog feed. The check does not compare the board

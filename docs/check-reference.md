@@ -30,6 +30,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
 | `fab_consistency` | Coordinator reads the earlier export's sealed staging tree and version run, the captured board, the sealed netlist and earlier sealed geometry; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
+| `package_consistency` | `/usr/bin/python3 -B -m agent_ee.package_consistency /candidate/CATALOG MANIFEST_SHA256 /work/request.json /work/catalog-rows.json`; coordinator then compares preceding native XML names through the captured table ([details](package-consistency.md)) | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -320,6 +321,15 @@ extraction and bounded overlap evidence through the coordinator seal; missing
 or unsupported geometry cannot pass. See the [contract and qualification](land-pattern.md)
 for exact parameters, pin-number comparisons and coverage limits. The actual
 C11702/0402 comparison does not meet the requested 0.98 threshold.
+
+## Footprint and catalog package names
+
+`package_consistency` requires an earlier `netlist_check`, a captured catalog
+snapshot pinned by manifest hash, and a captured `agent-ee.package-map/1` table.
+Each native component gets `match`, `mismatch`, `class_mismatch`, `unknown` or
+`excluded`, naming the table rule that fired; a name outside the table is
+unknown, never pass, and the table hash is recorded in the evidence. See
+[package consistency](package-consistency.md) for parameters, rules and limits.
 
 ## Placement predicates
 
