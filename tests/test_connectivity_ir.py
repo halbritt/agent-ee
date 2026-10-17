@@ -22,7 +22,6 @@ class ConnectivityTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'))
         self.assertEqual(result['components'][0]['pins'][0]['y_nm'], 3810000)
         self.assertEqual(result['components'][0]['pins'][0]['electrical_type'], 'passive')
-        self.assertEqual(canonical_resolved(result), canonical_resolved(result))
 
     def test_unknown_pin_never_reassigned(self):
         raw = intent()
@@ -339,3 +338,21 @@ class ResolvedBoundaryTests(unittest.TestCase):
             status = main([str(root / 'intent.json'), '--captures', tmp, '--out', str(root / 'out')])
             self.assertEqual(status, 1)
             self.assertEqual(json.loads((root / 'out/manifest.json').read_text())['execution'], 'failed')
+
+    def test_rehashed_nonlist_findings_are_malformed(self):
+        from agent_ee.connectivity_ir import validate_resolved
+        for findings in (None, {}, '', False, 0):
+            result = resolve_intent(intent(), {'Owned.kicad_sym': LIB})
+            result['findings'] = findings
+            result['canonical_sha256'] = hashlib.sha256(canonical_resolved({k: v for k, v in result.items() if k != 'canonical_sha256'})).hexdigest()
+            with self.subTest(findings=findings), self.assertRaises(ValueError):
+                validate_resolved(result)
+
+    def test_nul_pin_metadata_cannot_produce_usable_resolution(self):
+        for library in (LIB.replace(b'(name "~")', b'(name "bad\x00name")'),
+                        LIB.replace(b'R_1_1', b'bad\x00R_1_1')):
+            raw = intent()
+            raw['libraries'][0]['sha256'] = hashlib.sha256(library).hexdigest()
+            with self.subTest(library=library):
+                result = resolve_intent(raw, {'Owned.kicad_sym': library})
+                self.assertNotEqual(result['outcome'], 'pass')
