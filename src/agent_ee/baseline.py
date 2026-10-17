@@ -6,7 +6,7 @@ from .candidate import safe_relative
 from .storage import digest, identity, read_json, write_json
 
 
-def compile_baseline(scope, files):
+def compile_baseline(scope, files, inputs=None):
     """Bind the complete baseline and verification criteria to captured bytes."""
     if scope.get("schema") == "agent-ee.scope/1":
         return None
@@ -66,6 +66,8 @@ def compile_baseline(scope, files):
             paths.add(str(safe_relative(params["adapter"])))
             paths.update(str(safe_relative(p)) for p in params["tool"].get("inputs", []))
         paths.update(str(safe_relative(p)) for p in params.get("calibration_inputs", []))
+    from .datasheet_facts import verification_inputs
+    paths.update(verification_inputs(scope, inputs))
     paths.update(str(safe_relative(p)) for p in scope.get("requirements", []))
     if not paths <= files.keys():
         raise ValueError(f"baseline sources not captured: {sorted(paths - files.keys())}")
@@ -80,7 +82,7 @@ def compile_baseline(scope, files):
 
 def load_baseline(run):
     manifest = read_json(Path(run) / "candidate.json")
-    expected = compile_baseline(manifest["scope"], manifest["files"])
+    expected = compile_baseline(manifest["scope"], manifest["files"], Path(run) / "inputs")
     if expected is None:
         return None
     if read_json(Path(run) / "baseline.json") != expected:

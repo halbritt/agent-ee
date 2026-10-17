@@ -122,6 +122,9 @@ def verify(run, *, current_source=True):
     verify_evidence(run, result["checks"], required=result["state"] == "complete")
     for spec in manifest["scope"].get("checks", []):
         tool = spec.get("params", {}).get("tool")
+        if spec.get("kind") == "datasheet_facts":
+            from .datasheet_facts import verify_extractor
+            verify_extractor(spec.get("params", {}).get("extractor"))
         if spec.get("kind") == "measurements":
             if not isinstance(tool, dict) or not tool.get("argv") or not tool.get("sha256"):
                 raise ValueError("measurement check lacks a pinned tool declaration")

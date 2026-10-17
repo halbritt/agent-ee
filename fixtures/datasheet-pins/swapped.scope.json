@@ -1,0 +1,105 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "TJA1051 pin map swapped",
+  "scope": "Compare declared native U1 pin names against page-cited facts.",
+  "inputs": [
+    {
+      "path": "swapped",
+      "at": "project"
+    },
+    {
+      "path": "facts.json",
+      "at": "facts.json"
+    },
+    {
+      "path": "requirements.md",
+      "at": "requirements.md"
+    },
+    {
+      "path": "../../references/TJA1051.pdf",
+      "at": "TJA1051.pdf"
+    },
+    {
+      "path": "/usr/share/kicad/template",
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ]
+    }
+  ],
+  "schematic": "project/pins.kicad_sch",
+  "board": "project/pins.kicad_pcb",
+  "requirements": [
+    "requirements.md"
+  ],
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "facts",
+      "kind": "datasheet_facts",
+      "params": {
+        "facts": "facts.json",
+        "extractor": {
+          "path": "/usr/bin/pdftotext",
+          "sha256": "88263e2333fa712d6eadfc69dd2daf826792a67abb14f4d2110673d5f195b154",
+          "version": "pdftotext version 24.02.0"
+        }
+      }
+    },
+    {
+      "id": "pin-map",
+      "kind": "pin_map",
+      "params": {
+        "facts_check": "facts",
+        "netlist_check": "netlist",
+        "symbols": [
+          {
+            "reference": "U1",
+            "part_number": "TJA1051T",
+            "facts": [
+              "canl",
+              "canh"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "pins",
+        "statement": "U1 pin 6 is CANL; pin 7 is CANH; native checks remain clean.",
+        "source": {
+          "path": "requirements.md",
+          "locator": "Pin-map fixture requirements"
+        },
+        "checks": [
+          "erc",
+          "drc",
+          "netlist",
+          "facts",
+          "pin-map"
+        ]
+      }
+    ],
+    "targets": [
+      "requirements.md"
+    ],
+    "reference_architectures": [
+      "requirements.md"
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "agent-ee.datasheet-facts/1",
+  "facts": [
+    {
+      "id": "canl",
+      "part_number": "TJA1051T",
+      "kind": "pin_function",
+      "pin": "6",
+      "value": "CANL",
+      "unit": "",
+      "conditions": "Table 3, TJA1051T",
+      "source": {
+        "path": "TJA1051.pdf",
+        "sha256": "6637cd500dda3c1c951ce29bed7fe909f11f9a3bef64b096dbb486827add9f11",
+        "page": 4,
+        "locator": "Table 3, CANL row",
+        "quote": "CANL          6          LOW-level CAN bus line"
+      }
+    },
+    {
+      "id": "canh",
+      "part_number": "TJA1051T",
+      "kind": "pin_function",
+      "pin": "7",
+      "value": "CANH",
+      "unit": "",
+      "conditions": "Table 3, TJA1051T",
+      "source": {
+        "path": "TJA1051.pdf",
+        "sha256": "6637cd500dda3c1c951ce29bed7fe909f11f9a3bef64b096dbb486827add9f11",
+        "page": 4,
+        "locator": "Table 3, CANH row",
+        "quote": "CANH          7          HIGH-level CAN bus line"
+      }
+    }
+  ]
+}

@@ -92,7 +92,7 @@ def capture(scope_path, run_dir, profile_path=None):
         manifest.update(profile_path=str(profile_source), profile_sha256=profile_hash)
     manifest["candidate_id"] = identity({"scope": scope, "files": before})
     from .baseline import compile_baseline
-    baseline = compile_baseline(scope, before)
+    baseline = compile_baseline(scope, before, inputs)
     if baseline is not None:
         write_json(run_dir / "baseline.json", baseline)
     write_json(run_dir / "candidate.json", manifest)

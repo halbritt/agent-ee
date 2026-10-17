@@ -11,6 +11,8 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | --- | --- |
 | `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
 | `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |
+| `datasheet_facts` | Captured PDF hash/page/exact-quote/value verification with sandboxed hash/version-pinned Poppler. Textual support only; applicability and row/conditions remain engineer judgments. |
+| `pin_map` | Native XML symbol pin names against verified pin-function facts and explicit engineer applicability; missing/unverified dependencies are unsupported. See [datasheet facts](datasheet-facts.md). |
 | `erc` | Native all-severity ERC plus complete hierarchy coverage. Missing child files prevent a clean result. |
 | `drc` | Native all-severity DRC, saved fill, and schematic parity. Reports retain exclusions and native items. A violation is distinct from execution failure. |
 | `netlist` | Complete-hierarchy native XML export, with derived connectivity, DNP, native symbol identity, and sheet/UUID provenance. Informational rather than functional acceptance. |
