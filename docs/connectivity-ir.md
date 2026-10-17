@@ -154,6 +154,13 @@ must be accounted for exactly once, and each boundary permits only one port
 for a final physical net. Each port must reach terminals on both sides of the
 boundary; port-only leaves are defects.
 
+A child port's emitted hierarchical-label name must not equal a local label
+on that child belonging to a different physical class after explicit port
+unions. This includes generated reserved labels. Aliases within the same class
+are allowed, and labels on other sheets do not collide. Raw validation and
+resolved reconstruction both reject cross-class aliases as boundary defects;
+recomputing a record's hash cannot bypass the check.
+
 Local names are display labels, never global join keys. Equal nonempty names
 on different segments in one sheet are refused; names may repeat across
 sheets. Empty names receive `__agent_ee_` followed by SHA256 of the UTF-8 compact
