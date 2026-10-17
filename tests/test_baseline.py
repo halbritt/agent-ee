@@ -46,6 +46,12 @@ class BaselineTests(unittest.TestCase):
                          {"design/requirements", "design/targets", "design/reference"})
         self.assertIn("R1", str(packet["baseline"]))
 
+    def test_navigation_cannot_substitute_for_a_sealed_check_witness(self):
+        build_packet(self.run, [self.check], "run1")
+        with self.assertRaisesRegex(ValueError, "cited check"):
+            validate_witnesses(self.run, self.witnesses,
+                [{"path": "work/.navigation/index.json", "locator": "/entries/0"}])
+
     def test_baseline_mutation_and_missing_coverage_refused(self):
         write_json(self.run / "baseline.json", {})
         with self.assertRaisesRegex(ValueError, "baseline changed"):

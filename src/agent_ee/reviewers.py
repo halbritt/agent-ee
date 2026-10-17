@@ -56,6 +56,12 @@ def build_packet(run_dir, checks, run_id):
     if baseline is not None:
         packet["baseline"] = baseline
         packet["baseline_access"] = "/evidence/baseline.json; complete sources at /candidate/<path>"
+    from .packet_index import retain
+    packet["navigation"] = retain(run_dir, m, baseline, checks, run_id)
+    packet["evidence_access"] = {"candidate": "/candidate/<path>",
+        "checks": "/evidence/checks/<id>.json", "artifacts": "/evidence/work/<check>/<path>",
+        "navigation": "/evidence/work/.navigation/index.json",
+        "binding": "/evidence/work/.navigation/binding.json"}
     paths = ["inputs/" + p for p in scope.get("requirements", [])]
     if baseline is not None:
         paths += ["inputs/" + p for p in baseline["files"]]
@@ -77,7 +83,7 @@ def build_packet(run_dir, checks, run_id):
         try:
             data.decode("utf-8")
         except UnicodeDecodeError:
-            packet["packet_limits"].append(f"binary artifact retained for operator, not read by text reviewer: {rel}")
+            packet["packet_limits"].append(f"binary artifact omitted from text; available through mounted evidence: {rel}")
             continue
         amount = min(len(data), max(0, remaining), 100_000)
         included = data[:amount].decode("utf-8", "ignore")

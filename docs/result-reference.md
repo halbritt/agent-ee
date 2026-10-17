@@ -406,3 +406,61 @@ No model call, authentication/quota canary, numerical simulator canary or provid
 fallback is performed. An `ok` receipt establishes neither subscription quota nor
 engineering acceptance. Only declared tool identities are covered; arbitrary
 transitive dependencies are not discovered.
+
+## Factual packet navigation
+
+New reviewer packets carry an additive `navigation` view. The complete
+`agent-ee.packet-index/1` is at `/evidence/work/.navigation/index.json`;
+`binding.json` beside it records this run's raw native artifact hashes and
+check projection identities. The leading-dot directory cannot collide with a
+valid check ID. Existing packets without navigation retain their original meaning.
+
+The structural index binds the candidate, optional baseline, complete declared
+requirements/checks and supported native inventory. Native XML component/pin/net
+locators and saved-board primitive UUIDs link to check applicability and retained
+bindings. Coupling entries retain declared member/metric names, units, conditions,
+limits and domains. Missing entity attribution remains `unresolved`. Reference
+names and anonymous nets do not establish stable electrical intent. Duplicate
+component references are unresolved rather than assigned to the first match.
+
+Raw report hashes belong to the run binding. XML retains its declared export
+version; unversioned geometry JSON is marked with a null native schema version.
+The index extractor version is separate from native producer provenance. Structural source hashes explicitly
+name the extracted semantic content; changing an export timestamp or geometry
+runtime path does not change topology identity. Changing candidate bytes, native
+entities or declared criteria invalidates prior index continuations. Source
+locators identify retained evidence; they are not synthetic tool observations.
+
+`packet_index.page` bounds UTF-8 JSON display bytes as rendered in reviewer prompts (default 12,000).
+Each continuation binds candidate/index IDs and an exact offset. An entry too
+large for the display has an explicit full-index JSON pointer and continuation.
+Full requirements, baseline, criteria and raw artifacts remain reachable through
+`baseline_access` and `evidence_access`, including binary artifacts omitted from
+text. Display omission never removes an acceptance obligation.
+
+Coverage always identifies this extractor as partial, or unavailable when it
+produces no entities. It reports observed native entities, unresolved/fallback
+identities, every declared requirement/check and checks without entity mappings.
+It does not certify native hierarchy completeness or physical routing. XML/JSON
+parser failures and the 16 MB per-native-source, 100,000 XML-element and 50,000
+entity limits produce explicit navigation diagnostics while leaving raw sources
+available. Unsafe paths and symlinks fail integrity checks.
+
+Navigation is built once before independent initial reviews from declared
+coordinator native outputs and explicit criteria/bindings. It reads no reviewer
+judgments, campaign history, preflight results or peer experiments. Existing
+review isolation, preflight dispatch guards, sealed check witnesses and central
+adjudication remain required. Index entries cannot serve as failed-check
+witnesses. Public verification checks artifact bytes and reconstructs navigation
+bindings; ordinary trusted-local-storage limitations still apply.
+
+For a retained run with a packet, measure local construction and display bytes:
+
+```sh
+PYTHONPATH=src python3 scripts/benchmark_packet_index.py build/review
+```
+
+The report separates structural index size, prefix packet size and indexed packet
+size. It does not measure tokens, provider latency or model missed defects.
+No reviewer attention, detection or cost improvement is established by these
+mechanical measurements; a paired live reviewer comparison remains outstanding.

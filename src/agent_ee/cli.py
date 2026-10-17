@@ -171,6 +171,9 @@ def verify(run, *, current_source=True):
         raise ValueError("candidate manifest changed")
     if (run / "packet.json").exists() and digest(run / "packet.json") != result.get("packet_file_sha256"):
         raise ValueError("review evidence packet changed")
+    from .packet_index import verify_navigation
+    from .baseline import load_baseline
+    verify_navigation(run, manifest, load_baseline(run), result["checks"], result["run_id"])
     from .preflight import verify_calls
     verify_calls(run, result, manifest)
     from .baseline import verify_evidence
