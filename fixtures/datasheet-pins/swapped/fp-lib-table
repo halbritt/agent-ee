@@ -1,0 +1,1 @@
+(fp_lib_table (lib (name "pins") (type "KiCad") (uri "${KIPRJMOD}/pins.pretty") (options "") (descr "Original test footprint")))

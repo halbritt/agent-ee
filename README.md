@@ -97,7 +97,8 @@ model or acquire measurements from instruments.
 ## What is implemented today
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
-saved-board geometry, and an ideal passive R/C/L transient simulation through
+saved-board geometry, [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
+and an ideal passive R/C/L transient simulation through
 ngspice. Generic producer/parser interfaces support additional measurements and
 coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
 their subscription CLIs; authentication or quota failures stop the affected call

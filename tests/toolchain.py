@@ -12,7 +12,7 @@ from agent_ee.executor import sandbox_argv
 
 
 @functools.lru_cache(maxsize=None)
-def prerequisite_problem(native=False):
+def prerequisite_problem(native=False, tools=()):
     if shutil.which('bwrap') is None:
         return 'bwrap not found on PATH'
     with tempfile.TemporaryDirectory(prefix='agent-ee-prerequisites-') as tmp:
@@ -32,9 +32,9 @@ def prerequisite_problem(native=False):
                 return 'Bubblewrap/user namespaces unavailable: ' + diagnostic
             raise AssertionError(f'Bubblewrap prerequisite probe failed ({result.returncode}): '
                                  + diagnostic)
-        if native:
+        if native or tools:
             # The sandbox has a fixed PATH, independent of the launching shell.
-            for tool in ('kicad-cli', 'ngspice'):
+            for tool in (('kicad-cli', 'ngspice') + tools if native else tools):
                 result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
                     ['/bin/sh', '-c', f'command -v {tool} >/dev/null; status=$?; '
                      'if [ "$status" -eq 1 ] || [ "$status" -eq 127 ]; then exit 42; fi; exit "$status"']),
@@ -44,6 +44,7 @@ def prerequisite_problem(native=False):
                 if result.returncode:
                     raise AssertionError(f'{tool} prerequisite probe failed ({result.returncode}): '
                                          + result.stderr)
+        if native:
             result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
                 ['/usr/bin/python3', '-c', 'import importlib.util; '
                  'raise SystemExit(0 if importlib.util.find_spec("pcbnew") else 42)']),
@@ -62,8 +63,8 @@ def prerequisite_problem(native=False):
     return None
 
 
-def require_toolchain(*, native=False):
-    problem = prerequisite_problem(native)
+def require_toolchain(*, native=False, tools=()):
+    problem = prerequisite_problem(native, tuple(tools))
     if problem:
         reason = 'toolchain prerequisite: ' + problem
         if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':

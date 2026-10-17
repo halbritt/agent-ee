@@ -149,3 +149,10 @@ initial review contexts. New model knowledge changes the calibration epoch, not
 the immutable requirement baseline. Once feedback is registered, a later failure
 cannot silently restore the old acceptance. Recovery must preserve the evidence
 and the supersession relationship.
+
+Datasheet fact authors are untrusted. Citation verification establishes exact
+text occurrence in the captured PDF, not applicability or correct table/conditions
+selection. Engineer-owned check parameters select components and facts. Scope/2
+binds the facts and all referenced PDFs into immutable baseline files; the
+networkless installed extractor is hash/version declared and rechecked by verify.
+See [datasheet facts](datasheet-facts.md) for its limits.
