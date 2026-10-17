@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import time
+from threading import Event, Lock
 from pathlib import Path
 
 from .storage import digest, write_json
@@ -44,7 +45,20 @@ def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=()):
     return command + ["--", *map(str, argv)]
 
 
-def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=()):
+class Cancellation:
+    """One operation's launch gate and cooperative subprocess cancellation."""
+
+    def __init__(self):
+        self.cancelled = Event()
+        self.launch_lock = Lock()
+
+    def cancel(self):
+        # Do not wait behind a worker inside Popen. A launch already admitted
+        # there observes this flag immediately after Popen returns.
+        self.cancelled.set()
+
+
+def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=(), cancellation=None):
     work = Path(work).resolve()
     work.mkdir(parents=True, exist_ok=True)
     (work / "home").mkdir(exist_ok=True)
@@ -54,17 +68,45 @@ def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra
     start = time.monotonic()
     output, stderr = b"", b""
     try:
-        with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, start_new_session=True) as proc:
+        cancellation = cancellation or Cancellation()
+        with cancellation.launch_lock:
+            if cancellation.cancelled.is_set():
+                proc = None
+            else:
+                proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, start_new_session=True)
+        if proc is not None:
             try:
-                output, stderr = proc.communicate(stdin.encode() if stdin is not None else None,
-                                             timeout=max(0.001, timeout))
-                record["exit_code"] = proc.returncode
-                record["execution"] = "ok" if proc.returncode == 0 else "failed"
-            except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
-                os.killpg(proc.pid, signal.SIGKILL)
-                output, stderr = proc.communicate()
-                record["execution"] = "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "interrupted"
+                data = stdin.encode() if stdin is not None else None
+                try:
+                    while True:
+                        if cancellation.cancelled.is_set():
+                            raise KeyboardInterrupt
+                        remaining = timeout - (time.monotonic() - start)
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(command, timeout)
+                        try:
+                            output, stderr = proc.communicate(data, timeout=min(.05, remaining))
+                            break
+                        except subprocess.TimeoutExpired:
+                            data = None
+                    record["exit_code"] = proc.returncode
+                    record["execution"] = "ok" if proc.returncode == 0 else "failed"
+                except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    record["execution"] = "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "interrupted"
+                    try:
+                        output, stderr = proc.communicate(timeout=1)
+                    except subprocess.TimeoutExpired as cleanup:
+                        output, stderr = cleanup.output or b"", cleanup.stderr or b""
+                        record["cleanup_error"] = "process group killed but output drain exceeded one second"
+            finally:
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream is not None:
+                        stream.close()
     except FileNotFoundError as exc:
         record["execution"] = "unavailable"
         output = str(exc).encode()

@@ -63,7 +63,7 @@ def parse_stream(harness, text, model, tools=True):
         'model_observed': start['init']['model'], 'usage': end.get('usage', {})}
 
 
-def native_call(run_dir, label, definition, prompt, schema, timeout):
+def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None):
     harness = definition['harness']
     model, effort = definition['model'], definition['effort']
     tools = definition.get('tool_mode', 'investigate') == 'investigate'
@@ -130,7 +130,7 @@ def native_call(run_dir, label, definition, prompt, schema, timeout):
             record['tool_host_sha256'] = digest(host)
         record['harness_binary_sha256'] = digest(executable)
         record.update(execute(Path(run_dir) / 'inputs', work, argv, stdin=stdin, timeout=timeout,
-            network=True, extra_ro=mounts))
+            network=True, extra_ro=mounts, cancellation=cancellation))
         if record['execution'] != 'ok':
             record['error'] = 'harness execution failed; inspect retained console; no fallback attempted'
             return record, None

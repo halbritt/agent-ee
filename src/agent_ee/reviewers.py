@@ -3,11 +3,11 @@
 import json
 import shutil
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from threading import Lock
 from pathlib import Path
 
-from .executor import execute
+from .executor import Cancellation, execute
 from .storage import digest, identity, read_json, write_json
 
 EVIDENCE_SCHEMA = {"type": "array", "items": {"type": "object", "required": ["path", "locator"],
@@ -90,7 +90,7 @@ def build_packet(run_dir, checks, run_id):
     return packet
 
 
-def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", tools=False):
+def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", tools=False, *, cancellation=None):
     """Claude subscription route with explicit tools; no MCP, hooks or fallback."""
     run_dir = Path(run_dir)
     work = run_dir / "review-work" / label
@@ -116,7 +116,7 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
             argv += ["--allowedTools", "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch", "--add-dir", "/candidate", "--output-format", "stream-json", "--verbose"]
         from .harnesses import evidence_mounts
         execution = execute(run_dir / "inputs", work, argv, stdin=prompt, timeout=timeout,
-                            network=True, extra_ro=[(executable, "/reviewer"),
+                            network=True, cancellation=cancellation, extra_ro=[(executable, "/reviewer"),
                                 (credentials, "/work/home/.claude/.credentials.json"), *evidence_mounts(run_dir, label)])
         record.update(execution)
         record["harness_binary_sha256"] = digest(executable)
@@ -157,11 +157,11 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
         shutil.rmtree(work / "home", ignore_errors=False)
 
 
-def reviewer_call(run_dir, label, definition, prompt, schema, timeout):
+def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None):
     from .harnesses import native_call
     if definition['harness'] == 'claude':
-        return claude_call(run_dir, label, definition['model'], prompt, schema, timeout, definition['effort'], definition.get('tool_mode', 'investigate') == 'investigate')
-    return native_call(run_dir, label, definition, prompt, schema, timeout)
+        return claude_call(run_dir, label, definition['model'], prompt, schema, timeout, definition['effort'], definition.get('tool_mode', 'investigate') == 'investigate', cancellation=cancellation)
+    return native_call(run_dir, label, definition, prompt, schema, timeout, cancellation=cancellation)
 
 
 def workspace_instructions(role):
@@ -185,6 +185,7 @@ def initial_reviews(run_dir, packet, deadline):
     scope = read_json(Path(run_dir) / "candidate.json")["scope"]
     from .profiles import validate_profile
     definitions = validate_profile(scope.get("review_profile"))["reviewers"]
+    cancellation = Cancellation()
     stopped = set()
     launch_lock = Lock()
 
@@ -193,7 +194,7 @@ def initial_reviews(run_dir, packet, deadline):
         definition = {**definition, "tool_mode": scope["review_profile"].get("tool_mode", "investigate")}
         role = definition["role"]
         record = {"role": role, "execution": "not_run"}
-        if time.monotonic() < deadline:
+        if not cancellation.cancelled.is_set() and time.monotonic() < deadline:
             lens = definition.get("lens", LENSES.get(role, LENSES["circuit"]))
             prompt = ("You are an independent initial engineering reviewer. Investigate with available tools as needed. Read the supplied "
                 "native source excerpts and check records yourself. Prior reviewers and author conclusions are absent. "
@@ -216,7 +217,9 @@ def initial_reviews(run_dir, packet, deadline):
             # Admission and failure publication share one lock. Admitted calls may
             # settle after a peer fails; queued calls cannot restart that harness.
             with launch_lock:
-                if definition["harness"] in stopped:
+                if cancellation.cancelled.is_set():
+                    timeout = None
+                elif definition["harness"] in stopped:
                     record["error"] = "affected harness stopped after prior execution failure; no fallback"
                     timeout = None
                 else:
@@ -225,7 +228,20 @@ def initial_reviews(run_dir, packet, deadline):
             if timeout is None:
                 write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
                 return None, record
-            record, value = reviewer_call(run_dir, role, definition, prompt, schema, timeout)
+            try:
+                record, value = reviewer_call(run_dir, role, definition, prompt, schema, timeout,
+                                              cancellation=cancellation)
+            except KeyboardInterrupt:
+                record.update(backend=definition["harness"], model_requested=definition["model"],
+                              effort=definition["effort"], billing_route="subscription")
+                work_record = Path(run_dir) / "review-work" / role / "execution.json"
+                if work_record.is_file():
+                    record.update(read_json(work_record))
+                else:
+                    record["execution"] = "interrupted"
+                record["role"] = role
+                write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
+                raise
             with launch_lock:
                 if record["execution"] in ("failed", "unavailable", "timeout", "interrupted"):
                     stopped.add(definition["harness"])
@@ -243,10 +259,24 @@ def initial_reviews(run_dir, packet, deadline):
         write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
         return review, record
 
-    # Bound resource use even for profiles with additional roles. Exiting the
-    # executor waits for every in-flight call, including after a peer failure.
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(review_role, definitions))
+    # Owner cancellation stops every harness, unlike an independent peer failure.
+    pool = ThreadPoolExecutor(max_workers=2)
+    futures = []
+    try:
+        for definition in definitions:
+            futures.append(pool.submit(review_role, definition))
+        results = [future.result() for future in futures]
+    except BaseException:
+        cancellation.cancel()
+        # Queued roles still run the admission gate to retain not_run records.
+        # Executor cancellation polls at 50ms; allow bounded artifact cleanup.
+        _, pending = wait(futures, timeout=2)
+        if pending:
+            (Path(run_dir) / "cancellation-error.log").write_text(
+                "Reviewer cleanup did not settle within two seconds; inspect partial executions.\n")
+        raise
+    finally:
+        pool.shutdown(wait=False)
     return [review for review, _ in results if review is not None], [record for _, record in results]
 
 

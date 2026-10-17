@@ -62,7 +62,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         # Avoid platform fingerprint probes; sandbox tool execution is real.
         patch('agent_ee.cli.runtime_files', return_value={"test": "fixed"}).start()
 
-    def agent(self, run, label, definition, prompt, schema, timeout):
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None):
         run = Path(run)
         self.calls.append(label)
         if label == "implementation":
@@ -120,7 +120,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "observed_utc": "2026-10-17T00:00:00Z", "artifacts": [{"path": "instrument.json",
                 "sha256": digest(self.root / "instrument.json")}],
             "observations": [{**sample, "artifact": "instrument.json", "locator": "0"}]})
-        def calibrated_repair(run, label, definition, prompt, schema, timeout):
+        def calibrated_repair(run, label, definition, prompt, schema, timeout, *, cancellation=None):
             reply = self.agent(run, label, definition, prompt, schema, timeout)
             if label == "implementation":
                 write_json(Path(run) / "review-work/implementation/design/design/design.json", {"value": 1})
@@ -146,7 +146,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def test_implementation_cannot_change_verification_inputs_or_add_files(self):
         for attack in ("modify", "plant"):
             with self.subTest(attack=attack):
-                def attacking_agent(run, label, definition, prompt, schema, timeout):
+                def attacking_agent(run, label, definition, prompt, schema, timeout, *, cancellation=None):
                     reply = self.agent(run, label, definition, prompt, schema, timeout)
                     if label == "implementation":
                         design = Path(run) / "review-work/implementation/design/design"

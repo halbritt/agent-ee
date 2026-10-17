@@ -106,8 +106,10 @@ There is no automatic provider or account fallback. Initial review scheduling
 runs at most two calls concurrently while retaining role-specific schemas,
 contexts and sandbox mounts. Scripted sleeping subprocess tests exercise overlap,
 asymmetric failure/timeouts, retained artifacts, queued harness stops and the
-adjudication barrier. These tests establish scheduling behavior, not live-model
-latency or engineering review quality.
+adjudication barrier. Isolated coordinator processes receiving actual SIGINT
+exercise cancellation during subprocess launch and waiting, queued-role suppression,
+partial artifacts, and absence of surviving scripted child processes. These tests
+establish scheduling behavior, not live-model latency or engineering review quality.
 
 ## Adding an engineering check
 
