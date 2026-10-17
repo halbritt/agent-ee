@@ -136,8 +136,9 @@ it. The implementation cannot broaden it by editing state or adding a file.
 This protects the supported proposal path, not arbitrary host filesystem writes.
 
 In a placement iteration the [placement adapter](placement-adapter.md) narrows
-the board further. It allows only footprint translations and quarter turns, and
-it protects fixed and locked footprints. Every other board change and every
+the board further. It allows only footprint translations and exact quarter turns.
+Angles are compared without rounding, and an angle that cannot be held exactly is
+refused. It also protects fixed and locked footprints. Every other board change and every
 non-board byte change is refused. The coordinator, not the writer, runs the placer
 helper. The helper runs networkless, from a hashed read-only source copy, and
 writes to a fresh scratch destination. Its receipt and local checks are
