@@ -143,7 +143,7 @@ def capability(params, scope, files, inputs, check_id):
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 
-def read_inventory(path, *, global_labels=()):
+def read_inventory(path):
     """Reject lossy identity maps before judging any missing terminal."""
     root = ET.parse(path).getroot()
     sheets = [text(sheet.get('tstamps')) for sheet in root.findall('./design/sheet')]
@@ -574,9 +574,6 @@ def check_hardware_interface(ctx):
             qualify_global_names(inventory, schematics, atom(schematics[files[0]], 'uuid'),
                                  declared_pins(descriptor['contract'], inventory))
             records = evaluate(descriptor['contract'], inventory)
-            for record in records:
-                for terminal in record['actual'].get('terminals', []):
-                    record['locators'].extend(global_labels.get(terminal['net_name'], []))
         except (ValueError, KeyError, TypeError, ET.ParseError) as exc:
             records = [{'id': invariant['id'], 'expected': invariant,
                         'status': 'not_evaluated', 'actual': {'reason': str(exc)},
