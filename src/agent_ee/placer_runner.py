@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from .locking import writer_lock
 from .placement import judge
 from .placement_probe import extract
-from .placer import pack
+from .placer import _failure, pack
 from .storage import digest, read_json, write_json
 
 
@@ -73,6 +73,37 @@ def _unrouted_board(source):
     return board
 
 
+def _padstack_refusal(board):
+    # The probe records one shape per pad; another padstack mode could hide an
+    # unqualified shape on some copper layer.
+    import pcbnew
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+                return f'{fp.GetReference()} pad {pad.GetNumber()!r}: per-layer padstack not qualified for packing'
+    return None
+
+
+def _pad_inventory(board):
+    """Footprint-local pad facts that a footprint move must leave unchanged.
+
+    A quarter turn can report the unchanged relative angle as 360 degrees.
+    """
+    import pcbnew
+    every = pcbnew.PADSTACK.ALL_LAYERS
+    def xy(v):
+        return [int(v.x), int(v.y)]
+    return {fp.m_Uuid.AsString(): {
+        'fpid': fp.GetFPIDAsString(), 'pads': sorted([
+            [pad.m_Uuid.AsString(), pad.GetNumber(), pad.GetNetname(), int(pad.GetAttribute()),
+             int(pad.Padstack().Mode()), int(pad.GetShape(every)), xy(pad.GetSize(every)),
+             xy(pad.GetOffset(every)), xy(pad.GetDrillSize()), int(pad.GetDrillShape()),
+             pad.GetRoundRectRadiusRatio(every), pad.GetChamferRectRatio(every),
+             int(pad.GetChamferPositions(every)), pad.GetLayerSet().FmtHex(),
+             xy(pad.GetFPRelativePosition()), round(pad.GetFPRelativeOrientation().AsDegrees(), 6) % 360]
+            for pad in fp.Pads()])} for fp in board.GetFootprints()}
+
+
 def _native_drc(board, scratch):
     report_path = scratch / 'native-drc.json'
     command = ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
@@ -130,7 +161,11 @@ def _saved_judgment(output, plan):
 
 
 def _evaluate_proposal(board, output, plan, netlist_bytes):
+    import pcbnew
+    pads = _pad_inventory(board)
     _apply_plan(board, plan, output)
+    if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
+        raise ValueError('native saved board changed footprint pad geometry')
     saved, judgment = _saved_judgment(output, plan)
     write_json(output.parent / 'placement-probe.json', saved)
     write_json(output.parent / 'placement-judgment.json', judgment)
@@ -176,6 +211,9 @@ def place_candidate(source, netlist, destination, request):
         _netlist_binding(netlist_bytes, facts)
         board = _unrouted_board(source)
         plan = pack(facts, request['policy'])
+        refusal = plan['status'] == 'planned' and _padstack_refusal(board)
+        if refusal:
+            return _failure(facts, request['policy'], 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
         if plan['status'] != 'planned':
             return plan
         with tempfile.TemporaryDirectory(prefix='.placement-staging-', dir=root) as temporary:

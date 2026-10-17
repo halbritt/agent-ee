@@ -10,6 +10,12 @@ from fractions import Fraction
 from .placement import area2, intersection_area, judge, qualified_polygons, validate_capture
 
 
+# Native pcbnew PAD_SHAPE values, read from the KiCad 10.0.7 bindings.
+# TRAPEZOID (3) and CUSTOM (6) stay unqualified until their effect is reviewed.
+PAD_SHAPES = {0: 'circle', 1: 'rect', 2: 'oval', 4: 'roundrect', 5: 'chamfered_rect'}
+PAD_SHAPE_PCBNEW_MAJOR = '10'
+
+
 def rotate(point, quarter_turns):
     x, y = point
     for _ in range(quarter_turns % 4):
@@ -67,6 +73,11 @@ def _qualified(capture):
     outline = qualified_polygons(capture['outline'])
     if len(outline) != 1:
         raise ValueError('single closed outline required')
+    # Shape numbers are only meaningful for the pcbnew enum they came from.
+    version = capture.get('pcbnew_version')
+    if any(fp['pads'] for fp in capture['footprints']) and (
+            not isinstance(version, str) or version.split('.')[0] != PAD_SHAPE_PCBNEW_MAJOR):
+        raise ValueError(f'native pad shape enum not qualified for pcbnew {version!r}')
     for fp in capture['footprints']:
         if fp['rotation_deg'] % 90:
             raise ValueError('initial footprint rotations must be quarter turns')
@@ -75,10 +86,23 @@ def _qualified(capture):
         for courtyard in fp['courtyards'].values():
             courtyard['polygons'] = qualified_polygons(courtyard)
         for pad in fp['pads']:
-            # Native PAD_SHAPE_RECT is 1 in the qualified KiCad 10 probe.
-            if pad['shape'] != 1 or pad['rotation_deg'] % 90:
-                raise ValueError('only axis-aligned rectangular pads supported')
+            if not isinstance(pad, dict):
+                raise ValueError('pad record must be an object')
+            # Pad outlines never enter the search or the judge; they still must be
+            # a reviewed native shape so that the plan states what it covers.
+            if type(pad.get('shape')) is not int or pad['shape'] not in PAD_SHAPES:
+                raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: native pad shape "
+                                 f"{pad.get('shape')!r} not qualified for packing")
+            if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
+                raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
     return outline[0]
+
+
+def pad_shape_qualification():
+    """The pad-shape domain recorded in every complete plan."""
+    return {'pcbnew_major': PAD_SHAPE_PCBNEW_MAJOR,
+            'accepted': {str(k): v for k, v in sorted(PAD_SHAPES.items())},
+            'pad_rotation': 'quarter-turn', 'pad_outline_in_geometry': False}
 
 
 def _blocked(candidate, reserved, gap):
@@ -204,7 +228,7 @@ def pack(capture, policy):
                         'independent full-polygon judge rejected complete proposal')
     return {'schema': 'agent-ee.packing-plan/1', 'board_sha256': capture['board_sha256'],
             'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan', 'steps_used': steps, 'step_budget': policy['step_budget'],
-            'policy': copy.deepcopy(policy), 'judgment': judgment,
+            'policy': copy.deepcopy(policy), 'pad_shapes': pad_shape_qualification(), 'judgment': judgment,
             'placements': [{'ref': f['ref'], 'uuid': f['uuid'], 'position_nm': f['position_nm'],
                             'rotation_deg': f['rotation_deg'], 'fixed': f['ref'] in fixed}
                            for f in sorted(placed, key=lambda f: f['ref'])]}
