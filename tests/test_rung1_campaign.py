@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from agent_ee import generate as g
 from agent_ee import rung1_campaign as rc
@@ -180,6 +181,24 @@ class RecordTest(unittest.TestCase):
             self.assertFalse(rc.write_record(tmp, {}, verdict='criteria_satisfied',
                                              fab={'exports_exist': False}, fab_bound=True)['done'])
             record = json.loads((Path(tmp) / 'rung1-campaign-record.json').read_text())
+            self.assertEqual(record['done_rule'].split(' AND ')[0], 'campaign verdict criteria_satisfied')
+
+    def test_fab_of_an_unaccepted_final_candidate_is_not_bound(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'campaign'
+            (root / 'runs' / '1').mkdir(parents=True)
+            (root / 'state.json').write_text(json.dumps({'state': 'incomplete', 'history': [], 'error': 'x'}))
+            with mock.patch.object(rc, 'run_logged', return_value={'exit_code': 2, 'stdout_tail': '',
+                                                                    'stderr_tail': 'x'}), \
+                    mock.patch.object(rc, 'campaign_summary', return_value=(
+                        {'state': 'incomplete', 'error': 'x'}, [{'run': str(root / 'runs/1'), 'checks': {}}],
+                        [{'fab': {'exports_exist': True, 'board_sha256': 'b', 'schematic_sha256': 's'}}])):
+                (root / 'runs/1/candidate.json').write_text(json.dumps({'files': {
+                    'project/rung1_rc.kicad_pcb': 'b', 'project/rung1_rc.kicad_sch': 's'}}))
+                record = rc.campaign_record(tmp, {}, None)
+            self.assertTrue(record['fab_matches_final_captured_candidate'])
+            self.assertFalse(record['fab_bound_to_accepted_candidate'])
+            self.assertFalse(record['done'])
             self.assertEqual((record['schema'], record['qualification']),
                              ('agent-ee.rung1-campaign-record/0-experimental', 'experimental-unqualified'))
 

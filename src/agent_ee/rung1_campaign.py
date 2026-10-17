@@ -424,9 +424,9 @@ def agent_ee_command(*args):
     return [sys.executable, '-B', '-m', 'agent_ee.cli', *map(str, args)]
 
 
-def run_logged(argv, log_dir, label, timeout):
+def run_logged(argv, log_dir, label, timeout, source=PACKAGE_ROOT):
     log_dir.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, 'PYTHONPATH': str(PACKAGE_ROOT), 'PYTHONDONTWRITEBYTECODE': '1'}
+    env = {**os.environ, 'PYTHONPATH': str(source), 'PYTHONDONTWRITEBYTECODE': '1'}
     try:
         proc = subprocess.run(argv, capture_output=True, timeout=timeout, cwd=REPO_ROOT, env=env)
         code, out, err = proc.returncode, proc.stdout, proc.stderr
@@ -638,26 +638,59 @@ def run(spec, rundir, *, profile_path, kicad_route, dry_run, catalog_checkout=No
     root = rundir / 'campaign'
     command = run_logged(agent_ee_command('campaign', config_path, '--out', root), logs, 'campaign',
                          max_seconds + 3600)
-    verify = run_logged(agent_ee_command('verify-campaign', root), logs, 'verify-campaign', 1800)
+    return campaign_record(rundir, base, command)
+
+
+def campaign_record(rundir, base, command, source=PACKAGE_ROOT):
+    """Summarize the retained campaign, run verify-campaign (no inference) and write the record.
+
+    verify-campaign runs from `source`, the package the campaign itself ran under.
+    """
+    rundir = Path(rundir)
+    root = rundir / 'campaign'
+    verify = run_logged(agent_ee_command('verify-campaign', root), rundir / 'logs', 'verify-campaign', 1800,
+                        source=source)
     state, iterations, implementations = campaign_summary(root)
     fab = next((i['fab'] for i in reversed(implementations) if i['fab']), None)
     verdict = state.get('state') if state else None
-    fab_bound = False
+    # The fab step must have consumed exactly the board and schematic of the final captured run.
+    fab_final = False
     if fab and iterations and iterations[-1].get('checks') is not None:
         manifest = read_json(Path(iterations[-1]['run']) / 'candidate.json')
-        fab_bound = (fab['board_sha256'] == manifest['files'].get(f'project/{NAME}.kicad_pcb') and
+        fab_final = (fab['board_sha256'] == manifest['files'].get(f'project/{NAME}.kicad_pcb') and
                      fab['schematic_sha256'] == manifest['files'].get(f'project/{NAME}.kicad_sch'))
     base.update(mode='campaign', campaign={
-        'root': str(root), 'command': command, 'exit_code': command['exit_code'],
+        'root': str(root), 'command': command, 'exit_code': command['exit_code'] if command else None,
         'state': verdict, 'error': state.get('error') if state else None,
         'diagnostic': state.get('diagnostic') if state else None,
         'stage_receipt_anchors': state.get('stage_receipts') if state else None,
         'iterations': iterations, 'implementations': implementations},
+        fab_matches_final_captured_candidate=fab_final,
         verify_campaign={'exit_code': verify['exit_code'], 'stdout_tail': verify['stdout_tail'],
                          'stderr_tail': verify['stderr_tail']})
     if verify['exit_code'] != 0 and verdict == 'criteria_satisfied':
         verdict = 'unverified:' + verdict
-    return write_record(rundir, base, verdict=verdict, fab=fab, fab_bound=fab_bound)
+    return write_record(rundir, base, verdict=verdict, fab=fab,
+                        fab_bound=fab_final and verdict == 'criteria_satisfied')
+
+
+def rebuild_record(rundir):
+    """Recompute the record of a finished campaign run from its retained files; spends no inference."""
+    rundir = Path(rundir).absolute()
+    path = rundir / 'rung1-campaign-record.json'
+    original = read_json(path)
+    if original.get('mode') != 'campaign' or not (rundir / 'campaign' / 'state.json').is_file():
+        raise ValueError('record rebuild needs a finished campaign run directory')
+    previous = rundir / 'rung1-campaign-record.previous.json'
+    shutil.copyfile(path, previous)
+    base = {k: v for k, v in original.items() if k in (
+        'spec', 'generator', 'kicad_route', 'prep_receipts', 'scaffold', 'scope', 'campaign_config')}
+    base['record_rebuilt'] = {'by': g.tool_identity('agent_ee')['version'], 'previous': previous.name,
+                              'previous_sha256': digest(previous)}
+    # verify-campaign must run under the package that ran the campaign (its policy files are pinned).
+    source = Path(original['generator']['path']).parent
+    base['record_rebuilt']['verify_campaign_source'] = str(source)
+    return campaign_record(rundir, base, original.get('campaign', {}).get('command'), source=source)
 
 
 def main(argv=None):
@@ -671,11 +704,17 @@ def main(argv=None):
                         help='scaffold, scope and config validation, checks-only review of the empty candidate '
                              'and a step rehearsal; no inference')
     parser.add_argument('--max-seconds', type=float, default=3600)
+    parser.add_argument('--rebuild-record', action='store_true',
+                        help='recompute the record of the finished campaign in --out (verify-campaign only)')
     args = parser.parse_args(argv)
     try:
+        if args.rebuild_record:
+            record = rebuild_record(args.out)
+            print(json.dumps({k: record.get(k) for k in ('mode', 'verdict', 'done')}))
+            return 0 if record['done'] else 1
         record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
                      dry_run=args.dry_run, max_seconds=args.max_seconds)
-    except (FileExistsError, OSError) as exc:
+    except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_campaign refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'fab_exports_exist',
                                                  'fab_bound_to_accepted_candidate', 'done')}))

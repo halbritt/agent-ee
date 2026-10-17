@@ -40,6 +40,11 @@ Without `--dry-run`, the command runs `agent-ee campaign RUNDIR/campaign.json
 --out RUNDIR/campaign` once, and then `agent-ee verify-campaign`. A reviewer
 or writer failure is recorded as it happened. The driver never retries it.
 
+`--rebuild-record` recomputes `rung1-campaign-record.json` for a finished
+campaign in `--out` and keeps the earlier record as
+`rung1-campaign-record.previous.json`. It runs `verify-campaign` again, from
+the package that ran the campaign, and spends no inference.
+
 ## What the driver writes
 
 | Path | Content |
@@ -131,6 +136,31 @@ manifest.
 - The fab exports exist, are not empty, and match their manifest.
 - The fab step consumed the board and the schematic of the candidate that the
   final run accepted.
+
+## Recorded run (2026-10-17)
+
+One real run used commit 02d74cf from a clean clone, and a kicad-route
+snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
+`incomplete`, so `done` is false.
+
+- Iteration 1 reviewed the empty candidate. `erc`, `netlist`, `drc` and
+  `geometry` were `stage_not_reached`, and `rc-step` was `stage_blocked`. Both
+  reviewers and the adjudicator ran. The adjudicator accepted the five check
+  defects, and the campaign continued to `repair`.
+- The writer ran for 190 s (exit 0). All four steps then completed with exit 0
+  and no violations, and the coordinator adopted their outputs. The index
+  marks `emit-schematic` and `build-board` as superseded, and `route-krt` and
+  `export-fab` as applicable.
+- Iteration 2 captured the generated design. All five checks passed (`netlist`
+  is `info`), and both reviewers ran. Then the host binary
+  `~/.local/bin/agy`, an unused harness that `runtime_files` hashes, was
+  replaced at 20:47:51Z. The adjudicator was not run. The review stopped with
+  `implementation or tool runtime changed during review; rerun required`, and
+  the campaign stopped with `tool runtime changed; rerun under the current
+  tools`. `verify-campaign` exits 2 for the same reason.
+- The fab step consumed the board and schematic of the iteration-2 candidate.
+  It made 15 files, and the BOM and CPL list C1 and R1, with J1 excluded as
+  `not_assembled`. That candidate was not accepted.
 
 ## Limits
 
