@@ -35,6 +35,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -333,6 +334,17 @@ authority and unknown boundaries.
 See [passive corners](passive-corners.md) for the optional `passive_corners`
 contract, supported topology, immutable qualification inputs, bounded ensemble,
 retained per-corner evidence and empirical-transfer refusal.
+
+## JLC assembly readiness
+
+See [assembly readiness](assembly-readiness.md) for `assembly_readiness`. It
+reads its own native XML netlist export after every hierarchy file parses
+completely, then checks each populated component against the captured
+catalog: required and any-of BOM properties, R/C rating properties, exact
+LCSC binding, three-state stock (zero is a defect; missing, stale or
+undeclared freshness is unknown), stock for quantity per board times boards,
+and Basic/Preferred/Extended counts. DNP, `exclude_from_bom` and off-board
+symbols stay distinct, and an empty schematic is `info`, not `pass`.
 
 ## JLCPCB fab package
 
