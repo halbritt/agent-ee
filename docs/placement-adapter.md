@@ -133,7 +133,9 @@ the index comes from the step plan. The step's sandbox view is:
 - `/placement-tool`: a coordinator copy of the `agent_ee` sources plus a constant
   launcher. Python runs with `-I`, so this hashed tree, rather than `/app`,
   supplies the helper code. The receipt records the tree as the step's source
-  identity.
+  identity. The snapshot must equal the campaign's pinned `agent_ee` sources
+  (the launch policy files) before the step runs, and verification checks the
+  retained snapshot against both the pin and the receipt.
 - `/placement-request/request.json`: a request derived by the coordinator. It
   contains `agent-ee.placement-write/1` with `single_design_writer: true`, the
   exact delivered board SHA-256 and `writable_root: /work/placement`. Its policy is
