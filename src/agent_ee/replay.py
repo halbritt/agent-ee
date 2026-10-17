@@ -162,8 +162,8 @@ def parse_assertions(stdout):
 
 def replay(request_dir, out, *, cancellation=None):
     request_dir = Path(request_dir).resolve()
-    # Read only the run locator before reserving output. Malformed requests
-    # still get a receipt, but cannot select a nested output in a known run.
+    # Raw fields label diagnostic receipts only. fresh_directory independently
+    # rejects retained-run/operation ancestry before any output is created.
     initial_error = None
     try:
         raw = read_request(request_dir)

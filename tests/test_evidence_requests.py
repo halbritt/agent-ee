@@ -206,6 +206,45 @@ class RequestTests(unittest.TestCase):
         self.assertEqual(receipt['execution'], 'failed')
         verify_operation(self.root / 'malformed-request')
 
+    def test_invalid_request_cannot_write_inside_retained_evidence(self):
+        from agent_ee.cli import verify
+        from agent_ee.replay import replay
+        self.request('existing-operation')
+        for corruption in ('malformed', 'missing-run', 'tampered-run', 'valid'):
+            request_dir = self.root / (corruption + '-request')
+            self.request(request_dir.name)
+            request = read_json(request_dir / 'request.json')
+            if corruption == 'malformed':
+                (request_dir / 'request.json').write_text('invalid JSON')
+            elif corruption != 'valid':
+                if corruption == 'missing-run':
+                    del request['run']
+                else:
+                    request['run'] = str(self.root / 'decoy-run')
+                write_json(request_dir / 'request.json', request)
+            for retained in (self.run, self.root / 'existing-operation'):
+                with self.subTest(corruption=corruption, retained=retained.name):
+                    before = {p.relative_to(retained).as_posix(): digest(p)
+                              for p in retained.rglob('*') if p.is_file()}
+                    directories = {p.relative_to(retained).as_posix()
+                                   for p in retained.rglob('*') if p.is_dir()}
+                    output = retained / 'work' / 'replay-rejected-request'
+                    with self.assertRaisesRegex(ValueError, 'retained'):
+                        replay(request_dir, output)
+                    self.assertFalse(output.exists())
+                    self.assertEqual(before, {p.relative_to(retained).as_posix(): digest(p)
+                                              for p in retained.rglob('*') if p.is_file()})
+                    self.assertEqual(directories, {p.relative_to(retained).as_posix()
+                                                  for p in retained.rglob('*') if p.is_dir()})
+                    verify(self.run, current_source=False)
+                    verify_operation(self.root / 'existing-operation')
+            if corruption != 'valid':
+                output = self.root / (corruption + '-diagnostic')
+                receipt = replay(request_dir, output)
+                self.assertEqual(receipt['execution'], 'failed')
+                self.assertEqual(receipt['acceptance_authority'], 'none')
+                verify_operation(output)
+
     def test_live_sigint_reaps_sandbox_and_later_replay_succeeds(self):
         import os
         import signal

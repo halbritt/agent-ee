@@ -68,6 +68,12 @@ def fresh_directory(out, *sources):
         if parent.is_symlink():
             raise ValueError('output ancestors must not be symlinks')
     out = out.resolve()
+    # Request locators are untrusted, including when producing failure receipts.
+    # Inspect the destination ancestry before creating even intermediate paths.
+    for parent in (out, *out.parents):
+        if any((parent / name).exists() or (parent / name).is_symlink()
+               for name in ('candidate.json', 'result.json', 'operation.json')):
+            raise ValueError('operation output must be separate from retained runs and operations')
     for source in sources:
         source = Path(source).resolve()
         if out == source or source in out.parents or out in source.parents:

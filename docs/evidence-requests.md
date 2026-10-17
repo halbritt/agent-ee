@@ -3,7 +3,12 @@
 These standalone operations make unresolved reviewer concerns actionable without
 changing acceptance. They never append to a reviewed run, change a disposition,
 install a check, or edit a baseline. Each `--out` must be fresh and separate from
-its source run and other operation directories. Request export requires a settled
+its source run and other operation directories. Destination ancestry is checked
+for retained run/operation records independently of unvalidated request fields.
+Malformed requests, missing run locators and tampered locators cannot select a
+nested output in retained evidence. Unsafe output paths are invocation errors
+without receipts or directory creation; fresh independent output paths can retain
+failed diagnostic receipts. Request export requires a settled
 run that passes current policy/runtime and snapshot verification. Historical
 scope/1 requests have `baseline_id: null` and acquire no baseline witness authority.
 
