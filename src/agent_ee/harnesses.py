@@ -58,7 +58,8 @@ def parse_stream(harness, text, model, tools=True):
     for e in events:
         if not tools and e.get('event') == 'step_update' and e['step_update'].get('step_type') not in ('user_input', 'agent_response'):
             raise ValueError('unexpected harness tool activity')
-    return end.get('structured_output', json.loads(end['response'])), {'harness_session': start['conversation_id'],
+    value = end['structured_output'] if 'structured_output' in end else json.loads(end['response'])
+    return value, {'harness_session': start['conversation_id'],
         'model_observed': start['init']['model'], 'usage': end.get('usage', {})}
 
 
@@ -87,9 +88,9 @@ def native_call(run_dir, label, definition, prompt, schema, timeout):
             (home / '.codex').mkdir()
             write_json(work / 'schema.json', strict_schema(schema))
             argv = ['/reviewer', 'exec', '--json', '--ignore-user-config', '--ignore-rules', '--ephemeral',
-                '--sandbox', 'workspace-write', '--skip-git-repo-check', '--color', 'never', '--model', model,
+                '--sandbox', 'danger-full-access' if tools else 'read-only', '--skip-git-repo-check', '--color', 'never', '--model', model,
                 '--output-schema', '/work/schema.json']
-            configs = ['approval_policy="never"', 'forced_login_method="chatgpt"', 'web_search="disabled"',
+            configs = ['approval_policy="never"', 'forced_login_method="chatgpt"', 'web_search=' + json.dumps('live' if tools else 'disabled'),
                 'project_doc_max_bytes=0', 'model_reasoning_effort=' + json.dumps(effort),
                 'features.skip_host_skill_discovery=true', 'suppress_unstable_features_warning=true']
             configs += ['features.' + f + '=false' for f in ('apps', 'hooks',

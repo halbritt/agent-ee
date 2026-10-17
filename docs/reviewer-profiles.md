@@ -56,7 +56,10 @@ reviewers. `/evidence/work` and `/evidence/checks` expose completed native resul
 read-only. Each reviewer has its own writable `/work`. The adjudicator also gets
 previous experiment directories read-only under `/experiments/<role>`. No new
 hermetic tool environment is built: system tools, libraries and networking are
-used. Models may still omit useful investigations; inspect coverage and logs.
+used. Codex runs without a second inner filesystem/network sandbox; Bubblewrap
+continues to enforce the read-only candidate. A live fetch/write probe verified
+HTTP 200 for a source document and refusal of a candidate overwrite. Models may
+still omit useful investigations; inspect coverage and logs.
 
 `fixed_packet` disables Claude and Codex tools for a deliberately limited
 comparison. Agy lacks a complete tool-disable flag: it uses plan mode and any
@@ -68,7 +71,7 @@ engineering workflow. The model-selection experiment uses `investigate`.
 | Harness | Credential lookup | Execution and response |
 | --- | --- | --- |
 | Claude | `~/.claude/.credentials.json` | Safe mode, explicit ordinary tools, no user hooks/settings/MCP; JSONL tools and terminal structured response |
-| Codex | `~/.codex/auth.json`; `AGENT_EE_CODEX_AUTH_HOME` selects an existing auth directory explicitly | ChatGPT login required, user config/rules ignored, ephemeral session, native JSONL and strict response schema |
+| Codex | `~/.codex/auth.json`; `AGENT_EE_CODEX_AUTH_HOME` selects an existing auth directory explicitly | ChatGPT login required, user config/rules ignored, ephemeral session, ordinary tools plus live web search, native JSONL and strict response schema |
 | Agy | `~/.gemini/antigravity-cli/antigravity-oauth-token` | Fresh settings/home, native tools, JSONL and terminal `structured_output`; requested model/session checked |
 
 Credentials are read-only mounts, not copied to artifacts. The parent environment

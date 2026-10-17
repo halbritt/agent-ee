@@ -54,3 +54,13 @@ class ProfileFreshnessTests(unittest.TestCase):
             write_json(root/'profile.json', {'name':'changed'})
             with self.assertRaisesRegex(ValueError, 'profile changed'):
                 verify_source(root/'run')
+
+class StructuredOutputTests(unittest.TestCase):
+    def test_agy_structured_payload_does_not_depend_on_prose_being_json(self):
+        import json
+        from agent_ee.harnesses import parse_stream
+        events = [{'event':'init','conversation_id':'c','init':{'model':'gemini-4-argon-high'}},
+            {'event':'result','result':{'status':'SUCCESS','conversation_id':'c',
+              'response':'Review is complete.', 'structured_output':{'findings':[]}}}]
+        value, _ = parse_stream('agy','\n'.join(map(json.dumps,events)),'gemini-4-argon-high')
+        self.assertEqual(value, {'findings':[]})

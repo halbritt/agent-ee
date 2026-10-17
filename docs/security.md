@@ -84,3 +84,8 @@ limits, thermal paths, mechanical constraints or vehicle conditions were tested.
 An undeclared condition is not automatically a defect, and missing necessary
 coverage is not a pass. State consequential unknowns and obtain project-specific
 requirements and physical validation before expanding the conclusion.
+
+Tool-enabled reviewers are trusted to use mounted subscription credentials only
+for inference. Read-only mounts prevent credential changes, not reads by their
+processes. The parent does not copy credentials into evidence; no claim of
+credential isolation from arbitrary reviewer shell commands is made.
