@@ -3,6 +3,8 @@
 import json
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from pathlib import Path
 
 from .executor import execute
@@ -183,15 +185,15 @@ def initial_reviews(run_dir, packet, deadline):
     scope = read_json(Path(run_dir) / "candidate.json")["scope"]
     from .profiles import validate_profile
     definitions = validate_profile(scope.get("review_profile"))["reviewers"]
-    reviews, records = [], []
     stopped = set()
-    for definition in definitions:
+    launch_lock = Lock()
+
+    def review_role(definition):
+        review = None
         definition = {**definition, "tool_mode": scope["review_profile"].get("tool_mode", "investigate")}
         role = definition["role"]
         record = {"role": role, "execution": "not_run"}
-        if definition["harness"] in stopped:
-            record["error"] = "affected harness stopped after prior execution failure; no fallback"
-        elif time.monotonic() < deadline:
+        if time.monotonic() < deadline:
             lens = definition.get("lens", LENSES.get(role, LENSES["circuit"]))
             prompt = ("You are an independent initial engineering reviewer. Investigate with available tools as needed. Read the supplied "
                 "native source excerpts and check records yourself. Prior reviewers and author conclusions are absent. "
@@ -211,8 +213,22 @@ def initial_reviews(run_dir, packet, deadline):
             if packet.get("baseline"):
                 schema["properties"]["findings"]["items"]["properties"]["witnesses"] = WITNESS_SCHEMA
                 schema["properties"]["findings"]["items"]["required"].append("witnesses")
-            record, value = reviewer_call(run_dir, role, definition, prompt,
-                schema, min(definition.get("timeout_s", 300), max(.001, deadline - time.monotonic())))
+            # Admission and failure publication share one lock. Admitted calls may
+            # settle after a peer fails; queued calls cannot restart that harness.
+            with launch_lock:
+                if definition["harness"] in stopped:
+                    record["error"] = "affected harness stopped after prior execution failure; no fallback"
+                    timeout = None
+                else:
+                    remaining = deadline - time.monotonic()
+                    timeout = min(definition["timeout_s"], remaining) if remaining > 0 else None
+            if timeout is None:
+                write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
+                return None, record
+            record, value = reviewer_call(run_dir, role, definition, prompt, schema, timeout)
+            with launch_lock:
+                if record["execution"] in ("failed", "unavailable", "timeout", "interrupted"):
+                    stopped.add(definition["harness"])
             record["role"] = role
             if value is not None:
                 try:
@@ -220,15 +236,18 @@ def initial_reviews(run_dir, packet, deadline):
                     if review["role"] != role:
                         raise ValueError("reviewer returned a different role")
                     write_json(Path(run_dir) / "reviews" / f"{role}.json", review)
-                    reviews.append(review)
                 except ValueError as exc:
+                    review = None
                     record["execution"] = "malformed"
                     record["error"] = str(exc)
-        if record["execution"] in ("failed", "unavailable", "timeout", "interrupted"):
-            stopped.add(definition["harness"])
-        records.append(record)
         write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
-    return reviews, records
+        return review, record
+
+    # Bound resource use even for profiles with additional roles. Exiting the
+    # executor waits for every in-flight call, including after a peer failure.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(review_role, definitions))
+    return [review for review, _ in results if review is not None], [record for _, record in results]
 
 
 def adjudicator_call(run_dir, packet, findings, reviews, deadline):

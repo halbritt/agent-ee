@@ -81,10 +81,20 @@ engineering workflow. The model-selection experiment uses `investigate`.
 
 Credentials are read-only mounts, not copied to artifacts. The parent environment
 is cleared. There is no API-key/OpenRouter route, automatic account switch or
-model substitution. Unavailable, failed, timed-out or interrupted calls stop further same-harness
-reviewers in the run. A malformed initial response stays invalid while the other
-role may still run. The comparison campaign stops that harness after any case
-with invalid execution.
+model substitution. Initial reviews run concurrently, at most two calls at once.
+Call admission and harness-failure publication share a coordinator lock: a call
+admitted before a peer reports failure is already in flight and may settle.
+Unavailable, failed, timed-out or interrupted calls prevent admission of further
+same-harness reviewers in the run, including authentication/quota failures.
+Queued affected roles retain `not_run` records. No admitted peer is cancelled
+because another role fails; each retains its own logs and partial experiments.
+A malformed initial response stays invalid while the other role may still run.
+Returned reviews and execution records follow profile role order, regardless of
+completion order. Every call is bounded by its profile timeout and the remaining
+shared deadline at admission. Adjudication begins only after all initial roles
+settle and every declared role has a valid review; unfinished required roles
+keep the result incomplete. The comparison campaign stops that harness after
+any case with invalid execution.
 Other independent harness campaigns may finish. Retain the failed attempt and
 fix access before starting a new run.
 

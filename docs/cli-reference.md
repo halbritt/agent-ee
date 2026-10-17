@@ -62,8 +62,10 @@ Checks run in declared order. A check with less than five seconds remaining
 does not begin. Native command timeouts are capped by the remaining deadline.
 Every reviewer and the adjudicator has an explicit profile timeout; supplied
 small evaluation profiles use 300 seconds and donor profiles use 900 seconds.
-Calls run sequentially. No automatic
-retry occurs. See the [check reference](check-reference.md) for native ceilings.
+Initial review calls run concurrently, at most two at once; adjudication waits
+for all initial roles to settle. Each call's timeout is capped by the remaining
+shared deadline at admission. No automatic retry occurs. See the
+[check reference](check-reference.md) for native ceilings.
 
 SIGINT attempts to preserve validated checks/reviews, unknown placeholders for
 unfinished work, and useful findings. Invoked subprocess groups are killed on

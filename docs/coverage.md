@@ -51,7 +51,12 @@ claim to have inspected omitted data just because its hash/path is present.
 Reviewers and adjudicator use explicit [profiles](reviewer-profiles.md). Claude,
 Codex and Agy subscription adapters support ordinary investigative tools. Every
 declared role must complete. More agents or model families do not prove independence.
-There is no automatic provider or account fallback.
+There is no automatic provider or account fallback. Initial review scheduling
+runs at most two calls concurrently while retaining role-specific schemas,
+contexts and sandbox mounts. Scripted sleeping subprocess tests exercise overlap,
+asymmetric failure/timeouts, retained artifacts, queued harness stops and the
+adjudication barrier. These tests establish scheduling behavior, not live-model
+latency or engineering review quality.
 
 ## Adding an engineering check
 

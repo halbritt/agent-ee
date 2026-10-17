@@ -83,9 +83,10 @@ sequenceDiagram
     C-->>O: Criteria satisfied, escalated, or incomplete
 ```
 
-Initial reviewers execute sequentially in the current implementation. Independence
-means separate contexts and scratch directories, not simultaneous calls or proof
-that models have different blind spots. Reviewers do not receive campaign history,
+Initial reviewers execute concurrently, with at most two calls in flight. Each
+candidate still gets separate contexts and scratch directories; concurrency does
+not prove that models have different blind spots. Reviewers do not receive
+campaign history,
 implementation prose or other initial judgments. The implementation receives the
 baseline, convergence history and accepted **check** findings. It cannot turn its
 own summary into evidence of a passing candidate.
