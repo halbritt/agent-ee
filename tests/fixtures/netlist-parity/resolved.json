@@ -1,0 +1,17 @@
+{
+  "schema": "agent-ee.resolved-connectivity/1",
+  "status": "complete",
+  "intent_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "libraries": [],
+  "components": [
+    {"id":"port","reference":"U1","lib_id":"Owned:Port","value":"port","footprint":"","units":[1],"pins":[{"number":"1"},{"number":"2"},{"number":"3"}]},
+    {"id":"series","reference":"R1","lib_id":"Owned:R","value":"10k","footprint":"","units":[1],"pins":[{"number":"1"},{"number":"2"}]},
+    {"id":"shunt","reference":"R2","lib_id":"Owned:R","value":"10k","footprint":"","units":[1],"pins":[{"number":"1"},{"number":"2"}]}
+  ],
+  "nets": [
+    {"id":"input","name":"VBUS","terminals":[{"component":"port","pin":"1"},{"component":"series","pin":"1"}]},
+    {"id":"output","name":"VCC","terminals":[{"component":"port","pin":"2"},{"component":"series","pin":"2"},{"component":"shunt","pin":"1"}]},
+    {"id":"ground","name":"GND","terminals":[{"component":"port","pin":"3"},{"component":"shunt","pin":"2"}]}
+  ],
+  "no_connects": []
+}
