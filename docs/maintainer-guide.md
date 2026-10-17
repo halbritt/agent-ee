@@ -54,17 +54,17 @@ linked source modules in [architecture](architecture.md).
 
 | Interface | Contract |
 | --- | --- |
-| `capture(scope_path, run_dir)` | Copy explicit selection, verify capture consistency, persist and return manifest |
+| `capture(scope_path, run_dir, profile_path=None)` | Copy explicit selection, verify capture consistency, persist and return manifest |
 | `verify_snapshot(run_dir)` | Verify exact copied-file set and candidate identity; return manifest or raise |
 | `verify_source(run_dir)` | Also compare live scope and current selected source bytes |
-| `execute(inputs, work, argv, timeout=120, stdin=None, network=False, extra_ro=())` | Isolated subprocess; persist execution/stdout/stderr/console; return execution record |
+| `execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=())` | Isolated subprocess; persist execution/stdout/stderr/console; return execution record |
 | `run_checks(run_dir, deadline)` | Ordered handlers; monotonic absolute deadline; persist each result |
 | `build_packet(run_dir, checks, run_id)` | Construct/persist bounded packet with explicit omissions and identity |
 | `initial_reviews(run_dir, packet, deadline)` | Return validated reviews plus per-role execution records |
 | `validate_review(value, candidate_id, run_id, packet_sha256, run_dir)` | Exact schema/identity/citation validation and visible unsupported-defect downgrade |
 | `collect_findings(reviews, checks)` | Preserve all claims and native check defects with namespaced IDs |
 | `adjudicate(findings, decisions, run_dir)` | Return copied updated finding list; validate dispositions; CLI persists run-level events |
-| `verify(run, current_source=True)` | Full CLI integrity/freshness check; return current projection |
+| `verify(run, *, current_source=True)` | Full CLI integrity/freshness check; return current projection |
 | `link_correction(previous, current, finding_id, check_ids, reason)` | Full CLI verification, closure invariants, persistent event and old report update |
 
 `CheckError(execution, message)` is the native-handler boundary for an explicitly
@@ -168,3 +168,76 @@ artifact freshness. Perform the normal verification before packaging.
 Archives and their manifest must move together. New rounds use new names rather
 than overwriting prior evidence. Restore/replay caveats and commands are in
 [evidence reproduction](reproducing-evidence.md).
+
+## Closed-loop seams and preservation rules
+
+The scope/2 additions are explicit interfaces with separate ownership:
+
+| Interface | Responsibility |
+| --- | --- |
+| `compile_baseline(scope, files)` / `load_baseline(run)` | Construct or reconstruct immutable requirements, criteria and baseline file hashes |
+| `freeze_evidence(run, checks)` / `verify_evidence(run, checks, required=...)` | Seal coordinator outputs before review; reconstruct that seal during verification |
+| `validate_witnesses(run, witnesses, evidence)` | Bind a claimed defect to a mapped, executed, failed check and unchanged raw evidence |
+| `check_measurements(ctx)` | Execute declared producer and captured parser, validate identities/provenance and evaluate limits |
+| `check_coupled_margins(ctx)` | Join earlier same-condition metrics from distinct domains and evaluate every bound |
+| `writer_lock(*directories)` | Context-managed nonblocking process leases, including enclosing campaign roots |
+| `advance(history, result, manifest, max_iterations)` | Pure convergence decision and iteration record; no model calls or file mutation |
+| `run_campaign(config_path, out)` / `verify_campaign(root)` | Own repair orchestration and verification of retained historical projections |
+| `ingest(run, report_path, out)` | Validate and capture sample/calibration evidence; lower-level helper, not a standalone complete feedback workflow |
+| `bench_review(run, report, out, max_seconds, review_out=...)` | Register source supersession and run fresh verification; `review_out` is an internal keyword-only placement hook |
+| `campaign_feedback(root, report, out, max_seconds)` | Hold campaign ownership, admit feedback and continue a calibrated epoch |
+
+Keyword-only markers and exact signatures remain in the source; these table
+entries identify responsibilities rather than promise positional-call stability.
+Prefer supported CLI entry points to bypassing locking or registration wrappers.
+Do not expose `ingest` alone as equivalent to feedback: it does not by itself
+supersede old acceptance or execute fresh checks/reviews.
+
+Maintain these boundaries when extending behavior:
+
+- Full baseline access must survive packet excerpt limits and every sandbox
+  adapter. Captured requirements and verification programs cannot be repair targets.
+- Initial reviewers receive current candidate and tool facts, not other reviews,
+  implementation prose or prior campaign judgments. Empirical prediction records
+  must remain tool-only when exposed as captured input.
+- Only the parent creates the authoritative evidence seal and acceptance
+  projection. A parser supplies numbers and raw-output references, not pass/fail
+  authority. Generic tool programs require separate qualification.
+- Convergence keys must remain comparable within an epoch. Baseline changes,
+  silent new criteria or erased history cannot stand in for progress.
+- Feedback registration is durable before re-review and can survive later failure.
+  Do not restore old acceptance in an error handler or drop previous residuals.
+- Parent leases, process-group cleanup and failure classifications must remain
+  valid under nested campaign operations and interruptions.
+
+## Closed-loop test protection
+
+| Test module | Observable contract |
+| --- | --- |
+| [test_baseline.py](../tests/test_baseline.py) | Full baseline despite packet budget; source/evidence/witness integrity and check-only adjudication |
+| [test_measurements.py](../tests/test_measurements.py) | Actual sandbox producer/parser execution, request/raw isolation, pinned binary, domain/condition/bounds and coupling |
+| [test_convergence.py](../tests/test_convergence.py) | Protected criteria and metric margins, stalls, finite limits and execution-vs-design classification |
+| [test_locking.py](../tests/test_locking.py) | Competing process refusal, exception cleanup and enclosing campaign ownership |
+| [test_empirical.py](../tests/test_empirical.py) | Bias/uncertainty propagation, replay evidence and model/condition applicability |
+| [test_campaign.py](../tests/test_campaign.py) | Real coordinator with scripted model replies: repair, fresh review, history, restricted write authority and accumulated empirical epochs |
+
+The final implementation verification recorded 98 passing tests. That count is
+historical, not a requirement that forbids adding tests. Scripted replies test
+orchestration and data contracts; real subscription execution, model review
+quality and actual prototype behavior need their own evidence.
+
+## Checking documentation changes
+
+Run the local checker:
+
+```sh
+python3 scripts/check_docs.py
+```
+
+The command above assumes the repository root as the shell working directory;
+the script resolves documentation paths from its own location. It checks local
+Markdown links and heading anchors, parses JSON/Python examples, checks shell
+syntax with `bash -n`, and counts Mermaid blocks. It does not execute examples,
+fetch external URLs, render diagrams or verify prose against implementation.
+Run interface examples separately with their real validators and render changed
+Mermaid diagrams before reviewing their meaning and readability.

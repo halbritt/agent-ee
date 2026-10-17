@@ -1,0 +1,270 @@
+{
+  "schema_version": "decision-receipt/2",
+  "receipt_id": "agent-ee-closed-loop-2026-10-17",
+  "question": "How should candidate-bound reviews enforce immutable requirements, evidence gates and bounded single-writer convergence?",
+  "scope": [
+    "agent-ee pipeline state contracts and supported CLI orchestration"
+  ],
+  "status": "executed",
+  "authority_boundary": {
+    "owner": "repository owner",
+    "authority_source": "explicit five-invariant execution directive in conversation",
+    "authorized_scope": [
+      "Modify orchestration, prompts, state contracts, EDA interfaces and documentation; preserve single writer and reviewer independence"
+    ]
+  },
+  "evidence": [
+    {
+      "schema_version": "evidence-record/1",
+      "id": "contracts",
+      "evidence_class": "evidence-repository-contracts",
+      "summary": "Repository is a standard-library Python >=3.12 CLI. README names unittest command and subscription-only routes. Version1 review remains compatible; scope2 opts into stricter contract, campaigns only scope2.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/pyproject.toml",
+          "method": "source inspection",
+          "content_sha256": "0deb0092528e6643a3370aaebd1e0b6bab00bc5c8747d84eb5974e2efadf8039"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/README.md",
+          "method": "source inspection",
+          "content_sha256": "c1c3ac1b94254f7b2370cc32f710f65279c9eae1fdf68994735df2f18a7e29d0"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/docs/closed-loop.md",
+          "method": "source inspection",
+          "content_sha256": "ae8fff14294e3765dc55c14cb4935d330ae43bcb9424331e833737d6fd47aca8"
+        }
+      ],
+      "satisfies": [
+        "repository contract",
+        "repository placement constraints",
+        "task scope and repository orientation",
+        "verification and integration route",
+        "repository version and dependency contract",
+        "repository toolchain inspection",
+        "accepted ADR, RFC, API, compatibility, generation, build, and test contracts",
+        "a bounded decision question",
+        "preservation matrix and consumers"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "owner",
+      "evidence_class": "evidence-explicit-user-requirements",
+      "summary": "Owner explicitly directs semantic architecture changes for five invariants while preserving one implementation writer and independent reviews. Scope is pipeline tooling; no fabrication or physical qualification is authorized.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/.codex-harm/attachments/47d06878-3e4c-4cf4-bf12-e44b0236c8ad/pasted-text-1.txt",
+          "method": "source inspection",
+          "content_sha256": "b645ea029acdd65057cef60f45155b67501ae8ea9129ddadd8d30cc30f2191b0"
+        }
+      ],
+      "satisfies": [
+        "decision owner",
+        "explicit task authority",
+        "task scope and authority statement",
+        "accepted problem and outcome",
+        "accepted desired behavior and semantic authority",
+        "target repository and task scope",
+        "user instruction and authority",
+        "expected future change from accepted plans",
+        "preservation boundary and semantic authority"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "source",
+      "evidence_class": "evidence-static-source-structure",
+      "summary": "Coordinator owns capture/check/evidence/adjudication; campaign owns disposable implementation write authority and history. Process leases enclose nested runs and are released on exception. Calibrated empirical input is distinct from immutable normative baseline. Generic parser provenance alone cannot authorize defects.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/campaign.py",
+          "method": "source inspection",
+          "content_sha256": "72f67d9f71916ce5b19638bc51933e28590c5ae41a3fcd075fab6f640f68d74f"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/locking.py",
+          "method": "source inspection",
+          "content_sha256": "13f7b1c12cfa4508b08e2710f838014f382cc4da116baa66e299bce76cef88b9"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/empirical.py",
+          "method": "source inspection",
+          "content_sha256": "2b676e31650b79585e6dd742ff8d5434094dbcd4ab8639e0062bcaf36f454677"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/measurements.py",
+          "method": "source inspection",
+          "content_sha256": "11a6f4ae6af3d09e947afcdf4b3f6d84b8debaf84fbc043428a195c02432d11d"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/baseline.py",
+          "method": "source inspection",
+          "content_sha256": "5822fba9532ab4fe4461386c1d1d98a75d067ce51db0d355415f3b53de4ef40e"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/src/agent_ee/findings.py",
+          "method": "source inspection",
+          "content_sha256": "622570ecfda7c8a2e81e410c833a4976c56ffeac3e200e6c62308e9bc48fa3f3"
+        }
+      ],
+      "satisfies": [
+        "affected behavior and state",
+        "current relevant behavior",
+        "adjacent code",
+        "concurrency",
+        "identity and equality contract",
+        "mutation sites",
+        "nested object graph",
+        "object and ownership graph",
+        "boundary trust model",
+        "runtime invariant",
+        "acquisition and release paths",
+        "exception and cancellation behavior",
+        "nesting order",
+        "owner and lifetime",
+        "resource ownership and failure policy",
+        "state, invariant, and dependency ownership",
+        "current source, configuration, and relevant runtime state",
+        "change-type classification",
+        "per-edit change classification"
+      ]
+    },
+    {
+      "schema_version": "evidence-record/1",
+      "id": "tests",
+      "evidence_class": "evidence-tests",
+      "summary": "Observed full suite95 tests pass in24.954 seconds on this host. Integration invokes real sandbox protocol tools with scripted agent responses; empirical fixtures are synthetic, not physical bench qualification. Native version2 control passes ERC DRC geometry ngspice; checks-only remains incomplete.",
+      "provenance": [
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_campaign.py",
+          "method": "source inspection",
+          "content_sha256": "563734fdc828194a7941b0186eca67ce14013bae3a67abaf8709088a1b2e0b53"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_baseline.py",
+          "method": "source inspection",
+          "content_sha256": "3d5bc2ddbf491746bdb84548ffccae67c4501fdd96f868dd1396262d9f518d45"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_measurements.py",
+          "method": "source inspection",
+          "content_sha256": "4305056147d85f5729e9980ea8ed431c32d0b21f845e4c881e5ba534280558c6"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_convergence.py",
+          "method": "source inspection",
+          "content_sha256": "8a467cc04f8bb8f342ad0b22dec5a661449c9b76da8ecf39a6fffa7e4d4e61dc"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_empirical.py",
+          "method": "source inspection",
+          "content_sha256": "d4e23593d48e810accda8ea8c93d01b333641b1204e0381f0e4f3db503ca8eb8"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/tests/test_locking.py",
+          "method": "source inspection",
+          "content_sha256": "1a39e3a1a332ae581252c94e80bad70e933fc7f6ac6058f8af8b666e10a76161"
+        },
+        {
+          "locator": "/home/halbritt/git/agent-ee/build/closed-loop-final-native/REPORT.md",
+          "method": "source inspection",
+          "content_sha256": "d9b5bb7097e4346cd0c5e37e6ce3e65d644072121cc67ab28b2f94b01f6b31b4"
+        }
+      ],
+      "satisfies": [
+        "behavior tests",
+        "public API and tests",
+        "tests, characterization, probes, or explicit residual risk",
+        "checkpoint verification",
+        "reversibility and verification",
+        "claim-relative observation such as accepted requirement, reproduction, incident, recurring change, operational constraint, or representative measurement",
+        "evidence connecting the proposed action to the condition",
+        "representative change or use scenario",
+        "representative change scenario"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "owner-directive",
+      "type": "observation",
+      "text": "The owner authorized pipeline semantic changes while preserving writer topology.",
+      "evidence": [
+        "owner"
+      ]
+    },
+    {
+      "id": "selected",
+      "type": "decision",
+      "text": "Keep legacy bounded reviews and add strict scope2 baseline contracts, a single coordinator-owned campaign, independently executed measurement producers, and empirical calibration epochs. Structured process locks pair acquisition and release.",
+      "depends_on": [
+        "owner-directive"
+      ],
+      "owner": "repository owner",
+      "authority": "explicit execution directive"
+    },
+    {
+      "id": "implemented",
+      "type": "execution",
+      "text": "Implemented the selected workflow and documented its contracts. Physical qualification is outside the software evidence.",
+      "depends_on": [
+        "selected"
+      ],
+      "scope": [
+        "src/agent_ee",
+        "tests",
+        "docs",
+        "fixtures/closed-loop"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "option": "Leave bounded review architecture unchanged",
+      "disposition": "rejected",
+      "evidence": [
+        "owner"
+      ]
+    },
+    {
+      "option": "Prompt-only repair with unrestricted concurrent writers",
+      "disposition": "rejected",
+      "evidence": [
+        "owner",
+        "source"
+      ]
+    },
+    {
+      "option": "Explicit strict scope2 coordinator and bounded feedback epochs",
+      "disposition": "selected",
+      "evidence": [
+        "owner",
+        "source",
+        "tests"
+      ]
+    }
+  ],
+  "source_locators": [
+    "python-structured-cleanup",
+    "agent-conduct-authority-bounded-action"
+  ],
+  "corpus_version": "corpus-2026-07-12-a11702cc9217",
+  "retriever_version": "retriever-ec995ecdd083b2c8",
+  "verification_criteria": [
+    "98 tests passed after final reviewer fixes in31.893 seconds",
+    "Final native version2 control passes ERC DRC geometry and ngspice, with informational netlist export; verify confirms fresh checks-only incomplete",
+    "Actual subscription initial reviews succeeded; malformed adjudicator citation stopped the live campaign before implementation"
+  ],
+  "reopening_conditions": [
+    "A reproducible invariant bypass",
+    "New model applicability or changed ground-truth requirements",
+    "Unqualified physical parser or instrument evidence"
+  ],
+  "residual_risk": [
+    "Doctrine conclusion is limited to structured lock ownership and explicit action authority; other concept obligations are not asserted satisfied.",
+    "Tests use synthetic bench samples; no physical prototype qualification claimed.",
+    "Tool-specific models and parsers require validation before use."
+  ]
+}

@@ -1,5 +1,9 @@
 # Argon Integration Review of Coordinator Modules & Operator Discovery
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 **Reviewer**: `gemini-argon` (Cairn `agent-414`)
 **Scope**: Read-only verification of [`src/agent_ee/candidate.py`](../src/agent_ee/candidate.py), [`src/agent_ee/executor.py`](../src/agent_ee/executor.py), [`src/agent_ee/reviewers.py`](../src/agent_ee/reviewers.py), [`src/agent_ee/cli.py`](../src/agent_ee/cli.py), [`scopes/donor.json`](../scopes/donor.json), [`README.md`](../README.md), and [`skills/agent-ee/SKILL.md`](../skills/agent-ee/SKILL.md).
 

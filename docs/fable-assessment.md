@@ -1,5 +1,9 @@
 # Fable independent assessment (agent-413)
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 Recorded as durable evidence of the independent judgment formed before and
 during reconciliation. Sources read directly: `fome-mc/toolchain/eda.py`
 (whole file), `fome-mc/toolchain/versions.toml`, vendored kicad-happy v2.3.1

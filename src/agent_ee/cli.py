@@ -76,6 +76,15 @@ def verify(run, *, current_source=True):
         raise ValueError("candidate manifest changed")
     if (run / "packet.json").exists() and digest(run / "packet.json") != result.get("packet_file_sha256"):
         raise ValueError("review evidence packet changed")
+    from .baseline import verify_evidence
+    verify_evidence(run, result["checks"], required=result["state"] == "complete")
+    for spec in manifest["scope"].get("checks", []):
+        tool = spec.get("params", {}).get("tool")
+        if spec.get("kind") == "measurements":
+            if not isinstance(tool, dict) or not tool.get("argv") or not tool.get("sha256"):
+                raise ValueError("measurement check lacks a pinned tool declaration")
+            if digest(tool["argv"][0]) != tool["sha256"]:
+                raise ValueError("declared measurement tool changed since review")
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
     if result["state"] == "complete":
@@ -96,6 +105,8 @@ def finding_status(finding):
 
 
 def outcome(result):
+    if result.get("empirical_feedback"):
+        return "incomplete"
     if result.get("state") != "complete":
         return "incomplete"
     if (result.get("expected_check_ids") is not None and
@@ -245,7 +256,14 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None):
+    from .locking import writer_lock
+    with writer_lock(out):
+        return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
+                           previous=previous, profile=profile, expected_baseline=expected_baseline)
+
+
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -266,6 +284,10 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
             raise ValueError("implementation files changed after this process loaded; start a fresh process")
         m = capture(scope_path, run, profile)
         validate_scope(m["scope"])
+        if expected_baseline is not None:
+            from .baseline import load_baseline
+            if load_baseline(run) != expected_baseline:
+                raise ValueError("candidate changed the campaign baseline before verification")
         if m["scope"].get("review_profile"):
             from .profiles import validate_profile
             validate_profile(m["scope"]["review_profile"])
@@ -279,6 +301,8 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
                           [{"role": "circuit"}, {"role": "physical"}])])
         save_result(run, result)
         result["checks"] = run_checks(run, deadline)
+        from .baseline import freeze_evidence
+        freeze_evidence(run, result["checks"])
         result["findings"] = collect_findings([], result["checks"])
         save_result(run, result)
         verify_snapshot(run)
@@ -331,6 +355,12 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
 
 
 def apply_decisions(run, decisions_path):
+    from .locking import writer_lock
+    with writer_lock(run):
+        return _apply_decisions(run, decisions_path)
+
+
+def _apply_decisions(run, decisions_path):
     from .findings import adjudicate
     run = Path(run).resolve()
     result = verify(run)
@@ -349,6 +379,12 @@ def apply_decisions(run, decisions_path):
 
 
 def link_correction(previous, current, finding_id, check_ids, reason):
+    from .locking import writer_lock
+    with writer_lock(previous, current):
+        return _link_correction(previous, current, finding_id, check_ids, reason)
+
+
+def _link_correction(previous, current, finding_id, check_ids, reason):
     previous, current = Path(previous).resolve(), Path(current).resolve()
     old, new = verify(previous, current_source=False), verify(current)
     if old["candidate_id"] == new["candidate_id"]:
@@ -387,6 +423,21 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor", help="inspect installed prerequisites; real runs establish integration")
+    bench = sub.add_parser("bench-review", help="capture bench evidence and rerun calibrated checks/reviews")
+    bench.add_argument("run")
+    bench.add_argument("report")
+    bench.add_argument("--out", required=True)
+    bench.add_argument("--max-seconds", type=float, default=1200)
+    feedback = sub.add_parser("campaign-feedback", help="ingest bench evidence and continue a campaign in a new model epoch")
+    feedback.add_argument("campaign")
+    feedback.add_argument("report")
+    feedback.add_argument("--out", required=True)
+    feedback.add_argument("--max-seconds", type=float, default=1200)
+    campaign_verify = sub.add_parser("verify-campaign", help="verify all candidate history links and convergence state")
+    campaign_verify.add_argument("campaign")
+    campaign = sub.add_parser("campaign", help="run a bounded single-writer implementation/review campaign")
+    campaign.add_argument("config")
+    campaign.add_argument("--out", required=True)
     review = sub.add_parser("review", help="capture and review a fresh candidate")
     review.add_argument("scope")
     review.add_argument("--out", required=True)
@@ -428,6 +479,20 @@ def main(argv=None):
             print(json.dumps({"prerequisites": checks,
                 "note": "Presence/version probes do not establish engineering integration. Run a declared scope."}, indent=2))
             return 0 if all(c.get("exit_code") == 0 for c in checks.values()) else 1
+        if args.command == "bench-review":
+            from .empirical import bench_review
+            return bench_review(args.run, args.report, args.out, args.max_seconds)
+        if args.command == "campaign-feedback":
+            from .campaign import campaign_feedback
+            return campaign_feedback(args.campaign, args.report, args.out, args.max_seconds)
+        if args.command == "verify-campaign":
+            from .campaign import verify_campaign
+            state = verify_campaign(args.campaign)
+            print(state["state"])
+            return 0
+        if args.command == "campaign":
+            from .campaign import run_campaign
+            return run_campaign(args.config, args.out)
         if args.command == "review":
             return run_review(args.scope, args.out, args.max_seconds, checks_only=args.checks_only, profile=args.profile)
         if args.command == "inspect":

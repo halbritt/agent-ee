@@ -1,5 +1,9 @@
 # Proposed fix: PCB_VIA width query in geometry_probe (Fable, agent-413)
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 Status: applied and regression-tested by the coordinator in commit `2a0e7f0`,
 after preserving the interrupted initial attempts at source commit `6efecc7`.
 Fresh full review demonstrations use the corrected implementation.

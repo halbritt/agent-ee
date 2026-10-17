@@ -1,5 +1,9 @@
 # Operator guide
 
+Use this page for standalone review and manual correction. For automatic repair,
+read the [campaign guide](campaign-guide.md); for physical observations, read
+[bench feedback](bench-feedback.md). Both use the [scope/2 baseline](scope-reference.md#version-2-baseline).
+
 ## First real review
 
 Run from the installed checkout with the prerequisites in
@@ -125,13 +129,17 @@ agent-ee inspect build/operator-control
 This example requires an intentionally prepared decisions file; it is not
 generated automatically by the command. Do not manufacture decisions merely to
 remove blockers. A failing executable criterion cannot be waived into a pass.
-If an applicable requirement, model, exclusion or rule must change, record that
+In scope/2, only witnessed coordinator check findings can be accepted defects;
+a reviewer hypothesis must be reproduced or remain a concern. Manual adjudication
+uses the same gate as automatic adjudication. If an applicable requirement, model,
+exclusion or rule must change, record that
 decision and run a new review under the changed criteria.
 
 ## Authorized correction
 
 Review does not modify a design. First confirm repair is authorized for that
-project/candidate; the original task authorized disposable fixture repairs only.
+project and candidate. The historical demonstrations used disposable fixtures;
+that history is not authority to modify another project.
 Copy the selected design into a separate disposable workspace or use an isolated
 project branch. Keep reviewer experiments away from the candidate under review.
 
@@ -186,3 +194,20 @@ evidence and archive expanded inputs/configuration using the project's artifact
 convention. Do not delete failed rounds merely because a later round succeeded.
 Record which criteria remain unknown, and keep bench/prototype obligations
 separate from this candidate's declared review result.
+
+## Select the continuation mechanism
+
+| Situation | Supported next step |
+| --- | --- |
+| Standalone review interrupted or inputs changed | `resume RUN --out NEW` recaptures the original scope, or `review` uses an explicitly revised scope |
+| Authorized manual repair of an established defect | Review a separate changed candidate, then use `close-correction` with affected checks |
+| Authorized bounded automatic repair | Create an explicit scope/2 campaign configuration and run `campaign CONFIG --out NEW` |
+| Physical discrepancy on a standalone candidate | Prepare raw sample evidence and use `bench-review RUN REPORT --out NEW` |
+| Physical discrepancy on an accepted campaign candidate | Use `campaign-feedback CAMPAIGN REPORT --out NEW`; inspect the new epoch and remaining iteration allowance |
+| Campaign escalation or unrelated execution failure | Preserve history, diagnose the cause and deliberately configure a new campaign if warranted; there is no generic in-place campaign resume |
+
+A campaign's `verify-campaign` command acquires the root lease, so it is refused
+while another writer holds that campaign. Read retained state and individual
+execution records for progress; do not unlink locks or alter history. Use the
+[budget and recovery rules](campaign-guide.md#writer-ownership-budgets-and-recovery)
+when deciding whether a new attempt is appropriate.

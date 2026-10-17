@@ -1,5 +1,9 @@
 # Evaluation plan, recorded before implementation
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 The owner authorizes a reusable CLI review system and disposable fixture repairs.
 The real FOME-MC and Universal 112 designs must remain unchanged. Manufacturing
 approval, ECU architecture selection, and general redesign are outside this task.

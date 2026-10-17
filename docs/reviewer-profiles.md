@@ -127,3 +127,26 @@ The donor profiles explicitly allow 900 seconds per call; use a 3600-second run
 budget. This did not guarantee completion: see the retained Claude/Agy timeouts
 and rejected donor adjudications in the evaluation. Raising a budget creates a
 new attempt and must not overwrite or rescore the failed attempt.
+
+## Profiles in campaigns and empirical re-review
+
+A campaign embeds the complete review profile object in its configuration and a
+separate `implementation` definition with the adjudicator's harness/model/effort/
+timeout fields. It writes the review profile to the campaign root and captures
+that allocation in each run. The implementation uses investigative tools even
+if the review profile selects `fixed_packet`. It is the sole candidate proposal
+writer; its native model call still uses the same subscription sandbox and
+failure policy.
+
+Scope/2 prompts and schemas add the full immutable baseline and requirement/check
+witnesses. This does not authorize a reviewer to edit requirements or replace
+coordinator checks with prose. The adjudicator can accept only executable check
+findings under that contract; see [scope/2 decisions](result-reference.md#version-2-witnesses-and-evidence-seal).
+
+Campaign feedback passes its captured campaign profile. Standalone `bench-review`
+preserves only an embedded scope profile; it currently does not forward an
+external source-run `--profile FILE`, leaving the fresh review incomplete in that
+case. The bench commands have no profile override flag. Initial reviewers receive tool-only empirical source
+predictions and raw samples, without prior reviewer judgments. The implementation
+agent alone receives the broader campaign convergence history when further
+repair is allowed.

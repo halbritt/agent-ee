@@ -1,12 +1,18 @@
 # agent-ee manual
 
-This manual describes agent-ee 0.1.0. The implementation is a Python CLI and an
+This manual describes the current agent-ee worktree (package version 0.1.0),
+including scope/2 campaigns and empirical feedback. Package version alone does
+not identify a compatible evidence policy; recorded Python/runtime hashes do. The implementation is a Python CLI and an
 agent discovery skill. Native KiCad files are the design authority. Review
 outputs apply to a captured candidate and declared criteria, not to an entire
 product's hardware qualification.
 
 | Task | Read |
 | --- | --- |
+| Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
+| Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
+| Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
+| Ingest bench samples and calibrate subsequent verification | [Bench feedback](bench-feedback.md) |
 | Install, authenticate, upgrade or remove links | [Installation](installation.md) |
 | Run a review, investigate findings and verify a repair | [Operator guide](operator-guide.md) |
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
@@ -17,6 +23,7 @@ product's hardware qualification.
 | Assess permissions, inference data exposure and trust | [Security and trust](security.md) |
 | Diagnose a refusal, incomplete run or tool failure | [Troubleshooting](troubleshooting.md) |
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
+| Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 
 The [acceptance index](../evidence/README.md) links all ten demonstrations,
@@ -44,3 +51,25 @@ agreement differs. The manual references their actual behavior and names limits
 that remain unenforced or outside the demonstrated scope.
 
 Reviewer routing and comparison: [Profiles](reviewer-profiles.md), [evaluation plan](model-evaluation-plan.md), [observed results and provisional allocation](../evidence/MODEL-SELECTION.md), and [donor follow-up](../evidence/MODEL-BASELINE.md).
+
+## Reading routes and diagrams
+
+For a first review, follow installation → operator guide → result reference.
+For an automatic repair loop, add the scope/2 baseline and campaign guide.
+For a new engineering analysis, read measurement adapters → coverage → maintainer
+guide before asserting tool qualification. For physical discrepancies, start
+with bench feedback and its raw-sample contract.
+
+Diagrams accompany the contracts they explain:
+
+- [Pipeline and sandbox information flow](architecture.md).
+- [Campaign sequence and state transitions](campaign-guide.md).
+- [Requirement-to-check baseline](scope-reference.md#version-2-baseline).
+- [Producer/parser evidence flow](measurement-adapters.md#producer-parser-and-acceptance-boundary).
+- [Witnesses and adjudication](result-reference.md#version-2-witnesses-and-evidence-seal).
+- [Bench re-entry and calibration epochs](bench-feedback.md).
+
+The Mermaid source is embedded in these Markdown pages for repository viewers
+that support it. Captions and tables state the same contracts for text-only readers.
+Historical assessment, evaluation and decision records retain their original
+context; they are not substitutes for the current references above.

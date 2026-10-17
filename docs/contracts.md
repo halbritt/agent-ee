@@ -1,5 +1,9 @@
 # Internal contracts (implementation agreement)
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 This is the historical builder agreement. The current
 [manual](README.md), [scope reference](scope-reference.md) and
 [result reference](result-reference.md) describe the implemented operator

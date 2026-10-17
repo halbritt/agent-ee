@@ -1,5 +1,8 @@
 # CLI reference
 
+For version-2 requirements, measurement/coupling interfaces, campaigns and bench
+feedback, see the [closed-loop contract and command reference](closed-loop.md).
+
 Invoke `agent-ee --help` or `agent-ee COMMAND --help` for parser help. Commands
 below are implemented by [cli.py](../src/agent_ee/cli.py). JSON is written to
 stdout for `doctor`, `inspect` and successful correction linkage; diagnostics
@@ -9,6 +12,10 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
+| `campaign` | `CONFIG --out NEW` | Review and repair disposable candidates with one writer and bounded convergence |
+| `verify-campaign` | `CAMPAIGN` | Recompute historical convergence and verify result/calibration links |
+| `bench-review` | `RUN REPORT --out NEW [--max-seconds N]` | Capture physical samples and run calibrated checks plus fresh review |
+| `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
 | `doctor` | None | Probe prerequisite versions/imports; no design or inference run |
 | `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
 | `inspect` | `RUN` | Show recorded outcome/state, findings, checks, freshness and correction links |
@@ -20,7 +27,8 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 Paths are shell arguments, so quote paths containing spaces. `SCOPE` is a JSON
 file. All output directories for `review` and `resume` must be new; parents are
 created. There is no overwrite, force, in-place resume, single-role retry,
-automatic repair or provider-fallback switch.
+or provider-fallback switch. Automatic repair is a separate explicit `campaign`
+operation, with configuration and limits described in the closed-loop reference.
 
 ## Exit codes
 
@@ -28,6 +36,8 @@ automatic repair or provider-fallback switch.
 | --- | --- | --- | --- |
 | `doctor` | Every recorded probe exited 0 | A prerequisite probe failed or timed out | Parser/handled invocation error |
 | `review`, `resume` | `criteria_satisfied` | Any other recorded review outcome, including execution/capture failure and interruption | Refusal before the run is handled, such as an existing output directory or invalid budget; parser error |
+| `campaign`, `campaign-feedback`, `bench-review` | Criteria satisfied | Retained nonpassing/incomplete outcome | Invocation refusal |
+| `verify-campaign` | Integrity checks succeeded; read printed campaign state | Not a normal handled result | Inconsistent/unavailable evidence |
 | `verify` | Integrity/freshness checks succeeded, whatever the design outcome | Not a normal handled result | Stale/inconsistent/unavailable evidence or handled invocation/parser error |
 | `inspect` | Inspection printed, even when its `freshness` field reports a refusal | Not a normal handled result | Cannot load the required inspection record or another handled invocation/parser error |
 | `adjudicate` | Decisions applied; does not imply the resulting review passes | Not a normal handled result | Decisions refused or evidence unavailable/stale |
@@ -41,9 +51,9 @@ design acceptance. The [operator guide](operator-guide.md) includes that gate.
 
 ## Work budgets and interruption
 
-`--max-seconds` defaults to 1200 and accepts a finite number from 0 through
-86400 inclusive. A zero budget is useful for exercising an incomplete run.
-The work deadline is monotonic, begins before capture, and is checked between
+For `review` and `resume`, `--max-seconds` defaults to 1200 and accepts a
+finite number from 0 through 86400 inclusive. A zero budget is useful for exercising an incomplete run.
+The review work deadline is monotonic, begins before capture, and is checked between
 steps and during subprocess execution. Capture, fingerprinting, finalization
 and file I/O are not all hard-preempted; this is not an exact process lifetime
 limit or a CPU/token quota.
@@ -70,6 +80,7 @@ The JSON object has `prerequisites` and `note`. Each normal probe records `path`
 `exit_code`, `version_output` and `diagnostics`; a launch failure or 15-second
 probe timeout records `error` instead. The probes are kicad-cli, ngspice, bwrap,
 pcbnew through system Python, and Claude. No design check or inference occurs.
+Codex and Agy are not version-probed by doctor even when a profile selects them.
 Authentication is not probed, so doctor can succeed before a review discovers
 missing subscription access.
 
@@ -133,3 +144,49 @@ the bounded repair workflow.
 `--profile FILE` captures an explicit reviewer/adjudicator configuration. An
 embedded scope `review_profile` is also accepted. Without either, native checks
 are preserved but full review is incomplete. See [profiles](reviewer-profiles.md).
+
+## `campaign` and `verify-campaign`
+
+`campaign CONFIG --out NEW` requires an `agent-ee.campaign/1` JSON object.
+There are no `--profile`, `--checks-only`, `--max-iterations` or `--max-seconds`
+flags on this command: review allocation, implementation definition and budgets
+are configuration fields. `scope` resolves relative to CONFIG and must use
+scope/2. See the [complete field reference](campaign-guide.md#configure-and-start).
+
+The campaign runs synchronously and retains `state.json`, ordinary runs, original
+result snapshots and implementation workspaces. Individual review completions
+print their report/outcome lines; the campaign command's exit code and final
+state determine the campaign result. Do not parse the last review's printed line
+as the whole campaign outcome.
+
+`verify-campaign CAMPAIGN` takes no snapshot-only flag. It checks historical run
+snapshots without requiring their original live sources, but still requires the
+recorded Python/runtime identities and retained evidence. It prints the verified
+campaign state and exits 0 on integrity success, including for honestly incomplete
+or escalated campaigns. It uses the root writer lease and can refuse while a
+campaign is active. See [history verification](campaign-guide.md#retained-files-and-verification).
+
+## `bench-review` and `campaign-feedback`
+
+Both require an existing target, an `agent-ee.bench/1` report, a fresh `--out`
+directory, and optional `--max-seconds` (default 1200). Neither accepts a new
+review-profile flag. Campaign continuation passes its captured campaign profile.
+Standalone `bench-review` preserves an embedded scope `review_profile`, but the
+current implementation does not forward an external `--profile FILE` from the
+source run. With only an external profile, calibrated checks run but the fresh
+adversarial review is incomplete because no reviewer profile is supplied.
+Physical data must identify that candidate and match executed metric contracts.
+
+`bench-review RUN REPORT --out NEW` captures the bundle, registers feedback on
+RUN and starts a fresh review at NEW/review. Its later review validates a finite
+0–86400-second budget. A bad budget can therefore be refused after feedback
+registration; the old acceptance is not rolled back.
+
+`campaign-feedback CAMPAIGN REPORT --out NEW` validates its finite 1–86400-second
+budget before ingestion and requires an accepted or empirically superseded last
+candidate. The fresh review goes into the next campaign run directory. Calibrated
+repair continues only within the remaining original iteration allowance.
+
+These commands can mutate the source run's empirical event/result even if the
+subsequent review fails. They do not edit its native design inputs. Consult
+[bench admission and recovery](bench-feedback.md) before retrying a failed attempt.

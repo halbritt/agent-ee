@@ -1,5 +1,9 @@
 # Reviewer selection experiment, version 1
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 The owner rejected selection by convenience and authorized actual Codex, Claude
 and Agy calls, including baseline runs. This plan is recorded before engineering
 comparison calls. Tools remain enabled. Existing read-only candidate mounts and

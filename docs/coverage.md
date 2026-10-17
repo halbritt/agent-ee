@@ -9,6 +9,8 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 
 | Kind | Criterion and evidence |
 | --- | --- |
+| `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
+| `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |
 | `erc` | Native all-severity ERC plus complete hierarchy coverage. Missing child files prevent a clean result. |
 | `drc` | Native all-severity DRC, saved fill, and schematic parity. Reports retain exclusions and native items. A violation is distinct from execution failure. |
 | `netlist` | Complete-hierarchy native XML export, with derived connectivity, DNP, native symbol identity, and sheet/UUID provenance. Informational rather than functional acceptance. |
@@ -89,3 +91,22 @@ potting temperatures and bench performance need dedicated requirements, sources,
 checks/models and physical validation. Record these as limits or material open
 questions; do not turn an unrequested condition into a speculative blocking
 defect on a narrower valid control.
+
+## Scope/2 and empirical coverage
+
+The [baseline contract](scope-reference.md#version-2-baseline) requires every check
+and requirement ID to be mapped. It preserves complete normative sources and
+criteria, but does not infer missing engineering requirements. Scope/2 accepted
+defects must be coordinator check findings backed by sealed evidence.
+
+The [campaign](campaign-guide.md) provides bounded iteration and regression
+protection. [Bench feedback](bench-feedback.md) adds measured residual envelopes
+at declared operating conditions; generated replay cases test those retained
+observations against unchanged limits. Neither facility invents unmeasured fault
+conditions or qualifies a new physical model from provenance text alone.
+
+Use [generic adapters](measurement-adapters.md) when an installed solver or
+captured manufacturing/telemetry tool can establish an additional criterion.
+Record what it actually computes and what remains out of scope. A domain string
+such as `thermal` is declared tool routing metadata, not independent proof of
+thermal qualification.

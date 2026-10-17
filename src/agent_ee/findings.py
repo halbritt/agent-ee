@@ -29,7 +29,7 @@ REVIEW_TOP_KEYS = frozenset(
 FINDING_REQUIRED_KEYS = frozenset(
     ("id", "title", "location", "condition", "mechanism", "severity", "assessment", "evidence", "reasoning")
 )
-FINDING_OPTIONAL_KEYS = frozenset(("downgraded_from", "validation_note"))
+FINDING_OPTIONAL_KEYS = frozenset(("downgraded_from", "validation_note", "witnesses"))
 DECISIONS_TOP_KEYS = frozenset(("schema", "candidate_id", "run_id", "decisions"))
 DECISION_REQUIRED_KEYS = frozenset(("finding_id", "disposition", "reason", "evidence"))
 DECISION_OPTIONAL_KEYS = frozenset(("duplicate_of", "checks", "previous_run"))
@@ -214,6 +214,13 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
             "evidence": evidence,
             "reasoning": reasoning,
         }
+        if "witnesses" in item:
+            from .baseline import validate_witness_shape
+            validate_witness_shape(item["witnesses"])
+            normalized["witnesses"] = copy.deepcopy(item["witnesses"])
+        if assessment == "defect" and (run_dir / "baseline.json").exists():
+            from .baseline import validate_witnesses
+            validate_witnesses(run_dir, item.get("witnesses"), evidence)
         if not evidence and assessment == "defect":
             normalized["assessment"] = "concern"
             normalized["downgraded_from"] = "defect"
@@ -345,6 +352,8 @@ def collect_findings(reviews, checks):
                 finding["candidate_id"] = rcand
             if rrun:
                 finding["run_id"] = rrun
+            if "witnesses" in item:
+                finding["witnesses"] = copy.deepcopy(item["witnesses"])
             collected.append(finding)
 
     return collected
@@ -596,6 +605,16 @@ def adjudicate(findings, decisions, run_dir):
             raise ValueError(f"decision {fid}: duplicate_of is only allowed when disposition is 'duplicate'")
 
         if disp == "accepted":
+            from .baseline import load_baseline, validate_witnesses
+            baseline = load_baseline(run_dir) if (run_dir / "candidate.json").exists() else None
+            if baseline is not None:
+                if target_finding.get("source") != "check":
+                    raise ValueError("only executable check findings may be accepted; reviewer claims require reproduction or duplication")
+                witnesses = target_finding.get("witnesses")
+                if target_finding.get("source") == "check":
+                    witnesses = [{"requirement_id": r["id"], "check_id": target_finding["local_id"]}
+                        for r in baseline["requirements"] if target_finding["local_id"] in r["checks"]]
+                validate_witnesses(run_dir, witnesses, validated_ev)
             if target_finding.get("assessment") != "defect":
                 raise ValueError(
                     f"decision {fid}: 'accepted' requires assessment='defect' "

@@ -157,6 +157,8 @@ def evidence_mounts(run_dir, label):
     """Completed native checks and, only for adjudication, reviewer experiments."""
     run = Path(run_dir)
     mounts = [(run / name, '/evidence/' + name) for name in ('checks', 'work') if (run / name).is_dir()]
+    if (run / 'baseline.json').is_file():
+        mounts.append((run / 'baseline.json', '/evidence/baseline.json'))
     if label == 'adjudicator':
         mounts += [(p, '/experiments/' + p.parent.name) for p in (run / 'review-work').glob('*/experiments')]
     return mounts

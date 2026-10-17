@@ -91,3 +91,56 @@ hard refusal. Preserve the conflicting copy and use a fresh checkout for
 inspection instead of overwriting it. Archive packing also refuses a running
 review, an existing archive name, or an implementation ref that does not
 reproduce recorded policy hashes. Use a new evidence-group name for a new round.
+
+## Closed-loop refusals
+
+Start with the failing run's execution records and, for a campaign, `state.json`.
+Use `verify-campaign` only after the active writer releases its lease. Error text
+below is an exact implementation diagnostic or a distinctive substring; other
+context may be included in the stored exception.
+
+| Diagnostic or state | Meaning | Supported response |
+| --- | --- | --- |
+| `KeyError: 'step_v'` after RC simulation | Current metric builder needs an explicit amplitude when measurements exist | Set `step_v` explicitly; see the native check limitation |
+| Fresh standalone bench review has no reviewer profile | External source-run profiles are not currently forwarded | Prepare the source scope with an embedded profile; preserve already registered feedback and diagnose the incomplete follow-up |
+| `scope/2 requires baseline requirements, targets and reference_architectures` | Required baseline shape missing or wrong | Supply the exact baseline fields and capture their source files |
+| `every check must trace to a baseline requirement` | Requirement mappings do not cover all checks | Correct the engineering mapping, including informational prerequisites |
+| `immutable baseline changed` / `candidate changed the campaign baseline` | Captured normative/model/criteria identity changed | Preserve old evidence; deliberately create a new baseline/campaign instead of weakening history |
+| `witness must establish a freshly failed criterion` | Claimed defect cites a passing, unknown or nonexecuted check | Reproduce an applicable criterion violation; retain an unproven claim as a concern |
+| `only executable check findings may be accepted` | Scope/2 adjudication attempted to accept reviewer prose | Accept the mapped check finding or retain/duplicate the reviewer analysis appropriately |
+| `evidence seal contradicts retained check artifacts` | Saved seal does not reproduce from the retained checks/raw files | Preserve and investigate; do not regenerate a seal to hide changed evidence |
+| `declared measurement tool changed since review` | Pinned producer executable no longer matches | Use the matching historical tool or create a newly declared run |
+| `measurement parser altered raw tool evidence` / `measurement parser altered coordinator request` | Parser crossed its evidence boundary | Inspect invocation and mount records; reject that attempt |
+| `campaign terminal state contradicts convergence history` | Stored state and recomputed history disagree | Preserve records and investigate the state mutation |
+| `another writer owns` | Supported writer lease is held | Inspect the actual process; wait for its completion or resolve the running operation; do not unlink the lock |
+| `implementation changed the captured file inventory` | Proposal added or deleted a file | Keep the authorized inventory or deliberately start a new scope for a broader change |
+| `implementation changed immutable verification input` | Proposal edited outside the allowlist | Inspect the proposed diff and accepted defects; do not broaden state by hand |
+| `campaign mutable_inputs differ from captured write authority` | Stored allowlist differs from the first scope | Treat state as inconsistent; preserve and investigate |
+| `campaign history result link changed` | Stored history snapshot/hash/path or current result changed incompatibly | Preserve original evidence; later manual adjudication is not a campaign history rewrite mechanism |
+| `campaign epoch lacks a bound physical feedback transition` | Epoch change is not backed by the preceding bench event/bundle/review | Inspect event and captured calibration identity; do not reset epoch numbers |
+| `escalated` | Convergence rule stopped repair | Read `tradeoff.json`, its reason and margins; see [stop rules](campaign-guide.md#states-and-stop-rules) |
+| `empirical_superseded` | Last retained candidate has newer registered bench evidence | Inspect the feedback output/new review; old acceptance is no longer current |
+| `measurement check lacks a pinned tool declaration` | Generic check has no usable tool identity | Supply explicit argv/hash/domain/program inputs; rerun under the corrected scope |
+| `measurement tool executable differs from pinned baseline` | Installed executable does not match the declared digest | Investigate the installation/change; approve and declare a new tool identity intentionally |
+| `parser cited evidence not produced by the declared tool` | Parser used its own replacement or an unrecorded path | Fix parser provenance; cite actual recorded producer outputs |
+| `parser domain differs from baseline tool declaration` | Parser and declared producer disagree | Correct the tool/adapter contract; domain labels are not inferred |
+| `coupled measurements have different operating conditions` | Joined values are not at the same exact condition | Produce compatible measurements; do not relabel unrelated samples |
+| `bench report must identify the measured candidate` | Report does not match the source candidate hash/schema | Select the actual prototype's captured run and correct the report provenance |
+| `bench observation differs from captured instrument sample` | Report fields disagree with raw sample | Investigate source data/conversion; never edit raw evidence to fit a conclusion |
+| `adapter must declare immutable calibration_inputs` | No model applicability boundary was declared | Create a properly scoped new baseline before claiming reusable calibration |
+| `calibration model applicability changed` | Current captured model hashes differ | Obtain a new justified model/bench basis; old residuals are not silently reused |
+
+## Feedback failure stages
+
+| Last durable stage | What remains true | Recovery implication |
+| --- | --- | --- |
+| Report rejected before bundle capture | No completed new empirical registration is established | Output directories may still exist; inspect them and choose a fresh path for a corrected attempt |
+| Bundle captured and event registered | Old run's current outcome is incomplete | Keep the bundle and source event even if later review fails |
+| New review directory exists | Useful new checks/review records may be partial | There is no general in-place campaign resume; a second feedback call can collide with the reserved next run path |
+| New epoch retained | Original historical result snapshot remains unchanged | Verify the campaign and diagnose the new epoch's actual state |
+
+Do not assume a failed command had no side effects. The [bench guide](bench-feedback.md)
+defines registration order, budget validation timing and the absence of a
+multi-file rollback. An invalid adjudicator citation must be corrected through
+valid evidence in a fresh supported workflow, not by silently rewriting its log
+or manufacturing the referenced file after the call.

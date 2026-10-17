@@ -189,3 +189,44 @@ rejects stale hashes. Without `--grades`, the summary reports execution and
 findings as ungraded. All comparison reviews remain incomplete as acceptance
 runs because they intentionally omit adjudication. The score report separately
 identifies execution failures, unrun cases and engineering overclaims.
+
+## Reproduce scope/2 verification
+
+These commands use the current worktree and require the native environment. They
+create fresh local evidence and do not restore old acceptance:
+
+```sh
+./bin/agent-ee review fixtures/closed-loop/control.scope.json \
+  --checks-only --out build/scope2-native --max-seconds 120
+./bin/agent-ee verify build/scope2-native
+PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
+```
+
+The first command intentionally exits 1 because checks-only omits adversarial
+review. Run the subsequent verification even though a shell `&&` chain would
+stop at that exit. On a compatible native installation the control's declared
+checks pass/info, while the full review outcome remains incomplete. Verification
+exit 0 confirms fresh evidence, not completion of missing agent judgments.
+
+For an explicit live campaign, use:
+
+```sh
+./bin/agent-ee campaign fixtures/closed-loop/campaign.json --out build/scope2-live
+./bin/agent-ee verify-campaign build/scope2-live
+```
+
+This configuration selects an actual subscription profile and spends inference.
+A new model response can fail schema/citation validation, so do not assume a
+passing control guarantees a completed campaign. The [recorded scope/2 live attempt](closed-loop.md#live-subscription-failure-path-demonstration)
+stopped on an invalid adjudicator citation before implementation. Complete repair
+and empirical continuation are exercised in integration tests with scripted model
+replies. The synthetic samples in those tests are not instrument measurements.
+
+The new closed-loop local build runs are not entries in the historical archive
+manifest. Archive complete runs only after committing their exact implementation
+and verifying the matching policy/runtime. Campaign history and feedback contain
+absolute run/bundle/scope-source paths; the existing archive helper does not
+relocate these links or provide portable whole-campaign restoration. Preserve the
+full campaign plus referenced feedback and source trees at their recorded paths,
+or inspect relocated copies as historical records without claiming equivalent
+verification.

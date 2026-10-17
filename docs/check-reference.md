@@ -1,5 +1,8 @@
 # Native and engineering checks
 
+For version-2 requirements, measurement/coupling interfaces, campaigns and bench
+feedback, see the [closed-loop contract and command reference](closed-loop.md).
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.
@@ -24,6 +27,8 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
+| `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
+| `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
@@ -127,9 +132,15 @@ exporter or active-circuit simulator.
 | `input_net` | Required | Exact exported net to drive |
 | `output_net` | Required | Exact exported net whose voltage is measured |
 | `ground_net` | Required | Exact net mapped to SPICE node 0 |
-| `step_v` | 1.0 | Finite positive ideal step amplitude, volts |
+| `step_v` | Explicit value required when measurements are requested | Finite positive ideal step amplitude, volts; see current limitation below |
 | `stop_ms` | 5.0 | Finite positive stop time, milliseconds |
+| `calibration_inputs` | Optional captured path list; nonempty before bench ingestion | Immutable model applicability inputs for empirical feedback |
 | `measurements` | Default empty | Entries with `name`, `at_ms`, optional `min`/`max` in volts |
+
+Current limitation: deck validation defaults an omitted `step_v` to 1.0, but
+metric-condition construction later reads the original parameter directly. With
+any requested measurement, omission therefore raises `KeyError` after simulation
+instead of producing a valid check. Set `step_v` explicitly in both scope versions.
 
 Measurement names are lowercased and must be unique, matching
 `[a-z][a-z0-9_]{0,31}` after normalization. `at_ms` must be finite and in
@@ -177,3 +188,25 @@ not prove the time axis, model applicability or waveform meets every undeclared
 condition. Inspect the stimulus, deck, measurements and independent calculation.
 The [evaluation](evaluation-plan.md) independently derives the demonstrated RC
 response and its unchanged limits.
+
+## Generic measurements and coupled margins
+
+The [measurement-adapter reference](measurement-adapters.md) defines producer and
+parser invocation, every supported parameter, request/report formats, retained
+artifacts, margin arithmetic, domain/condition rules and failure paths. These
+interfaces can host independently qualified engineering tools; installing
+agent-ee does not install thermal, parasitic, DFM/DFA/DFT or supply-chain adapters.
+
+In scope/2, bounded `rc_transient` results also expose electrical scalar metrics
+and margins for coupling and empirical correction. Unbounded measurements remain
+informational. A native RC check with no bounded measurements does not run the
+empirical correction stage. Declare bounds and a nonempty `calibration_inputs`
+list before using bench
+feedback. The condition string is emitted from the configured step amplitude and
+measurement time; read it from `checks/CHECK_ID.json` when preparing a report.
+[Bench feedback](bench-feedback.md) describes residual intervals and replay cases.
+
+A scope/2 RC result can fail despite an in-range raw SPICE value when its
+empirically corrected interval crosses a bound. Inspect `details.metrics`
+(`nominal`, `lower`, `upper`), `details.margins` and `bench-replay.json` alongside
+the raw `details.measurements`; they answer different questions.

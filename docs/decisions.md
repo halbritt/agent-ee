@@ -1,5 +1,12 @@
 # Implementation decisions
 
+The original decisions below describe the bounded standalone-review release.
+The current scope/2 extension is documented in the [closed-loop overview](closed-loop.md),
+with [implementation review dispositions](closed-loop-review.md) and
+[decision provenance](closed-loop-doctrine.md). Those additions introduce explicit
+single-writer campaigns and empirical re-review while preserving the original
+candidate/reviewer/adjudicator information boundary.
+
 ## Small standalone Python CLI and skill
 
 The owner requested a working reusable review capability and authorized ordinary

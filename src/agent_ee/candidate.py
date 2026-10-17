@@ -64,8 +64,8 @@ def capture(scope_path, run_dir, profile_path=None):
     scope_path, run_dir = Path(scope_path).resolve(), Path(run_dir).resolve()
     scope_bytes = scope_path.read_bytes()
     scope = read_json(scope_path)
-    if scope.get("schema") != "agent-ee.scope/1":
-        raise ValueError("expected agent-ee.scope/1")
+    if scope.get("schema") not in ("agent-ee.scope/1", "agent-ee.scope/2"):
+        raise ValueError("expected agent-ee.scope/1 or agent-ee.scope/2")
     profile_source = None
     if profile_path:
         profile_source = Path(profile_path).expanduser().resolve()
@@ -91,6 +91,10 @@ def capture(scope_path, run_dir, profile_path=None):
             raise ValueError("profile changed during capture")
         manifest.update(profile_path=str(profile_source), profile_sha256=profile_hash)
     manifest["candidate_id"] = identity({"scope": scope, "files": before})
+    from .baseline import compile_baseline
+    baseline = compile_baseline(scope, before)
+    if baseline is not None:
+        write_json(run_dir / "baseline.json", baseline)
     write_json(run_dir / "candidate.json", manifest)
     return manifest
 
@@ -107,6 +111,8 @@ def verify_snapshot(run_dir):
             actual[p.relative_to(root).as_posix()] = digest(p)
     if actual != m["files"] or identity({"scope": m["scope"], "files": actual}) != m["candidate_id"]:
         raise ValueError("candidate snapshot changed; evidence is stale")
+    from .baseline import load_baseline
+    load_baseline(run_dir)
     return m
 
 

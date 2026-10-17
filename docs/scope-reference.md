@@ -1,5 +1,8 @@
 # Scope configuration reference
 
+For version-2 requirements, measurement/coupling interfaces, campaigns and bench
+feedback, see the [closed-loop contract and command reference](closed-loop.md).
+
 A scope declares what to capture, what to check and what the reviewers can see.
 It is not a discovery engine for every dependency in a design. Include the
 native project, rules, library tables, actual libraries, applicable requirements
@@ -14,13 +17,16 @@ specific to the original workstation; adapt them before using it elsewhere.
 
 | Field | Type / default | Meaning |
 | --- | --- | --- |
-| `schema` | Required string | Exactly `agent-ee.scope/1` |
+| `schema` | Required string | `agent-ee.scope/1` or requirements-bound `agent-ee.scope/2` |
 | `name` | Required nonempty string | Name displayed in reports |
 | `scope` | Required nonempty string | Review purpose, boundary and relevant operating conditions |
 | `inputs` | Required list of input mappings | Source files/trees to copy into the candidate |
 | `schematic` | Required relative path | Captured root `.kicad_sch` |
 | `board` | Required relative path | Captured saved `.kicad_pcb` |
 | `checks` | Required nonempty list | Ordered check specifications |
+| `baseline` | Required for scope/2 | Requirement/check mappings and captured target/reference sources; see [closed-loop contract](closed-loop.md) |
+| `mutable_inputs` | Optional list | Campaign-editable captured design paths; default board and schematic |
+| `empirical` | Optional captured path | Coordinator-generated calibration bundle for bench feedback |
 | `requirements` | List, default `[]` | Captured input-relative text files placed first in the packet |
 | `limitations` | List of strings, default `[]` | Explicit omitted conditions or analyses retained in the report |
 | `packet_inputs` | List; default root schematic and board | Captured input-relative source text selected for reviewers |
@@ -103,7 +109,9 @@ Each check has `id`, `kind`, and optional `params` (object, default `{}`). CLI
 check IDs are unique and match `[a-z][a-z0-9_-]{0,63}`. Checks execute in the
 listed order; dependencies are not topologically sorted.
 
-Supported kinds are `erc`, `drc`, `netlist`, `geometry`, and `rc_transient`.
+Supported kinds are `erc`, `drc`, `netlist`, `geometry`, `rc_transient`,
+`measurements` and `coupled_margins`. The latter two use the
+[measurement contract](measurement-adapters.md).
 Unknown kinds are retained as unsupported unknown coverage. The transient check
 must name a preceding check in `params.netlist_check`; use an actual `netlist`
 check whose generated connectivity exists. Parameters, units and check-specific
@@ -129,10 +137,14 @@ Role lenses request coverage; actual coverage still needs recorded evidence.
 The packet includes scope criteria, check records and selected text in this order:
 
 1. Requirement paths, prefixed with `inputs/`.
-2. `packet_inputs`, prefixed with `inputs/`.
-3. Required `packet_artifacts`.
-4. Remaining evidence paths produced by the declared checks.
+2. In scope/2, all baseline file paths, prefixed with `inputs/` (including captured
+   normative sources, adapters, declared tool program inputs and calibration inputs).
+3. `packet_inputs`, prefixed with `inputs/`.
+4. Required `packet_artifacts`.
+5. Remaining evidence paths produced by the declared checks.
 
+Large baseline source/program files can consume the text budget before native
+packet inputs. The structured baseline itself is included outside that budget.
 Duplicate paths are included once. Each artifact text is capped at 100000 bytes,
 within the shared artifact budget. The budget does not cap all JSON overhead,
 check-record text or adjudicator context. Text is a prefix when clipped. Binary
@@ -146,3 +158,83 @@ by the same validation, so inspect unavailable-source notices. Choosing a path
 or capturing a document does not ensure its full contents reached the reviewers.
 If a relevant source is clipped, narrow the scope or add a suitable extraction
 with preserved source/page/native provenance and rerun.
+
+## Version-2 baseline
+
+`agent-ee.scope/2` uses the same capture/native/profile fields and adds a required
+`baseline`. [The version-2 control](../fixtures/closed-loop/control.scope.json)
+is a complete runnable example. This fragment shows the baseline shape only:
+
+```json
+{
+  "requirements": [
+    {"id": "R-response", "statement": "Output meets the declared response band",
+     "source": {"path": "requirements/system.md", "locator": "R-response"},
+     "checks": ["response"]}
+  ],
+  "targets": ["requirements/targets.md"],
+  "reference_architectures": ["requirements/reference.md"]
+}
+```
+
+The baseline object accepts exactly `requirements`, `targets` and
+`reference_architectures`. All three lists must be nonempty. Each requirement
+has exactly `id`, `statement`, `source` and `checks`; IDs use the safe finding-ID
+syntax and must be unique. Statements and source locators are nonempty strings.
+Each source has exactly `path` and `locator`. Paths must be safe, captured input
+paths. Locators document the relevant section; the validator does not parse prose
+to prove that a section or statement is correct.
+
+Each requirement names one or more unique declared check IDs. Every declared
+check must appear in at least one requirement mapping. Multiple requirements may
+map to the same check. Coverage of IDs is structural traceability, not proof that
+a check semantically covers every part of a requirement. The operator must make
+that engineering mapping defensible.
+
+The coordinator creates `baseline.json` with the requirement mappings, target and
+reference paths, complete check specifications, and hashes of all baseline files.
+The immutable file set includes the normative sources, legacy `requirements`
+paths, measurement adapters, declared producer `tool.inputs`, and all
+`calibration_inputs`. Candidate verification reconstructs and compares it.
+Changing an included file or check specification changes `baseline_id`.
+
+```mermaid
+flowchart TD
+    R["Requirement IDs and source locators"] --> M["Requirement-to-check mapping"]
+    T["Target and reference sources"] --> B["Immutable baseline identity"]
+    F["Captured model and parser bytes"] --> B
+    M --> B
+    C["Complete check specifications"] --> B
+    B --> V["Checks, reviewers, adjudicator and implementation"]
+    V --> E["Evidence-backed requirement decisions"]
+```
+
+The full structured baseline is included in the packet outside the artifact-text
+budget and mounted at `/evidence/baseline.json`. Its complete sources remain
+read-only under `/candidate`. Packet excerpt limits still apply to embedded
+source text; access to a file does not establish that a reviewer inspected it.
+
+A version-2 reviewer defect needs valid requirement/check witnesses and a citation
+to a sealed failed check. Only coordinator check findings may receive an accepted
+defect disposition; see [finding contracts](result-reference.md#version-2-witnesses-and-evidence-seal).
+
+## Migrating a legacy scope
+
+1. Preserve the scope/1 file and historical runs. Copy it to a new scope file.
+2. Change its schema to `agent-ee.scope/2`; capture the actual requirements,
+   target specifications and reference architecture sources.
+3. Add explicit requirement IDs, statements, source locators and mappings that
+   cover every declared check, including informational exports.
+4. For generic measurements, declare captured parser/program/model inputs and
+   a pinned producer executable. Add `calibration_inputs` before bench feedback.
+5. For campaigns, declare `mutable_inputs` as the exact authorized design files.
+   This setting is not a glob and cannot include immutable baseline sources.
+6. Run fresh checks and independent reviews. A migration creates a new candidate
+   and does not transfer previous acceptance or convert old review prose into
+   executable evidence.
+
+A standalone scope may include `empirical`, a captured path to an
+`agent-ee.calibration/1` bundle. Normally let `bench-review` or `campaign-feedback`
+create that field and its captured `empirical/` tree. It is runtime empirical
+knowledge, separate from the normative baseline. See [bench feedback](bench-feedback.md)
+for provenance, applicability and accumulation rules.

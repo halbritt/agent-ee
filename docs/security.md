@@ -89,3 +89,63 @@ Tool-enabled reviewers are trusted to use mounted subscription credentials only
 for inference. Read-only mounts prevent credential changes, not reads by their
 processes. The parent does not copy credentials into evidence; no claim of
 credential isolation from arbitrary reviewer shell commands is made.
+
+## Scope/2 evidence and implementation authority
+
+Scope/2 adds a coordinator-created baseline and evidence seal. Full requirements,
+target/reference sources and verification program inputs are captured. A reviewer
+cannot promote an arbitrary claim to an accepted defect: acceptance requires a
+failed coordinator check, a mapped requirement, a check citation and unchanged
+sealed raw evidence. Unsupported concerns can remain unresolved; merely adding a
+path to a file does not establish their mechanism.
+
+Generic measurement production and parsing are separate invocations. Producer
+argv and installed executable hash are baseline criteria; captured program/parser
+bytes are immutable inputs. Requests are mounted read-only for each stage, and
+the parser's raw-output mount is read-only. The coordinator rechecks retained
+hashes. A malicious or incorrectly qualified declared producer/parser can still
+compute misleading values; the operator supplies and qualifies that toolchain.
+
+Campaign implementation receives the prior candidate read-only plus a disposable
+writable design copy. After the call, the coordinator checks exact file inventory,
+no symlinks, unchanged baseline files and unchanged bytes outside `mutable_inputs`.
+The initial captured scope owns that allowlist; campaign verification re-derives
+it. The implementation cannot broaden it by editing state or adding a file.
+This protects the supported proposal path, not arbitrary host filesystem writes.
+
+The implementation call receives baseline and campaign history in its prompt.
+That is additional inference exposure compared with an initial reviewer. The
+same subscription credential/network limitations apply to it. Initial reviewers
+receive neither implementation prose nor historical reviewer opinions.
+
+## Leases and persistent history
+
+Supported mutation entry points acquire nonblocking process writer leases. A
+`.campaign-root` marker makes descendant run mutations acquire the parent campaign
+lease as well. Concurrent attempts fail rather than waiting indefinitely. Lock
+files are persistent adjacent files; do not unlink them as a stale-lock remedy.
+A process crash releases the OS lock, while the file remains. Read operations
+are not guaranteed to observe one atomic transaction spanning all run files.
+
+`verify-campaign` retains and checks original result snapshots, baseline equality,
+write authority, calibration transitions and convergence projections. Feedback
+can supersede current acceptance while preserving the original snapshot. This
+is trusted-local-storage consistency, not a signed append-only ledger resistant
+to an owner rewriting every record and hash. Campaign and feedback records also
+contain absolute paths; moving a tree can break those links.
+
+## Empirical provenance
+
+Bench ingestion checks raw-file hashes, sample equality, candidate identity,
+operating condition, units, applicable model/program hashes and residual arithmetic.
+It does not authenticate an instrument, validate a calibration certificate,
+parse every provenance field semantically, or prove a prototype matches its
+claimed candidate. Real engineering use requires those controls outside this
+software interface.
+
+Cumulative bundles retain source tool predictions and raw samples. Prior reviewer
+judgments are excluded from those prediction records to preserve independent
+initial review contexts. New model knowledge changes the calibration epoch, not
+the immutable requirement baseline. Once feedback is registered, a later failure
+cannot silently restore the old acceptance. Recovery must preserve the evidence
+and the supersession relationship.

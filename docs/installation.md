@@ -22,6 +22,7 @@ bindings. A virtual environment that hides system bindings is insufficient.
 | `ngspice` | Passive transient check; also included in runtime fingerprints |
 | `bwrap` | Filesystem/process/network isolation for invoked checks and reviewers |
 | `claude`, `codex`, `agy` | Selected subscription reviewer/adjudicator harnesses; install those used by your profile |
+| Scope-declared measurement producer | Additional installed executable under `/usr`, matching the pinned digest; captured parser/program/model inputs are supplied by the scope |
 | `bash` | Link installer |
 
 Bubblewrap must actually be allowed to create the required namespaces and mount

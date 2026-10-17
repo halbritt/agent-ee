@@ -6,7 +6,11 @@ history. Review never changes the source design.
 
 The [full manual](docs/README.md) covers installation, operator workflows, every
 CLI command and scope field, native/engineering checks, result formats,
-isolation, troubleshooting, extension and evidence reproduction.
+isolation, troubleshooting, extension and evidence reproduction. For the closed
+loop, read the [campaign guide](docs/campaign-guide.md),
+[measurement adapters](docs/measurement-adapters.md), and
+[bench-feedback guide](docs/bench-feedback.md). The
+[architecture diagrams](docs/architecture.md) show the writer and review boundaries.
 
 ```sh
 cd ~/git/agent-ee
@@ -54,7 +58,10 @@ Their presence does not count as exercised review coverage.
 
 ## Declaring a scope
 
-Use an `agent-ee.scope/1` JSON document. `docs/contracts.md` describes the fields;
+Use `agent-ee.scope/2` for requirements-bound reviews and campaigns; legacy
+`agent-ee.scope/1` remains supported for bounded reviews. See the
+[closed-loop contract](docs/closed-loop.md) and executable
+[version-2 control](fixtures/closed-loop/control.scope.json). `docs/contracts.md` describes the fields;
 the examples under `scopes/` and `fixtures/` are executable configurations.
 Paths are relative to the scope file unless absolute or beginning with `~`.
 `inputs` declares source trees/files and their destinations inside the candidate.
@@ -108,7 +115,9 @@ Inspect partial work with `agent-ee inspect RUN`. Interrupting or exhausting the
 wall-clock budget preserves useful completed records. `agent-ee resume RUN
 --out NEW` recaptures and reruns all checks and reviewers. This intentionally
 spends more work than selectively reusing results, while avoiding stale evidence.
-No automatic retries or autonomous source repairs occur.
+Standalone reviews do not retry or repair. The explicit `campaign` command
+authorizes bounded repairs in disposable copies, with one implementation agent
+and fresh independent reviews for each proposal.
 
 `verify RUN` checks the captured input identity, current declared sources and
 scope, implementation hashes, and retained evidence hashes. Source changes make
@@ -158,8 +167,8 @@ Closure requires a distinct candidate, an accepted old finding, unchanged
 requirements/check criteria, a completed passing new review and fresh passing
 affected checks. It appends a correction link; the old defect remains true of
 the old candidate. For repair, copy to an isolated disposable candidate and
-change its native files only with authorization. The CLI never rewrites native
-circuits, performs general redesign, orders parts or approves fabrication.
+change its native files only with authorization. A campaign may rewrite only declared mutable design files in disposable copies.
+It does not modify the source design, order parts or approve fabrication.
 
 ## Extending and testing
 

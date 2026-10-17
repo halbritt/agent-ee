@@ -1,5 +1,9 @@
 # Independent Assessment (`gemini-argon` / `agent-414`)
 
+> Historical design, review or evaluation record. Status and proposed actions
+> describe the recorded work, not the current implementation. Use the
+> [current manual](README.md) for supported contracts and commands.
+
 ## 1. Observations from Inspected Sources (Reusable Pieces vs. Gaps)
 
 ### `/home/halbritt/git/fome-mc/toolchain/eda.py`, `versions.toml`, `test_smoke.py`, `rc_filter/generate.py`

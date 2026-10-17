@@ -1,0 +1,143 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "RC low-pass response review",
+  "scope": "Review the saved passive RC low-pass against the captured response and geometry requirements. This is a disposable review fixture, not an ECU circuit.",
+  "limitations": [
+    "Ideal unloaded step response only; tolerance, temperature, loading, ADC sampling, EMI and hardware behavior are untested.",
+    "Zone fill is evaluated as saved; the read-only candidate forbids a refill pass."
+  ],
+  "inputs": [
+    {
+      "path": "../rc/control",
+      "at": "project"
+    },
+    {
+      "path": "/usr/share/kicad/symbols",
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/footprints",
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/template",
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ]
+    },
+    {
+      "path": "requirements",
+      "at": "requirements"
+    }
+  ],
+  "schematic": "project/rc_filter.kicad_sch",
+  "board": "project/rc_filter.kicad_pcb",
+  "requirements": [
+    "requirements/system.md"
+  ],
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry",
+      "params": {
+        "min_track_width_mm": 0.2
+      }
+    },
+    {
+      "id": "rc-step",
+      "kind": "rc_transient",
+      "params": {
+        "netlist_check": "netlist",
+        "input_net": "/IN",
+        "output_net": "/OUT",
+        "ground_net": "GND",
+        "step_v": 1.0,
+        "stop_ms": 5.0,
+        "measurements": [
+          {
+            "name": "vout_1ms",
+            "at_ms": 1.0,
+            "min": 0.62,
+            "max": 0.65
+          },
+          {
+            "name": "vout_5ms",
+            "at_ms": 5.0
+          }
+        ],
+        "calibration_inputs": [
+          "requirements/reference.md"
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-native",
+        "statement": "Native rule checks pass and netlist exports",
+        "source": {
+          "path": "requirements/system.md",
+          "locator": "R-native"
+        },
+        "checks": [
+          "erc",
+          "drc",
+          "netlist"
+        ]
+      },
+      {
+        "id": "R-width",
+        "statement": "Tracks at least 0.20 mm",
+        "source": {
+          "path": "requirements/system.md",
+          "locator": "R-width"
+        },
+        "checks": [
+          "geometry"
+        ]
+      },
+      {
+        "id": "R-response",
+        "statement": "Unloaded 1 V step response at 1 ms in [0.62,0.65] V",
+        "source": {
+          "path": "requirements/system.md",
+          "locator": "R-response"
+        },
+        "checks": [
+          "rc-step"
+        ]
+      }
+    ],
+    "targets": [
+      "requirements/targets.md"
+    ],
+    "reference_architectures": [
+      "requirements/reference.md"
+    ]
+  }
+}

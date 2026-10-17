@@ -113,12 +113,14 @@ class Ctx:
             if (self.run_dir / rel).is_file() and rel not in self.result["evidence"]:
                 self.result["evidence"].append(rel)
 
-    def execute(self, argv, timeout):
+    def execute(self, argv, timeout, *, extra_ro=()):
         remaining = self.remaining()
         if remaining <= 1:
             raise CheckError("interrupted", "deadline exhausted before the tool could run")
         clamped = min(timeout, remaining)
-        rec = executor.execute(self.inputs, self.work, argv, timeout=clamped)
+        baseline = self.run_dir / "baseline.json"
+        mounts = [(baseline, "/evidence/baseline.json")] if baseline.is_file() else []
+        rec = executor.execute(self.inputs, self.work, argv, timeout=clamped, extra_ro=[*mounts, *extra_ro])
         self.evidence("execution.json", "console.log")
         self.result["details"]["tool"] = {
             "argv": rec["argv"], "exit_code": rec["exit_code"],
@@ -701,6 +703,10 @@ def check_rc_transient(ctx):
     checks, failures, raw = analyze_sim(ctx.work, wanted)
     ctx.result["details"]["raw"] = raw
     ctx.result["details"]["measurements"] = checks
+    metrics = {name: {"value": m["measured"], "unit": "V",
+        "condition": f"ideal-unloaded-{ctx.params['step_v']}V-step-at-{m['at_ms']}ms"}
+        for name, m in checks.items()}
+    ctx.result["details"].update(metrics=metrics, producer={"tool": "ngspice", "domain": "electrical"})
     ctx.result["execution"] = "ok"
     if failures:
         ctx.result["outcome"] = "defect"
@@ -713,8 +719,22 @@ def check_rc_transient(ctx):
         ctx.result["outcome"] = "info"
         ctx.result["summary"] = "transient simulation completed; no limits were declared"
 
+    if ctx.scope.get("schema") == "agent-ee.scope/2":
+        from .measurements import finish
+        limits = {name: {"unit": "V", "condition": metrics[name]["condition"],
+            **{key: m[key] for key in ("min", "max") if m[key] is not None}}
+            for name, m in checks.items() if m["min"] is not None or m["max"] is not None}
+        if limits:
+            try:
+                finish(ctx, metrics, limits)
+            except (ValueError, KeyError, TypeError) as exc:
+                raise CheckError("malformed", str(exc)) from exc
 
-CHECK_FUNCS = {"erc": check_erc, "drc": check_drc, "netlist": check_netlist,
+
+from .measurements import check_measurements, check_coupled_margins
+
+
+CHECK_FUNCS = {"measurements": check_measurements, "coupled_margins": check_coupled_margins, "erc": check_erc, "drc": check_drc, "netlist": check_netlist,
                "geometry": check_geometry, "rc_transient": check_rc_transient}
 
 

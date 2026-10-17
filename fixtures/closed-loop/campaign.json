@@ -1,0 +1,39 @@
+{
+  "schema": "agent-ee.campaign/1",
+  "scope": "control.scope.json",
+  "review_profile": {
+    "schema": "agent-ee.profile/1",
+    "name": "claude-evaluation-v1",
+    "tool_mode": "investigate",
+    "reviewers": [
+      {
+        "role": "circuit",
+        "harness": "claude",
+        "model": "claude-fable-5",
+        "effort": "high",
+        "timeout_s": 300
+      },
+      {
+        "role": "physical",
+        "harness": "claude",
+        "model": "claude-fable-5",
+        "effort": "high",
+        "timeout_s": 300
+      }
+    ],
+    "adjudicator": {
+      "harness": "claude",
+      "model": "claude-fable-5",
+      "effort": "high",
+      "timeout_s": 300
+    }
+  },
+  "implementation": {
+    "harness": "claude",
+    "model": "claude-fable-5",
+    "effort": "high",
+    "timeout_s": 300
+  },
+  "max_iterations": 3,
+  "max_seconds": 1800
+}

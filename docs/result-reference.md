@@ -1,5 +1,8 @@
 # Result and evidence format
 
+For version-2 requirements, measurement/coupling interfaces, campaigns and bench
+feedback, see the [closed-loop contract and command reference](closed-loop.md).
+
 Version strings identify record formats; they are not signatures or proof of
 correct electrical conclusions. There is no automatic migration or import of
 old acceptance. JSON records are written with sorted keys, indentation, finite
@@ -11,8 +14,10 @@ and compact separators before SHA-256 hashing.
 ```text
 RUN/
   candidate.json                 selected input manifest and scope
+  baseline.json                  immutable scope/2 baseline, when applicable
   inputs/                        exact captured source/library/requirement bytes
   work/CHECK_ID/                  isolated native scratch and raw evidence
+  work/verification/evidence.json scope/2 check and raw-artifact seal
   checks/CHECK_ID.json            interpreted check result
   packet.json                    bounded evidence supplied to initial reviewers
   reviews/ROLE.json              validated initial judgment
@@ -20,7 +25,8 @@ RUN/
   review-work/ROLE/               raw harness stdout/stderr/execution
   review-work/adjudicator/        raw adjudicator execution
   adjudicator-execution.json      interpreted adjudicator outcome
-  events/                        adjudication and correction history
+  events/                        adjudication, correction and empirical history
+  events/bench-BUNDLE_SHA256.json registered physical feedback event, when present
   result.json                    current projection and integrity inventory
   REPORT.md                      human-readable projection
   error.log                      traceback when the CLI crash boundary catches an error
@@ -43,6 +49,7 @@ contents are never copied into the retained run.
 | `sources` | Candidate-relative path to resolved original source path |
 | `source_revisions` | Input destination to source Git HEAD, or null |
 | `scope_path`, `scope_sha256` | Original scope path and exact file digest |
+| `profile_path`, `profile_sha256` | Present for an external profile file; its resolved source path and exact digest |
 | `candidate_id` | SHA-256 identity of the parsed `scope` and `files` mapping |
 
 Candidate identity includes input path mappings and scope settings. A changed
@@ -65,7 +72,9 @@ scope text, declared `criteria`, `declared_limitations`, interpreted `checks`,
 `path`, `sha256`, `bytes_total`, `bytes_included`, `extent` (`whole` or `prefix`)
 and `content`. The digest identifies the complete source file; `content` can be
 only its prefix. Binary omissions have notices rather than readable content.
-Packet identity cannot establish that omitted data was inspected.
+Packet identity cannot establish that omitted data was inspected. Scope/2 packets
+also include `baseline` and `baseline_access`; see the version-2 record details
+below and [packet ordering](scope-reference.md#packet-ordering-and-omissions).
 
 ## Result projection
 
@@ -78,6 +87,7 @@ Packet identity cannot establish that omitted data was inspected.
 | Work inventory | `expected_check_ids`, `expected_review_roles`, `checks`, `reviews`, `review_executions` |
 | Findings | `findings`, `adjudicated`, `limitations` |
 | Freshness | `policy_files`, `runtime_files`, `artifact_hashes`, `manifest_sha256`, `packet_file_sha256` when available |
+| Physical supersession | `empirical_feedback` when registered; forces the current outcome to incomplete |
 | Diagnostics | `error` when present; `prior_errors` when a manual update completes a previously failed projection |
 
 State is `running`, `complete`, `incomplete` or `interrupted`. State `complete`
@@ -85,7 +95,7 @@ does not imply acceptable design or complete engineering coverage. Outcome is:
 
 | Outcome | Interpretation |
 | --- | --- |
-| `incomplete` | Run not finalized with all required execution/reviews/adjudication, or some required check/review has unknown/failed coverage |
+| `incomplete` | Registered bench feedback supersedes old acceptance, or run not finalized with all required execution/reviews/adjudication, or some required check/review has unknown/failed coverage |
 | `defects_or_unresolved` | Required execution completed, but a declared check failed or a finding is accepted, unresolved or deferred |
 | `criteria_satisfied` | Required execution/reviews/adjudication completed, all checks are pass/info, and no blocking dispositions remain |
 
@@ -147,7 +157,8 @@ structurally allowed. Findings may be empty. Each finding requires:
 | `reasoning` | Relationship between condition, source evidence and conclusion |
 
 Required text fields must be nonempty. Optional normalization fields are
-`downgraded_from` and `validation_note`. A defect with no evidence is visibly
+`downgraded_from`, `validation_note` and `witnesses`. In a legacy scope/1 run,
+a defect with no evidence is visibly
 downgraded to concern, retaining why it was downgraded. Bad identities, invalid
 paths, duplicate local IDs and malformed structures invalidate the review.
 Merely having citations does not prove the claim is true or that the reviewer
@@ -201,7 +212,7 @@ an existing finding and engineer-checked counter-evidence before application:
 
 | Disposition | Requirements and effect |
 | --- | --- |
-| `accepted` | Established `assessment=defect`, explanation and nonempty decision evidence; blocks satisfaction |
+| `accepted` | Established `assessment=defect`, explanation and nonempty decision evidence; scope/2 additionally requires a coordinator `check/ID` finding and its sealed failed-check citation; blocks satisfaction |
 | `noted` | Evidence-supported minor/info concern with its own original evidence and decision citations; does not block satisfaction |
 | `dismissed` | Explanation; a supported/alleged defect needs counter-evidence; native check defects cannot be dismissed |
 | `deferred` | Explained unresolved uncertainty; blocks satisfaction; native check defects cannot be deferred |
@@ -232,3 +243,103 @@ anchored acceptance evidence. Python policy hashes cover each `*.py` module in
 system Python, Claude/Codex/Agy binaries, the Codex tool host and the `_pcbnew` extension. They do not hash the entire
 OS/shared-library image. See [security](security.md) for the guarantees this
 provides and the host-modification limits.
+
+## Version-2 witnesses and evidence seal
+
+Version 2 changes the **scope** contract; candidate, packet, result, review and
+decision records retain their existing `/1` schema names with the extensions
+below. Legacy scope/1 runs do not require a baseline file, seal or witnesses; their
+absence in such a run is not evidence tampering. There is no blanket inference that an old `/1` result has the stronger
+scope/2 guarantees: inspect its captured scope and baseline.
+
+| Record | Fields and ownership |
+| --- | --- |
+| `baseline.json`, `agent-ee.baseline/1` | Coordinator-owned `requirements`, `targets`, `reference_architectures`, `files`, `criteria`, `baseline_id` |
+| `work/verification/evidence.json`, `agent-ee.evidence/1` | Coordinator-owned `candidate_id`, `baseline_id`, and `checks` map of check IDs to `{result, artifacts}` hashes |
+| Packet extension | `baseline` contains the full structured baseline; `baseline_access` describes its sandbox location |
+| Finding extension | `witnesses` array of `{requirement_id, check_id}` pairs |
+| Result extension | `empirical_feedback` array of captured feedback event references; nonempty means current outcome is incomplete |
+
+The seal is written before initial reviews. It covers every baseline check and
+hashes each retained check JSON plus its cited raw artifacts. Check evidence must
+come from its own workspace or evidence already sealed for an earlier check.
+Verification reconstructs the seal and compares it to the saved record; a
+standalone incomplete run that stopped before sealing need not have one.
+
+```mermaid
+flowchart TD
+    C["Captured candidate and baseline"] --> K["Executed check and raw artifacts"]
+    K --> S["Coordinator evidence seal"]
+    S --> W["Requirement and check witness"]
+    W --> D["Reviewer defect claim"]
+    D --> A["Central adjudication"]
+    K --> F["Coordinator check finding"]
+    F --> A
+    A --> X["Only witnessed check findings may be accepted"]
+    A --> Y["Reviewer claims: duplicate, concern or evidence-based dismissal"]
+```
+
+Each witness must name an existing requirement mapped to that check, cite
+`checks/CHECK_ID.json`, and refer to unchanged sealed evidence whose check
+execution is `ok` and outcome is `defect`. At least one raw artifact is required.
+Witness shapes are validated for concerns too. The model response schema requires
+a `witnesses` field for every scope/2 finding; an empty array is appropriate for
+a concern without a reproduced requirement violation.
+
+A scope/2 defect without a valid witness is refused, rather than receiving the
+legacy no-evidence downgrade. The whole malformed review remains invalid.
+An accepted scope/2 decision must target `check/CHECK_ID` and cite its failed
+check JSON; arbitrary reviewer prose cannot become a separate accepted defect
+by borrowing that check's witness. Reviewer analysis may be retained as a
+concern or linked as a duplicate of the executable finding. These restrictions
+apply to manual and automatic adjudication alike.
+
+The same check result can carry one or more requirement mappings. Witnesses
+prove the configured failed criterion and its provenance; they do not prove all
+natural-language causal explanations attached to it.
+
+## Campaign record schemas
+
+Campaigns add an outer history above ordinary review runs. The
+[campaign guide](campaign-guide.md#retained-files-and-verification) explains
+paths, lifecycle, verification and recovery.
+
+| Schema or record | Required meaning |
+| --- | --- |
+| `agent-ee.campaign/1` | Operator configuration: scope, review profile, implementation definition and iteration/time limits |
+| `agent-ee.campaign-state/1` | Coordinator state, `config_sha256`, `history`; after the first retained review also `baseline`, `mutable_inputs`, `diagnostic`; `epoch` defaults to zero and is stored when feedback advances it |
+| History entry | `candidate_id`, `design_id`, `run_id`, `failed`, `passing`, `outcome`, `margins`, `run`, `result_sha256`, `result_snapshot`, `epoch`, `calibration_id` |
+| `history/N.json` | Exact original `agent-ee.result/1` bytes copied when the coordinator records that iteration |
+| `agent-ee.tradeoff/1` | `state=escalated`, reason, failed/protected criteria, history and required engineering action |
+| Implementation response | Object containing only a string `summary`; actual permitted file changes establish the proposal |
+
+`calibration_id` is the hash of the captured empirical bundle, or null without a
+bundle. `design_id` hashes the entire captured file inventory, not only mutable
+native design files. It intentionally distinguishes file changes from candidate
+identity changes caused solely by scope paths or profiles.
+
+Campaign state can be `running`, `repair`, `criteria_satisfied`, `escalated` or
+`incomplete`. `empirical_superseded` is a verification projection when the last
+retained run has later feedback; it is not an automatic overwrite of stored state.
+Errors can leave state incomplete even though the last completed history entry
+would otherwise permit repair. A state label alone is not process liveness.
+
+## Measurement and empirical records
+
+These records are machine-readable interfaces, not automatically published JSON
+Schema files. Their field constraints are enforced by Python validators at the
+stage that consumes them. Unknown fields are not universally rejected.
+
+| Schema | Producer and consumer | Detailed contract |
+| --- | --- | --- |
+| `agent-ee.measurement-request/1` | Coordinator → producer and parser | [Request fields](measurement-adapters.md#request-and-report-contracts) |
+| `agent-ee.measurements/1` | Captured parser → coordinator | [Metrics and raw-output binding](measurement-adapters.md#request-and-report-contracts) |
+| `agent-ee.bench/1` | Operator/instrument ingestion → feedback coordinator | [Raw samples and report fields](bench-feedback.md#report-and-raw-sample-contracts) |
+| `agent-ee.calibration/1` | Feedback coordinator → subsequent check harness | [Cumulative provenance and model applicability](bench-feedback.md#calibration-provenance-and-reviewer-independence) |
+| `agent-ee.empirical-feedback/1` | Coordinator → source run event/result | [Registration and output paths](bench-feedback.md#capture-and-re-entry) |
+
+Coupling and bench-replay JSON are retained check-specific evidence; they do not
+carry a standalone schema version in the current implementation. Their fields
+are described in the measurement and bench guides. Hash inventories and campaign
+snapshots remain trusted local records, not signatures against a privileged
+party capable of replacing all records and expected hashes.
