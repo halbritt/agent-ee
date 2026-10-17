@@ -1,6 +1,9 @@
 # agent-ee enhancement roadmap
 
-**Status: agreed and published.** These are proposed implementation designs, not implemented capabilities.
+**Status: implementation in progress.** The detailed designs below preserve the
+agreed planning contracts. They are not evidence that every planned capability
+has shipped. See the [README](../README.md#what-is-implemented-today) and
+[coverage guide](coverage.md) for the current implementation and its limits.
 
 Turn three independent ADHD explorations into a jointly ordered backlog of complete engineering improvements for agent-ee, preserving the existing single-writer, immutable-candidate adversarial review topology.
 
@@ -23,11 +26,18 @@ Turn three independent ADHD explorations into a jointly ordered backlog of compl
 
 Rank expresses delivery preference; hard dependencies are listed per design. Native parent relationships group the items under AGENTEE-1. Dependency references in issue bodies are not native blocking edges; the installed Plane interfaces do not expose relation creation.
 
-The roadmap parent is **AGENTEE-1**; all twelve children are in Backlog.
+The roadmap parent is **AGENTEE-1**. Plane tracks implementation, validation and
+owner review separately; the original backlog snapshot below is historical.
+Implemented parts include RC defaults, explicit copper-width coverage,
+acceptance-coverage auditing, calibration applicability, campaign diagnostics,
+pre-inference guards, hardware-interface contracts and bounded RC tolerance
+corners. Evidence replay, interrupted bench recovery, packet indexing and PCB
+DC-resistance extraction remain under implementation or review. A source change
+and passing tests do not replace the owner's acceptance review.
 
 ## Preserved engineering contract
 
-Requirements, targets and reference architectures remain immutable captured ground truth. Each candidate receives independent initial reviews before centralized adjudication. Only sealed coordinator checks establish accepted scope/2 defects. Implementation is the sole design writer; bounded convergence and empirical supersession remain enforced. Synthetic and scripted harness tests are not live-model reliability or physical validation. These are backlog designs, not implemented capabilities or hardware release authority.
+Requirements, targets and reference architectures remain immutable captured ground truth. Each candidate receives independent initial reviews before centralized adjudication. Only sealed coordinator checks establish accepted scope/2 defects. Implementation is the sole design writer; bounded convergence and empirical supersession remain enforced. Synthetic and scripted harness tests are not live-model reliability or physical validation. The planning contracts below do not confer hardware release authority.
 
 ## Independent exploration and discussion
 
