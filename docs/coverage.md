@@ -9,6 +9,9 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 
 | Kind | Criterion and evidence |
 | --- | --- |
+| `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); checks declared symbol-pin/pad parity, not correspondence to the actual schematic inventory or physical fit. |
+| `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |
+| `netlist_extra` | [Captured direct-net topology](netlist-extra.md) for exact declared two-terminal classes and anchored rail pairs; hierarchical basename islands are informational. |
 | `netclass_completeness` | [Captured Default netclass field presence](netclass-completeness.md), qualified for KiCad 10.0.7 settings schema 5; no value or rendering validation. |
 | `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
 | `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |
@@ -395,3 +398,46 @@ Reports keep misses, unsupported execution, unrelated findings and unresolved
 control findings separate. No adjudicated false-alarm rate or model-review
 performance is established by this preregistration. Third-party source files and
 generated candidates/results remain scratch-only pending publication approval.
+
+## Captured routing constraints
+
+The [routing check](routing-rules.md) compiles explicit immutable bounds into
+isolated native KiCad DRC invocations. Qualified straight-track/two-layer-via
+routes need complete topology and finite-width copper-contact coverage; arcs,
+zones, copper graphics and unsupported topology remain unknown. Every routing
+check binds one conjunctive requirement. Partial coverage cannot witness a
+defect, even if a supported constraint failed. Impedance has no qualified solver.
+Public pipeline tests use native tools with scripted reviewer transport; they do
+not establish physical qualification or live-model detection performance.
+
+## Captured fabricator profiles
+
+The [fab profile check](fab-profile.md) binds each limit to a captured source
+quote and one conjunctive fabrication requirement. Quote occurrence is not proof
+that the typed value is correct, authentic or applicable. Board size and edge
+clearance need one simple straight-segment outline; size uses fixed saved axes.
+A missing, flat or crossing outline, a curved outline or a cutout is unknown.
+SMT support means only that saved SMD pads are present. Only owned synthetic
+profiles are tested; no real fabricator standard is qualified.
+
+## Offline catalog and part-selection preparation
+
+[Catalog capture](catalog.md) checks snapshot integrity and rederives normalized
+quantities from retained raw attributes before [selection](part-selection.md).
+Repinned contradictory quantities fail closed. This proves internal consistency,
+not upstream authenticity. Selection compares declared intervals and allocates
+snapshot stock; it is not circuit acceptance or purchasing authorization.
+The real upstream catalog and exact Konnect fixture remain unqualified.
+The informational `catalog` check and bounded `part_selection` check now use
+the existing sandbox, immutable baseline and coordinator seal. Selection binds
+one requirement sourced from its captured requirements file. Unknown selection
+cannot establish a defect witness; checks-only success is not campaign acceptance.
+
+## Intent and golden netlist parity
+
+The [netlist parity check](netlist-parity.md) compares full native XML physical-pin
+incidence and exact component multiplicity with a captured source. It preserves
+identical instances, bounds exact graph search, and leaves ambiguous instance
+correspondence unknown unless explicit immutable anchors resolve it. Descriptive
+scores do not grant conformance. Missing or malformed producer/source evidence
+cannot pass; footprint adequacy and electrical behavior remain outside coverage.

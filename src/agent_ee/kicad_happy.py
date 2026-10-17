@@ -35,6 +35,7 @@ def installation(root):
 
 def normalize(reports, rules):
     from .checks import CheckError
+    from .happy_adapters import Native, NotEvaluated, require
     findings = []
     for analyzer, report in reports.items():
         if (not isinstance(report, dict) or report.get('schema_version') != '1.4.0'
@@ -72,11 +73,23 @@ def normalize(reports, rules):
                     and native.get('type') == 'low-pass' and not native.get('suppressed')):
                 value = native.get(rule['field'])
                 if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                    native_targets = Native(reports)
+                    try:
+                        for ref in rule['components']:
+                            component = native_targets.component(ref)
+                            require(component.get('dnp') is False,
+                                    'target requires explicit non-DNP evidence')
+                    except NotEvaluated as exc:
+                        evaluation['reason'] = str(exc)
+                        evaluations.append(evaluation)
+                        continue
                     failed = ('min' in rule and value < rule['min'] or
                               'max' in rule and value > rule['max'])
                     evaluation.update(status='violation' if failed else 'satisfied', value=value,
                         native_locator=match['native_locator'], raw_output_path=match['raw_output_path'],
-                        raw_locator=match['raw_locator'])
+                        raw_locator=match['raw_locator'],
+                        native_sources=[{'raw_output_path': match['raw_output_path'],
+                                         'raw_locator': match['raw_locator']}] + native_targets.locators)
         evaluations.append(evaluation)
     return findings, evaluations
 
@@ -103,6 +116,8 @@ def declarations(params):
         if 'adapter' in rule:
             from .happy_adapters import validate
             validate(rule)
+        elif {'assumptions', 'assumptions_source'} & rule.keys():
+            raise ValueError('assumptions fields require an adapter')
         elif not isinstance(rule.get('field'), str) or not {'min', 'max'} & rule.keys():
             raise ValueError('rule requires a calculation field and bounds')
         for key in ('min', 'max'):

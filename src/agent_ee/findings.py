@@ -115,6 +115,8 @@ def validate_check_result(check, run_dir=None):
             f"check {cid}: dishonest status (execution={execution!r} requires outcome='unknown', got {outcome!r})"
         )
     _nonempty_str(check.get("summary"), f"check {cid} summary")
+    from .stages import validate_gate_findings
+    validate_gate_findings(check)
     ev = check.get("evidence")
     if not isinstance(ev, list):
         raise ValueError(f"check {cid}: evidence must be a list")
@@ -287,6 +289,8 @@ def collect_findings(reviews, checks):
             "disposition": "unresolved",
             "events": [],
         }
+        if 'gate_findings' in check.get('details', {}):
+            finding['gate_findings'] = copy.deepcopy(check['details']['gate_findings'])
         if check.get("candidate_id"):
             finding["candidate_id"] = check["candidate_id"]
         if check.get("run_id"):

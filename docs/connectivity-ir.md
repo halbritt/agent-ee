@@ -115,3 +115,86 @@ Tests use original small libraries and dynamically read captured installed
 pin 1 is passive and AMS1117-3.3 VI is physical pin 3 of type power_in, inherited
 from AP1117-15. Strict mode (`AGENT_EE_REQUIRE_TOOLCHAIN=1`) fails if these stock
 libraries are missing. It does not silently skip unexpected resolution failures.
+
+## Opt-in hierarchy version 2
+
+`agent-ee.connectivity-intent/2` requires all six arrays: `libraries`,
+`components`, `nets`, `no_connects`, `hierarchy`, and `ports` (plus `schema`).
+Version 1 retains its existing bytes, hash behavior and unsupported hierarchy
+classification. Version 2 reuses its captured symbol and pin resolver.
+
+An occurrence is `{id,parent,local_id,file}`. Exactly one root is
+`{"id":"root","parent":null,"local_id":"root","file":"main.kicad_sch"}`.
+Other occurrences name their immediate parent and a unique sibling `local_id`.
+Scoped IDs and port fields are limited to 256 UTF-8 bytes to bound elaboration.
+The connected acyclic tree supports at most 256 occurrences and 16 edges from
+root to leaf. Each `file` is a normalized relative `.kicad_sch` path; absolute,
+dot, parent, backslash and file/directory aliases are refused. Files must be
+unique: repeated file instances remain unsupported pending actual native
+instance qualification. Pure resolution does not access the filesystem;
+the writer must also enforce precreated captured inventory and refuse symlinks.
+
+Components add `sheet`; `(sheet,id)` identifies an occurrence-local component.
+Annotated `reference` remains globally unique. Nets add `sheet`; `(sheet,id)`
+identifies a local segment. Terminal selectors name components only in that
+segment's sheet. Explicit no-connects add `sheet`. Direct cross-sheet terminal
+references are refused. Physical components are limited to 128 and their
+resolved pin inventory to 8192, matching the bounded parity comparison limits.
+A resolver pass does not guarantee that graph matching will finish its search.
+
+A port has exactly `child`, `id`, `name`, `direction`, `parent_net`, `child_net`.
+It unions two declared segments on one immediate parent/child boundary. `id`
+and emitted `name` are unique on that boundary. Directions are `input`,
+`output`, `bidirectional`, `tri_state`, or `passive`; the emitter must qualify
+these declarations through native hierarchical labels, sheet pins and ERC.
+There are no root ports or ancestor shortcuts. Siblings connect through ports
+to a shared parent segment. Pass-through segments may have zero direct pins.
+Each final physical net still needs two distinct physical terminals, every pin
+must be accounted for exactly once, and each boundary permits only one port
+for a final physical net. Each port must reach terminals on both sides of the
+boundary; port-only leaves are defects.
+
+A child port's emitted hierarchical-label name must not equal a local label
+on that child belonging to a different physical class after explicit port
+unions. This includes generated reserved labels. Aliases within the same class
+are allowed, and labels on other sheets do not collide. Raw validation and
+resolved reconstruction both reject cross-class aliases as boundary defects;
+recomputing a record's hash cannot bypass the check.
+
+Local names are display labels, never global join keys. Equal nonempty names
+on different segments in one sheet are refused; names may repeat across
+sheets. Empty names receive `__agent_ee_` followed by SHA256 of the UTF-8 compact
+JSON `[sheet,id]`; explicit names with that prefix are reserved and refused.
+Hierarchical power symbols are unsupported for multi-sheet intents until native
+global equivalence is explicitly qualified. Neither `GND` spelling nor power
+pin type creates an implicit union.
+
+Resolved `agent-ee.resolved-connectivity/2` retains the current status, source,
+and hash fields. Physical component `id` is the compact JSON string
+`[sheet,local_id]`; `sheet` and `local_id` remain explicit component fields.
+Physical `nets` contain `{id,name,terminals}`, with globally scoped component
+IDs and pin numbers. Their `name` is empty: a physical net has local aliases,
+not one asserted universal native name. Its `id` is `net:` plus SHA256 of the
+compact JSON sorted array of `[sheet,local_segment_id]` pairs. Hashing that
+membership avoids quadratic output growth for large unions.
+
+`local_nets` retains `{sheet,id,name,label,terminals,physical_net}` for every
+source segment; terminals use resolved physical component IDs and pin numbers.
+`physical_net` names the elaborated physical net. `hierarchy` and `ports` retain
+the exact declaration fields. All collections are canonically ordered;
+reordering input collections preserves identity, while changing a port binding
+changes the intent and resolved hashes.
+
+`validate_resolved` dispatches by version and checks the entire record:
+scoped identities, tree, labels, local membership, explicit port unions,
+boundary use, physical projection and complete pin accounting. Rehashing an
+invalid projection does not make it valid. A structurally consistent authored
+record still does not attest captured source or execution. Consumers must
+freshly resolve the raw intent against captured library bytes before granting
+emission or parity authority; existing resolved-source limitations remain.
+
+This extension supplies the resolver interface only. Native two-level export,
+ERC, sheet-instance anchoring, mutated native output and forward annotation
+require the separately owned emitter and native inventory adapter. Pure tests
+are not native qualification or completion of AGENTEE-40. Repeated sheet files
+and multi-sheet power remain explicit unsupported coverage.

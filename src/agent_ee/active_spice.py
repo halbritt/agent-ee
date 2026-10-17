@@ -46,9 +46,12 @@ def validate_statement(line):
         raise ValueError('unsupported model character or quoted expression')
     if re.search(r'\b(file|pwl|sffm|am|trnoise|trrandom|external|code|load|write|read|shell|source)\b', line, re.I):
         raise ValueError('file-driven or unsupported model statement')
-    if re.search(r'(?:^|\s)\.[A-Za-z]', line.lstrip().split(None, 1)[-1]):
+    head, *rest = line.split(None, 1)
+    if rest and re.search(r'(?:^|\s)\.[A-Za-z]', rest[0]):
         raise ValueError('embedded model directive')
-    directive = line.split()[0].lower()
+    directive = head.lower()
+    if not rest and directive.startswith('.') and directive != '.ends':
+        raise ValueError(f'incomplete model directive {directive}')
     if directive.startswith('.'):
         if directive not in ('.subckt', '.ends', '.model', '.param'):
             raise ValueError(f'unsupported model directive {directive}')

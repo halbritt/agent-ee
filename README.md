@@ -104,6 +104,19 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
+earlier gates. Missing expected design content requires a native observation; it
+cannot pass merely because an empty design produces no rule violations. Progress
+is measured in the earliest failing stage, with regression and retry limits.
+Existing unstaged campaigns keep their convergence rules. A complete native
+empty-to-routed run and enforcement of stage-specific writer tools remain pending.
+
+An [offline intent importer](docs/design-intent.md) preserves source requirements
+and exact voltage values. [Decision capture](docs/design-dialog.md) records
+answers and their dependencies; missing answers remain unresolved. These tools
+prepare inputs, but do not choose executable acceptance checks or generate a
+verified circuit.
+
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
 [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
@@ -118,9 +131,51 @@ Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
 series/parallel networks; unsupported conductors leave coverage incomplete.
+The [connectivity resolver](docs/connectivity-ir.md) elaborates explicit captured
+symbol pins and scoped sheet ports into physical nets. Hierarchical port names
+that would short distinct local nets are rejected. Repeated sheet files and
+multi-sheet global power remain unsupported; native hierarchical emission and
+end-to-end generation qualification are still pending.
+[Netlist parity](docs/netlist-parity.md) compares native connectivity with captured
+intent and libraries or an explicit golden netlist. Resolved intent is rederived
+before comparison. Exact instance connectivity catches exchanges that collapsed
+part labels can miss; ambiguous correspondence and search exhaustion remain unknown.
+[Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
+and anchored rail pairs. Neither check establishes electrical adequacy.
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
+
+The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
+other supported bounds through native KiCad rules, with complete copper-contact
+coverage required. Arcs, zones and unsupported topology remain unknown.
+The [fab profile check](docs/fab-profile.md) runs captured, source-cited
+fabrication limits through the same native rules. It also compares layer count
+and outline size with the saved board and lists legal surcharged features
+separately. No real fabricator preset is supplied or qualified.
+
+[Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
+that derived quantities match retained raw attributes. [Part selection](docs/part-selection.md)
+compares declared intervals and stock within that snapshot. Both now have checks
+that use the captured baseline, sandbox and coordinator seal; selection binds one
+explicit requirement. They do not authenticate upstream claims or establish
+circuit acceptance. Real upstream catalog qualification remains pending.
+
+[Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
+URLs before offline checks, with byte limits, deadlines and per-part missing
+records. Automatic propagation from selected parts remains pending; capturing a
+PDF does not verify its applicability or its engineering claims.
+
+[Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
+with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
+captured library pin references. These checks do not yet establish that an
+assignment declaration covers the actual schematic inventory.
+
+The [placement judge](docs/placement.md) checks supported saved-board outlines
+and courtyards. An [initial placer](docs/placer.md) proposes deterministic
+positions on an isolated copy and validates the saved result with native tools.
+These helpers are not yet registered as campaign placement gates; they do not
+establish routing quality or a fabrication-ready board.
 
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,

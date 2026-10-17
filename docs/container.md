@@ -167,8 +167,8 @@ the control gave `checks_passed`, the seeded run gave `check_failed` with
 `rc-step` `defect` and ERC, DRC and geometry `pass`, `agent-ee verify` exited 0
 for both, and the step failed when a run directory already existed or an
 expectation did not match. The first hosted run built the image but failed at the Bubblewrap host-policy
-boundary described above. The named-profile correction still needs a passing
-hosted run; local success is not reported as hosted CI acceptance.
+boundary described above. The named-profile correction then passed on the
+hosted runner at `c0ddba2`, as recorded at the top of this page.
 
 ## Reusable action
 
@@ -178,7 +178,7 @@ or any other trigger. agent-ee's own development does not use pull requests.
 | Input | Default | Meaning |
 | --- | --- | --- |
 | `scope` | required | Scope JSON inside the workspace |
-| `output-directory` | `agent-ee-run` | New run directory inside the workspace; an existing directory is refused |
+| `output-directory` | `agent-ee-run` | New run directory inside the workspace; an existing directory, control characters, `*`, `?`, `[`, `\` and trailing whitespace are refused because they would change which directory is judged or uploaded |
 | `max-seconds` | `1200` | Review work budget, as for `review --max-seconds` |
 | `artifact-name` | `agent-ee-run` | Name of the uploaded run-directory artifact |
 | `image` | empty | Use an existing local image instead of building this action's Dockerfile |
@@ -211,7 +211,10 @@ A consumer repository uses the action by reference or from a copy. Each run buil
 supplied, which takes a few minutes and downloads the KiCad packages. Pull
 requests from forks run the consumer's scope and design files with the relaxed
 Docker confinement described above. Bubblewrap still isolates the native tools,
-but decide whether that is acceptable for untrusted contributions.
+but decide whether that is acceptable for untrusted contributions. A pull
+request can also edit the scope and requirements it is judged against, so the
+gate checks a contribution only against criteria the consumer controls when the
+scope comes from a trusted revision.
 
 ### Sample workflow and local evidence
 
