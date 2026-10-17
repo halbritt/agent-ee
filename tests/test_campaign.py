@@ -313,6 +313,39 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(len(read_json(self.root / 'interrupted/empirical/calibration.json')['observations']), 2)
 
     @toolchain_test
+    def test_interrupted_supersession_retry_refuses_before_new_epoch(self):
+        self.test_reentry_preserves_unclassified_empirical_files_and_supersession_on_interrupt()
+        run = self.root / 'feedback/review'
+        before = read_json(run / 'result.json')
+        events = {p.name: digest(p) for p in (run / 'events').iterdir()}
+        retained = digest(self.root / 'interrupted/empirical/calibration.json')
+        for attempt in ('retry', 'retry-again'):
+            with self.assertRaisesRegex(ValueError, 'superseded.*recovery'):
+                bench_review(run, self.root / 'bench.json', self.root / attempt, 60)
+            self.assertFalse((self.root / attempt / 'empirical/calibration.json').exists())
+            self.assertFalse((self.root / attempt / 'review').exists())
+            self.assertEqual(read_json(run / 'result.json'), before)
+            self.assertEqual({p.name: digest(p) for p in (run / 'events').iterdir()}, events)
+            self.assertEqual(digest(self.root / 'interrupted/empirical/calibration.json'), retained)
+
+    @toolchain_test
+    def test_ingest_rejects_duplicate_corrections_before_publication(self):
+        from agent_ee.empirical import ingest
+        self.test_reentry_preserves_unclassified_empirical_files_and_supersession_on_interrupt()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'new-source', 60), 0)
+        run = self.root / 'new-source'
+        before = read_json(run / 'result.json')
+        report = read_json(self.root / 'bench.json')
+        report['candidate_id'] = before['candidate_id']
+        report['observations'] *= 2
+        write_json(self.root / 'duplicate-bench.json', report)
+        with self.assertRaisesRegex(ValueError, 'duplicate correction identity'):
+            ingest(run, self.root / 'duplicate-bench.json', self.root / 'invalid-epoch')
+        self.assertFalse((self.root / 'invalid-epoch/calibration.json').exists())
+        self.assertEqual(read_json(run / 'result.json'), before)
+
+    @toolchain_test
     def test_scope3_changed_design_requires_and_recovers_with_fresh_bench_epoch(self):
         from agent_ee.capabilities import convert_scope
         self.scope = convert_scope(self.scope)

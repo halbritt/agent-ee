@@ -44,9 +44,14 @@ def source_prediction(check):
         'agent-ee.recalibration-request/1')
 
 
-def validate_bundle(inputs, bundle, baseline):
+def validate_bundle(inputs, bundle, baseline, *, empirical_root=None):
     """Reconstruct the entire evidence closure before using any exclusions."""
     from .empirical import validate_observations
+    from .candidate import safe_relative
+
+    def artifact_path(rel):
+        return inputs / rel if empirical_root is None else empirical_root / safe_relative(rel).relative_to("empirical")
+
     fields = {'schema', 'candidate_id', 'baseline_id', 'source_result_sha256', 'parent',
               'source', 'report', 'artifacts', 'model_inputs', 'observations', 'obligations'}
     if set(bundle) != fields:
@@ -61,7 +66,7 @@ def validate_bundle(inputs, bundle, baseline):
     for rel, sha in artifacts.items():
         if not isinstance(sha, str) or len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):
             raise ValueError('invalid empirical content hash')
-        if rel != f'empirical/artifacts/{sha}' or digest(inputs / rel) != sha:
+        if rel != f'empirical/artifacts/{sha}' or digest(artifact_path(rel)) != sha:
             raise ValueError('empirical provenance is not intact content-addressed evidence')
     expected = set()
     prior = []
@@ -69,15 +74,15 @@ def validate_bundle(inputs, bundle, baseline):
     if parent is not None:
         if parent not in artifacts:
             raise ValueError('unretained parent epoch')
-        previous = read_json(inputs / parent)
-        validate_bundle(inputs, previous, baseline)
+        previous = read_json(artifact_path(parent))
+        validate_bundle(inputs, previous, baseline, empirical_root=empirical_root)
         expected.update(previous['artifacts'])
         expected.add(parent)
         prior = previous['observations']
     source_ref, report_ref = bundle['source'], bundle['report']
     if source_ref not in artifacts or report_ref not in artifacts:
         raise ValueError('unretained epoch provenance')
-    source, report = read_json(inputs / source_ref), read_json(inputs / report_ref)
+    source, report = read_json(artifact_path(source_ref)), read_json(artifact_path(report_ref))
     source_fields = {'schema', 'candidate_id', 'scope', 'files', 'baseline_id', 'baseline_files',
                      'criteria', 'empirical', 'design_inputs', 'derivation', 'checks', 'source_result_sha256'}
     if set(source) != source_fields:
@@ -92,7 +97,7 @@ def validate_bundle(inputs, bundle, baseline):
         raise ValueError('source prediction identity mismatch')
     empirical = set()
     if parent is not None:
-        previous = read_json(inputs / parent)
+        previous = read_json(artifact_path(parent))
         if source['empirical'] is None or source['files'].get(source['empirical']) != artifacts[parent]:
             raise ValueError('parent epoch differs from captured source')
         empirical = set(previous['artifacts']) | {source['empirical']}
@@ -158,7 +163,7 @@ def validate_bundle(inputs, bundle, baseline):
         raise ValueError('duplicate correction identity')
     if bundle['obligations'] != sorted({obligation(o) for o in bundle['observations']}):
         raise ValueError('epoch correction obligations changed')
-    validate_observations(inputs, bundle)
+    validate_observations(inputs, bundle, empirical_root=empirical_root)
     return set(artifacts)
 
 

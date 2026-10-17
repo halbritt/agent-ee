@@ -294,3 +294,13 @@ immutable source/model dependencies, and route any calibrated numeric consumer
 through the same post-production finishing boundary. Execution registration or
 facts verification alone must not grant calibrated acceptance. No coverage for
 those absent handlers is claimed here.
+
+### Interrupted supersession
+
+Bench ingestion refuses a source that already records empirical feedback. If a
+follow-up review was interrupted, its retained epoch and the source supersession
+remain in place; retrying against that source cannot publish another epoch or
+restore its old acceptance. Explicit transaction recovery is required for that
+partial state. After a completed follow-up review, ingest subsequent observations
+against the new review candidate. Every new calibration/2 bundle is validated
+against its complete provenance closure before publication.
