@@ -12,7 +12,8 @@ class LibraryError(ValueError):
     pass
 
 
-def parse_library(data):
+def parse_sexpr(data):
+    """Parse one bounded, complete S-expression without a format-specific root."""
     if not isinstance(data, bytes) or len(data) > 32 * 1024 * 1024:
         raise LibraryError('library must be bytes, at most 32 MiB')
     try:
@@ -70,10 +71,17 @@ def parse_library(data):
                     raise LibraryError('invalid token')
                 atom, pos = text[pos:end], end
             (stack[-1] if stack else roots).append(atom)
-    if stack or len(roots) != 1 or not isinstance(roots[0], list) or not roots[0] or roots[0][0] != 'kicad_symbol_lib':
+    if stack or len(roots) != 1 or not isinstance(roots[0], list) or not roots[0]:
+        raise LibraryError('expected one complete nonempty S-expression')
+    return roots[0]
+
+
+def parse_library(data):
+    root = parse_sexpr(data)
+    if root[0] != 'kicad_symbol_lib':
         raise LibraryError('expected one complete kicad_symbol_lib')
     symbols = {}
-    for symbol in children(roots[0], 'symbol'):
+    for symbol in children(root, 'symbol'):
         if len(symbol) < 2 or not isinstance(symbol[1], str) or symbol[1] in symbols:
             raise LibraryError('invalid/duplicate symbol')
         symbols[symbol[1]] = symbol
