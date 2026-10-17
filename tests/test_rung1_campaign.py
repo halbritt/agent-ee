@@ -167,7 +167,7 @@ class StepTest(unittest.TestCase):
         config = rc.campaign_config(Path('/x/scope.json'), profile, rc.check_steps(self.steps, self.mutable))
         self.assertEqual(config['implementation'], {'harness': 'claude', 'model': 'claude-fable-5',
                                                     'effort': 'high', 'timeout_s': 900})
-        self.assertEqual((config['scope'], config['max_iterations'], config['max_seconds']), ('scope.json', 3, 3600))
+        self.assertEqual((config['scope'], config['max_iterations'], config['max_seconds']), ('scope.json', 2, 3600))
         self.assertEqual(config['review_profile'], profile)
 
 
