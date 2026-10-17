@@ -113,10 +113,20 @@ repository. One job:
 3. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    and fails if any test fails, errors or is skipped.
 4. Runs `scripts/check_docs.py` in the image.
-5. Runs the reusable action on the RC control and seeded fixtures, then asserts
-   from `result.json`, through the gate script, that every control check passes
-   and that the seeded run has a fully executed check set whose `rc-step`
-   transient check reports `defect` while ERC, DRC and geometry pass.
+5. Runs checks-only reviews of the RC control and seeded fixtures directly in
+   the image, with `--network none` and the runner's non-root UID, then
+   `agent-ee verify` on each run. The same gate script the action uses judges
+   each `result.json`, receives the verify exit status and appends its report to
+   the job summary. The step asserts that every control check passes and that
+   the seeded run has a fully executed check set whose `rc-step` transient check
+   reports `defect` while ERC, DRC and geometry pass.
+
+Project CI does not call the reusable action and uploads no run directory. A run
+directory holds copies of the candidate inputs, and the RC fixture inputs include
+third-party design material: the FOME-MC-origin fixture and captured stock KiCad
+library files. This repository is public, and the owner has not yet resolved
+whether that material may be republished, so run outputs stay on the ephemeral
+runner and only the gate summary reaches the job page.
 
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` is the strict-toolchain contract: toolchain tests
 must fail rather than skip when KiCad, ngspice, Bubblewrap or a usable user
@@ -124,8 +134,13 @@ namespace is missing. CI also refuses any skip on its own, so a skip cannot pass
 unnoticed whatever the test suite's skip behavior.
 
 The workflow file has been checked locally for YAML structure, and its image,
-test, docs and fixture commands have been run locally in the built image. A
-hosted GitHub Actions run had not been observed when this page was written.
+test, docs and fixture commands have been run locally in the built image. The
+fixture step was replayed locally with GitHub's `bash -eo pipefail` semantics:
+the control gave `checks_passed`, the seeded run gave `check_failed` with
+`rc-step` `defect` and ERC, DRC and geometry `pass`, `agent-ee verify` exited 0
+for both, and the step failed when a run directory already existed or an
+expectation did not match. A hosted GitHub Actions run had not been observed
+when this page was written.
 
 ## Reusable action
 
@@ -164,8 +179,7 @@ acceptance. It says only that the declared native checks executed and passed
 for the captured candidate. The gate's tests are in
 [test_action_gate.py](../tests/test_action_gate.py).
 
-The repository is private. A consumer repository needs access to it to use the
-action (or a copy of it). Each run builds the image unless an `image` is
+A consumer repository uses the action by reference or from a copy. Each run builds the image unless an `image` is
 supplied, which takes a few minutes and downloads the KiCad packages. Pull
 requests from forks run the consumer's scope and design files with the relaxed
 Docker confinement described above. Bubblewrap still isolates the native tools,
@@ -175,7 +189,10 @@ but decide whether that is acceptable for untrusted contributions.
 
 The [installation guide](installation.md#sample-consumer-workflow) has a sample
 consumer workflow that runs the action on the seeded RC fixture and fails with the
-`rc-step` finding in the job summary.
+`rc-step` finding in the job summary. Like every action run, it uploads the run
+directory as an artifact, and the seeded run directory contains the third-party
+fixture inputs. A hosted run of the sample therefore waits for the owner's
+decision on publishing that material.
 
 The local evidence for this behavior is limited. A scratch harness, not part of
 the repository, ran the action's shell steps with GitHub's `bash -eo pipefail`

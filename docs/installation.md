@@ -149,7 +149,11 @@ jobs:
 Inside an agent-ee checkout, `uses: ./` runs the local copy. For a real board,
 use your own scope and requirements; the fixture's limits apply only to that
 filter. Consumer pull requests are a choice of the consumer project. agent-ee's
-own CI runs on pushes to `main` and manual dispatch. Inputs, verdicts and the
+own CI runs on pushes to `main` and manual dispatch. It runs the RC fixtures
+directly in the image and judges them with the same gate, but it does not call
+the action and uploads no run directory: the fixture inputs include third-party
+design files whose publication the owner has not yet approved. A hosted run of
+this sample waits for that decision. Inputs, verdicts and the
 local evidence for this behavior are listed in the [container reference](container.md#reusable-action).
 
 ## Subscription authentication
