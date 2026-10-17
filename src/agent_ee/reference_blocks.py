@@ -1,0 +1,336 @@
+"""Private offline block capture and provenance, using existing run authority."""
+import argparse
+import copy
+import hashlib
+import json
+import math
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+
+from .storage import canonical, digest, write_json
+from .symbol_library import children, field, parse_sexpr
+
+
+def _object(value, required, optional=()):
+    if not isinstance(value, dict) or set(required) - value.keys() or value.keys() - set(required) - set(optional):
+        raise ValueError('expected fields: ' + ', '.join(required))
+
+
+def _text(value):
+    if not isinstance(value, str) or not value.strip() or '\x00' in value:
+        raise ValueError('expected nonempty text')
+
+
+def _path(value):
+    _text(value)
+    path = PurePosixPath(value)
+    if path.is_absolute() or '..' in path.parts or str(path) != value or '\\' in value or value == '.':
+        raise ValueError('unsafe block path: ' + value)
+    if path.parts[0] in ('block.json', 'validation.json'):
+        raise ValueError('reserved block path')
+    return path
+
+
+def _hash(value, length=64):
+    if not isinstance(value, str) or re.fullmatch('[0-9a-f]{' + str(length) + '}', value) is None:
+        raise ValueError('invalid content identity')
+
+
+def _list(value):
+    if not isinstance(value, list) or len(value) > 10000:
+        raise ValueError('expected bounded list')
+
+
+def _read(path):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('duplicate JSON key: ' + key)
+            result[key] = value
+        return result
+    data = Path(path).read_bytes()
+    if len(data) > 8 * 1024 * 1024:
+        raise ValueError('block JSON exceeds 8 MiB')
+    return json.loads(data, object_pairs_hook=pairs,
+                      parse_constant=lambda x: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
+
+
+def hierarchy_ports(data):
+    """Read explicit native child-sheet terminals with the shared AGENTEE-39 AST."""
+    root = parse_sexpr(data)
+    if root[0] != 'kicad_sch':
+        raise ValueError('expected native schematic')
+    result = {}
+    for label in children(root, 'hierarchical_label'):
+        if len(label) < 2:
+            raise ValueError('missing hierarchical label name')
+        name = label[1]
+        _text(name)
+        direction, = field(label, 'shape', 1)
+        if direction not in ('input', 'output', 'bidirectional', 'tri_state', 'passive') or name in result:
+            raise ValueError('unsupported or duplicate hierarchical port: ' + name)
+        result[name] = direction
+    return result
+
+
+def _structure(record):
+    _object(record, ('schema', 'id', 'version', 'role', 'source', 'sheet', 'parts_manifest',
+                     'boundary_ports', 'requirements', 'files', 'runs'), ('layout',))
+    if record['schema'] != 'agent-ee.block/1':
+        raise ValueError('unknown block schema')
+    for key in ('id', 'version', 'role'):
+        _text(record[key])
+    source = record['source']
+    _object(source, ('repository', 'commit', 'paths', 'license'))
+    for key in ('repository', 'license'):
+        _text(source[key])
+    _hash(source['commit'], 40)
+    files = record['files']
+    if not isinstance(files, dict) or not files or len(files) > 10000:
+        raise ValueError('missing/bounded file inventory')
+    if 'block-contract.json' not in files:
+        raise ValueError('missing immutable block contract')
+    for path, checksum in files.items():
+        _path(path)
+        _hash(checksum)
+    if not isinstance(source['paths'], dict) or not source['paths']:
+        raise ValueError('missing source paths')
+    for local, original in source['paths'].items():
+        if local not in files:
+            raise ValueError('source path outside inventory')
+        _path(original)
+    for key, suffix in (('sheet', '.kicad_sch'), ('layout', '.kicad_pcb'), ('parts_manifest', '.json')):
+        if key in record:
+            path = record[key]
+            _path(path)
+            if path not in files or PurePosixPath(path).suffix != suffix:
+                raise ValueError('missing/invalid ' + key)
+            if key != 'parts_manifest' and path not in source['paths']:
+                raise ValueError('native file lacks pinned source path')
+    _list(record['boundary_ports'])
+    names = set()
+    for port in record['boundary_ports']:
+        _object(port, ('name', 'net_name', 'direction', 'voltage_domain', 'current_a'))
+        for key in ('name', 'net_name', 'direction'):
+            _text(port[key])
+        if port['voltage_domain'] is not None:
+            _text(port['voltage_domain'])
+        current = port['current_a']
+        if current is not None and (type(current) not in (float, int) or
+                                    (type(current) is float and not math.isfinite(current)) or current < 0):
+            raise ValueError('current_a must be finite nonnegative amperes')
+        if port['name'] in names:
+            raise ValueError('duplicate boundary port')
+        names.add(port['name'])
+    _list(record['requirements'])
+    if not record['requirements']:
+        raise ValueError('missing block requirements')
+    ids = set()
+    for req in record['requirements']:
+        _object(req, ('id', 'statement', 'checks'))
+        _text(req['id'])
+        _text(req['statement'])
+        _list(req['checks'])
+        for check in req['checks']:
+            _text(check)
+        if not req['checks'] or len(set(req['checks'])) != len(req['checks']) or req['id'] in ids:
+            raise ValueError('duplicate requirement or missing/duplicate checks')
+        ids.add(req['id'])
+    _list(record['runs'])
+    runs = set()
+    for ref in record['runs']:
+        _object(ref, ('run_id', 'candidate_id', 'baseline_id', 'files'))
+        _text(ref['run_id'])
+        _hash(ref['candidate_id'])
+        _hash(ref['baseline_id'])
+        if ref['run_id'] in runs:
+            raise ValueError('duplicate run reference')
+        runs.add(ref['run_id'])
+        if not isinstance(ref['files'], dict) or set(ref['files']) != set(files):
+            raise ValueError('run must cover every payload file')
+        for path in ref['files'].values():
+            _path(path)
+        if len(set(ref['files'].values())) != len(files):
+            raise ValueError('run file mappings must be one-to-one')
+
+
+def block_contract(record):
+    """Immutable descriptive bytes, avoiding a circular run/manifest self-hash."""
+    return {'schema': 'agent-ee.block-contract/1', **{
+        key: value for key, value in record.items() if key not in ('schema', 'files', 'runs')}}
+
+
+def _payload(root, record):
+    actual = {}
+    for path in root.rglob('*'):
+        if path.is_symlink():
+            raise ValueError('block contains symlink')
+        if path.is_file() and path != root / 'block.json':
+            actual[path.relative_to(root).as_posix()] = digest(path)
+    if actual != record['files']:
+        raise ValueError('block file inventory/hash differs')
+    if _read(root / 'block-contract.json') != block_contract(record):
+        raise ValueError('block contract differs from captured metadata')
+    ports = hierarchy_ports((root / record['sheet']).read_bytes())
+    if ports != {p['name']: p['direction'] for p in record['boundary_ports']}:
+        raise ValueError('boundary ports differ from native hierarchical pins')
+    parts = _read(root / record['parts_manifest'])
+    if not isinstance(parts, dict) or parts.get('schema') != 'agent-ee.parts/1':
+        raise ValueError('expected captured agent-ee.parts/1 subset')
+
+
+def validate_block(directory, run_locations=None):
+    """Refuse inconsistent records; return unverified for missing passing coverage."""
+    root = Path(directory)
+    if root.is_symlink():
+        raise ValueError('block root is a symlink')
+    record = _read(root / 'block.json')
+    _structure(record)
+    _payload(root, record)
+    covered, runs = set(), []
+    locations = run_locations or {}
+    for ref in record['runs']:
+        rid = ref['run_id']
+        if rid not in locations:
+            runs.append(dict(run_id=rid, status='unavailable'))
+            continue
+        # Public verification retains the coordinator seal, policy and native
+        # execution authority; this module does not replay or replace those rules.
+        from .cli import verify
+        from .baseline import load_baseline, verify_evidence
+        from .locking import reader_lock
+        run = Path(locations[rid]).resolve()
+        with reader_lock(run):
+            result = verify(run, current_source=False)
+            baseline = load_baseline(run)
+            manifest = _read(run / 'candidate.json')
+            if (result['run_id'] != rid or result['candidate_id'] != ref['candidate_id'] or
+                    baseline is None or baseline['baseline_id'] != ref['baseline_id']):
+                raise ValueError('referenced run/candidate/baseline identity differs')
+            for path, captured in ref['files'].items():
+                if (manifest['files'].get(captured) != record['files'][path] or
+                        digest(run / 'inputs' / captured) != record['files'][path]):
+                    raise ValueError('referenced run does not cover exact block bytes: ' + path)
+            passing = result['state'] == 'complete' and result['outcome'] == 'criteria_satisfied'
+            if passing:
+                verify_evidence(run, result['checks'], required=True)
+                requirements = {r['id']: r for r in baseline['requirements']}
+                checks = {c['id']: c for c in result['checks']}
+                for req in record['requirements']:
+                    bound = requirements.get(req['id'])
+                    if bound is None:
+                        continue
+                    if bound['statement'] != req['statement'] or not set(req['checks']) <= set(bound['checks']):
+                        raise ValueError('block requirement differs from baseline')
+                    if all(checks.get(c, {}).get('execution') == 'ok' and
+                           checks[c]['outcome'] == 'pass' for c in req['checks']):
+                        covered.add(req['id'])
+            runs.append(dict(run_id=rid, status='passing' if passing else 'unverified'))
+    # Detect mutation at the read boundary; trusted-local consistency, not a
+    # signature or protection from a hostile host rewriting all expected hashes.
+    if _read(root / 'block.json') != record:
+        raise ValueError('block metadata changed during validation')
+    _payload(root, record)
+    declared = all(p['current_a'] is not None and p['voltage_domain'] is not None
+                   for p in record['boundary_ports'])
+    return dict(schema='agent-ee.block-report/1', block_id=record['id'],
+                status='verified' if declared and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
+                covered_requirements=sorted(covered), runs=runs,
+                missing_requirements=sorted({r['id'] for r in record['requirements']} - covered),
+                undeclared_ports=[p['name'] for p in record['boundary_ports']
+                                  if p['current_a'] is None or p['voltage_domain'] is None],
+                limitations=['Provenance only; adaptations require fresh board checks.',
+                             'Parts subset bytes retained; selection/availability not qualified.'])
+
+
+def _git(repo, *args):
+    proc = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, check=True)
+    return proc.stdout
+
+
+def capture_block(request, repository, commit, destination, *, parts=None):
+    """Copy pinned local Git blobs only; never update source or fetch objects."""
+    record = copy.deepcopy(request)
+    if not isinstance(record, dict) or not isinstance(record.get('source'), dict):
+        raise ValueError('capture request needs source object')
+    _object(record['source'], ('repository', 'commit', 'paths', 'license'))
+    if not isinstance(record['source']['paths'], dict) or not record['source']['paths']:
+        raise ValueError('capture request needs source paths')
+    if 'parts_manifest' not in record:
+        raise ValueError('capture request needs parts_manifest')
+    _path(record['parts_manifest'])
+    _hash(commit, 40)
+    pinned = _git(repository, 'rev-parse', '--verify', commit + '^{commit}').decode().strip()
+    if pinned != commit:
+        raise ValueError('source commit must be full exact commit')
+    record['source']['repository'] = str(Path(repository).resolve())
+    record['source']['commit'] = pinned
+    payload = {}
+    for local, source in record['source']['paths'].items():
+        _path(local)
+        _path(source)
+        # Reject trees, submodules and links, even though git show can read a
+        # link target string. Source statements bind ordinary committed blobs.
+        entry = _git(repository, 'ls-tree', '-z', commit, '--', ':(literal)' + source).split(b'\x00')
+        if len(entry) != 2 or not entry[0].startswith((b'100644 blob ', b'100755 blob ')):
+            raise ValueError('source is not one regular committed file: ' + source)
+        payload[local] = _git(repository, 'show', commit + ':' + source)
+    if parts is not None:
+        path = record['parts_manifest']
+        _path(path)
+        if path in payload or Path(parts).is_symlink():
+            raise ValueError('parts supplement overlaps source or is a link')
+        payload[path] = Path(parts).read_bytes()
+    if 'block-contract.json' in payload:
+        raise ValueError('reserved generated contract path')
+    payload['block-contract.json'] = canonical(block_contract(record))
+    record['files'] = {p: hashlib.sha256(data).hexdigest() for p, data in payload.items()}
+    _structure(record)
+    hierarchy_ports(payload[record['sheet']])
+    target = Path(destination)
+    if any(p.is_symlink() for p in (target, *target.parents)):
+        raise ValueError('capture destination has a symlink ancestor')
+    target.mkdir(mode=0o700, parents=False, exist_ok=False)
+    for path, data in payload.items():
+        out = target / path
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(data)
+    write_json(target / 'block.json', record)
+    return validate_block(target)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    capture = commands.add_parser('capture')
+    capture.add_argument('request')
+    capture.add_argument('--repo', required=True)
+    capture.add_argument('--commit', required=True)
+    capture.add_argument('--out', required=True)
+    capture.add_argument('--parts', help='explicit local parts/1 subset supplement')
+    validate = commands.add_parser('validate')
+    validate.add_argument('directory')
+    validate.add_argument('--run', action='append', default=[], metavar='ID=PATH')
+    args = parser.parse_args(argv)
+    try:
+        if args.command == 'capture':
+            report = capture_block(_read(args.request), args.repo, args.commit, args.out, parts=args.parts)
+        else:
+            locations = {}
+            for value in args.run:
+                key, sep, path = value.partition('=')
+                if not sep or not key or not path or key in locations:
+                    raise ValueError('run location must be unique ID=PATH')
+                locations[key] = path
+            report = validate_block(args.directory, locations)
+    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+        print(json.dumps(dict(schema='agent-ee.block-report/1', status='refused', error=str(exc))))
+        return 2
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report['status'] == 'verified' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
