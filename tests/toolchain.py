@@ -37,7 +37,7 @@ def prerequisite_problem(native=False):
             for tool in ('kicad-cli', 'ngspice'):
                 result = subprocess.run(sandbox_argv(root / 'inputs', root / 'work',
                     ['/bin/sh', '-c', f'command -v {tool} >/dev/null; status=$?; '
-                     'if [ "$status" -eq 1 ]; then exit 42; fi; exit "$status"']),
+                     'if [ "$status" -eq 1 ] || [ "$status" -eq 127 ]; then exit 42; fi; exit "$status"']),
                     capture_output=True, text=True, timeout=15)
                 if result.returncode == 42 and not result.stderr:
                     return f'{tool} not found in native sandbox'
