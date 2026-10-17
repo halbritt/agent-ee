@@ -27,8 +27,10 @@ class DatasheetCapabilityTests(unittest.TestCase):
         req.update(intent='acceptance', checks=['netlist', 'facts', 'pin-map'])
         self.facts = read_json(ROOT / 'fixtures/datasheet-pins/facts.json')
         write_json(self.inputs / 'facts.json', self.facts)
+        (self.inputs / 'requirements.md').write_bytes(
+            (ROOT / 'fixtures/datasheet-pins/requirements.md').read_bytes())
         self.files = {'facts.json': digest(self.inputs / 'facts.json'),
-                      'TJA1051.pdf': 'a' * 64, 'requirements.md': 'b' * 64,
+                      'TJA1051.pdf': 'a' * 64, 'requirements.md': digest(self.inputs / 'requirements.md'),
                       'project/pins.kicad_sch': 'c' * 64, 'project/pins.kicad_pcb': 'd' * 64}
 
     def compile(self):
@@ -186,8 +188,9 @@ class EnvelopeCapabilityTests(unittest.TestCase):
 
     def compile(self, scope):
         inputs = self.root / 'prepared'
+        (inputs / 'requirements.md').write_bytes((self.root / 'requirements.md').read_bytes())
         files = {p.relative_to(inputs).as_posix(): digest(p) for p in inputs.rglob('*') if p.is_file()}
-        files.update({'requirements.md': digest(self.root / 'requirements.md'),
+        files.update({'requirements.md': digest(inputs / 'requirements.md'),
                       'project/pins.kicad_sch': 'a' * 64, 'project/pins.kicad_pcb': 'b' * 64})
         return compile_baseline(scope, files, inputs), files
 
