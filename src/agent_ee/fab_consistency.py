@@ -24,6 +24,7 @@ import shutil
 import stat
 import zipfile
 import xml.etree.ElementTree as ET
+from decimal import Decimal, DecimalException
 from pathlib import PurePosixPath
 
 from . import kicad_embedded
@@ -54,11 +55,14 @@ EMBED = 'kicad-embed://'
 MAX_FILES = 4096
 MAX_TEXT_BYTES = 64 * 1024 * 1024
 MAX_CITATIONS = 50
+COORDINATE_TOLERANCE = Decimal('0.01')
+LOG_DIAGNOSTIC = re.compile(r'(?:^\s*(?:warning|error|fatal)\b|\b(?:warning|error|fatal)\s*:)', re.I)
 
 
 GEOMETRY_FLAGS = ('dnp', 'exclude_from_bom', 'exclude_from_pos_files', 'board_only')
 PREDICATES = ['fab-package:inventory', 'fab-package:designator-parity', 'fab-package:lcsc-footprint',
-              'fab-package:cpl-side', 'fab-package:3d-models']
+              'fab-package:cpl-side', 'fab-package:cpl-coordinates', 'fab-package:3d-models',
+              'fab-package:build-log']
 
 
 def capability(params, scope, prerequisite, captured):
@@ -182,7 +186,12 @@ def geometry_footprints(ctx):
             side = {'F.Cu': 'top', 'B.Cu': 'bottom'}.get(fp.get('layer'))
             if not isinstance(fp.get('ref'), str) or side is None:
                 raise CheckError('malformed', f'sealed geometry {gid!r} footprint lacks a reference or side')
-            inventory.append((fp['ref'], side, *(fp[flag] for flag in GEOMETRY_FLAGS)))
+            position = fp.get('position_nm')
+            if (not isinstance(position, list) or len(position) != 2 or
+                    any(type(n) is not int for n in position)):
+                raise CheckError('unsupported', f'sealed geometry {gid!r} lacks exact native footprint '
+                                                'positions; rerun the geometry probe')
+            inventory.append((fp['ref'], side, *(fp[flag] for flag in GEOMETRY_FLAGS), tuple(position)))
         inventories.append(sorted(inventory))
     if any(inventory != inventories[0] for inventory in inventories[1:]):
         raise CheckError('malformed', 'earlier geometry checks disagree on the board footprint inventory')
@@ -240,6 +249,39 @@ def verify_tool(ctx, eid, export_result, tool, gaps):
         fail('tool', f'manifest tool version {tool["version"]!r} disagrees with the sealed kicad-cli version '
                      f'output {sorted(set(versions.values()))}')
     return record
+
+
+def check_build_logs(ctx, eid, export_result, defects, gaps):
+    """Inspect hash-bound console logs from every sealed native producer execution."""
+    sealed = {e for e in export_result.get('evidence', []) if isinstance(e, str)}
+    logs = []
+    for rel in sorted(sealed):
+        if not rel.startswith(f'work/{eid}/') or not rel.endswith('/execution.json'):
+            continue
+        try:
+            record = read_json(ctx.run_dir / rel)
+        except (OSError, ValueError) as exc:
+            fail('build_log', f'sealed execution record {rel} is unreadable ({exc})')
+        argv = record.get('argv', []) if isinstance(record, dict) else []
+        if not argv or argv[0] != 'kicad-cli':
+            continue
+        if record.get('execution') != 'ok' or record.get('exit_code') != 0:
+            fail('build_log', f'{rel} is not a completed native producer execution')
+        log = rel[:-len('execution.json')] + 'console.log'
+        if log not in sealed:
+            gaps.append({'code': 'build_log', 'detail': f'{rel} has no sealed console.log'})
+            continue
+        path = ctx.run_dir / log
+        if digest(path) != record.get('console_sha256'):
+            fail('build_log', f'{log} differs from its execution record')
+        logs.append(log)
+        ctx.result['evidence'].extend([rel, log])
+        for line, text in enumerate(read_text(ctx.run_dir, log, 'build_log').decode('utf-8').splitlines(), 1):
+            if LOG_DIAGNOSTIC.search(text):
+                defects.append({'code': 'build_log_warning', 'locator': f'{log}:{line}: {text}'})
+    if not logs:
+        gaps.append({'code': 'build_log', 'detail': 'no sealed native producer console logs'})
+    return logs
 
 
 # ----------------------------------------------------------------------- manifest
@@ -404,8 +446,9 @@ def assembled(fp):
 def reconcile_native(board, geometry, netlist, gaps):
     """Board parse == sealed pcbnew geometry; board and netlist membership agree."""
     parsed = sorted((fp['ref'], fp['side'], *(fp[flag] for flag in GEOMETRY_FLAGS)) for fp in board['footprints'])
-    if parsed != geometry:
-        differences = sorted(set(parsed) ^ set(geometry), key=str)
+    inventory = [fp[:-1] for fp in geometry]
+    if parsed != inventory:
+        differences = sorted(set(parsed) ^ set(inventory), key=str)
         fail('native', f'captured board parse disagrees with the sealed geometry footprints {differences[:6]}')
     for fp in board['footprints']:
         if fp['ref'] in netlist:
@@ -579,7 +622,10 @@ def coordinate(value, label, rel, ref):
         text = text[:-2].strip()
     if not NUMBER.fullmatch(text) or not math.isfinite(float(text)):
         fail('csv', f'{rel} {ref}: {label} {value!r} is not a finite number')
-    return float(text)
+    try:
+        return Decimal(text)
+    except DecimalException as exc:
+        fail('csv', f'{rel} {ref}: {label} {value!r} is not a supported decimal ({exc})')
 
 
 def check_bom(rows, defects):
@@ -630,15 +676,43 @@ def check_cpl(rows, defects):
             defects.append({'code': 'duplicate_designator', 'locator': locator, 'file': 'cpl.csv'})
             continue
         seen.add(ref)
-        for label in ('Mid X', 'Mid Y', 'Rotation'):
-            coordinate(cells[label], label, 'cpl.csv', ref)
+        position = [coordinate(cells[label], label, 'cpl.csv', ref) for label in ('Mid X', 'Mid Y')]
+        coordinate(cells['Rotation'], 'Rotation', 'cpl.csv', ref)
         layer = cells['Layer'].strip().lower()
         if layer not in ('top', 'bottom'):
             defects.append({'code': 'invalid_cpl_layer', 'locator': f'{locator} Layer {cells["Layer"]!r}',
                             'file': 'cpl.csv'})
             layer = None
-        placements[ref] = {'row': index, 'layer': layer}
+        placements[ref] = {'row': index, 'layer': layer, 'position_mm': position}
     return placements
+
+
+def check_coordinates(cpl, geometry, by_ref, defects):
+    """fab_export/1 uses the footprint anchor, absolute X and negated board Y on both sides."""
+    native_positions = {fp[0]: fp[-1] for fp in geometry}
+    records = []
+    for ref, placement in sorted(cpl.items()):
+        if len(by_ref.get(ref, ())) != 1:
+            continue  # reference parity/duplicates are reported separately
+        x, y = native_positions[ref]
+        expected = [Decimal(x) / 1_000_000, -Decimal(y) / 1_000_000]
+        delta = [abs(actual - native) for actual, native in zip(placement['position_mm'], expected)]
+        # Compare to exact bounds: subtracting an arbitrarily precise CSV value
+        # first could round a just-outside coordinate onto the tolerance boundary.
+        exceeds = any(actual < native - COORDINATE_TOLERANCE or actual > native + COORDINATE_TOLERANCE
+                      for actual, native in zip(placement['position_mm'], expected))
+        records.append({'ref': ref, 'expected_mm': [float(n) for n in expected],
+                        'actual_mm': [float(n) for n in placement['position_mm']],
+                        'delta_mm': [float(n) for n in delta], 'outcome': 'defect' if exceeds else 'pass'})
+        if exceeds:
+            actual_text = ', '.join(str(n) for n in placement['position_mm'])
+            expected_text = ', '.join(str(n) for n in expected)
+            defects.append({'code': 'cpl_coordinates', 'file': 'cpl.csv', 'locator':
+                            f'cpl.csv row {placement["row"]} designator {ref} coordinates '
+                            f'({actual_text}) differ from native ({expected_text}) '
+                            f'by more than {COORDINATE_TOLERANCE} mm'})
+    return {'convention': 'absolute-board-x-negative-y', 'tolerance_mm': float(COORDINATE_TOLERANCE),
+            'records': records}
 
 
 # ------------------------------------------------------------------------ models
@@ -690,6 +764,7 @@ def check_fab_consistency(ctx):
         manifest = load_manifest(ctx, stage)
         details['manifest_sha256'] = digest(stage / 'manifest.json')
         details['tool'] = verify_tool(ctx, eid, export_result, manifest['tool'], gaps)
+        details['build_logs'] = check_build_logs(ctx, eid, export_result, defects, gaps)
         ctx.result['evidence'] += [rel for record in details['tool']['version_records']
                                    for rel in (record, record[:-len('execution.json')] + 'stdout.log')]
         found = inventory(stage, manifest)
@@ -712,7 +787,7 @@ def check_fab_consistency(ctx):
         cpl = check_cpl(cpl_rows, defects)
     except Malformed as exc:
         raise CheckError('malformed', str(exc)) from exc
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise CheckError('malformed', f'staging read failed: {exc}') from exc
     details.update(enabled_fab_layers=sorted(enabled), plots=plots, drill=drill, zip_members=zipped)
 
@@ -720,12 +795,11 @@ def check_fab_consistency(ctx):
     by_ref = {}
     for fp in footprints:
         by_ref.setdefault(fp['ref'], []).append(fp)
-    non_dnp = sorted({fp['ref'] for fp in footprints
-                      if not fp['dnp'] and not netlist.get(fp['ref'], {}).get('dnp')})
+    non_dnp = sorted({fp['ref'] for fp in footprints if not fp['dnp']})
     if non_dnp != sorted(manifest['designators']['board_non_dnp']):
         raise CheckError('malformed', 'stale: manifest board_non_dnp '
                          f'{sorted(set(manifest["designators"]["board_non_dnp"]) ^ set(non_dnp))} '
-                         'disagrees with the sealed geometry and netlist')
+                         'disagrees with the sealed geometry')
     assembled_refs = {fp['ref'] for fp in footprints if assembled(fp)}
     for ref in sorted(assembled_refs):
         if len(by_ref[ref]) > 1 or designator_defect(ref):
@@ -763,6 +837,8 @@ def check_fab_consistency(ctx):
                             f'cpl.csv row {placement["row"]} designator {ref} Layer {placement["layer"]} '
                             f'but board footprint is {boards[0]["side"]}'})
 
+    details['coordinates'] = check_coordinates(cpl, geometry, by_ref, defects)
+
     models = []
     for fp in footprints:
         for path in fp['models']:
@@ -784,10 +860,9 @@ def check_fab_consistency(ctx):
     ctx.evidence('fab-consistency.json')
     details.update(defects=defects, coverage_gaps=gaps)
     ctx.result['limitations'] += [
-        'CPL coordinates and rotations are not compared with the board: pad-centroid midpoints and '
-        'rotation policy belong to the rotation lane, and the export origin convention is not part of '
-        'the fab-manifest/1 contract.',
-        'No Gerber geometry, DFM or build-log inspection; plot identity comes from FileFunction attributes.',
+        'CPL coordinates use the fab_export/1 native footprint anchor and absolute export origin; '
+        'assembly centroid corrections and rotation policy belong to the rotation lane.',
+        'No Gerber geometry or DFM; plot identity comes from FileFunction attributes.',
         '3D model resolution establishes captured-file presence only: embedded models are decoded '
         'and checksum-verified like a native load, but model content and fit are not assessed.',
         'The board inventory is the sealed pcbnew geometry; board-only parts that would be assembled '

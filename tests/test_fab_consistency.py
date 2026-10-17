@@ -1,7 +1,7 @@
 """fab_consistency gate over test-staged fab_export trees and real native evidence.
 
-AGENTEE-23 (`fab_export`) is still pending, so its handler is a stub that stages
-synthetic package bytes. The stub still records a real sandboxed `kicad-cli
+The malformed-package cases use a stub that stages synthetic package bytes.
+The stub still records a real sandboxed `kicad-cli
 version` execution, and its manifest names the actual pinned kicad-cli. Footprint
 evidence always comes from the real `geometry` check (pcbnew in the sandbox) over
 the captured board. Synthetic boards have no schematic, so their `netlist` is a
@@ -11,6 +11,7 @@ saved AGENTEE-73 probes are reproduced as regressions (`test_astra73_*`).
 """
 import base64
 import copy
+import csv
 import hashlib
 import io
 import json
@@ -23,12 +24,13 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from agent_ee import checks, fab_consistency
-from agent_ee.baseline import freeze_evidence, verify_evidence
+from agent_ee import checks, executor, fab_consistency
+from agent_ee.baseline import freeze_evidence, load_baseline, validate_witnesses, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import parse_xml_netlist, run_checks
 from agent_ee.executor import SANDBOX_PATH, execute
+from agent_ee.findings import adjudicate, collect_findings
 from agent_ee.kicad_embedded import decompress, kicad_checksum, records, verify
 from agent_ee.storage import digest, read_json, write_json
 from agent_ee.symbol_library import parse_sexpr
@@ -49,7 +51,7 @@ BOM = BOM_HEAD + ('"R1,R2",R_0603,2,10k,SynthCo,SR-10K,C100001\n'
                   'C1,C_0603,1,100n,SynthCo,SC-100N,C100002\n'
                   'U1,SOT5,1,REG,SynthCo,SU-REG,C100003\n')
 CPL_HEAD = 'Designator,Mid X,Mid Y,Layer,Rotation\n'
-CPL = CPL_HEAD + 'R1,10,10,Top,0\nR2,14,10,Top,0\nC1,18mm,10mm,Bottom,90\nU1,22,10,Top,180\n'
+CPL = CPL_HEAD + 'R1,10,-10,Top,0\nR2,14,-10,Top,0\nC1,18mm,-10mm,Bottom,90\nU1,22,-10,Top,180\n'
 # (lib_id, ref, side layer, attr tokens, model paths)
 FOOTPRINTS = [('Synth:R_0603', 'R1', 'F.Cu', 'smd', ['models/r.step']),
               ('Synth:R_0603', 'R2', 'F.Cu', 'smd', ['${KIPRJMOD}/models/r.step']),
@@ -63,7 +65,7 @@ NON_DNP = ['C1', 'R1', 'R2', 'TP1', 'U1']
 RC_BOM = BOM_HEAD + ('C1,C_0805,1,100n,SynthCo,SC-100N,C100002\n'
                      'J1,PinHeader_1x03,1,Conn,SynthCo,SJ-3,C100005\n'
                      'R1,R_0805,1,10k,SynthCo,SR-10K,C100001\n')
-RC_CPL = CPL_HEAD + 'C1,0,0,Top,0\nJ1,0,0,Top,0\nR1,0,0,Top,0\n'
+RC_CPL = CPL_HEAD + 'C1,110,-100,Top,0\nJ1,100,-100,Top,0\nR1,105,-100,Top,0\n'
 RC_MODELS = {'Capacitor_SMD.3dshapes/C_0805_2012Metric.step': 'c1.step',
              'Resistor_SMD.3dshapes/R_0805_2012Metric.step': 'r1.step',
              'Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x03_P2.54mm_Vertical.step': 'j1.step'}
@@ -562,7 +564,7 @@ class FabConsistencyTests(FabCase):
 
     def test_parity_names_missing_designator_in_each_direction(self):
         files = package()
-        files['cpl.csv'] = CPL.replace('C1,18mm,10mm,Bottom,90\n', '').encode()
+        files['cpl.csv'] = CPL.replace('C1,18mm,-10mm,Bottom,90\n', '').encode()
         result = self.run_case(files=files)
         self.assertStatus(result, 'ok', 'defect')
         self.assertIn(('designator_parity', 'designator C1 absent from cpl'), self.defects(result))
@@ -603,7 +605,7 @@ class FabConsistencyTests(FabCase):
 
     def test_cpl_layer_must_match_board_side(self):
         files = package()
-        files['cpl.csv'] = CPL.replace('C1,18mm,10mm,Bottom', 'C1,18mm,10mm,Top').encode()
+        files['cpl.csv'] = CPL.replace('C1,18mm,-10mm,Bottom', 'C1,18mm,-10mm,Top').encode()
         result = self.run_case(files=files)
         self.assertStatus(result, 'ok', 'defect')
         self.assertIn(('cpl_side', 'cpl.csv row 4 designator C1 Layer top but board footprint is bottom'),
@@ -613,7 +615,7 @@ class FabConsistencyTests(FabCase):
 
     def test_netlist_dnp_assembled_part_is_defect(self):
         components = dict(NETLIST_COMPONENTS, C1=['dnp'])
-        result = self.run_case(netlist=netlist_xml(components), non_dnp=['R1', 'R2', 'TP1', 'U1'])
+        result = self.run_case(netlist=netlist_xml(components))
         self.assertStatus(result, 'ok', 'defect')
         self.assertIn('netlist_exclusion_assembled', self.codes(result))
 
@@ -621,8 +623,8 @@ class FabConsistencyTests(FabCase):
         variants = {
             'header': ('bom.csv', BOM.replace('"LCSC Part #"', 'LCSC'), 'header must be exactly'),
             'cells': ('cpl.csv', CPL + 'U9,1,2,Top\n', 'has 4 cells'),
-            'number': ('cpl.csv', CPL.replace('22,10,Top', 'twenty,10,Top'), 'not a finite number'),
-            'infinite': ('cpl.csv', CPL.replace('22,10,Top', '1e999,10,Top'), 'not a finite number'),
+            'number': ('cpl.csv', CPL.replace('22,-10,Top', 'twenty,10,Top'), 'not a finite number'),
+            'infinite': ('cpl.csv', CPL.replace('22,-10,Top', '1e999,10,Top'), 'not a finite number'),
             'quote': ('bom.csv', BOM + '"R9,R_0603\n', 'does not parse'),
             'no rows': ('cpl.csv', CPL_HEAD, 'has no rows'),
         }
@@ -813,6 +815,300 @@ class FabConsistencyTests(FabCase):
         self.assertEqual(describe(no_netlist)['status'], 'unsupported')
         self.assertEqual(describe([specs[0], specs[2], specs[3]])['status'], 'unsupported')
         self.assertEqual(describe([specs[0], specs[2], specs[3], specs[1]])['status'], 'unsupported')
+
+
+class CoordinatePrecisionTests(unittest.TestCase):
+    def test_csv_precision_cannot_round_an_outside_coordinate_onto_the_boundary(self):
+        geometry = [('R1', 'top', False, False, False, False, (116123456, 106654321))]
+        cases = [('116.133456', 'pass'), ('116.1334559999999999999999999999', 'pass'),
+                 ('116.1334560000000000000000000001', 'defect'),
+                 ('116.1134559999999999999999999999', 'defect')]
+        for x, outcome in cases:
+            with self.subTest(x=x):
+                defects = []
+                cpl = fab_consistency.check_cpl([['R1', x, '-106.654321', 'Top', '0']], defects)
+                report = fab_consistency.check_coordinates(cpl, geometry, {'R1': [{}]}, defects)
+                self.assertEqual(report['records'][0]['outcome'], outcome)
+                self.assertEqual(bool(defects), outcome == 'defect')
+
+
+class NativeFabPipelineTests(unittest.TestCase):
+    """Owned native 23→73 pipeline and sealed scope/3 witnesses, with file fault injection."""
+
+    def setUp(self):
+        require_toolchain(native=True)
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-consistency-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        shutil.copytree(REPO / 'fixtures/fab-export', self.source)
+        (self.source / 'owned.step').write_bytes(owned_step('owned.step'))
+        for name in ('fab.kicad_pcb', 'fab4.kicad_pcb'):
+            board = self.source / name
+            board.write_text(board.read_text().replace(
+                '(attr smd)', '(attr smd)\n\t\t(model "${KIPRJMOD}/owned.step")', 1))
+        self.runs = 0
+
+    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None):
+        scope = read_json(REPO / 'fixtures/fab-export/control.scope.json')
+        scope.update(schema='agent-ee.scope/3', board='design/' + board)
+        scope['inputs'][0]['path'] = str(self.source)
+        scope['inputs'][0]['include'].append('owned.step')
+        scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
+        scope['checks'].append({'id': 'consistency', 'kind': 'fab_consistency',
+                                'params': {'export_check': 'fab'}})
+        req = scope['baseline']['requirements'][0]
+        req.update(intent='acceptance', checks=['fab', 'consistency'])
+        scope['baseline']['requirements'].append({**req, 'id': 'I-native', 'intent': 'informational',
+            'statement': 'Retain native board and schematic observations', 'checks': ['netlist', 'geometry']})
+        self.runs += 1
+        case = self.root / str(self.runs)
+        case.mkdir()
+        write_json(case / 'scope.json', scope)
+        self.run_dir = case / 'run'
+        self.run_dir.mkdir()
+        capture(case / 'scope.json', self.run_dir)
+        if before:
+            before(self.run_dir)
+
+        # The control runs the unmodified production registry. Defect cases
+        # change producer files before coordinator sealing, retaining real tool runs.
+        if mutate:
+            producer = checks.CHECK_FUNCS['fab_export']
+
+            def damaged_export(ctx):
+                producer(ctx)
+                stage = ctx.work / 'fab'
+                mutate(ctx, stage)
+                manifest = read_json(stage / 'manifest.json')
+                manifest['files'] = {rel: digest(stage / rel) for rel in manifest['files']
+                                      if (stage / rel).is_file()}
+                write_json(stage / 'manifest.json', manifest)
+
+            with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': damaged_export}):
+                self.results = run_checks(self.run_dir, time.monotonic() + 300)
+        else:
+            self.results = run_checks(self.run_dir, time.monotonic() + 300)
+        self.assertTrue(all(r['execution'] == 'ok' for r in self.results[:2]), self.results)
+        freeze_evidence(self.run_dir, self.results)
+        verify_evidence(self.run_dir, self.results, required=True)
+        return self.results[-1]
+
+    def assert_witness(self, result, *, accepted):
+        evidence = [{'path': 'checks/consistency.json', 'locator': 'details.defects'}]
+        witness = [{'requirement_id': 'R-fab', 'check_id': 'consistency'}]
+        if not accepted:
+            self.assertEqual(collect_findings([], [result]), [])
+            with self.assertRaisesRegex(ValueError, 'freshly failed criterion'):
+                validate_witnesses(self.run_dir, witness, evidence)
+            return
+        validate_witnesses(self.run_dir, witness, evidence)
+        findings = collect_findings([], [result])
+        self.assertEqual(len(findings), 1)
+        decision = {'schema': 'agent-ee.decisions/1', 'candidate_id': result['candidate_id'],
+                    'run_id': 'native-fab-qualification', 'decisions': [{
+                        'finding_id': 'check/consistency', 'disposition': 'accepted',
+                        'reason': 'Sealed package invariant violation', 'evidence': evidence}]}
+        self.assertEqual(adjudicate(findings, decision, self.run_dir)[0]['status'], 'accepted')
+        # The same bytes cannot support an unrelated informational obligation.
+        with self.assertRaisesRegex(ValueError, 'trace to a baseline requirement'):
+            validate_witnesses(self.run_dir, [{'requirement_id': 'I-native', 'check_id': 'consistency'}], evidence)
+
+    @staticmethod
+    def edit_csv(stage, name, edit):
+        rows = list(csv.reader(io.StringIO((stage / name).read_text())))
+        edit(rows)
+        output = io.StringIO(newline='')
+        csv.writer(output, lineterminator='\n').writerows(rows)
+        (stage / name).write_text(output.getvalue())
+
+    def test_native_scope3_two_and_four_layer_packages_pass_and_seal(self):
+        for board, count in (('fab.kicad_pcb', 9), ('fab4.kicad_pcb', 11)):
+            with self.subTest(board=board):
+                result = self.run_case(board=board)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+                self.assertEqual(len(result['details']['plots']), count)
+                self.assertEqual(len(result['details']['build_logs']), 5)
+                self.assertEqual(result['details']['models']['records'][0]['status'], 'resolved')
+                self.assertEqual(len(result['details']['coordinates']['records']), 6)
+                predicates = load_baseline(self.run_dir)['coverage']['checks']['consistency']['predicates']
+                self.assertIn('fab-package:cpl-coordinates', predicates)
+                self.assertIn('fab-package:build-log', predicates)
+                self.assert_witness(result, accepted=False)
+
+    def test_native_package_subpredicate_defects_qualify_sealed_witnesses(self):
+        def csv_mutation(name, edit):
+            return lambda ctx, stage: self.edit_csv(stage, name, edit)
+
+        cases = {
+            'range': ('compressed_range', csv_mutation('bom.csv', lambda r: r[1].__setitem__(0, 'C1-C10'))),
+            'duplicate': ('duplicate_designator', csv_mutation('bom.csv', lambda r: r[2].__setitem__(0, 'C1'))),
+            'empty ref': ('empty_designator', csv_mutation('bom.csv', lambda r: r[2].__setitem__(0, ''))),
+            'missing cpl': ('designator_parity', csv_mutation('cpl.csv', lambda r: r.pop(1))),
+            'missing bom': ('designator_parity', csv_mutation('bom.csv', lambda r: r.pop(1))),
+            'not on board': ('designator_parity', csv_mutation('cpl.csv', lambda r: r.append(
+                ['R99', '120', '-110', 'Top', '0']))),
+            'empty lcsc': ('empty_lcsc', csv_mutation('bom.csv', lambda r: r[1].__setitem__(6, ''))),
+            'lcsc footprint': ('lcsc_multiple_footprints', csv_mutation('bom.csv',
+                lambda r: r[2].__setitem__(6, r[1][6]))),
+            'side': ('cpl_side', csv_mutation('cpl.csv',
+                lambda r: next(row for row in r if row[0] == 'R2').__setitem__(3, 'Top'))),
+            'coordinates': ('cpl_coordinates', csv_mutation('cpl.csv',
+                lambda r: next(row for row in r if row[0] == 'R2').__setitem__(1, '116.010001'))),
+        }
+        for name, (code, mutate) in cases.items():
+            with self.subTest(invariant=name):
+                result = self.run_case(mutate=mutate)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+                self.assertIn(code, {d['code'] for d in result['details']['defects']})
+                self.assert_witness(result, accepted=True)
+
+        (self.source / 'owned.step').unlink()
+        result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertIn('model_unresolved', {d['code'] for d in result['details']['defects']})
+        self.assert_witness(result, accepted=True)
+
+    def test_native_schematic_board_dnp_disagreement_is_a_named_parity_defect(self):
+        schematic = self.source / 'fab.kicad_sch'
+        board = self.source / 'fab.kicad_pcb'
+        original_schematic, original_board = schematic.read_text(), board.read_text()
+        for dnp_source in ('schematic', 'board'):
+            with self.subTest(dnp_source=dnp_source):
+                # J1 is the fixture's first schematic instance and only through-hole footprint.
+                schematic.write_text(original_schematic.replace('(dnp no)', '(dnp yes)', 1)
+                                     if dnp_source == 'schematic' else original_schematic)
+                board.write_text(original_board.replace('(attr through_hole)', '(attr through_hole dnp)', 1)
+                                 if dnp_source == 'board' else original_board)
+                result = self.run_case()
+                self.assertEqual((self.results[-2]['execution'], self.results[-2]['outcome']), ('ok', 'pass'))
+                manifest = read_json(self.run_dir / 'work/fab/fab/manifest.json')
+                self.assertEqual('J1' in manifest['designators']['board_non_dnp'], dnp_source == 'schematic')
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+                self.assertIn('J1', result['location'])
+                self.assertIn('designator_parity', {d['code'] for d in result['details']['defects']})
+                if dnp_source == 'schematic':
+                    self.assertIn('netlist_exclusion_assembled', {d['code'] for d in result['details']['defects']})
+                self.assert_witness(result, accepted=True)
+
+    def test_native_coordinates_include_the_exact_tolerance_on_both_sides(self):
+        def boundary(ctx, stage):
+            def edit(rows):
+                for row in rows[1:]:
+                    # Top and bottom use the same X sign and negative board Y.
+                    if row[0] == 'R1':
+                        row[1:3] = ['116.01', '-106.01']
+                    elif row[0] == 'R2':
+                        row[1:3] = ['115.99', '-113.99']
+            self.edit_csv(stage, 'cpl.csv', edit)
+        result = self.run_case(mutate=boundary)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assert_witness(result, accepted=False)
+        for axis, number in ((1, '115.989999'), (2, '-114.010001')):
+            with self.subTest(axis=axis):
+                def beyond(ctx, stage):
+                    self.edit_csv(stage, 'cpl.csv', lambda rows: next(
+                        row for row in rows if row[0] == 'R2').__setitem__(axis, number))
+                result = self.run_case(mutate=beyond)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+                self.assertIn('cpl_coordinates', {d['code'] for d in result['details']['defects']})
+                self.assertIn('R2', result['location'])
+                self.assert_witness(result, accepted=True)
+
+    def test_fractional_native_anchor_ignores_aux_origin_and_preserves_boundary(self):
+        board = self.source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('(at 116 106)', '(at 116.123456 106.654321)')
+                         .replace('(setup', '(setup\n\t\t(aux_axis_origin 20 30)', 1))
+        result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        native = next(r for r in result['details']['coordinates']['records'] if r['ref'] == 'R1')
+        self.assertEqual(native['expected_mm'], [116.123456, -106.654321])
+        self.assertEqual(native['actual_mm'], native['expected_mm'])
+
+        def shifted(ctx, stage):
+            # Four-decimal geometry would round X up to 116.1235, hiding this violation.
+            self.edit_csv(stage, 'cpl.csv', lambda rows: next(
+                r for r in rows if r[0] == 'R1').__setitem__(1, '116.133457'))
+        result = self.run_case(mutate=shifted)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertIn('cpl_coordinates', {d['code'] for d in result['details']['defects']})
+        self.assert_witness(result, accepted=True)
+
+    def test_malformed_packages_and_missing_native_positions_cannot_witness(self):
+        def missing_positions(ctx, stage):
+            path = ctx.run_dir / 'work/geometry/geometry.json'
+            geometry = read_json(path)
+            del geometry['footprints'][0]['position_nm']
+            write_json(path, geometry)
+        cases = {
+            'empty artifact': ('malformed', lambda ctx, stage: (stage / 'bom.csv').write_bytes(b'')),
+            'broken CSV': ('malformed', lambda ctx, stage: (stage / 'bom.csv').write_text('"broken')),
+            'missing positions': ('unsupported', missing_positions),
+        }
+        for name, (execution, mutate) in cases.items():
+            with self.subTest(case=name):
+                result = self.run_case(mutate=mutate)
+                self.assertEqual((result['execution'], result['outcome']), (execution, 'unknown'), result)
+                self.assert_witness(result, accepted=False)
+
+    def test_export_log_warning_and_missing_or_changed_log_are_fail_closed(self):
+        def inject_diagnostic(ctx, stage):
+            # Synthetic warning injected at the retained-file boundary; this is
+            # a parser/adjudication fault test, not evidence of a native warning.
+            directory = ctx.work / 'steps/gerbers'
+            log = directory / 'console.log'
+            log.write_bytes(log.read_bytes() + b'Warning: synthetic export diagnostic\n')
+            record = read_json(directory / 'execution.json')
+            record['console_sha256'] = digest(log)
+            write_json(directory / 'execution.json', record)
+        result = self.run_case(mutate=inject_diagnostic)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertIn('build_log_warning', {d['code'] for d in result['details']['defects']})
+        self.assert_witness(result, accepted=True)
+
+        def unseal(ctx, stage):
+            ctx.result['evidence'].remove('work/fab/steps/gerbers/console.log')
+        result = self.run_case(mutate=unseal)
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assert_witness(result, accepted=False)
+
+        def change(ctx, stage):
+            path = ctx.work / 'steps/gerbers/console.log'
+            path.write_bytes(path.read_bytes() + b'changed log\n')
+        result = self.run_case(mutate=change)
+        self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'), result)
+        self.assert_witness(result, accepted=False)
+
+    def test_native_producer_refuses_stale_outputs_without_publishing_them(self):
+        for directory in ('work/fab/fab', 'work/fab/steps/gerbers/out'):
+            with self.subTest(directory=directory):
+                def stale(run):
+                    out = run / directory
+                    out.mkdir(parents=True)
+                    (out / 'stale.gtl').write_text('old export')
+                result = self.run_case(before=stale)
+                producer = self.results[-2]
+                self.assertEqual((producer['execution'], producer['outcome']), ('malformed', 'unknown'), producer)
+                self.assertIn('stale outputs', producer['summary'])
+                self.assertFalse((self.run_dir / 'work/fab/fab/manifest.json').exists())
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
+                self.assert_witness(result, accepted=False)
+
+    def test_empty_native_export_is_failed_and_cannot_qualify_a_witness(self):
+        native_execute = executor.execute
+
+        def empty_output(inputs, work, argv, **kwargs):
+            record = native_execute(inputs, work, argv, **kwargs)
+            if argv[:4] == ['kicad-cli', 'pcb', 'export', 'gerbers']:
+                next((Path(work) / 'out').glob('*F_Cu.gtl')).write_bytes(b'')
+            return record
+        with mock.patch.object(executor, 'execute', side_effect=empty_output):
+            result = self.run_case()
+        producer = self.results[-2]
+        self.assertEqual((producer['execution'], producer['outcome']), ('failed', 'unknown'), producer)
+        self.assertFalse((self.run_dir / 'work/fab/fab/manifest.json').exists())
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
+        self.assert_witness(result, accepted=False)
 
 
 class EmbeddedRecordTests(unittest.TestCase):

@@ -163,7 +163,9 @@ Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
-board, the sealed netlist and the sealed geometry. Coordinates, Gerber geometry and DFM stay outside its coverage.
+board, the sealed netlist and the sealed geometry. It checks native CPL anchor
+coordinates within 0.01 mm and sealed export logs for warnings. Gerber geometry,
+DFM and assembly rotation corrections stay outside its coverage.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact

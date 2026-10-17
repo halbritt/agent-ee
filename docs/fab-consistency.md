@@ -9,8 +9,9 @@ reads these sources only:
 
 - `work/EXPORT/fab/` and its `manifest.json` (`agent-ee.fab-manifest/1`).
   The export result must list `work/EXPORT/fab/manifest.json` as evidence.
-- The export's sealed `kicad-cli version` execution record
-  (`execution.json` with argv `["kicad-cli", "version"]` and its `stdout.log`).
+- The export's sealed `kicad-cli` execution records, including its version
+  run (`execution.json` with argv `["kicad-cli", "version"]` and `stdout.log`),
+  and the hash-bound `console.log` of each recorded native step.
 - `work/NETLIST/design.xml` and `connectivity.json` from the export's netlist
   prerequisite. They must agree, and references must be unique.
 - `work/GEOMETRY/geometry.json` from every earlier `geometry` check. Each must
@@ -30,26 +31,29 @@ The manifest is a claim to verify, never an authority:
   geometry exactly. Every non-board-only footprint must be in the sealed
   netlist, and every netlist component must be on the board unless the netlist
   excludes it from the board. `designators.board_non_dnp` must equal the
-  geometry's non-DNP references less netlist DNP parts.
+  geometry's non-DNP references. Schematic DNP flags do not change this
+  board-derived manifest field; a disagreement with the assembled board is
+  reported separately as an assembly/parity defect.
 
 Scope/3 requires the parameters to be exactly `{export_check}`. The export,
 its netlist and a geometry check must all come earlier in scope order. The check declares
 the `fab-package:inventory`, `fab-package:designator-parity`,
-`fab-package:lcsc-footprint`, `fab-package:cpl-side` and
-`fab-package:3d-models` predicates.
+`fab-package:lcsc-footprint`, `fab-package:cpl-side`,
+`fab-package:cpl-coordinates`, `fab-package:3d-models` and
+`fab-package:build-log` predicates.
 
 ## Results
 
 | Condition | Result |
 | --- | --- |
 | Export missing, later in scope order, a different kind, a different candidate or not `execution=ok`; netlist prerequisite unverified; manifest not sealed by the export | `unsupported`, `unknown` |
-| No earlier sealed geometry check; a geometry result not bound to the captured board digest; geometry without the footprint attribute fields; no kicad-cli on the sandbox PATH | `unsupported`, `unknown` |
+| No earlier sealed geometry check; a geometry result not bound to the captured board digest; geometry without the footprint attribute fields or exact `position_nm`; no kicad-cli on the sandbox PATH | `unsupported`, `unknown` |
 | Manifest tool path or digest is not the pinned kicad-cli; manifest version differs from a sealed `kicad-cli version` run; a sealed version run that failed or whose output differs from its record | `malformed`, `unknown` |
 | The export sealed no `kicad-cli version` run, so the manifest version is unverified | `unsupported`, `unknown` (a gap) |
 | Board parse differs from the sealed geometry; geometry checks disagree; a non-board-only footprint is not in the netlist; a netlist component has no footprint and is not excluded from the board; duplicate netlist references; netlist XML and its connectivity record disagree | `malformed`, `unknown` |
 | A board-only footprint that would be assembled (no DNP or BOM/position exclusion) | `unsupported`, `unknown` (a gap) |
 | Staging directory absent or empty although the export reported ok | `malformed`, `unknown` |
-| Manifest fields not exactly the fab-manifest/1 set; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry and netlist | `malformed`, `unknown` |
+| Manifest fields not exactly the fab-manifest/1 set; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry | `malformed`, `unknown` |
 | A staged file not in the manifest, a manifest file not staged, a hash mismatch, an empty file, a symlink or other non-regular file; `bom.csv`, `cpl.csv`, `gerbers.zip` or `pcb_summary.json` absent | `malformed`, `unknown` |
 | Manifest copper count or enabled layers differ from the board. The enabled layers must be every board copper layer, `F.Mask`, `B.Mask` and `Edge.Cuts`, plus optional paste and silkscreen layers. | `malformed`, `unknown` |
 | Fewer Gerber plots than enabled fab layers; an enabled layer with no plot whose `FileFunction` names it; two plots for one layer | `malformed`, `unknown` |
@@ -62,6 +66,10 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | A designator missing from the BOM, the CPL or the assembled board set. The defect names the designator and each missing side. | `ok`, `defect` |
 | One LCSC number maps to more than one BOM footprint or board footprint library ID | `ok`, `defect` |
 | CPL `Layer` differs from the board footprint side, or is not Top/Bottom | `ok`, `defect` |
+| CPL X or Y differs from the native footprint anchor by more than 0.01 mm in the `fab_export/1` coordinate frame | `ok`, `defect` |
+| A recorded native producer execution lacks a sealed console log | `unsupported`, `unknown` |
+| A recorded native producer execution failed, or its console hash differs from the execution record; console text is not UTF-8 | `malformed`, `unknown` |
+| A native export console has a warning, error or fatal diagnostic | `ok`, `defect` |
 | An assembled board footprint that the sealed netlist marks DNP or excluded from BOM/position files | `ok`, `defect` |
 | A model path that resolves to a missing captured input. An embedded model that is absent, has no data, is not base64, is not one complete zstd frame with a declared content size, decodes to nothing, or lacks a matching checksum. | `ok`, `defect` |
 | A model path through a library variable other than `KIPRJMOD`, an absolute path outside the captured sources, or a path that escapes the inputs. Several differing embedded records with one name; an embedded frame that needs a dictionary or decodes to more than 64 MiB. | `unsupported`, `unknown` |
@@ -71,6 +79,22 @@ The assembled board set holds every footprint without `dnp`,
 coverage gaps. Remaining gaps are listed in `details.coverage_gaps` and the
 limitations. When no defect remains, any gap makes the result unknown. It is
 never a pass.
+
+CPL coordinates use the `fab_export/1` native position-file convention: absolute
+board X and negated board Y, for both top and bottom footprints. The origin is
+the board origin, with no auxiliary/drill-origin override. The anchor is
+`pcbnew.FOOTPRINT.GetPosition()`, not a calculated pad centroid. The geometry
+probe retains its integer nanometres as `position_nm`; the gate compares CSV
+decimals against them without first rounding to the probe's four-decimal
+`position_mm`. Exactly 0.01 mm on either axis is allowed; any larger difference
+is a defect naming the reference. A legacy probe without exact positions is
+unknown coverage and must be rerun.
+
+The gate reads every sealed `kicad-cli` execution's console and verifies its
+`console_sha256`. Warning/error/fatal diagnostics at the start of a line or
+followed by a colon are defects; a missing log is a coverage gap. Ordinary
+progress lines containing a filename such as `warning.kicad_pcb` are not
+diagnostics. The exporter retains all five native step records and logs.
 
 Model paths resolve as follows:
 
@@ -94,17 +118,16 @@ contract maps library roots to captured inputs.
 ## Evidence
 
 `work/CHECK_ID/fab-consistency.json` holds the plot, drill, designator, model,
-defect and gap records. A defect citation points at the export's `bom.csv` or
-`cpl.csv` when the export sealed that file. Otherwise it points at this report.
+coordinate, build-log, defect and gap records. A defect citation points at the
+export's `bom.csv` or `cpl.csv` when the export sealed that file. Otherwise it points at this report.
 Every citation stays within this check's workspace or a sealed prerequisite,
 so the evidence seal accepts the result.
 
 ## Limits
 
-- CPL coordinates and rotations are not compared with the board. Pad-centroid
-  midpoints and the rotation policy belong to the rotation lane, and the
-  fab-manifest/1 contract does not fix the export origin.
-- The gate does not parse Gerber geometry, run DFM checks or read build logs.
+- CPL rotation and assembly centroid/offset corrections belong to the rotation
+  lane. This check verifies native footprint anchors only.
+- The gate does not parse Gerber geometry or run DFM checks.
   Plot identity comes only from `FileFunction` attributes.
 - Model resolution proves that a captured file, or a decodable embedded
   payload with a matching checksum, exists. It does not check the model
@@ -114,8 +137,8 @@ so the evidence seal accepts the result.
   run kicad-cli itself.
 - No policy yet covers assembled board-only parts, so they stay unknown.
 
-AGENTEE-23 is still pending, so the tests stage synthetic package bytes through
-a stub `fab_export` handler. That stub records a real sandboxed
+Malformed-package tests stage synthetic package bytes through a stub
+`fab_export` handler. That stub records a real sandboxed
 `kicad-cli version` run, and its manifest names the actual pinned binary. Every
 case runs the real `geometry` check (pcbnew in the sandbox) on the captured
 board, so no case stubs the board inventory. Synthetic boards have no
@@ -129,3 +152,22 @@ KiCad 10.0.7 drill and Gerber files from a synthetic board. It confirms that
 the plating and `FileFunction` classifiers accept native output. These tests
 need KiCad, pcbnew and bubblewrap; `AGENT_EE_REQUIRE_TOOLCHAIN=1` turns a
 missing toolchain into a failure instead of a skip.
+
+`NativeFabPipelineTests` in [test_fab_consistency.py](../tests/test_fab_consistency.py)
+runs the actual `netlist → geometry → fab_export → fab_consistency` chain on the
+owned [fab-export fixture](../fixtures/fab-export/generate.py), on two and four
+copper layers, with an original captured model file. Scope/3 separates the
+informational native inventories from the package acceptance requirement.
+Fault injection changes retained files before coordinator sealing. The log
+diagnostic test adds an explicitly synthetic warning to a retained native log;
+it does not claim a warning from the native tool. Defect cases exercise BOM/CPL/board parity,
+compressed/duplicate/empty references, LCSC binding and footprint conflicts, CPL
+side and coordinate violations, missing models and synthetic log diagnostics.
+A native source-mutation case also makes the schematic and board disagree on
+J1 DNP state in both directions. The producer succeeds with its board-derived
+manifest; the gate reports named assembly/parity defects rather than treating
+that valid manifest as stale.
+Each is sealed and accepted through the existing requirement/check witness and
+central adjudication helpers. Controls, malformed packages, stale producer
+outputs and missing native evidence cannot qualify a defect witness. No witness
+schema or reviewer independence rule changes.

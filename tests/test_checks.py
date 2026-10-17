@@ -84,6 +84,7 @@ class ControlFixtureTest(unittest.TestCase):
         refs = {fp["ref"]: fp for fp in geo["footprints"]}
         self.assertEqual(set(refs), {"R1", "C1", "J1"})
         self.assertFalse(refs["R1"]["dnp"])
+        self.assertEqual(refs["R1"]["position_nm"], [105_000_000, 100_000_000])
         self.assertTrue(all(p["uuid"] for p in geo["pads"]))
 
     def test_rc_transient_within_limits(self):
