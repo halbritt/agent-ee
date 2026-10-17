@@ -17,7 +17,7 @@ Series: two collinear 5 mm segments give .019702857142857143 ohm.
 Parallel: four 5 mm segments form a diamond with two 10 mm branches, giving
 .009851428571428572 ohm (each branch .019702857142857143 ohm).
 Arc: semicircle radius 5 mm, angle pi rad, length 5*pi mm, gives
-.030949681911873 ohm (tolerance 1e-8 ohm for integer native geometry resolution).
+.0309491756273646 ohm (tolerance 1e-8 ohm for integer native geometry resolution).
 
 Zero dimensional tolerance must reproduce nominal. Width factors [.9, 1.1]
 and thickness factors [.9, 1.1] imply resistance bounds nominal/1.21 and
