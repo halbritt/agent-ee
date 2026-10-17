@@ -1,0 +1,4775 @@
+{
+ "derivation": {
+  "footprint_library": "kicad-footprints 10.0.7",
+  "generator": "references/package-map/generate.py",
+  "observations": [
+   {
+    "category": "capacitor",
+    "lcsc": "C1525",
+    "package": "0402",
+    "source": "https://www.lcsc.com/product-detail/C1525.html"
+   },
+   {
+    "category": "capacitor",
+    "lcsc": "C14663",
+    "package": "0603",
+    "source": "https://www.lcsc.com/product-detail/C14663.html"
+   },
+   {
+    "category": "regulator",
+    "lcsc": "C9055",
+    "package": "SOT-23-5",
+    "source": "https://www.lcsc.com/product-detail/C9055.html"
+   },
+   {
+    "category": "regulator",
+    "lcsc": "C51118",
+    "package": "SOT-25-5",
+    "source": "https://www.lcsc.com/product-detail/C51118.html"
+   },
+   {
+    "category": null,
+    "lcsc": "C20917",
+    "package": "SOT-23",
+    "source": "https://www.lcsc.com/product-detail/C20917.html"
+   },
+   {
+    "category": null,
+    "lcsc": "C7593",
+    "package": "SOIC-8",
+    "source": "https://www.lcsc.com/product-detail/C7593.html"
+   },
+   {
+    "category": null,
+    "lcsc": "C1340704",
+    "package": "UFQFPN-48(7x7)",
+    "source": "https://jlcpcb.com/partdetail/STM32F072C8U7/C1340704"
+   }
+  ]
+ },
+ "footprints": {
+  "Capacitor_SMD:C_0201_0603Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0201_0603Metric_Pad0.64x0.40mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0402_1005Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0402_1005Metric_Pad0.74x0.62mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0603_1608Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0805_2012Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_1206_3216Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_1210_3225Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_1210_3225Metric_Pad1.33x2.70mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_1812_4532Metric": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Capacitor_SMD:C_1812_4532Metric_Pad1.57x3.40mm_HandSolder": {
+   "classes": [
+    "capacitor"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0201_0603Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0201_0603Metric_Pad0.64x0.40mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0402_1005Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0402_1005Metric_Pad0.77x0.64mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0603_1608Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0603_1608Metric_Pad1.05x0.95mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0805_2012Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_0805_2012Metric_Pad1.15x1.40mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_1206_3216Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_1206_3216Metric_Pad1.42x1.75mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_1210_3225Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_1210_3225Metric_Pad1.42x2.65mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_1812_4532Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_1812_4532Metric_Pad1.30x3.40mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_2010_5025Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_2010_5025Metric_Pad1.52x2.65mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_2512_6332Metric": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Diode_SMD:D_2512_6332Metric_Pad1.52x3.35mm_HandSolder": {
+   "classes": [
+    "diode"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0201_0603Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0201_0603Metric_Pad0.64x0.40mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0402_1005Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0402_1005Metric_Pad0.77x0.64mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0603_1608Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0603_1608Metric_Pad1.05x0.95mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0805_2012Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_0805_2012Metric_Pad1.05x1.20mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_1206_3216Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_1206_3216Metric_Pad1.22x1.90mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_1210_3225Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_1210_3225Metric_Pad1.42x2.65mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_1812_4532Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_1812_4532Metric_Pad1.30x3.40mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_2010_5025Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_2010_5025Metric_Pad1.52x2.65mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_2512_6332Metric": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Inductor_SMD:L_2512_6332Metric_Pad1.52x3.35mm_HandSolder": {
+   "classes": [
+    "inductor"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0201_0603Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0201_0603Metric_Pad0.64x0.40mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0402_1005Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0603_1608Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0603_1608Metric_Pad1.05x0.95mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0805_2012Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_1206_3216Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_1206_3216Metric_Pad1.42x1.75mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_1210_3225Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_1210_3225Metric_Pad1.42x2.65mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_1812_4532Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_1812_4532Metric_Pad1.30x3.40mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_2010_5025Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_2010_5025Metric_Pad1.52x2.65mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_2512_6332Metric": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LED_SMD:LED_2512_6332Metric_Pad1.52x3.35mm_HandSolder": {
+   "classes": [
+    "led"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_1.8x2.6mm_P0.4mm_EP0.7x1.5mm": {
+   "classes": null,
+   "package": {
+    "body": "1.8x2.6",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_1.8x2.6mm_P0.4mm_EP0.7x1.5mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "1.8x2.6",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.45x1.45mm": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.45x1.45mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.675x1.675mm": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.75x1.75mm": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.75x1.75mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.9x1.9mm": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.9x1.9mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_5x5mm_P0.8mm_EP2.7x2.7mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-16-1EP_5x5mm_P0.8mm_EP2.7x2.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_3.5x3.5mm_P0.5mm_EP2x2mm": {
+   "classes": null,
+   "package": {
+    "body": "3.5x3.5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_3.5x3.5mm_P0.5mm_EP2x2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3.5x3.5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_3x4mm_P0.5mm_EP1.65x2.65mm": {
+   "classes": null,
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_3x4mm_P0.5mm_EP1.65x2.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.5x2.5mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.6x2.6mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.6x2.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.7x2.7mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.7x2.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x5mm_P0.5mm_EP2.65x3.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_4x5mm_P0.5mm_EP2.65x3.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_5x5mm_P0.65mm_EP3.35x3.35mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-20-1EP_5x5mm_P0.65mm_EP3.35x3.35mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_3x3mm_P0.4mm_EP1.75x1.6mm": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_3x3mm_P0.4mm_EP1.75x1.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_3x4mm_P0.4mm_EP1.65x2.65mm": {
+   "classes": null,
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_3x4mm_P0.4mm_EP1.65x2.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.15x2.15mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.15x2.15mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.65x2.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.65x2.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.75x2.75mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.75x2.75mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.6mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.7mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.8x2.8mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.8x2.8mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x5mm_P0.5mm_EP2.65x3.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x5mm_P0.5mm_EP2.65x3.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.25x3.25mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.25x3.25mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.2x3.2mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.2x3.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.4x3.4mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.4x3.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.6x3.6mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-24-1EP_5x5mm_P0.65mm_EP3.6x3.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_3x6mm_P0.5mm_EP1.7x4.75mm": {
+   "classes": null,
+   "package": {
+    "body": "3x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_3x6mm_P0.5mm_EP1.7x4.75mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "3x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_4x5mm_P0.5mm_EP2.65x3.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_4x5mm_P0.5mm_EP2.65x3.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP2.7x2.7mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP2.7x2.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.1x3.1mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.1x3.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.25x3.25mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.25x3.25mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.35x3.35mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.35x3.35mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.75x3.75mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x5mm_P0.5mm_EP3.75x3.75mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x6mm_P0.5mm_EP3.65x4.65mm": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_5x6mm_P0.5mm_EP3.65x4.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_6x6mm_P0.65mm_EP4.25x4.25mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_6x6mm_P0.65mm_EP4.25x4.25mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_6x6mm_P0.65mm_EP4.8x4.8mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-28-1EP_6x6mm_P0.65mm_EP4.8x4.8mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_4x4mm_P0.4mm_EP2.65x2.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_4x4mm_P0.4mm_EP2.65x2.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_4x4mm_P0.4mm_EP2.9x2.9mm": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_4x4mm_P0.4mm_EP2.9x2.9mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.1x3.1mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.1x3.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.3x3.3mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.3x3.3mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.65x3.65mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.65x3.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.6x3.6mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.6x3.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.7x3.7mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.7x3.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_7x7mm_P0.65mm_EP4.65x4.65mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_7x7mm_P0.65mm_EP4.65x4.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_7x7mm_P0.65mm_EP4.7x4.7mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_7x7mm_P0.65mm_EP4.7x4.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_7x7mm_P0.65mm_EP5.4x5.4mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-32-1EP_7x7mm_P0.65mm_EP5.4x5.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_5x6mm_P0.5mm_EP3.6x4.1mm": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_5x6mm_P0.5mm_EP3.6x4.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_5x6mm_P0.5mm_EP3.6x4.6mm": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_5x6mm_P0.5mm_EP3.6x4.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_6x6mm_P0.5mm_EP3.7x3.7mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_6x6mm_P0.5mm_EP3.7x3.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_6x6mm_P0.5mm_EP4.1x4.1mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-36-1EP_6x6mm_P0.5mm_EP4.1x4.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-38-1EP_4x6mm_P0.4mm_EP2.65x4.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4x6",
+    "family": "quad-flat-no-lead",
+    "pins": 38
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-38-1EP_4x6mm_P0.4mm_EP2.65x4.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "4x6",
+    "family": "quad-flat-no-lead",
+    "pins": 38
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-40-1EP_5x5mm_P0.4mm_EP3.6x3.6mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-40-1EP_5x5mm_P0.4mm_EP3.6x3.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-40-1EP_5x5mm_P0.4mm_EP3.8x3.8mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-40-1EP_5x5mm_P0.4mm_EP3.8x3.8mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-40-1EP_6x6mm_P0.5mm_EP4.6x4.6mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-40-1EP_6x6mm_P0.5mm_EP4.6x4.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-42-1EP_5x6mm_P0.4mm_EP3.7x4.7mm": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 42
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-42-1EP_5x6mm_P0.4mm_EP3.7x4.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 42
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_7x7mm_P0.5mm_EP5.15x5.15mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_7x7mm_P0.5mm_EP5.15x5.15mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_7x7mm_P0.5mm_EP5.2x5.2mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_7x7mm_P0.5mm_EP5.2x5.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_8x8mm_P0.65mm_EP6.45x6.45mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_8x8mm_P0.65mm_EP6.45x6.45mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_9x9mm_P0.65mm_EP7.5x7.5mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-44-1EP_9x9mm_P0.65mm_EP7.5x7.5mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_5x5mm_P0.35mm_EP3.7x3.7mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_5x5mm_P0.35mm_EP3.7x3.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.2x4.2mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.2x4.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.3x4.3mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.3x4.3mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.4x4.4mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.4x4.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.66x4.66mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.66x4.66mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.6x4.6mm": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.6x4.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP3.5x3.5mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP3.5x3.5mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.15x5.15mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.1x5.1mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.1x5.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.3x5.3mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.3x5.3mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.45x5.45mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.45x5.45mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.6x5.6mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.6x5.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.7x5.7mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.7x5.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_8x8mm_P0.5mm_EP6.2x6.2mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-48-1EP_8x8mm_P0.5mm_EP6.2x6.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-52-1EP_7x8mm_P0.5mm_EP5.41x6.45mm": {
+   "classes": null,
+   "package": {
+    "body": "7x8",
+    "family": "quad-flat-no-lead",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-52-1EP_7x8mm_P0.5mm_EP5.41x6.45mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x8",
+    "family": "quad-flat-no-lead",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP5.6x5.6mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP5.6x5.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP4.3x4.3mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP4.3x4.3mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP4.5x5.2mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP4.5x5.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP5.6x5.6mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP5.6x5.6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP5.9x5.9mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP5.9x5.9mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP6.1x6.1mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-56-1EP_8x8mm_P0.5mm_EP6.1x6.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-60-1EP_7x7mm_P0.4mm_EP3.4x3.4mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 60
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-60-1EP_7x7mm_P0.4mm_EP3.4x3.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 60
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_8x8mm_P0.4mm_EP6.5x6.5mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_8x8mm_P0.4mm_EP6.5x6.5mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP3.4x3.4mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP3.4x3.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP3.8x3.8mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP3.8x3.8mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP4.1x4.1mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP4.1x4.1mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP4.35x4.35mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP4.35x4.35mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP4.7x4.7mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP4.7x4.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.2x5.2mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.2x5.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.45x5.45mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.45x5.45mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.4x5.4mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.4x5.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.7x5.7mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP5.7x5.7mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP6x6mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP6x6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.15x7.15mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.15x7.15mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.25x7.25mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.35x7.35mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.3x7.3mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.3x7.3mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.5x7.5mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.5x7.5mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.65x7.65mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-64-1EP_9x9mm_P0.5mm_EP7.65x7.65mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-68-1EP_8x8mm_P0.4mm_EP5.2x5.2mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-68-1EP_8x8mm_P0.4mm_EP5.2x5.2mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-72-1EP_10x10mm_P0.5mm_EP6x6mm": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 72
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-72-1EP_10x10mm_P0.5mm_EP6x6mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 72
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-76-1EP_9x9mm_P0.4mm_EP3.8x3.8mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-76-1EP_9x9mm_P0.4mm_EP3.8x3.8mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-76-1EP_9x9mm_P0.4mm_EP5.81x6.31mm": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-76-1EP_9x9mm_P0.4mm_EP5.81x6.31mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-8-1EP_6x5mm_P1.27mm_EP3.4x4.2mm": {
+   "classes": null,
+   "package": {
+    "body": "6x5",
+    "family": "quad-flat-no-lead",
+    "pins": 8
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "Package_DFN_QFN:QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm_ThermalVias": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-100_14x14mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 100
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-128_14x14mm_P0.4mm": {
+   "classes": null,
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 128
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-128_14x20mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "14x20",
+    "family": "quad-flat",
+    "pins": 128
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-144_20x20mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "20x20",
+    "family": "quad-flat",
+    "pins": 144
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-160_24x24mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "24x24",
+    "family": "quad-flat",
+    "pins": 160
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-176_20x20mm_P0.4mm": {
+   "classes": null,
+   "package": {
+    "body": "20x20",
+    "family": "quad-flat",
+    "pins": 176
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-176_24x24mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "24x24",
+    "family": "quad-flat",
+    "pins": 176
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-208_28x28mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "28x28",
+    "family": "quad-flat",
+    "pins": 208
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-216_24x24mm_P0.4mm": {
+   "classes": null,
+   "package": {
+    "body": "24x24",
+    "family": "quad-flat",
+    "pins": 216
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-32_5x5mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-32_7x7mm_P0.8mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-36_7x7mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-44_10x10mm_P0.8mm": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-48_7x7mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-52_10x10mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-52_14x14mm_P1mm": {
+   "classes": null,
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-64_10x10mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-64_14x14mm_P0.8mm": {
+   "classes": null,
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-64_7x7mm_P0.4mm": {
+   "classes": null,
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-80_10x10mm_P0.4mm": {
+   "classes": null,
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-80_12x12mm_P0.5mm": {
+   "classes": null,
+   "package": {
+    "body": "12x12",
+    "family": "quad-flat",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "Package_QFP:LQFP-80_14x14mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm": {
+   "classes": null,
+   "package": {
+    "body": "3.9x8.7",
+    "family": "gull-wing-dual",
+    "pins": 14
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm": {
+   "classes": null,
+   "package": {
+    "body": "3.9x9.9",
+    "family": "gull-wing-dual",
+    "pins": 16
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm": {
+   "classes": null,
+   "package": {
+    "body": "3.9x4.9",
+    "family": "gull-wing-dual",
+    "pins": 8
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:TSSOP-14_4.4x5mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4.4x5",
+    "family": "gull-wing-dual",
+    "pins": 14
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:TSSOP-16_4.4x5mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4.4x5",
+    "family": "gull-wing-dual",
+    "pins": 16
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4.4x6.5",
+    "family": "gull-wing-dual",
+    "pins": 20
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4.4x7.8",
+    "family": "gull-wing-dual",
+    "pins": 24
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:TSSOP-28_4.4x9.7mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4.4x9.7",
+    "family": "gull-wing-dual",
+    "pins": 28
+   },
+   "rule": "gull-wing"
+  },
+  "Package_SO:TSSOP-8_4.4x3mm_P0.65mm": {
+   "classes": null,
+   "package": {
+    "body": "4.4x3",
+    "family": "gull-wing-dual",
+    "pins": 8
+   },
+   "rule": "gull-wing"
+  },
+  "Package_TO_SOT_SMD:SOT-23": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "Package_TO_SOT_SMD:SOT-23-3": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "Package_TO_SOT_SMD:SOT-23-5": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 5
+   },
+   "rule": "named-sot23"
+  },
+  "Package_TO_SOT_SMD:SOT-23-5_HandSoldering": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 5
+   },
+   "rule": "named-sot23"
+  },
+  "Package_TO_SOT_SMD:SOT-23-6": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 6
+   },
+   "rule": "named-sot23"
+  },
+  "Package_TO_SOT_SMD:SOT-23-6_Handsoldering": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 6
+   },
+   "rule": "named-sot23"
+  },
+  "Package_TO_SOT_SMD:SOT-23_Handsoldering": {
+   "classes": null,
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "Resistor_SMD:R_0201_0603Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0201_0603Metric_Pad0.64x0.40mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0402_1005Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0402_1005Metric_Pad0.72x0.64mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0603_1608Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0805_2012Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_1206_3216Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_1210_3225Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_1210_3225Metric_Pad1.30x2.65mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_1812_4532Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_1812_4532Metric_Pad1.30x3.40mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_2010_5025Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_2010_5025Metric_Pad1.40x2.65mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_2512_6332Metric": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "Resistor_SMD:R_2512_6332Metric_Pad1.40x3.35mm_HandSolder": {
+   "classes": [
+    "resistor"
+   ],
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  }
+ },
+ "packages": {
+  "0201": {
+   "package": {
+    "body": "0201",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "0402": {
+   "package": {
+    "body": "0402",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "0603": {
+   "package": {
+    "body": "0603",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "0805": {
+   "package": {
+    "body": "0805",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "1206": {
+   "package": {
+    "body": "1206",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "1210": {
+   "package": {
+    "body": "1210",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "1812": {
+   "package": {
+    "body": "1812",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "2010": {
+   "package": {
+    "body": "2010",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "2512": {
+   "package": {
+    "body": "2512",
+    "family": "chip",
+    "pins": 2
+   },
+   "rule": "chip-imperial"
+  },
+  "LQFP-100(14x14)": {
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 100
+   },
+   "rule": "body-size"
+  },
+  "LQFP-128(14x14)": {
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 128
+   },
+   "rule": "body-size"
+  },
+  "LQFP-128(14x20)": {
+   "package": {
+    "body": "14x20",
+    "family": "quad-flat",
+    "pins": 128
+   },
+   "rule": "body-size"
+  },
+  "LQFP-144(20x20)": {
+   "package": {
+    "body": "20x20",
+    "family": "quad-flat",
+    "pins": 144
+   },
+   "rule": "body-size"
+  },
+  "LQFP-160(24x24)": {
+   "package": {
+    "body": "24x24",
+    "family": "quad-flat",
+    "pins": 160
+   },
+   "rule": "body-size"
+  },
+  "LQFP-176(20x20)": {
+   "package": {
+    "body": "20x20",
+    "family": "quad-flat",
+    "pins": 176
+   },
+   "rule": "body-size"
+  },
+  "LQFP-176(24x24)": {
+   "package": {
+    "body": "24x24",
+    "family": "quad-flat",
+    "pins": 176
+   },
+   "rule": "body-size"
+  },
+  "LQFP-208(28x28)": {
+   "package": {
+    "body": "28x28",
+    "family": "quad-flat",
+    "pins": 208
+   },
+   "rule": "body-size"
+  },
+  "LQFP-216(24x24)": {
+   "package": {
+    "body": "24x24",
+    "family": "quad-flat",
+    "pins": 216
+   },
+   "rule": "body-size"
+  },
+  "LQFP-32(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "LQFP-32(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "LQFP-36(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "LQFP-44(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "LQFP-48(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "LQFP-52(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "LQFP-52(14x14)": {
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "LQFP-64(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "LQFP-64(14x14)": {
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "LQFP-64(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "LQFP-80(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "LQFP-80(12x12)": {
+   "package": {
+    "body": "12x12",
+    "family": "quad-flat",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "LQFP-80(14x14)": {
+   "package": {
+    "body": "14x14",
+    "family": "quad-flat",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "QFN-16(1.8x2.6)": {
+   "package": {
+    "body": "1.8x2.6",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "QFN-16(3x3)": {
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "QFN-16(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "QFN-20(3.5x3.5)": {
+   "package": {
+    "body": "3.5x3.5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "QFN-20(3x4)": {
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "QFN-20(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "QFN-20(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "QFN-20(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "QFN-24(3x3)": {
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "QFN-24(3x4)": {
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "QFN-24(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "QFN-24(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "QFN-24(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "QFN-28(3x6)": {
+   "package": {
+    "body": "3x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "QFN-28(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "QFN-28(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "QFN-28(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "QFN-28(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "QFN-32(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "QFN-32(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "QFN-32(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "QFN-36(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "QFN-36(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "QFN-38(4x6)": {
+   "package": {
+    "body": "4x6",
+    "family": "quad-flat-no-lead",
+    "pins": 38
+   },
+   "rule": "body-size"
+  },
+  "QFN-40(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "QFN-40(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "QFN-42(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 42
+   },
+   "rule": "body-size"
+  },
+  "QFN-44(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "QFN-44(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "QFN-44(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "QFN-48(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "QFN-48(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "QFN-48(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "QFN-48(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "QFN-52(7x8)": {
+   "package": {
+    "body": "7x8",
+    "family": "quad-flat-no-lead",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "QFN-56(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "QFN-56(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "QFN-60(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 60
+   },
+   "rule": "body-size"
+  },
+  "QFN-64(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "QFN-64(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "QFN-68(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "QFN-72(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 72
+   },
+   "rule": "body-size"
+  },
+  "QFN-76(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "QFN-8(6x5)": {
+   "package": {
+    "body": "6x5",
+    "family": "quad-flat-no-lead",
+    "pins": 8
+   },
+   "rule": "body-size"
+  },
+  "QFN-80(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "SOIC-14": {
+   "package": {
+    "body": "3.9x8.7",
+    "family": "gull-wing-dual",
+    "pins": 14
+   },
+   "rule": "gull-wing"
+  },
+  "SOIC-16": {
+   "package": {
+    "body": "3.9x9.9",
+    "family": "gull-wing-dual",
+    "pins": 16
+   },
+   "rule": "gull-wing"
+  },
+  "SOIC-8": {
+   "package": {
+    "body": "3.9x4.9",
+    "family": "gull-wing-dual",
+    "pins": 8
+   },
+   "rule": "gull-wing"
+  },
+  "SOT-23": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-23-3": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-23-3L": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-23-5": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 5
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-23-5L": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 5
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-23-6": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 6
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-23-6L": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 6
+   },
+   "rule": "named-sot23"
+  },
+  "SOT-25-5": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 5
+   },
+   "rule": "named-sot23"
+  },
+  "TO-236-3(SOT-23-3)": {
+   "package": {
+    "body": null,
+    "family": "sot-23",
+    "pins": 3
+   },
+   "rule": "named-sot23"
+  },
+  "TSSOP-14": {
+   "package": {
+    "body": "4.4x5",
+    "family": "gull-wing-dual",
+    "pins": 14
+   },
+   "rule": "gull-wing"
+  },
+  "TSSOP-16": {
+   "package": {
+    "body": "4.4x5",
+    "family": "gull-wing-dual",
+    "pins": 16
+   },
+   "rule": "gull-wing"
+  },
+  "TSSOP-20": {
+   "package": {
+    "body": "4.4x6.5",
+    "family": "gull-wing-dual",
+    "pins": 20
+   },
+   "rule": "gull-wing"
+  },
+  "TSSOP-24": {
+   "package": {
+    "body": "4.4x7.8",
+    "family": "gull-wing-dual",
+    "pins": 24
+   },
+   "rule": "gull-wing"
+  },
+  "TSSOP-28": {
+   "package": {
+    "body": "4.4x9.7",
+    "family": "gull-wing-dual",
+    "pins": 28
+   },
+   "rule": "gull-wing"
+  },
+  "TSSOP-8": {
+   "package": {
+    "body": "4.4x3",
+    "family": "gull-wing-dual",
+    "pins": 8
+   },
+   "rule": "gull-wing"
+  },
+  "UFQFPN-16(1.8x2.6)": {
+   "package": {
+    "body": "1.8x2.6",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-16(3x3)": {
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-16(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-20(3.5x3.5)": {
+   "package": {
+    "body": "3.5x3.5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-20(3x4)": {
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-20(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-20(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-20(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-24(3x3)": {
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-24(3x4)": {
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-24(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-24(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-24(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-28(3x6)": {
+   "package": {
+    "body": "3x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-28(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-28(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-28(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-28(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-32(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-32(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-32(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-36(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-36(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-38(4x6)": {
+   "package": {
+    "body": "4x6",
+    "family": "quad-flat-no-lead",
+    "pins": 38
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-40(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-40(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-42(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 42
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-44(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-44(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-44(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-48(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-48(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-48(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-48(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-52(7x8)": {
+   "package": {
+    "body": "7x8",
+    "family": "quad-flat-no-lead",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-56(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-56(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-60(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 60
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-64(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-64(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-68(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-72(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 72
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-76(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-8(6x5)": {
+   "package": {
+    "body": "6x5",
+    "family": "quad-flat-no-lead",
+    "pins": 8
+   },
+   "rule": "body-size"
+  },
+  "UFQFPN-80(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 80
+   },
+   "rule": "body-size"
+  },
+  "VQFN-16(1.8x2.6)": {
+   "package": {
+    "body": "1.8x2.6",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "VQFN-16(3x3)": {
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "VQFN-16(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 16
+   },
+   "rule": "body-size"
+  },
+  "VQFN-20(3.5x3.5)": {
+   "package": {
+    "body": "3.5x3.5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "VQFN-20(3x4)": {
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "VQFN-20(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "VQFN-20(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "VQFN-20(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 20
+   },
+   "rule": "body-size"
+  },
+  "VQFN-24(3x3)": {
+   "package": {
+    "body": "3x3",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "VQFN-24(3x4)": {
+   "package": {
+    "body": "3x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "VQFN-24(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "VQFN-24(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "VQFN-24(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 24
+   },
+   "rule": "body-size"
+  },
+  "VQFN-28(3x6)": {
+   "package": {
+    "body": "3x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "VQFN-28(4x5)": {
+   "package": {
+    "body": "4x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "VQFN-28(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "VQFN-28(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "VQFN-28(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 28
+   },
+   "rule": "body-size"
+  },
+  "VQFN-32(4x4)": {
+   "package": {
+    "body": "4x4",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "VQFN-32(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "VQFN-32(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 32
+   },
+   "rule": "body-size"
+  },
+  "VQFN-36(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "VQFN-36(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 36
+   },
+   "rule": "body-size"
+  },
+  "VQFN-38(4x6)": {
+   "package": {
+    "body": "4x6",
+    "family": "quad-flat-no-lead",
+    "pins": 38
+   },
+   "rule": "body-size"
+  },
+  "VQFN-40(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "VQFN-40(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 40
+   },
+   "rule": "body-size"
+  },
+  "VQFN-42(5x6)": {
+   "package": {
+    "body": "5x6",
+    "family": "quad-flat-no-lead",
+    "pins": 42
+   },
+   "rule": "body-size"
+  },
+  "VQFN-44(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "VQFN-44(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "VQFN-44(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 44
+   },
+   "rule": "body-size"
+  },
+  "VQFN-48(5x5)": {
+   "package": {
+    "body": "5x5",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "VQFN-48(6x6)": {
+   "package": {
+    "body": "6x6",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "VQFN-48(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "VQFN-48(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 48
+   },
+   "rule": "body-size"
+  },
+  "VQFN-52(7x8)": {
+   "package": {
+    "body": "7x8",
+    "family": "quad-flat-no-lead",
+    "pins": 52
+   },
+   "rule": "body-size"
+  },
+  "VQFN-56(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "VQFN-56(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 56
+   },
+   "rule": "body-size"
+  },
+  "VQFN-60(7x7)": {
+   "package": {
+    "body": "7x7",
+    "family": "quad-flat-no-lead",
+    "pins": 60
+   },
+   "rule": "body-size"
+  },
+  "VQFN-64(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "VQFN-64(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 64
+   },
+   "rule": "body-size"
+  },
+  "VQFN-68(8x8)": {
+   "package": {
+    "body": "8x8",
+    "family": "quad-flat-no-lead",
+    "pins": 68
+   },
+   "rule": "body-size"
+  },
+  "VQFN-72(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 72
+   },
+   "rule": "body-size"
+  },
+  "VQFN-76(9x9)": {
+   "package": {
+    "body": "9x9",
+    "family": "quad-flat-no-lead",
+    "pins": 76
+   },
+   "rule": "body-size"
+  },
+  "VQFN-8(6x5)": {
+   "package": {
+    "body": "6x5",
+    "family": "quad-flat-no-lead",
+    "pins": 8
+   },
+   "rule": "body-size"
+  },
+  "VQFN-80(10x10)": {
+   "package": {
+    "body": "10x10",
+    "family": "quad-flat-no-lead",
+    "pins": 80
+   },
+   "rule": "body-size"
+  }
+ },
+ "rules": {
+  "body-size": "QFN/QFP by terminal family, lead count and explicit body WxL; pitch and exposed pad are not compared.",
+  "chip-imperial": "Two-terminal chip by EIA imperial code; footprint library fixes the component class.",
+  "gull-wing": "SOIC/TSSOP by lead count with the JEDEC body width, length and pitch for that name.",
+  "named-sot23": "SOT-23 outline by explicit name and lead count; lead counts are never crossed."
+ },
+ "schema": "agent-ee.package-map/1",
+ "version": "kicad-10.0.7-lcsc-1"
+}

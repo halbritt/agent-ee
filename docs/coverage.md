@@ -12,6 +12,7 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); checks declared symbol-pin/pad parity, not correspondence to the actual schematic inventory or physical fit. |
 | `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |
 | `netlist_extra` | [Captured direct-net topology](netlist-extra.md) for exact declared two-terminal classes and anchored rail pairs; hierarchical basename islands are informational. |
+| `package_consistency` | [Footprint against pinned catalog package names](package-consistency.md) through a captured, hashed mapping table; unmapped names are unknown, class mismatch follows explicit policy; no land-pattern geometry. |
 | `netclass_completeness` | [Captured Default netclass field presence](netclass-completeness.md), qualified for KiCad 10.0.7 settings schema 5; no value or rendering validation. |
 | `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
 | `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |

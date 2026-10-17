@@ -21,6 +21,7 @@ product's hardware qualification.
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
+| Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |

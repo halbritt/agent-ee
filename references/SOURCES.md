@@ -20,6 +20,10 @@ requirements or replace native design evidence.
   supply/temperature conditions for a 45–65 Ω load (also a separate 45–70 Ω row).
   This is a characterization condition, not a damage threshold. It does not
   establish the donor's fitted termination or prove an assembled bus will fail.
+- LCSC/JLCPCB public product pages for C1525, C14663, C9055, C51118, C20917,
+  C7593 and C1340704, read 2026-10-17. Only their package strings are recorded,
+  in the [package map](package-map/kicad-10.0.7-lcsc-1.json) observations. They
+  qualify those examples, not a full catalog feed.
 
 For the carrier baseline, fitted state must be checked against native `dnp`
 properties and the saved board. A resistor's nominal value and connectivity

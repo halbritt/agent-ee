@@ -135,6 +135,9 @@ before comparison. Exact instance connectivity catches exchanges that collapsed
 part labels can miss; ambiguous correspondence and search exhaustion remain unknown.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs. Neither check establishes electrical adequacy.
+The [package consistency check](docs/package-consistency.md) compares each
+footprint with its LCSC part's package in a pinned catalog through a captured
+mapping table. Unmapped names are unknown; land-pattern geometry is not compared.
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
