@@ -41,3 +41,36 @@ Seeded variants (all must refuse pass):
 - J1 on PinHeader_1x05 -> defect (extra pad 5 and connector count).
 - captured library drift after declaration -> failed/unknown.
 - duplicate native footprint XML elements (either order) -> malformed.
+
+Occurrence identity (repair, written before the resolver change). Owned
+`kicad-cli` 10.0.7 probes: for one occurrence path, the last instance entry
+wins whatever its project name; entries at paths outside the design's
+hierarchy are ignored when the occurrence has its own entry; an occurrence
+with no entry of its own takes another entry's reference; `#` omission follows
+the selected reference. Project names, and a `.kicad_pro`, change nothing.
+Binding must therefore resolve each actual (sheet occurrence, symbol UUID)
+from the captured hierarchy and the native identities, never a union of every
+instance entry:
+- archived-alias: every root symbol also has an archived project entry at
+  another root's path (`#PWR01` alias `#GHOST`) -> control declaration pass;
+  `#PWR01` declared -> excluded, pass; `#GHOST` declared -> ghost_declaration,
+  defect (never excluded).
+- archived-same-path (archived `#GHOST` after `#PWR01` at the current path) and
+  archived-same-path-first (before) -> occurrence identity ambiguous ->
+  unsupported/unknown whichever of the two is declared.
+- archived-same-path-exported (`PW9` after `#PWR01` at the current path): the
+  exporter exports PW9 -> undeclared PW9 unknown; `#PWR01` is not excluded.
+- reference-property-alias: `#PWR01`'s Reference property says `#GHOST`; the
+  exporter uses the instance entry (ordinary-reference probes never export the
+  property when an entry exists) -> `#GHOST` declared defect, `#PWR01` excluded.
+- Two distinct omitted symbols resolving to the same `#` reference ->
+  unsupported/unknown, never an overwritten exclusion.
+- hierarchy: child sheet used twice, R11/R12 and `#PWR11`/`#PWR12` -> R11 and
+  R12 declared pass; also declaring both power references -> excluded, pass.
+- hierarchy-duplicate (`#PWR11` in both occurrences) and hierarchy-missing
+  (no entry for the second occurrence) -> unsupported/unknown.
+- hierarchy-archived (child also lists another root's occurrences, `R99` and
+  `#GHOST`) -> pass; `#GHOST` declared -> ghost_declaration, defect.
+- Native component identity not found in the captured hierarchy, a captured
+  non-`#` occurrence missing from native, or native sheets differing from the
+  captured hierarchy -> unsupported/unknown.

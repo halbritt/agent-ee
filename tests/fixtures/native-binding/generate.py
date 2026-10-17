@@ -139,25 +139,84 @@ def _embedded(variant):
     return ''.join(out)
 
 
+# A sheet reused from another project keeps that project's occurrence paths.
+ARCHIVED_ROOT = uid('archived-root')
+SHEETS = (('a', uid('sheet-a')), ('b', uid('sheet-b')))
+CHILD = 'sheets/child.kicad_sch'
+
+
+def _instances(entries):
+    return '(instances ' + ''.join(
+        f'(project "{project}" ' + ''.join(f'(path "{path}" (reference "{ref}") (unit {unit}))'
+                                           for path, ref, unit in paths) + ')'
+        for project, paths in entries) + ')'
+
+
+def _root_entries(ref, unit, variant):
+    """Instance data of a root-sheet symbol: the current project, plus archived aliases."""
+    current = ('binding', [(f'/{uid("root")}', ref, unit)])
+    if variant == 'archived-alias':
+        alias = '#GHOST' if ref.startswith('#') else 'Z' + ref
+        return [current, ('archived', [(f'/{ARCHIVED_ROOT}', alias, unit)])]
+    if ref == '#PWR01' and variant.startswith('archived-same-path'):
+        alias = 'PW9' if variant == 'archived-same-path-exported' else '#GHOST'
+        archived = ('archived', [(f'/{uid("root")}', alias, unit)])
+        return [archived, current] if variant == 'archived-same-path-first' else [current, archived]
+    return [current]
+
+
+def _symbol(ref, symbol, fp, flags, unit, x, entries, shown=None):
+    in_bom, on_board, dnp = flags
+    numbers = {'Dual': ['1', '2', '5']}.get(symbol) or sorted(
+        {p[0] for _, pins in SYMBOLS['Tri' if symbol == 'Child' else symbol] for p in pins})
+    pins = ''.join(f'(pin "{n}" (uuid "{uid(ref + n)}"))' for n in numbers)
+    return (f'(symbol (lib_id "Owned:{symbol}") (at {x} 50 0) (unit {unit}) (in_bom {in_bom}) '
+            f'(on_board {on_board}) (dnp {dnp}) (uuid "{uid(ref)}")' + prop('Reference', shown or ref) +
+            prop('Value', symbol) + prop('Footprint', fp) + pins + _instances(entries) + ')')
+
+
+def _sheet_file(uuid, body, variant='control'):
+    return (f'(kicad_sch (version 20250114) (generator "eeschema") (uuid "{uuid}") '
+            f'(paper "A4") (lib_symbols {_embedded(variant)}) {body})\n')
+
+
 def schematic(variant='control'):
-    pin_numbers = {n: sorted({p[0] for _, pins in u for p in pins}) for n, u in SYMBOLS.items()}
-    pin_numbers['Child'] = pin_numbers['Tri']
-    symbols = []
-    for index, (ref, symbol, fp, (in_bom, on_board, dnp), unit) in enumerate(parts(variant)):
-        x = 20 + index * 20
-        numbers = pin_numbers[symbol]
-        if symbol == 'Dual':
-            numbers = ['1', '2', '5']
-        pins = ''.join(f'(pin "{n}" (uuid "{uid(ref + n)}"))' for n in numbers)
-        symbols.append(
-            f'(symbol (lib_id "Owned:{symbol}") (at {x} 50 0) (unit {unit}) (in_bom {in_bom}) '
-            f'(on_board {on_board}) (dnp {dnp}) (uuid "{uid(ref)}")' + prop('Reference', ref) +
-            prop('Value', symbol) + prop('Footprint', fp) + pins +
-            f'(instances (project "binding" (path "/{uid("root")}" (reference "{ref}") (unit {unit})))))')
-    return (f'(kicad_sch (version 20250114) (generator "eeschema") (uuid "{uid("root")}") '
-            f'(paper "A4") (lib_symbols {_embedded(variant)}) {"".join(symbols)})\n')
+    # reference-property-alias: the Reference property disagrees with the instance entry.
+    shown = {'#PWR01': '#GHOST'} if variant == 'reference-property-alias' else {}
+    symbols = [_symbol(ref, symbol, fp, flags, unit, 20 + index * 20, _root_entries(ref, unit, variant),
+                       shown.get(ref))
+               for index, (ref, symbol, fp, flags, unit) in enumerate(parts(variant))]
+    return _sheet_file(uid('root'), ''.join(symbols), variant)
+
+
+def hierarchy(variant='hierarchy'):
+    """Root control sheet with CHILD instantiated twice, as sheets a and b.
+
+    The child holds R (R11/R12) and a GND power symbol (#PWR11/#PWR12).
+    """
+    root = schematic().rstrip()[:-1]
+    for index, (name, sheet) in enumerate(SHEETS):
+        root += (f'(sheet (at {50 + 60 * index} 100) (size 30 20) (stroke (width 0) (type default)) '
+                 f'(fill (color 0 0 0 0)) (uuid "{sheet}")' + prop('Sheetname', name) +
+                 prop('Sheetfile', CHILD) +
+                 f'(instances (project "binding" (path "/{uid("root")}" (page "{index + 2}")))))')
+    paths = [f'/{uid("root")}/{sheet}' for _, sheet in SHEETS]
+    power = {'hierarchy-duplicate': ['#PWR11', '#PWR11'], 'hierarchy-missing': ['#PWR11']}.get(
+        variant, ['#PWR11', '#PWR12'])
+    resistor = [('binding', [(p, r, 1) for p, r in zip(paths, ['R11', 'R12'])])]
+    ground = [('binding', [(p, r, 1) for p, r in zip(paths, power)])]
+    if variant == 'hierarchy-archived':
+        archived = [f'/{ARCHIVED_ROOT}/{sheet}' for _, sheet in SHEETS]
+        resistor.append(('archived', [(p, 'R99', 1) for p in archived]))
+        ground.append(('archived', [(p, '#GHOST', 1) for p in archived]))
+    body = (_symbol('R11', 'R', 'Owned:R2', ('yes', 'yes', 'no'), 1, 20, resistor) +
+            _symbol('#PWR11', 'GND', '', ('yes', 'yes', 'no'), 1, 60, ground))
+    return {'binding.kicad_sch': root + ')\n', CHILD: _sheet_file(uid('child'), body)}
 
 
 VARIANTS = ('control', 'pin4', 'pin4-corrected', 'extra-native', 'footprint-edit', 'shared-bad',
             'empty-footprint', 'absent-footprint', 'embedded-retyped', 'embedded-extra-pin',
-            'virtual-nonpower', 'power-exported', 'connector-1x5')
+            'virtual-nonpower', 'power-exported', 'connector-1x5', 'archived-alias',
+            'archived-same-path', 'archived-same-path-first', 'archived-same-path-exported',
+            'reference-property-alias')
+HIERARCHY_VARIANTS = ('hierarchy', 'hierarchy-duplicate', 'hierarchy-missing', 'hierarchy-archived')

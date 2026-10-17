@@ -39,8 +39,8 @@ stays immutable; the declaration must repeat it exactly.
 2. The sandbox runs `python3 -m agent_ee.native_binding`. It reads the XML only
    through the strict [netlist parity](netlist-parity.md) reader
    (`native_netlist.read_native_inventory`). It reads captured libraries,
-   footprints and schematic sheets by explicit path. No network, model or host
-   library is used.
+   footprints and every hierarchy sheet (root first) by explicit path. No
+   network, model or host library is used.
 3. The coordinator requires the report's `native_xml_sha256` to equal the
    retained XML, and checks the report's sheet inventory against the producer.
    The report and the XML are sealed with the check.
@@ -58,12 +58,56 @@ netlist`, XML and PCB-side formats):
 | Reference starting with `#` | The exporter omits it from XML and PCB netlists, power or not. |
 | Power symbol with another reference | Exported and placed on the PCB. Footprint parity is required. |
 
-Omitted `#` instances are audited from the captured sheets with the shared
-S-expression reader. Each is excluded only when its embedded definition (the
-one KiCad exports from) carries `(power)`. A non-power omitted instance leaves
-board scope unproved: `unsupported`, outcome `unknown`. A captured library's
-`power` or `on_board` flag is recorded but never excludes an exported board
-instance. No reference prefix exempts an exported component.
+Omitted `#` occurrences are audited from the captured sheets with the shared
+S-expression reader (see [Occurrence identity](#occurrence-identity)). Each is
+excluded only when its embedded definition (the one KiCad exports from)
+carries `(power)`. A non-power omitted occurrence leaves board scope unproved:
+`unsupported`, outcome `unknown`. A captured library's `power` or `on_board`
+flag is recorded but never excludes an exported board instance. No reference
+prefix exempts an exported component.
+
+## Occurrence identity
+
+A symbol occurrence is one sheet instance path and one symbol UUID. Owned
+KiCad 10.0.7 exports, all with ordinary references so the choice is visible,
+showed how the exporter picks an occurrence's reference:
+
+| Instance data for the occurrence path | Exported reference |
+|---|---|
+| One entry | That entry |
+| Several entries (any projects, or one project) | The last one in file order. Project names and a `.kicad_pro` change nothing |
+| Entries only for paths outside this hierarchy | Another path's reference (in repeated sheets, a duplicate) |
+| No instance data | The `Reference` property |
+
+`#` omission follows the selected reference. Entries for paths outside the
+hierarchy are ignored when the occurrence has its own entry. The `Reference`
+property is not used when entries exist. A legacy `symbol_instances` block was
+ignored for this file version.
+
+The audit walks the hierarchy from the root sheet. Each child path is the
+parent path plus the sheet UUID. The native sheet `tstamps` are the same chain
+without the root UUID. It never takes the union of references. It never picks
+by project name or by entry order:
+
+| Condition | Finding |
+|---|---|
+| Exported occurrence | Native reference is authoritative; it must be one of the occurrence's own entries, if any, and must not begin with `#` (`occurrence_identity_conflict`) |
+| Omitted, one distinct `#` reference in its own entries | Resolved; excluded only if power |
+| Omitted, different references in its own entries (e.g. an archived project at the same path) | `ambiguous_occurrence_identity` |
+| Omitted, no entry of its own | `missing_occurrence_identity` |
+| Omitted, reference not beginning with `#` | `unexplained_omission` |
+| Two omitted occurrences resolve to one reference | `duplicate_occurrence_reference` |
+| Native component sheet/UUID not in the captured hierarchy | `native_identity_unmatched` |
+| Native sheets differ from the captured hierarchy | `hierarchy_mismatch` |
+| `symbol_instances` present | `legacy_symbol_instances` |
+
+Each of these leaves board scope unproved: `unsupported`, outcome `unknown`. A
+declared reference that matches no resolved occurrence is a
+`ghost_declaration`, never an exclusion. Archived aliases for another root are
+therefore neither exclusions nor problems. A captured sheet outside the
+hierarchy, a missing child sheet, a cycle, a duplicate symbol UUID or a
+malformed instance entry fails the audit (`failed`). Every record is retained
+in the report's `virtual_symbols`.
 
 ## Binding
 
@@ -121,8 +165,10 @@ the meaningful empty value.
 ## Limits
 
 Exporter rules are qualified only for KiCad 10.0.7 and the owned probes.
-Hierarchical designs follow the producer's sheet coverage. The omission audit
-looks only for `#` references; other exporter omissions are not known. This
+Hierarchical designs follow the producer's sheet coverage. Only `#` omissions
+are explained; any other captured occurrence missing from the export is
+unknown. Same-path instance entries with different references are refused even
+though the exporter picks the last one. This
 check establishes symbol/footprint pad and assembly parity for the native board
 inventory only. It does not choose packages or qualify land-pattern geometry,
 mechanical fit, datasheet conformance, placement or manufacturing.
