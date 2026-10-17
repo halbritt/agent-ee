@@ -1,0 +1,93 @@
+name: CI
+
+# The owner removed pull-request CI for this repository: pushes to main and
+# manual dispatch only. Consumer projects may call action.yml from any trigger.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Image, strict suite, docs and RC fixtures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      IMAGE: agent-ee:ci
+      # The three --security-opt relaxations are required for Bubblewrap inside
+      # the container; docs/container.md explains each. No container run needs network.
+      SANDBOX_OPTS: >-
+        --network none
+        --security-opt seccomp=unconfined
+        --security-opt apparmor=unconfined
+        --security-opt systempaths=unconfined
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the image from the checkout
+        run: docker build -t "$IMAGE" .
+
+      - name: Doctor (native toolchain versions and binary hashes)
+        run: |
+          docker run --rm $SANDBOX_OPTS "$IMAGE" agent-ee doctor --checks-only
+
+      - name: Full test suite, strict toolchain mode, no skips
+        run: |
+          docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 -e PYTHONPATH=src \
+            -w /opt/agent-ee "$IMAGE" python3 -c '
+          import sys, unittest
+          result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover("tests"))
+          if result.skipped:
+              print(f"strict CI refuses {len(result.skipped)} skipped test(s)", file=sys.stderr)
+          sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
+          '
+
+      - name: Documentation check
+        run: docker run --rm --network none -w /opt/agent-ee "$IMAGE" python3 scripts/check_docs.py
+
+      - name: RC control, checks-only (all checks must pass)
+        id: control
+        uses: ./
+        with:
+          scope: fixtures/rc/control.scope.json
+          output-directory: build/ci/rc-control
+          max-seconds: "900"
+          artifact-name: rc-control-run
+          image: ${{ env.IMAGE }}
+
+      - name: RC seeded defect, checks-only (expected to fail)
+        id: seeded
+        continue-on-error: true
+        uses: ./
+        with:
+          scope: fixtures/rc/seeded.scope.json
+          output-directory: build/ci/rc-seeded
+          max-seconds: "900"
+          artifact-name: rc-seeded-run
+          image: ${{ env.IMAGE }}
+
+      - name: Assert fixture verdicts from result.json
+        env:
+          CONTROL_VERDICT: ${{ steps.control.outputs.verdict }}
+          SEEDED_OUTCOME: ${{ steps.seeded.outcome }}
+          SEEDED_VERDICT: ${{ steps.seeded.outputs.verdict }}
+        run: |
+          set -euo pipefail
+          test "$CONTROL_VERDICT" = checks_passed
+          test "$SEEDED_OUTCOME" = failure
+          test "$SEEDED_VERDICT" = check_failed
+          workspace=$(realpath "$GITHUB_WORKSPACE")
+          gate() {
+            docker run --rm --network none --user "$(id -u):$(id -g)" -v "$workspace:$workspace" "$IMAGE" \
+              python3 /opt/agent-ee/scripts/action_gate.py "$@" > /dev/null
+          }
+          gate "$workspace/build/ci/rc-control" --expect checks_passed
+          # The seeded fixture must fail its functional check while every other check executes.
+          gate "$workspace/build/ci/rc-seeded" --expect check_failed --expect-check rc-step=defect \
+            --expect-check erc=pass --expect-check drc=pass --expect-check geometry=pass

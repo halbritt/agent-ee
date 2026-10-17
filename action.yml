@@ -1,0 +1,141 @@
+name: agent-ee checks-only review
+description: >-
+  Run agent-ee's native KiCad/ngspice checks on a declared scope inside the
+  agent-ee image, upload the run directory and judge the outcome from result.json.
+  No model review or adjudication is performed.
+
+inputs:
+  scope:
+    description: Scope JSON path, relative to the workspace or absolute inside it.
+    required: true
+  output-directory:
+    description: New run directory, relative to the workspace or absolute inside it. It must not exist.
+    required: false
+    default: agent-ee-run
+  max-seconds:
+    description: Review work budget in seconds (finite, 0 through 86400).
+    required: false
+    default: "1200"
+  artifact-name:
+    description: Name of the uploaded run-directory artifact.
+    required: false
+    default: agent-ee-run
+  image:
+    description: >-
+      Existing local image to use. When empty, the image is built from this
+      action's Dockerfile, which pins the toolchain.
+    required: false
+    default: ""
+
+outputs:
+  verdict:
+    description: checks_passed, check_failed, coverage_incomplete or result_invalid.
+    value: ${{ steps.gate.outputs.verdict }}
+  run-directory:
+    description: Absolute path of the run directory on the runner.
+    value: ${{ steps.review.outputs.run }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build agent-ee image
+      id: image
+      shell: bash
+      env:
+        INPUT_IMAGE: ${{ inputs.image }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        if [ -n "$INPUT_IMAGE" ]; then
+          printf 'image=%s\n' "$INPUT_IMAGE" >> "$GITHUB_OUTPUT"
+        else
+          docker build -t agent-ee-action:local "$ACTION_PATH"
+          printf 'image=agent-ee-action:local\n' >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run checks-only review
+      id: review
+      shell: bash
+      env:
+        IMAGE: ${{ steps.image.outputs.image }}
+        INPUT_SCOPE: ${{ inputs.scope }}
+        INPUT_OUT: ${{ inputs.output-directory }}
+        INPUT_MAX_SECONDS: ${{ inputs.max-seconds }}
+      run: |
+        # GitHub runs bash with -e; exit statuses here are recorded, not fatal.
+        set +e -uo pipefail
+        workspace=$(realpath "$GITHUB_WORKSPACE")
+        scope=$(realpath -m "$INPUT_SCOPE")
+        out=$(realpath -m "$INPUT_OUT")
+        for path in "$scope" "$out"; do
+          case "$path/" in "$workspace"/*) ;; *)
+            # Only the workspace is mounted into the container.
+            echo "::error::scope and output-directory must be inside the workspace: $path"
+            printf 'review_exit=2\nverify_exit=2\n' >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+        done
+        if [ -e "$out" ]; then
+          # Never judge or upload a result that this review did not produce.
+          echo "::error::output-directory already exists; each review needs a new directory: $out"
+          printf 'review_exit=2\nverify_exit=2\n' >> "$GITHUB_OUTPUT"; exit 0
+        fi
+        printf 'run=%s\n' "$out" >> "$GITHUB_OUTPUT"
+        # Bubblewrap inside the container needs the three --security-opt
+        # relaxations; see docs/container.md. The container user is the runner's
+        # unprivileged UID, and checks-only work needs no network at all.
+        run_image() {
+          docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            --security-opt systempaths=unconfined \
+            -v "$workspace:$workspace" -w "$workspace" "$IMAGE" "$@"
+        }
+        run_image agent-ee review "$scope" --out "$out" --checks-only --max-seconds "$INPUT_MAX_SECONDS"
+        review_exit=$?
+        verify_exit=2
+        if [ -f "$out/result.json" ]; then
+          run_image agent-ee verify "$out"
+          verify_exit=$?
+        fi
+        printf 'review_exit=%s\nverify_exit=%s\n' "$review_exit" "$verify_exit" >> "$GITHUB_OUTPUT"
+
+    - name: Judge result.json
+      id: gate
+      shell: bash
+      env:
+        IMAGE: ${{ steps.image.outputs.image }}
+        RUN_DIR: ${{ steps.review.outputs.run }}
+        REVIEW_EXIT: ${{ steps.review.outputs.review_exit }}
+        VERIFY_EXIT: ${{ steps.review.outputs.verify_exit }}
+      run: |
+        # GitHub runs bash with -e; exit statuses here are recorded, not fatal.
+        set +e -uo pipefail
+        workspace=$(realpath "$GITHUB_WORKSPACE")
+        summary="$RUNNER_TEMP/agent-ee-gate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RANDOM.md"
+        docker run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp \
+          -v "$workspace:$workspace" "$IMAGE" python3 /opt/agent-ee/scripts/action_gate.py "$RUN_DIR" \
+          --review-exit "$REVIEW_EXIT" --verify-exit "$VERIFY_EXIT" > "$summary"
+        gate_exit=$?
+        cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+        verdict=$(sed -n '1s/^## agent-ee checks-only gate: `\([a-z_]*\)`$/\1/p' "$summary")
+        printf 'verdict=%s\ngate_exit=%s\n' "${verdict:-result_invalid}" "$gate_exit" >> "$GITHUB_OUTPUT"
+
+    - name: Upload run directory
+      if: always() && steps.review.outputs.run != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.review.outputs.run }}
+        include-hidden-files: true
+        if-no-files-found: warn
+
+    - name: Fail on a check defect or incomplete coverage
+      shell: bash
+      env:
+        GATE_EXIT: ${{ steps.gate.outputs.gate_exit }}
+        VERDICT: ${{ steps.gate.outputs.verdict }}
+      run: |
+        if [ "$GATE_EXIT" != "0" ]; then
+          echo "::error::agent-ee checks-only verdict: ${VERDICT:-result_invalid} (see the job summary)"
+          exit 1
+        fi
+        echo "agent-ee checks-only verdict: $VERDICT"

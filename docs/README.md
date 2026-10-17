@@ -14,6 +14,7 @@ product's hardware qualification.
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Ingest bench samples and calibrate subsequent verification | [Bench feedback](bench-feedback.md) |
 | Install, authenticate, upgrade or remove links | [Installation](installation.md) |
+| Build the pinned image, run checks in CI or use the GitHub Action | [Container image and CI action](container.md) |
 | Run a review, investigate findings and verify a repair | [Operator guide](operator-guide.md) |
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |

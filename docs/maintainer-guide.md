@@ -28,8 +28,10 @@ PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
 
 The original recorded release has 63 tests; the subscription-profile release has
 69. This is an observation at the recorded implementation, not a permanent expected test count. Tests need the installed
-native environment for their native/Bubblewrap paths; this repository does not
-install those dependencies automatically.
+native environment for their native/Bubblewrap paths. The host installation is
+not automated; the [container image](container.md) provides the pinned toolchain,
+and project CI runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` and no
+permitted skips.
 
 | Test module | Protection |
 | --- | --- |
@@ -40,6 +42,8 @@ install those dependencies automatically.
 | [test_findings.py](../tests/test_findings.py) | Singleton retention, unsupported allegations, evidence/dispositions, duplicate and closure invariants |
 | [test_profiles.py](../tests/test_profiles.py) | Explicit allocation, profile freshness, subscription response handling, native adapter contracts and refusal of profile-only repair closure |
 | [test_cli.py](../tests/test_cli.py) | Required work, outcome projection, interruption/budget preservation and correction behavior |
+| [test_doctor.py](../tests/test_doctor.py) | Doctor version output and binary hashes, missing tools, unimportable pcbnew, unhashable binaries and `--checks-only` |
+| [test_action_gate.py](../tests/test_action_gate.py) | CI/action verdicts from `result.json`: passing checks, defects, incomplete coverage, missing or malformed results and failed verification |
 
 Avoid tests that only echo generated implementation text. Define the engineering
 expected response and failure mechanism independently, then exercise actual

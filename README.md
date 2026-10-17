@@ -120,6 +120,13 @@ The demonstrated environment is Linux with KiCad 10.0.7, ngspice 42, Bubblewrap
 no third-party package dependencies. See [installation](docs/installation.md)
 for prerequisites, subscription setup and installation details.
 
+A [Dockerfile](Dockerfile) pins that toolchain for checks-only runs. The image
+has no reviewer harness, and Bubblewrap inside it needs three explicit Docker
+confinement relaxations, documented with what each grants in the
+[container reference](docs/container.md). A reusable GitHub Action runs
+checks-only reviews in the image for consumer KiCad projects and judges them
+from `result.json`.
+
 From the repository root:
 
 ```sh
@@ -178,14 +185,17 @@ and partial runs.
 
 ## Evidence, development and documentation
 
-The project has 98 tests covering native checks, evidence integrity, isolated
-review contexts, single-writer ownership, regression detection and empirical
-feedback. The original RC defect-and-repair demonstration used actual agent
+The project has 115 tests covering native checks, evidence integrity, isolated
+review contexts, single-writer ownership, regression detection, empirical
+feedback, doctor's binary hashes and the CI action's result gate. The original RC defect-and-repair demonstration used actual agent
 reviews. The newer complete campaign and bench-feedback loops are exercised with
 scripted agent responses and synthetic bench samples. A live subscription
 campaign demonstrated independent review and rejection of an invalid adjudicator
 citation; it did not complete an automatic repair. These are distinct levels of
 evidence, recorded in the [closed-loop verification report](docs/closed-loop.md).
+Project CI is defined to build the image and run the suite, documentation check
+and both RC fixtures there on pushes to `main`; those steps have been run locally
+in the image, not yet on a hosted runner.
 
 ```sh
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
