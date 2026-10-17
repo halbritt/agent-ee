@@ -21,13 +21,17 @@ def primitive(shape):
     if shape.GetClass() != 'PCB_SHAPE':
         return {**record, 'kind': 'unsupported'}
     kind = shape.GetShape()
+    if shape.GetCornerRadius():
+        return {**record, 'kind': 'unsupported', 'native_shape': int(kind),
+                'corner_radius_nm': int(shape.GetCornerRadius())}
     if kind == pcbnew.SHAPE_T_SEGMENT:
         return {**record, 'kind': 'segment', 'start': vector_nm(shape.GetStart()), 'end': vector_nm(shape.GetEnd())}
     if kind == pcbnew.SHAPE_T_RECT:
         return {**record, 'kind': 'polygon', 'points': [vector_nm(p) for p in shape.GetRectCorners()]}
     if kind == pcbnew.SHAPE_T_POLY:
         poly = shape.GetPolyShape()
-        if poly.OutlineCount() == 1 and not poly.HasHoles() and poly.COutline(0).IsClosed():
+        if (poly.OutlineCount() == 1 and not poly.HasHoles() and poly.COutline(0).IsClosed()
+                and poly.COutline(0).ArcCount() == 0):
             return {**record, 'kind': 'polygon', 'points': [vector_nm(p) for p in shape.GetPolyPoints()]}
     return {**record, 'kind': 'unsupported', 'native_shape': int(kind)}
 
@@ -94,15 +98,17 @@ def extract(board_path):
                          'size_nm': vector_nm(pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)),
                          'rotation_deg': pad.GetOrientationDegrees()})
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
-                           'side': 'B' if fp.GetLayer() == pcbnew.B_Cu else 'F',
+                           'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),
                            'locked': bool(fp.IsLocked()), 'position_nm': vector_nm(fp.GetPosition()),
                            'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': courtyards,
                            'pads': sorted(pads, key=lambda p: (p['number'], p['uuid']))})
     if path.read_bytes() != before:
         raise ValueError('saved board changed during extraction')
+    outline = prove_contours([primitive(s) for s in outline_shapes], 'outline_missing', 'outline_unproven')
+    if outline['status'] == 'proven' and len(outline['polygons']) != 1:
+        outline.update(status='outline_unproven', reason='multiple board contours unsupported')
     return {'schema': 'agent-ee.placement-probe/1', 'board_sha256': hashlib.sha256(before).hexdigest(),
-            'pcbnew_version': pcbnew.Version(), 'outline': prove_contours(
-                [primitive(s) for s in outline_shapes], 'outline_missing', 'outline_unproven'),
+            'pcbnew_version': pcbnew.Version(), 'outline': outline,
             'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid']))}
 
 
@@ -111,6 +117,8 @@ def main(argv=None):
     parser.add_argument('board')
     parser.add_argument('--out', required=True)
     args = parser.parse_args(argv)
+    if Path(args.out).resolve() == Path(args.board).resolve():
+        raise ValueError('placement probe cannot overwrite its source board')
     report = extract(args.board)
     Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
     return 0

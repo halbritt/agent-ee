@@ -159,16 +159,18 @@ def _geometry(capture):
 
 
 def validate_capture(capture):
-    if capture.get('schema') != SCHEMA:
+    if not isinstance(capture, dict) or capture.get('schema') != SCHEMA:
         raise ValueError('unsupported placement capture schema')
     sha = capture.get('board_sha256', '')
-    if len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):
+    if not isinstance(sha, str) or len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):
         raise ValueError('missing captured board hash')
     footprints = capture.get('footprints')
     if not isinstance(footprints, list) or not footprints:
         raise ValueError('empty footprint inventory')
     refs, uuids = set(), set()
     for fp in footprints:
+        if not isinstance(fp, dict):
+            raise ValueError('footprint record must be an object')
         for key, seen in (('ref', refs), ('uuid', uuids)):
             identity = fp.get(key)
             if not isinstance(identity, str) or not identity or identity in seen:
@@ -177,7 +179,7 @@ def validate_capture(capture):
 
 
 def _policy(policy, footprints):
-    if policy.get('schema') != 'agent-ee.placement-policy/1':
+    if not isinstance(policy, dict) or policy.get('schema') != 'agent-ee.placement-policy/1':
         raise ValueError('unsupported placement policy')
     refs = set(footprints)
     for name in ('ic_refs', 'connector_refs', 'ground_nets'):
@@ -194,6 +196,8 @@ def _policy(policy, footprints):
     if type(policy.get('max_shared_refs')) is not int or not 1 <= policy['max_shared_refs'] <= 8:
         raise ValueError('max_shared_refs must be 1..8')
     for cap in caps.values():
+        if not isinstance(cap, dict):
+            raise ValueError('capacitor declaration must be an object')
         for key in ('capacitance_nf', 'max_distance_mm', 'deduction'):
             v = cap.get(key)
             if type(v) not in (int, float) or not math.isfinite(v) or v < 0 or (key != 'deduction' and v == 0):

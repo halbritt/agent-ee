@@ -6,7 +6,8 @@ KiCad's `pcbnew` bindings. They add no dependencies and do not modify the board.
 board SHA-256, tool version, native UUIDs, pad nets and positions, footprint
 positions/rotations, raw courtyard primitives by side, and raw Edge.Cuts from
 both board and footprint graphics/fields. Coordinates are integer nanometres.
-Native errors propagate; no fabricated fallback geometry is supplied.
+Native errors propagate; no fabricated fallback geometry is supplied. The probe
+CLI refuses an output path that resolves to its input board.
 
 `placement.judge(facts, policy=None)` is an offline pure function. It checks
 full polygons, including concave boundaries, using exact rational intersections.
