@@ -109,10 +109,20 @@ An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
 ideal regulator feedback, complete typed power-pin inventory, USB protection
 presence, capacitor voltage utilization, generic LDO temperature estimates and
-ESD placement distance. Other analyzer rules remain informational. Generic producer/parser interfaces support additional measurements and
-coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
+ESD placement distance. Other analyzer rules remain informational. Generic
+producer/parser interfaces support additional measurements and coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
 their subscription CLIs; authentication or quota failures stop the affected call
 without a provider fallback.
+
+Before each reviewer, adjudicator or implementation call, a
+[preflight guard](docs/result-reference.md#pre-inference-environment-receipts)
+checks captured tool and policy identities and tests sandbox execution. Drift or
+an unavailable prerequisite stops the call with a retained diagnostic.
+
+Bench corrections bind to the complete captured design inventory. Changing a
+component, connection, layout or library makes calibrated acceptance unavailable
+until fresh observations cover the changed design. The nominal simulation stays
+available for diagnosis; an old correction cannot make a new design pass.
 
 Thermal solvers, post-layout parasitic extraction, DFM/DFA/DFT analysis and BOM
 lifecycle services are **not bundled**. They need separately qualified tools,
