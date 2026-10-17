@@ -3,13 +3,15 @@
 Full reviews require an explicit profile; there is no implicit reviewer or
 adjudicator model. Pass `--profile profiles/claude.json`, `profiles/codex.json`,
 or `profiles/agy.json`, or embed the object under `review_profile` in the scope.
-These three profiles are evaluation candidates, not an established ranking.
+These three profiles are explicit options. The [recorded evaluation](../evidence/MODEL-SELECTION.md)
+supports a provisional Codex starting configuration, with material adjudication
+and coverage limits; it does not establish a general model ranking.
 
 ```sh
 agent-ee review fixtures/rc/control.scope.json \
   --profile profiles/codex.json --out build/control-codex --max-seconds 1200
 agent-ee review scopes/donor-case-alias.json \
-  --profile profiles/agy.json --out build/donor-agy --max-seconds 1200
+  --profile profiles/agy-baseline.json --out build/donor-agy --max-seconds 3600
 ```
 
 The external profile path and SHA-256 are recorded. Its parsed content is part
@@ -79,8 +81,10 @@ engineering workflow. The model-selection experiment uses `investigate`.
 
 Credentials are read-only mounts, not copied to artifacts. The parent environment
 is cleared. There is no API-key/OpenRouter route, automatic account switch or
-model substitution. Execution failures stop further same-harness reviewers in
-the run; the comparison campaign stops that harness on any invalid execution.
+model substitution. Unavailable, failed, timed-out or interrupted calls stop further same-harness
+reviewers in the run. A malformed initial response stays invalid while the other
+role may still run. The comparison campaign stops that harness after any case
+with invalid execution.
 Other independent harness campaigns may finish. Retain the failed attempt and
 fix access before starting a new run.
 
@@ -118,3 +122,8 @@ the plan; no keyword classifier or model majority supplies the answer key.
 A changed model, effort, prompt, harness or tool policy requires new evidence
 before transferring a recommendation. Model-family diversity can reduce shared
 misses, but it is not proof of independent engineering verification.
+
+The donor profiles explicitly allow 900 seconds per call; use a 3600-second run
+budget. This did not guarantee completion: see the retained Claude/Agy timeouts
+and rejected donor adjudications in the evaluation. Raising a budget creates a
+new attempt and must not overwrite or rescore the failed attempt.
