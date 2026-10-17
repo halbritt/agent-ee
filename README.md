@@ -124,6 +124,17 @@ Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
 series/parallel networks; unsupported conductors leave coverage incomplete.
+The [connectivity resolver](docs/connectivity-ir.md) elaborates explicit captured
+symbol pins and scoped sheet ports into physical nets. Hierarchical port names
+that would short distinct local nets are rejected. Repeated sheet files and
+multi-sheet global power remain unsupported; native hierarchical emission and
+end-to-end generation qualification are still pending.
+[Netlist parity](docs/netlist-parity.md) compares native connectivity with captured
+intent and libraries or an explicit golden netlist. Resolved intent is rederived
+before comparison. Exact instance connectivity catches exchanges that collapsed
+part labels can miss; ambiguous correspondence and search exhaustion remain unknown.
+[Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
+and anchored rail pairs. Neither check establishes electrical adequacy.
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
