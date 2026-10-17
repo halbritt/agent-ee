@@ -238,3 +238,13 @@ A standalone scope may include `empirical`, a captured path to an
 create that field and its captured `empirical/` tree. It is runtime empirical
 knowledge, separate from the normative baseline. See [bench feedback](bench-feedback.md)
 for provenance, applicability and accumulation rules.
+
+### Geometry criterion versions
+
+A geometry check with `min_track_width_mm` alone checks straight segments only,
+including under scope/2. To include native arcs, explicitly set
+`criterion: "copper-width/1"`, `covered_primitives: ["PCB_TRACK", "PCB_ARC"]`,
+`min_track_width_mm` and `exclude_nets` (use `[]` when none). See the
+[coverage contract](coverage.md) for counts, evidence and incomplete outcomes.
+Changing these captured check parameters creates a different baseline; it cannot
+broaden an existing campaign's acceptance coverage.

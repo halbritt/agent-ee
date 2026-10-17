@@ -14,8 +14,45 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `erc` | Native all-severity ERC plus complete hierarchy coverage. Missing child files prevent a clean result. |
 | `drc` | Native all-severity DRC, saved fill, and schematic parity. Reports retain exclusions and native items. A violation is distinct from execution failure. |
 | `netlist` | Complete-hierarchy native XML export, with derived connectivity, DNP, native symbol identity, and sheet/UUID provenance. Informational rather than functional acceptance. |
-| `geometry` | Saved-board pcbnew extraction. `params.min_track_width_mm` optionally applies a declared minimum to track segments; `params.exclude_nets` records explicit exemptions. Via diameters are not track-width acceptance criteria. |
+| `geometry` | Saved-board pcbnew extraction. `params.min_track_width_mm` retains its historical straight-segment meaning; `params.exclude_nets` records explicit exemptions. Opt-in `params.criterion: "copper-width/1"` covers straight tracks and native arcs with explicit coverage evidence (see below). |
 | `rc_transient` | Prior `params.netlist_check` supplies actual native connectivity/values. A supported populated passive R/C/L network receives the declared `input_net`, `output_net`, `ground_net`, positive `step_v`, `stop_ms`, and named measurements with `at_ms`, optional `min`/`max`. |
+
+For broader routing-width coverage, declare all four parameters:
+
+```json
+{
+  "criterion": "copper-width/1",
+  "covered_primitives": ["PCB_TRACK", "PCB_ARC"],
+  "min_track_width_mm": 0.20,
+  "exclude_nets": []
+}
+```
+
+`copper-width/1` evaluates the native board track collection, including arcs.
+The covered class list must contain exactly `PCB_TRACK` and `PCB_ARC`.
+Exclusions match net names exactly, including an explicitly listed empty net
+name. Vias are counted separately; pads, zones and graphic copper shapes are
+outside this routing-width criterion. Via drill/annular-ring and zone geometry
+need separate criteria.
+
+`work/<check-id>/copper-width.json` retains candidate ID, board hash, pcbnew
+version, primitive UUID/type/net/layer/width/limit/status, all proven offenders,
+and eligible, checked, excluded and unsupported counts. Eligible means a
+non-via track item not exempted by a known excluded net; it includes unsupported
+items. Unsupported is a subset of eligible, so eligible = checked + unsupported.
+The comparison uses native integer nanometres without the legacy report's
+four-decimal rounding. Any unsupported or malformed eligible item, or an empty
+eligible set, yields `execution: unsupported`, `outcome: unknown`, even when
+other checked items are narrow. Complete coverage with a proven below-limit
+track or arc yields a defect; complete coverage without offenders passes.
+
+Checks without the new criterion retain straight-segment semantics, including
+existing scope/2 baselines. Changing a criterion, its class coverage or exclusions
+changes the captured baseline identity. Broader campaign acceptance therefore
+requires a new baseline; an old passing review never gains arc coverage.
+The native regression tests create actual `PCB_ARC` boards through pcbnew and
+run the sandboxed probe. Malformed and future-class cases use synthetic parser
+inputs; they do not claim native support for those classes or physical validation.
 
 The passive generator excludes DNP parts and identifies passives through native
 symbol class, rather than assuming a designator proves component identity.

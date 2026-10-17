@@ -84,7 +84,8 @@ def extract(board_path):
                  else t.GetWidth())
         entry = {"net": t.GetNetname(), "width_mm": mm(width),
                  "start_mm": vec_mm(t.GetStart()), "end_mm": vec_mm(t.GetEnd()),
-                 "uuid": t.m_Uuid.AsString()}
+                 "uuid": t.m_Uuid.AsString(), "native_class": cls,
+                 "width_nm": int(width)}
         if cls == "PCB_VIA":
             entry["type"] = "via"
             entry["drill_mm"] = mm(t.GetDrillValue())
