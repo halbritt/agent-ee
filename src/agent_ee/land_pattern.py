@@ -20,10 +20,6 @@ from .footprint_library import (FootprintError, _members, _object, canonical, di
 
 
 SCHEMA = 'agent-ee.land-pattern-criteria/1'
-# /2 adds a required per-requirement ``acceptance`` rule; /1 means the threshold rule everywhere.
-SCHEMA_V2 = 'agent-ee.land-pattern-criteria/2'
-RULES = ('threshold', 'nearest_variant')
-MAX_ALTERNATIVES = 16
 REPORT = 'agent-ee.land-pattern/1'
 PROVENANCE = 'agent-ee.supplier-footprint/1'
 VERSION = 'agent-ee.land-pattern-adapter/1'
@@ -78,11 +74,8 @@ def validate_criteria(criteria):
     """Every field is required; unknown fields refuse. Returns referenced paths."""
     _object(criteria, ('schema', 'threshold', 'pin_tolerance_nm', 'source_tolerance_nm',
                        'refinement_levels', 'library_manifest', 'requirements'))
-    if criteria['schema'] not in (SCHEMA, SCHEMA_V2):
+    if criteria['schema'] != SCHEMA:
         raise ValueError('unsupported land-pattern criteria schema')
-    keys = ('reference', 'lcsc', 'supplier', 'native', 'registration', 'pin_aliases')
-    if criteria['schema'] == SCHEMA_V2:
-        keys += ('acceptance',)
     threshold = _decimal_text(criteria['threshold'], 'threshold', positive=True)
     if threshold >= 1:
         raise ValueError('threshold must be below 1')
@@ -100,7 +93,7 @@ def validate_criteria(criteria):
         raise ValueError('nonempty requirement list required; zero references cannot pass')
     refs, supplier_paths, sources = set(), set(), set()
     for item in requirements:
-        _object(item, keys)
+        _object(item, ('reference', 'lcsc', 'supplier', 'native', 'registration', 'pin_aliases'))
         ref = item['reference']
         if not isinstance(ref, str) or not ref or ref in refs:
             raise ValueError('unique nonempty references required')
@@ -137,33 +130,7 @@ def validate_criteria(criteria):
                         for k, v in aliases.items())
                     or len(set(aliases.values())) != len(aliases)):
                 raise ValueError(f'{ref}: pin aliases must be an explicit injective string map')
-        if 'acceptance' in item:
-            _acceptance(item, manifest)
     return dict(supplier_provenance=sorted(supplier_paths), sources=sorted(sources), manifest=manifest)
-
-
-def _acceptance(item, manifest):
-    ref, acceptance = item['reference'], item['acceptance']
-    if not isinstance(acceptance, dict) or acceptance.get('rule') not in RULES:
-        raise ValueError(f'{ref}: acceptance rule must be one of {", ".join(RULES)}')
-    if acceptance['rule'] == 'threshold':
-        _object(acceptance, ('rule',))
-        return
-    _object(acceptance, ('rule', 'alternatives'))
-    alternatives = acceptance['alternatives']
-    if not isinstance(alternatives, list) or not 1 <= len(alternatives) <= MAX_ALTERNATIVES:
-        raise ValueError(f'{ref}: nearest_variant needs 1..{MAX_ALTERNATIVES} declared alternatives')
-    if manifest is None:
-        raise ValueError(f'{ref}: nearest_variant alternatives require library_manifest')
-    seen = {item['native'].get('lib_id')}
-    for alternative in alternatives:
-        _object(alternative, ('source', 'lib_id'))
-        lib_id = alternative['lib_id']
-        if alternative['source'] != 'library' or not isinstance(lib_id, str) or lib_id.count(':') != 1:
-            raise ValueError(f'{ref}: alternatives must be exact library:footprint identities')
-        if lib_id in seen:
-            raise ValueError(f'{ref}: alternatives must be unique and differ from the bound footprint')
-        seen.add(lib_id)
 
 
 def validate_provenance(record, lcsc):
@@ -558,39 +525,30 @@ def _present(bound):
     return dict(lower=text(Fraction(down, scale)), upper=text(Fraction(up, scale)))
 
 
-def _kernel(left, right, criteria, levels, aliases):
+def compare(native, supplier, item, criteria):
     from . import land_geometry as kernel
+    left, right = register(native['pattern'], supplier['pattern'], item['registration'])
+    kwargs = dict(threshold=criteria['threshold'], pin_tolerance=criteria['pin_tolerance_nm'],
+                  levels=tuple(criteria['refinement_levels']))
     try:
-        result = kernel.compare_patterns(left, right, threshold=criteria['threshold'],
-                                         pin_tolerance=criteria['pin_tolerance_nm'], levels=tuple(levels))
-        if aliases is not None:
-            result['pins'] = kernel.match_pins(left, right, tolerance=criteria['pin_tolerance_nm'], aliases=aliases)
+        result = kernel.compare_patterns(left, right, **kwargs)
+        if item['pin_aliases'] is not None:
+            result['pins'] = kernel.match_pins(left, right, tolerance=criteria['pin_tolerance_nm'],
+                                               aliases=item['pin_aliases'])
     except kernel.GeometryError as exc:
         _refuse(exc.mode, str(exc), exc.execution)
-    decisions = [m['decision'] for m in result['copper'].values()]
-    if result['holes']['decision'] != 'not_applicable':
-        decisions.append(result['holes']['decision'])
-    if any(d not in ('pass', 'defect', 'unknown') for d in decisions) or result['pins']['mode'] not in (
-            'pin_agreement', 'pin_conflict', 'pin_mapping_unavailable', 'alias_conflict'):
-        _refuse('kernel_malformed', 'unrecognized kernel decision or pin mode', 'failed')
-    return result, decisions
-
-
-def _numbered(pins, native, supplier):
-    return dict(pins, pairs=[dict(native=native['pattern']['pads'][a]['number'],
-                                  supplier=supplier['pattern']['pads'][b]['number'],
-                                  native_index=a, supplier_index=b) for a, b in pins.get('pairs', [])])
-
-
-def compare(native, supplier, item, criteria, alternatives=()):
-    if item.get('acceptance', {'rule': 'threshold'})['rule'] == 'nearest_variant':
-        return compare_nearest(native, supplier, item, criteria, alternatives)
-    left, right = register(native['pattern'], supplier['pattern'], item['registration'])
-    result, decisions = _kernel(left, right, criteria, criteria['refinement_levels'], item['pin_aliases'])
     copper = {layer: dict(metric, presented=_present(metric)) for layer, metric in sorted(result['copper'].items())}
     holes = dict(result['holes'], presented=_present(result['holes']))
+    decisions = [m['decision'] for m in copper.values()]
+    if holes['decision'] != 'not_applicable':
+        decisions.append(holes['decision'])
     pins = result['pins']
-    numbered = _numbered(pins, native, supplier)
+    numbered = dict(pins, pairs=[dict(native=native['pattern']['pads'][a]['number'],
+                                      supplier=supplier['pattern']['pads'][b]['number'],
+                                      native_index=a, supplier_index=b) for a, b in pins.get('pairs', [])])
+    if any(d not in ('pass', 'defect', 'unknown') for d in decisions) or pins['mode'] not in (
+            'pin_agreement', 'pin_conflict', 'pin_mapping_unavailable', 'alias_conflict'):
+        _refuse('kernel_malformed', 'unrecognized kernel decision or pin mode', 'failed')
     modes = ['low_accuracy'] if 'defect' in decisions else []
     if pins['mode'] != 'pin_agreement':
         modes.append(pins['mode'])
@@ -604,72 +562,6 @@ def compare(native, supplier, item, criteria, alternatives=()):
         outcome, modes = 'pass', ['match']
     return dict(outcome=outcome, mode=modes[0], modes=modes, copper=copper, holes=holes, pins=numbered,
                 refinement=result['refinement'], algorithm=result['algorithm'],
-                registered=dict(native=left, supplier=right))
-
-
-def _metrics(result):
-    """Certified IoU bounds without the absolute-threshold decision, which nearest_variant does not use."""
-    strip = lambda m: dict({k: v for k, v in m.items() if k != 'decision'}, presented=_present(m))
-    copper = {layer: strip(metric) for layer, metric in sorted(result['copper'].items())}
-    holes = strip(result['holes']) if result['holes']['decision'] != 'not_applicable' else dict(
-        lower=None, upper=None, applicable=False, presented=None)
-    return copper, holes
-
-
-def _score(copper, holes):
-    """Worst compared metric: [min of lower bounds, min of upper bounds] over copper layers and holes."""
-    metrics = list(copper.values()) + ([holes] if holes.get('lower') is not None else [])
-    value = lambda b: Fraction(b['numerator'], b['denominator'])
-    lower = min(value(m['lower']) for m in metrics)
-    upper = min(value(m['upper']) for m in metrics)
-    bound = dict(lower=rational(lower), upper=rational(upper))
-    return dict(bound, presented=_present(bound)), lower, upper
-
-
-def compare_nearest(native, supplier, item, criteria, alternatives):
-    """Declared variant discrimination: the bound footprint must be certified strictly nearer.
-
-    Every declared alternative library footprint is registered by the same rule
-    and compared with the same supplier pattern. The score of a comparison is
-    its worst certified IoU over compared copper layers and holes. Pass needs
-    pin agreement on the bound footprint and a bound lower score above every
-    alternative's upper score; an alternative whose lower score exceeds the
-    bound upper score is a defect. Overlap after the last refinement is unknown.
-    No absolute threshold is applied, and nothing is searched or selected.
-    """
-    left, right = register(native['pattern'], supplier['pattern'], item['registration'])
-    pairs = [register(alt['pattern'], supplier['pattern'], item['registration']) for alt in alternatives]
-    for level in criteria['refinement_levels']:
-        bound, _ = _kernel(left, right, criteria, (level,), item['pin_aliases'])
-        copper, holes = _metrics(bound)
-        score, lower, upper = _score(copper, holes)
-        variants = []
-        for alt, (alt_left, alt_right) in zip(alternatives, pairs):
-            result, _ = _kernel(alt_left, alt_right, criteria, (level,), None)
-            alt_copper, alt_holes = _metrics(result)
-            alt_score, alt_lower, alt_upper = _score(alt_copper, alt_holes)
-            relation = 'farther' if lower > alt_upper else 'nearer' if alt_lower > upper else 'unresolved'
-            variants.append(dict(lib_id=alt['source']['lib_id'], path=alt['source']['path'],
-                                 sha256=alt['source']['sha256'], copper=alt_copper, holes=alt_holes,
-                                 score=alt_score, relation=relation))
-        if all(v['relation'] != 'unresolved' for v in variants):
-            break
-    pins = bound['pins']
-    relations = {v['relation'] for v in variants}
-    modes = ['variant_mismatch'] if 'nearer' in relations else []
-    if pins['mode'] != 'pin_agreement':
-        modes.append(pins['mode'])
-    if 'unresolved' in relations:
-        modes.append('variant_unresolved')
-    if 'variant_mismatch' in modes or pins['mode'] in ('pin_conflict', 'alias_conflict'):
-        outcome = 'defect'
-    elif modes:
-        outcome = 'unknown'
-    else:
-        outcome, modes = 'pass', ['match']
-    return dict(outcome=outcome, mode=modes[0], modes=modes, copper=copper, holes=holes,
-                pins=_numbered(pins, native, supplier), score=score, variants=variants,
-                refinement=bound['refinement'], algorithm=bound['algorithm'],
                 registered=dict(native=left, supplier=right))
 
 
@@ -688,8 +580,6 @@ def evaluate(criteria, captures, board_path=None):
     for item in criteria['requirements']:
         record = dict(reference=item['reference'], lcsc=item['lcsc'], native_request=item['native'],
                       registration=item['registration'], pin_aliases=item['pin_aliases'])
-        if 'acceptance' in item:
-            record['acceptance'] = item['acceptance']
         report['references'].append(record)
         report['counts']['eligible'] += 1
         try:
@@ -712,22 +602,14 @@ def evaluate(criteria, captures, board_path=None):
                                       retrieved_at=provenance['retrieved_at'], identity=supplier['identity'],
                                       inventory=supplier['inventory'], pads=supplier['pad_locators'],
                                       holes=supplier['hole_locators'])
-            requested = [item['native']['lib_id']] if item['native']['source'] == 'library' else []
-            acceptance = item.get('acceptance', {'rule': 'threshold'})
-            alternatives = [a['lib_id'] for a in acceptance.get('alternatives', [])]
-            library = []
-            for lib_id in requested + alternatives:
+            if item['native']['source'] == 'library':
                 try:
                     manifest = _json(_capture(captures, meta['manifest']))
-                    library.append(library_footprint(manifest, captures, lib_id))
-                except PatternError as exc:
-                    if lib_id in alternatives:
-                        _refuse(exc.mode, f'alternative {lib_id}: {exc}', exc.execution)
-                    raise
+                    native = library_footprint(manifest, captures, item['native']['lib_id'])
                 except (FootprintError, ValueError, TypeError) as exc:
-                    _refuse('native_missing', f'alternative {lib_id}: {exc}' if lib_id in alternatives else str(exc))
-            if requested:
-                native = library[0]
+                    if isinstance(exc, PatternError):
+                        raise
+                    _refuse('native_missing', str(exc))
             else:
                 if board_path is None:
                     _refuse('native_missing', 'board-instance comparison requires the candidate board')
@@ -737,7 +619,7 @@ def evaluate(criteria, captures, board_path=None):
                 native = board_footprint(board[0], item['reference'], board[1])
                 native['source']['path'] = board_path
             record['native'] = dict(native['source'], inventory=native['inventory'], pads=native['pad_locators'])
-            record.update(compare(native, supplier, item, criteria, library[len(requested):]))
+            record.update(compare(native, supplier, item, criteria))
             record['execution'] = 'ok'
             report['counts']['evaluated'] += 1
         except SupplierError as exc:
@@ -781,9 +663,7 @@ def _witness(record, criteria):
     inputs = [dict(path=record['supplier']['provenance'], sha256=record['supplier']['provenance_sha256']),
               dict(path=record['supplier']['raw_path'], sha256=record['supplier']['raw_sha256']),
               dict(path=record['native']['path'], sha256=record['native']['sha256'])]
-    inputs += [dict(path=v['path'], sha256=v['sha256']) for v in record.get('variants', [])]
-    body = {k: record[k] for k in ('reference', 'lcsc', 'modes', 'copper', 'holes', 'pins', 'score', 'variants')
-            if k in record}
+    body = {k: record[k] for k in ('reference', 'lcsc', 'modes', 'copper', 'holes', 'pins')}
     return dict(criteria_sha256=digest(criteria), inputs=inputs, result_sha256=digest(body))
 
 

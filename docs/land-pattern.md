@@ -12,12 +12,9 @@ reported as an exact finite-polygon area.
 Status: the supplier reader, native extraction, comparison, CLI and coordinator
 adapter are implemented and tested with owned fixtures. The `land_pattern`
 kind is registered in the shared check registry, with captured dependencies,
-scope/3 coverage and coordinator-sealed evidence. Two acceptance rules exist:
-an absolute IoU threshold, and declared
-[variant discrimination](#variant-discrimination). The actual C11702 pattern
-fails the absolute 0.98 threshold against `R_0402_1005Metric`. Under variant
-discrimination it passes against that footprint and is a defect against
-`R_0603_1608Metric`. See [C11702 qualification](#c11702-qualification).
+scope/3 coverage and coordinator-sealed evidence. The ticket's
+C11702-passes-against-R_0402 criterion is **not met** at the 0.98 threshold.
+See [C11702 qualification](#c11702-qualification).
 
 ## Captured inputs
 
@@ -101,25 +98,6 @@ compare. All fields are required and unknown fields are refused:
 - Bindings are consumed as declared. The check does not select parts or
   footprints.
 
-`agent-ee.land-pattern-criteria/2` has the same fields plus a required
-`acceptance` object on every requirement. A /1 criteria file means
-`{"rule": "threshold"}` for every requirement and produces the same report
-bytes as before /2 existed. `acceptance` is either:
-
-```json
-{"rule": "threshold"}
-```
-
-```json
-{"rule": "nearest_variant",
- "alternatives": [{"source": "library", "lib_id": "Resistor_SMD:R_0201_0603Metric"},
-                  {"source": "library", "lib_id": "Resistor_SMD:R_0603_1608Metric"}]}
-```
-
-Alternatives are 1–16 unique members of the captured library manifest, distinct
-from the bound footprint. `acceptance` in a /1 file, a missing `acceptance` in a
-/2 file, unknown rules and extra keys are all refused.
-
 ## Supplier reader
 
 `agent_ee.easyeda_footprint.parse_package` treats one canvas unit as
@@ -195,51 +173,13 @@ translated:
 There is no scaling, mirroring, rotation search or alias search. A wrong
 declared rotation is a geometric defect, not a reason to try another rotation.
 
-Under the `threshold` rule each compared copper layer and the hole set is
-decided against the criteria `threshold`.
-
-### Variant discrimination
-
-Supplier land patterns are generally not the IPC-nominal pads of a KiCad stock
-footprint, so a fixed absolute overlap cannot tell a correct variant from a
-neighbouring one across supplier and library generators. The `nearest_variant`
-rule asks a relative question instead: is the bound footprint certified closer
-to the supplier pattern than every declared alternative?
-
-- Every alternative is registered by the requirement's declared rule and
-  compared with the same supplier pattern. The kernel is the same; nothing is
-  searched or selected.
-- The score of one comparison is its worst metric: the interval
-  [min lower, min upper] over compared copper layers and, when either side has
-  apertures, the hole set.
-- An alternative is `farther` when the bound lower score exceeds its upper
-  score. It is `nearer` when its lower score exceeds the bound upper score.
-  Otherwise it is `unresolved`.
-- All comparisons are refined together through `refinement_levels` until none
-  is unresolved or the levels are spent.
-- Pass needs every alternative `farther` and pin agreement on the bound
-  footprint. Any `nearer` alternative is a defect (`variant_mismatch`). Pin and
-  alias conflicts remain defects. A remaining overlap is `variant_unresolved`.
-  Identical alternatives therefore can never pass.
-- The absolute `threshold` is not applied, and per-metric `decision` fields are
-  omitted for these requirements. The pin-correspondence tolerance still has
-  to hold for pass. The rule is only as strong as the declared alternatives,
-  which should include the neighbouring size variants.
-- Each record carries `score` and `variants`, one per alternative, with its
-  path, hash, copper, holes, score and relation. Alternative footprints are
-  witness inputs.
-- An alternative that is missing or cannot be extracted makes the whole
-  reference unsupported, with the alternative named in the message.
-
 | Mode | Outcome | Meaning |
 | --- | --- | --- |
-| `match` | pass | Threshold rule: every compared layer and the hole set pass. Nearest-variant rule: every alternative is certified farther. Either way, pins agree under the unique (or all-agreeing) geometric correspondence |
-| `low_accuracy` | defect | Threshold rule: some copper layer or the hole set has certified IoU upper bound ≤ threshold |
-| `variant_mismatch` | defect | Nearest-variant rule: a declared alternative is certified nearer to the supplier pattern |
+| `match` | pass | Every compared layer and the hole set pass, and pins agree under the unique (or all-agreeing) geometric correspondence |
+| `low_accuracy` | defect | Some copper layer or the hole set has certified IoU upper bound ≤ threshold |
 | `pin_conflict` / `alias_conflict` | defect | No admissible correspondence preserves numbering, or the alias map collides; holds even at IoU 1 |
 | `pin_mapping_unavailable` | unknown | Pads cannot be uniquely corresponded within tolerance, or admissible correspondences disagree |
 | `numeric_uncertainty` | unknown | A threshold straddle after the last refinement level |
-| `variant_unresolved` | unknown | Nearest-variant rule: bound and alternative scores still overlap after the last refinement level |
 | `supplier_missing`, `unsupported_shape`, `unsupported_layer`, `unsupported_rotation`, `native_missing` | unsupported | Coverage is not available for that reference |
 | `supplier_malformed`, `supplier_identity`, `source_inconsistent`, `native_malformed` | malformed | Captured bytes are invalid or disagree with their binding |
 | `input_missing`, `kernel_unavailable`, `adapter_error`, `kernel_malformed` | failed | An expected input or implementation was unavailable |
@@ -290,41 +230,40 @@ sandbox:
 
 `land-pattern.json` is retained as evidence. `land_pattern` is registered in
 `CHECK_FUNCS`, the baseline dependency loop and the capability
-`KINDS`/descriptor dispatch. The manifest closure already contains every
-nearest-variant alternative, so alternatives are immutable inputs too.
+`KINDS`/descriptor dispatch.
 
 ## C11702 qualification
 
 This private gate uses the actual EasyEDA component for C11702 (raw sha256
 `1874700…67155f2`), a local copy of an upstream converter test asset. It is
-compared with the pinned KiCad 10.0.7 stock `R_0201_0603Metric`,
-`R_0402_1005Metric`, `R_0603_1608Metric` and `R_0805_2012Metric` footprints.
-Settings: declared origin, rotation 0, pin tolerance 0.25 mm, refinement
-levels 2/4/8/16. Under the nearest-variant rule, the alternatives for each
-bound footprint are the other three sizes.
+compared with the pinned KiCad 10.0.7 stock `R_0402_1005Metric` and
+`R_0603_1608Metric` footprints. Settings: threshold 0.98, declared origin,
+rotation 0, pin tolerance 0.25 mm.
 
-| Bound footprint | Certified copper IoU | Threshold rule (0.98) | Nearest-variant rule |
-| --- | --- | --- | --- |
-| `R_0402_1005Metric` | [0.662971, 0.682132] | defect (`low_accuracy`; pins agree) | **pass** (`match`; 0201 [0.470166, 0.483326], 0603 and 0805 all farther; pins 1↔1, 2↔2) |
-| `R_0603_1608Metric` | [0.177979, 0.182392] | defect (`low_accuracy`; pin mapping unavailable) | **defect** (`variant_mismatch`: 0402 and 0201 nearer; pin mapping unavailable) |
+| Footprint | Certified copper IoU | Outcome |
+| --- | --- | --- |
+| `R_0402_1005Metric` | [0.662971, 0.682132] | defect (`low_accuracy`; pins agree) |
+| `R_0603_1608Metric` | [0.177979, 0.182392] | defect (`low_accuracy`; pin mapping unavailable) |
 
 An independent float integration gave 0.6713 and 0.1795, inside both intervals.
-Reruns are byte-identical and `replay` verifies both reports.
 
 The supplier's rectangular 0.566 × 0.540 mm pads at ±0.433 mm differ
 substantially from KiCad's IPC-nominal 0.54 × 0.64 mm roundrect pads at
-±0.51 mm. No absolute IoU above 0.98 is reachable for this pair, and the
-threshold was not tuned. Even the centred copper-bounding-box IoU is about
-0.77, below the 0.8 used upstream for supplier-mismatch warnings. The ticket's
-acceptance example (0402 passes, 0603 is a defect with the IoU reported) is met
-by the declared nearest-variant rule. It is not met by an absolute threshold.
-Which rule a campaign uses is part of its immutable criteria.
+±0.51 mm. The ticket's literal "C11702 passes against R_0402_1005Metric at IoU
+above 0.98" is therefore false for these actual bytes, and the threshold was
+not tuned. Resolving it is an owner decision: a justified per-pair criterion, a
+variant-discrimination criterion, or a different library reference. Until that
+decision, the only acceptance rule is the absolute threshold. No relative or
+nearest-variant rule exists, and a criteria schema other than `/1` is refused
+as malformed.
 
 The raw/derived supplier data remain unpublished. The EasyEDA data licence is
-unclear, so committed tests use only owned EasyEDA-format records. One of these
-reproduces the published C11702 pad dimensions as facts, against owned
-roundrect footprints with the stock R_0201/R_0402/R_0603 pad dimensions. Those
-tests check the same pass/defect split and the float control.
+unclear, so committed tests use only owned synthetic EasyEDA-format records.
+`C11702ThresholdTests` builds one from the published C11702 pad dimensions as
+facts, against owned roundrect footprints with the stock R_0402/R_0603 pad
+dimensions. It checks that both bindings are `low_accuracy` defects with the
+IoU reported, that the 0402 interval contains an independent float control of
+about 0.671, and that a 3 % overlap (IoU about 0.031) is also `low_accuracy`.
 
 ## Limitations
 

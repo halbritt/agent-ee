@@ -318,13 +318,10 @@ interfaces from names or treating components as transparent shorts.
 raw EasyEDA geometry and KiCad library members. The check retains native
 extraction and bounded overlap evidence through the coordinator seal; missing
 or unsupported geometry cannot pass. See the [contract and qualification](land-pattern.md)
-for exact parameters, pin-number comparisons and coverage limits. Each
-requirement uses one of two acceptance rules (criteria /2). The `threshold`
-rule needs certified IoU above the threshold. The `nearest_variant` rule needs
-the bound footprint to be certified nearer than every declared alternative
-library footprint; a nearer alternative is `variant_mismatch`. Both rules also
-require pin agreement. The actual C11702 pattern fails 0.98 against 0402. Under
-nearest-variant it passes against 0402 and is a defect against 0603.
+for exact parameters, pin-number comparisons and coverage limits. The actual
+C11702/0402 comparison does not meet the requested 0.98 threshold. The absolute
+threshold is the only acceptance rule. Any other acceptance criterion for that
+pair is an owner decision.
 
 ## Placement predicates
 
