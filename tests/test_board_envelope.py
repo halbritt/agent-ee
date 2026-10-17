@@ -172,6 +172,22 @@ class EnvelopeValidationTests(unittest.TestCase):
             with self.subTest(label), self.assertRaises(ValueError):
                 validate(data)
 
+    def test_resource_bounds_are_refused_before_quadratic_checks(self):
+        value = rc()
+        value['outline']['edges'] = [{'name': f'e{i}', 'start': [i, 0], 'end': [i + 1, 0]} for i in range(1025)]
+        with self.assertRaisesRegex(ValueError, 'outline needs 3 to 1024 named edges'):
+            validate(raw(value))
+        value = rc()
+        value['keepouts'] = [{'id': f'K{i}', 'polygon': [], 'layers': [], 'forbid': []} for i in range(1025)]
+        with self.assertRaisesRegex(ValueError, 'at most 1024'):
+            validate(raw(value))
+        value = rc()
+        value['keepouts'] = [{'id': 'K1', 'polygon': [[100, 100]] * 1025, 'layers': ['F.Cu'], 'forbid': ['vias']}]
+        with self.assertRaisesRegex(ValueError, 'keepout K1 polygon needs 3 to 1024 vertices'):
+            validate(raw(value))
+        with self.assertRaisesRegex(ValueError, 'at most 1048576'):
+            validate(RC_ENVELOPE.read_bytes() + b' ' * 1024 * 1024)
+
     def test_layer_count_and_stackup_must_agree_exactly(self):
         value = rc()
         value['layer_count'] = 4
@@ -440,6 +456,31 @@ class EnvelopeRoundTripTests(unittest.TestCase):
         self.assertEqual({r['field']: r['status'] for r in round_trip(RC_ENVELOPE.read_bytes(), thicker)['fields']}
                          ['/stackup/thickness_mm'], 'mismatch')
 
+    def test_rotation_is_compared_modulo_360_and_references_must_be_unique(self):
+        board = RC_BOARD.read_bytes()
+        value = rc()
+        value['fixed_footprints'][0]['rotation_deg'] = 270
+        self.assertEqual(round_trip(raw(value), board.replace(b'(at 100 100)', b'(at 100 100 -90)'))['outcome'], 'match')
+        self.assertEqual(round_trip(raw(value), board)['outcome'], 'mismatch')
+        # A duplicated unrelated reference is listed, not fatal; a duplicated fixed one is ambiguous.
+        self.assertEqual(board.count(b'(property "Reference" "C1"'), 1)
+        twice_c1 = board.replace(b'(property "Reference" "R1"', b'(property "Reference" "C1"')
+        self.assertEqual(round_trip(RC_ENVELOPE.read_bytes(), twice_c1)['outcome'], 'match')
+        # An exact second copy of J1 would match on its own; ambiguity must not pick one.
+        start = board.index(b'\t(footprint "Connector_PinHeader')
+        depth, end = 0, start
+        for end in range(start, len(board)):
+            depth += {40: 1, 41: -1}.get(board[end], 0)
+            if depth == 0 and board[end] == 41:
+                break
+        twice_j1 = board[:start] + board[start:end + 1] + b'\n' + board[start:]
+        trip = round_trip(RC_ENVELOPE.read_bytes(), twice_j1)
+        fixed = {r['field']: r for r in trip['fields']}['/fixed_footprints/0']
+        self.assertEqual((trip['outcome'], fixed['detail']['board_matches']), ('mismatch', 2))
+        missing = board.replace(b'(property "Reference" "J1"', b'(property "Reference" "J9"')
+        fixed = {r['field']: r for r in round_trip(RC_ENVELOPE.read_bytes(), missing)['fields']}['/fixed_footprints/0']
+        self.assertEqual((fixed['status'], fixed['detail']['board_matches']), ('mismatch', 0))
+
     def test_unsupported_outline_items_and_native_stackups(self):
         arc = (b'(kicad_pcb (layers (0 "F.Cu" signal) (2 "B.Cu" signal)) (general (thickness 1.6))'
                b' (gr_rect (start 96 96) (end 116 108) (layer "Edge.Cuts"))'
@@ -485,7 +526,7 @@ class EnvelopeRoundTripTests(unittest.TestCase):
                          {frozenset(s) for s in facts['edge_segments']})
         self.assertEqual(native['copper'], len(facts['copper_layers']))
         self.assertEqual(native['thickness'], facts['thickness_nm'])
-        j1 = facts['footprints']['J1']
+        [j1] = facts['footprints']['J1']
         self.assertEqual(native['j1'], [j1['at'][0], j1['at'][1], float(j1['rotation_deg']), j1['layer']])
 
 

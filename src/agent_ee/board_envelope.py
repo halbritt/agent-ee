@@ -25,6 +25,8 @@ SIDES = {'front': 'F.Cu', 'back': 'B.Cu'}
 INSERTIONS = ('through_edge', 'from_top', 'from_bottom')
 FORBID = ('footprints', 'tracks', 'vias', 'pads', 'copper_pours')
 MAX_COPPER = 32
+# Bounds keep exact O(n^2) polygon checks small; real envelopes are far below them.
+MAX_BYTES, MAX_VERTICES, MAX_ITEMS = 1024 * 1024, 1024, 1024
 # Provisional mapping from the ticket graph (AGENTEE-92 placement, AGENTEE-75
 # fab profile, AGENTEE-94 fab package); none of these kinds is registered yet.
 CHECK_KINDS = {'outline': ['placement'], 'layer_count': ['fab_profile'],
@@ -47,8 +49,8 @@ def load(raw):
 
     def constant(name):
         raise ValueError(f'invalid JSON number: {name}')
-    if not isinstance(raw, bytes):
-        raise ValueError('envelope must be bytes')
+    if not isinstance(raw, bytes) or len(raw) > MAX_BYTES:
+        raise ValueError(f'envelope must be bytes, at most {MAX_BYTES}')
     try:
         return json.loads(raw.decode('utf-8'), object_pairs_hook=unique,
                           parse_float=Decimal, parse_constant=constant)
@@ -107,6 +109,13 @@ def text(number):
     if '.' in out:
         out = out.rstrip('0').rstrip('.')
     return '0' if out in ('-0', '') else out
+
+
+def degrees(value):
+    """Exact angle text normalized to [0, 360); KiCad may save -90 for 270."""
+    if not value.is_finite():
+        raise ValueError('rotation must be finite')
+    return text((value % 360 + 360) % 360)
 
 
 def mm(nm):
@@ -228,8 +237,8 @@ def sign(value):
 def validate_outline(value):
     fields(value, 'outline', ['edges'])
     edges = value['edges']
-    if not isinstance(edges, list) or len(edges) < 3:
-        raise ValueError('outline needs at least three named edges')
+    if not isinstance(edges, list) or not 3 <= len(edges) <= MAX_VERTICES:
+        raise ValueError(f'outline needs 3 to {MAX_VERTICES} named edges')
     names, parsed = set(), []
     for index, edge in enumerate(edges):
         fields(edge, f'outline edge {index}', ['name', 'start', 'end'])
@@ -336,8 +345,8 @@ def validate_profile(value, profile):
 
 
 def unique_names(items, key, label, namespace):
-    if not isinstance(items, list):
-        raise ValueError(f'{label} must be a list')
+    if not isinstance(items, list) or len(items) > MAX_ITEMS:
+        raise ValueError(f'{label} must be a list of at most {MAX_ITEMS}')
     for item in items:
         if not isinstance(item, dict):
             raise ValueError(f'{label} entries must be objects')
@@ -369,8 +378,8 @@ def validate_keepouts(keepouts, vertices, copper):
         kid = keepout['id']
         fields(keepout, f'keepout {kid}', ['id', 'polygon', 'layers', 'forbid'])
         polygon = keepout['polygon']
-        if not isinstance(polygon, list) or len(polygon) < 3:
-            raise ValueError(f'keepout {kid} polygon needs at least three vertices')
+        if not isinstance(polygon, list) or not 3 <= len(polygon) <= MAX_VERTICES:
+            raise ValueError(f'keepout {kid} polygon needs 3 to {MAX_VERTICES} vertices')
         points = [point(p, f'keepout {kid} vertex') for p in polygon]
         simple_polygon(points, f'keepout {kid}')
         if not all(segment_inside(points[i], points[(i + 1) % len(points)], vertices) for i in range(len(points))):
@@ -421,7 +430,7 @@ def validate_fixed(footprints, vertices, edges):
             raise ValueError(f'fixed footprint {ref} anchor {mm_point(anchor)} is outside the outline')
         records.append({'reference': ref, 'side': footprint['side'], 'layer': SIDES[footprint['side']],
                         'edge': edge['name'], 'position_mm': mm(position), 'inset_mm': mm(inset),
-                        'anchor_mm': mm_point(anchor), 'rotation_deg': text(rotation), 'insertion': insertion,
+                        'anchor_mm': mm_point(anchor), 'rotation_deg': degrees(rotation), 'insertion': insertion,
                         'mating_axis': edge['outward'] if insertion == 'through_edge' else
                         ('z-' if insertion == 'from_top' else 'z+'),
                         'tolerance_mm': mm(tolerance)})
@@ -621,12 +630,13 @@ def saved_facts(root):
                 + children(footprint, 'fp_circle') + children(footprint, 'fp_poly'):
             if one(p, 'layer') and atoms(one(p, 'layer')) == ['Edge.Cuts']:
                 other.append('footprint ' + p[0])
-        if len(reference) != 1 or reference[0] in footprints or not at or not layer:
-            raise ValueError('footprint without one unique Reference, at and layer')
+        if len(reference) != 1 or not at or not layer:
+            raise ValueError('footprint without one Reference, at and layer')
         values = atoms(at)
-        footprints[reference[0]] = {'layer': atoms(layer)[0],
-                                    'at': (nanometres(values[0]), nanometres(values[1])),
-                                    'rotation_deg': text(Decimal(values[2])) if len(values) > 2 else '0'}
+        # Duplicate references stay listed; a fixed footprint needs exactly one match.
+        footprints.setdefault(reference[0], []).append({
+            'layer': atoms(layer)[0], 'at': (nanometres(values[0]), nanometres(values[1])),
+            'rotation_deg': degrees(Decimal(values[2]) if len(values) > 2 else Decimal(0))})
     return {'copper_layers': copper,
             'thickness_nm': nanometres(atoms(thickness)[0]) if thickness and atoms(thickness) else None,
             'stackup': stackup, 'edge_segments': segments, 'other_edge_cuts': sorted(other),
@@ -664,13 +674,15 @@ def round_trip(raw, pcb):
         if layer['kind'] == 'copper':
             add(pointer + '/copper_weight_oz', 'not_in_board', {'reason': 'KiCad boards save copper thickness only'})
     for index, fixed in enumerate(record['fixed_footprints']):
-        saved = facts['footprints'].get(fixed['reference'])
+        matches = facts['footprints'].get(fixed['reference'], [])
+        saved = matches[0] if len(matches) == 1 else None
         anchor = point([Decimal(v) for v in fixed['anchor_mm']], 'anchor')
         tolerance = length(Decimal(fixed['tolerance_mm']), 'tolerance')
         ok = (saved is not None and saved['layer'] == fixed['layer'] and saved['rotation_deg'] == fixed['rotation_deg']
               and (saved['at'][0] - anchor[0]) ** 2 + (saved['at'][1] - anchor[1]) ** 2 <= tolerance ** 2)
         add(f'/fixed_footprints/{index}', 'match' if ok else 'mismatch',
-            {'board': None if saved is None else {'layer': saved['layer'], 'at_mm': mm_point(saved['at']),
+            {'board_matches': len(matches),
+             'board': None if saved is None else {'layer': saved['layer'], 'at_mm': mm_point(saved['at']),
                                                   'rotation_deg': saved['rotation_deg']}})
     for key in ('mounting_holes', 'keepouts'):
         for index, _ in enumerate(envelope[key]):
