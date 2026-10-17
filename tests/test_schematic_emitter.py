@@ -176,7 +176,7 @@ class DeterminismTests(unittest.TestCase):
 class RefusalTests(unittest.TestCase):
     def assertRefused(self, code, intent=None, layout=None, name='regulator', **kwargs):
         result, files = emit(name, intent=intent, layout=layout, **kwargs)
-        self.assertIsNone(files)
+        self.assertIsNone(files and sorted(files))
         self.assertNotEqual(result['execution'], 'ok')
         self.assertEqual(result['files'], [])
         self.assertIn(code, [f['code'] for f in result['findings']], result['findings'])
@@ -198,7 +198,7 @@ class RefusalTests(unittest.TestCase):
         files = captures(intent)
         files['lib/Owned_Gen.kicad_sym'] += b'\n'
         result, out = emit_schematic(intent, files, load('regulator.layout.json'))
-        self.assertIsNone(out)
+        self.assertIsNone(out and sorted(out))
         self.assertEqual(result['execution'], 'failed')
         self.assertIn('resolution_library_coverage', [f['code'] for f in result['findings']])
 
@@ -222,14 +222,15 @@ class RefusalTests(unittest.TestCase):
             files['lib/Owned_Gen.kicad_sym'] = data.replace(old, new, 1).encode()
             intent['libraries'][0]['sha256'] = hashlib.sha256(files['lib/Owned_Gen.kicad_sym']).hexdigest()
             result, out = emit_schematic(intent, files, load('regulator.layout.json'))
-            self.assertIsNone(out)
+            self.assertIsNone(out and sorted(out))
             self.assertIn(code, [f['code'] for f in result['findings']], result['findings'])
         # VO moved onto VI's connection point: two pins would be shorted.
-        variant('(at 7.62 0 180)', '(at -7.62 0 180)', 'impossible_pin_endpoint')
-        variant('(at 7.62 0 180)', '(at 7.6 0 180)', 'unlocatable_pin')
-        variant('(rectangle\n\t\t\t\t(start -5.08 5.08)',
-                '(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 6)\n\t\t\t\t(end 5.08 5.08))\n\t\t\t(rectangle\n'
-                '\t\t\t\t(start -5.08 5.08)', 'unsupported_graphic')
+        vo = '(pin power_out line\n\t\t\t\t(at 7.62 0 180)'
+        variant(vo, vo.replace('7.62 0', '-7.62 0'), 'impossible_pin_endpoint')
+        variant(vo, vo.replace('7.62 0', '7.6 0'), 'unlocatable_pin')
+        body = '(symbol "REG3_0_1"\n'
+        variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 6)\n'
+                '\t\t\t\t(end 5.08 5.08)\n\t\t\t)\n', 'unsupported_graphic')
 
     def test_malformed_names_and_escaping(self):
         cases = [
@@ -264,7 +265,7 @@ class RefusalTests(unittest.TestCase):
         intent['libraries'][0]['sha256'] = hashlib.sha256(data.encode()).hexdigest()
         intent['components'][2]['lib_id'] = 'OwnedGen:CAP_DERIVED'
         result, out = emit_schematic(intent, files, load('regulator.layout.json'))
-        self.assertIsNone(out)
+        self.assertIsNone(out and sorted(out))
         self.assertIn('derived_symbol_unsupported', [f['code'] for f in result['findings']])
 
     def test_layout_contract(self):
@@ -378,13 +379,24 @@ class NativeEmissionTests(unittest.TestCase):
         copy_dir = work / 'upgrade' / 'copy'
         shutil.copytree(project, copy_dir)
         run_native(project, work / 'upgrade', 'kicad-cli', 'sch', 'upgrade', '/work/copy/regulator.kicad_sch')
-        self.assertIn('Schematic file was not updated', (work / 'upgrade' / 'stdout.log').read_text())
+        self.assertIn('Schematic file was not updated', (work / 'upgrade' / 'console.log').read_text())
         self.assertEqual((copy_dir / 'regulator.kicad_sch').read_bytes(), files['regulator.kicad_sch'])
+        self.assertNativeResave(project, work, 'regulator', files)
+
+    def assertNativeResave(self, project, work, name, files):
+        """KiCad's own forced re-save reproduces the bytes, apart from the generator."""
+        shutil.copytree(project, work / 'resave' / 'copy')
+        run_native(project, work / 'resave', 'kicad-cli', 'sch', 'upgrade', '--force', f'/work/copy/{name}.kicad_sch')
+        native = (work / 'resave' / 'copy' / f'{name}.kicad_sch').read_bytes()
+        self.assertNotEqual(native, files[f'{name}.kicad_sch'])
+        self.assertEqual(native.replace(b'(generator "eeschema")', b'(generator "agent-ee-schematic-emitter")', 1),
+                         files[f'{name}.kicad_sch'])
 
     def test_all_transforms_multiunit_and_repeated_names_connect_natively(self):
         result, files = emit('transforms', symbol_table={'OwnedGen': '${KIPRJMOD}/lib/Owned_Gen.kicad_sym'})
         self.assertEqual(result['execution'], 'ok', result['findings'])
-        _, _, erc, (components, nets, singles) = self.native_run('transforms', files, 'transforms')
+        project, work, erc, (components, nets, singles) = self.native_run('transforms', files, 'transforms')
+        self.assertNativeResave(project, work, 'transforms', files)
         expected = {}
         for k in range(1, 9):
             for n in '1234':
