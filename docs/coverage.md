@@ -331,3 +331,12 @@ coupling links; distinct declared sheets can reuse a symbol UUID. Public verify
 also rejects stale navigation after deliberate native-inventory corruption even
 when outer artifact hashes are refreshed. Corruption fixtures are software
 boundary tests, not native-tool measurements or model-performance evidence.
+
+## Intent and golden netlist parity
+
+The [netlist parity check](netlist-parity.md) compares full native XML physical-pin
+incidence and exact component multiplicity with a captured source. It preserves
+identical instances, bounds exact graph search, and leaves ambiguous instance
+correspondence unknown unless explicit immutable anchors resolve it. Descriptive
+scores do not grant conformance. Missing or malformed producer/source evidence
+cannot pass; footprint adequacy and electrical behavior remain outside coverage.
