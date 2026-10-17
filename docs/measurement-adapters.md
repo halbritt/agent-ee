@@ -3,7 +3,8 @@
 `measurements` runs an explicitly declared producer tool and a captured Python
 parser, then lets the coordinator apply acceptance limits. `coupled_margins`
 combines metrics from earlier checks at the same operating point. Neither check
-is a bundled thermal, parasitic, DFM, DFA, DFT or supply-chain solver. Supply and
+is a bundled thermal, parasitic, DFM, DFA, DFT or supply-chain solver; declared
+access geometry is the separate [`dfa_dft`](dfa-dft.md) check. Supply and
 lifecycle telemetry must be captured before execution because tool sandboxes
 have no network.
 

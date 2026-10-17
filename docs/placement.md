@@ -93,12 +93,15 @@ the check criteria. The AGENTEE-75 profile has only a copper-to-edge key
 scope with every derived obligation covered. One `connector-edge/1` check
 covers the fixed-footprint obligation of an envelope with one fixed footprint
 ([baseline integration](board-envelope.md#baseline-integration)). `placement_predicates.connector_access` is the
-shared declared-edge predicate for AGENTEE-64. A declaration names reference,
+declared-edge predicate. A declaration names reference,
 side, edge segment and outward axis, anchor, tolerance, optional rotation,
 insertion (`through_edge`, `from_top`, `from_bottom`) and an optional
 footprint-local mating axis. That axis is mapped to board axes by mirroring y on
 the back and rotating by the saved orientation, qualified against pcbnew pad
-transforms. No nearest-edge heuristic replaces a declaration.
+transforms. No nearest-edge heuristic replaces a declaration. A connector with a
+declared insertion direction but no envelope edge is checked by the AGENTEE-64
+[`dfa_dft` connector-orientation/1](dfa-dft.md#connector-orientation), which uses
+the same axis mapping against the nearest saved outline edge.
 
 `ratsnest-mst/1` reports, per sorted net, every netted pad (duplicate pad
 numbers kept by pad UUID) and two minimum spanning trees over pad centres:

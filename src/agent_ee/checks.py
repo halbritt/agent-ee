@@ -40,6 +40,9 @@ Check kinds and parameters:
   — list of `{name, at_ms, min?, max?}` with unique names, finite `at_ms`
   within (0, stop_ms], finite limits and min <= max; entries with limits are
   fixed acceptance criteria, entries without are informational.
+- `dfa_dft`: one declared assembly/test-access criterion over the sandboxed
+  saved-board probe (`connector-orientation/1`, `testpoint-access/1`,
+  `testpoint-coverage/1` with `bringup_plan.json`); see docs/dfa-dft.md.
 
 Result shape (contract `docs/contracts.md`): `{id, kind, candidate_id,
 execution, outcome, summary, evidence, details, limitations}` with execution
@@ -866,6 +869,7 @@ from .netclass_completeness import check_netclass_completeness
 from .netlist_extra import check_netlist_extra
 from .placement_check import check_placement
 from .assembly_readiness import check_assembly_readiness
+from .dfa_dft import check_dfa_dft
 
 
 from .catalog_checks import check_catalog
@@ -887,7 +891,8 @@ CHECK_FUNCS = {'fab_consistency': check_fab_consistency, 'fab_export': check_fab
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
                "passive_corners": check_passive_corners, "dc_path": check_dc_path,
-               "placement": check_placement, "assembly_readiness": check_assembly_readiness}
+               "placement": check_placement, "assembly_readiness": check_assembly_readiness,
+               "dfa_dft": check_dfa_dft}
 
 
 # ------------------------------------------------------------------ entry point

@@ -173,6 +173,7 @@ inventory changes are today (AGENTEE-91). The writer's summary is not evidence.
 | Ratsnest length | pcbnew probe: per-net minimum spanning tree over pad centres, Manhattan and Euclidean | Metric bounds the reducer can compare; a proxy, not routed length |
 | Keepouts and edge clearance | Probe geometry against rule areas that forbid footprints and the fab profile's edge minimum | Defect |
 | Connector on edge | Envelope declarations (AGENTEE-85) with the AGENTEE-64 predicate: edge, tolerance, insertion direction | Defect; outline not provably closed is unknown |
+| Connector facing, test-point access and coverage | [`dfa_dft`](dfa-dft.md) (AGENTEE-64): declared insertion direction against the nearest saved edge; declared test points against same-side courtyards; declared probe points on every rail and acceptance-measured net, with `bringup_plan.json` | Defect; undeclared values, unproven courtyards and corners are unknown |
 | Routability | A captured kicad-route `result.json`: `routing.blocked_by` and `kicad-route blocked` | Information only; never a pass |
 
 Unconnected items are expected before routing and are not graded by

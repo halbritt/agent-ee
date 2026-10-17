@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from .geometry_probe import pad_attribute
 from .placement import qualified_polygons
 
 
@@ -117,8 +118,10 @@ def extract(board_path):
             pads.append({'uuid': pad.m_Uuid.AsString(), 'number': pad.GetNumber(), 'net': pad.GetNetname(),
                          'position_nm': vector_nm(pad.GetPosition()), 'shape': int(pad.GetShape()),
                          'size_nm': vector_nm(pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)),
-                         'rotation_deg': pad.GetOrientationDegrees()})
+                         'rotation_deg': pad.GetOrientationDegrees(), 'attribute': pad_attribute(pad),
+                         'layers': sorted(pcbnew.LayerName(layer) for layer in pad.GetLayerSet().Seq())})
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
+                           'fpid': fp.GetFPIDAsString(),
                            'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),
                            'locked': bool(fp.IsLocked()), 'position_nm': vector_nm(fp.GetPosition()),
                            'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': courtyards,
