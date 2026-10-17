@@ -1,0 +1,1318 @@
+{
+  "schema": "agent-ee.file-origins/1",
+  "baseline": "69d7bbf46fa40b170c61bf325f18e5ef78988f8c",
+  "prepared": "2026-10-17",
+  "work_item": "AGENTEE-14",
+  "license_proposal": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "status": "Proposed on branch impl/license-preparation. Not merged, not owner-approved and not applied publicly.",
+    "covers": "Files whose every origin has permission_status proposed-mit-pending-owner-approval.",
+    "excludes": "Every file with an origin whose permission_status is unresolved-owner-decision-required."
+  },
+  "observations": [
+    "On 2026-10-17 the GitHub API reported halbritt/agent-ee and halbritt/fome-mc as public, with agent-ee main at 69d7bbf46fa40b170c61bf325f18e5ef78988f8c. That branch already contains the third-party-origin files listed here. This is an observation, not a rights decision."
+  ],
+  "permission_statuses": {
+    "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
+    "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
+    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given). No origin has this status."
+  },
+  "kinds": {
+    "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
+    "owned-documentation": "Documentation and reports written for agent-ee.",
+    "owned-fixture": "Original fixture designs, generators and expectations written for agent-ee.",
+    "owned-metadata": "Records written for agent-ee that name or describe third-party material without copying it.",
+    "adapted-source": "Code written for agent-ee that contains logic adapted from another project.",
+    "copied-design": "Verbatim or modified copies of design files from another project.",
+    "third-party-document": "Verbatim copies of documents, pages, firmware sources or text extractions from another party.",
+    "third-party-data": "Other data published by another party.",
+    "retained-output": "Tool, coordinator and reviewer outputs retained as evidence.",
+    "generated-design-output": "Plots, renders, Gerber and drill outputs generated from a design.",
+    "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration."
+  },
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved.",
+  "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
+  "origins": {
+    "AE": {
+      "name": "agent-ee original material",
+      "description": "Code, tests, scripts, configuration, documentation, planning records and original fixtures written for agent-ee in this repository by the owner and by AI agents working under the owner's direction. Original fixtures are produced by generators in this repository or hand-authored here.",
+      "upstream": null,
+      "upstream_license": "Not applicable. MIT is proposed in LICENSE.",
+      "license_verified": false,
+      "permission_status": "proposed-mit-pending-owner-approval",
+      "owner_decision": "Approve MIT for this material and confirm the copyright holder named in LICENSE. Authorship by AI agents was not analysed.",
+      "evidence": [
+        "git log author for all commits on main is halbritt",
+        "LICENSE",
+        "docs/decisions.md"
+      ],
+      "capture_sources": [
+        "/fixtures/rc/requirements/",
+        "/requirements.txt"
+      ]
+    },
+    "AE-RUN": {
+      "name": "Retained agent-ee run outputs",
+      "description": "Coordinator records, native KiCad/ngspice/Bubblewrap outputs and Claude, Codex and Agy subscription reviewer outputs produced by agent-ee runs. A file has this origin alone only when its run used agent-ee material as input.",
+      "upstream": null,
+      "upstream_license": "Not applicable. MIT is proposed in LICENSE.",
+      "license_verified": false,
+      "permission_status": "proposed-mit-pending-owner-approval",
+      "owner_decision": "Approve MIT for retained run outputs. Model-provider output terms and tool banners in the outputs (for example the ngspice copyright banner) were not analysed.",
+      "evidence": [
+        "evidence/README.md",
+        "evidence/files-manifest.json"
+      ]
+    },
+    "T1": {
+      "name": "FOME-MC RC filter fixture",
+      "description": "The RC low-pass fixture copied byte for byte from FOME-MC, its seeded variant (R1 value changed), and further copies and variants in evidence.",
+      "upstream": {
+        "repository": "https://github.com/halbritt/fome-mc",
+        "local_path": "/home/halbritt/git/fome-mc/toolchain/fixtures/rc_filter/",
+        "revisions": {
+          "c43ad7bafc9a8e3be337f1342ae0cb259918882a": "Working tree HEAD at copy time on 2026-10-16; the files were untracked then (fixtures/rc/PROVENANCE.md).",
+          "5b7b175": "First FOME-MC commit that tracks the files. The five SHA-256 hashes equal fixtures/rc/control/ (checked 2026-10-17).",
+          "da527563b95ca8d59f75a37b65959a285dfb2998": "FOME-MC HEAD on 2026-10-17; same five hashes."
+        },
+        "license_file": null
+      },
+      "upstream_license": "No license found. FOME-MC has no LICENSE or COPYING file at da52756, and the GitHub API reports no license.",
+      "license_verified": true,
+      "embedded_origins": [
+        "T6"
+      ],
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Confirm whether these FOME-MC files may be published in agent-ee and under which license. Every FOME-MC commit lists halbritt as author; that is not treated as a publication right.",
+      "evidence": [
+        "fixtures/rc/PROVENANCE.md",
+        "evidence/*/candidate.json sources"
+      ],
+      "capture_sources": [
+        "/fixtures/rc/control/",
+        "/fixtures/rc/seeded/",
+        "/disposable/",
+        "/native/"
+      ]
+    },
+    "T2": {
+      "name": "FOME-MC toolchain/eda.py validation logic",
+      "description": "Validation logic for report shape, sheet coverage, silent parity skips and ngspice output adapted into src/agent_ee/checks.py.",
+      "upstream": {
+        "repository": "https://github.com/halbritt/fome-mc",
+        "local_path": "/home/halbritt/git/fome-mc/toolchain/eda.py",
+        "revisions": {
+          "c43ad7bafc9a8e3be337f1342ae0cb259918882a": "Read in the working tree, where eda.py was untracked (checks.py module docstring).",
+          "5b7b175": "First commit that tracks eda.py. On 2026-10-17, 29 distinct lines longer than 25 characters in checks.py are identical to lines of this version. src/agent_ee/executor.py shares 3 generic lines (an except clause and two record assignments). No other tracked Python file shares 3 or more such lines."
+        },
+        "license_file": null
+      },
+      "upstream_license": "No license found (see T1).",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Confirm whether the adapted eda.py logic may be published under MIT. Until then the adapted portions of checks.py are not covered by the MIT grant.",
+      "evidence": [
+        "src/agent_ee/checks.py module docstring",
+        "line comparison against fome-mc 5b7b175:toolchain/eda.py"
+      ]
+    },
+    "T3": {
+      "name": "Polygonus-Universal-112 donor ECU design",
+      "description": "The FOME-Tech Universal 112 carrier board used as the read-only donor: schematics, board, project, README and project-local footprints captured into evidence, plus native reports, packets, netlists, renders, Gerber and drill outputs and reviewer outputs generated from it.",
+      "upstream": {
+        "repository": "https://github.com/FOME-Tech/Polygonus-Universal-112",
+        "local_path": "/home/halbritt/git/Polygonus-Universal-112",
+        "revisions": {
+          "ddcf0f77fecf3ea7f093954ce1becb7c4a26e970": "Captured revision recorded in each donor candidate.json."
+        },
+        "license_file": null
+      },
+      "upstream_license": "No license found. No license file at ddcf0f7; the README calls the board open-source but names no license.",
+      "license_verified": true,
+      "embedded_origins": [
+        "T4",
+        "T5",
+        "T6"
+      ],
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Decide whether to seek permission from FOME-Tech, keep only facts derived by agent-ee, or stop distributing the copies in future trees. The owner cannot grant rights in another party's design.",
+      "evidence": [
+        "scopes/donor.json",
+        "evidence/donor-*/candidate.json sources"
+      ],
+      "capture_sources": [
+        "/Polygonus-Universal-112/"
+      ]
+    },
+    "T4": {
+      "name": "FOME-Tech kicad-libraries",
+      "description": "fome_modules, Simon, Wiring-Diagrams, Molex symbols and SamacSys_Parts libraries captured as project/fome-kicad-libs/ in donor runs (50 files per candidate).",
+      "upstream": {
+        "repository": "https://github.com/FOME-Tech/kicad-libraries",
+        "local_path": "/home/halbritt/git/kicad-libraries",
+        "revisions": {
+          "ab9c5f8": "Donor submodule pin captured in donor runs."
+        },
+        "license_file": null
+      },
+      "upstream_license": "No license found at ab9c5f8. SamacSys parts are usually generated by the SamacSys/Component Search Engine service, whose terms were not reviewed.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "As T3.",
+      "evidence": [
+        "evidence/donor-*/candidate.json sources under /home/halbritt/git/kicad-libraries/"
+      ],
+      "capture_sources": [
+        "/git/kicad-libraries/"
+      ]
+    },
+    "T5": {
+      "name": "rusEFI libraries vendored in the donor repository",
+      "description": "The donor repository's kicad-libraries/ directory (151 files per candidate), described by its readme as rusEFI libraries.",
+      "upstream": {
+        "repository": "https://github.com/FOME-Tech/Polygonus-Universal-112 (kicad-libraries/); related https://github.com/rusefi/kicad-legacy-libraries",
+        "local_path": "/home/halbritt/git/Polygonus-Universal-112/kicad-libraries",
+        "revisions": {
+          "ddcf0f77fecf3ea7f093954ce1becb7c4a26e970": "Captured donor revision."
+        },
+        "license_file": "kicad-libraries/Credit_lic.txt (credits, not a license grant)"
+      },
+      "upstream_license": "Mixed and incomplete. Credit_lic.txt marks HC-0X_bluetooth.mod and itead_hc-0X_bluetooth.lib as \"GPLv3 from W. Lain\" and says the STM32 symbols came from KiCad/kicad-library, whose historical license was not verified. rusefi/kicad-legacy-libraries has no license file. Other parts are unknown.",
+      "license_verified": false,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "As T3. The GPLv3 credit means these files cannot be offered under MIT.",
+      "evidence": [
+        "/home/halbritt/git/Polygonus-Universal-112/kicad-libraries/Credit_lic.txt"
+      ],
+      "capture_sources": [
+        "/Polygonus-Universal-112/kicad-libraries/"
+      ]
+    },
+    "T6": {
+      "name": "KiCad 10.0.7 stock symbols, footprints and templates",
+      "description": "Whole stock footprint directories, symbol libraries and template library tables captured as stock/ inputs in every design archive, and stock symbol/footprint data embedded in the T1 fixture and in donor files.",
+      "upstream": {
+        "repository": "https://gitlab.com/kicad/libraries",
+        "local_path": "/usr/share/kicad (Ubuntu packages kicad-symbols, kicad-footprints, kicad-templates 10.0.7~ubuntu24.04.1)",
+        "revisions": {
+          "10.0.7~ubuntu24.04.1": "Installed package version; upstream source commit not recovered."
+        },
+        "license_file": "/usr/share/doc/kicad-symbols/LICENSE.md sha256 45d2bce75e5a4208f5afb01b8fb2c406e700371c4fe2b5f5cd5c443d46db4d8f"
+      },
+      "upstream_license": "CC-BY-SA-4.0 with a design-use exception (verified from the installed LICENSE.md). The exception covers designs that use the library data and files generated from them. It does not apply to redistribution of the libraries as a collection, which must keep CC-BY-SA-4.0, attribution and the license documents. No archive contains that license file.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Decide whether the archives keep the stock library collections. If they stay, they need CC-BY-SA-4.0 attribution and the license document. Data embedded in designs falls under the design exception.",
+      "evidence": [
+        "evidence/*/candidate.json sources under /usr/share/kicad/",
+        "benchmarks/seeded/alternate-library.json"
+      ],
+      "capture_sources": [
+        "/usr/share/kicad/"
+      ]
+    },
+    "T7": {
+      "name": "KiCad documentation",
+      "description": "https://docs.kicad.org/10.0/en/cli/cli.html saved by a Codex network probe, an excerpt, and records that echo it.",
+      "upstream": {
+        "repository": "https://docs.kicad.org/10.0/en/cli/cli.html",
+        "local_path": null,
+        "revisions": {},
+        "license_file": null
+      },
+      "upstream_license": "The page states GPL-3.0-or-later or CC-BY-3.0-or-later, copyright The KiCad Documentation Contributors.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Keep with the upstream notice, or stop distributing the copy.",
+      "evidence": [
+        "evidence/model-network-probes/codex-fixed/review-work/probe/experiments/kicad-cli.html"
+      ]
+    },
+    "T8": {
+      "name": "FOME-Tech Polygonus brain module",
+      "description": "Schematics, README, a KiCad PDF export, a text extraction, and netlists, net lists, interface summaries and GitHub tree listings that reviewers derived from fetched copies.",
+      "upstream": {
+        "repository": "https://github.com/FOME-Tech/Polygonus",
+        "local_path": null,
+        "revisions": {
+          "b3176cb": "Codex reviewer fetch pin (references/modules_fetch_log.json in its experiments).",
+          "master": "Agy and Claude reviewers fetched the unpinned default branch; exact revisions are not recorded."
+        },
+        "license_file": null
+      },
+      "upstream_license": "No license found at b3176cb.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "As T3.",
+      "evidence": [
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/modules_fetch_log.json"
+      ]
+    },
+    "T9": {
+      "name": "mck1117/wideband (FOME open-source wideband O2 module)",
+      "description": "Schematics, firmware sources and READMEs fetched by reviewers, and netlists derived from them.",
+      "upstream": {
+        "repository": "https://github.com/mck1117/wideband",
+        "local_path": null,
+        "revisions": {
+          "0a26d3b5aea9ef1a965082fe92caac438aa7569e": "Codex reviewer fetch pin.",
+          "master": "Agy reviewers fetched the unpinned default branch."
+        },
+        "license_file": "LICENSE at 0a26d3b: MIT, Copyright (c) 2023 Matthew Kennedy"
+      },
+      "upstream_license": "MIT at 0a26d3b (verified). MIT requires the copyright and permission notice with copies; no notice accompanies the copies here. The master-branch copies were not checked against a revision.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Keep with the upstream MIT notice added, or stop distributing the copies.",
+      "evidence": [
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/modules_fetch_log.json"
+      ]
+    },
+    "T10": {
+      "name": "Semiconductor vendor datasheets",
+      "description": "NXP TJA1051 (rev. 9, \"(c) NXP N.V. 2017. All rights reserved.\"), Infineon TLE9201SG, STMicroelectronics VNL5050/VNL5090, Maxim MAX9924-MAX9927 and Texas Instruments DRV8825 PDFs, their text extractions, a saved error page from a datasheet request, and short verbatim quotations of TJA1051 table rows.",
+      "upstream": {
+        "repository": "Vendor websites; TJA1051 download details in references/SOURCES.md",
+        "local_path": null,
+        "revisions": {},
+        "license_file": null
+      },
+      "upstream_license": "Proprietary. Copyright or \"All rights reserved\" notices; no redistribution permission found in the files.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Replace copies with URL, revision and SHA-256 (as references/SOURCES.md already records for TJA1051), or obtain vendor permission. Decide whether the one-line TJA1051 table quotations used by the datasheet-facts check may stay.",
+      "evidence": [
+        "references/SOURCES.md"
+      ]
+    },
+    "T11": {
+      "name": "Distributor pages and web-search captures",
+      "description": "LCSC product and datasheet pages and web-search tool captures quoting STMicroelectronics, Analog Devices and LCSC pages.",
+      "upstream": {
+        "repository": "https://www.lcsc.com, https://www.szlcsc.com and pages named in the captures",
+        "local_path": null,
+        "revisions": {},
+        "license_file": null
+      },
+      "upstream_license": "Proprietary site content; site terms not reviewed.",
+      "license_verified": false,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Replace with URLs and retrieval dates, or stop distributing the copies.",
+      "evidence": []
+    },
+    "T12": {
+      "name": "KiCad 10.0 releases PPA signing public key",
+      "description": "OpenPGP public key for the Launchpad kicad/kicad-10.0-releases PPA, fingerprint FDA854F61C4D0D9572BB95E5245D5502FAD7A805, used by the Dockerfile to verify packages.",
+      "upstream": {
+        "repository": "https://launchpad.net/~kicad/+archive/ubuntu/kicad-10.0-releases",
+        "local_path": null,
+        "revisions": {},
+        "license_file": null
+      },
+      "upstream_license": "No license stated. A published signing key, not code or design data.",
+      "license_verified": false,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Confirm that redistributing the published PPA public key with the Dockerfile is acceptable. It is not offered under MIT.",
+      "evidence": [
+        "Dockerfile",
+        "docs/container.md"
+      ]
+    },
+    "T13": {
+      "name": "Seeded-benchmark source boards (metadata only)",
+      "description": "Records about five pinned public boards (SparkFun Qwiic Directional Pad, SparkFun RFID USB-C Reader, sparkengineering host-usb-pmod, Protocentral TMF8829, rmingon i2c-over-rj45): commits, hashes, embedded symbol and library identifiers, reference designators, UUIDs and source values. No design file bytes are tracked.",
+      "upstream": {
+        "repository": "Per-board repository and commit in benchmarks/seeded/expectations.json",
+        "local_path": null,
+        "revisions": {},
+        "license_file": "Per-board license path, SHA-256 and Git blob in benchmarks/seeded/expectations.json"
+      },
+      "upstream_license": "CC-BY-SA-4.0 (SparkFun boards), CERN-OHL-P-2.0 and CERN-OHL-S-2.0, as recorded per board. The records mark repository publication as not authorized.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Confirm that metadata and extracted identifiers about these boards may be published. Design files and modified derivatives stay outside the repository (docs/seeded-benchmark.md).",
+      "evidence": [
+        "benchmarks/seeded/expectations.json",
+        "docs/seeded-benchmark.md"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "paths": [
+        ".dockerignore",
+        ".gitattributes",
+        ".gitignore",
+        ".github/",
+        "Dockerfile",
+        "action.yml",
+        "bin/",
+        "docker/agent-ee.apparmor",
+        "pyproject.toml",
+        "profiles/",
+        "skills/"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "README.md",
+        "docs/",
+        "evidence/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "LICENSE"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "MIT text with the agent-ee copyright line and a scope note that names excluded third-party projects."
+    },
+    {
+      "paths": [
+        "docker/kicad-10.0-releases.asc"
+      ],
+      "kind": "third-party-data",
+      "origins": [
+        "T12"
+      ]
+    },
+    {
+      "paths": [
+        "src/",
+        "scripts/",
+        "tests/"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "src/agent_ee/checks.py"
+      ],
+      "kind": "adapted-source",
+      "origins": [
+        "AE",
+        "T2"
+      ]
+    },
+    {
+      "paths": [
+        "tests/test_datasheet_facts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE",
+        "T10"
+      ],
+      "note": "Contains the two one-line TJA1051 Table 3 quotations used by the datasheet-facts check."
+    },
+    {
+      "paths": [
+        "tests/test_capability_pipeline.py",
+        "tests/test_checks.py",
+        "tests/test_connectivity_ir.py",
+        "tests/test_execution_failures.py",
+        "tests/test_findings.py",
+        "tests/test_footprint_library.py",
+        "tests/test_hardware_interface.py",
+        "tests/test_packet_index.py",
+        "tests/test_seeded_benchmark.py",
+        "tests/test_shared_sexpr.py",
+        "tests/test_symbol_context.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Short KiCad, netlist and PDF-header snippets written for these tests; no copied library or design text."
+    },
+    {
+      "paths": [
+        "tests/test_file_origins.py",
+        "scripts/check_origins.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Contains the third-party content markers as detection patterns."
+    },
+    {
+      "paths": [
+        "docs/argon-assessment.md",
+        "docs/fable-assessment.md",
+        "docs/integration-review-argon.md",
+        "docs/via-probe-correction.md",
+        "docs/third-party-origins.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Names donor, Polygonus or SamacSys material; copies no third-party file content."
+    },
+    {
+      "paths": [
+        "docs/file-origins.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "This inventory; names third-party material and its paths."
+    },
+    {
+      "paths": [
+        "references/SOURCES.md"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "references/TJA1051.pdf"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T10"
+      ]
+    },
+    {
+      "paths": [
+        "scopes/donor.json",
+        "scopes/donor-case-alias.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Names donor input paths and file names and states review limits written for agent-ee; copies no donor content."
+    },
+    {
+      "paths": [
+        "benchmarks/seeded/"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T13"
+      ],
+      "note": "Metadata and small independent numerical expectations; extracted identifiers and values of the upstream boards."
+    },
+    {
+      "paths": [
+        "benchmarks/seeded/alternate-library.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T6"
+      ],
+      "note": "Provenance record for a stock KiCad footprint library used outside the repository."
+    },
+    {
+      "paths": [
+        "fixtures/rc/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T1",
+        "T6"
+      ],
+      "note": "Copied FOME-MC fixture (control) and the seeded variant with R1 changed to 100k."
+    },
+    {
+      "paths": [
+        "fixtures/rc/PROVENANCE.md",
+        "fixtures/rc/control.scope.json",
+        "fixtures/rc/seeded.scope.json",
+        "fixtures/rc/requirements/"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "fixtures/active-spice/",
+        "fixtures/closed-loop/",
+        "fixtures/datasheet-pins/",
+        "fixtures/dc-path/",
+        "fixtures/hardware-interface/",
+        "fixtures/kicad-happy/",
+        "fixtures/netclass-completeness/",
+        "fixtures/passive-corners/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ]
+    },
+    {
+      "paths": [
+        "fixtures/datasheet-pins/facts.json"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE",
+        "T10"
+      ],
+      "note": "Contains two one-line quotations of TJA1051 Table 3 rows with page and hash."
+    },
+    {
+      "paths": [
+        "fixtures/datasheet-pins/control/fp-lib-table",
+        "fixtures/datasheet-pins/control/pins.kicad_pcb",
+        "fixtures/datasheet-pins/control/pins.kicad_pro",
+        "fixtures/datasheet-pins/control/pins.kicad_sch",
+        "fixtures/datasheet-pins/control/pins.kicad_sym",
+        "fixtures/datasheet-pins/control/pins.pretty/SO8.kicad_mod",
+        "fixtures/datasheet-pins/control/sym-lib-table",
+        "fixtures/datasheet-pins/swapped/fp-lib-table",
+        "fixtures/datasheet-pins/swapped/pins.kicad_pcb",
+        "fixtures/datasheet-pins/swapped/pins.kicad_pro",
+        "fixtures/datasheet-pins/swapped/pins.kicad_sch",
+        "fixtures/datasheet-pins/swapped/pins.kicad_sym",
+        "fixtures/datasheet-pins/swapped/pins.pretty/SO8.kicad_mod",
+        "fixtures/datasheet-pins/swapped/sym-lib-table"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original eight-pin symbol and footprint written here. Pin numbers and names are facts from TJA1051 Table 3; no datasheet text or vendor library data is copied."
+    },
+    {
+      "paths": [
+        "fixtures/active-spice/active.kicad_pcb",
+        "fixtures/active-spice/active.kicad_sch",
+        "fixtures/active-spice/owned.lib",
+        "fixtures/dc-path/arc.kicad_pcb",
+        "fixtures/dc-path/dc_path.kicad_sch",
+        "fixtures/dc-path/long.kicad_pcb",
+        "fixtures/dc-path/narrow.kicad_pcb",
+        "fixtures/dc-path/parallel.kicad_pcb",
+        "fixtures/dc-path/series.kicad_pcb",
+        "fixtures/dc-path/straight.kicad_pcb",
+        "fixtures/hardware-interface/interface.kicad_pcb",
+        "fixtures/hardware-interface/interface.kicad_sch",
+        "fixtures/kicad-happy/qualified/control/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/control/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/control/qualification.kicad_sch",
+        "fixtures/kicad-happy/qualified/derating/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/derating/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/derating/qualification.kicad_sch",
+        "fixtures/kicad-happy/qualified/emc/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/emc/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/emc/qualification.kicad_sch",
+        "fixtures/kicad-happy/qualified/feedback/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/feedback/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/feedback/qualification.kicad_sch",
+        "fixtures/kicad-happy/qualified/power/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/power/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/power/qualification.kicad_sch",
+        "fixtures/kicad-happy/qualified/protection/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/protection/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/protection/qualification.kicad_sch",
+        "fixtures/kicad-happy/qualified/thermal/qualification.kicad_pcb",
+        "fixtures/kicad-happy/qualified/thermal/qualification.kicad_pro",
+        "fixtures/kicad-happy/qualified/thermal/qualification.kicad_sch",
+        "fixtures/netclass-completeness/native.kicad_pro"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Generated by the generator in the same fixture directory or hand-authored here, with pin-only symbols and fixture footprints written here; stock library names are used as identifiers only. Checked 2026-10-17: no embedded stock symbol graphics."
+    },
+    {
+      "paths": [
+        "fixtures/hardware-interface/generate.py",
+        "fixtures/kicad-happy/qualified/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Generator writing original KiCad text."
+    },
+    {
+      "paths": [
+        "evidence/rc-demonstration/",
+        "evidence/rc-final/",
+        "evidence/rc-verified/",
+        "evidence/model-repair/",
+        "evidence/model-repair-final/",
+        "evidence/model-release/repair-demo/",
+        "evidence/model-release/uncertainty/",
+        "evidence/model-comparison/",
+        "evidence/adjudicator-comparison/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ],
+      "note": "Directory rule: files were not individually reviewed. The directory holds retained run records whose captured inputs, packets, native reports and reviewer outputs embed or quote the listed origins."
+    },
+    {
+      "paths": [
+        "evidence/model-repair/",
+        "evidence/model-repair-final/",
+        "evidence/model-release/repair-demo/",
+        "evidence/model-release/uncertainty/",
+        "evidence/model-comparison/"
+      ],
+      "kind": "generated-design-output",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ],
+      "suffixes": [
+        ".drl",
+        "-drill.rpt",
+        ".gbl",
+        ".gbs",
+        ".gtl",
+        ".gts",
+        ".gm1",
+        ".g1",
+        ".g2",
+        ".gbrjob",
+        ".png",
+        ".svg",
+        ".pdf"
+      ],
+      "note": "Plots and renders generated from T1 designs."
+    },
+    {
+      "paths": [
+        "evidence/rc-verified/",
+        "evidence/model-repair/",
+        "evidence/model-repair-final/",
+        "evidence/model-release/repair-demo/",
+        "evidence/model-comparison/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T1",
+        "T6"
+      ],
+      "suffixes": [
+        ".kicad_sch",
+        ".kicad_pcb",
+        ".kicad_pro",
+        ".kicad_prl",
+        "fp-lib-table",
+        "sym-lib-table"
+      ],
+      "note": "Copies and reviewer- or coordinator-modified variants of the T1 fixture (disposable repair copies, comparison cases, scratch boards)."
+    },
+    {
+      "paths": [
+        "evidence/donor-baseline/",
+        "evidence/donor-baseline-v2/",
+        "evidence/donor-final/",
+        "evidence/donor-verified/",
+        "evidence/model-baselines/",
+        "evidence/model-baselines-expanded/",
+        "evidence/model-baselines-final/",
+        "evidence/model-release/baseline/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ],
+      "note": "Directory rule: files were not individually reviewed. The directory holds retained run records whose captured inputs, packets, native reports and reviewer outputs embed or quote the listed origins."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines/",
+        "evidence/model-baselines-expanded/",
+        "evidence/model-baselines-final/",
+        "evidence/model-release/baseline/"
+      ],
+      "kind": "generated-design-output",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ],
+      "suffixes": [
+        ".drl",
+        "-drill.rpt",
+        ".gbl",
+        ".gbs",
+        ".gtl",
+        ".gts",
+        ".gm1",
+        ".g1",
+        ".g2",
+        ".gbrjob",
+        ".png",
+        ".svg",
+        ".pdf"
+      ],
+      "note": "Gerber, drill, report and render outputs that reviewers generated from the donor board."
+    },
+    {
+      "paths": [
+        "evidence/BASELINE.md",
+        "evidence/MODEL-BASELINE.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE",
+        "T3"
+      ],
+      "note": "Reports written here that quote donor reference designators, values and locations."
+    },
+    {
+      "paths": [
+        "evidence/MODEL-SELECTION.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE",
+        "T1",
+        "T3"
+      ],
+      "note": "Report written here that quotes fixture and donor findings."
+    },
+    {
+      "paths": [
+        "evidence/model-comparison-grades.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T1"
+      ],
+      "note": "Manual grades quoting fixture nets and values."
+    },
+    {
+      "paths": [
+        "evidence/files-manifest.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Per-file sizes and hashes; names donor and fetched file paths only."
+    },
+    {
+      "paths": [
+        "evidence/model-comparison-summary.json",
+        "evidence/fetch-local-check-20261017.json",
+        "evidence/verify-baseline-20261017.json",
+        "evidence/model-release/tests.log",
+        "evidence/model-release/uncertainty-expectation.json",
+        "evidence/archives/manifest.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/model-selection/",
+        "evidence/model-validation/",
+        "evidence/verification/",
+        "evidence/model-network-probes/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/model-validation/source-state-final.json",
+        "evidence/verification/final-freshness-and-source-status.json",
+        "evidence/verification/doctrine-provenance.json",
+        "evidence/verification/fresh-checkout-replay.json",
+        "evidence/verification/documentation-release.json",
+        "evidence/verification/donor-console.log",
+        "evidence/verification/donor-verified-console.log",
+        "evidence/verification/donor-case-alias-native.log",
+        "evidence/verification/donor-final-console.log",
+        "evidence/verification/donor-v2-console.log"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Names donor paths, checkout status or file names only."
+    },
+    {
+      "paths": [
+        "evidence/model-network-probes/codex-fixed/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T7"
+      ],
+      "note": "Probe records that echo the saved KiCad documentation excerpt."
+    },
+    {
+      "paths": [
+        "evidence/model-network-probes/codex-fixed/review-work/probe/experiments/kicad-cli.html",
+        "evidence/model-network-probes/codex-fixed/review-work/probe/experiments/kicad-cli-source-excerpt.txt"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T7"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_README.md",
+        "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/Polygonus_README.md",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_README.md",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_export_V1.6_polygonus-Shortage-Version.pdf",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_v1.6.txt",
+        "evidence/model-release/baseline/review-work/circuit/experiments/polygonus-readme.md",
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T8"
+      ],
+      "note": "Verbatim copies of READMEs, a KiCad PDF export and its text extraction fetched by reviewers."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-expanded/claude/review-work/adjudicator/experiments/fetch/psu_upstream.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus-Shortage-Version.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_Keep_Alive.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_ign4.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_lowside_quad.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_mcu.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_psu.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_triggers.kicad_sch",
+        "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/Polygonus_mcu.kicad_sch",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_mcu.kicad_sch",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_polygonus-Shortage-Version.kicad_sch",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_triggers.kicad_sch"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T8"
+      ],
+      "note": "Verbatim schematic copies fetched by reviewers."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/",
+        "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/polygonus/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T8"
+      ],
+      "suffixes": [
+        ".kicad_sch"
+      ],
+      "note": "Verbatim schematic copies fetched by reviewers."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_full.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_full_nets.txt",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_ign4.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_lowside_quad.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_mcu.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_psu.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_sub_nets.txt",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_triggers.xml",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/Polygonus_mcu.xml",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/Polygonus_mcu_interface.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_tree.json",
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/polygonus.xml"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T8"
+      ],
+      "note": "Netlists, net lists, interface summaries and tree listings reviewers derived from T8 copies."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/all_ref_symbols.txt",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/parsed_refs.txt",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/repo_files.txt",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/upstream_nets.txt",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/github_trees.txt",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/modules_fetch_log.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/fetch_log.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/fetch_log_followup.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T8",
+        "T9"
+      ],
+      "note": "Listings and fetch logs covering both T8 and T9 sources."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_board.h",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_io_pins.h",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_port.cpp",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_port_shared.cpp",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_readme.md",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_README.md",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_firmware_boards_f0_module_readme.md",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_hardware_README.md",
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T9"
+      ],
+      "note": "Verbatim copies of MIT-licensed READMEs and firmware sources, without the upstream notice."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband_controller.kicad_sch",
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/wideband_controller.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_board_carrier.kicad_sch",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_controller.kicad_sch",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_hardware_board_module_wideband_controller.kicad_sch"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T9"
+      ],
+      "note": "Verbatim schematic copies fetched by reviewers."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T9"
+      ],
+      "suffixes": [
+        ".kicad_sch"
+      ],
+      "note": "Verbatim schematic copies fetched by reviewers."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_board_carrier.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_controller.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_netlist.xml",
+        "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_nets.txt",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_tree.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/wideband_module.xml"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T9"
+      ],
+      "note": "Netlists, net lists and tree listings derived from T9 copies."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/wideband_controller.xml"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T9"
+      ],
+      "note": "Netlist exported from the T9 copy."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/claude/review-work/circuit/experiments/max9924.pdf",
+        "evidence/model-baselines-final/claude/review-work/circuit/experiments/max9924.txt",
+        "evidence/model-baselines-final/claude/review-work/circuit/experiments/vnl5090.pdf",
+        "evidence/model-baselines-final/claude/review-work/circuit/experiments/vnl5090.txt",
+        "evidence/model-baselines-final/claude/review-work/circuit/experiments/tja.tmp",
+        "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/VNL5050.pdf",
+        "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/VNL5050.txt",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TJA1051.pdf",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TJA1051.txt",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TLE9201_actual.pdf",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TLE9201_actual.txt",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/VNL5050_supplier.pdf",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/VNL5050_supplier.txt",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/VNL5050_supplier_fetch.json",
+        "evidence/model-release/baseline/review-work/circuit/experiments/drv8825.pdf",
+        "evidence/model-release/baseline/review-work/circuit/experiments/drv8825.txt",
+        "evidence/model-release/baseline/review-work/circuit/experiments/tja1051.pdf",
+        "evidence/model-release/baseline/review-work/circuit/experiments/tja1051.txt",
+        "evidence/model-release/baseline/review-work/circuit/experiments/tle9201.pdf",
+        "evidence/model-release/baseline/review-work/circuit/experiments/tle9201.txt"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T10"
+      ],
+      "note": "Datasheet PDFs, text extractions, a fetch record and a saved error page from a datasheet request."
+    },
+    {
+      "paths": [
+        "evidence/model-baselines-final/claude/review-work/circuit/experiments/t.tmp",
+        "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/LCSC.html",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/LCSC_C2680415_cn.html",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/LCSC_C2680415_product.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/web_driver_sources.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/web_pin_sources.json",
+        "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/web_vnl5050_sources.json",
+        "evidence/model-release/baseline/review-work/circuit/experiments/identity-web.txt",
+        "evidence/model-release/baseline/review-work/circuit/experiments/vnl-reference-web.txt",
+        "evidence/model-release/baseline/review-work/circuit/experiments/vnl5050-primary-web.txt",
+        "evidence/model-release/baseline/review-work/circuit/experiments/vnl5050-search-web.txt"
+      ],
+      "kind": "third-party-document",
+      "origins": [
+        "T11"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/adjudicator-comparison.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/rc-demonstration.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/rc-final.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/rc-verified.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-repair.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-repair-final.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-comparison.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/donor-baseline.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/donor-baseline-v2.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/donor-final.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/donor-verified.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-baselines.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-baselines-expanded.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8",
+        "T9"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-baselines-final.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8",
+        "T9",
+        "T10",
+        "T11"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-release.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T1",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T8",
+        "T10",
+        "T11"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-network-probes.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN",
+        "T7"
+      ]
+    },
+    {
+      "paths": [
+        "evidence/archives/model-selection.tar.gz"
+      ],
+      "kind": "evidence-archive",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Listing checked 2026-10-17: only the 31 readable files of evidence/model-selection; no captured design inputs or generated configuration."
+    }
+  ]
+}

@@ -227,8 +227,11 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 ## Licence posture
 
-- agent-ee: MIT is proposed on `impl/license` (AGENTEE-14), with an inventory
-  of third-party-origin files. It is not merged or owner-confirmed.
+- agent-ee: MIT is proposed on `impl/license-preparation` (AGENTEE-14), with
+  a [file-origin inventory](file-origins.json) of every tracked file and a
+  [summary](third-party-origins.md). It is not merged or owner-confirmed.
+  FOME-MC fixture, donor, vendor and other third-party files stay excluded
+  until the owner decides each origin.
 - kicad-route: no `LICENSE` file and no licence field in `pyproject.toml` yet;
   MIT is in progress in workstream B.
 - KRT (KiCadRoutingTools) is MIT. Freerouting (GPL-3.0) runs as a separate
@@ -236,8 +239,11 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 - Decision 6: GPL tools are called as processes, never linked into agent-ee.
   `agent_ee/geometry_probe.py` and kicad-route's facts and Specctra bridge
   import KiCad's `pcbnew` Python module in their own child processes. Whether
-  that satisfies the process boundary for distribution is an open question for
-  AGENTEE-14, not settled here.
+  that satisfies the process boundary for distribution is open, not settled
+  here. AGENTEE-14 records it as an owner question in
+  [third-party origins](third-party-origins.md#limits), which also notes that
+  `benchmark.verify_pcb_protection` imports `pcbnew` inside the seeded-benchmark
+  preparation process.
 
 ## Limits
 

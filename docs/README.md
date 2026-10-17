@@ -31,6 +31,7 @@ product's hardware qualification.
 | Plan generation from an empty candidate: stages, benchmark ladder and epics | [Generator roadmap](generator-roadmap.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
+| Check the proposed license and each file's origin and publication status | [Third-party origins](third-party-origins.md) |
 
 The [acceptance index](../evidence/README.md) links all ten demonstrations,
 including actual native tools and agent reviews. The [donor baseline](../evidence/BASELINE.md)
