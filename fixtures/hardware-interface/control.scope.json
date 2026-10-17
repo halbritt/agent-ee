@@ -1,0 +1,57 @@
+{
+  "schema": "agent-ee.scope/3",
+  "name": "Original declared hardware interface",
+  "scope": "Synthetic structural interface and loaded passive response.",
+  "inputs": [
+    {
+      "path": ".",
+      "at": ".",
+      "include": [
+        "interface.kicad_sch",
+        "requirements.md",
+        "contract.json"
+      ]
+    }
+  ],
+  "schematic": "interface.kicad_sch",
+  "requirements": [
+    "requirements.md"
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "contract.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "interface",
+        "statement": "Preserve declared interface invariants.",
+        "source": {
+          "path": "requirements.md",
+          "locator": "Structural interface"
+        },
+        "checks": [
+          "netlist",
+          "interface"
+        ],
+        "intent": "acceptance"
+      }
+    ],
+    "targets": [
+      "requirements.md"
+    ],
+    "reference_architectures": [
+      "requirements.md"
+    ]
+  }
+}

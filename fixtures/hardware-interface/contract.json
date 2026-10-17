@@ -1,0 +1,242 @@
+{
+  "schema": "agent-ee.interface/1",
+  "components": {
+    "external": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "X1"
+        }
+      ],
+      "symbols": [
+        "Owned:Port"
+      ]
+    },
+    "series": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "R1"
+        }
+      ],
+      "symbols": [
+        "Device:R"
+      ]
+    },
+    "capacitor": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "C1"
+        }
+      ],
+      "symbols": [
+        "Device:C"
+      ]
+    },
+    "load": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "LOAD"
+        }
+      ],
+      "symbols": [
+        "Device:R"
+      ]
+    },
+    "probe": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "PROBE"
+        }
+      ],
+      "symbols": [
+        "Owned:Probe"
+      ]
+    },
+    "link": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "R2"
+        }
+      ],
+      "symbols": [
+        "Device:R"
+      ]
+    },
+    "tail": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "R3"
+        }
+      ],
+      "symbols": [
+        "Device:R"
+      ]
+    }
+  },
+  "terminals": {
+    "in": {
+      "component": "external",
+      "pin": "1"
+    },
+    "out": {
+      "component": "external",
+      "pin": "2"
+    },
+    "ground": {
+      "component": "external",
+      "pin": "3"
+    },
+    "series-in": {
+      "component": "series",
+      "pin": "1"
+    },
+    "series-out": {
+      "component": "series",
+      "pin": "2"
+    },
+    "load-top": {
+      "component": "load",
+      "pin": "1"
+    },
+    "probe-tip": {
+      "component": "probe",
+      "pin": "1"
+    },
+    "anon-left": {
+      "component": "link",
+      "pin": "2"
+    },
+    "anon-right": {
+      "component": "tail",
+      "pin": "1"
+    }
+  },
+  "allowed_edits": [
+    {
+      "component": "series",
+      "property": "value",
+      "values": [
+        "10k"
+      ]
+    }
+  ],
+  "invariants": [
+    {
+      "id": "load-present",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "component",
+      "component": "load",
+      "populated": true
+    },
+    {
+      "id": "probe-present",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "component",
+      "component": "probe",
+      "populated": true
+    },
+    {
+      "id": "input-pin",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "named_net",
+      "terminal": "in",
+      "names": [
+        "/IN"
+      ]
+    },
+    {
+      "id": "output-pin",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "named_net",
+      "terminal": "out",
+      "names": [
+        "/OUT"
+      ]
+    },
+    {
+      "id": "load-wire",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "same_net",
+      "terminals": [
+        "out",
+        "load-top"
+      ]
+    },
+    {
+      "id": "probe-wire",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "same_net",
+      "terminals": [
+        "out",
+        "probe-tip"
+      ]
+    },
+    {
+      "id": "series-isolation",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "different_net",
+      "terminals": [
+        "series-in",
+        "series-out"
+      ]
+    },
+    {
+      "id": "anonymous-wire",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "same_net",
+      "terminals": [
+        "anon-left",
+        "anon-right"
+      ]
+    },
+    {
+      "id": "series-value",
+      "requirement": "interface",
+      "source": {
+        "path": "requirements.md",
+        "locator": "Structural interface"
+      },
+      "kind": "value",
+      "component": "series",
+      "equals": "100k"
+    }
+  ]
+}
