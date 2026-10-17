@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from toolchain import require_toolchain, toolchain_test
+
 from agent_ee.cli import outcome, run_review
 from agent_ee.candidate import capture
 from agent_ee.executor import execute
@@ -98,6 +100,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         value = json.loads((work / "stdout.log").read_text().splitlines()[-1]) if record["execution"] == "ok" else None
         return record, value
 
+    @toolchain_test
     def test_two_sleeping_roles_overlap_and_keep_role_order(self):
         run, packet = self.prepare()
         start = time.monotonic()
@@ -125,6 +128,7 @@ class ConcurrentReviewTests(unittest.TestCase):
                 self.assertIn("started " + role, (work / "stdout.log").read_text())
                 self.assertEqual(read_json(work / "execution.json")["execution"], record["execution"])
 
+    @toolchain_test
     def test_failed_role_retains_inflight_peer_in_either_order(self):
         for failed in ("circuit", "physical"):
             with self.subTest(failed=failed):
@@ -140,6 +144,7 @@ class ConcurrentReviewTests(unittest.TestCase):
                 self.assertEqual(outcome({"state": "complete", "checks": [], "reviews": reviews,
                     "review_executions": records, "findings": [], "adjudicated": False}), "incomplete")
 
+    @toolchain_test
     def test_per_call_timeout_retains_completed_peer_in_either_order(self):
         for slow in ("circuit", "physical"):
             with self.subTest(slow=slow):
@@ -156,6 +161,7 @@ class ConcurrentReviewTests(unittest.TestCase):
                 self.assertEqual(next(r for r in records if r["role"] == slow)["timeout_s"], 1)
                 self.assert_retained(run, records)
 
+    @toolchain_test
     def test_global_deadline_bounds_both_calls_and_retains_partial_artifacts(self):
         self.settings["circuit"]["sleep"] = .2
         self.settings["physical"]["sleep"] = 3
@@ -169,6 +175,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assertTrue(all(0 < r["timeout_s"] <= .8 for r in records))
         self.assert_retained(run, records)
 
+    @toolchain_test
     def test_known_harness_failure_suppresses_queued_calls_without_affecting_other_harness(self):
         definition = self.profile["reviewers"][0]
         self.profile["reviewers"] += [{**definition, "role": "queued"},
@@ -195,6 +202,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assert_retained(run, records)
 
     def test_coordinator_adjudicates_only_after_both_initial_roles_settle(self):
+        require_toolchain(native=True)
         fixture = Path(__file__).resolve().parents[1] / "fixtures/rc/control.scope.json"
         self.scope = read_json(fixture)
         for entry in self.scope["inputs"]:
@@ -217,6 +225,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assertEqual([r["role"] for r in result["reviews"]], ["circuit", "physical"])
 
     def test_coordinator_reports_failure_incomplete_and_does_not_adjudicate(self):
+        require_toolchain(native=True)
         fixture = Path(__file__).resolve().parents[1] / "fixtures/rc/control.scope.json"
         self.scope = read_json(fixture)
         for entry in self.scope["inputs"]:
@@ -245,9 +254,11 @@ class ConcurrentReviewTests(unittest.TestCase):
 
 
     def test_owner_sigint_cancels_process_groups_and_queued_roles(self):
+        require_toolchain(native=True)
         self.assert_owner_cancellation("waiting")
 
     def test_owner_sigint_during_launch_cancels_new_process_groups(self):
+        require_toolchain(native=True)
         self.assert_owner_cancellation("launch")
 
     def assert_owner_cancellation(self, phase):
