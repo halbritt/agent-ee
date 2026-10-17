@@ -163,6 +163,12 @@ class NativePlacementTest(unittest.TestCase):
             self.assertIn('work/placement/placement-judgment.json', ctx.result['evidence'])
             self.assertEqual(ctx.result['details']['candidate_id'], manifest['candidate_id'])
             if variant == 'control':
+                unsupported = Ctx(run, manifest, {'id': 'score-only', 'kind': 'placement',
+                    'params': {'score_threshold': 70}}, time.monotonic() + 60)
+                with self.assertRaises(CheckError) as caught:
+                    check_placement(unsupported)
+                self.assertEqual(caught.exception.execution, 'unsupported')
+                self.assertEqual(unsupported.result['outcome'], 'unknown')
                 manifest['files']['board.kicad_pcb'] = 'b'*64
                 with self.assertRaises(CheckError) as caught:
                     check_placement(ctx)

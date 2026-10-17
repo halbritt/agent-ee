@@ -5,6 +5,8 @@ from .storage import write_json
 
 def check_placement(ctx):
     from .checks import CheckError
+    if set(ctx.params) - {'policy'}:
+        raise CheckError('unsupported', 'placement only supports the declared polygon criterion and advisory policy')
     board = ctx.candidate_path(ctx.scope['board'])
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', board,
                  '--out', '/work/placement-probe.json'], timeout=600)
