@@ -19,6 +19,8 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
                            'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
                            'passive_corners': '/usr/bin/ngspice'}
     for spec in manifest['scope'].get('checks', []):
+        if spec.get('kind') == 'routing_rules':
+            required_runtime.update(('kicad-cli', 'pcbnew'))
         if spec.get('kind') in native_requirements:
             required_runtime.add(native_requirements[spec['kind']])
         params = spec.get('params', {})

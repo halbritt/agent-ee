@@ -134,6 +134,14 @@ class PreflightTests(unittest.TestCase):
         self.runtime = {**self.runtime, '/usr/bin/ngspice': {'path': '/usr/bin/ngspice', 'sha256': 'changed'}}
         self.assert_refused('runtime_drift')
 
+    def test_routing_requires_both_native_interfaces_before_dispatch(self):
+        self.runtime['kicad-cli'] = self.runtime['/usr/bin/python3']
+        self.runtime['pcbnew'] = {'path': None, 'sha256': None}
+        self.optional_expectation([{'kind': 'routing_rules', 'params': {}}])
+        self.assertIn('kicad-cli', self.expected['required_runtime'])
+        self.assertIn('pcbnew', self.expected['required_runtime'])
+        self.assert_refused('missing_binary:pcbnew')
+
     def test_active_spice_requires_solver_before_dispatch(self):
         self.runtime['/usr/bin/ngspice'] = {'path': None, 'sha256': None}
         self.optional_expectation([{'kind': 'active_spice', 'params': {}}])

@@ -331,3 +331,14 @@ coupling links; distinct declared sheets can reuse a symbol UUID. Public verify
 also rejects stale navigation after deliberate native-inventory corruption even
 when outer artifact hashes are refreshed. Corruption fixtures are software
 boundary tests, not native-tool measurements or model-performance evidence.
+
+## Captured routing constraints
+
+The [routing check](routing-rules.md) compiles explicit immutable bounds into
+isolated native KiCad DRC invocations. Qualified straight-track/two-layer-via
+routes need complete topology and finite-width copper-contact coverage; arcs,
+zones, copper graphics and unsupported topology remain unknown. Every routing
+check binds one conjunctive requirement. Partial coverage cannot witness a
+defect, even if a supported constraint failed. Impedance has no qualified solver.
+Public pipeline tests use native tools with scripted reviewer transport; they do
+not establish physical qualification or live-model detection performance.
