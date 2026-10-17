@@ -63,6 +63,10 @@ def validate_citation_path(path_value, run_dir):
     if head in ("inputs", "checks"):
         if len(rel.parts) < 2:
             raise ValueError(f"citation path must reference a file inside {head}/: {path_value!r}")
+    elif head == "review-work":
+        if len(rel.parts) < 4 or rel.parts[2] != "experiments":
+            raise ValueError("reviewer citations must name review-work/<role>/experiments/<file>")
+        safe_id(rel.parts[1], "review role")
     elif head == "work":
         if len(rel.parts) < 3:
             raise ValueError(f"citation path under work/ must be work/<check-id>/<file>: {path_value!r}")

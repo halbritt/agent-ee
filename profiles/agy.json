@@ -1,0 +1,27 @@
+{
+  "schema": "agent-ee.profile/1",
+  "name": "agy-evaluation-v1",
+  "tool_mode": "investigate",
+  "reviewers": [
+    {
+      "role": "circuit",
+      "harness": "agy",
+      "model": "gemini-4-argon-high",
+      "effort": "high",
+      "timeout_s": 300
+    },
+    {
+      "role": "physical",
+      "harness": "agy",
+      "model": "gemini-4-argon-high",
+      "effort": "high",
+      "timeout_s": 300
+    }
+  ],
+  "adjudicator": {
+    "harness": "agy",
+    "model": "gemini-4-argon-high",
+    "effort": "high",
+    "timeout_s": 300
+  }
+}

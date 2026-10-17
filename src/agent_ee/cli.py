@@ -30,6 +30,14 @@ def runtime_files():
     for name in ("kicad-cli", "ngspice", "bwrap", "/usr/bin/python3", "claude"):
         path = shutil.which(name)
         files[name] = {"path": path, "sha256": digest(path) if path else None}
+    from .harnesses import executable_for
+    for name in ("claude", "codex", "agy"):
+        path = executable_for(name)
+        files[name] = {"path": path, "sha256": digest(path) if path and Path(path).is_file() else None}
+    native_codex = executable_for("codex")
+    host = Path(native_codex).parent / "codex-code-mode-host" if native_codex else None
+    files["codex_tool_host"] = {"path": str(host) if host and host.is_file() else None,
+        "sha256": digest(host) if host and host.is_file() else None}
     # pcbnew shares a large native extension rather than a standalone CLI.
     probe = subprocess.run(["/usr/bin/python3", "-c", "import _pcbnew; print(_pcbnew.__file__)"],
                            capture_output=True, text=True, timeout=15)
@@ -192,7 +200,7 @@ def recover_records(run, result):
                 "evidence": [raw.relative_to(run).as_posix()] if raw.exists() else [], "limitations": []}
             result["checks"].append(check)
         done = {r["role"] for r in result["review_executions"]}
-        for spec in scope.get("reviewers", [{"role": "circuit"}, {"role": "physical"}]):
+        for spec in scope.get("review_profile", {}).get("reviewers", [{"role": "circuit"}, {"role": "physical"}]):
             if spec["role"] not in done:
                 raw = run / "review-work" / spec["role"] / "execution.json"
                 execution = read_json(raw).get("execution", "interrupted") if raw.exists() else "not_run"
@@ -230,14 +238,14 @@ def validate_scope(scope):
             raise ValueError("rc_transient must name a preceding declared netlist check")
         seen.add(cid)
     seen = set()
-    for reviewer in scope.get("reviewers", [{"role": "circuit"}, {"role": "physical"}]):
+    for reviewer in scope.get("review_profile", {}).get("reviewers", [{"role": "circuit"}, {"role": "physical"}]):
         role = reviewer.get("role", "")
         if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", role) or role == "adjudicator" or role in seen:
             raise ValueError(f"invalid or duplicate reviewer role: {role!r}")
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -256,15 +264,18 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
     try:
         if result["policy_files"] != LOADED_POLICY_FILES:
             raise ValueError("implementation files changed after this process loaded; start a fresh process")
-        m = capture(scope_path, run)
+        m = capture(scope_path, run, profile)
         validate_scope(m["scope"])
+        if m["scope"].get("review_profile"):
+            from .profiles import validate_profile
+            validate_profile(m["scope"]["review_profile"])
         for rel in [m["scope"]["schematic"], m["scope"]["board"], *m["scope"].get("requirements", [])]:
             if rel not in m["files"]:
                 raise ValueError(f"declared native/requirement input was not captured: {rel}")
         result.update(candidate_id=m["candidate_id"], name=m["scope"]["name"], scope=m["scope"]["scope"],
                       limitations=m["scope"].get("limitations", []),
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
-                      expected_review_roles=[r["role"] for r in m["scope"].get("reviewers",
+                      expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
         save_result(run, result)
         result["checks"] = run_checks(run, deadline)
@@ -272,6 +283,8 @@ def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None
         save_result(run, result)
         verify_snapshot(run)
         if not checks_only and time.monotonic() < deadline:
+            from .profiles import validate_profile
+            validate_profile(m["scope"].get("review_profile"))
             packet = build_packet(run, result["checks"], result["run_id"])
             result["limitations"] += packet["packet_limits"]
             result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline)
@@ -377,6 +390,7 @@ def main(argv=None):
     review.add_argument("--out", required=True)
     review.add_argument("--max-seconds", type=float, default=1200)
     review.add_argument("--checks-only", action="store_true")
+    review.add_argument("--profile", help="explicit agent-ee.profile/1 JSON file")
     for cmd in ("inspect", "verify"):
         p = sub.add_parser(cmd)
         p.add_argument("run")
@@ -413,7 +427,7 @@ def main(argv=None):
                 "note": "Presence/version probes do not establish engineering integration. Run a declared scope."}, indent=2))
             return 0 if all(c.get("exit_code") == 0 for c in checks.values()) else 1
         if args.command == "review":
-            return run_review(args.scope, args.out, args.max_seconds, checks_only=args.checks_only)
+            return run_review(args.scope, args.out, args.max_seconds, checks_only=args.checks_only, profile=args.profile)
         if args.command == "inspect":
             run = Path(args.run).resolve()
             result = read_json(run / "result.json")
@@ -444,7 +458,7 @@ def main(argv=None):
             print(f"fresh {result['outcome']}: {result['candidate_id']}")
         elif args.command == "resume":
             old = read_json(Path(args.run) / "candidate.json")
-            return run_review(old["scope_path"], args.out, args.max_seconds, previous=str(Path(args.run).resolve()))
+            return run_review(old["scope_path"], args.out, args.max_seconds, previous=str(Path(args.run).resolve()), profile=old.get("profile_path"))
         elif args.command == "adjudicate":
             apply_decisions(args.run, args.decisions)
         elif args.command == "close-correction":

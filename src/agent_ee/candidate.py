@@ -60,12 +60,17 @@ def source_manifest(scope, base):
     return files, sources, revisions
 
 
-def capture(scope_path, run_dir):
+def capture(scope_path, run_dir, profile_path=None):
     scope_path, run_dir = Path(scope_path).resolve(), Path(run_dir).resolve()
     scope_bytes = scope_path.read_bytes()
     scope = read_json(scope_path)
     if scope.get("schema") != "agent-ee.scope/1":
         raise ValueError("expected agent-ee.scope/1")
+    profile_source = None
+    if profile_path:
+        profile_source = Path(profile_path).expanduser().resolve()
+        scope["review_profile"] = read_json(profile_source)
+        profile_hash = digest(profile_source)
     before, sources, revisions = source_manifest(scope, scope_path.parent)
     inputs = run_dir / "inputs"
     inputs.mkdir()
@@ -81,6 +86,10 @@ def capture(scope_path, run_dir):
     manifest = {"schema": "agent-ee.candidate/1", "scope": scope, "files": before,
                 "sources": sources, "source_revisions": revisions,
                 "scope_path": str(scope_path), "scope_sha256": digest(scope_path)}
+    if profile_source:
+        if digest(profile_source) != profile_hash:
+            raise ValueError("profile changed during capture")
+        manifest.update(profile_path=str(profile_source), profile_sha256=profile_hash)
     manifest["candidate_id"] = identity({"scope": scope, "files": before})
     write_json(run_dir / "candidate.json", manifest)
     return manifest
@@ -103,6 +112,8 @@ def verify_snapshot(run_dir):
 
 def verify_source(run_dir):
     m = verify_snapshot(run_dir)
+    if m.get("profile_path") and digest(m["profile_path"]) != m["profile_sha256"]:
+        raise ValueError("review profile changed; evidence is stale")
     scope_path = Path(m["scope_path"])
     if digest(scope_path) != m["scope_sha256"]:
         raise ValueError("review scope changed; evidence is stale")
