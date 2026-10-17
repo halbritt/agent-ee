@@ -117,6 +117,12 @@ answers and their dependencies; missing answers remain unresolved. These tools
 prepare inputs, but do not choose executable acceptance checks or generate a
 verified circuit.
 
+[Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
+and derived requirements into the captured baseline. A reference document becomes
+binding only when declared or consumed by the scope. Complete production envelope
+capture remains unavailable: outline, layer and stackup obligations still lack
+all required executable predicates, so capture refuses those gaps.
+
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
 [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
