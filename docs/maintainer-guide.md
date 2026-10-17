@@ -29,10 +29,23 @@ PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
 The original recorded release has 63 tests; the subscription-profile release has
 69. This is an observation at the recorded implementation, not a permanent expected test count. Tests need the installed
 native environment for their native/Bubblewrap paths; this repository does not
-install those dependencies automatically.
+install those dependencies automatically. Tests that execute native tools skip
+with a prerequisite reason when Bubblewrap/user namespaces, KiCad (including
+`pcbnew` and fixture libraries), or ngspice are absent. Pure Python and simulated
+failure tests still run. Test assertions and check failures are never converted
+to skips. To require the toolchain, as CI should, run:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
+```
+
+The test-only preflight uses the production sandbox command without network
+access. Unexpected probe errors fail the suite. This mode changes only tests;
+production execution still records unavailable/failed tools as incomplete work.
 
 | Test module | Protection |
 | --- | --- |
+| [test_toolchain.py](../tests/test_toolchain.py) | Real discovery with absent tools, strict-mode refusal, prerequisite diagnostics and preservation of assertions/production semantics |
 | [test_candidate.py](../tests/test_candidate.py) | Captured identity, selected source changes, dependency changes and link restrictions |
 | [test_checks.py](../tests/test_checks.py) | Native control/seed behavior, hierarchy, report parsing, passive modeling and simulation failure interpretation |
 | [test_execution_failures.py](../tests/test_execution_failures.py) | Unavailable/failed/timeout subprocesses, sandbox boundary and invalid execution/review behavior |

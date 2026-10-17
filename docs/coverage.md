@@ -110,3 +110,12 @@ captured manufacturing/telemetry tool can establish an additional criterion.
 Record what it actually computes and what remains out of scope. A domain string
 such as `thermal` is declared tool routing metadata, not independent proof of
 thermal qualification.
+
+## Test environment coverage
+
+Native-dependent tests preflight their sandbox and installed prerequisites.
+Unavailable prerequisites produce explicit skips by default;
+`AGENT_EE_REQUIRE_TOOLCHAIN=1` makes them fail. A skipped test supplies no native
+execution evidence. Parser, orchestration and failure tests that do not require
+those tools continue to run. See the [maintainer guide](maintainer-guide.md#development-and-checks)
+for the strict command. Production missing-tool classification is unchanged.

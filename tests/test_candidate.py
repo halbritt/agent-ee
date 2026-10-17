@@ -6,6 +6,8 @@ from pathlib import Path
 from agent_ee.candidate import capture, verify_snapshot, verify_source
 from agent_ee.executor import execute
 
+from toolchain import toolchain_test
+
 
 class CandidateTests(unittest.TestCase):
     def setUp(self):
@@ -67,6 +69,7 @@ class CandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symlink"):
             capture(self.scope, another)
 
+    @toolchain_test
     def test_os_refuses_writes_and_hides_other_review(self):
         capture(self.scope, self.run)
         record = execute(self.run / "inputs", self.run / "work",
@@ -78,6 +81,7 @@ class CandidateTests(unittest.TestCase):
             ["/bin/sh", "-c", f"test ! -e '{self.run}/work/console.log'"], timeout=5)
         self.assertEqual(record["execution"], "ok")
 
+    @toolchain_test
     def test_timeout_and_failed_command_are_distinct(self):
         capture(self.scope, self.run)
         timeout = execute(self.run / "inputs", self.run / "timeout", ["sleep", "2"], timeout=.02)

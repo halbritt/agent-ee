@@ -178,7 +178,7 @@ and partial runs.
 
 ## Evidence, development and documentation
 
-The project has 98 tests covering native checks, evidence integrity, isolated
+The project has tests covering native checks, evidence integrity, isolated
 review contexts, single-writer ownership, regression detection and empirical
 feedback. The original RC defect-and-repair demonstration used actual agent
 reviews. The newer complete campaign and bench-feedback loops are exercised with
@@ -191,6 +191,11 @@ evidence, recorded in the [closed-loop verification report](docs/closed-loop.md)
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -v
 python3 scripts/check_docs.py
 ```
+
+Native-dependent tests skip with a stated prerequisite reason when their
+toolchain is unavailable. Set `AGENT_EE_REQUIRE_TOOLCHAIN=1` to make missing
+prerequisites fail (the CI mode). Assertions remain failures. See the
+[maintainer guide](docs/maintainer-guide.md#development-and-checks).
 
 The [full manual](docs/README.md) is the entry point for command, scope, tool and
 state contracts. The [maintainer guide](docs/maintainer-guide.md) covers extension
