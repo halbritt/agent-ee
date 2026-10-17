@@ -31,6 +31,19 @@ sufficient access, a compromised kernel/provider, or a malicious change to the
 parent application. Before/after hashing detects changes at boundaries; it
 cannot prevent privileged mutation or turn capture into an atomic transaction.
 
+The shared executor writes `stdout.log`, `stderr.log`, `console.log` and `execution.json` into
+the tool's `/work` after the tool exits, for every caller. It holds a descriptor for the work
+directory from before launch and refuses a link at the work directory itself or at its `home`.
+Each record is written to a new exclusive temporary file relative to that descriptor, then
+renamed into place, so a link, FIFO, directory or hard link planted at a record name or at a
+temporary name is never opened or written through. An entry the tool created or changed at a
+record name is moved aside, unread, to `<name>.displaced-<random>`, and listed in the record's
+`displaced_records`. Stage receipts refuse such a step. A scratch the tool left unwritable
+makes the executor raise without writing anything; an interrupt still propagates as one.
+`storage.write_json` uses the same exclusive temporary file, so a coordinator JSON record
+written into tool scratch does not follow a planted link either. The work directory's parent
+is a coordinator path and is resolved as given.
+
 ## Inference and credentials
 
 Reviewers have network access for subscription inference. The selected artifact
@@ -134,6 +147,26 @@ no symlinks, unchanged baseline files and unchanged bytes outside `mutable_input
 The initial captured scope owns that allowlist; campaign verification re-derives
 it. The implementation cannot broaden it by editing state or adding a file.
 This protects the supported proposal path, not arbitrary host filesystem writes.
+
+[Stage receipts](stage-receipts.md) for writer-side steps are created only by the
+coordinator. It runs the declared tool itself without network access and stores the
+receipt outside the writer's writable mount. Writer statements and writer-made
+files are never receipts. A receipt is provenance only: it neither satisfies a
+check nor replaces the fresh checks of the captured proposal. An unknown tool version
+is recorded as unknown. The coordinator never follows a link or opens a special entry that
+the tool planted in its scratch directory. Write sources, artifacts, backend reports, executor
+records and adopted outputs are opened one component at a time without following links. A host
+file is therefore never hashed or copied into the design through such a link
+([details](stage-receipts.md#links-and-special-files-planted-by-the-tool)).
+
+When invoked, the [placement adapter](placement-adapter.md) narrows
+the board further. It allows only footprint translations and exact quarter turns.
+Angles are compared without rounding, and an angle that cannot be held exactly is
+refused. It also protects fixed and locked footprints. Every other board change and every
+non-board byte change is refused. The coordinator, not the writer, runs the placer
+helper. The helper runs networkless, from a hashed read-only source copy, and
+writes to a fresh scratch destination. Its receipt and local checks are
+provenance only.
 
 The implementation call receives baseline and campaign history in its prompt.
 That is additional inference exposure compared with an initial reviewer. The

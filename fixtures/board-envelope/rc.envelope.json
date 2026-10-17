@@ -1,0 +1,28 @@
+{
+  "schema": "agent-ee.envelope/1",
+  "id": "rc-filter",
+  "outline": {
+    "edges": [
+      {"name": "top", "start": [96, 96], "end": [116, 96]},
+      {"name": "right", "start": [116, 96], "end": [116, 108]},
+      {"name": "bottom", "start": [116, 108], "end": [96, 108]},
+      {"name": "left", "start": [96, 108], "end": [96, 96]}
+    ]
+  },
+  "layer_count": 2,
+  "stackup": {
+    "thickness_mm": 1.6,
+    "layers": [
+      {"name": "F.Cu", "kind": "copper", "thickness_mm": 0.035, "copper_weight_oz": 1},
+      {"name": "core", "kind": "dielectric", "thickness_mm": 1.53},
+      {"name": "B.Cu", "kind": "copper", "thickness_mm": 0.035, "copper_weight_oz": 1}
+    ]
+  },
+  "fab_profile": null,
+  "mounting_holes": [],
+  "keepouts": [],
+  "fixed_footprints": [
+    {"reference": "J1", "side": "front", "edge": "left", "position_mm": 8, "inset_mm": 4,
+     "rotation_deg": 0, "insertion": "from_top", "tolerance_mm": 0}
+  ]
+}

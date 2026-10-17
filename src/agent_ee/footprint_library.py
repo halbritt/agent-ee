@@ -286,12 +286,14 @@ def validate_declaration(declaration):
                 raise FootprintError('connector requires positive integer rows/columns')
 
 
-def check_assignments(manifest, captured_files, declaration):
+def check_assignments(manifest, captured_files, declaration, native_membership=False):
     """Check declared physical components against full shared-resolver pin inventory.
 
     Declaration bytes must be captured by the coordinator before using this as
     evidence. All logical device units are compared, including unconnected pins.
     No schematic/intent reference-name inference or package choice is performed.
+    With native_membership the caller has already established native board
+    membership; captured power/on_board flags are recorded but exclude nothing.
     """
     index = index_footprints(manifest, captured_files)
     result = dict(schema='agent-ee.footprint-assignments/1', execution=index['execution'],
@@ -317,6 +319,9 @@ def check_assignments(manifest, captured_files, declaration):
             assignment['symbol_sources'] = sources
             assignment['pin_numbers'] = sorted({p['number'] for p in pins})
             on_board = board_membership(sources, captured_files)
+            if native_membership:
+                assignment.update(library_power=power, library_on_board=on_board)
+                power, on_board = False, True
             assignment['on_board'] = on_board
             if power or not on_board:
                 assignment.update(status='excluded', exclusion='pinned native power symbol' if power else 'pinned native on_board=no')

@@ -10,6 +10,7 @@ product's hardware qualification.
 | Task | Read |
 | --- | --- |
 | Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
+| Declare stage gates and interpret absent design content | [Staged campaigns](staged-campaign.md) |
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
@@ -21,7 +22,11 @@ product's hardware qualification.
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
+| Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
+| Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
+| Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
+| Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
@@ -31,6 +36,8 @@ product's hardware qualification.
 | Change checks, adapters, schemas or tests | [Maintainer guide](maintainer-guide.md) |
 | Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
 | Plan generation from an empty candidate: stages, benchmark ladder and epics | [Generator roadmap](generator-roadmap.md) |
+| Record a board's outline, stackup, keepouts and fixed connectors before generation | [Board envelope](board-envelope.md) |
+| Record coordinator-run writer-side steps and their exact applicability | [Stage receipts](stage-receipts.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 
@@ -86,6 +93,10 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
-- [Placement geometry](placement.md) and [initial placement](placer.md) — saved-board polygon checks and an isolated proposal writer; campaign gate integration remains pending.
+- [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
+- [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
+- [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison; supplier/native check integration remains pending.
+- [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
+- [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.

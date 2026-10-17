@@ -7,15 +7,15 @@ runtime success. No tool execution, model inference, or uncaptured input reads o
 import copy
 import math
 import re
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from .storage import identity
 
 
-KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('catalog', 'part_selection', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -202,7 +202,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             raise ValueError(f'unknown capability kind: {kind}')
         if not isinstance(params, dict):
             raise ValueError('params must be an object')
-        if kind != 'geometry' and 'criterion' in params:
+        if kind not in ('geometry', 'placement') and 'criterion' in params:
             raise ValueError('unknown criterion for check kind')
         if not isinstance(params.get('calibration_inputs', []), list):
             raise ValueError('calibration_inputs must be a list')
@@ -220,11 +220,33 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                         if dependency in files:
                             captured(dependency, immutable=True)
                 result['predicates'] = [f'native:{kind}:violations']
+            if 'projection' in params:
+                from .checks import drc_projection, require_later_full_drc
+                if kind != 'drc' or drc_projection(params) is None:
+                    raise ValueError('only drc supports a declared projection')
+                require_later_full_drc(check_specs, spec)
+                result['predicates'] = [f"native:drc:{params['projection']}"]
         elif kind == 'geometry':
             captured(scope.get('board'))
             result['predicates'] = _geometry(params)
         elif kind == 'rc_transient':
             result['predicates'] = _rc_transient(params, prerequisite)
+        elif kind == 'placement':
+            from .placement_check import parameters, predicate_names
+            captured(scope.get('board'))
+            for path in parameters(params):
+                captured(path, immutable=True)
+            prerequisite(params.get('drc_check'), ('drc',))
+            if params['criterion'] == 'connector-edge/1':
+                try:
+                    from .board_envelope import validate
+                except ImportError:
+                    raise ValueError('connector-edge/1 needs the AGENTEE-85 envelope validator') from None
+                if inputs is not None:
+                    from .placement_predicates import envelope_declarations
+                    if not envelope_declarations(validate((Path(inputs) / params['envelope']).read_bytes())):
+                        raise ValueError('envelope declares no fixed connectors')
+            result['predicates'] = predicate_names(params)
         elif kind == 'kicad_happy':
             from .kicad_happy import describe_capability
             captured(scope.get('schematic'))
@@ -239,6 +261,12 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                 captured(path, immutable=True)
             result['capability_version'] = descriptor['capability_version']
             result['predicates'] = descriptor['predicates']
+        elif kind in ('catalog', 'part_selection'):
+            from .catalog_checks import capability
+            descriptor = capability(kind, params, scope, files, inputs, spec['id'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
         elif kind == 'symbol_pins':
             from .symbol_checks import capability
             descriptor = capability(params, files, inputs)
@@ -248,8 +276,17 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = descriptor['predicates']
         elif kind == 'footprint_assignment':
             from .library_checks import capability
-            descriptor = capability(params, files, inputs)
+            descriptor = capability(params, files, inputs, scope, spec['id'])
             captured(params['declaration'])
+            if 'netlist_check' in params:
+                prerequisite(params['netlist_check'], ('netlist',))
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'netlist_extra':
+            from .netlist_extra import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
+            prerequisite(params.get('netlist_check'), ('netlist',))
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
@@ -262,6 +299,19 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = descriptor['predicates']
         elif kind == 'routing_rules':
             from .routing_rules import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'netlist_parity':
+            from .netlist_parity import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
+            prerequisite(params.get('netlist_check'), ('netlist',))
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'fab_profile':
+            from .fab_profile import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
@@ -336,7 +386,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                             raise ValueError('duplicate pin fact')
                         pins.add(fact['pin'])
                         result['predicates'].append(f"pin-map:{ref}:{fact['pin']}")
-    except (ValueError, KeyError, TypeError, AttributeError, StopIteration, OverflowError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration, OverflowError) as exc:
         result.update(status='unsupported', predicates=[], unsupported_reasons=[{
             'code': 'unknown_kind' if kind not in KINDS else 'invalid_contract',
             'message': str(exc)}])

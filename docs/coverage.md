@@ -9,8 +9,10 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 
 | Kind | Criterion and evidence |
 | --- | --- |
-| `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); checks declared symbol-pin/pad parity, not correspondence to the actual schematic inventory or physical fit. |
+| `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); declared symbol-pin/pad parity. With `netlist_check`, [native-bound](native-binding.md) exact binding of every native board component, its selection and its captured library pins. No physical fit. |
+| `netlist_parity` | [Exact intent or golden netlist parity](netlist-parity.md) against full native XML; resolved sources must rederive from captured intent. No footprint or electrical adequacy. |
 | `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |
+| `netlist_extra` | [Captured direct-net topology](netlist-extra.md) for exact declared two-terminal classes and anchored rail pairs; hierarchical basename islands are informational. |
 | `netclass_completeness` | [Captured Default netclass field presence](netclass-completeness.md), qualified for KiCad 10.0.7 settings schema 5; no value or rendering validation. |
 | `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
 | `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |
@@ -95,7 +97,12 @@ The [hardware interface check](hardware-interface.md) evaluates captured owner
 predicates over full native schematic terminal inventory and direct conductors.
 Unknown mappings yield incomplete coverage. It protects only declared identities,
 population, exact values and net relations; it never infers obligations or treats
-R/C/L as shorts. Physical access, PCB routing and transfer behavior need separate checks.
+R/C/L as shorts. A global label spelled like a generated no-connect name preserves
+a singleton conductor only with exact source-geometry proof. Source text, present
+or absent, is not evidence: kicad-cli expands label and power-Value text
+variables, so an unexpanded name source touching the pin, and geometry outside
+the qualified domain, are unknown. Physical
+access, PCB routing and transfer behavior need separate checks.
 
 ## Input and packet choices
 
@@ -383,6 +390,36 @@ the stopped report SHA-256 is
 These identifiers support retained-record comparison; the records and captured
 third-party fixture inputs have not been republished as benchmark evidence.
 
+## Writer-side stage receipts
+
+`test_stage_receipts.py` runs an original test step program in the real sandbox.
+It covers the following:
+
+- coordinator-observed executable, source-tree and version identity, and an unknown version when no probe exists or the probe prints nothing;
+- exact input and output hashes and adoption;
+- partial, failed, crashed, timed-out and cancelled steps;
+- out-of-scope writes and inventory changes;
+- verbatim backend reports, and malformed reports that keep the process receipt: `NaN`, `Infinity`,
+  float overflow, duplicate keys, overdeep nesting, invalid UTF-8, truncation, oversized integers and
+  size, including on failure, timeout and cancellation;
+- links planted by the tool, against an owned host-only sentinel. The cases are ancestor and leaf links in write
+  sources, artifacts and backend reports, links to candidate and retained files, broken links,
+  links and a FIFO inside a declared artifact directory beside a valid nested output, and links in the design copy.
+  The sentinel is never hashed, adopted or modified;
+- links planted at every executor record name against the host-only sentinel, an unwritable `/work`,
+  and forged records after an interrupt. These give a retained `refused` receipt, never an adoptable one,
+  and the sentinel is unchanged;
+- adoption that refuses a replaced output or ancestor even when its bytes match, and a receipt
+  object that differs from the retained receipt;
+- forged, tampered and foreign receipts;
+- exact whole-tree applicability.
+
+Campaign tests bind a receipt to the captured proposal. They show that a late change after binding fails
+`verify-campaign`, that a failed step stops the repair without substitution, and
+that undeclared or unanchored receipts are refused. A step whose backend report is `NaN` or truncated
+leaves a verifiable campaign. No scaffold, placement helper or
+kicad-route execution is qualified. The rung 1 receipt set remains open.
+
 ## Synthetic seeded benchmark
 
 The [benchmark utilities](seeded-benchmark.md) freeze five public source commits
@@ -409,6 +446,16 @@ defect, even if a supported constraint failed. Impedance has no qualified solver
 Public pipeline tests use native tools with scripted reviewer transport; they do
 not establish physical qualification or live-model detection performance.
 
+## Captured fabricator profiles
+
+The [fab profile check](fab-profile.md) binds each limit to a captured source
+quote and one conjunctive fabrication requirement. Quote occurrence is not proof
+that the typed value is correct, authentic or applicable. Board size and edge
+clearance need one simple straight-segment outline; size uses fixed saved axes.
+A missing, flat or crossing outline, a curved outline or a cutout is unknown.
+SMT support means only that saved SMD pads are present. Only owned synthetic
+profiles are tested; no real fabricator standard is qualified.
+
 ## Offline catalog and part-selection preparation
 
 [Catalog capture](catalog.md) checks snapshot integrity and rederives normalized
@@ -416,5 +463,17 @@ quantities from retained raw attributes before [selection](part-selection.md).
 Repinned contradictory quantities fail closed. This proves internal consistency,
 not upstream authenticity. Selection compares declared intervals and allocates
 snapshot stock; it is not circuit acceptance or purchasing authorization.
-The real upstream catalog and exact Konnect fixture remain unqualified. These
-APIs are not yet registered as campaign checks with requirement-bound witnesses.
+The real upstream catalog and exact Konnect fixture remain unqualified.
+The informational `catalog` check and bounded `part_selection` check now use
+the existing sandbox, immutable baseline and coordinator seal. Selection binds
+one requirement sourced from its captured requirements file. Unknown selection
+cannot establish a defect witness; checks-only success is not campaign acceptance.
+
+## Intent and golden netlist parity
+
+The [netlist parity check](netlist-parity.md) compares full native XML physical-pin
+incidence and exact component multiplicity with a captured source. It preserves
+identical instances, bounds exact graph search, and leaves ambiguous instance
+correspondence unknown unless explicit immutable anchors resolve it. Descriptive
+scores do not grant conformance. Missing or malformed producer/source evidence
+cannot pass; footprint adequacy and electrical behavior remain outside coverage.

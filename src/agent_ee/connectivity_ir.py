@@ -63,7 +63,7 @@ def _terminal(value):
     _text(next(iter(pin.values())))
 
 
-def _validate_intent(value):
+def _validate_flat_intent(value):
     _object(value, ('schema', 'libraries', 'components', 'nets', 'no_connects'), ('hierarchy', 'ports'))
     if value['schema'] != INTENT_SCHEMA:
         raise ValueError('unknown intent schema')
@@ -122,7 +122,7 @@ def _seal(record):
     return record
 
 
-def resolve_intent(intent, captured_libraries):
+def _resolve_flat_intent(intent, captured_libraries, *, _pin_limit=None):
     """Resolve explicit path→bytes captures; never reads a file or environment."""
     result = dict(schema=RESOLVED_SCHEMA, execution='ok', outcome='pass', coverage='complete',
                   findings=[], intent_sha256=None, libraries=[], components=[], nets=[],
@@ -135,7 +135,7 @@ def resolve_intent(intent, captured_libraries):
             result.update(execution=execution, outcome='unknown', coverage='missing')
     try:
         raw = _read_json(intent)
-        _validate_intent(raw)
+        _validate_flat_intent(raw)
         raw = _normal_intent(raw)
     except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
         result.update(execution='malformed', outcome='unknown', coverage='missing')
@@ -196,6 +196,8 @@ def resolve_intent(intent, captured_libraries):
             if not pins:
                 finding('empty_pins', location, 'selected symbol has empty pins inventory')
                 continue
+            if _pin_limit is not None and sum(len(c['pins']) for c in result['components']) + len(pins) > _pin_limit:
+                raise LibraryError('physical pin inventory exceeds hierarchy limit')
             numbers = [p['number'] for p in pins]
             if len(set(numbers)) != len(numbers):
                 raise LibraryError('duplicate physical pin number across selected/common units unsupported')
@@ -254,7 +256,7 @@ def _hash(value):
         raise ValueError('invalid SHA256')
 
 
-def validate_resolved(record):
+def _validate_flat_resolved(record):
     """Reject partial, rejected, tampered or structurally invalid parity inputs."""
     _object(record, ('schema', 'execution', 'outcome', 'coverage', 'findings', 'intent_sha256',
                      'libraries', 'components', 'nets', 'no_connects', 'hierarchy', 'ports', 'canonical_sha256'))
@@ -352,6 +354,34 @@ def validate_resolved(record):
     if record['hierarchy'] or record['ports']:
         raise ValueError('unsupported hierarchy')
     return record
+
+
+def _validate_intent(value):
+    if isinstance(value, dict) and value.get('schema') == 'agent-ee.connectivity-intent/2':
+        from ._connectivity_hierarchy import validate_intent
+        validate_intent(value)
+    else:
+        _validate_flat_intent(value)
+
+
+def resolve_intent(intent, captured_libraries):
+    """Resolve captured bytes with explicit version dispatch; v1 remains unchanged."""
+    try:
+        raw = _read_json(intent)
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        return _resolve_flat_intent(intent, captured_libraries)
+    if isinstance(raw, dict) and raw.get('schema') == 'agent-ee.connectivity-intent/2':
+        from ._connectivity_hierarchy import resolve
+        return resolve(raw, captured_libraries)
+    return _resolve_flat_intent(intent, captured_libraries)
+
+
+def validate_resolved(record):
+    """Validate the whole versioned record; a selfhash is not source authority."""
+    if isinstance(record, dict) and record.get('schema') == 'agent-ee.resolved-connectivity/2':
+        from ._connectivity_hierarchy import validate_resolved as validate_hierarchy
+        return validate_hierarchy(record)
+    return _validate_flat_resolved(record)
 
 
 def main(argv=None):

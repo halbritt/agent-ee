@@ -28,6 +28,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
+| `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -63,11 +64,20 @@ before making that stronger electrical claim.
 
 ## DRC and schematic parity
 
-No check parameters are currently interpreted. Required JSON lists are
-`violations`, `unconnected_items`, and `schematic_parity`. A missing list is
-malformed coverage. The console is also checked for known native messages that
-indicate skipped schematic parity even when the CLI exits 0. Any item in the
-three lists makes the criterion fail.
+Required JSON lists are `violations`, `unconnected_items`, and
+`schematic_parity`. A missing list is malformed coverage. The console is also
+checked for known native messages that indicate skipped schematic parity even
+when the CLI exits 0. Any item in the three lists makes the criterion fail.
+
+The only parameter is the optional `projection: "placement-stage/1"`. It runs
+the same single native DRC and retains the same raw `drc.json`, but grades only
+`violations` and `schematic_parity`. Unconnected items are counted in
+`details.ungraded`; a placed but unrouted board can pass this projection. Its
+capability predicate is `native:drc:placement-stage/1`, distinct from the full
+`native:drc:violations`. A scope/3 capability audit refuses a projection unless a
+later full `drc` check exists, so connectivity is still graded before
+acceptance. Any other projection value is unsupported. The
+[placement checks](placement.md#placement-check-kind) consume either DRC result.
 
 Zone fill is evaluated as saved. The implementation does not refill, save or
 repair the board. Reported exclusions stay visible and are not dropped by this
@@ -84,6 +94,15 @@ runs. Scope/2 and scope/3 bind exactly one requirement per routing check and
 freeze its rule document and captured native rule sidecars. Complete route and
 constraint coverage is required; unsupported topology or missing inputs are
 unknown. General DRC and schematic parity remain separate obligations.
+
+## Captured fabricator profiles
+
+The [fab profile check](fab-profile.md) accepts a captured `params.fab_profile`
+document whose limits each cite an exact quote in a captured UTF-8 source. It
+runs sourced physical minima as isolated native rules and compares layer count,
+fixed-axis outline extents and SMD presence with the saved board. Missing sources,
+missing profiles and unqualified outlines are unknown. Preferred-tier overruns
+are reported as extra charges, never defects. No real fabricator preset exists.
 
 ## Native netlist
 
@@ -287,6 +306,13 @@ inside the common completion image remains separate.
 schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
+
+## Placement predicates
+
+`placement` evaluates one declared criterion per check against the saved-board
+probe and the raw report of an earlier `drc` check; it never runs DRC itself.
+See [placement checks](placement.md#placement-check-kind) for parameters,
+authority and unknown boundaries.
 
 ## Qualified passive tolerance endpoints
 

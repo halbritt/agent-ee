@@ -36,6 +36,7 @@ The configuration schema is `agent-ee.campaign/1`:
 | `implementation` | One harness/model/effort/timeout definition using the profile adjudicator fields |
 | `max_iterations` | Integer 1–100, excluding booleans; counts reviewed candidates, including the initial candidate |
 | `max_seconds` | Finite number 1–86400; monotonic campaign work budget |
+| `implementation_steps` | Optional list of `agent-ee.stage-step/1` declarations, run by the coordinator after each writer session; see [stage receipts](stage-receipts.md) |
 
 See the [complete executable configuration](../fixtures/closed-loop/campaign.json)
 and [profile field rules](reviewer-profiles.md). The implementation call always
@@ -160,6 +161,8 @@ CAMPAIGN/
     baseline.json
     review-work/implementation/design/  # Only design proposal workspace
     implementation-execution.json
+    receipts/1-<step>/        # Coordinator-run step receipt, when steps are declared
+    stage-receipts.json       # Receipt index, anchored in state.json (new campaigns)
     proposal.scope.json
   tradeoff.json               # Present after an escalation
 ```
@@ -173,7 +176,9 @@ replace the actual file diff.
 `verify-campaign` verifies configuration/profile consistency, each run's snapshot,
 policy/runtime and evidence, baseline equality, the original result snapshot
 hashes, the initial mutable-file allowlist, calibration transitions and the
-recomputed convergence projection. It requires the same implementation/runtime
+recomputed convergence projection. In campaigns that anchor stage receipts, it
+also validates every receipt index and receipt. It refuses the campaign when a
+receipt claiming to apply has outputs that differ from the next run's captured proposal. It requires the same implementation/runtime
 as the recorded runs, even though it skips their original live-source comparison.
 An exit code of 0 means integrity checks succeeded; require the printed state
 `criteria_satisfied` for campaign acceptance. An honestly incomplete campaign
@@ -211,3 +216,7 @@ last candidate; it is not a generic recovery mechanism. A partial output directo
 or already-created next run can prevent another attempt. Preserve those records,
 resolve the cause, and start a fresh explicitly configured campaign if needed.
 Never edit history, limits or state labels to manufacture continuation.
+
+The opt-in [staged campaign contract](staged-campaign.md) adds declared generation
+stages and captured expected-content witnesses to this same campaign. It preserves
+unstaged behavior and requires separate owner acceptance of the convergence change.

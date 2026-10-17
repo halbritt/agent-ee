@@ -1,0 +1,265 @@
+{
+  "schema": "agent-ee.resolved-connectivity/1",
+  "execution": "ok",
+  "outcome": "pass",
+  "coverage": "complete",
+  "findings": [],
+  "intent_sha256": "4593d610daf9f6679bba6e08fad5972623279641b754a213e702f70a78f55766",
+  "libraries": [
+    {
+      "name": "Owned",
+      "path": "Owned.kicad_sym",
+      "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83"
+    }
+  ],
+  "components": [
+    {
+      "id": "port",
+      "reference": "U1",
+      "lib_id": "Owned:Port",
+      "value": "port",
+      "footprint": "",
+      "units": [
+        1
+      ],
+      "pins": [
+        {
+          "number": "1",
+          "name": "P1",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": 0,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "Port",
+            "unit_symbol": "Port_1_1",
+            "pin": "1"
+          }
+        },
+        {
+          "number": "2",
+          "name": "P2",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": -2540000,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "Port",
+            "unit_symbol": "Port_1_1",
+            "pin": "2"
+          }
+        },
+        {
+          "number": "3",
+          "name": "P3",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": -5080000,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "Port",
+            "unit_symbol": "Port_1_1",
+            "pin": "3"
+          }
+        }
+      ],
+      "sources": [
+        {
+          "path": "Owned.kicad_sym",
+          "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+          "symbol": "Port"
+        }
+      ],
+      "power": false,
+      "field_sources": {
+        "id": "/components/port/id",
+        "reference": "/components/port/reference",
+        "lib_id": "/components/port/lib_id",
+        "value": "/components/port/value",
+        "footprint": "/components/port/footprint",
+        "units": "/components/port/units"
+      }
+    },
+    {
+      "id": "series",
+      "reference": "R1",
+      "lib_id": "Owned:R",
+      "value": "10k",
+      "footprint": "",
+      "units": [
+        1
+      ],
+      "pins": [
+        {
+          "number": "1",
+          "name": "P1",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": 0,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "R",
+            "unit_symbol": "R_1_1",
+            "pin": "1"
+          }
+        },
+        {
+          "number": "2",
+          "name": "P2",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": -2540000,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "R",
+            "unit_symbol": "R_1_1",
+            "pin": "2"
+          }
+        }
+      ],
+      "sources": [
+        {
+          "path": "Owned.kicad_sym",
+          "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+          "symbol": "R"
+        }
+      ],
+      "power": false,
+      "field_sources": {
+        "id": "/components/series/id",
+        "reference": "/components/series/reference",
+        "lib_id": "/components/series/lib_id",
+        "value": "/components/series/value",
+        "footprint": "/components/series/footprint",
+        "units": "/components/series/units"
+      }
+    },
+    {
+      "id": "shunt",
+      "reference": "R2",
+      "lib_id": "Owned:R",
+      "value": "10k",
+      "footprint": "",
+      "units": [
+        1
+      ],
+      "pins": [
+        {
+          "number": "1",
+          "name": "P1",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": 0,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "R",
+            "unit_symbol": "R_1_1",
+            "pin": "1"
+          }
+        },
+        {
+          "number": "2",
+          "name": "P2",
+          "electrical_type": "passive",
+          "unit": 1,
+          "x_nm": 0,
+          "y_nm": -2540000,
+          "orientation": 0,
+          "source": {
+            "path": "Owned.kicad_sym",
+            "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+            "symbol": "R",
+            "unit_symbol": "R_1_1",
+            "pin": "2"
+          }
+        }
+      ],
+      "sources": [
+        {
+          "path": "Owned.kicad_sym",
+          "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83",
+          "symbol": "R"
+        }
+      ],
+      "power": false,
+      "field_sources": {
+        "id": "/components/shunt/id",
+        "reference": "/components/shunt/reference",
+        "lib_id": "/components/shunt/lib_id",
+        "value": "/components/shunt/value",
+        "footprint": "/components/shunt/footprint",
+        "units": "/components/shunt/units"
+      }
+    }
+  ],
+  "nets": [
+    {
+      "id": "ground",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": "3"
+        },
+        {
+          "component": "shunt",
+          "pin": "2"
+        }
+      ]
+    },
+    {
+      "id": "input",
+      "name": "VBUS",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": "1"
+        },
+        {
+          "component": "series",
+          "pin": "1"
+        }
+      ]
+    },
+    {
+      "id": "output",
+      "name": "VCC",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": "2"
+        },
+        {
+          "component": "series",
+          "pin": "2"
+        },
+        {
+          "component": "shunt",
+          "pin": "1"
+        }
+      ]
+    }
+  ],
+  "no_connects": [],
+  "hierarchy": [],
+  "ports": [],
+  "canonical_sha256": "e58b7b9bd96f91bb51c505b7796b252544ca2956697c2990f4e104c37a6c6048"
+}

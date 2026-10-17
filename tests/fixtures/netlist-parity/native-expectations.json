@@ -1,0 +1,5 @@
+{
+ "control":"pass", "renamed":"pass", "exchange-refs":"pass",
+ "ic-swap":"defect", "merge":"defect", "off-pin":"defect",
+ "same-part-mutation":"defect", "missing":"defect", "extra":"defect"
+}

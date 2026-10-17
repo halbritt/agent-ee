@@ -1,0 +1,17 @@
+<export version="E">
+ <design><sheet tstamps="/"/></design>
+ <components>
+  <comp ref="X9"><value>port</value><libsource lib="Owned" part="Port"/><sheetpath tstamps="/"/><tstamps>port-uuid</tstamps><units><unit name="A"><pins><pin num="1"/><pin num="2"/><pin num="3"/></pins></unit></units></comp>
+  <comp ref="R80"><value>10k</value><libsource lib="Owned" part="R"/><sheetpath tstamps="/"/><tstamps>series-uuid</tstamps><units><unit name="A"><pins><pin num="1"/><pin num="2"/></pins></unit></units></comp>
+  <comp ref="R90"><value>10k</value><libsource lib="Owned" part="R"/><sheetpath tstamps="/"/><tstamps>shunt-uuid</tstamps><units><unit name="A"><pins><pin num="1"/><pin num="2"/></pins></unit></units></comp>
+ </components>
+ <libparts>
+  <libpart lib="Owned" part="Port"><pins><pin num="1" name="IN" type="passive"/><pin num="2" name="OUT" type="passive"/><pin num="3" name="GND" type="passive"/></pins></libpart>
+  <libpart lib="Owned" part="R"><pins><pin num="1" name="~" type="passive"/><pin num="2" name="~" type="passive"/></pins></libpart>
+ </libparts>
+ <nets>
+  <net code="81" name="ALPHA"><node ref="X9" pin="1"/><node ref="R80" pin="1"/></net>
+  <net code="82" name="BETA"><node ref="X9" pin="2"/><node ref="R80" pin="2"/><node ref="R90" pin="1"/></net>
+  <net code="83" name="GAMMA"><node ref="X9" pin="3"/><node ref="R90" pin="2"/></net>
+ </nets>
+</export>
