@@ -128,6 +128,16 @@ The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
 
+The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
+other supported bounds through native KiCad rules, with complete copper-contact
+coverage required. Arcs, zones and unsupported topology remain unknown.
+
+[Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
+that derived quantities match retained raw attributes. [Part selection](docs/part-selection.md)
+compares declared intervals and stock within that snapshot. These preparation APIs
+do not authenticate upstream claims or establish circuit acceptance; check and
+campaign integration and real upstream catalog qualification remain pending.
+
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references. These checks do not yet establish that an

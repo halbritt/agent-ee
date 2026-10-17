@@ -20,6 +20,8 @@ product's hardware qualification.
 | Run a review, investigate findings and verify a repair | [Operator guide](operator-guide.md) |
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
+| Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
+| Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |

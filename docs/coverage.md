@@ -408,3 +408,13 @@ check binds one conjunctive requirement. Partial coverage cannot witness a
 defect, even if a supported constraint failed. Impedance has no qualified solver.
 Public pipeline tests use native tools with scripted reviewer transport; they do
 not establish physical qualification or live-model detection performance.
+
+## Offline catalog and part-selection preparation
+
+[Catalog capture](catalog.md) checks snapshot integrity and rederives normalized
+quantities from retained raw attributes before [selection](part-selection.md).
+Repinned contradictory quantities fail closed. This proves internal consistency,
+not upstream authenticity. Selection compares declared intervals and allocates
+snapshot stock; it is not circuit acceptance or purchasing authorization.
+The real upstream catalog and exact Konnect fixture remain unqualified. These
+APIs are not yet registered as campaign checks with requirement-bound witnesses.
