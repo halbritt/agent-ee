@@ -1,0 +1,406 @@
+"""Exact, bounded schematic graph comparison over independently captured inputs."""
+import json
+from collections import Counter
+from pathlib import Path
+
+from .hardware_interface import text, unique_object
+
+MAX_COMPONENTS = 128
+MAX_TERMINALS = 8192
+MAX_BYTES = 8_000_000
+MAX_SEARCH = 100_000
+MAX_LIBRARY_BYTES = 32 * 1024 * 1024
+
+
+class Unsupported(ValueError):
+    """Well-formed input whose declared comparison cannot be established."""
+
+
+def terminal_inventory(components, nets):
+    memberships = {}
+    for nid, net in nets.items():
+        terminals = net['terminals']
+        if not terminals or len(terminals) != len(set(terminals)):
+            raise ValueError('empty net or duplicate terminal')
+        for cid, pin in terminals:
+            if cid not in components or pin not in components[cid]['pins']:
+                raise ValueError('unknown component or physical pin')
+            if (cid, pin) in memberships:
+                raise ValueError('physical pin belongs to multiple nets')
+            memberships[cid, pin] = nid
+    if sum(len(c['pins']) for c in components.values()) > MAX_TERMINALS:
+        raise Unsupported('terminal inventory limit exceeded')
+    if not components:
+        raise ValueError('empty component inventory')
+    if len(components) > MAX_COMPONENTS:
+        raise Unsupported('component inventory limit exceeded')
+    return {'components': components, 'nets': nets, 'memberships': memberships}
+
+
+def resolved_inventory(record):
+    from .connectivity_ir import validate_resolved
+    if (record.get('execution'), record.get('outcome'), record.get('coverage')) != ('ok', 'pass', 'complete'):
+        raise Unsupported('resolution incomplete or rejected')
+    validate_resolved(record)
+    components, refs, nets = {}, set(), {}
+    for comp in record['components']:
+        cid, ref = text(comp['id']), text(comp['reference'])
+        if cid in components or ref in refs:
+            raise ValueError('duplicate resolved component identity')
+        refs.add(ref)
+        pins = [text(p['number']) for p in comp['pins']]
+        if not pins or len(pins) != len(set(pins)):
+            raise ValueError('missing or duplicate resolved physical pins')
+        components[cid] = {'lib_id': text(comp['lib_id']), 'value': comp['value'],
+            'populated': True, 'pins': tuple(sorted(pins)), 'reference': ref,
+            'locator': f'components[id={cid}]'}
+    for net in record['nets']:
+        nid = text(net['id'])
+        if nid in nets:
+            raise ValueError('duplicate resolved net identity')
+        terminals = [(text(t['component']), text(t['pin'])) for t in net['terminals']]
+        if len(terminals) < 2:
+            raise ValueError('resolved nets require two physical terminals')
+        nets[nid] = {'name': net['name'], 'terminals': tuple(terminals),
+                     'locator': f'nets[id={nid}]'}
+    graph = terminal_inventory(components, nets)
+    nc = [(text(t['component']), text(t['pin'])) for t in record['no_connects']]
+    all_pins = {(cid, pin) for cid, comp in components.items() for pin in comp['pins']}
+    if len(nc) != len(set(nc)) or set(nc) & graph['memberships'].keys():
+        raise ValueError('duplicate or connected no-connect terminal')
+    if set(nc) | graph['memberships'].keys() != all_pins:
+        raise ValueError('resolved pin accounting incomplete')
+    graph['no_connects'] = tuple(nc)
+    return graph
+
+
+def comparison_key(component):
+    return (component['lib_id'], component['value'], component['populated'])
+
+
+def _number_colors(signatures):
+    labels = {signature: i for i, signature in enumerate(sorted(
+        {s for graph in signatures for s in graph.values()}, key=repr))}
+    return [{cid: labels[s] for cid, s in graph.items()} for graph in signatures]
+
+
+def _refined_colors(expected, actual):
+    """Joint refinement; IDs, references, UUIDs and net names never color vertices."""
+    graphs = (expected, actual)
+    colors = _number_colors([{cid: comparison_key(comp) + (comp['pins'],)
+               for cid, comp in graph['components'].items()} for graph in graphs])
+    for _ in range(len(expected['components']) + len(actual['components'])):
+        # Intern a net signature once, rather than allocating its full neighbour
+        # tuple once per terminal (quadratic space on a high-fanout conductor).
+        net_colors = _number_colors([{nid: tuple(sorted((palette[cid], pin)
+            for cid, pin in net['terminals'])) for nid, net in graph['nets'].items()}
+            for graph, palette in zip(graphs, colors)])
+        signatures = [{cid: (palette[cid], tuple((pin, nets[graph['memberships'][cid, pin]]
+            if (cid, pin) in graph['memberships'] else -1) for pin in comp['pins']))
+            for cid, comp in graph['components'].items()}
+            for graph, palette, nets in zip(graphs, colors, net_colors)]
+        updated = _number_colors(signatures)
+        if len({c for palette in updated for c in palette.values()}) == len(
+                {c for palette in colors for c in palette.values()}):
+            return updated
+        colors = updated
+    return colors
+
+
+def _net_sets(graph, mapping=None):
+    return {nid: frozenset((mapping[cid] if mapping is not None else cid, pin)
+            for cid, pin in net['terminals']) for nid, net in graph['nets'].items()}
+
+
+def _assignments(candidates, budget):
+    order = sorted(candidates, key=lambda cid: (len(candidates[cid]), cid))
+    mapping, used = {}, set()
+
+    def visit(index):
+        if index == len(order):
+            yield dict(mapping)
+            return
+        cid = order[index]
+        for native in candidates[cid]:
+            budget['steps'] += 1
+            if budget['steps'] > budget['limit']:
+                raise Unsupported('exact graph search limit exhausted')
+            if native in used:
+                continue
+            mapping[cid] = native
+            used.add(native)
+            yield from visit(index + 1)
+            used.remove(native)
+            del mapping[cid]
+    yield from visit(0)
+
+
+def _diagnostics(expected, actual, mapping):
+    wanted, observed = _net_sets(expected, mapping), _net_sets(actual)
+    matched = [{'expected': eid, 'native': nid} for eid, terminals in wanted.items()
+               for nid, other in observed.items() if terminals == other]
+    missing = [eid for eid in wanted if not any(m['expected'] == eid for m in matched)]
+    extra = [nid for nid in observed if not any(m['native'] == nid for m in matched)]
+    relations = {eid: [nid for nid, other in observed.items() if terminals & other]
+                 for eid, terminals in wanted.items()}
+    merged = [{'native': nid, 'expected': [eid for eid, nids in relations.items() if nid in nids]}
+              for nid in observed if sum(nid in nids for nids in relations.values()) > 1]
+    split = [{'expected': eid, 'native': nids} for eid, nids in relations.items() if len(nids) > 1]
+    bindings = []
+    for eid in missing:
+        for cid, pin in expected['nets'][eid]['terminals']:
+            native = mapping[cid]
+            nid = actual['memberships'].get((native, pin))
+            bindings.append({'component': cid, 'pin': pin, 'native_component': native,
+                'expected_net': eid, 'native_net': nid,
+                'kind': 'missing_binding' if nid is None or len(observed[nid]) == 1 else 'changed_binding',
+                'intent_locator': expected['nets'][eid]['locator'],
+                'native_locator': actual['components'][native]['locator'] + f', pin={pin}, ' +
+                    (actual['nets'][nid]['locator'] if nid is not None else 'no net membership')})
+    intersection = len(matched)
+    precision = intersection / len(observed) if observed else float(not wanted)
+    recall = intersection / len(wanted) if wanted else float(not observed)
+    union = len(wanted) + len(observed) - intersection
+    return {'matched_nets': matched, 'missing_nets': missing, 'extra_nets': extra,
+        'merged_nets': merged, 'split_nets': split, 'bindings': bindings,
+        'expected_net_names': {nid: n['name'] for nid, n in expected['nets'].items()},
+        'native_net_names': {nid: n['name'] for nid, n in actual['nets'].items()},
+        'scores': {'jaccard': intersection / union if union else 1.0,
+                   'precision': precision, 'recall': recall,
+                   'f1': 2 * precision * recall / (precision + recall) if precision + recall else 0.0}}
+
+
+def _normalize_no_connects(expected, actual):
+    declared = expected.get('no_connects', ())
+    eligible = []
+    for nid, net in actual['nets'].items():
+        if not net.get('auto_unconnected_singleton') or len(net['terminals']) != 1:
+            continue
+        native, pin = net['terminals'][0]
+        candidates = [cid for cid, number in declared if number == pin and
+            comparison_key(expected['components'][cid]) == comparison_key(actual['components'][native])]
+        if candidates:
+            eligible.append({'native_net': nid, 'native_name': net['name'], 'terminal': [native, pin],
+                'expected_candidates': candidates, 'native_no_connect_marker': net.get('no_connect_marker', False),
+                'locator': net['locator']})
+    ignored = {n['native_net'] for n in eligible}
+    nets = {nid: net for nid, net in actual['nets'].items() if nid not in ignored}
+    return {**actual, **terminal_inventory(actual['components'], nets)}, eligible
+
+
+def compare(expected, actual, policy):
+    """Borrow inventories. Exhaustion/ambiguity is unknown, never an approximate pass."""
+    predicate = policy['predicate']
+    wanted = Counter(comparison_key(c) for c in expected['components'].values())
+    observed = Counter(comparison_key(c) for c in actual['components'].values())
+    missing, extra = wanted - observed, observed - wanted
+    report = {'execution': 'ok', 'outcome': 'unknown', 'predicate': predicate,
+        'missing_components': [{'key': list(k), 'count': v} for k, v in sorted(missing.items())],
+        'extra_components': [{'key': list(k), 'count': v} for k, v in sorted(extra.items())],
+        'expected_components': expected['components'], 'native_components': actual['components'],
+        'component_matches': {}, 'correspondence_evaluated': False, 'search_steps': 0}
+    if predicate == 'components':
+        report['outcome'] = 'defect' if missing or (extra and policy['multiset'] == 'exactly') else 'pass'
+        return report
+    if missing or extra:
+        report['outcome'] = 'defect'
+        return report
+    actual, report['normalized_no_connects'] = _normalize_no_connects(expected, actual)
+    candidates = {cid: sorted(nid for nid, native in actual['components'].items()
+                  if comparison_key(comp) == comparison_key(native) and comp['pins'] == native['pins'])
+                  for cid, comp in expected['components'].items()}
+    try:
+        for cid, anchor in policy['anchors'].items():
+            if cid not in candidates:
+                raise Unsupported('unknown anchored intent component')
+            candidates[cid] = [nid for nid in candidates[cid]
+                if all(actual['components'][nid].get(k) == v for k, v in anchor.items())]
+        if any(not matches for matches in candidates.values()):
+            raise Unsupported('unresolvable component key, physical pin inventory or anchor')
+        budget = {'steps': 0, 'limit': policy.get('max_search', MAX_SEARCH)}
+        expected_colors, native_colors = _refined_colors(expected, actual)
+        refined = {cid: [nid for nid in matches if expected_colors[cid] == native_colors[nid]]
+                   for cid, matches in candidates.items()}
+        observed_nets = set(_net_sets(actual).values())
+        matches, best = {cid: set() for cid in candidates}, None
+        for mapping in _assignments(refined, budget):
+            if set(_net_sets(expected, mapping).values()) == observed_nets:
+                best = mapping
+                for cid, nid in mapping.items():
+                    matches[cid].add(nid)
+                if predicate == 'topology':
+                    break
+        if best is None:
+            best_score = -1
+            for mapping in _assignments(candidates, budget):
+                score = len(set(_net_sets(expected, mapping).values()) & observed_nets)
+                if score > best_score:
+                    best, best_score = mapping, score
+            if best is None:
+                raise Unsupported('no compatible instance bijection')
+            report['outcome'] = 'defect'
+        else:
+            report['topology_equivalent'] = True
+            report['outcome'] = 'pass'
+            if predicate == 'instance' and any(len(matches[cid]) != 1 for cid in policy['instance_components']):
+                report.update(execution='unsupported', outcome='unknown',
+                              reason='automorphism leaves required instance correspondence unresolved')
+        report.update(_diagnostics(expected, actual, best))
+        report['component_matches'] = {cid: sorted(nids) for cid, nids in matches.items()}
+        report['correspondence_evaluated'] = predicate == 'instance' and report['execution'] == 'ok'
+        report['search_steps'] = budget['steps']
+    except Unsupported as exc:
+        report.update(execution='unsupported', outcome='unknown', reason=str(exc))
+    return report
+
+
+def read_json_source(path):
+    with Path(path).open('rb') as stream:
+        raw = stream.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise Unsupported('source byte limit exceeded')
+    def invalid_constant(value):
+        raise ValueError(f'non-finite JSON constant: {value}')
+    return json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+
+
+def validate_policy(params):
+    required = {'source', 'netlist_check', 'predicate', 'multiset'}
+    if not isinstance(params, dict) or not required <= params.keys() or params.keys() - required - {
+            'anchors', 'instance_components', 'max_search'}:
+        raise ValueError('expected source, netlist_check, predicate and multiset policy')
+    source = params['source']
+    if not isinstance(source, dict) or set(source) != {'kind', 'path'} or source['kind'] not in (
+            'resolved', 'intent', 'golden_xml'):
+        raise ValueError('source requires explicit resolved, intent or golden_xml adapter')
+    if params['predicate'] not in ('topology', 'components', 'instance'):
+        raise ValueError('unsupported parity predicate')
+    if params['multiset'] not in ('exactly', 'at_least'):
+        raise ValueError('unsupported component multiset policy')
+    if params['multiset'] == 'at_least' and params['predicate'] != 'components':
+        raise ValueError('at_least is supported only for component multiset predicates')
+    anchors = params.get('anchors', {})
+    if not isinstance(anchors, dict):
+        raise ValueError('anchors must map logical IDs to immutable sheet/UUID identities')
+    for cid, anchor in anchors.items():
+        text(cid)
+        if not isinstance(anchor, dict) or set(anchor) != {'sheet', 'uuid'}:
+            raise ValueError('anchors require sheet and UUID; reference names are not anchors')
+        text(anchor['sheet'])
+        text(anchor['uuid'])
+    if anchors and params['predicate'] == 'components':
+        raise ValueError('component multiset predicate does not evaluate instance anchors')
+    if len({(a['sheet'], a['uuid']) for a in anchors.values()}) != len(anchors):
+        raise ValueError('duplicate native anchor')
+    instances = params.get('instance_components', [])
+    if not isinstance(instances, list) or any(not isinstance(c, str) or not c for c in instances) or len(
+            instances) != len(set(instances)):
+        raise ValueError('instance_components must be unique logical IDs')
+    if (params['predicate'] == 'instance') != bool(instances):
+        raise ValueError('instance predicate requires explicit instance_components only')
+    limit = params.get('max_search', MAX_SEARCH)
+    if type(limit) is not int or not 1 <= limit <= MAX_SEARCH:
+        raise ValueError('invalid bounded exact-search budget')
+    return {**params, 'anchors': anchors, 'instance_components': instances, 'max_search': limit}
+
+
+def capability(params, scope, files, inputs, check_id):
+    from .candidate import safe_relative
+    policy = validate_policy(params)
+    rel = str(safe_relative(policy['source']['path']))
+    if inputs is None or rel not in files:
+        raise ValueError('parity source must be captured')
+    immutable = [rel]
+    if policy['source']['kind'] != 'golden_xml':
+        record = read_json_source(Path(inputs) / rel)
+        for library in record['libraries']:
+            path = str(safe_relative(library['path']))
+            if path not in files or files[path] != library['sha256']:
+                raise ValueError('library dependency missing or hash mismatch')
+            immutable.append(path)
+    specs = scope['checks']
+    ids = [s['id'] for s in specs]
+    prior = next((s for s in specs if s['id'] == params['netlist_check']), None)
+    if prior is None or prior['kind'] != 'netlist' or ids.index(prior['id']) >= ids.index(check_id):
+        raise ValueError('unresolved/forward/wrong-kind native netlist prerequisite')
+    requirements = [r for r in scope.get('baseline', {}).get('requirements', []) if check_id in r['checks']]
+    if len(requirements) != 1:
+        raise ValueError('netlist_parity requires exactly one requirement per check')
+    return {'policy': policy, 'immutable_inputs': sorted(set(immutable)),
+            'predicates': ['netlist-parity:' + policy['predicate']]}
+
+
+def _source_inventory(inputs, policy):
+    from .native_netlist import read_native_inventory
+    path = Path(inputs) / policy['source']['path']
+    if policy['source']['kind'] == 'golden_xml':
+        return read_native_inventory(path), None
+    from .connectivity_ir import resolve_intent
+    record = read_json_source(path)
+    if policy['source']['kind'] == 'intent':
+        if len(record['components']) > MAX_COMPONENTS:
+            raise Unsupported('component inventory limit exceeded before resolution')
+        captures, remaining = {}, MAX_LIBRARY_BYTES
+        for library in record['libraries']:
+            with (Path(inputs) / library['path']).open('rb') as stream:
+                raw = stream.read(remaining + 1)
+            remaining -= len(raw)
+            if remaining < 0:
+                raise Unsupported('captured library byte limit exceeded')
+            captures[library['path']] = raw
+        record = resolve_intent(record, captures)
+    if (record.get('execution'), record.get('outcome'), record.get('coverage')) != ('ok', 'pass', 'complete'):
+        return None, record
+    return resolved_inventory(record), record
+
+
+def check_netlist_parity(ctx):
+    from .checks import CheckError
+    from .datasheet_facts import prerequisite
+    from .storage import digest, read_json, write_json
+    from xml.etree.ElementTree import ParseError
+    from .native_netlist import read_native_inventory
+    try:
+        descriptor = capability(ctx.params, ctx.scope, ctx.manifest['files'], ctx.inputs, ctx.cid)
+        producer = read_json(ctx.run_dir / 'checks' / f"{ctx.params['netlist_check']}.json")
+        if producer.get('execution') != 'ok':
+            raise CheckError('failed', 'native netlist producer did not complete successfully')
+        xml = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'design.xml')
+        # Retain the old export for navigation but never use it as graph authority.
+        prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'connectivity.json')
+        expected, resolution = _source_inventory(ctx.inputs, descriptor['policy'])
+        if resolution is not None:
+            write_json(ctx.work / 'resolved-intent.json', resolution)
+            ctx.evidence('resolved-intent.json')
+        if expected is None:
+            status = resolution.get('execution')
+            raise CheckError(status if status in ('failed', 'malformed', 'unsupported') else 'unsupported',
+                             'intent resolution incomplete or rejected; see resolved-intent.json')
+        actual = read_native_inventory(xml)
+        if len(actual['sheets']) != producer['details']['sheet_instances']:
+            raise ValueError('XML hierarchy count differs from native producer coverage')
+        missing_ids = set(descriptor['policy']['instance_components']) - expected['components'].keys()
+        if missing_ids:
+            raise Unsupported(f'unresolved instance predicate: {sorted(missing_ids)}')
+        report = compare(expected, actual, descriptor['policy'])
+        report.update(schema='agent-ee.netlist-parity-result/1', candidate_id=ctx.manifest['candidate_id'],
+            source_sha256=digest(ctx.inputs / ctx.params['source']['path']), native_xml_sha256=digest(xml),
+            intent_sha256=resolution['intent_sha256'] if resolution else None)
+        # Check results must equal their JSON receipt at sealing, including arrays.
+        report = json.loads(json.dumps(report))
+        write_json(ctx.work / 'parity.json', report)
+        ctx.evidence('parity.json')
+        ctx.result['details'].update(report)
+        ctx.result['details']['evaluated_predicates'] = (
+            descriptor['predicates'] if report['execution'] == 'ok' else [])
+        ctx.result.update(execution=report['execution'], outcome=report['outcome'],
+                          summary=f"Exact {ctx.params['predicate']} parity: {report['outcome']}")
+        ctx.result['limitations'].append('Exact schematic incidence and component counts only. '
+            'Scores are descriptive; electrical adequacy, footprint suitability and PCB routing are outside coverage. '
+            'Automorphic instance correspondence requires explicit immutable anchors.')
+    except Unsupported as exc:
+        raise CheckError('unsupported', str(exc)) from exc
+    except OSError as exc:
+        raise CheckError('failed', str(exc)) from exc
+    except (ValueError, KeyError, TypeError, ParseError) as exc:
+        raise CheckError('malformed', str(exc)) from exc

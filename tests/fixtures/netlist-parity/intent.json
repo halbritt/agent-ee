@@ -1,0 +1,105 @@
+{
+  "schema": "agent-ee.connectivity-intent/1",
+  "libraries": [
+    {
+      "name": "Owned",
+      "path": "Owned.kicad_sym",
+      "sha256": "7e2ba4c5b755c50abfb216e11449e5f5fbf39e29a645c9bb763d12d1f64cdf83"
+    }
+  ],
+  "components": [
+    {
+      "id": "port",
+      "reference": "U1",
+      "lib_id": "Owned:Port",
+      "value": "port",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "series",
+      "reference": "R1",
+      "lib_id": "Owned:R",
+      "value": "10k",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "shunt",
+      "reference": "R2",
+      "lib_id": "Owned:R",
+      "value": "10k",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "id": "input",
+      "name": "VBUS",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "series",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "output",
+      "name": "VCC",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "series",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "shunt",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ground",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "port",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "shunt",
+          "pin": {
+            "number": "2"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": []
+}
