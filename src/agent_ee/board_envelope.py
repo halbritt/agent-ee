@@ -37,16 +37,16 @@ MAX_PLACES = 32
 # mapped check evaluates that exact field, does. fab_package (AGENTEE-94) is
 # proposed and unregistered; fab_profile max_layers bounds only a maximum, so it
 # cannot establish an exact layer count.
-CHECK_KINDS = {'outline': ['placement'], 'layer_count': ['fab_package'],
-               'stackup': ['fab_package'], 'fab_profile': ['fab_profile'],
+CHECK_KINDS = {'outline': ['placement', 'board_envelope'],
+               'layer_count': ['fab_package', 'board_envelope'],
+               'stackup': ['fab_package', 'board_envelope'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement'], 'keepouts': ['placement'],
                'fixed_footprints': ['placement']}
 # Why a field without a binding has unknown coverage; reported, never assumed.
 UNBOUND = {
-    'outline': 'no registered predicate compares saved Edge.Cuts with the declared polygon '
-               '(placement outline-containment/1 grades courtyards only)',
-    'layer_count': 'fab_package (AGENTEE-94) is not registered; fab_profile max_layers bounds only a maximum',
-    'stackup': 'fab_package (AGENTEE-94) is not registered',
+    'outline': 'needs an exact native board_envelope outline/1 check',
+    'layer_count': 'needs an exact native board_envelope layers/1 check',
+    'stackup': 'needs native stackup facts and qualified captured copper_weight_oz authority',
     'fab_profile': 'needs one fab_profile check over the referenced profile bytes',
     'mounting_holes': 'no registered predicate checks declared mounting holes',
     'keepouts': 'no registered predicate binds a declared keepout to a saved rule area '
@@ -617,7 +617,7 @@ def derive_requirements(record, source_path):
                        (f" {l['copper_weight_oz']} oz" if 'copper_weight_oz' in l else '')
                        for l in record['stackup']['layers'])
     out.append(obligation(eid, 'stackup', '/stackup', record['stackup'],
-                          f"the fabricated board is {record['stackup']['thickness_mm']} mm thick with stackup, "
+                          f"the saved design and manufacturing request specify {record['stackup']['thickness_mm']} mm thickness and stackup, "
                           f'top to bottom: {layers}.', source_path, CHECK_KINDS['stackup']))
     if record['fab_profile']['status'] == 'referenced':
         profile = {k: record['fab_profile'][k] for k in ('name', 'sha256')}
@@ -726,10 +726,29 @@ def bind_connector_edge(item, spec, record, files, others):
     return None
 
 
+def bind_native_envelope(item, spec, record, files, others):
+    """One field, one criterion, these exact immutable envelope bytes."""
+    from .envelope_check import CRITERIA, parameters
+    params = spec.get('params')
+    parameters(params)
+    field = field_of(item)
+    if CRITERIA[params['criterion']] != field:
+        raise ValueError(f"envelope obligation {item['id']} needs its exact criterion, not {params['criterion']}")
+    if files.get(params['envelope']) != record['envelope_sha256']:
+        raise ValueError('native envelope check does not bind these captured envelope bytes')
+    if others:
+        raise ValueError(f"native envelope check {spec['id']} also mapped by {others}; one field per witness")
+    if field == 'stackup':
+        return 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
+    return None
+
+
 # (field, check kind) -> validator. Coverage for another field needs the owning
 # item to add a validator here; registering a kind or criterion is not enough.
 BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile,
-            ('fixed_footprints', 'placement'): bind_connector_edge}
+            ('fixed_footprints', 'placement'): bind_connector_edge,
+            **{(field, 'board_envelope'): bind_native_envelope
+               for field in ('outline', 'layer_count', 'stackup')}}
 
 
 def field_of(item):
@@ -1112,7 +1131,8 @@ def round_trip(raw, pcb):
                                                               'and fixed footprints only'})
     return {'schema': 'agent-ee.envelope-round-trip/1', 'envelope_sha256': record['envelope_sha256'],
             'board_sha256': hashlib.sha256(pcb).hexdigest(), 'fields': results,
-            'outcome': 'mismatch' if any(r['status'] == 'mismatch' for r in results) else 'match'}
+            'outcome': ('mismatch' if any(r['status'] == 'mismatch' for r in results) else
+                        'unknown' if any(r['status'] != 'match' for r in results) else 'match')}
 
 
 def write_artifacts(artifacts, output):
