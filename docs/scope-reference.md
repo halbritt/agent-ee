@@ -110,8 +110,9 @@ check IDs are unique and match `[a-z][a-z0-9_-]{0,63}`. Checks execute in the
 listed order; dependencies are not topologically sorted.
 
 Supported kinds are `erc`, `drc`, `netlist`, `geometry`, `rc_transient`,
-`measurements` and `coupled_margins`. The latter two use the
-[measurement contract](measurement-adapters.md).
+`measurements`, `coupled_margins` and `placement`. The measurement kinds use the
+[measurement contract](measurement-adapters.md); `placement` names an earlier
+`drc` check in `params.drc_check` ([placement checks](placement.md#placement-check-kind)).
 Unknown kinds are retained as unsupported unknown coverage. The transient check
 must name a preceding check in `params.netlist_check`; use an actual `netlist`
 check whose generated connectivity exists. Parameters, units and check-specific
@@ -122,6 +123,8 @@ failed declared criterion, including reported excluded issues. There is no scope
 parameter for "warnings only" acceptance, arbitrary DRC waiver, or silently
 ignoring a failing native check. Report exclusions and resolve their engineering
 meaning separately; changing that policy is an explicit implementation change.
+The one declared exception is the DRC `placement-stage/1` projection, which
+leaves unconnected items ungraded and requires a later full DRC.
 
 ## Reviewer specification
 

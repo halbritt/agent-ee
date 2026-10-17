@@ -242,6 +242,7 @@ Maintain these boundaries when extending behavior:
 | [test_empirical.py](../tests/test_empirical.py) | Historical bias/uncertainty propagation and model/condition applicability |
 | [test_applicability.py](../tests/test_applicability.py) | Exact design inventories, provenance closure, omission/tamper refusal, unqualified prediction diagnostics and strict migration |
 | [test_campaign.py](../tests/test_campaign.py) | Real coordinator with scripted model replies: repair, fresh review, history, restricted write authority and accumulated empirical epochs |
+| [test_stage_receipts.py](../tests/test_stage_receipts.py) | Coordinator-run step receipts in the real sandbox: identity, unknown versions, exit/scope status, malformed backend reports, tool-planted links and executor records, adoption races, tamper/foreign refusal, exact applicability and campaign anchoring |
 
 The final implementation verification recorded 98 passing tests. That count is
 historical, not a requirement that forbids adding tests. Scripted replies test

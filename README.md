@@ -166,16 +166,31 @@ URLs before offline checks, with byte limits, deadlines and per-part missing
 records. Automatic propagation from selected parts remains pending; capturing a
 PDF does not verify its applicability or its engineering claims.
 
+[Reference-block capture](docs/reference-block-interface.md) retains files from a
+pinned local commit and checks declared ports against the native sheet. It credits
+sealed interface evidence only for the block's actual native components and
+hierarchy. Parts subsets, layouts and adapted designs still need qualification;
+a passing run on a separate schematic cannot qualify the block.
+
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
-captured library pin references. These checks do not yet establish that an
-assignment declaration covers the actual schematic inventory.
+captured library pin references. The [native-bound mode](docs/native-binding.md)
+requires the declaration to match every native board component, its exact
+selection and its captured library pins; declared-only reports remain distinct.
+A [land-pattern geometry kernel](docs/land-geometry.md) compares supported pad
+shapes using exact areas or certified bounds. Its supplier/native check adapter
+and supplier qualification remain pending; the kernel alone cannot accept a part.
 
-The [placement judge](docs/placement.md) checks supported saved-board outlines
-and courtyards. An [initial placer](docs/placer.md) proposes deterministic
-positions on an isolated copy and validates the saved result with native tools.
-These helpers are not yet registered as campaign placement gates; they do not
-establish routing quality or a fabrication-ready board.
+The [placement check](docs/placement.md#placement-check-kind) grades one
+declared criterion per check: native DRC courtyard overlap and footprint
+keepouts from an earlier DRC, outline containment, courtyard edge clearance,
+declared connector edges and a pad-centre ratsnest proxy. An
+[initial placer](docs/placer.md) proposes deterministic positions on an isolated
+copy and validates the saved result with native tools. The
+[placement campaign adapter](docs/placement-adapter.md) runs the placer as a
+receipted coordinator step and refuses edits other than footprint translations
+and quarter turns. Automatic campaign wiring remains pending; these checks do
+not establish routing quality or a fabrication-ready board.
 
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,

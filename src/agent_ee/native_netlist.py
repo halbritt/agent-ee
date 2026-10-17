@@ -2,12 +2,17 @@
 
 The returned graph preserves each instance and selected physical pin. Callers may
 use this read-only inventory for BOM checks without reparsing lossy JSON readers.
+See docs/native-binding.md for the board, BOM and population fields.
 """
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .hardware_interface import text
 from .netlist_parity import MAX_BYTES, Unsupported, terminal_inventory
+
+# Valueless instance flags observed in KiCad 10.0.7 XML exports. Board and BOM
+# membership are independent; DNP keeps a component on the board.
+FLAGS = frozenset(('dnp', 'exclude_from_board', 'exclude_from_bom'))
 
 
 def _one(parent, tag):
@@ -84,16 +89,43 @@ def _components(root, parts, sheets):
         selected = sorted(set(selected))
         if not selected or not set(selected) <= parts[symbol].keys():
             raise ValueError('missing native selected physical pin inventory')
-        properties = [text(p.get('name')) for p in comp.findall('property')]
-        if len(properties) != len(set(properties)):
-            raise ValueError('duplicate native component property')
+        properties = {}
+        for prop in comp.findall('property'):
+            name = text(prop.get('name'))
+            if name in properties:
+                raise ValueError('duplicate native component property')
+            if name in FLAGS and (prop.attrib.keys() != {'name'} or len(prop) or (prop.text or '').strip()):
+                raise ValueError('unqualified native instance flag form')
+            properties[name] = prop.get('value')
         components[ref] = {'reference': ref, 'sheet': sheet, 'uuid': uuid,
             'lib_id': ':'.join(symbol), 'value': _one(comp, 'value').text or '',
-            'footprint': comp.findtext('footprint') or '', 'populated': 'dnp' not in properties,
+            'footprint': _footprint(comp), 'populated': 'dnp' not in properties,
+            'on_board': 'exclude_from_board' not in properties,
+            'in_bom': 'exclude_from_bom' not in properties, 'properties': properties,
             'pins': tuple(selected), 'units': tuple(units),
             'pin_metadata': {pin: parts[symbol][pin] for pin in selected},
+            'library_pins': tuple(sorted(parts[symbol])),
             'locator': f'components/comp[@ref={ref!r}], sheet={sheet}, UUID={uuid}'}
     return components
+
+
+def _footprint(comp):
+    """Zero or one plain element; an absent or empty one is a meaningful empty value."""
+    nodes = comp.findall('footprint')
+    if len(nodes) > 1 or any(len(n) or n.attrib for n in nodes):
+        raise ValueError('duplicate or structured native footprint')
+    value = (nodes[0].text or '') if nodes else ''
+    containers = comp.findall('fields')
+    if len(containers) > 1:
+        raise ValueError('duplicate native field container')
+    fields = containers[0].findall('field') if containers else []
+    names = [text(f.get('name')) for f in fields]
+    if len(names) != len(set(names)):
+        raise ValueError('duplicate native component field')
+    for field in fields:
+        if field.get('name') == 'Footprint' and (field.text or '') != value:
+            raise ValueError('native Footprint field contradicts footprint element')
+    return value
 
 
 def read_native_inventory(path):
@@ -103,7 +135,8 @@ def read_native_inventory(path):
     if ('/' not in sheets or len(sheets) != len(set(sheets)) or
             any(not s.startswith('/') or not s.endswith('/') for s in sheets)):
         raise ValueError('missing or ambiguous native hierarchy inventory')
-    components = _components(root, _parts(root), sheets)
+    parts = _parts(root)
+    components = _components(root, parts, sheets)
     nets, names = {}, set()
     for net in root.findall('./nets/net'):
         nid, name = text(net.get('code')), text(net.get('name'))
@@ -119,4 +152,7 @@ def read_native_inventory(path):
             'locator': f'nets/net[@code={nid!r}][@name={name!r}]'}
     graph = terminal_inventory(components, nets)
     graph['sheets'] = sheets
+    # Complete per-symbol inventory, including pins of unplaced graphical units.
+    graph['library_parts'] = {':'.join(symbol): pins for symbol, pins in parts.items()}
+    graph['exporter'] = root.findtext('./design/tool') or ''
     return graph

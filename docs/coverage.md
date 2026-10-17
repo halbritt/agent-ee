@@ -9,7 +9,8 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 
 | Kind | Criterion and evidence |
 | --- | --- |
-| `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); checks declared symbol-pin/pad parity, not correspondence to the actual schematic inventory or physical fit. |
+| `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); declared symbol-pin/pad parity. With `netlist_check`, [native-bound](native-binding.md) exact binding of every native board component, its selection and its captured library pins. No physical fit. |
+| `netlist_parity` | [Exact intent or golden netlist parity](netlist-parity.md) against full native XML; resolved sources must rederive from captured intent. No footprint or electrical adequacy. |
 | `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |
 | `netlist_extra` | [Captured direct-net topology](netlist-extra.md) for exact declared two-terminal classes and anchored rail pairs; hierarchical basename islands are informational. |
 | `netclass_completeness` | [Captured Default netclass field presence](netclass-completeness.md), qualified for KiCad 10.0.7 settings schema 5; no value or rendering validation. |
@@ -383,6 +384,36 @@ the stopped report SHA-256 is
 `6b521b3b526161e92577e92296d7197046d525ed7d3b4365540cc5852009ac86`.
 These identifiers support retained-record comparison; the records and captured
 third-party fixture inputs have not been republished as benchmark evidence.
+
+## Writer-side stage receipts
+
+`test_stage_receipts.py` runs an original test step program in the real sandbox.
+It covers the following:
+
+- coordinator-observed executable, source-tree and version identity, and an unknown version when no probe exists or the probe prints nothing;
+- exact input and output hashes and adoption;
+- partial, failed, crashed, timed-out and cancelled steps;
+- out-of-scope writes and inventory changes;
+- verbatim backend reports, and malformed reports that keep the process receipt: `NaN`, `Infinity`,
+  float overflow, duplicate keys, overdeep nesting, invalid UTF-8, truncation, oversized integers and
+  size, including on failure, timeout and cancellation;
+- links planted by the tool, against an owned host-only sentinel. The cases are ancestor and leaf links in write
+  sources, artifacts and backend reports, links to candidate and retained files, broken links,
+  links and a FIFO inside a declared artifact directory beside a valid nested output, and links in the design copy.
+  The sentinel is never hashed, adopted or modified;
+- links planted at every executor record name against the host-only sentinel, an unwritable `/work`,
+  and forged records after an interrupt. These give a retained `refused` receipt, never an adoptable one,
+  and the sentinel is unchanged;
+- adoption that refuses a replaced output or ancestor even when its bytes match, and a receipt
+  object that differs from the retained receipt;
+- forged, tampered and foreign receipts;
+- exact whole-tree applicability.
+
+Campaign tests bind a receipt to the captured proposal. They show that a late change after binding fails
+`verify-campaign`, that a failed step stops the repair without substitution, and
+that undeclared or unanchored receipts are refused. A step whose backend report is `NaN` or truncated
+leaves a verifiable campaign. No scaffold, placement helper or
+kicad-route execution is qualified. The rung 1 receipt set remains open.
 
 ## Synthetic seeded benchmark
 

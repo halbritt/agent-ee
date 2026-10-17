@@ -72,7 +72,7 @@ def compile_baseline(scope, files, inputs=None):
             paths.update(capability(params, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "footprint_assignment":
             from .library_checks import capability
-            paths.update(capability(params, files, inputs)["immutable_inputs"])
+            paths.update(capability(params, files, inputs, scope, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "netlist_extra":
             from .netlist_extra import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
@@ -103,6 +103,9 @@ def compile_baseline(scope, files, inputs=None):
             from .dc_path import load_inputs
             _, dependencies = load_inputs(params, files, inputs)
             paths.update(dependencies)
+        if spec.get("kind") == "placement":
+            from .placement_check import parameters
+            paths.update(str(safe_relative(p)) for p in parameters(params))
         if spec.get("kind") == "passive_corners":
             paths.add(str(safe_relative(params["qualification"])))
         if spec.get("kind") == "measurements":

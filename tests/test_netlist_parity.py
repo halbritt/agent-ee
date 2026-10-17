@@ -333,7 +333,11 @@ class NativeParityTests(unittest.TestCase):
             record['components'][0]['pins'][0]['electrical_type'] = 'power_in'
         def net_order(record):
             record['nets'].reverse()
-        for mutate in [value, pin_type, net_order]:
+        def pin_source(record):
+            record['components'][0]['pins'][0]['source']['unit_symbol'] = 'Forged_1_1'
+        def intent_identity(record):
+            record['intent_sha256'] = hashlib.sha256(b'another intent').hexdigest()
+        for mutate in [value, pin_type, net_order, pin_source, intent_identity]:
             with self.subTest(mutation=mutate.__name__):
                 record = read_json(FIXTURE / 'resolved.json')
                 mutate(record)

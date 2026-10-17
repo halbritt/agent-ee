@@ -23,6 +23,7 @@ product's hardware qualification.
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
+| Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
@@ -36,6 +37,7 @@ product's hardware qualification.
 | Audit manual coverage, peer review and documentation checks | [Documentation review](documentation-review.md) |
 | Plan generation from an empty candidate: stages, benchmark ladder and epics | [Generator roadmap](generator-roadmap.md) |
 | Record a board's outline, stackup, keepouts and fixed connectors before generation | [Board envelope](board-envelope.md) |
+| Record coordinator-run writer-side steps and their exact applicability | [Stage receipts](stage-receipts.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 
@@ -91,6 +93,10 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
-- [Placement geometry](placement.md) and [initial placement](placer.md) — saved-board polygon checks and an isolated proposal writer; campaign gate integration remains pending.
+- [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
+- [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
+- [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison; supplier/native check integration remains pending.
+- [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
+- [Placement campaign adapter](placement-adapter.md) — coordinator-run placer step and placement-only structural write scope; campaign wiring remains pending.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
