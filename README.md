@@ -109,6 +109,11 @@ ensembles for one unloaded first-order topology. A separate
 pin bindings and declared transient/AC measurements. Its committed control model
 is synthetic; vendor-model qualification and publication rights are separate
 evidence obligations.
+Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
+materials and saved native copper dimensions to declared DC drop/loss limits.
+Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
+series/parallel networks; unsupported conductors leave coverage incomplete.
+
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
 ideal regulator feedback, complete typed power-pin inventory, USB protection
@@ -133,6 +138,10 @@ Bench corrections bind to the complete captured design inventory. Changing a
 component, connection, layout or library makes calibrated acceptance unavailable
 until fresh observations cover the changed design. The nominal simulation stays
 available for diagnosis; an old correction cannot make a new design pass.
+[Recoverable bench transactions](docs/bench-feedback.md#recoverable-feedback-transactions)
+retain publication and review-attempt history across interruptions. Recovery
+never repeats inference automatically; an uncertain review needs an explicit
+fresh attempt, and retained evidence remains protected from overlapping outputs.
 
 Thermal solvers, post-layout parasitic extraction, DFM/DFA/DFT analysis and BOM
 lifecycle services are **not bundled**. They need separately qualified tools,
@@ -249,8 +258,3 @@ record Fable and Argon's findings on the closed-loop implementation.
 The [enhancement roadmap](docs/enhancement-roadmap.md) records proposed next
 steps, their engineering constraints and acceptance tests, with the independent
 idea pools and review decisions that informed their priority.
-
-Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
-materials and saved native copper dimensions to declared DC drop/loss limits.
-Its initial qualification is limited to ideal F.Cu endpoint paths and bounded
-series/parallel networks; unsupported conductors leave coverage incomplete.
