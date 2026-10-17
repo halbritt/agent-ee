@@ -142,7 +142,7 @@ def capability(params, scope, files, inputs, check_id):
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 
-def read_inventory(path, *, global_labels=()):
+def read_inventory(path):
     """Reject lossy identity maps before judging any missing terminal."""
     root = ET.parse(path).getroot()
     sheets = [text(sheet.get('tstamps')) for sheet in root.findall('./design/sheet')]
@@ -198,14 +198,264 @@ def read_inventory(path, *, global_labels=()):
                 raise ValueError('ambiguous or unknown native terminal membership')
             memberships[(ref, pin)] = code
         # Native generated singleton NC names have no sheet/name prefix. A
-        # local label is sheet-qualified; global labels require captured source.
+        # local label is sheet-qualified; an identically spelled global label
+        # is judged only by qualify_global_names from source geometry.
         if len(nodes) == 1:
             pin_name = components[refs[ref]]['pin_names'][pin]
             prefix = f'{pin_name}-' if pin_name and pin_name not in (pin, '~') else ''
-            if name == f'unconnected-({ref}-{prefix}Pad{pin})' and name not in global_labels:
+            if name == f'unconnected-({ref}-{prefix}Pad{pin})':
                 disconnected.add((ref, pin))
     return {'components': components, 'memberships': memberships, 'nets': nets,
-            'sheets': sheets, 'disconnected': disconnected}
+            'sheets': sheets, 'disconnected': disconnected, 'unresolved': {}, 'sources': {}}
+
+
+# KiCad schematic internal unit is 100 nm. Native labels attach to wires within
+# about one unit; anything within this much larger margin may be connected.
+SCHEMATIC_UNIT = 100
+TOUCH_MARGIN = 10000
+INERT = frozenset('version generator generator_version uuid paper title_block lib_symbols text '
+                  'text_box polyline rectangle circle arc bezier image table sheet_instances '
+                  'symbol_instances embedded_fonts embedded_files group'.split())
+CONNECTABLE = frozenset('wire bus bus_entry junction no_connect label global_label '
+                        'hierarchical_label netclass_flag symbol sheet'.split())
+
+
+def atoms(node):
+    return [x for x in node[1:] if isinstance(x, str)]
+
+
+def only(node, key):
+    from .symbol_library import children
+    found = children(node, key)
+    if len(found) != 1:
+        raise ValueError(f'expected one native {key}')
+    return found[0]
+
+
+def atom(node, key):
+    values = atoms(only(node, key))
+    if len(values) != 1:
+        raise ValueError(f'expected one native {key} value')
+    return values[0]
+
+
+def coordinate(value):
+    from .symbol_library import nanometres
+    nm = nanometres(value)
+    if nm % SCHEMATIC_UNIT:
+        raise ValueError('coordinate is not a whole native schematic unit')
+    return nm
+
+
+def xy(node):
+    values = atoms(node)
+    if len(values) < 2:
+        raise ValueError('expected native coordinates')
+    return coordinate(values[0]), coordinate(values[1])
+
+
+def placed_pins(symbol, library):
+    """Native pin connection points: rotate counterclockwise, then mirror."""
+    from .symbol_library import children
+    definition = library.get(atom(symbol, 'lib_name' if children(symbol, 'lib_name') else 'lib_id'))
+    if definition is None or children(definition, 'extends') or children(definition, 'pin'):
+        raise ValueError('unsupported embedded symbol definition')
+    styles = children(symbol, 'body_style') + children(symbol, 'convert')
+    if len(styles) > 1:
+        raise ValueError('ambiguous native body style')
+    unit, style = atom(symbol, 'unit'), atoms(styles[0]) if styles else ['1']
+    place = atoms(only(symbol, 'at'))
+    mirrors = children(symbol, 'mirror')
+    mirror = atoms(mirrors[0]) if mirrors else []
+    if (len(style) != 1 or len(place) != 3 or len(mirrors) > 1
+            or place[2] not in ('0', '90', '180', '270') or mirror not in ([], ['x'], ['y'])):
+        raise ValueError('unsupported native symbol placement')
+    x, y = xy(only(symbol, 'at'))
+    pins = {}
+    for sub in children(definition, 'symbol'):
+        suffix = atoms(sub)[0].rsplit('_', 2) if atoms(sub) else []
+        if len(suffix) != 3 or not suffix[1].isdigit() or not suffix[2].isdigit():
+            raise ValueError('unsupported embedded symbol unit')
+        if suffix[1] not in ('0', unit) or suffix[2] not in ('0', style[0]):
+            continue
+        for pin in children(sub, 'pin'):
+            if not atoms(pin):
+                raise ValueError('unsupported embedded pin')
+            px, py = xy(only(pin, 'at'))
+            for _ in range(int(place[2]) // 90):
+                px, py = -py, px
+            if mirror == ['x']:
+                py = -py
+            elif mirror == ['y']:
+                px = -px
+            hidden = 'hide' in atoms(pin) or any(atoms(h) == ['yes'] for h in children(pin, 'hide'))
+            pins.setdefault(atom(pin, 'number'), []).append(
+                {'point': (x + px, y - py), 'type': atoms(pin)[0], 'hidden': hidden})
+    return pins
+
+
+def within(point, a, b, margin):
+    """Exact integer test: point lies within margin of segment a-b."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = dx * dx + dy * dy
+    along = (point[0] - a[0]) * dx + (point[1] - a[1]) * dy
+    if along <= 0 or along >= length:
+        end = a if along <= 0 else b
+        return (point[0] - end[0]) ** 2 + (point[1] - end[1]) ** 2 <= margin * margin
+    cross = (point[0] - a[0]) * dy - (point[1] - a[1]) * dx
+    return cross * cross <= margin * margin * length
+
+
+def touches(first, second, margin):
+    """Conservative proximity between point and segment shapes."""
+    if len(first) == 1 or len(second) == 1:
+        point, shape = (first, second) if len(first) == 1 else (second, first)
+        return within(point[0], shape[0], shape[-1], margin)
+    a, b = first
+    c, d = second
+    if any(within(p, *s, margin) for p, s in ((a, second), (b, second), (c, first), (d, first))):
+        return True
+    def turn(p, q, r):
+        value = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return (value > 0) - (value < 0)
+    return turn(a, b, c) * turn(a, b, d) < 0 and turn(c, d, a) * turn(c, d, b) < 0
+
+
+def item_shapes(kind, node, library):
+    from .symbol_library import children
+    if kind not in CONNECTABLE:
+        raise ValueError(f'unsupported native schematic item {kind!r}')
+    uuid = atom(node, 'uuid')
+    if kind == 'symbol':
+        return [{'kind': 'pin', 'shape': (pin['point'],), 'uuid': uuid, 'number': number,
+                 'pin': pin, 'node': node}
+                for number, pins in placed_pins(node, library).items() for pin in pins]
+    if kind == 'sheet':
+        return [{'kind': 'sheet_pin', 'shape': (xy(only(pin, 'at')),), 'uuid': atom(pin, 'uuid')}
+                for pin in children(node, 'pin')]
+    if kind in ('wire', 'bus'):
+        points = only(node, 'pts')[1:]
+        if (len(points) != 2 or any(not isinstance(p, list) or p[:1] != ['xy'] for p in points)
+                or {n[0] for n in node[1:] if isinstance(n, list)} - {'pts', 'stroke', 'uuid'}):
+            raise ValueError(f'unsupported native {kind} geometry')
+        shape = tuple(xy(p) for p in points)
+        if shape[0] == shape[1]:
+            raise ValueError(f'degenerate native {kind}')
+    elif kind == 'bus_entry':
+        (x, y), (dx, dy) = xy(only(node, 'at')), xy(only(node, 'size'))
+        shape = ((x, y), (x + dx, y + dy))
+    else:
+        shape = (xy(only(node, 'at')),)
+    name = text(node[1]) if kind.endswith('label') else None
+    return [{'kind': kind, 'shape': shape, 'uuid': uuid, 'name': name}]
+
+
+def sheet_items(schematic):
+    """Connectable geometry of one sheet file, plus every item it cannot model."""
+    from .symbol_library import children
+    library = {atoms(s)[0]: s for s in children(only(schematic, 'lib_symbols'), 'symbol') if atoms(s)}
+    items, problems = [], []
+    for node in schematic[1:]:
+        kind = node[0] if isinstance(node, list) and node and isinstance(node[0], str) else None
+        if kind not in INERT:
+            try:
+                items += item_shapes(kind, node, library)
+            except ValueError as exc:
+                problems.append(str(exc))
+    return items, problems
+
+
+def label_locator(rel, item):
+    x, y = (f'{v / 1e6:g}' for v in item['shape'][0])
+    return f'{rel}: global_label {item["name"]} at ({x}, {y}) mm, UUID {item["uuid"]}'
+
+
+def label_connection(schematics, root, component, pin, name):
+    """Classify one exact global label spelling against one native pin.
+
+    'connected' requires exact native-equivalent geometry: a label on the pin,
+    or on a wire reached through exact shared endpoints or junctions.
+    Unmodelled items cannot break such a route. 'disconnected' requires every
+    connectable item in the sheet file to be modelled and nothing name-bearing
+    within TOUCH_MARGIN of the pin's conductor. Anything else is 'unknown';
+    text presence is never evidence.
+    """
+    from .symbol_library import children
+    try:
+        owners = [(rel, symbol) for rel, schematic in schematics.items()
+                  for symbol in children(schematic, 'symbol')
+                  if atom(symbol, 'uuid') in component['uuid'].split()]
+        if len(owners) != 1:
+            return 'unknown', 'native component UUID does not resolve to one captured source symbol'
+        rel, symbol = owners[0]
+        instance = '/' + root + component['sheet'][:-1]
+        refs = {atom(path, 'reference') for project in children(only(symbol, 'instances'), 'project')
+                for path in children(project, 'path') if atoms(path) == [instance]}
+        if refs != {component['reference']} or atom(symbol, 'lib_id') != component['symbol']:
+            return 'unknown', 'captured source symbol instance does not match native component identity'
+        items, problems = sheet_items(schematics[rel])
+    except ValueError as exc:
+        return 'unknown', f'source geometry unsupported: {exc}'
+    targets = [i for i in items if i['kind'] == 'pin' and i['node'] is symbol and i['number'] == pin]
+    if len(targets) != 1 or targets[0]['pin']['hidden'] or targets[0]['pin']['type'] == 'no_connect':
+        return 'unknown', (f'{rel}: {component["reference"]} pin {pin} has no unique visible source point'
+                           + ''.join(f'; {problem}' for problem in problems[:1]))
+    target = targets[0]
+    origin = target['shape'][0]
+    wires = [i for i in items if i['kind'] == 'wire']
+    junctions = [i['shape'][0] for i in items if i['kind'] == 'junction']
+    # Only exact connections observed with native kicad-cli; no tolerance.
+    reached = [w for w in wires if origin in w['shape']]
+    frontier = list(reached)
+    while frontier:
+        wire = frontier.pop()
+        for other in wires:
+            if any(other is r for r in reached):
+                continue
+            if set(wire['shape']) & set(other['shape']) or any(
+                    within(j, *wire['shape'], 0) and within(j, *other['shape'], 0) for j in junctions):
+                reached.append(other)
+                frontier.append(other)
+    labels = [i for i in items if i['kind'] == 'global_label' and i['name'] == name]
+    for label in labels:
+        point = label['shape'][0]
+        if point == origin or any(within(point, *w['shape'], 0) for w in reached):
+            route = (', via wire UUIDs ' + ', '.join(sorted(w['uuid'] for w in reached))) if point != origin else ''
+            return 'connected', [label_locator(rel, label) + f' joins {component["reference"]} pin {pin}{route}']
+    if problems:
+        return 'unknown', f'{rel}: source geometry unsupported: {problems[0]}'
+    # Conservative closure: anything within the margin may be connected.
+    cluster = [target]
+    for item in cluster:
+        cluster += [other for other in items if all(other is not c for c in cluster)
+                    and touches(item['shape'], other['shape'], TOUCH_MARGIN)]
+    blockers = sorted({i['kind'] for i in cluster[1:] if i['kind'] not in ('wire', 'junction', 'no_connect')})
+    if blockers:
+        return 'unknown', (f'{rel}: {", ".join(blockers)} may touch {component["reference"]} '
+                           f'pin {pin}; global label connection unproven')
+    return 'disconnected', [label_locator(rel, label) + f' does not reach {component["reference"]} pin {pin}'
+                            for label in labels]
+
+
+def qualify_global_names(inventory, schematics, root):
+    """A global label exempts a native NC spelling only with geometry proof."""
+    from .symbol_library import children
+    spellings = {text(label[1]) for schematic in schematics.values()
+                 for label in children(schematic, 'global_label')}
+    components = {c['reference']: c for c in inventory['components'].values()}
+    for ref, pin in sorted(inventory['disconnected']):
+        name = inventory['nets'][inventory['memberships'][(ref, pin)]]
+        if name not in spellings:
+            continue
+        status, detail = label_connection(schematics, root, components[ref], pin, name)
+        inventory['sources'][(ref, pin)] = {'status': status,
+            **({'reason': detail} if status == 'unknown' else {'locators': detail})}
+        if status == 'connected':
+            inventory['disconnected'].discard((ref, pin))
+        elif status == 'unknown':
+            inventory['disconnected'].discard((ref, pin))
+            inventory['unresolved'][(ref, pin)] = detail
+    return inventory
 
 
 def resolve_components(contract, inventory):
@@ -258,14 +508,25 @@ def evaluate(contract, inventory):
             codes = [inventory['memberships'].get((n['reference'], pin)) for n, pin in zip(natives, pins)]
             record['actual']['terminals'] = [{'terminal': t, 'pin': pin, 'net_code': code,
                 'net_name': inventory['nets'].get(code)} for t, pin, code in zip(tids, pins, codes)]
-            connected = all(code is not None and (n['reference'], pin) not in inventory['disconnected']
-                            for n, pin, code in zip(natives, pins, codes))
+            keys = [(n['reference'], pin) for n, pin in zip(natives, pins)]
+            sources = [{'terminal': t, **inventory['sources'][k]}
+                       for t, k in zip(tids, keys) if k in inventory['sources']]
+            if sources:
+                record['actual']['global_label_sources'] = sources
+                record['locators'] += [l for s in sources if s['status'] == 'connected' for l in s['locators']]
+            unresolved = [inventory['unresolved'][k] for k in keys if k in inventory['unresolved']]
+            connected = all(code is not None and k not in inventory['disconnected']
+                            for k, code in zip(keys, codes))
             if kind == 'named_net':
                 satisfied = connected and inventory['nets'][codes[0]] in invariant['names']
             elif kind == 'same_net':
                 satisfied = connected and codes[0] == codes[1]
             else:
                 satisfied = connected and codes[0] != codes[1]
+            if unresolved and satisfied:
+                # A disconnected pin would fail; only proved geometry may pass.
+                record['actual']['reason'] = '; '.join(unresolved)
+                continue
         record['status'] = 'satisfied' if satisfied else 'violation'
     return records
 
@@ -284,24 +545,22 @@ def check_hardware_interface(ctx):
             from .symbol_library import parse_sexpr, children
             from .checks import verified_hierarchy
             files, _ = verified_hierarchy(ctx)
-            global_labels = {}
+            schematics = {}
             for rel in files:
-                schematic = parse_sexpr((ctx.inputs / rel).read_bytes())
-                if schematic[0] != 'kicad_sch':
+                schematics[rel] = parse_sexpr((ctx.inputs / rel).read_bytes())
+                if schematics[rel][0] != 'kicad_sch':
                     raise ValueError('expected native schematic for label qualification')
-                for label in children(schematic, 'global_label'):
+                for label in children(schematics[rel], 'global_label'):
                     if len(label) < 2:
                         raise ValueError('missing native global label name')
-                    name = text(label[1])
-                    global_labels.setdefault(name, []).append(f'{rel}: global_label {name}')
-            inventory = read_inventory(xml, global_labels=global_labels)
+                    text(label[1])
+            inventory = read_inventory(xml)
             native_result = read_json(ctx.run_dir / 'checks' / f"{prior['id']}.json")
             if len(inventory['sheets']) != native_result['details']['sheet_instances']:
                 raise ValueError('native XML hierarchy count differs from verified schematic hierarchy')
+            # sheet_instances walks from the scope schematic, so files[0] is the root.
+            qualify_global_names(inventory, schematics, atom(schematics[files[0]], 'uuid'))
             records = evaluate(descriptor['contract'], inventory)
-            for record in records:
-                for terminal in record['actual'].get('terminals', []):
-                    record['locators'].extend(global_labels.get(terminal['net_name'], []))
         except (ValueError, KeyError, TypeError, ET.ParseError) as exc:
             records = [{'id': invariant['id'], 'expected': invariant,
                         'status': 'not_evaluated', 'actual': {'reason': str(exc)},
