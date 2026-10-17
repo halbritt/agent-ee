@@ -64,8 +64,8 @@ def _snap(value):
 def _inventory(xml_bytes):
     """Native inventory and parsed component elements from exact bytes.
 
-    Both come from the AGENTEE-41 reader's own bounded parser, so this module
-    never judges the export by its byte spelling.
+    Both come from the AGENTEE-41 reader and its own bounded parser; the
+    elements supply only the symbol fields that the reader does not expose.
     """
     with tempfile.TemporaryDirectory(prefix='agent-ee-annotation-xml-') as tmp:
         path = Path(tmp) / 'netlist.xml'
@@ -81,17 +81,6 @@ def _inventory(xml_bytes):
     if set(elements) != set(inventory['components']) or len(root.findall('./components/comp')) != len(elements):
         raise AnnotationError('native_netlist', 'parsed components differ from the native inventory')
     return inventory, elements
-
-
-def _on_board(comp, element):
-    """Board membership from the parsed native flag, never from a lexical match.
-
-    KiCad 10.0.7 exports ``on_board no`` as a valueless ``exclude_from_board``
-    property of the component. The reader's ``on_board`` field is honoured too
-    once it provides one; either source excluding the symbol refuses it.
-    """
-    names = {(prop.get('name') or '').strip() for prop in element.findall('property')}
-    return 'exclude_from_board' not in names and comp.get('on_board', True) is not False
 
 
 def _fields(elements):
@@ -124,7 +113,9 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
     try:
         inventory, elements = _inventory(xml_bytes)
         for ref in sorted(inventory['components'], key=_natural):
-            if not _on_board(inventory['components'][ref], elements[ref]):
+            # The reader's parsed flag: KiCad 10.0.7 exports on_board no as a
+            # valueless exclude_from_board property, whatever its byte spelling.
+            if not inventory['components'][ref]['on_board']:
                 raise AnnotationError('board_exclusion_unsupported',
                                       'native export excludes this symbol from the board', '/components/' + ref)
         index = index_footprints(manifest, captured_footprints)

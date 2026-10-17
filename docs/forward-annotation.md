@@ -26,15 +26,14 @@ new file. `--work` must name a new directory.
   output for the schematic. The complete component inventory, sheet paths,
   unit UUIDs and nets come from AGENTEE-41's `agent_ee.native_netlist` reader;
   this module has no other inventory source. Symbol fields such as
-  `Description` (which native parity compares) and instance flags are read from
-  the component elements that the same reader's bounded parser returns, and
-  they must cover exactly the same references. Do-not-populate and
-  board-excluded symbols are refused, because they are not qualified yet.
-  KiCad 10.0.7 exports `on_board no` as a valueless `exclude_from_board`
-  property of the component. The refusal is judged on the parsed property
-  name, so quoting, whitespace, character references and end-tag form do not
-  matter. If the reader later exposes an `on_board` field, that field is also
-  honoured.
+  `Description` (which native parity compares) are read from the component
+  elements that the same reader's bounded parser returns, and they must cover
+  exactly the same references. Do-not-populate and board-excluded symbols are
+  refused, because they are not qualified yet. Both come from the reader's
+  parsed `populated` and `on_board` fields: KiCad 10.0.7 exports `on_board no`
+  as a valueless `exclude_from_board` property of the component, so quoting,
+  whitespace, character references and end-tag form do not matter. The reader
+  rejects a flag that carries a value.
 - Board: the existing `.kicad_pcb`. pcbnew runs only in
   `agent_ee.forward_annotation_probe`, a child process started through the
   production Bubblewrap executor with networking unshared and the board copied
