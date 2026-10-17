@@ -18,6 +18,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
 | `doctor` | None | Probe prerequisite versions/imports; no design or inference run |
 | `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
+| `diagnose` | `RUN_OR_CAMPAIGN [--json] [--snapshot-only]` | Report retained facts, unavailable evidence and ambiguous transitions without writes |
 | `inspect` | `RUN` | Show recorded outcome/state, findings, checks, freshness and correction links |
 | `verify` | `RUN [--snapshot-only]` | Check input, policy, runtime and retained evidence consistency |
 | `resume` | `RUN --out NEW_RUN [--max-seconds N]` | Read the old manifest's scope path, recapture and rerun all work |
@@ -39,6 +40,7 @@ operation, with configuration and limits described in the closed-loop reference.
 | `campaign`, `campaign-feedback`, `bench-review` | Criteria satisfied | Retained nonpassing/incomplete outcome | Invocation refusal |
 | `verify-campaign` | Integrity checks succeeded; read printed campaign state | Not a normal handled result | Inconsistent/unavailable evidence |
 | `verify` | Integrity/freshness checks succeeded, whatever the design outcome | Not a normal handled result | Stale/inconsistent/unavailable evidence or handled invocation/parser error |
+| `diagnose` | Advisory report printed, including failed/unavailable verification | Not a normal handled result | Invocation/parser error |
 | `inspect` | Inspection printed, even when its `freshness` field reports a refusal | Not a normal handled result | Cannot load the required inspection record or another handled invocation/parser error |
 | `adjudicate` | Decisions applied; does not imply the resulting review passes | Not a normal handled result | Decisions refused or evidence unavailable/stale |
 | `close-correction` | Correction invariants verified and event appended | Not a normal handled result | Closure refused or evidence unavailable/stale |
@@ -189,3 +191,31 @@ repair continues only within the remaining original iteration allowance.
 These commands can mutate the source run's empirical event/result even if the
 subsequent review fails. They do not edit its native design inputs. Consult
 [bench admission and recovery](bench-feedback.md) before retrying a failed attempt.
+
+## Read-only failure diagnosis
+
+`agent-ee diagnose PATH` prints an evidence timeline. `--json` emits
+`agent-ee.diagnosis/1`, including identities, recorded state, verification,
+verified facts, failed invariants, unavailable facts, ambiguous transitions and
+operator actions with preconditions. Campaign reports also contain per-run reports.
+Timeline entries describe observed records in lifecycle order; they do not prove
+write chronology or completed transitions. Record fields remain untrusted until
+ordinary integrity verification succeeds under coherent reads.
+
+Diagnosis opens existing adjacent writer lock files read-only and attempts shared
+nonblocking `flock` leases, including marked campaign ancestors. It never creates
+a missing lock. `coherence.status` is `coherent`, `busy` or `unverified`.
+Verification uses the same decisions as `verify` and `verify-campaign`, retaining
+exception types and messages; `verification.coherent` says whether those decisions
+were observed under leases. A passing check on an unverified snapshot is advisory.
+Missing or malformed records produce partial reports. A `.tmp` file may belong to
+an active writer; it establishes neither the interrupted phase nor a safe retry.
+
+Diagnosis does not repair records, recover work, invoke models or rerun checks.
+It may probe installed runtime identity through the ordinary verifier. Default
+run verification checks live sources; `--snapshot-only` selects historical inputs.
+Campaign history always uses historical inputs. Exit zero means the report was
+printed, even for busy, unknown or failed evidence; it does not establish design
+acceptance or recovery safety. Byte hashes and directory inventory stay unchanged;
+filesystem access times may change from reads. Leases coordinate supported writers,
+not arbitrary host processes.
