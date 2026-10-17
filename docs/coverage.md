@@ -301,3 +301,12 @@ provenance closure, never by a directory prefix or author list. Executed nominal
 predictions remain unqualified diagnostics for fresh bench recovery. Historical
 calibration/1 does not acquire scope/3 qualification. See [bench feedback](bench-feedback.md).
 These contracts do not authenticate instruments or establish physical validation.
+## Concern evidence replay
+
+[Standalone evidence requests](evidence-requests.md) bind unresolved concerns to
+exact retained candidates. The dedicated Linux x86-64 Python replay lane has
+networkless read-only isolation, single-process resource limits and bounded logs.
+It supports no arbitrary shell, external tool, writable artifact or aggregate
+job-memory budget. Requests and replay assertions supply no acceptance coverage;
+graduation exports are inert proposals. Existing sealed coordinator check
+witnesses remain the only scope/2 and scope/3 acceptance path.

@@ -12,6 +12,10 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
+| `evidence-request` | `RUN --finding ID --spec FILE [--script FILE] --out NEW` | Export a standalone nonauthoritative concern request |
+| `evidence-replay` | `REQUEST --out NEW` | Replay the supported bounded networkless Python contract; no acceptance authority |
+| `evidence-graduation` | `REQUEST --proposal FILE [--replay REPLAY] --out NEW` | Export an inert proposed check bundle |
+| `verify-evidence-operation` | `OPERATION` | Verify standalone operation file identities; no acceptance or source freshness claim |
 | `campaign` | `CONFIG --out NEW` | Review and repair disposable candidates with one writer and bounded convergence |
 | `verify-campaign` | `CAMPAIGN` | Recompute historical convergence and verify result/calibration links |
 | `bench-review` | `RUN REPORT --out NEW [--max-seconds N]` | Capture physical samples and run calibrated checks plus fresh review |
@@ -235,3 +239,5 @@ printed, even for busy, unknown or failed evidence; it does not establish design
 acceptance or recovery safety. Byte hashes and directory inventory stay unchanged;
 filesystem access times may change from reads. Leases coordinate supported writers,
 not arbitrary host processes.
+
+See [evidence requests](evidence-requests.md) for schemas, resource limits and replay exit codes.

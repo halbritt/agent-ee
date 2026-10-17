@@ -13,6 +13,7 @@ product's hardware qualification.
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
+| Request missing concern evidence or export a proposed check | [Evidence requests](evidence-requests.md) |
 | Ingest bench samples and calibrate subsequent verification | [Bench feedback](bench-feedback.md) |
 | Install, authenticate, upgrade or remove links | [Installation](installation.md) |
 | Build the pinned image, run checks in CI or use the GitHub Action | [Container image and CI action](container.md) |

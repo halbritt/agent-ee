@@ -543,6 +543,22 @@ def _link_correction(previous, current, finding_id, check_ids, reason):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    request = sub.add_parser("evidence-request", help="export an inert request from a retained concern")
+    request.add_argument("run")
+    request.add_argument("--finding", required=True)
+    request.add_argument("--spec", required=True)
+    request.add_argument("--script")
+    request.add_argument("--out", required=True)
+    replay = sub.add_parser("evidence-replay", help="networkless nonauthoritative Python experiment")
+    replay.add_argument("request")
+    replay.add_argument("--out", required=True)
+    graduation = sub.add_parser("evidence-graduation", help="export an inert unaccepted check proposal")
+    graduation.add_argument("request")
+    graduation.add_argument("--proposal", required=True)
+    graduation.add_argument("--replay")
+    graduation.add_argument("--out", required=True)
+    operation = sub.add_parser("verify-evidence-operation", help="verify standalone operation bytes, not acceptance")
+    operation.add_argument("path")
     doctor_parser = sub.add_parser("doctor", help="inspect installed prerequisites; real runs establish integration")
     doctor_parser.add_argument("--checks-only", action="store_true",
                                help="probe only the native check toolchain, not reviewer harnesses")
@@ -591,6 +607,24 @@ def main(argv=None):
     closure.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "evidence-request":
+            from .evidence_requests import export_request
+            record = export_request(args.run, args.finding, read_json(args.spec), args.out, script=args.script)
+            print(record["request_id"])
+            return 0
+        if args.command == "evidence-replay":
+            from .replay import replay
+            receipt = replay(args.request, args.out)
+            print(json.dumps(receipt, indent=2))
+            return 0 if receipt["status"] == "completed" else 130 if receipt["execution"] == "interrupted" else 1
+        if args.command == "evidence-graduation":
+            from .evidence_requests import export_graduation
+            export_graduation(args.request, read_json(args.proposal), args.out, replay_dir=args.replay)
+            return 0
+        if args.command == "verify-evidence-operation":
+            from .evidence_requests import verify_operation
+            print(verify_operation(args.path)["operation_id"])
+            return 0
         if args.command == "diagnose":
             from .diagnostics import diagnose, render_diagnosis
             report = diagnose(args.path, current_source=not args.snapshot_only)
