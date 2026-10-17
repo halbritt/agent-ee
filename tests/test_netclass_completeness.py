@@ -1,6 +1,7 @@
 """Independent presence oracle from the KiCad 10.0.7 native writer."""
 import copy
 import json
+import subprocess
 import tempfile
 import time
 import unittest
@@ -10,6 +11,7 @@ from agent_ee.storage import read_json, write_json
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.checks import run_checks
 from agent_ee.baseline import freeze_evidence, verify_evidence, validate_witnesses, load_baseline
+from toolchain import require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures/netclass-completeness'
 
@@ -64,6 +66,32 @@ class NetclassTests(unittest.TestCase):
         project['net_settings']['classes'].insert(0, {'name':'Inherited'})
         _, result = self.run_project(project)
         self.assertEqual(result['outcome'], 'pass', result)
+
+    def test_default_is_selected_by_exact_name_not_position(self):
+        project = read_json(FIXTURE/'native.kicad_pro')
+        classes = project['net_settings']['classes']
+        complete = copy.deepcopy(classes[0])
+        del classes[0]['wire_width']
+        classes.insert(0, {**complete, 'name':'Power'})
+        _, later = self.run_project(project)
+        self.assertEqual(later['outcome'], 'defect', later)
+        self.assertEqual(later['details']['missing'], [{'class':'Default','keys':['wire_width']}])
+        classes[1]['wire_width'] = 0
+        classes.insert(0, {'name':'default'})
+        _, exact = self.run_project(project)
+        self.assertEqual((exact['execution'],exact['outcome']), ('ok','pass'), exact)
+        project['net_settings']['classes'] = [{**complete, 'name':'default'}]
+        _, renamed = self.run_project(project)
+        self.assertEqual(renamed['details']['missing'], [{'class':'Default','keys':sorted(complete)}])
+
+    def test_fixture_is_reproduced_by_native_writer(self):
+        require_toolchain(native=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)/'native.kicad_pro'
+            generated = subprocess.run(['/usr/bin/python3', str(FIXTURE/'generate.py'), str(out)],
+                                       capture_output=True, text=True, timeout=120)
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            self.assertEqual(out.read_bytes(), (FIXTURE/'native.kicad_pro').read_bytes())
 
     def test_missing_default_duplicate_and_malformed_are_explicit(self):
         project = read_json(FIXTURE/'native.kicad_pro')
