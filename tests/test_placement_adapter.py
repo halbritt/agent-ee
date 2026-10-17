@@ -8,8 +8,8 @@ import os
 import shutil
 import subprocess
 import tempfile
-import threading
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -818,11 +818,23 @@ class ReceiptIterationTest(unittest.TestCase):
     def test_cancelled_helper_is_retained_and_never_adopted(self):
         from agent_ee.executor import Cancellation
         cancellation = Cancellation()
-        timer = threading.Timer(1.0, cancellation.cancel)
-        timer.start()
-        self.addCleanup(timer.cancel)
-        with self.assertRaises(KeyboardInterrupt):
-            self.iterate(cancellation=cancellation)
+        popen = subprocess.Popen
+        launched = []
+
+        def cancel_helper(command, **kwargs):
+            proc = popen(command, **kwargs)
+            # Let the version probe finish; cancel the real sandboxed helper at
+            # launch so the assertion does not depend on machine speed.
+            if f'{pa.TOOL_AT}/launch.py' in command:
+                launched.append(proc)
+                cancellation.cancel()
+            return proc
+
+        with patch('agent_ee.executor.subprocess.Popen', side_effect=cancel_helper):
+            with self.assertRaises(KeyboardInterrupt):
+                self.iterate(cancellation=cancellation)
+        self.assertEqual(len(launched), 1)
+        self.assertIsNotNone(launched[0].returncode)
         self.assertUnadopted()
         record = read_json(self.work / 'placement-adapter.json')
         self.assertEqual(record['status'], 'cancelled')
