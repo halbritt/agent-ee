@@ -90,7 +90,7 @@ def build_packet(run_dir, checks, run_id):
     return packet
 
 
-def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", tools=False, *, cancellation=None):
+def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", tools=False, *, cancellation=None, executable=None):
     """Claude subscription route with explicit tools; no MCP, hooks or fallback."""
     run_dir = Path(run_dir)
     work = run_dir / "review-work" / label
@@ -104,7 +104,8 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
         if not credentials.is_file():
             record["error"] = "Claude subscription credential file unavailable; no fallback attempted"
             return record, None
-        executable = shutil.which("claude")
+        from .harnesses import executable_for
+        executable = executable or executable_for("claude")
         if not executable:
             record["error"] = "Claude executable unavailable"
             return record, None
@@ -157,11 +158,47 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
         shutil.rmtree(work / "home", ignore_errors=False)
 
 
-def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None):
+def reviewer_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, launch_context=None):
+    from .preflight import guard
+    if isinstance(launch_context, dict) and 'deadline' in launch_context:
+        launch_context = {**launch_context, 'deadline': min(launch_context['deadline'], time.monotonic() + timeout)}
+    try:
+        receipt, link, executable = guard(run_dir, label, definition, launch_context, cancellation)
+        if receipt['result'] != 'ok':
+            return {'execution': 'not_run', 'backend': definition['harness'], 'preflight': link,
+                    'error': 'preflight refused: ' + '; '.join(receipt['reasons'])}, None
+        timeout = min(timeout, launch_context['deadline'] - time.monotonic())
+        if timeout <= 0 or (cancellation and cancellation.cancelled.is_set()):
+            return {'execution': 'not_run', 'preflight': link, 'error': 'launch cancelled or deadline exhausted'}, None
+        record, value = dispatch(run_dir, label, definition, prompt, schema, timeout,
+                                 cancellation=cancellation, executable=executable)
+        record['preflight'] = link
+        return record, value
+    except KeyboardInterrupt:
+        run = Path(run_dir)
+        receipt_path = run / 'review-work' / label / 'preflight/receipt.json'
+        record = {'execution': 'interrupted', 'error': 'operator cancelled launch or provider execution'}
+        if receipt_path.is_file():
+            receipt = read_json(receipt_path)
+            record['preflight'] = {'path': receipt_path.relative_to(run).as_posix(), 'sha256': digest(receipt_path)}
+            if receipt['result'] == 'refused':
+                record['execution'] = 'not_run'
+        write_json(run / 'review-work' / label / 'launch-execution.json', record)
+        if label in ('adjudicator', 'implementation'):
+            write_json(run / (label + '-execution.json'), record)
+        raise
+
+
+def dispatch(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
     from .harnesses import native_call
     if definition['harness'] == 'claude':
-        return claude_call(run_dir, label, definition['model'], prompt, schema, timeout, definition['effort'], definition.get('tool_mode', 'investigate') == 'investigate', cancellation=cancellation)
-    return native_call(run_dir, label, definition, prompt, schema, timeout, cancellation=cancellation)
+        record, value = claude_call(run_dir, label, definition['model'], prompt, schema, timeout,
+            definition['effort'], definition.get('tool_mode', 'investigate') == 'investigate',
+            cancellation=cancellation, executable=executable)
+    else:
+        record, value = native_call(run_dir, label, definition, prompt, schema, timeout,
+                                    cancellation=cancellation, executable=executable)
+    return record, value
 
 
 def workspace_instructions(role):
@@ -179,7 +216,7 @@ def workspace_instructions(role):
         "No other reviewer's initial judgment is supplied to an initial reviewer. ")
 
 
-def initial_reviews(run_dir, packet, deadline):
+def initial_reviews(run_dir, packet, deadline, *, launch_context=None):
     from .findings import validate_review
 
     scope = read_json(Path(run_dir) / "candidate.json")["scope"]
@@ -193,7 +230,7 @@ def initial_reviews(run_dir, packet, deadline):
         review = None
         definition = {**definition, "tool_mode": scope["review_profile"].get("tool_mode", "investigate")}
         role = definition["role"]
-        record = {"role": role, "execution": "not_run"}
+        record = {"role": role, "execution": "not_run", "admission": "not_attempted"}
         if not cancellation.cancelled.is_set() and time.monotonic() < deadline:
             lens = definition.get("lens", LENSES.get(role, LENSES["circuit"]))
             prompt = ("You are an independent initial engineering reviewer. Investigate with available tools as needed. Read the supplied "
@@ -219,7 +256,7 @@ def initial_reviews(run_dir, packet, deadline):
             with launch_lock:
                 if cancellation.cancelled.is_set():
                     timeout = None
-                elif definition["harness"] in stopped:
+                elif "*" in stopped or definition["harness"] in stopped:
                     record["error"] = "affected harness stopped after prior execution failure; no fallback"
                     timeout = None
                 else:
@@ -228,13 +265,27 @@ def initial_reviews(run_dir, packet, deadline):
             if timeout is None:
                 write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
                 return None, record
+            def admit():
+                with launch_lock:
+                    return not cancellation.cancelled.is_set() and not stopped.intersection({'*', definition['harness']})
+
+            def refuse(reason):
+                with launch_lock:
+                    local = reason.startswith(('missing_binary:', 'native_binary_required'))
+                    stopped.add(definition['harness'] if local else '*')
+
+            context = {**(launch_context or {}), 'boundary': 'initial', 'deadline': deadline,
+                       'admit': admit, 'refuse': refuse}
             try:
                 record, value = reviewer_call(run_dir, role, definition, prompt, schema, timeout,
-                                              cancellation=cancellation)
+                                              cancellation=cancellation, launch_context=context)
             except KeyboardInterrupt:
+                record.pop("admission", None)
                 record.update(backend=definition["harness"], model_requested=definition["model"],
                               effort=definition["effort"], billing_route="subscription")
-                work_record = Path(run_dir) / "review-work" / role / "execution.json"
+                work_record = Path(run_dir) / 'review-work' / role / 'launch-execution.json'
+                if not work_record.is_file():
+                    work_record = Path(run_dir) / "review-work" / role / "execution.json"
                 if work_record.is_file():
                     record.update(read_json(work_record))
                 else:
@@ -280,7 +331,7 @@ def initial_reviews(run_dir, packet, deadline):
     return [review for review, _ in results if review is not None], [record for _, record in results]
 
 
-def adjudicator_call(run_dir, packet, findings, reviews, deadline):
+def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_context=None):
     prompt = ("Adjudicate this engineering review through evidence, never majority vote. Preserve supported singleton "
         "findings even if other reviews are clean. Check every claim's condition/mechanism against original native input "
         "and check evidence in the packet. Existing path/citation is not proof of electrical truth. For every finding ID "
@@ -311,4 +362,5 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline):
     definition = {**definition, "tool_mode": read_json(Path(run_dir) / "candidate.json")["scope"]["review_profile"].get("tool_mode", "investigate")}
     prompt = workspace_instructions("adjudicator") + prompt
     return reviewer_call(run_dir, "adjudicator", definition, prompt, schema,
-                        min(definition["timeout_s"], max(.001, deadline - time.monotonic())))
+                        min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
+                        launch_context={**(launch_context or {}), "boundary": "adjudicator", "deadline": deadline})

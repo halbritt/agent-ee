@@ -63,7 +63,7 @@ def parse_stream(harness, text, model, tools=True):
         'model_observed': start['init']['model'], 'usage': end.get('usage', {})}
 
 
-def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None):
+def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
     harness = definition['harness']
     model, effort = definition['model'], definition['effort']
     tools = definition.get('tool_mode', 'investigate') == 'investigate'
@@ -74,7 +74,7 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
     record = {'backend': harness, 'model_requested': model, 'effort': effort,
         'billing_route': 'subscription', 'execution': 'unavailable', 'limitations': []}
     try:
-        executable = executable_for(harness)
+        executable = executable or executable_for(harness)
         if not executable or not Path(executable).is_file():
             record['error'] = 'native executable unavailable; no fallback attempted'
             return record, None

@@ -18,7 +18,7 @@ from agent_ee.cli import outcome, run_review
 from agent_ee.candidate import capture
 from agent_ee.executor import execute
 from agent_ee.reviewers import initial_reviews
-from agent_ee.storage import read_json, write_json
+from agent_ee.storage import digest, read_json, write_json
 
 
 HARNESS = '''import json, sys, time
@@ -65,6 +65,11 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.settings = {"circuit": {"sleep": 1.2, "fail": False},
                          "physical": {"sleep": 1.2, "fail": False}}
         self.calls = []
+        runtime = {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+                   for name in ('codex', 'claude', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}
+        runtime_patch = patch('agent_ee.cli.runtime_files', return_value=runtime)
+        runtime_patch.start()
+        self.addCleanup(runtime_patch.stop)
 
     def prepare(self):
         write_json(self.root / "scope.json", self.scope)
@@ -73,9 +78,16 @@ class ConcurrentReviewTests(unittest.TestCase):
         manifest = capture(self.root / "scope.json", run)
         packet = {"candidate_id": manifest["candidate_id"], "run_id": "scripted-run", "packet_sha256": "packet"}
         write_json(run / "packet.json", packet)
+        from agent_ee.cli import policy_files, runtime_files
+        from agent_ee.preflight import capture_expectation
+        selected = manifest['scope']['review_profile']
+        definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')} for d in
+                       [*selected['reviewers'], selected['adjudicator']]]
+        self.context = {'expected': capture_expectation({'run_id': packet['run_id'],
+            'policy_files': policy_files(), 'runtime_files': runtime_files()}, manifest, definitions)}
         return run, packet
 
-    def harness(self, run, role, definition, prompt, schema, timeout, *, cancellation=None):
+    def harness(self, run, role, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         self.calls.append(role)
         if role == "adjudicator":
             now = time.monotonic()
@@ -104,8 +116,8 @@ class ConcurrentReviewTests(unittest.TestCase):
     def test_two_sleeping_roles_overlap_and_keep_role_order(self):
         run, packet = self.prepare()
         start = time.monotonic()
-        with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness):
-            reviews, records = initial_reviews(run, packet, start + 10)
+        with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+            reviews, records = initial_reviews(run, packet, start + 10, launch_context=self.context)
         elapsed = time.monotonic() - start
         self.assertEqual([r["role"] for r in reviews], ["circuit", "physical"])
         self.assertEqual([r["execution"] for r in records], ["ok", "ok"])
@@ -136,8 +148,8 @@ class ConcurrentReviewTests(unittest.TestCase):
                 self.settings[failed] = {"sleep": .25, "fail": True}
                 self.settings[other] = {"sleep": .7, "fail": False}
                 run, packet = self.prepare()
-                with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness):
-                    reviews, records = initial_reviews(run, packet, time.monotonic() + 5)
+                with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+                    reviews, records = initial_reviews(run, packet, time.monotonic() + 5, launch_context=self.context)
                 self.assertEqual([r["role"] for r in reviews], [other])
                 self.assertEqual({r["role"]: r["execution"] for r in records}, {failed: "failed", other: "ok"})
                 self.assert_retained(run, records)
@@ -154,11 +166,11 @@ class ConcurrentReviewTests(unittest.TestCase):
                 for definition in self.profile["reviewers"]:
                     definition["timeout_s"] = 1 if definition["role"] == slow else 5
                 run, packet = self.prepare()
-                with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness):
-                    reviews, records = initial_reviews(run, packet, time.monotonic() + 5)
+                with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+                    reviews, records = initial_reviews(run, packet, time.monotonic() + 5, launch_context=self.context)
                 self.assertEqual([r["role"] for r in reviews], [other])
                 self.assertEqual({r["role"]: r["execution"] for r in records}, {slow: "timeout", other: "ok"})
-                self.assertEqual(next(r for r in records if r["role"] == slow)["timeout_s"], 1)
+                self.assertTrue(0 < next(r for r in records if r["role"] == slow)["timeout_s"] <= 1)
                 self.assert_retained(run, records)
 
     @toolchain_test
@@ -167,8 +179,8 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.settings["physical"]["sleep"] = 3
         run, packet = self.prepare()
         start = time.monotonic()
-        with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness):
-            reviews, records = initial_reviews(run, packet, start + .8)
+        with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+            reviews, records = initial_reviews(run, packet, start + .8, launch_context=self.context)
         self.assertLess(time.monotonic() - start, 1.5)
         self.assertEqual([r["role"] for r in reviews], ["circuit"])
         self.assertEqual([r["execution"] for r in records], ["ok", "timeout"])
@@ -183,8 +195,8 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.settings.update(circuit={"sleep": .25, "fail": True}, physical={"sleep": .7, "fail": False},
             independent={"sleep": .1, "fail": False})
         run, packet = self.prepare()
-        with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness):
-            reviews, records = initial_reviews(run, packet, time.monotonic() + 5)
+        with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+            reviews, records = initial_reviews(run, packet, time.monotonic() + 5, launch_context=self.context)
         self.assertEqual([r["role"] for r in reviews], ["physical", "independent"])
         self.assertEqual([r["execution"] for r in records], ["failed", "ok", "not_run", "ok"])
         self.assertCountEqual(self.calls, ["circuit", "physical", "independent"])
@@ -194,8 +206,8 @@ class ConcurrentReviewTests(unittest.TestCase):
 
     def test_expired_budget_launches_nothing_and_records_every_role(self):
         run, packet = self.prepare()
-        with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness):
-            reviews, records = initial_reviews(run, packet, time.monotonic() - 1)
+        with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+            reviews, records = initial_reviews(run, packet, time.monotonic() - 1, launch_context=self.context)
         self.assertEqual(reviews, [])
         self.assertEqual(self.calls, [])
         self.assertEqual([r["execution"] for r in records], ["not_run", "not_run"])
@@ -215,7 +227,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.settings["physical"]["sleep"] = .2
         write_json(self.root / "scope.json", self.scope)
         run = self.root / "coordinator"
-        with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
+        with patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
             status = run_review(self.root / "scope.json", run, 30)
         result = read_json(run / "result.json")
         self.assertEqual(status, 0, result)
@@ -242,7 +254,7 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.settings["independent"] = {"sleep": .1, "fail": False}
         write_json(self.root / "scope.json", self.scope)
         run = self.root / "coordinator"
-        with patch("agent_ee.reviewers.reviewer_call", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
+        with patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
             status = run_review(self.root / "scope.json", run, 30)
         result = read_json(run / "result.json")
         self.assertEqual(status, 1, result)
@@ -256,6 +268,10 @@ class ConcurrentReviewTests(unittest.TestCase):
     def test_owner_sigint_cancels_process_groups_and_queued_roles(self):
         require_toolchain(native=True)
         self.assert_owner_cancellation("waiting")
+
+    def test_owner_sigint_during_preflight_cancels_probes_before_provider(self):
+        require_toolchain(native=True)
+        self.assert_owner_cancellation('preflight')
 
     def test_owner_sigint_during_launch_cancels_new_process_groups(self):
         require_toolchain(native=True)
@@ -294,10 +310,17 @@ def harness(run, role, definition, prompt, schema, timeout, **kwargs):
     work = Path(run) / 'review-work' / role
     (work / 'experiments').mkdir(parents=True)
     from agent_ee.executor import execute
+    kwargs.pop('executable', None)
     return execute(Path(run) / 'inputs', work,
         ['/usr/bin/python3', '/candidate/design/harness.py'], timeout=timeout, **kwargs), None
 from contextlib import ExitStack
 real_popen = subprocess.Popen
+from agent_ee.executor import sandbox_argv as real_sandbox
+def slow_probe(inputs, work, argv, **kwargs):
+    if argv == ['/usr/bin/true']:
+        code = "import subprocess,time; from pathlib import Path; subprocess.Popen(['/usr/bin/sleep','60']); Path('probe-start').write_text('started'); print('partial probe',flush=True); time.sleep(60)"
+        argv = ['/usr/bin/python3', '-c', code]
+    return real_sandbox(inputs, work, argv, **kwargs)
 def launching(*args, **kwargs):
     proc = real_popen(*args, **kwargs)
     if '/candidate/design/harness.py' in args[0]:
@@ -305,7 +328,9 @@ def launching(*args, **kwargs):
         time.sleep(.8)
     return proc
 with ExitStack() as stack:
-    stack.enter_context(patch('agent_ee.reviewers.reviewer_call', side_effect=harness))
+    stack.enter_context(patch('agent_ee.reviewers.dispatch', side_effect=harness))
+    if sys.argv[2] == 'preflight':
+        stack.enter_context(patch('agent_ee.executor.sandbox_argv', side_effect=slow_probe))
     if sys.argv[2] == 'launch':
         stack.enter_context(patch('agent_ee.executor.subprocess.Popen', side_effect=launching))
     status = run_review(root / 'scope.json', root / 'run', 120)
@@ -316,7 +341,8 @@ sys.exit(0 if status == 1 else 2)
         self.addCleanup(lambda: process.poll() is None and process.kill())
         run = self.root / "run"
         deadline = time.monotonic() + 30
-        while len(list(run.glob("review-work/*/experiments/pids"))) < 2:
+        marker = 'review-work/*/preflight/probe/probe-start' if phase == 'preflight' else 'review-work/*/experiments/pids'
+        while len(list(run.glob(marker))) < 2:
             if process.poll() is not None:
                 self.fail(str(process.communicate()) + str(read_json(run / "result.json").get("error")))
             if time.monotonic() >= deadline:
@@ -356,11 +382,49 @@ sys.exit(0 if status == 1 else 2)
         self.assertEqual(result["state"], "interrupted")
         self.assertEqual(result["outcome"], "incomplete")
         self.assertFalse(result["adjudicated"])
+        expected_execution = 'not_run' if phase == 'preflight' else 'interrupted'
         self.assertEqual({r["role"]: r["execution"] for r in result["review_executions"]},
-            {"circuit": "interrupted", "physical": "interrupted", "queued": "not_run"})
+            {"circuit": expected_execution, "physical": expected_execution, "queued": "not_run"})
         self.assertFalse((run / "review-work/queued").exists())
         for role in ("circuit", "physical"):
             work = run / "review-work" / role
+            if phase == 'preflight':
+                self.assertEqual(read_json(work / 'preflight/receipt.json')['result'], 'refused')
+                self.assertFalse((work / 'experiments').exists())
+                work = work / 'preflight/probe'
+                self.assertIn('partial probe', (work / 'stdout.log').read_text())
+                self.assertEqual(read_json(work / 'execution.json')['execution'], 'interrupted')
+                continue
             self.assertEqual(read_json(work / "execution.json")["execution"], "interrupted")
             self.assertIn("partial output", (work / "stdout.log").read_text())
             self.assertTrue((work / "experiments/pids").exists())
+
+    @toolchain_test
+    def test_global_drift_preserves_admitted_peer_and_refuses_other_provider(self):
+        from threading import Event, Lock
+        from agent_ee.cli import runtime_files
+        run, packet = self.prepare()
+        runtime = runtime_files()
+        provider_started = Event()
+        observed = Lock()
+        count = 0
+        def observe(**kwargs):
+            nonlocal count
+            with observed:
+                count += 1
+                first = count == 1
+            if first:
+                return runtime
+            if not provider_started.wait(3):
+                raise AssertionError('first role did not reach provider')
+            return {**runtime, 'changed': {}}
+        def provider(*args, **kwargs):
+            provider_started.set()
+            return self.harness(*args, **kwargs)
+        with patch('agent_ee.cli.runtime_files', side_effect=observe), \
+             patch('agent_ee.reviewers.dispatch', side_effect=provider):
+            reviews, records = initial_reviews(run, packet, time.monotonic() + 5, launch_context=self.context)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(reviews), 1)
+        self.assertCountEqual([record['execution'] for record in records], ['ok', 'not_run'])
+        self.assertTrue(any('runtime_drift' in record.get('error', '') for record in records))

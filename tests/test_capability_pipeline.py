@@ -97,7 +97,7 @@ pcbnew.SaveBoard(p, b)
         write_json(root / 'scope.json', scope)
         return root
 
-    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None):
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         run = Path(run)
         self.calls.append((run.name, label))
         packet = read_json(run / 'packet.json')
@@ -124,7 +124,7 @@ pcbnew.SaveBoard(p, b)
         for name, expected in self.oracle['cases'].items():
             with self.subTest(case=name):
                 root = self.prepare(name)
-                with patch('agent_ee.reviewers.reviewer_call', side_effect=self.agent), \
+                with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
                      contextlib.redirect_stdout(io.StringIO()):
                     status = run_review(root / 'scope.json', root / 'run', 180)
                 result = verify(root / 'run')

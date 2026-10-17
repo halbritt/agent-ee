@@ -25,33 +25,63 @@ def policy_files():
 LOADED_POLICY_FILES = policy_files()
 
 
-def runtime_files():
+def runtime_files(*, checkpoint=None):
+    def fingerprint(path):
+        if checkpoint is None:
+            return digest(path)
+        import hashlib
+        value = hashlib.sha256()
+        with Path(path).open('rb') as stream:
+            while True:
+                checkpoint()
+                block = stream.read(1024 * 1024)
+                if not block:
+                    return value.hexdigest()
+                value.update(block)
+
     files = {}
     for name in ("kicad-cli", "ngspice", "bwrap", "/usr/bin/python3", "claude"):
         path = shutil.which(name)
-        files[name] = {"path": path, "sha256": digest(path) if path else None}
+        files[name] = {"path": path, "sha256": fingerprint(path) if path else None}
     from .harnesses import executable_for
     for name in ("claude", "codex", "agy"):
         path = executable_for(name)
-        files[name] = {"path": path, "sha256": digest(path) if path and Path(path).is_file() else None}
+        files[name] = {"path": path, "sha256": fingerprint(path) if path and Path(path).is_file() else None}
     native_codex = executable_for("codex")
     host = Path(native_codex).parent / "codex-code-mode-host" if native_codex else None
     files["codex_tool_host"] = {"path": str(host) if host and host.is_file() else None,
-        "sha256": digest(host) if host and host.is_file() else None}
-    path, diagnostic = pcbnew_extension()
+        "sha256": fingerprint(host) if host and host.is_file() else None}
+    path, diagnostic = pcbnew_extension(checkpoint=checkpoint)
     if path:
-        files["pcbnew"] = {"path": path, "sha256": digest(path)}
+        files["pcbnew"] = {"path": path, "sha256": fingerprint(path)}
     else:
         files["pcbnew"] = {"path": None, "sha256": None, "diagnostic": diagnostic}
     return files
 
 
-def pcbnew_extension():
+def pcbnew_extension(*, checkpoint=None):
     """Return (path, diagnostic) for KiCad's native _pcbnew extension module."""
     # pcbnew shares a large native extension rather than a standalone CLI.
-    probe = subprocess.run(["/usr/bin/python3", "-c", "import _pcbnew; print(_pcbnew.__file__)"],
-                           capture_output=True, text=True, timeout=15)
-    return (probe.stdout.strip(), "") if probe.returncode == 0 else (None, probe.stderr)
+    argv = ['/usr/bin/python3', '-c', 'import _pcbnew; print(_pcbnew.__file__)']
+    if checkpoint is None:
+        probe = subprocess.run(argv, capture_output=True, text=True, timeout=15)
+        return (probe.stdout.strip(), '') if probe.returncode == 0 else (None, probe.stderr)
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as probe:
+        end = time.monotonic() + 15
+        try:
+            while True:
+                checkpoint()
+                if time.monotonic() >= end:
+                    raise ValueError('runtime_probe_timeout')
+                try:
+                    stdout, stderr = probe.communicate(timeout=.05)
+                    return (stdout.strip(), '') if probe.returncode == 0 else (None, stderr)
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if probe.poll() is None:
+                probe.kill()
+                probe.communicate(timeout=1)
 
 
 DOCTOR_PROBES = {"kicad-cli": ["kicad-cli", "version"], "ngspice": ["ngspice", "--version"],
@@ -118,6 +148,8 @@ def verify(run, *, current_source=True):
         raise ValueError("candidate manifest changed")
     if (run / "packet.json").exists() and digest(run / "packet.json") != result.get("packet_file_sha256"):
         raise ValueError("review evidence packet changed")
+    from .preflight import verify_calls
+    verify_calls(run, result, manifest)
     from .baseline import verify_evidence
     verify_evidence(run, result["checks"], required=result["state"] == "complete")
     for spec in manifest["scope"].get("checks", []):
@@ -341,6 +373,12 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
                       expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
+        from .preflight import capture_expectation
+        selected = m['scope'].get('review_profile', {})
+        definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
+                       for d in [*selected.get('reviewers', []), *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
+        result['launch_expectation'] = capture_expectation(result, m, definitions)
+        launch_context = {'expected': result['launch_expectation']}
         save_result(run, result)
         result["checks"] = run_checks(run, deadline)
         from .baseline import freeze_evidence
@@ -353,11 +391,13 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             validate_profile(m["scope"].get("review_profile"))
             packet = build_packet(run, result["checks"], result["run_id"])
             result["limitations"] += packet["packet_limits"]
-            result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline)
+            result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline, launch_context=launch_context)
             result["findings"] = collect_findings(result["reviews"], result["checks"])
             save_result(run, result)
+            from .preflight import verify_calls
+            verify_calls(run, result, m)
             if len(result["reviews"]) == len(result["expected_review_roles"]) and time.monotonic() < deadline:
-                execution, decisions = adjudicator_call(run, packet, result["findings"], result["reviews"], deadline)
+                execution, decisions = adjudicator_call(run, packet, result["findings"], result["reviews"], deadline, launch_context=launch_context)
                 if decisions is not None:
                     try:
                         if {d["finding_id"] for d in decisions.get("decisions", [])} != {f["id"] for f in result["findings"]}:
@@ -370,6 +410,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                     except (ValueError, KeyError, TypeError) as exc:
                         execution.update(execution="malformed", error=str(exc))
                 write_json(run / "adjudicator-execution.json", execution)
+        from .preflight import verify_calls
+        verify_calls(run, result, m)
         if checks_only:
             result["limitations"].append("Checks-only run: independent agent reviews and adjudication not performed.")
         if time.monotonic() >= deadline:

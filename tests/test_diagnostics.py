@@ -111,7 +111,10 @@ class DiagnosisTests(unittest.TestCase):
                       'state': 'running', 'policy_files': policy_files(),
                       'runtime_files': runtime_files(), 'checks': [], 'reviews': [],
                       'findings': [], 'limitations': []}
+            from agent_ee.preflight import capture_expectation
+            result['launch_expectation'] = capture_expectation(result, manifest, [])
             save_result(root, result)
+            self.assertEqual(verify(root)['state'], 'running')
             with writer_lock(root):
                 pass
             original = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}

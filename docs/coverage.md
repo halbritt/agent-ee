@@ -237,3 +237,11 @@ Their integration must supply:
 
 Descriptor semantics are coordinator policy. Changes require capability version
 and policy review; old evidence never gains new audited coverage automatically.
+
+Pre-inference drift tests count scripted provider dispatches below the production
+guard. They cover initial, adjudication and implementation refusal, independent
+concurrent calls and the adjudication barrier, a real invalid Bubblewrap option,
+Claude executable override mounting, and real SIGINT during a slow networkless
+probe. Retained receipt tampering is checked separately. These tests establish
+coordinator behavior, not provider quota, live-model quality or elimination of
+external upgrade races. See [preflight receipts](result-reference.md#pre-inference-environment-receipts).
