@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import math
+import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -181,6 +182,72 @@ def _payload(root, record):
         raise ValueError('expected captured agent-ee.parts/1 subset')
 
 
+def _native_requirement_coverage(run, manifest, ref, record, req, checks):
+    """Recognize only qualified native interface witnesses for this block instance.
+
+    Other check families need their own subject binding; capture membership alone
+    never establishes applicability. Optional layout qualification is unsupported.
+    """
+    from xml.etree import ElementTree as ET
+    from .checks import sheet_instances
+    from .hardware_interface import load_contract
+
+    if 'layout' in record:
+        return False
+    scope = manifest['scope']
+    specs = {c['id']: c for c in scope['checks']}
+    if not scope.get('schematic') or any(specs[c]['kind'] != 'hardware_interface' for c in req['checks']):
+        return False
+    sheet = ref['files'][record['sheet']]
+    files, _, missing = sheet_instances(run / 'inputs', scope['schematic'])
+    if missing or sheet not in files:
+        return False
+
+    # Reconstruct native instance IDs from actual captured hierarchy, rather than
+    # accepting author-written evaluated-files or ambiguous source basenames.
+    occurrences = set()
+    def walk(path, instance):
+        if path == sheet:
+            occurrences.add(instance)
+        ast = parse_sexpr((run / 'inputs' / path).read_bytes())
+        for child in children(ast, 'sheet'):
+            props = {p[1]: p[2] for p in children(child, 'property')}
+            child_path = (PurePosixPath(path).parent / props['Sheetfile']).as_posix()
+            child_path = posixpath.normpath(child_path)
+            uuid, = field(child, 'uuid', 1)
+            walk(child_path, instance + uuid + '/')
+    walk(scope['schematic'], '/')
+    symbols = {field(symbol, 'uuid', 1)[0]
+               for symbol in children(parse_sexpr((run / 'inputs' / sheet).read_bytes()), 'symbol')}
+    for cid in req['checks']:
+        spec = specs[cid]
+        params = spec['params']
+        native_id = params['netlist_check']
+        native = checks.get(native_id, {})
+        if (specs[native_id]['kind'] != 'netlist' or native.get('execution') != 'ok' or
+                sheet not in native.get('details', {}).get('schematic_files', [])):
+            return False
+        xml = ET.parse(run / 'work' / native_id / 'design.xml')
+        if xml.findtext('./design/source') != '/candidate/' + scope['schematic']:
+            return False
+        exported = {node.get('tstamps') for node in xml.findall('./design/sheet')}
+        if not occurrences or not occurrences <= exported:
+            return False
+        contract = load_contract(run / 'inputs', params['contract'])
+        expected = {i['id'] for i in contract['invariants'] if i['requirement'] == req['id']}
+        witnesses = [i for i in checks[cid]['details']['invariants']
+                     if i['expected']['requirement'] == req['id']]
+        if not expected or {i['id'] for i in witnesses} != expected:
+            return False
+        for witness in witnesses:
+            components = witness['actual'].get('components', {})
+            if (witness['status'] != 'satisfied' or not components or
+                    any(not n or n.get('sheet') not in occurrences or n.get('uuid') not in symbols
+                        for n in components.values())):
+                return False
+    return True
+
+
 def validate_block(directory, run_locations=None):
     """Refuse inconsistent records; return unverified for missing passing coverage."""
     root = Path(directory)
@@ -220,12 +287,13 @@ def validate_block(directory, run_locations=None):
                 checks = {c['id']: c for c in result['checks']}
                 for req in record['requirements']:
                     bound = requirements.get(req['id'])
-                    if bound is None:
+                    if bound is None or bound.get('intent', 'acceptance') != 'acceptance':
                         continue
                     if bound['statement'] != req['statement'] or not set(req['checks']) <= set(bound['checks']):
                         raise ValueError('block requirement differs from baseline')
                     if all(checks.get(c, {}).get('execution') == 'ok' and
-                           checks[c]['outcome'] == 'pass' for c in req['checks']):
+                           checks[c]['outcome'] == 'pass' for c in req['checks']) and _native_requirement_coverage(
+                               run, manifest, ref, record, req, checks):
                         covered.add(req['id'])
             runs.append(dict(run_id=rid, status='passing' if passing else 'unverified'))
     # Detect mutation at the read boundary; trusted-local consistency, not a
@@ -242,7 +310,9 @@ def validate_block(directory, run_locations=None):
                 undeclared_ports=[p['name'] for p in record['boundary_ports']
                                   if p['current_a'] is None or p['voltage_domain'] is None],
                 limitations=['Provenance only; adaptations require fresh board checks.',
-                             'Parts subset bytes retained; selection/availability not qualified.'])
+                             'Parts subset bytes retained; selection/availability not qualified.',
+                             'Only native hardware-interface requirement subjects are qualified; '
+                             'other check families and optional layouts remain unverified.'])
 
 
 def _git(repo, *args):
