@@ -362,6 +362,7 @@
         "action.yml",
         "bin/",
         "docker/agent-ee.apparmor",
+        "docker/kicad-route/",
         "pyproject.toml",
         "profiles/",
         "skills/"

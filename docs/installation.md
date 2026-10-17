@@ -88,8 +88,9 @@ installation or extra interpreter environment.
 
 The [Dockerfile](../Dockerfile) pins the demonstrated toolchain: KiCad
 10.0.7 with stock symbols, footprints, templates and `pcbnew` bindings, ngspice
-42, Bubblewrap 0.9.0 and Python 3.12, with this checkout installed through the
-source launcher. It contains no reviewer harness or credential, so it supports
+42, Bubblewrap 0.9.0 and Python 3.12, the installed kicad-happy analyzer and
+the pinned kicad-route with KRT for the routing stage, with this checkout
+installed through the source launcher. It contains no reviewer harness or credential, so it supports
 checks-only reviews and CI, not agent reviews. The
 [container reference](container.md) explains how each pin is enforced.
 
