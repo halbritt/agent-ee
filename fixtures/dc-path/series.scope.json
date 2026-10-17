@@ -1,0 +1,67 @@
+{
+  "baseline": {
+    "reference_architectures": [
+      "requirements.md"
+    ],
+    "requirements": [
+      {
+        "checks": [
+          "dc"
+        ],
+        "id": "R-dc",
+        "intent": "acceptance",
+        "source": {
+          "locator": "Owned DC path analytic expectations",
+          "path": "requirements.md"
+        },
+        "statement": "Bound declared DC drop and total loss"
+      }
+    ],
+    "targets": [
+      "requirements.md"
+    ]
+  },
+  "board": "project/dc_path.kicad_pcb",
+  "checks": [
+    {
+      "id": "dc",
+      "kind": "dc_path",
+      "params": {
+        "contract": "contract.json",
+        "qualification": "qualification.json"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "at": "project/dc_path.kicad_pcb",
+      "path": "series.kicad_pcb"
+    },
+    {
+      "at": "project/dc_path.kicad_sch",
+      "path": "dc_path.kicad_sch"
+    },
+    {
+      "at": "requirements.md",
+      "path": "EXPECTATIONS.md"
+    },
+    {
+      "at": "contract.json",
+      "path": "contract.json"
+    },
+    {
+      "at": "qualification.json",
+      "path": "qualification.json"
+    }
+  ],
+  "limitations": [
+    "Ideal endpoint contacts and externally imposed temperature; no hardware validation or schematic electrical criterion."
+  ],
+  "name": "Owned series DC path",
+  "requirements": [
+    "requirements.md"
+  ],
+  "schema": "agent-ee.scope/3",
+  "schematic": "project/dc_path.kicad_sch",
+  "scope": "Ideal PCB DC path with explicit materials and independent analytic oracle; no schematic electrical acceptance."
+}

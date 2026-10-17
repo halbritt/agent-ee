@@ -1,0 +1,54 @@
+{
+  "dimensions": {
+    "length_factors": [
+      1.0,
+      1.0
+    ],
+    "thickness_factors": [
+      1.0,
+      1.0
+    ],
+    "width_factors": [
+      1.0,
+      1.0
+    ]
+  },
+  "layer": "F.Cu",
+  "loads": [
+    {
+      "current_a": 1.0,
+      "id": "one_amp",
+      "max_drop_v": 0.03,
+      "max_loss_w": 0.03
+    }
+  ],
+  "material": {
+    "alpha_per_c": 0.00393,
+    "model": "linear-external-temperature/1",
+    "reference_c": 20.0,
+    "rho_ref_ohm_m": 1.724e-08,
+    "valid_c": [
+      20.0,
+      80.0
+    ]
+  },
+  "net": "PATH",
+  "schema": "agent-ee.dc-path/1",
+  "stackup": {
+    "layer": "F.Cu",
+    "thickness_m": 3.5e-05
+  },
+  "temperature_c": 20.0,
+  "terminals": [
+    {
+      "contact": "ideal-centered-round-smd/1",
+      "pad": "1",
+      "ref": "SOURCE"
+    },
+    {
+      "contact": "ideal-centered-round-smd/1",
+      "pad": "1",
+      "ref": "SINK"
+    }
+  ]
+}

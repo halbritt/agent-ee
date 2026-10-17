@@ -14,7 +14,7 @@ from .storage import identity
 
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
-                   'kicad_happy', 'hardware_interface', 'passive_corners'))
+                   'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -127,16 +127,21 @@ def _measurements(params, captured):
     return predicates
 
 
-def _coupled_margins(params, prerequisite):
+def _coupled_margins(params, prerequisite, files, inputs):
     members = params['members']
     if not isinstance(members, list) or len(members) < 2:
         raise ValueError('coupling requires at least two members')
     condition = text(params['condition'], 'coupling condition')
     domains, names = set(), set()
     for member in members:
-        source = prerequisite(member['check'], ('measurements', 'rc_transient', 'passive_corners'))
+        source = prerequisite(member['check'], ('measurements', 'rc_transient', 'passive_corners', 'dc_path'))
         source_params = source.get('params', {})
-        if source['kind'] == 'measurements':
+        if source['kind'] == 'dc_path':
+            from .dc_path import load_inputs, limits
+            contract, _ = load_inputs(source_params, files, inputs)
+            metric = limits(contract)[member['metric']]
+            domain = 'electrical'
+        elif source['kind'] == 'measurements':
             metric = source_params['limits'][member['metric']]
             domain = source_params['tool']['domain']
         else:
@@ -253,10 +258,17 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             validate_contract(params)
             captured(params['qualification'], immutable=True)
             result['predicates'] = _rc_transient(params, prerequisite)
+        elif kind == 'dc_path':
+            from .dc_path import load_inputs, limits
+            captured(scope.get('board'))
+            contract, dependencies = load_inputs(params, files, inputs)
+            for path in dependencies:
+                captured(path, immutable=True)
+            result['predicates'] = bounds(limits(contract))
         elif kind == 'measurements':
             result['predicates'] = _measurements(params, captured)
         elif kind == 'coupled_margins':
-            result['predicates'] = _coupled_margins(params, prerequisite)
+            result['predicates'] = _coupled_margins(params, prerequisite, files, inputs)
         elif kind in ('datasheet_facts', 'pin_map'):
             from .datasheet_facts import load_facts, validate_extractor
             if inputs is None:

@@ -301,3 +301,14 @@ provenance closure, never by a directory prefix or author list. Executed nominal
 predictions remain unqualified diagnostics for fresh bench recovery. Historical
 calibration/1 does not acquire scope/3 qualification. See [bench feedback](bench-feedback.md).
 These contracts do not authenticate instruments or establish physical validation.
+
+## PCB DC conduction
+
+The optional [DC path check](dc-path.md) qualifies ideal single-layer straight
+and circular-arc paths and bounded endpoint-connected series/parallel networks.
+Materials, temperature, terminal contacts, current and dimensional intervals
+must be captured explicitly. Unsupported copper or incomplete branches refuse
+coverage. Native owned fixtures test rho*L/A, independent network solutions,
+actual narrowed/lengthened trace violations and sealed evidence tampering.
+These results do not qualify pad spreading, vias, zones, RLC extraction,
+self-heating or arbitrary-board/hardware behavior.

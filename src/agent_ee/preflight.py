@@ -17,11 +17,14 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
     required_runtime = {'/usr/bin/python3', 'bwrap'}
     native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
                            'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
-                           'passive_corners': '/usr/bin/ngspice'}
+                           'passive_corners': '/usr/bin/ngspice', 'dc_path': 'pcbnew'}
     for spec in manifest['scope'].get('checks', []):
         if spec.get('kind') in native_requirements:
             required_runtime.add(native_requirements[spec['kind']])
         params = spec.get('params', {})
+        if spec.get('kind') == 'dc_path':
+            from .dc_path import TOOLS
+            tools.update(TOOLS)
         if spec.get('kind') == 'datasheet_facts':
             extractor = params['extractor']
             tools[extractor['path']] = extractor['sha256']
