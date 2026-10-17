@@ -7,6 +7,7 @@ from agent_ee.cli import save_result, policy_files, runtime_files
 from agent_ee.storage import digest, write_json, read_json
 from agent_ee.findings import collect_findings
 from agent_ee.evidence_requests import export_request, verify_operation
+from agent_ee.preflight import capture_expectation
 
 
 class RequestTests(unittest.TestCase):
@@ -30,11 +31,14 @@ class RequestTests(unittest.TestCase):
                   'evidence': [], 'title': 'Measure board', 'reasoning': 'Need measurement',
                   'condition': 'room temperature', 'mechanism': 'Unmeasured', 'location': 'board'}]}
         self.concern = collect_findings([review], [])[0]
-        save_result(self.run, {'schema': 'agent-ee.result/1', 'run_id': 'run1',
+        result = {'schema': 'agent-ee.result/1', 'run_id': 'run1',
             'candidate_id': manifest['candidate_id'], 'state': 'incomplete',
             'checks': [], 'reviews': [review], 'review_executions': [], 'findings': [self.concern],
             'adjudicated': False, 'limitations': [], 'policy_files': policy_files(),
-            'runtime_files': runtime_files()})
+            'runtime_files': runtime_files()}
+        result['launch_expectation'] = capture_expectation(
+            result, manifest, [], inputs=self.run / 'inputs')
+        save_result(self.run, result)
         self.script = self.root / 'script.py'
         self.script.write_text('print("{\\"assertions\\": []}")\n')
         self.spec = {'mode': 'experiment', 'requirement_id': None, 'check_id': None,
