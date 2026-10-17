@@ -1,13 +1,17 @@
 """Fab-package consistency gate over a sealed `fab_export` staging tree (AGENTEE-73).
 
-`fab_consistency` (params `{export_check}`) never regenerates exports. It reads
-the earlier export check's `work/EXPORT/fab/` staging tree and its
+`fab_consistency` (params `{export_check}`) never regenerates or runs exports. It
+reads the earlier export check's `work/EXPORT/fab/` staging tree and its
 `agent-ee.fab-manifest/1`, the export's sealed native XML netlist prerequisite,
-and the captured board bytes (S-expression parse only). Structural package
-faults (inventory, empty/non-regular files, layer/drill reconciliation,
-unparseable CSV) are malformed coverage; established cross-file disagreements
-are defects; inputs this gate cannot see (uncaptured 3D-model libraries,
-unattributed plots) are unknown coverage, never a pass.
+every earlier sealed `geometry` probe of the captured board, and the captured
+board bytes (S-expression parse only). The manifest is a claim to verify, never
+authority: its kicad-cli identity must be the pinned binary and its sealed
+version run, and its designators must match the native board inventory, which
+comes from the sealed pcbnew geometry and is cross-checked against the board
+parse and the sealed netlist. Structural package faults and disagreeing sealed
+sources are malformed; established cross-file disagreements are defects; inputs
+this gate cannot see (uncaptured 3D-model libraries, unattributed plots, an
+unrecorded tool version) are unknown coverage, never a pass.
 """
 
 import csv
@@ -16,11 +20,14 @@ import json
 import math
 import os
 import re
+import shutil
 import stat
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import PurePosixPath
 
+from . import kicad_embedded
+from .executor import SANDBOX_PATH
 from .storage import digest, read_json, write_json
 
 MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
@@ -49,18 +56,28 @@ MAX_TEXT_BYTES = 64 * 1024 * 1024
 MAX_CITATIONS = 50
 
 
+GEOMETRY_FLAGS = ('dnp', 'exclude_from_bom', 'exclude_from_pos_files', 'board_only')
 PREDICATES = ['fab-package:inventory', 'fab-package:designator-parity', 'fab-package:lcsc-footprint',
               'fab-package:cpl-side', 'fab-package:3d-models']
 
 
 def capability(params, scope, prerequisite, captured):
-    """Static scope/3 contract: exact params, earlier export and its earlier netlist."""
+    """Static scope/3 contract: exact params, earlier export, its earlier netlist and an earlier geometry."""
     if not isinstance(params, dict) or set(params) != {'export_check'}:
         raise ValueError('fab_consistency params must be exactly {export_check}')
     export = prerequisite(params['export_check'], ('fab_export',))
     export_params = export.get('params', {})
     prerequisite(export_params.get('netlist_check') if isinstance(export_params, dict) else None,
                  ('netlist',))
+    earlier = []
+    for spec in scope.get('checks', []):
+        if spec.get('kind') == 'geometry':
+            try:
+                earlier.append(prerequisite(spec.get('id'), ('geometry',)))
+            except ValueError:
+                pass  # a later geometry check cannot supply this gate's evidence
+    if not earlier:
+        raise ValueError('fab_consistency needs an earlier geometry check for native footprint evidence')
     captured(scope.get('board'))
     return list(PREDICATES)
 
@@ -102,26 +119,127 @@ def export_prerequisite(ctx):
 
 
 def netlist_components(ctx, export_spec):
-    """Sealed native XML netlist flags named by the export's own prerequisite."""
-    from .checks import CheckError
+    """Sealed native XML netlist flags named by the export's own prerequisite.
+
+    The XML must agree with the netlist check's sealed strict reading
+    (`connectivity.json`), and every reference must be unique.
+    """
+    from .checks import CheckError, parse_xml_netlist
     from .datasheet_facts import prerequisite
     nid = (export_spec.get('params') or {}).get('netlist_check')
     xml_path = prerequisite(ctx, nid, 'netlist', 'design.xml')
+    connectivity = prerequisite(ctx, nid, 'netlist', 'connectivity.json')
     try:
         root = ET.parse(xml_path).getroot()
-    except (ET.ParseError, OSError) as exc:
+        agrees = parse_xml_netlist(xml_path) == read_json(connectivity)
+    except (ET.ParseError, OSError, ValueError) as exc:
         raise CheckError('malformed', f'sealed netlist does not parse: {exc}') from exc
+    if not agrees:
+        raise CheckError('malformed', 'sealed native XML netlist and its connectivity record disagree')
     components = {}
-    for comp in root.findall('./components/comp'):
+    for comp in root.iter('comp'):
         ref = comp.get('ref')
-        if not ref or ref.startswith('#'):
-            continue
+        if not ref:
+            raise CheckError('malformed', 'sealed netlist has a component without a reference')
+        if ref in components:
+            raise CheckError('malformed', f'sealed netlist has duplicate reference {ref}')
         names = {p.get('name') for p in comp.findall('property')}
         components[ref] = {flag: flag in names for flag in
                            ('dnp', 'exclude_from_bom', 'exclude_from_pos_files', 'exclude_from_board')}
+    components = {ref: flags for ref, flags in components.items() if not ref.startswith('#')}
     if not components:
         raise CheckError('malformed', 'sealed netlist has no physical components')
     return nid, components
+
+
+def geometry_footprints(ctx):
+    """Native footprint inventory from every earlier sealed `geometry` check of the captured board."""
+    from .checks import CheckError
+    from .datasheet_facts import prerequisite
+    specs = ctx.scope['checks']
+    position = next(i for i, s in enumerate(specs) if s is ctx.spec or s.get('id') == ctx.cid)
+    ids = [s['id'] for s in specs[:position] if s.get('kind') == 'geometry']
+    if not ids:
+        raise CheckError('unsupported', 'no earlier sealed geometry check supplies native footprint '
+                                        'evidence for the captured board')
+    board_sha = ctx.manifest['files'].get(ctx.scope.get('board'))
+    inventories = []
+    for gid in ids:
+        path = prerequisite(ctx, gid, 'geometry', 'geometry.json')
+        if read_json(ctx.run_dir / 'checks' / f'{gid}.json').get('details', {}).get('board_sha256') != board_sha:
+            raise CheckError('unsupported', f'geometry check {gid!r} is not bound to the captured board digest')
+        try:
+            footprints = read_json(path)['footprints']
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise CheckError('malformed', f'sealed geometry {gid!r} is unreadable: {exc}') from exc
+        if not isinstance(footprints, list) or not all(isinstance(fp, dict) for fp in footprints):
+            raise CheckError('malformed', f'sealed geometry {gid!r} footprints are not records')
+        inventory = []
+        for fp in footprints:
+            if any(not isinstance(fp.get(flag), bool) for flag in GEOMETRY_FLAGS):
+                raise CheckError('unsupported', f'sealed geometry {gid!r} lacks footprint exclusion attributes; '
+                                                'rerun the geometry probe')
+            side = {'F.Cu': 'top', 'B.Cu': 'bottom'}.get(fp.get('layer'))
+            if not isinstance(fp.get('ref'), str) or side is None:
+                raise CheckError('malformed', f'sealed geometry {gid!r} footprint lacks a reference or side')
+            inventory.append((fp['ref'], side, *(fp[flag] for flag in GEOMETRY_FLAGS)))
+        inventories.append(sorted(inventory))
+    if any(inventory != inventories[0] for inventory in inventories[1:]):
+        raise CheckError('malformed', 'earlier geometry checks disagree on the board footprint inventory')
+    return ids, inventories[0]
+
+
+def pinned_kicad_cli():
+    """(path, sha256) of the kicad-cli the executor sandbox resolves, or None."""
+    path = shutil.which('kicad-cli', path=SANDBOX_PATH)
+    return (path, digest(path)) if path else None
+
+
+def sealed_versions(ctx, eid, export_result):
+    """{record: stdout version} for the export's sealed `kicad-cli version` executions."""
+    sealed = {e for e in export_result.get('evidence', []) if isinstance(e, str)}
+    found = {}
+    for rel in sorted(sealed):
+        if not rel.startswith(f'work/{eid}/') or not rel.endswith('/execution.json'):
+            continue
+        try:
+            record = read_json(ctx.run_dir / rel)
+        except (OSError, ValueError) as exc:
+            fail('tool', f'sealed execution record {rel} is unreadable ({exc})')
+        if not isinstance(record, dict) or record.get('argv') != ['kicad-cli', 'version']:
+            continue
+        stdout = rel[:-len('execution.json')] + 'stdout.log'
+        if record.get('execution') != 'ok' or record.get('exit_code') != 0 or stdout not in sealed:
+            fail('tool', f'{rel} is not a completed kicad-cli version run with sealed output')
+        if digest(ctx.run_dir / stdout) != record.get('stdout_sha256'):
+            fail('tool', f'{stdout} differs from its execution record')
+        found[rel] = (ctx.run_dir / stdout).read_text(errors='replace').strip()
+    return found
+
+
+def verify_tool(ctx, eid, export_result, tool, gaps):
+    """The manifest's kicad-cli identity must be the pinned binary and its sealed version run."""
+    from .checks import CheckError
+    pinned = pinned_kicad_cli()
+    if pinned is None:
+        raise CheckError('unsupported', 'pinned kicad-cli unavailable on the sandbox PATH; the manifest '
+                                        'tool identity cannot be verified')
+    path, sha = pinned
+    if tool['path'] != path or os.path.realpath(tool['path']) != os.path.realpath(path):
+        fail('tool', f'manifest tool path {tool["path"]!r} is not the pinned kicad-cli {path!r}')
+    if tool['sha256'] != sha:
+        fail('tool', 'manifest tool sha256 differs from the pinned kicad-cli digest')
+    versions = sealed_versions(ctx, eid, export_result)
+    record = {'path': path, 'sha256': sha, 'version': tool['version'], 'version_records': sorted(versions),
+              'status': 'verified'}
+    if not versions:
+        record['status'] = 'unverified'
+        gaps.append({'code': 'tool_identity', 'detail': f'no sealed kicad-cli version execution in {eid!r}; '
+                                                         f'manifest version {tool["version"]!r} unverified'})
+    elif set(versions.values()) != {tool['version']}:
+        fail('tool', f'manifest tool version {tool["version"]!r} disagrees with the sealed kicad-cli version '
+                     f'output {sorted(set(versions.values()))}')
+    return record
 
 
 # ----------------------------------------------------------------------- manifest
@@ -247,10 +365,6 @@ def board_facts(ctx):
     def atoms(node):
         return [x for x in node[1:] if isinstance(x, str)]
 
-    def embedded(node):
-        return {atoms(name)[0] for group in children(node, 'embedded_files')
-                for item in children(group, 'file') for name in children(item, 'name') if atoms(name)}
-
     layer_nodes = children(root, 'layers')
     if len(layer_nodes) != 1:
         fail('board', 'board needs one layers table')
@@ -277,11 +391,34 @@ def board_facts(ctx):
         attrs = {a for node in children(fp, 'attr') for a in atoms(node)}
         models = [atoms(m)[0] for m in children(fp, 'model') if atoms(m)]
         footprints.append({'ref': refs[0], 'lib_id': lib_id, 'side': side,
-                           'dnp': 'dnp' in attrs, 'exclude_from_bom': 'exclude_from_bom' in attrs,
-                           'exclude_from_pos_files': 'exclude_from_pos_files' in attrs,
-                           'models': models, 'embedded': sorted(embedded(fp))})
+                           **{flag: flag in attrs for flag in GEOMETRY_FLAGS},
+                           'models': models, 'embedded': kicad_embedded.records(fp)})
     return {'copper': copper, 'layers': layer_names, 'footprints': footprints,
-            'embedded': embedded(root)}
+            'embedded': kicad_embedded.records(root)}
+
+
+def assembled(fp):
+    return not (fp['dnp'] or fp['exclude_from_bom'] or fp['exclude_from_pos_files'])
+
+
+def reconcile_native(board, geometry, netlist, gaps):
+    """Board parse == sealed pcbnew geometry; board and netlist membership agree."""
+    parsed = sorted((fp['ref'], fp['side'], *(fp[flag] for flag in GEOMETRY_FLAGS)) for fp in board['footprints'])
+    if parsed != geometry:
+        differences = sorted(set(parsed) ^ set(geometry), key=str)
+        fail('native', f'captured board parse disagrees with the sealed geometry footprints {differences[:6]}')
+    for fp in board['footprints']:
+        if fp['ref'] in netlist:
+            continue
+        if not fp['board_only']:
+            fail('native', f'board footprint {fp["ref"]} is absent from the sealed native netlist')
+        if assembled(fp):
+            gaps.append({'code': 'board_only_assembled', 'detail': f'board-only footprint {fp["ref"]} is '
+                                                                   'assembled without a schematic part'})
+    on_board = {fp['ref'] for fp in board['footprints']}
+    for ref, flags in sorted(netlist.items()):
+        if ref not in on_board and not flags['exclude_from_board']:
+            fail('native', f'netlist component {ref} has no board footprint and is not excluded from the board')
 
 
 def reconcile_layers(manifest, board):
@@ -509,10 +646,10 @@ def check_cpl(rows, defects):
 def resolve_model(ctx, path, footprint, board):
     """('resolved'|'unresolved'|'uncovered', reason) for one footprint model path."""
     if path.startswith(EMBED):
+        # KiCad resolves the footprint's own embedded files before the board's.
         name = path[len(EMBED):]
-        if name in footprint['embedded'] or name in board['embedded']:
-            return 'resolved', 'embedded file present in captured board'
-        return 'unresolved', 'embedded model file absent from captured board'
+        scope = footprint['embedded'] if name in footprint['embedded'] else board['embedded']
+        return kicad_embedded.verify(scope.get(name, []), name)
     board_dir = PurePosixPath(ctx.scope['board']).parent
     variables = [a or b for a, b in VARIABLE.findall(path)]
     if any(name != 'KIPRJMOD' for name in variables):
@@ -545,15 +682,20 @@ def check_fab_consistency(ctx):
     from .checks import CheckError
     eid, export_spec, export_result, stage = export_prerequisite(ctx)
     nid, netlist = netlist_components(ctx, export_spec)
+    geometry_ids, geometry = geometry_footprints(ctx)
     details = ctx.result['details']
-    details.update(export_check=eid, netlist_check=nid, staging=f'work/{eid}/fab')
+    details.update(export_check=eid, netlist_check=nid, geometry_checks=geometry_ids, staging=f'work/{eid}/fab')
     defects, gaps = [], []
     try:
         manifest = load_manifest(ctx, stage)
         details['manifest_sha256'] = digest(stage / 'manifest.json')
+        details['tool'] = verify_tool(ctx, eid, export_result, manifest['tool'], gaps)
+        ctx.result['evidence'] += [rel for record in details['tool']['version_records']
+                                   for rel in (record, record[:-len('execution.json')] + 'stdout.log')]
         found = inventory(stage, manifest)
         details['inventory'] = {'files': len(found), 'bytes': sum(found.values())}
         board = board_facts(ctx)
+        reconcile_native(board, geometry, netlist, gaps)
         enabled = reconcile_layers(manifest, board)
         plots = check_plots(stage, found, manifest, enabled, gaps)
         drill = check_drill(stage, found, manifest, gaps)
@@ -583,10 +725,9 @@ def check_fab_consistency(ctx):
     if non_dnp != sorted(manifest['designators']['board_non_dnp']):
         raise CheckError('malformed', 'stale: manifest board_non_dnp '
                          f'{sorted(set(manifest["designators"]["board_non_dnp"]) ^ set(non_dnp))} '
-                         'disagrees with the captured board and sealed netlist')
-    assembled = {fp['ref'] for fp in footprints if not (fp['dnp'] or fp['exclude_from_bom'] or
-                                                       fp['exclude_from_pos_files'])}
-    for ref in sorted(assembled):
+                         'disagrees with the sealed geometry and netlist')
+    assembled_refs = {fp['ref'] for fp in footprints if assembled(fp)}
+    for ref in sorted(assembled_refs):
         if len(by_ref[ref]) > 1 or designator_defect(ref):
             defects.append({'code': 'board_designator', 'locator': f'board footprint {ref!r} '
                             f'is duplicated or not a usable designator'})
@@ -597,15 +738,16 @@ def check_fab_consistency(ctx):
 
     bom_refs = {ref for ref, _ in bom}
     parity = []
-    for ref in sorted(bom_refs | set(cpl) | assembled):
-        membership = {'bom': ref in bom_refs, 'cpl': ref in cpl, 'board': ref in assembled}
+    for ref in sorted(bom_refs | set(cpl) | assembled_refs):
+        membership = {'bom': ref in bom_refs, 'cpl': ref in cpl, 'board': ref in assembled_refs}
         if not all(membership.values()):
             parity.append({'designator': ref, **membership})
             absent = [k for k, v in membership.items() if not v]
             defects.append({'code': 'designator_parity', 'file': 'cpl.csv' if not membership['cpl'] else 'bom.csv',
                             'locator': f'designator {ref} absent from {", ".join(absent)}'})
-    details['designators'] = {'bom': len(bom_refs), 'cpl': len(cpl), 'board_assembled': len(assembled),
-                              'parity_violations': parity}
+    details['designators'] = {'bom': len(bom_refs), 'cpl': len(cpl), 'board_assembled': len(assembled_refs),
+                              'parity_violations': parity,
+                              'sources': {'geometry': geometry_ids, 'netlist': nid}}
 
     for lcsc, rows in sorted(lcsc_rows.items()):
         cells = {footprint for _, footprint, _ in rows}
@@ -646,7 +788,10 @@ def check_fab_consistency(ctx):
         'rotation policy belong to the rotation lane, and the export origin convention is not part of '
         'the fab-manifest/1 contract.',
         'No Gerber geometry, DFM or build-log inspection; plot identity comes from FileFunction attributes.',
-        '3D model resolution establishes captured-file presence only, not model content or fit.']
+        '3D model resolution establishes captured-file presence only: embedded models are decoded '
+        'and checksum-verified like a native load, but model content and fit are not assessed.',
+        'The board inventory is the sealed pcbnew geometry; board-only parts that would be assembled '
+        'have no package policy and stay unknown.']
     sealed = set(export_result.get('evidence', []))
     if defects:
         own = f'work/{ctx.cid}/fab-consistency.json'
@@ -666,5 +811,5 @@ def check_fab_consistency(ctx):
                          + '; '.join(g['detail'] for g in gaps[:5]))
     ctx.result.update(execution='ok', outcome='pass',
                       summary=f'fab package consistent: {len(found)} hash-bound files, {len(plots)} plots for '
-                              f'{len(enabled)} fab layers, PTH+NPTH drill, {len(assembled)} assembled '
+                              f'{len(enabled)} fab layers, PTH+NPTH drill, {len(assembled_refs)} assembled '
                               f'designators in BOM/CPL/board parity, {len(models)} 3D model path(s) resolved')

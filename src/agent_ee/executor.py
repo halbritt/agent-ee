@@ -11,6 +11,8 @@ from pathlib import Path
 from .storage import digest, write_json
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+# Tools resolve on this fixed PATH inside the sandbox; /usr is the host's, read-only.
+SANDBOX_PATH = "/usr/local/bin:/usr/bin:/bin"
 
 
 def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=()):
@@ -28,7 +30,7 @@ def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=()):
                 "--ro-bind", str(Path(inputs).resolve()), "/candidate",
                 "--ro-bind", str(PACKAGE_ROOT), "/app",
                 "--bind", str(Path(work).resolve()), "/work", "--chdir", "/work",
-                "--clearenv", "--setenv", "PATH", "/usr/local/bin:/usr/bin:/bin",
+                "--clearenv", "--setenv", "PATH", SANDBOX_PATH,
                 "--setenv", "HOME", "/work/home", "--setenv", "LANG", "C.UTF-8",
                 "--setenv", "PYTHONPATH", "/app",
                 "--setenv", "KICAD_CONFIG_HOME", "/work/kicad-config",

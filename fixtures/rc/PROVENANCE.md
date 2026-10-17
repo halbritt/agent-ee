@@ -25,5 +25,19 @@ output of an ideal 1 V step at t = 1 ms drops from 1 - exp(-1) = 0.632 V to
 
 The circuit: J1.1 (/IN) --R1-- /OUT (J1.2) --C1 100n-- GND (J1.3).
 
+`embedded-models/rc_filter.kicad_pcb` is owned and derived from
+`control/rc_filter.kicad_pcb` on 2026-10-17 for the fab-consistency gate. Each
+stock `${KICAD10_3DMODEL_DIR}` model reference (C1, R1, J1) was replaced by
+`kicad-embed://c1.step`, `r1.step` or `j1.step`. A board-level `embedded_files`
+section was added with owned placeholder STEP text (`owned_step` in
+`tests/test_fab_consistency.py`), compressed by `zstd -19` (zstd 1.5.5) and
+given SHA-256 checksums. KiCad 10.0.7 pcbnew then loaded and saved the board
+(`LoadBoard`/`SaveBoard`). pcbnew kept the frames and wrote its own checksums.
+The schematic and project are the control's. A test splices the committed
+frames into a fresh derivation and confirms that pcbnew reproduces this file
+byte for byte.
+
+- rc_filter.kicad_pcb  sha256 8f4063e1b956f77a5c08593f40e270b48914585d5e7e6887a1302e0cd301db96
+
 These copies are disposable review fixtures, not part of any ECU design; the
 fome-mc source tree was not modified.
