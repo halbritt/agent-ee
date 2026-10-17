@@ -369,8 +369,12 @@ def rederived_row(cells, manifest):
     columns follow from the raw claims. Every stored field must equal the result.
     """
     stored = dict(zip(DERIVED_COLUMNS, cells))
+    decoded = {}
     for key in ('attributes', 'normalized', 'provenance'):
-        if not isinstance(stored[key], str) or canonical(strict_json(stored[key])).decode() != stored[key]:
+        if not isinstance(stored[key], str):
+            raise ValueError(f'snapshot {key} is not canonical JSON')
+        decoded[key] = strict_json(stored[key])
+        if canonical(decoded[key]).decode() != stored[key]:
             raise ValueError(f'snapshot {key} is not canonical JSON')
     for key in ('is_basic', 'is_preferred'):
         if type(stored[key]) is not int or stored[key] not in (0, 1):
@@ -383,7 +387,7 @@ def rederived_row(cells, manifest):
     raw.update(stock='' if stored['stock'] is None else str(stored['stock']),
                price1='' if stored['price1'] is None else stored['price1'],
                is_basic=str(stored['is_basic']), is_preferred=str(stored['is_preferred']))
-    provenance = strict_json(stored['provenance'])
+    provenance = decoded['provenance']
     exact_fields(provenance, ('volume', 'row', 'raw_sha256'))
     if (provenance['volume'] not in {volume['path'] for volume in manifest['volumes']}
             or type(provenance['row']) is not int or provenance['row'] < 1
@@ -391,8 +395,8 @@ def rederived_row(cells, manifest):
             or not re.fullmatch('[0-9a-f]{64}', provenance['raw_sha256'])):
         raise ValueError('snapshot row lacks valid raw source provenance')
     row = normalize_row(raw, provenance, manifest['snapshot_date'])
-    decoded = {**stored, 'is_basic': bool(stored['is_basic']), 'is_preferred': bool(stored['is_preferred']),
-               **{key: strict_json(stored[key]) for key in ('attributes', 'normalized', 'provenance')}}
+    decoded = {**stored, **decoded, 'is_basic': bool(stored['is_basic']),
+               'is_preferred': bool(stored['is_preferred'])}
     if canonical(decoded) != canonical(row):
         raise ValueError(f'snapshot row {row["lcsc"]} does not match rederivation from its raw attributes')
     if manifest['stale_before'] is not None and row['last_seen'] < manifest['stale_before']:
