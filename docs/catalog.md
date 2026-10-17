@@ -87,11 +87,31 @@ identity is the cross-version comparison; cross-version SQLite byte identity
 is not claimed.
 
 `load_catalog(snapshot_directory, expected_manifest_sha256)` verifies the pinned
-manifest, DB size/hash, quick_check, exact table/column inventory, category-table
-contents, counts and canonical row identity, then returns `manifest` and decoded
-`rows`. `catalog_check(...)` maps missing/corrupt data to `execution: failed`,
-`outcome: unknown`; its pass establishes snapshot integrity only. Successful
-results retain snapshot manifest/DB hashes and date. Consumers must capture both
+manifest, DB size/hash, quick_check and exact table schema SQL (so key
+constraints cannot be dropped). It then revalidates every base row as captured
+data rather than trusting the hashes: canonical JSON text, integer or NULL stock,
+decimal-text or NULL price, 0/1 flags, unique LCSC identity and unique source
+record, and provenance naming a pinned volume with a positive record number and
+SHA-256. Normalized SI intervals and every other derived field are recomputed from
+the retained raw `attributes` and source cells with this module's normalization
+and must match exactly. Rows last seen after `snapshot_date` or before `stale_before`
+are refused. Category tables must equal the revalidated base rows. Counts and
+canonical row identity are checked last; it returns `manifest` and the rederived
+`rows`.
+
+A content hash only proves the bytes are the pinned bytes. Without rederivation,
+a newly pinned snapshot could carry intervals that contradict its own raw claims,
+for example a `10 kohm +/-5%` row labelled with a +/-1% interval. Such snapshots,
+including ones produced by a different normalization implementation, fail closed.
+Because raw attribute text and price are canonicalized at capture, the stored
+`raw_sha256` cannot be recomputed from the snapshot alone; it can be checked only
+against the pinned source volume, which the snapshot does not include. The
+manifest records no capture-execution receipt or producer attestation.
+
+`catalog_check(...)` maps missing, corrupt or semantically invalid data to
+`execution: failed`, `outcome: unknown`; its pass establishes snapshot integrity
+and derivation consistency only. Successful results retain snapshot manifest/DB
+hashes and date. Consumers must capture both
 files into their immutable candidate and invoke this reader inside the existing
 networkless sandbox. This focused module does not register a new acceptance
 check or expand reviewer/implementation permissions.

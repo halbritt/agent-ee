@@ -87,8 +87,11 @@ JSON via `agent_ee.storage.canonical`.
 `execution: ok, outcome: pass` means all parts matched the declared catalog
 constraints. It does not grant engineering acceptance. An empty candidate set
 has `outcome: unknown`, reason `no candidate`, and null `chosen`. The
-`selection_check` adapter maps invalid requirements and missing/corrupt snapshots
-to `execution: failed, outcome: unknown` with an error and no fallback choice.
+`selection_check` adapter maps invalid requirements and missing, corrupt or
+semantically invalid snapshots to `execution: failed, outcome: unknown` with an
+error and no fallback choice. Selection uses only intervals that `load_catalog`
+has rederived from each row's retained raw attributes. A repinned snapshot whose
+stored intervals disagree with its raw claims is never used to select a part.
 The direct `select_parts` API raises the underlying input error. Shared scope,
 CLI, baseline and check registration belong to the integrator; this module
 adds no acceptance authority or new reviewer access.

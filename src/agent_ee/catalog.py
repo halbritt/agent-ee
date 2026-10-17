@@ -142,8 +142,11 @@ def strict_json(text):
                 raise ValueError('duplicate JSON field')
             record[key] = entry
         return record
-    return json.loads(text, object_pairs_hook=pairs,
-                      parse_constant=lambda text: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
+    try:
+        return json.loads(text, object_pairs_hook=pairs,
+                          parse_constant=lambda text: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
+    except RecursionError as exc:
+        raise ValueError('JSON nesting too deep') from exc
 
 
 def normalize_row(raw, provenance, snapshot_date):
@@ -298,19 +301,25 @@ def row_counts(rows):
     return {'component_base': len(rows), **{category: sum(row['category'] == category for row in rows) for category in CATEGORIES}}
 
 
-def write_database(path, rows):
+def table_sql(table):
+    """Exact schema text; readers compare sqlite_master so constraints cannot be dropped."""
     declarations = ','.join(f'{key} ' + ('INTEGER' if key in ('stock', 'is_basic', 'is_preferred') else 'TEXT') for key in DERIVED_COLUMNS)
+    if table != 'component_base':
+        declarations += ',' + ','.join(f'{column} TEXT' for column in category_columns(table))
+    return f'CREATE TABLE {table} (' + declarations + ', PRIMARY KEY(lcsc))'
+
+
+def write_database(path, rows):
     with closing(sqlite3.connect(path)) as connection:
         connection.execute('PRAGMA page_size=4096')
-        connection.execute('CREATE TABLE component_base (' + declarations + ', PRIMARY KEY(lcsc))')
+        connection.execute(table_sql('component_base'))
         placeholders = ','.join('?' for _ in DERIVED_COLUMNS)
         connection.executemany('INSERT INTO component_base VALUES (' + placeholders + ')',
                                [tuple(canonical(row[key]).decode() if key in ('attributes', 'normalized', 'provenance') else row[key]
                                       for key in DERIVED_COLUMNS) for row in rows])
         for category in CATEGORIES:
             columns = DERIVED_COLUMNS + category_columns(category)
-            extra = ','.join(f'{column} TEXT' for column in category_columns(category))
-            connection.execute(f'CREATE TABLE {category} (' + declarations + ',' + extra + ', PRIMARY KEY(lcsc))')
+            connection.execute(table_sql(category))
             for row in rows:
                 if row['category'] == category:
                     base = tuple(canonical(row[key]).decode() if key in ('attributes', 'normalized', 'provenance') else row[key]
@@ -353,34 +362,68 @@ def capture_catalog(source_manifest, source_root, destination):
             shutil.rmtree(stage)
 
 
-def read_database(payload):
+def rederived_row(cells, manifest):
+    """Rebuild the raw source row from retained fields and rerun the pinned normalization.
+
+    Hashes only show the bytes are the pinned bytes; they do not show the derived
+    columns follow from the raw claims. Every stored field must equal the result.
+    """
+    stored = dict(zip(DERIVED_COLUMNS, cells))
+    for key in ('attributes', 'normalized', 'provenance'):
+        if not isinstance(stored[key], str) or canonical(strict_json(stored[key])).decode() != stored[key]:
+            raise ValueError(f'snapshot {key} is not canonical JSON')
+    for key in ('is_basic', 'is_preferred'):
+        if type(stored[key]) is not int or stored[key] not in (0, 1):
+            raise ValueError('invalid snapshot boolean')
+    if stored['stock'] is not None and type(stored['stock']) is not int:
+        raise ValueError('snapshot stock must be an integer or NULL')
+    if stored['price1'] is not None and (not isinstance(stored['price1'], str) or not stored['price1']):
+        raise ValueError('snapshot price must be decimal text or NULL')
+    raw = {key: stored[key] for key in COLUMNS}
+    raw.update(stock='' if stored['stock'] is None else str(stored['stock']),
+               price1='' if stored['price1'] is None else stored['price1'],
+               is_basic=str(stored['is_basic']), is_preferred=str(stored['is_preferred']))
+    provenance = strict_json(stored['provenance'])
+    exact_fields(provenance, ('volume', 'row', 'raw_sha256'))
+    if (provenance['volume'] not in {volume['path'] for volume in manifest['volumes']}
+            or type(provenance['row']) is not int or provenance['row'] < 1
+            or not isinstance(provenance['raw_sha256'], str)
+            or not re.fullmatch('[0-9a-f]{64}', provenance['raw_sha256'])):
+        raise ValueError('snapshot row lacks valid raw source provenance')
+    row = normalize_row(raw, provenance, manifest['snapshot_date'])
+    decoded = {**stored, 'is_basic': bool(stored['is_basic']), 'is_preferred': bool(stored['is_preferred']),
+               **{key: strict_json(stored[key]) for key in ('attributes', 'normalized', 'provenance')}}
+    if canonical(decoded) != canonical(row):
+        raise ValueError(f'snapshot row {row["lcsc"]} does not match rederivation from its raw attributes')
+    if manifest['stale_before'] is not None and row['last_seen'] < manifest['stale_before']:
+        raise ValueError('snapshot retains a row older than its stale cutoff')
+    return row
+
+
+def read_database(payload, manifest):
+    """Decode a snapshot whose manifest source fields were already validated."""
     with closing(sqlite3.connect(':memory:')) as connection:
         connection.deserialize(payload)
         connection.execute('PRAGMA trusted_schema=OFF')
         if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
             raise ValueError('corrupt snapshot database')
         expected = {'component_base', *CATEGORIES}
-        tables = connection.execute("SELECT name,type FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").fetchall()
-        if set(tables) != {(name, 'table') for name in expected}:
-            raise ValueError('unsupported snapshot tables')
-        for table in sorted(expected):
-            columns = DERIVED_COLUMNS if table == 'component_base' else DERIVED_COLUMNS + category_columns(table)
-            if tuple(column[1] for column in connection.execute(f'PRAGMA table_xinfo({table})')) != columns:
-                raise ValueError('missing snapshot columns')
-        rows = []
+        tables = connection.execute("SELECT name,type,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").fetchall()
+        if set(tables) != {(name, 'table', table_sql(name)) for name in expected}:
+            raise ValueError('unsupported snapshot tables or schema')
+        rows, identities, sources = [], set(), set()
         for cells in connection.execute('SELECT * FROM component_base ORDER BY CAST(substr(lcsc,2) AS INTEGER)'):
-            row = dict(zip(DERIVED_COLUMNS, cells))
-            for key in ('attributes', 'normalized', 'provenance'):
-                row[key] = strict_json(row[key])
-            for key in ('is_basic', 'is_preferred'):
-                if row[key] not in (0, 1):
-                    raise ValueError('invalid snapshot boolean')
-                row[key] = bool(row[key])
+            row = rederived_row(cells, manifest)
+            source = (row['provenance']['volume'], row['provenance']['row'])
+            if row['lcsc'] in identities or source in sources:
+                raise ValueError('duplicate snapshot LCSC identity or source record')
+            identities.add(row['lcsc'])
+            sources.add(source)
             rows.append(row)
+        by_lcsc = {row['lcsc']: row for row in rows}
         for category in CATEGORIES:
             actual = connection.execute(f'SELECT * FROM {category} ORDER BY lcsc').fetchall()
             base = connection.execute('SELECT * FROM component_base WHERE category=? ORDER BY lcsc', (category,)).fetchall()
-            by_lcsc = {row['lcsc']: row for row in rows}
             expected_rows = [cells + interval_cells(by_lcsc[cells[0]], category) for cells in base]
             if actual != expected_rows:
                 raise ValueError('derived category table mismatch')
@@ -408,7 +451,10 @@ def load_catalog(snapshot_directory, expected_manifest_sha256):
         payload = stream.read(database['size_bytes'] + 1)
     if len(payload) != database['size_bytes'] or hashlib.sha256(payload).hexdigest() != database['sha256']:
         raise ValueError('snapshot database size/hash mismatch')
-    rows = read_database(payload)
+    if type(manifest['pruned_rows']) is not int or manifest['pruned_rows'] < 0:
+        raise ValueError('invalid pruned row count')
+    nonempty(manifest['sqlite_version'])
+    rows = read_database(payload, manifest)
     if not rows or row_counts(rows) != manifest['row_counts'] or identity(rows) != manifest['rows_sha256']:
         raise ValueError('snapshot row identity/count mismatch')
     return {'manifest': manifest, 'rows': rows}

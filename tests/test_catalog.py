@@ -241,3 +241,116 @@ class CatalogTests(unittest.TestCase):
                 result = catalog_check(destination, digest(manifest_path))
                 self.assertEqual(result['execution'], 'failed')
                 self.assertEqual(result['outcome'], 'unknown')
+
+    def captured(self, name, rows=None, **source_changes):
+        source = self.source(rows)
+        source.update(source_changes)
+        destination = self.root / name
+        capture_catalog(source, self.root, destination)
+        return destination, digest(destination / 'manifest.json')
+
+    def test_repinned_derived_interval_contradicting_raw_attribute_is_unknown(self):
+        from agent_ee.catalog import catalog_check
+        from catalog_repin import repin, set_derived
+        snapshot, original = self.captured('snapshot')
+        # Narrower than the retained raw '1 kohm +/-1%' claim; base and category agree.
+        tampered = repin(snapshot, lambda connection: set_derived(
+            connection, 'C1', {'resistance': {'min': '999', 'max': '1001', 'unit': 'ohm'}}))
+        self.assertNotEqual(tampered, original)
+        result = catalog_check(snapshot, tampered)
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+        self.assertRegex(result['details']['error'], 'rederiv')
+        with self.assertRaisesRegex(ValueError, 'rederiv'):
+            load_catalog(snapshot, tampered)
+        self.assertEqual(catalog_check(snapshot, original)['execution'], 'failed')
+
+    def test_repinned_snapshot_with_valid_rederivation_still_passes(self):
+        from agent_ee.catalog import catalog_check
+        from catalog_repin import repin, set_derived
+        snapshot, original = self.captured('snapshot')
+        rewritten = repin(snapshot, lambda connection: set_derived(
+            connection, 'C1', {'resistance': {'min': '990', 'max': '1010', 'unit': 'ohm'}}))
+        self.assertNotEqual(rewritten, original)
+        self.assertEqual(catalog_check(snapshot, rewritten)['outcome'], 'pass')
+        self.assertEqual(load_catalog(snapshot, rewritten)['rows'][0]['normalized']['resistance'],
+                         {'min': '990', 'max': '1010', 'unit': 'ohm'})
+
+    def test_repinned_semantic_row_tampering_is_unknown(self):
+        from agent_ee.catalog import catalog_check
+        from catalog_repin import repin, set_derived
+
+        def both(assignment, *values):
+            return lambda connection: [connection.execute(f'UPDATE {table} SET {assignment}', values)
+                                       for table in ('component_base', 'resistor')]
+        interval = {'min': '990', 'max': '1010', 'unit': 'ohm'}
+        cases = {
+            'invented attribute': (lambda connection: set_derived(connection, 'C1', {
+                'resistance': interval, 'voltage': {'min': '50', 'max': '50', 'unit': 'V'}}), 'rederiv'),
+            'dropped attribute': (lambda connection: set_derived(connection, 'C1', {}), 'rederiv'),
+            'invalid unit': (lambda connection: set_derived(connection, 'C1', {
+                'resistance': {'min': '0.99', 'max': '1.01', 'unit': 'kohm'}}), 'rederiv'),
+            'raw attribute edited': (both('attributes=?', '{"resistance":"1 kohm +/-5%"}'), 'rederiv'),
+            'raw attribute not text': (both('attributes=?', '{"resistance":1000}'), 'text mapping'),
+            'noncanonical JSON': (both('normalized=?', '{"resistance": {"max":"1010","min":"990","unit":"ohm"}}'), 'canonical JSON'),
+            'textual stock': (both("stock='many'"), 'stock'),
+            'negative stock': (both('stock=-1'), 'stock'),
+            'real stock': (both('stock=123.5'), 'stock'),
+            'invalid price': (both("price1='abc'"), 'decimal'),
+            'noncanonical price': (both("price1='0.010'"), 'rederiv'),
+            'boolean outside 0/1': (both('is_basic=2'), 'boolean'),
+            'last_seen after snapshot': (both("last_seen='2026-10-18'"), 'last_seen'),
+            'invalid LCSC': (both("lcsc='C01'"), 'LCSC'),
+            'unsupported category': (lambda connection: connection.execute(
+                "UPDATE component_base SET category='widget'"), 'category'),
+            'missing provenance': (both("provenance='{}'"), 'raw_sha256'),
+            'foreign provenance volume': (both('provenance=?', json.dumps(
+                {'raw_sha256': '0' * 64, 'row': 1, 'volume': 'other.csv'}, separators=(',', ':'), sort_keys=True)), 'provenance'),
+            'boolean provenance row': (both('provenance=?', json.dumps(
+                {'raw_sha256': '0' * 64, 'row': True, 'volume': 'owned.csv'}, separators=(',', ':'), sort_keys=True)), 'provenance'),
+        }
+        for number, (label, (edit, reason)) in enumerate(cases.items()):
+            with self.subTest(label):
+                snapshot, _ = self.captured(f'case-{number}')
+                result = catalog_check(snapshot, repin(snapshot, edit))
+                self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+                self.assertRegex(result['details']['error'], reason)
+
+    def test_repinned_identity_schema_provenance_and_stale_cutoff_are_unknown(self):
+        from agent_ee.catalog import DERIVED_COLUMNS, catalog_check, category_columns
+        from catalog_repin import repin
+        base = dict(lcsc='C1', mfr='Owned fixture', mpn='R1', package='0603', category='resistor',
+                    stock='123', price1='0.01', is_basic='1', is_preferred='0', last_seen='2026-01-01',
+                    attributes=json.dumps({'resistance': '1 kohm +/-1%'}))
+        rows = [base, {**base, 'lcsc': 'C2', 'mpn': 'R2'}]
+
+        def duplicate_identity(connection):
+            for table in ('component_base', 'resistor'):
+                columns = DERIVED_COLUMNS + (() if table == 'component_base' else category_columns(table))
+                connection.execute(f'CREATE TABLE copy ({",".join(columns)})')
+                connection.execute(f'INSERT INTO copy SELECT * FROM {table}')
+                connection.execute(f'DROP TABLE {table}')
+                connection.execute(f'ALTER TABLE copy RENAME TO {table}')
+                connection.execute(f"INSERT INTO {table} SELECT * FROM {table} WHERE lcsc='C1'")
+
+        def shared_provenance(connection):
+            for table in ('component_base', 'resistor'):
+                connection.execute(f"UPDATE {table} SET provenance=(SELECT provenance FROM component_base "
+                                   f"WHERE lcsc='C1') WHERE lcsc='C2'")
+        cases = {
+            'duplicate identity schema': (duplicate_identity, None, 'schema'),
+            'shared provenance record': (shared_provenance, None, 'duplicate'),
+            'retained row before stale cutoff': (None, lambda manifest: manifest.update(stale_before='2026-06-01'), 'stale'),
+            'negative pruned count': (None, lambda manifest: manifest.update(pruned_rows=-1), 'pruned'),
+        }
+        for number, (label, (edit_database, edit_manifest, reason)) in enumerate(cases.items()):
+            with self.subTest(label):
+                snapshot, original = self.captured(f'case-{number}', rows)
+                self.assertEqual(catalog_check(snapshot, original)['outcome'], 'pass')
+                result = catalog_check(snapshot, repin(snapshot, edit_database, edit_manifest))
+                self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+                self.assertRegex(result['details']['error'], reason)
+
+    def test_deeply_nested_snapshot_json_is_a_value_error(self):
+        from agent_ee.catalog import strict_json
+        with self.assertRaisesRegex(ValueError, 'nest'):
+            strict_json('[' * 200000 + ']' * 200000)
