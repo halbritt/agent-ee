@@ -64,10 +64,12 @@ use terminal relations; generated anonymous names are not stable identities.
 Disconnected terminals fail both same-net and different-net predicates because
 neither establishes membership in a known conductor. Qualified native singleton
 `unconnected-(reference-Padpin)` nets (including the native symbol pin-name
-segment when present) represent disconnected pins, including explicit no-connect
-markers. Their raw net codes, names and terminal locators remain in the report;
-they cannot satisfy any conductor predicate. Normalization requires exact native
-terminal/name agreement and one node, after duplicate/unknown-node validation.
+segment when present, and the `_1`, `_2`, ... suffix KiCad appends when that
+name collides with another net) represent disconnected pins, including explicit
+no-connect markers. Their raw net codes, names and terminal locators remain in
+the report; they cannot satisfy any conductor predicate. Normalization requires
+exact native terminal/name agreement and one node, after duplicate/unknown-node
+validation.
 Local named nets retain their sheet-qualified names. Connected anonymous nets
 retain membership; a name prefix alone never removes a conductor.
 
@@ -76,10 +78,12 @@ retain membership; a name prefix alone never removes a conductor.
 A global label is unqualified, so it can deliberately name a singleton conductor
 with exactly the generated spelling. KiCad still generates that spelling for a
 truly disconnected pin when an identically spelled global label exists elsewhere.
+Power symbols also name nets without a sheet prefix, through their Value.
 Label text anywhere in the hierarchy is therefore never evidence. When a native
-singleton carries a generated no-connect spelling that some captured global label
-also uses, the check reads the sheet file that owns the native component with the
-existing bounded S-expression reader. The native component UUID must resolve to
+singleton carries a generated no-connect spelling that some captured global
+label, power symbol Value or power pin name also uses, the check reads the
+sheet file that owns the native component with the existing bounded
+S-expression reader. The native component UUID must resolve to
 exactly one source symbol whose hierarchical instance reference and `lib_id`
 match the XML. The pin connection point comes from the embedded library pin,
 rotated counterclockwise by 0, 90, 180 or 270 degrees and then mirrored about
@@ -97,10 +101,11 @@ result has three states:
   and the pin stays disconnected.
 - **Unknown.** Every other case. This includes labels, sheet pins, hierarchical
   ports, directive labels, buses, bus entries or other pins within the margin.
-  It also includes unmodelled item kinds, coordinates finer than the native
-  100 nm unit, oblique rotations, `extends` symbols and hidden or `no_connect`
-  pins. Multi-unit components whose native UUIDs resolve to several placed
-  symbols are also unknown.
+  A power symbol on the pin is therefore unknown, because only global labels are
+  modelled as positive sources. It also includes unmodelled item kinds,
+  coordinates finer than the native 100 nm unit, oblique rotations, `extends`
+  symbols and hidden or `no_connect` pins. Multi-unit components whose native
+  UUIDs resolve to several placed symbols are also unknown.
 
 kicad-cli connects labels lying within about one native unit of a wire. It does
 not connect a pin lying inside a wire or a wire ending inside another wire
@@ -110,7 +115,9 @@ A predicate that fails even if the label connects, such as `same_net` with a
 singleton or a `named_net` that does not list the spelling, is a violation.
 Otherwise the predicate is `not_evaluated`, so the check is `unsupported/unknown`.
 Global-label connectivity through hierarchical ports is outside this qualified
-domain.
+domain. A spelling attached to a different conductor makes kicad-cli emit two
+nets with one name. The reader refuses that as duplicate inventory instead of
+choosing one.
 
 R/C/L, ferrites, zero-ohm resistors, jumpers and semiconductors never merge native
 conductors. A declared load/testpoint is an explicitly named component, not a
@@ -157,14 +164,17 @@ mutation violations before native runs. Strict native tests exercise load/probe
 deletion, depopulation, swapped pins, disconnection, explicit rename aliases,
 unsupported mappings, seal tamper and a legitimate resistor repair with a loaded
 ngspice response. Global-label qualification tests cover the off-pin label at
-(140, 80) that the independent review reproduced. They also cover direct, wired,
+(140, 80) that the independent review reproduced. They also cover the same label
+with an explicit no-connect marker (native `_1` suffix), a spelling attached to
+another conductor, power symbols on and off the pin, and direct, wired,
 junction and interior-wire labels; junctionless tees; pins inside wires; labels
 offset by one native unit, 1 µm and 10 µm; sub-unit coordinates; all twelve pin
 orientations; and child-sheet, root-sheet and hierarchical-port scoping. Wired,
 unproven and orientation cases first check native kicad-cli connectivity with an
-ordinary label at the same point. Scripted independent initial reviews and central adjudication
-test evidence authority; they do not establish live-model reliability or physical
-validation. Undeclared topology is outside this contract's coverage.
+ordinary label at the same point. Scripted independent initial reviews and
+central adjudication test evidence authority; they do not establish live-model
+reliability or physical validation. Undeclared topology is outside this
+contract's coverage.
 
 The fixture includes an empty original board placeholder because the review CLI
 requires a captured board path. No board check or PCB validity is claimed.

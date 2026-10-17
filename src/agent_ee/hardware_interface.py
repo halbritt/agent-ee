@@ -1,5 +1,6 @@
 """Captured owner declarations over direct native schematic conductors."""
 import json
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -197,13 +198,14 @@ def read_inventory(path):
             if ref not in refs or pin not in components[refs[ref]]['pins'] or (ref, pin) in memberships:
                 raise ValueError('ambiguous or unknown native terminal membership')
             memberships[(ref, pin)] = code
-        # Native generated singleton NC names have no sheet/name prefix. A
-        # local label is sheet-qualified; an identically spelled global label
+        # Native generated singleton NC names have no sheet/name prefix; a
+        # collision with another net appends _1, _2, ... A local label is
+        # sheet-qualified; an identically spelled global label or power symbol
         # is judged only by qualify_global_names from source geometry.
         if len(nodes) == 1:
             pin_name = components[refs[ref]]['pin_names'][pin]
             prefix = f'{pin_name}-' if pin_name and pin_name not in (pin, '~') else ''
-            if name == f'unconnected-({ref}-{prefix}Pad{pin})':
+            if re.fullmatch(re.escape(f'unconnected-({ref}-{prefix}Pad{pin})') + '(_[1-9][0-9]*)?', name):
                 disconnected.add((ref, pin))
     return {'components': components, 'memberships': memberships, 'nets': nets,
             'sheets': sheets, 'disconnected': disconnected, 'unresolved': {}, 'sources': {}}
@@ -437,11 +439,27 @@ def label_connection(schematics, root, component, pin, name):
                             for label in labels]
 
 
-def qualify_global_names(inventory, schematics, root):
-    """A global label exempts a native NC spelling only with geometry proof."""
+def unqualified_names(schematic):
+    """Spellings that can name a native net without a sheet prefix."""
     from .symbol_library import children
-    spellings = {text(label[1]) for schematic in schematics.values()
-                 for label in children(schematic, 'global_label')}
+    names = {text(label[1]) for label in children(schematic, 'global_label')}
+    library = {atoms(s)[0]: s for lib in children(schematic, 'lib_symbols')
+               for s in children(lib, 'symbol') if atoms(s)}
+    for symbol in children(schematic, 'symbol'):
+        keys = [atoms(n)[:1] for n in children(symbol, 'lib_name') or children(symbol, 'lib_id')]
+        definition = library.get(keys[0][0]) if keys and keys[0] else None
+        if definition is not None and children(definition, 'power'):
+            # Power nets follow Value; keep every pin name too, conservatively.
+            names |= {atoms(n)[1] for n in children(symbol, 'property') if atoms(n)[:1] == ['Value']
+                      and len(atoms(n)) > 1}
+            names |= {atoms(n)[0] for sub in children(definition, 'symbol') for pin in children(sub, 'pin')
+                      for n in children(pin, 'name') if atoms(n)}
+    return names
+
+
+def qualify_global_names(inventory, schematics, root):
+    """An unprefixed source name exempts a native NC spelling only with geometry proof."""
+    spellings = set().union(*(unqualified_names(s) for s in schematics.values()))
     components = {c['reference']: c for c in inventory['components'].values()}
     for ref, pin in sorted(inventory['disconnected']):
         name = inventory['nets'][inventory['memberships'][(ref, pin)]]
