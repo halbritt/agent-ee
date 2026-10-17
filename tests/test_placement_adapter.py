@@ -1,14 +1,11 @@
 """Placement-iteration write scope and coordinator-run helper step (AGENTEE-91)."""
-import copy
 import decimal
 import hashlib
 import importlib.util
-import json
 import os
 import shutil
 import subprocess
 import tempfile
-import threading
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -993,18 +990,24 @@ class ReceiptIterationTest(unittest.TestCase):
         self.assertEqual(self.state['stage_receipts'], {})
 
     def test_cancelled_helper_is_retained_and_never_adopted(self):
+        from unittest.mock import patch
         from agent_ee.executor import Cancellation
         cancellation = Cancellation()
-        timer = threading.Timer(1.0, cancellation.cancel)
-        timer.start()
-        self.addCleanup(timer.cancel)
-        with self.assertRaises(KeyboardInterrupt):
+        real = subprocess.Popen
+        def launched(command, *args, **kwargs):
+            # Cancel once the real helper process is running; the executor then kills its group.
+            process = real(command, *args, **kwargs)
+            if f'{pa.TOOL_AT}/launch.py' in command:
+                cancellation.cancel()
+            return process
+        with patch('agent_ee.executor.subprocess.Popen', side_effect=launched), self.assertRaises(KeyboardInterrupt):
             self.iterate(cancellation=cancellation)
         self.assertUnadopted()
         record = read_json(self.work / 'placement-adapter.json')
         self.assertEqual(record['status'], 'cancelled')
         receipt = self.receipts.validate_receipt(self.work / record['helper']['receipt'])
-        self.assertEqual(receipt['status'], 'cancelled')
+        self.assertEqual((receipt['status'], receipt['execution']['execution']), ('cancelled', 'interrupted'))
+        self.assertEqual((record['helper']['status'], record['helper']['receipt_id']), ('cancelled', receipt['receipt_id']))
         self.assertIn('1', self.state['stage_receipts'])
 
     def test_legacy_state_other_stage_and_exhausted_deadline_run_no_helper(self):

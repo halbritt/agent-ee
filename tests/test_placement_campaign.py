@@ -581,7 +581,7 @@ class FailureCampaignTest(PlacementCampaignFixture):
             # A real interrupt of the coordinator while the sandboxed helper process itself runs.
             if argv[:4] != ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
                 return real(inputs, work, argv, **kwargs)
-            timer = threading.Timer(0.3, _thread.interrupt_main)
+            timer = threading.Timer(0.15, _thread.interrupt_main)
             timer.start()
             try:
                 return real(inputs, work, argv, **kwargs)
