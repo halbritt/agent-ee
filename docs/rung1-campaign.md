@@ -187,3 +187,14 @@ reserved mount points are refused. With the native toolchain, they check that
 kicad-cli loads the empty files and that a checks-only review of the empty
 candidate gives `stage_not_reached` for `erc`, `netlist`, `drc` and `geometry`
 and `stage_blocked` for `rc-step`. No test runs a campaign or inference.
+
+## Review conventions file
+
+The scaffold adds `requirements/review-conventions.md` and lists it in the scope's
+`requirements`. It restates, for the independent reviewers and the adjudicator, how the
+coordinator validates citations and witnesses (allowed path prefixes; `baseline.json` is
+sealed context, not a citable path; witnesses cite unchanged check results). It changes no
+check, limit or acceptance rule. It was added after two campaign attempts on 2026-10-17 were
+recorded incomplete because an otherwise valid adjudication cited `baseline.json` and a
+reviewer witness was malformed (AGENTEE-111, AGENTEE-115). The default `max_iterations` for
+this runner is 2: the empty candidate and one generated candidate.

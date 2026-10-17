@@ -219,6 +219,7 @@ def write_scaffold(rundir, prep):
         shutil.copyfile(FIXTURE_PROJECT / table, project / table)
     lib_table_check(project)
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
+    (scaffold / 'requirements' / 'review-conventions.md').write_text(REVIEW_CONVENTIONS)
     generation.mkdir()
     write_json(generation / 'intent.json', prep['intent'])
     (generation / 'resolved.json').write_bytes(prep['resolved_bytes'])
@@ -295,6 +296,7 @@ def compile_staged_scope(params, scope_dir, scaffold):
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs
     scope['name'] = 'Rung-1 RC low-pass, staged repair campaign from an empty candidate'
+    scope['requirements'] = list(scope.get('requirements', [])) + ['requirements/review-conventions.md']
     scope['scope'] = ('Review the rung-1 RC low-pass candidate against the requirements compiled from its '
                       'one-paragraph spec. The campaign starts from an empty native project (no symbols, '
                       'footprints or copper). After each implementation session the coordinator runs the '
@@ -410,7 +412,30 @@ def check_steps(steps, mutable):
     return normalized
 
 
-def campaign_config(scope_path, profile, steps, max_seconds=3600, max_iterations=3):
+
+REVIEW_CONVENTIONS = """# Review and adjudication conventions for this scope
+
+These are captured owner conventions for the independent reviewers and the adjudicator.
+They do not change any check, limit or acceptance rule; they state how the coordinator
+validates structured responses so that a valid judgment is not lost to a path or shape error.
+
+- Evidence citations must name retained run files only, with paths under `inputs/`
+  (captured sources, for example `inputs/requirements/system.md`), `checks/<check-id>.json`,
+  `work/<check-id>/<file>` (raw tool outputs) or `review-work/<role>/experiments/<file>`
+  (your own retained experiments). The baseline file (`baseline.json`, mounted at
+  `/evidence/baseline.json`) is sealed context and is **not** a citable path: cite the captured
+  requirement files under `inputs/requirements/` instead.
+- A witness for an accepted defect must name an existing requirement id from the baseline and
+  the id of a coordinator check whose retained result is cited unchanged. Do not restate,
+  summarise or alter a check result inside a witness; reviewer hypotheses without a failed
+  coordinator check remain concerns.
+- Locators must point at content that exists in the cited file. Each citation is validated
+  against the retained run; a single invalid citation or witness invalidates the whole
+  response and the run is recorded incomplete without a retry.
+"""
+
+
+def campaign_config(scope_path, profile, steps, max_seconds=3600, max_iterations=2):
     adjudicator = profile['adjudicator']
     return {'schema': 'agent-ee.campaign/1', 'scope': Path(scope_path).name, 'review_profile': profile,
             'implementation': {'harness': adjudicator['harness'], 'model': adjudicator['model'],
