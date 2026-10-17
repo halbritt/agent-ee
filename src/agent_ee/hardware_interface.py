@@ -200,8 +200,9 @@ def read_inventory(path):
             memberships[(ref, pin)] = code
         # Native generated singleton NC names have no sheet/name prefix; a
         # collision with another net appends _1, _2, ... A local label is
-        # sheet-qualified; an identically spelled global label or power symbol
-        # is judged only by qualify_global_names from source geometry.
+        # sheet-qualified; a global label or power symbol that natively spells
+        # the same name, literally or by expansion, is judged only by
+        # qualify_global_names from source geometry.
         if len(nodes) == 1:
             pin_name = components[refs[ref]]['pin_names'][pin]
             prefix = f'{pin_name}-' if pin_name and pin_name not in (pin, '~') else ''
@@ -378,9 +379,9 @@ def label_connection(schematics, root, component, pin, name):
     'connected' requires exact native-equivalent geometry: a label on the pin,
     or on a wire reached through exact shared endpoints or junctions.
     Unmodelled items cannot break such a route. 'disconnected' requires every
-    connectable item in the sheet file to be modelled and nothing name-bearing
-    within TOUCH_MARGIN of the pin's conductor. Anything else is 'unknown';
-    text presence is never evidence.
+    connectable item in the sheet file to be modelled and nothing name-bearing,
+    whatever its spelling, within TOUCH_MARGIN of the pin's conductor. Anything
+    else is 'unknown'; text presence or absence is never evidence.
     """
     from .symbol_library import children
     try:
@@ -439,41 +440,34 @@ def label_connection(schematics, root, component, pin, name):
                             for label in labels]
 
 
-def unqualified_names(schematic):
-    """Spellings that can name a native net without a sheet prefix."""
-    from .symbol_library import children
-    names = {text(label[1]) for label in children(schematic, 'global_label')}
-    library = {atoms(s)[0]: s for lib in children(schematic, 'lib_symbols')
-               for s in children(lib, 'symbol') if atoms(s)}
-    for symbol in children(schematic, 'symbol'):
-        keys = [atoms(n)[:1] for n in children(symbol, 'lib_name') or children(symbol, 'lib_id')]
-        definition = library.get(keys[0][0]) if keys and keys[0] else None
-        if definition is not None and children(definition, 'power'):
-            # Power nets follow Value; keep every pin name too, conservatively.
-            names |= {atoms(n)[1] for n in children(symbol, 'property') if atoms(n)[:1] == ['Value']
-                      and len(atoms(n)) > 1}
-            names |= {atoms(n)[0] for sub in children(definition, 'symbol') for pin in children(sub, 'pin')
-                      for n in children(pin, 'name') if atoms(n)}
-    return names
+def qualify_global_names(inventory, schematics, root, pins):
+    """A declared generated NC spelling stands only where source geometry isolates the pin.
 
-
-def qualify_global_names(inventory, schematics, root):
-    """An unprefixed source name exempts a native NC spelling only with geometry proof."""
-    spellings = set().union(*(unqualified_names(s) for s in schematics.values()))
+    kicad-cli expands text variables such as ${REF:FIELD} and ${UUID:FIELD} in
+    global labels and power Values before naming nets, so the absence of a
+    literal source spelling is not evidence. Every declared native singleton
+    with a generated name is classified; only exact literal labels connect.
+    """
     components = {c['reference']: c for c in inventory['components'].values()}
-    for ref, pin in sorted(inventory['disconnected']):
+    for ref, pin in sorted(inventory['disconnected'] & pins):
         name = inventory['nets'][inventory['memberships'][(ref, pin)]]
-        if name not in spellings:
-            continue
         status, detail = label_connection(schematics, root, components[ref], pin, name)
-        inventory['sources'][(ref, pin)] = {'status': status,
-            **({'reason': detail} if status == 'unknown' else {'locators': detail})}
+        if status != 'disconnected' or detail:
+            inventory['sources'][(ref, pin)] = {'status': status,
+                **({'reason': detail} if status == 'unknown' else {'locators': detail})}
         if status == 'connected':
             inventory['disconnected'].discard((ref, pin))
         elif status == 'unknown':
             inventory['disconnected'].discard((ref, pin))
             inventory['unresolved'][(ref, pin)] = detail
     return inventory
+
+
+def declared_pins(contract, inventory):
+    """Native (reference, pin) of every declared terminal with a resolved component."""
+    resolved = resolve_components(contract, inventory)
+    return {(resolved[t['component']]['reference'], t['pin']) for t in contract['terminals'].values()
+            if resolved[t['component']] and 'error' not in resolved[t['component']]}
 
 
 def resolve_components(contract, inventory):
@@ -577,7 +571,8 @@ def check_hardware_interface(ctx):
             if len(inventory['sheets']) != native_result['details']['sheet_instances']:
                 raise ValueError('native XML hierarchy count differs from verified schematic hierarchy')
             # sheet_instances walks from the scope schematic, so files[0] is the root.
-            qualify_global_names(inventory, schematics, atom(schematics[files[0]], 'uuid'))
+            qualify_global_names(inventory, schematics, atom(schematics[files[0]], 'uuid'),
+                                 declared_pins(descriptor['contract'], inventory))
             records = evaluate(descriptor['contract'], inventory)
         except (ValueError, KeyError, TypeError, ET.ParseError) as exc:
             records = [{'id': invariant['id'], 'expected': invariant,
