@@ -817,6 +817,7 @@ from .hardware_interface import check_hardware_interface
 from .passive_corners import check_passive_corners
 from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
+from .part_binding import check_part_binding
 
 
 CHECK_FUNCS = {"netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
@@ -826,7 +827,8 @@ CHECK_FUNCS = {"netclass_completeness": check_netclass_completeness, "kicad_happ
                "drc": check_drc, "netlist": check_netlist,
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
-               "passive_corners": check_passive_corners, "dc_path": check_dc_path}
+               "passive_corners": check_passive_corners, "dc_path": check_dc_path,
+               "part_binding": check_part_binding}
 
 
 # ------------------------------------------------------------------ entry point
