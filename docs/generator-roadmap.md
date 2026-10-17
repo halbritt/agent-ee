@@ -28,7 +28,7 @@ evidence (AGENTEE-96 to AGENTEE-99).
 
 | Rung | Board | Size | Record |
 | --- | --- | --- | --- |
-| 1 | RC filter; [fixtures/rc](../fixtures/rc/PROVENANCE.md) is the hand-made reference | 3 footprints, 2 layers | AGENTEE-96 |
+| 1 | RC filter; [fixtures/rc](../fixtures/rc/PROVENANCE.md) is the hand-made reference | 3 footprints, 2 layers | AGENTEE-96. Rung 1 evidence: see `build/rung1-evidence-index-2026-10-17.md` (gitignored; AGENTEE-20) and Plane AGENTEE-96 |
 | 2 | One FOME-MC sheet as a standalone board: `sheets/psu.kicad_sch` or `sheets/wbo1.kicad_sch` | One block plus a connector | AGENTEE-97 |
 | 3 | Standalone wideband controller board | Power, wideband channel, MCU core and CAN blocks | AGENTEE-98 |
 | 4 | FOME-MC itself | 15 sheets, 4 layers, about 492 footprints | AGENTEE-99 |
