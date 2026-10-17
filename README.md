@@ -149,6 +149,10 @@ produces flat and supported hierarchical schematics from that captured intent.
 [Forward annotation](docs/forward-annotation.md) plans and applies native-netlist
 changes to a board with protected placement and routing. Full campaign generation
 and hierarchical annotation application remain unqualified.
+[Sub-layout reuse](docs/sublayout-reuse.md) copies a captured module layout's
+placement and routing into new staged instances by anchor offset, quarter-turn
+rotation and a unanimous pad vote for nets. Copper on unmapped nets is withheld
+and reported, and a missing sub-board leaves its group unknown.
 [Netlist parity](docs/netlist-parity.md) compares native connectivity with captured
 intent and libraries or an explicit golden netlist. Resolved intent is rederived
 before comparison. Exact instance connectivity catches exchanges that collapsed

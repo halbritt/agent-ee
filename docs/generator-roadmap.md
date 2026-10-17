@@ -164,6 +164,10 @@ run pinned helpers as processes: forward annotation onto a staging grid
 (AGENTEE-55). In a placement iteration only footprint transforms may change;
 outline, zones, rules, copper and envelope-fixed connectors are refused, as
 inventory changes are today (AGENTEE-91). The writer's summary is not evidence.
+[Sub-layout reuse](sublayout-reuse.md) (AGENTEE-56) copies a captured module
+layout's placement and group-local copper into new instances. Because it
+writes copper, a placement iteration refuses its output until a write scope
+admits group-local copper.
 
 **Checks** (AGENTEE-92, extending AGENTEE-53):
 
