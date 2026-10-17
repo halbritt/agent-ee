@@ -122,6 +122,21 @@ bytes and inventory. In a placement iteration, it compares the delivered design
 with the source candidate's captured inputs. It therefore covers the writer's own
 edits as well as the helper's output.
 
+Angles are compared exactly. Each saved angle token is scaled to an integer
+number of 10^-32 degree units, without any Decimal context, and turns are
+compared with integer arithmetic modulo 360. An angle that needs more than 32
+digits before or after the decimal point is refused as not exactly
+representable, and is never rounded. Only plain decimal and exponent forms,
+such as `-90`, `12.5` or `1e-29`, are read as numbers. Any other token, for
+example `nan`, `9_0` or a quoted ` 90`, is kept as an exact extra position
+token, so adding or changing one is refused. Python's `Decimal` alone would read
+`9_0` as 90, which KiCad does not. This applies to the footprint angle and to the child angles of a
+turned footprint. An unchanged footprint whose saved angle cannot be held
+exactly is refused too, so a source board with such an angle refuses every
+placement iteration. pcbnew 10.0.7 saves tiny turns in exponent form, for
+example `(at 15.5 15 1e-29)`. The native tests check that such a turn, and a
+`1e-40` turn, are refused on both board sides.
+
 The shared parser does not keep the difference between quoted and unquoted
 atoms. Native reload and the fresh checks remain the authority on how KiCad
 parses the bytes.
@@ -136,9 +151,25 @@ records the following:
 - the helper result digest, the step's scope proof and the proposal scope proof;
 - `authority: provenance-only`.
 
-`verify_record` recomputes a proposed record from three sources: the retained
+`verify_record` rebuilds a proposed record from three sources: the retained
 receipt (through `stage_receipts.validate_receipt`), the request, and the
-captured proposal inputs. Any difference is refused.
+captured proposal inputs. It derives every field itself and copies none from the
+stored record. It refuses the following:
+
+- a record whose keys differ from the record schema, whose `status` is not
+  `proposed`, whose `error` is not null, or whose `authority` is not
+  `provenance-only`;
+- a captured proposal whose recomputed proposal scope is not `allowed` with no
+  violations. This applies to helper-free and helper-backed iterations, and it
+  holds even when the stored record repeats the same refused scope;
+- with a declared helper: a missing helper entry, or a receipt path other than
+  `receipts/<index>-agent-ee-placer`. It also refuses a captured proposal that
+  differs from the receipt's inputs with its outputs applied. The proposal must
+  be exactly the adopted helper output over the delivered design;
+- any remaining difference from the rebuilt record.
+
+`verify_record` does not check the anchored receipt index or the receipt's
+applicability. The campaign's stage-receipt verification owns both.
 
 The helper's local judgment, its native courtyard DRC and its `placed` status
 describe a disposable proposal only. Grades come only from the next run's fresh
@@ -154,7 +185,9 @@ The tests use owned boards and actual tools:
 - the production networkless executor;
 - the AGENTEE-95 receipt module.
 
-They check that quarter turns are accepted, and that edits outside the scope,
+They check that quarter turns are accepted on the top and bottom sides, with an
+unmodified re-save as a control. They check that edits outside the scope,
+non-quarter and tiny turns, a footprint-owned zone moving with its footprint,
 fixed-connector moves, helper failures, cancellation and an exhausted deadline
 are refused. The rectangular placeholder footprints are not production models.
 

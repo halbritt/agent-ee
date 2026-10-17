@@ -11,9 +11,10 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 import subprocess
 import uuid
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 
 from .storage import digest, identity, read_json, write_json
@@ -24,6 +25,9 @@ SCOPE_SCHEMA = 'agent-ee.placement-write-scope/1'
 RECORD_SCHEMA = 'agent-ee.placement-adapter-record/1'
 CONTEXT_SCHEMA = 'agent-ee.placement-writer-context/1'
 DRIVER_SCHEMA = 'agent-ee.placement-driver/1'
+RECORD_KEYS = {'schema', 'implementation', 'source_candidate_id', 'stage', 'declaration_sha256', 'board',
+               'protected', 'helper', 'proposal_scope', 'status', 'error', 'authority'}
+HELPER_KEYS = {'receipt', 'request_sha256', 'receipt_id', 'status', 'receipt_sha256', 'result_sha256', 'scope'}
 HELPERS = ('agent-ee.placer/1',)
 STEP = 'agent-ee-placer'
 TOOL_AT, REQUEST_AT, ROOT = '/placement-tool', '/placement-request', '/work/placement'
@@ -31,7 +35,15 @@ OUTPUT = 'placement/placed/candidate.kicad_pcb'
 RESULT = 'run/placement/placement-result.json'
 # Children whose saved `at` angle KiCad 10 stores as footprint plus local angle.
 ROTATED_CHILDREN = ('pad', 'property', 'fp_text')
-QUARTER_TURNS = (0, 90, 180, 270)
+# Angles stay exact: saved tokens are scaled to integers without any Decimal context.
+# Angles needing more than this many digits before or after the point are refused, never rounded.
+MAX_PLACES = 32
+FULL_TURN = 360 * 10 ** MAX_PLACES
+QUARTER_TURNS = tuple(turn * 10 ** MAX_PLACES for turn in (0, 90, 180, 270))
+MAX_TOKEN = 128
+# Only plain decimal and exponent forms, as pcbnew saves them, are read as numbers. Decimal()
+# alone would also accept forms such as `9_0`, ` 90` or `nan` that KiCad's parser reads differently.
+NUMBER = re.compile(r'-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?\Z')
 LAUNCHER = '''"""Constant launcher: run the hashed read-only agent_ee snapshot, not /app."""
 import sys
 sys.path.insert(0, '/placement-tool')
@@ -135,29 +147,58 @@ def _locked(node):
     return 'locked' in node[1:] or ['locked', 'yes'] in node[1:]
 
 
+def _number(token):
+    """Decimal of a bounded plain numeric token, else None; construction is exact."""
+    if len(token) > MAX_TOKEN or not NUMBER.match(token):
+        return None
+    try:
+        return Decimal(token)
+    except DecimalException:
+        return None
+
+
+def _scaled(number, token):
+    """Integer n with number == n / 10**MAX_PLACES exactly; no Decimal context is used."""
+    sign, digits, exponent = number.as_tuple()
+    coefficient = ''.join(map(str, digits)).rstrip('0')
+    if not coefficient:
+        return 0
+    exponent += len(digits) - len(coefficient)
+    if exponent < -MAX_PLACES or len(coefficient) + exponent > MAX_PLACES:
+        raise ValueError(f'angle {token} is not exactly representable with at most '
+                         f'{MAX_PLACES} digits before and after the point')
+    n = int(coefficient) * 10 ** (exponent + MAX_PLACES)
+    return -n if sign else n
+
+
 def _at(node):
-    """(x, y, angle, tail) of a direct `at` child; the KiCad angle defaults to zero."""
+    """(x, y, scaled angle, tail) of a direct `at` child; the KiCad angle defaults to zero.
+
+    None when the position is missing or malformed. An angle that cannot be held exactly
+    raises ValueError rather than being rounded."""
     found = children(node, 'at')
     if len(found) != 1 or len(found[0]) < 3 or not all(isinstance(t, str) for t in found[0][1:]):
         return None
     tokens = found[0][1:]
-    try:
-        values = [Decimal(t) for t in tokens[:2]]
-        angle, tail = Decimal(0), tokens[2:]
-        if tail:
-            try:
-                angle, tail = Decimal(tail[0]), tail[1:]
-            except InvalidOperation:
-                pass
-    except InvalidOperation:
+    values = [_number(t) for t in tokens[:2]]
+    angle, tail = Decimal(0), tokens[2:]
+    if tail and _number(tail[0]) is not None:
+        angle, tail = _number(tail[0]), tail[1:]
+    if not all(v is not None and v.is_finite() for v in (*values, angle)):
         return None
-    if not all(v.is_finite() for v in (*values, angle)):
-        return None
-    return values[0], values[1], angle, tuple(tail)
+    return values[0], values[1], _scaled(angle, tokens[2] if len(tokens) > 2 else '0'), tuple(tail)
 
 
 def _turn(angle):
-    return (angle % 360 + 360) % 360
+    """Exact scaled angle normalized to [0, FULL_TURN); Python integer modulo never rounds."""
+    return angle % FULL_TURN
+
+
+def _degrees(angle):
+    """Exact text of a scaled angle, without exponent or trailing zeros."""
+    whole, fraction = divmod(abs(angle), 10 ** MAX_PLACES)
+    fraction = str(fraction).rjust(MAX_PLACES, '0').rstrip('0')
+    return ('-' if angle < 0 else '') + str(whole) + ('.' + fraction if fraction else '')
 
 
 def _canonical(value):
@@ -185,14 +226,19 @@ def _sequence_violations(before, after, where):
             [f'{where}: added or changed {labels[i]}' for i in added])
 
 
-def _rotated_child(before, after, rotation):
-    """Whether after equals before with only its `at` angle advanced by rotation."""
-    b_at, a_at = _at(before), _at(after)
-    if b_at is None or a_at is None:
+def _child_follows(before, after, rotation):
+    """Whether a keyed child is unchanged, or a rotated child whose `at` angle advanced exactly
+    by the footprint's quarter turn. A malformed or inexact child angle never follows a turn."""
+    if before[0] not in ROTATED_CHILDREN or not children(before, 'at'):
         return before == after
+    if rotation == 0 and before == after:
+        return True
+    b_at, a_at = _at(before), _at(after)
+    if b_at is None or a_at is None or rotation not in QUARTER_TURNS:
+        return False
     rest = [[c for c in node if not (isinstance(c, list) and c and c[0] == 'at')] for node in (before, after)]
     return (rest[0] == rest[1] and b_at[:2] == a_at[:2] and b_at[3] == a_at[3] and
-            _turn(a_at[2]) == _turn(b_at[2] + rotation))
+            _turn(a_at[2] - b_at[2] - rotation) == 0)
 
 
 def _footprint(key, before, after, protected, violations):
@@ -202,7 +248,11 @@ def _footprint(key, before, after, protected, violations):
         violations.append(f'{label}: library identity or header changed')
     if children(before, 'layer') != children(after, 'layer'):
         violations.append(f'{label}: side or layer changed; side flips are not supported')
-    b_at, a_at = _at(before), _at(after)
+    try:
+        b_at, a_at = _at(before), _at(after)
+    except ValueError as exc:
+        violations.append(f'{label}: footprint {exc}')
+        return None
     if b_at is None or a_at is None:
         violations.append(f'{label}: missing or malformed footprint position')
         return None
@@ -213,7 +263,7 @@ def _footprint(key, before, after, protected, violations):
     if key in protected and children(before, 'at') != children(after, 'at'):
         violations.append(f'{label}: protected footprint transform changed')
     if rotation not in QUARTER_TURNS:
-        violations.append(f'{label}: rotation delta {rotation} is not a quarter turn')
+        violations.append(f'{label}: rotation delta {_degrees(rotation)} is not a quarter turn')
     unkeyed = [[c for c in node[1:] if isinstance(c, list) and c and c[0] != 'at' and _uuid(c) is None]
                for node in (before, after)]
     violations += _sequence_violations(*unkeyed, label)
@@ -229,16 +279,18 @@ def _footprint(key, before, after, protected, violations):
     for item in sorted(keyed[0].keys() ^ keyed[1].keys()):
         violations.append(f'{label}: {"removed" if item in keyed[0] else "added"} {item[0]} {item[1]}')
     for item in sorted(keyed[0].keys() & keyed[1].keys()):
-        old, new = keyed[0][item], keyed[1][item]
-        if old == new and (item[0] not in ROTATED_CHILDREN or rotation == 0 or _at(old) is None):
-            continue
-        if item[0] in ROTATED_CHILDREN and rotation in QUARTER_TURNS and _rotated_child(old, new, rotation):
+        try:
+            if _child_follows(keyed[0][item], keyed[1][item], rotation):
+                continue
+        except ValueError as exc:
+            violations.append(f'{label}: {item[0]} {item[1]} {exc}')
             continue
         violations.append(f'{label}: {item[0]} {item[1]} changed beyond the footprint transform')
     if len(violations) != count or not moved:
         return None
-    return {'uuid': key, 'reference': _reference(before), 'rotation_deg': int(rotation),
-            'from': [str(v) for v in b_at[:3]], 'to': [str(v) for v in a_at[:3]]}
+    return {'uuid': key, 'reference': _reference(before), 'rotation_deg': rotation // 10 ** MAX_PLACES,
+            'from': [str(b_at[0]), str(b_at[1]), _degrees(b_at[2])],
+            'to': [str(a_at[0]), str(a_at[1]), _degrees(a_at[2])]}
 
 
 def write_scope(before, after, protected=()):
@@ -450,40 +502,56 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
 
 
 def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, mutable_inputs, *, receipts=None):
-    """Recompute a proposed placement record from retained receipts and the captured proposal."""
+    """Recompute a proposed placement record from retained receipts and the captured proposal.
+
+    Every field is re-derived; none is copied from the stored record. The captured proposal
+    must be inside the placement write scope now, whatever the record claims.
+    """
     work = Path(work)
     stored = read_json(work / 'placement-adapter.json')
     bound = bind_declaration(declaration, manifest, mutable_inputs)
-    if stored.get('status') != 'proposed' or stored.get('schema') != RECORD_SCHEMA:
+    if (not isinstance(stored, dict) or set(stored) != RECORD_KEYS or stored['schema'] != RECORD_SCHEMA or
+            stored['status'] != 'proposed' or stored['error'] is not None or
+            stored['authority'] != 'provenance-only'):
         raise ValueError('placement record is not a proposed placement iteration')
     source_board = (Path(source_inputs) / bound['board']).read_bytes()
     policy = read_json(Path(source_inputs) / bound['policy']) if bound['policy'] else {'fixed_refs': []}
     protected, refs = protected_footprints(source_board, bound['fixed_footprints'], policy['fixed_refs'])
-    expected = {**stored, 'implementation': int(work.name), 'stage': 'placement',
-                'source_candidate_id': manifest['candidate_id'], 'protected': protected,
+    scope = proposal_scope(source_inputs, proposal_inputs, bound['board'], protected)
+    if scope['status'] != 'allowed' or scope['violations']:
+        raise ValueError(f"captured proposal is outside the placement write scope: {scope['violations']}")
+    expected = {'schema': RECORD_SCHEMA, 'implementation': int(work.name),
+                'source_candidate_id': manifest['candidate_id'], 'stage': 'placement',
                 'declaration_sha256': identity(validate_declaration(declaration)), 'board': bound['board'],
-                'proposal_scope': proposal_scope(source_inputs, proposal_inputs, bound['board'], protected)}
-    if bound['helper'] is None:
-        expected['helper'] = None
-    else:
+                'protected': protected, 'helper': None, 'proposal_scope': scope,
+                'status': 'proposed', 'error': None, 'authority': 'provenance-only'}
+    if bound['helper'] is not None:
         if receipts is None:
             from . import stage_receipts as receipts
-        helper = stored.get('helper') or {}
-        receipt_dir = work / str(helper.get('receipt'))
-        index = int(receipt_dir.name.partition('-')[0])
+        helper = stored['helper']
+        if not isinstance(helper, dict) or set(helper) != HELPER_KEYS:
+            raise ValueError('placement record lacks the declared helper receipt')
+        index, _, step = str(helper['receipt']).removeprefix('receipts/').partition('-')
+        if (helper['receipt'] != f'receipts/{index}-{STEP}' or step != STEP or not index.isdigit() or
+                index.startswith('0')):
+            raise ValueError('placement record names no coordinator placement receipt')
+        receipt_dir = work / helper['receipt']
         receipt = receipts.validate_receipt(receipt_dir, binding={
             'implementation': int(work.name), 'source_candidate_id': manifest['candidate_id'],
-            'receipt_index': index})
-        step_dir = work / 'placement' / str(index)
+            'receipt_index': int(index)})
+        step_dir = work / 'placement' / index
         if receipt['spec'] != receipts.validate_step(step_declaration(step_dir, bound), host=False):
             raise ValueError('placement receipt step differs from the placement declaration')
         # The request is re-derived from the receipt's retained input board, never trusted.
         request = helper_request((receipt_dir / 'inputs' / bound['board']).read_bytes(), policy, refs)
         if read_json(step_dir / 'request' / 'request.json') != request:
             raise ValueError('placement helper request differs from the coordinator derivation')
-        expected['helper'] = {'receipt': receipt_dir.relative_to(work).as_posix(),
-                              'request_sha256': identity(request), 'receipt_id': receipt['receipt_id'],
-                              'status': receipt['status'], 'receipt_sha256': digest(receipt_dir / 'receipt.json'),
+        # The captured proposal is exactly the adopted helper output over the delivered design.
+        if {**receipt['inputs'], **receipt['outputs']} != _files(proposal_inputs):
+            raise ValueError('captured proposal differs from the adopted placement helper output')
+        expected['helper'] = {'receipt': helper['receipt'], 'request_sha256': identity(request),
+                              'receipt_id': receipt['receipt_id'], 'status': receipt['status'],
+                              'receipt_sha256': digest(receipt_dir / 'receipt.json'),
                               **qualify_receipt(receipt_dir, receipt, bound['board'], protected)}
     if expected != stored:
         raise ValueError('placement record differs from retained receipts or captured proposal')

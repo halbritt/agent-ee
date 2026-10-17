@@ -1,5 +1,6 @@
 """Placement-iteration write scope and coordinator-run helper step (AGENTEE-91)."""
 import copy
+import decimal
 import hashlib
 import importlib.util
 import json
@@ -141,6 +142,54 @@ class WriteScopeTest(unittest.TestCase):
         partial = rotated(90).replace(b'(at 0.5 0 90)', b'(at 0.5 0)')
         self.assertRefused(partial, 'pad a7 changed beyond the footprint transform')
 
+    def test_tiny_and_near_quarter_angles_are_exact_never_rounded(self):
+        tiny = '0.' + '0' * 28 + '1'
+        for token in (tiny, '1e-29', '1E-32', '-1e-29', '359.' + '9' * 32):
+            with self.subTest(token=token):
+                self.assertRefused(mutate(('(at 10 10)', f'(at 10 10 {token})')), 'is not a quarter turn')
+        report = self.assertRefused(mutate(('(at 10 10)', '(at 10 10 1e-29)')), 'is not a quarter turn')
+        self.assertIn(f'rotation delta {tiny} is not a quarter turn', report['violations'][0])
+        # A footprint turned a hair past a quarter turn, children advanced by exactly 90.
+        self.assertRefused(rotated(90).replace(b'(at 12 9 90)', b'(at 12 9 90.' + b'0' * 29 + b'1)'),
+                           'is not a quarter turn')
+        # An exact footprint quarter turn whose child angle is a hair off.
+        off = rotated(90).replace(b'(at 0 1.5 90)', b'(at 0 1.5 90.' + b'0' * 31 + b'1)')
+        self.assertRefused(off, 'property a2 changed beyond the footprint transform')
+        self.assertRefused(rotated(90).replace(b'(at 0 1.5 90)', b'(at 0 1.5 9E+1)').replace(
+            b'(at 0 0 180)', b'(at 0 0 180.' + b'0' * 31 + b'1)'), 'fp_text a5 changed beyond the footprint transform')
+
+    def test_unrepresentable_or_non_finite_angles_are_refused(self):
+        for token in ('1e-33', '0.' + '0' * 32 + '1', '1e32', '90.' + '0' * 40 + '1'):
+            with self.subTest(token=token):
+                self.assertRefused(mutate(('(at 10 10)', f'(at 10 10 {token})')), 'not exactly representable')
+        for token in ('nan', 'inf', '1_0', '+1', '.5'):
+            with self.subTest(token=token):
+                self.assertRefused(mutate(('(at 10 10)', f'(at {token} 10)')), 'malformed footprint position')
+        # Overlong, non-finite or non-plain angle tokens are never read as numbers; they stay
+        # exact tail tokens. Decimal alone would read `9_0` as 90 and ` 90` as 90.
+        for token in ('1' * 129, 'nan', '-Infinity', '9_0', '" 90"', '0x5A'):
+            with self.subTest(token=token[:12]):
+                self.assertRefused(mutate(('(at 10 10)', f'(at 10 10 {token})')), 'position tokens changed')
+        underscored = rotated(90).replace(b'(at 12 9 90)', b'(at 12 9 9_0)').replace(b' 90)', b' 9_0)')
+        self.assertEqual(pa.write_scope(TEXT.encode(), underscored)['status'], 'refused')
+        # A quarter turn whose child angle cannot be held exactly is not verified as following it.
+        self.assertRefused(rotated(90).replace(b'(at 0 1.5 90)', b'(at 0 1.5 90.' + b'0' * 40 + b'1)'),
+                           'property a2 angle 90.' + '0' * 40 + '1 is not exactly representable')
+
+    def test_exact_equivalent_angles_are_allowed_independent_of_decimal_context(self):
+        equivalents = rotated(90).replace(b'(at 12 9 90)', b'(at 12 9 450)').replace(
+            b'(at 0 -1.5 90)', b'(at 0 -1.5 -270)').replace(b'(at 0 1.5 90)', b'(at 0 1.5 9E+1)').replace(
+            b'(at -0.5 0 90)', b'(at -0.5 0 90.' + b'0' * 32 + b')')
+        boundary = mutate(('(at 10 10)', '(at 10 10 1e-32)'))
+        with decimal.localcontext(decimal.Context(prec=1, traps=[])):
+            report = pa.write_scope(TEXT.encode(), equivalents)
+            self.assertEqual(report['status'], 'allowed', report['violations'])
+            self.assertEqual(report['transforms'][0]['rotation_deg'], 90)
+            self.assertEqual(report['transforms'][0]['to'], ['12', '9', '450'])
+            self.assertIn('rotation delta 0.' + '0' * 31 + '1 is not a quarter turn',
+                          pa.write_scope(TEXT.encode(), boundary)['violations'][0])
+            self.assertEqual(pa.write_scope(TEXT.encode(), rotated(90, x='12.' + '0' * 60 + '1'))['status'], 'allowed')
+
     def test_side_flip_is_refused_as_unsupported(self):
         self.assertRefused(mutate(('(footprint "Owned:R" (layer "F.Cu")', '(footprint "Owned:R" (layer "B.Cu")')),
                            'side flips are not supported')
@@ -257,6 +306,91 @@ class DeclarationAndContextTest(unittest.TestCase):
             self.assertIn('board missing: ' + BOARD, pa.proposal_scope(source, design, BOARD, [])['violations'])
 
 
+
+class WriterOnlyRecordTest(unittest.TestCase):
+    """verify_record re-derives a helper-free placement record; stored claims are never trusted."""
+    def setUp(self):
+        import time
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.source, self.design, self.captured = root / 'source', root / 'design', root / 'captured'
+        for tree in (self.source, self.design):
+            (tree / 'project').mkdir(parents=True)
+            (tree / BOARD).write_text(TEXT)
+            (tree / SCHEMATIC).write_text('(kicad_sch)')
+        self.work = root / 'implementations/1'
+        self.work.mkdir(parents=True)
+        self.manifest = {'candidate_id': 'c' * 64, 'files': {BOARD: 'a', SCHEMATIC: 'b'},
+                         'scope': {'board': BOARD, 'schematic': SCHEMATIC, 'stages': {'schema': 'agent-ee.stages/1'}}}
+        self.declaration = {'schema': pa.ADAPTER_SCHEMA, 'helper': None, 'policy': None,
+                            'fixed_footprints': [FP_J], 'timeout_s': 10}
+        state = {'history': [{'earliest_failing_stage': 'placement'}], 'mutable_inputs': [BOARD]}
+        (self.design / BOARD).write_bytes(rotated(90))
+        self.record = pa.run_placement_iteration(self.work, self.design, self.source, self.manifest, state,
+                                                 self.declaration, time.monotonic() + 60)
+        shutil.copytree(self.design, self.captured)
+
+    def verify(self):
+        return pa.verify_record(self.work, self.source, self.captured, self.manifest, self.declaration, [BOARD])
+
+    def forge(self, **changes):
+        write_json(self.work / 'placement-adapter.json', {**self.record, **changes})
+
+    def test_honest_writer_only_record_reverifies(self):
+        self.assertEqual((self.record['status'], self.record['helper']), ('proposed', None))
+        self.assertEqual(self.verify(), self.record)
+
+    def test_recomputed_refused_scope_is_refused_even_when_recorded_consistently(self):
+        # The reviewed forgery: Value 10k -> 100k with the recomputed refused scope stored as proposed.
+        (self.captured / BOARD).write_bytes(mutate(('"Value" "10k"', '"Value" "100k"')))
+        refused = pa.proposal_scope(self.source, self.captured, BOARD, [FP_J])
+        self.assertEqual(refused['status'], 'refused')
+        self.forge(proposal_scope=refused)
+        with self.assertRaisesRegex(ValueError, 'outside the placement write scope.*changed beyond'):
+            self.verify()
+        # A protected connector move or a non-board edit is refused the same way.
+        (self.captured / BOARD).write_bytes(mutate(('(at 2 10)', '(at 3 10)')))
+        self.forge(proposal_scope=pa.proposal_scope(self.source, self.captured, BOARD, [FP_J]))
+        with self.assertRaisesRegex(ValueError, 'outside the placement write scope.*protected footprint'):
+            self.verify()
+
+    def test_proposal_changed_after_the_record_is_refused(self):
+        (self.captured / BOARD).write_bytes(rotated(180))
+        with self.assertRaisesRegex(ValueError, 'differs from retained receipts or captured proposal'):
+            self.verify()
+        (self.captured / BOARD).write_bytes(rotated(90))
+        (self.captured / SCHEMATIC).write_text('(kicad_sch (changed))')
+        with self.assertRaisesRegex(ValueError, 'outside the placement write scope'):
+            self.verify()
+
+    def test_tampered_or_absent_scope_evidence_and_inconsistent_status_are_refused(self):
+        scope = self.record['proposal_scope']
+        cases = {
+            'absent scope': ({'proposal_scope': None}, 'differs from retained'),
+            'scope without transforms': ({'proposal_scope': {**scope, 'transforms': []}}, 'differs from retained'),
+            'scope protects nothing': ({'proposal_scope': {**scope, 'protected': []}}, 'differs from retained'),
+            'refused status': ({'status': 'refused'}, 'not a proposed'),
+            'incomplete status': ({'status': 'incomplete'}, 'not a proposed'),
+            'proposed with error': ({'error': 'ValueError: helper crashed'}, 'not a proposed'),
+            'evidence authority': ({'authority': 'evidence'}, 'not a proposed'),
+            'extra claim': ({'accepted': True}, 'not a proposed'),
+            'invented helper': ({'helper': {'receipt': 'receipts/1-agent-ee-placer'}}, 'differs from retained'),
+            'other candidate': ({'source_candidate_id': 'd' * 64}, 'differs from retained'),
+            'unprotected': ({'protected': []}, 'differs from retained'),
+        }
+        for name, (changes, message) in cases.items():
+            with self.subTest(name), self.assertRaisesRegex(ValueError, message):
+                self.forge(**changes)
+                self.verify()
+        stored = {k: v for k, v in self.record.items() if k != 'proposal_scope'}
+        write_json(self.work / 'placement-adapter.json', stored)
+        with self.assertRaisesRegex(ValueError, 'not a proposed'):
+            self.verify()
+        write_json(self.work / 'placement-adapter.json', [self.record])
+        with self.assertRaisesRegex(ValueError, 'not a proposed'):
+            self.verify()
+
 def owned_design(design):
     """Owned rectangular-pad board whose nets come from the native RC schematic export."""
     import pcbnew as k
@@ -342,9 +476,9 @@ class NativeWriteScopeTest(unittest.TestCase):
         self.before = self.board.read_bytes()
         self.fixed = uuid_of(self.board, 'J1')
 
-    def edited(self, name, edit):
+    def edited(self, name, edit, source=None):
         import pcbnew as k
-        board = k.LoadBoard(str(self.board))
+        board = k.LoadBoard(str(source or self.board))
         edit(k, board, {fp.GetReference(): fp for fp in board.GetFootprints()})
         path = self.root / f'{name}.kicad_pcb'
         k.SaveBoard(str(path), board)
@@ -361,6 +495,74 @@ class NativeWriteScopeTest(unittest.TestCase):
                 self.assertEqual(report['status'], 'allowed', report['violations'])
                 self.assertEqual(sorted((t['reference'], t['rotation_deg']) for t in report['transforms']),
                                  [('C1', turn), ('R1', turn)])
+
+    def test_actual_pcbnew_top_and_bottom_quarter_turn_controls(self):
+        def flip(k, board, fps):
+            for ref in ('C1', 'R1'):
+                fps[ref].Flip(fps[ref].GetPosition(), False)
+            # C1 keeps the flipped 180 degrees; R1 sits at 0 so a tiny native turn stays a change.
+            fps['R1'].SetOrientationDegrees(0)
+        bottom = self.root / 'bottom.kicad_pcb'
+        bottom.write_bytes(self.edited('bottom-source', flip))
+        for side, source in (('top', self.board), ('bottom', bottom)):
+            before = source.read_bytes()
+            saved = {pa._reference(n): n for n in pa.footprints(pa._board(before)).values()}
+            layer = 'B.Cu' if side == 'bottom' else 'F.Cu'
+            self.assertEqual([pa.children(saved[r], 'layer') for r in ('C1', 'R1')],
+                             [[['layer', layer]]] * 2)
+            self.assertEqual([pa._at(saved[r])[2] for r in ('C1', 'R1')],
+                             [180 * 10 ** pa.MAX_PLACES if side == 'bottom' else 0, 0])
+            # Unmodified control: a plain native load and save is no transform and no violation.
+            report = pa.write_scope(before, self.edited(f'{side}-resaved', lambda k, board, fps: None, source),
+                                    [self.fixed])
+            self.assertEqual((report['status'], report['transforms']), ('allowed', []), report['violations'])
+            for turn in (90, 180, 270, -90):
+                def edit(k, board, fps, turn=turn):
+                    for ref in ('C1', 'R1'):
+                        fps[ref].SetOrientationDegrees(fps[ref].GetOrientationDegrees() + turn)
+                        fps[ref].SetPosition(k.VECTOR2I(fps[ref].GetPosition().x + 1_000_000, 24_000_000))
+                with self.subTest(side=side, turn=turn):
+                    report = pa.write_scope(before, self.edited(f'{side}-turn{turn}', edit, source), [self.fixed])
+                    self.assertEqual(report['status'], 'allowed', report['violations'])
+                    self.assertEqual(sorted((t['reference'], t['rotation_deg']) for t in report['transforms']),
+                                     [('C1', turn % 360), ('R1', turn % 360)])
+            # Negative controls on R1 at 0 degrees, including turns pcbnew saves in exponent form.
+            for turn, fragment in ((45, 'not a quarter turn'), (90.0000001, 'not a quarter turn'),
+                                   (1e-29, 'rotation delta 0.' + '0' * 28 + '1 is not a quarter turn'),
+                                   (1e-40, 'not exactly representable')):
+                def edit(k, board, fps, turn=turn):
+                    fps['R1'].SetOrientationDegrees(fps['R1'].GetOrientationDegrees() + turn)
+                with self.subTest(side=side, turn=turn):
+                    after = self.edited(f'{side}-off{turn}', edit, source)
+                    report = pa.write_scope(before, after, [self.fixed])
+                    self.assertEqual(report['status'], 'refused')
+                    self.assertTrue(any(fragment in v for v in report['violations']), report['violations'])
+                    self.assertEqual(report['transforms'], [])
+        # pcbnew itself saves the tiny turn, so it is observable, not a parser artefact.
+        self.assertIn(b' 1e-29)', self.edited('tiny', lambda k, board, fps: fps['R1'].SetOrientationDegrees(1e-29)))
+
+    def test_actual_pcbnew_footprint_owned_zone_moving_with_its_footprint_is_refused(self):
+        def zone(k, board, fps):
+            area = k.ZONE(fps['R1'])
+            area.SetIsRuleArea(True)
+            area.SetLayer(k.F_Cu)
+            outline = area.Outline()
+            outline.NewOutline()
+            for x, y in ((14, 14), (16, 14), (16, 16), (14, 16)):
+                outline.Append(x * 1_000_000, y * 1_000_000)
+            fps['R1'].Add(area)
+        source = self.root / 'zone.kicad_pcb'
+        source.write_bytes(self.edited('zone-source', zone))
+        before = source.read_bytes()
+        self.assertIn(b'(zone', before)
+        control = pa.write_scope(before, self.edited('zone-resaved', lambda k, board, fps: None, source))
+        self.assertEqual(control['status'], 'allowed', control['violations'])
+        def move(k, board, fps):
+            fps['R1'].SetPosition(k.VECTOR2I(fps['R1'].GetPosition().x + 3_000_000, fps['R1'].GetPosition().y))
+        report = pa.write_scope(before, self.edited('zone-moved', move, source))
+        self.assertEqual(report['status'], 'refused')
+        self.assertTrue(any('(R1): zone ' in v and 'changed beyond the footprint transform' in v
+                            for v in report['violations']), report['violations'])
 
     def test_actual_pcbnew_out_of_scope_edits_are_refused(self):
         def move_fixed(k, board, fps):
@@ -537,7 +739,40 @@ class ReceiptIterationTest(unittest.TestCase):
             pa.verify_record(*args, receipts=self.receipts)
         request.write_bytes(original)
         (captured / SCHEMATIC).write_text('(kicad_sch (changed))')
-        with self.assertRaisesRegex(ValueError, 'differs from retained receipts or captured proposal'):
+        with self.assertRaisesRegex(ValueError, 'outside the placement write scope.*non-board file changed'):
+            pa.verify_record(*args, receipts=self.receipts)
+
+    def test_helper_record_requires_coordinator_receipt_allowed_scope_and_adopted_output(self):
+        record = self.iterate()
+        captured = self.root / 'runs/2/inputs'
+        shutil.copytree(self.design, captured)
+        args = (self.work, self.source, captured, self.manifest, self.declaration, self.state['mutable_inputs'])
+        self.assertEqual(pa.verify_record(*args, receipts=self.receipts), record)
+        path = self.work / 'placement-adapter.json'
+        for name, helper, message in (
+                ('no helper', None, 'lacks the declared helper receipt'),
+                ('leading zero', {**record['helper'], 'receipt': 'receipts/01-agent-ee-placer'}, 'names no coordinator'),
+                ('escaping', {**record['helper'], 'receipt': '../1/receipts/1-agent-ee-placer'}, 'names no coordinator'),
+                ('other step', {**record['helper'], 'receipt': 'receipts/1-other-step'}, 'names no coordinator'),
+                ('status claim', {**record['helper'], 'status': 'partial'}, 'differs from retained'),
+                ('scope claim', {**record['helper'], 'scope': {**record['helper']['scope'], 'violations': ['x']}},
+                 'differs from retained')):
+            with self.subTest(name), self.assertRaisesRegex(ValueError, message):
+                write_json(path, {**record, 'helper': helper})
+                pa.verify_record(*args, receipts=self.receipts)
+        write_json(path, record)
+        # In scope but not the adopted helper output: the unplaced source board itself.
+        board = captured / BOARD
+        placed = board.read_bytes()
+        shutil.copyfile(self.source / BOARD, board)
+        self.assertEqual(pa.proposal_scope(self.source, captured, BOARD, record['protected'])['status'], 'allowed')
+        with self.assertRaisesRegex(ValueError, 'differs from the adopted placement helper output'):
+            pa.verify_record(*args, receipts=self.receipts)
+        # Out of scope beside the helper output: refused before any stored claim is compared.
+        board.write_bytes(placed)
+        (captured / 'project/notes.txt').write_text('added')
+        write_json(path, {**record, 'proposal_scope': pa.proposal_scope(self.source, captured, BOARD, record['protected'])})
+        with self.assertRaisesRegex(ValueError, 'outside the placement write scope.*non-board file added'):
             pa.verify_record(*args, receipts=self.receipts)
 
     def test_helper_failure_leaves_iteration_incomplete_without_substitution(self):
