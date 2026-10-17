@@ -100,18 +100,21 @@ class GateBoundaryTests(unittest.TestCase):
     def test_unusable_namespace_reports_diagnostic(self):
         from unittest.mock import patch
         from toolchain import prerequisite_problem, require_toolchain
-        for strict in ('0', '1'):
-            with self.subTest(strict=strict):
-                prerequisite_problem.cache_clear()
-                self.addCleanup(prerequisite_problem.cache_clear)
-                result = subprocess.CompletedProcess([], 1, '',
-                    'bwrap: Creating new namespace failed: Operation not permitted')
-                with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
-                        patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
-                        patch('toolchain.subprocess.run', return_value=result):
-                    expected = AssertionError if strict == '1' else unittest.SkipTest
-                    with self.assertRaisesRegex(expected, 'Bubblewrap/user namespaces unavailable'):
-                        require_toolchain()
+        for diagnostic in (
+                'bwrap: Creating new namespace failed: Operation not permitted',
+                'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted'):
+            for strict in ('0', '1'):
+                with self.subTest(strict=strict):
+                    prerequisite_problem.cache_clear()
+                    self.addCleanup(prerequisite_problem.cache_clear)
+                    result = subprocess.CompletedProcess([], 1, '',
+                        diagnostic)
+                    with patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': strict}), \
+                            patch('toolchain.shutil.which', return_value='/usr/bin/bwrap'), \
+                            patch('toolchain.subprocess.run', return_value=result):
+                        expected = AssertionError if strict == '1' else unittest.SkipTest
+                        with self.assertRaisesRegex(expected, 'Bubblewrap/user namespaces unavailable'):
+                            require_toolchain()
 
     def test_unknown_sandbox_errors_fail_in_both_modes(self):
         from unittest.mock import patch

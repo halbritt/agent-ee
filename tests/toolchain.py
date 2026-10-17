@@ -25,6 +25,7 @@ def prerequisite_problem(native=False, tools=()):
             diagnostic = result.stderr.strip()
             if result.returncode == 1 and diagnostic in (
                 'bwrap: Creating new namespace failed: Operation not permitted',
+                'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
                 'bwrap: No permissions to create new namespace, likely because the kernel '
                 'does not allow non-privileged user namespaces. See '
                 '<https://deb.li/bubblewrap> or <file:///usr/share/doc/bubblewrap/README.Debian.gz>.',
