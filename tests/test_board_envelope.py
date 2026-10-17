@@ -587,7 +587,7 @@ class EnvelopeRequirementTests(unittest.TestCase):
                       by_id['R-envelope-rc-filter-hole-H1']['statement'])
         self.assertEqual(by_id['R-envelope-rc-filter-keepout-K1']['source']['locator'], '/keepouts/0')
         self.assertEqual(by_id[PROFILE_ID]['check_kinds'], ['fab_profile'])
-        self.assertEqual(by_id['R-envelope-rc-filter-layer-count']['check_kinds'], ['fab_package'])
+        self.assertEqual(by_id['R-envelope-rc-filter-layer-count']['check_kinds'], ['fab_package', 'board_envelope'])
         # Offline the profile's sources are unverified, so support is not assumed.
         self.assertEqual([u['predicate'] for u in document['unresolved']],
                          ['fab_profile_supports_layer_count', 'fab_profile_supports_board_size'])
@@ -620,7 +620,9 @@ class EnvelopeObligationTests(unittest.TestCase):
         return {r['id']: r for r in obligation_coverage(scope, self.document, self.record, self.files)}
 
     def test_only_profile_and_single_connector_bind_and_the_rest_stay_unknown(self):
-        self.assertEqual(set(BINDINGS), {('fab_profile', 'fab_profile'), ('fixed_footprints', 'placement')})
+        self.assertEqual(set(BINDINGS), {('fab_profile', 'fab_profile'), ('fixed_footprints', 'placement'),
+                                       ('outline', 'board_envelope'), ('layer_count', 'board_envelope'),
+                                       ('stackup', 'board_envelope')})
         report = self.coverage(mapped_scope(self.document))
         self.assertEqual({k: (r['status'], r['locator'], r['checks']) for k, r in report.items()}, {
             PROFILE_ID: ('bound', '/fab_profile', ['fab']),
@@ -628,8 +630,8 @@ class EnvelopeObligationTests(unittest.TestCase):
             'R-envelope-rc-filter-outline': ('unknown', '/outline', ['placement']),
             'R-envelope-rc-filter-layer-count': ('unknown', '/layer_count', ['package']),
             'R-envelope-rc-filter-stackup': ('unknown', '/stackup', ['package'])})
-        self.assertIn('outline-containment/1 grades courtyards only', report['R-envelope-rc-filter-outline']['reason'])
-        self.assertIn('fab_package (AGENTEE-94) is not registered; fab_profile max_layers bounds only a maximum',
+        self.assertIn('exact native board_envelope outline/1', report['R-envelope-rc-filter-outline']['reason'])
+        self.assertIn('exact native board_envelope layers/1',
                       report['R-envelope-rc-filter-layer-count']['reason'])
         with self.assertRaisesRegex(ValueError, 'refused, not dropped: R-envelope-rc-filter-outline .*'
                                                 'R-envelope-rc-filter-stackup') as raised:
@@ -873,7 +875,7 @@ class EnvelopeBaselineTests(unittest.TestCase):
         for scope in (proposed, omitted):
             scope['baseline']['requirements'].append(drc)
         for label, scope, message in (
-                ('vacuous drc', vacuous, "outline maps check drc of kind 'drc' outside kinds \\['placement'\\]"),
+                ('vacuous drc', vacuous, "outline maps check drc of kind 'drc' outside kinds \\['placement', 'board_envelope'\\]"),
                 ('unregistered or unbound kinds', proposed, 'refused, not dropped: ' + unknown),
                 ('omitted', omitted, 'refused, not dropped: ' + unknown)):
             with self.subTest(label), self.assertRaisesRegex(ValueError, message) as raised:
@@ -1198,7 +1200,7 @@ class EnvelopeRoundTripTests(unittest.TestCase):
     def test_rc_fixture_outline_layers_and_header_round_trip(self):
         trip = round_trip(RC_ENVELOPE.read_bytes(), RC_BOARD.read_bytes())
         statuses = {r['field']: r['status'] for r in trip['fields']}
-        self.assertEqual(trip['outcome'], 'match')
+        self.assertEqual(trip['outcome'], 'unknown')
         self.assertEqual(trip['board_sha256'], 'f8264d95e52dc3c3d48358696c87294c6bbe7ff83102ecc9e0c4c3c27c7e72de')
         for field in ('/outline', '/layer_count', '/stackup/thickness_mm', '/fixed_footprints/0'):
             self.assertEqual(statuses[field], 'match', field)
@@ -1216,7 +1218,7 @@ class EnvelopeRoundTripTests(unittest.TestCase):
         self.assertEqual(statuses['/fixed_footprints/0']['detail']['board']['at_mm'], ['100.5', '100'])
         value = rc()
         value['fixed_footprints'][0]['tolerance_mm'] = 0.5
-        self.assertEqual(round_trip(raw(value), board.replace(b'(at 100 100)', b'(at 100.5 100)'))['outcome'], 'match')
+        self.assertEqual(round_trip(raw(value), board.replace(b'(at 100 100)', b'(at 100.5 100)'))['outcome'], 'unknown')
         self.assertEqual(board.count(b'(end 116 108)'), 1)
         shrunk = board.replace(b'(end 116 108)', b'(end 116 107)')
         self.assertEqual({r['field']: r['status'] for r in round_trip(RC_ENVELOPE.read_bytes(), shrunk)['fields']}
@@ -1230,12 +1232,12 @@ class EnvelopeRoundTripTests(unittest.TestCase):
         board = RC_BOARD.read_bytes()
         value = rc()
         value['fixed_footprints'][0]['rotation_deg'] = 270
-        self.assertEqual(round_trip(raw(value), board.replace(b'(at 100 100)', b'(at 100 100 -90)'))['outcome'], 'match')
+        self.assertEqual(round_trip(raw(value), board.replace(b'(at 100 100)', b'(at 100 100 -90)'))['outcome'], 'unknown')
         self.assertEqual(round_trip(raw(value), board)['outcome'], 'mismatch')
         # A duplicated unrelated reference is listed, not fatal; a duplicated fixed one is ambiguous.
         self.assertEqual(board.count(b'(property "Reference" "C1"'), 1)
         twice_c1 = board.replace(b'(property "Reference" "R1"', b'(property "Reference" "C1"')
-        self.assertEqual(round_trip(RC_ENVELOPE.read_bytes(), twice_c1)['outcome'], 'match')
+        self.assertEqual(round_trip(RC_ENVELOPE.read_bytes(), twice_c1)['outcome'], 'unknown')
         # An exact second copy of J1 would match on its own; ambiguity must not pick one.
         start = board.index(b'\t(footprint "Connector_PinHeader')
         depth, end = 0, start
@@ -1268,7 +1270,7 @@ class EnvelopeRoundTripTests(unittest.TestCase):
                    b' (layer "B.Cu" (type "copper") (thickness 0.035))))'
                    b' (gr_rect (start 96 96) (end 116 108) (layer "Edge.Cuts")))')
         trip = round_trip(raw(envelope), stacked)
-        self.assertEqual(trip['outcome'], 'match')
+        self.assertEqual(trip['outcome'], 'unknown')
         self.assertEqual({r['field']: r['status'] for r in trip['fields']}['/stackup/layers/1/thickness_mm'], 'match')
         with self.assertRaises(ValueError):
             board_facts(b'(kicad_pcb (gr_line (layer "Edge.Cuts")))')
@@ -1311,7 +1313,7 @@ class EnvelopeRoundTripTests(unittest.TestCase):
                 self.assertEqual(outline['detail'], {'missing': 0, 'extra': 0, 'other': [label]})
                 # Paired control: the same item on a non-outline layer leaves the outline match intact.
                 control = round_trip(RC_ENVELOPE.read_bytes(), variant(label, 'Dwgs.User'))
-                self.assertEqual(control['outcome'], 'match')
+                self.assertEqual(control['outcome'], 'unknown')
                 self.assertEqual({r['field']: r for r in control['fields']}['/outline']['detail']['other'], [])
 
     def test_native_saved_edge_cuts_field_text_and_dimension_refuse_the_outline(self):
@@ -1362,7 +1364,7 @@ class EnvelopeRoundTripTests(unittest.TestCase):
                 fields = {r['field']: r for r in trip['fields']}
                 self.assertEqual(fields['/outline']['detail'], {'missing': 0, 'extra': 0, 'other': other})
                 self.assertEqual(fields['/fixed_footprints/0']['status'], 'match')
-                self.assertEqual(trip['outcome'], 'mismatch' if other else 'match')
+                self.assertEqual(trip['outcome'], 'mismatch' if other else 'unknown')
 
     def test_native_pcbnew_agrees_with_static_board_facts(self):
         require_toolchain(native=True)
@@ -1401,7 +1403,7 @@ class EnvelopeCliTests(unittest.TestCase):
             result = self.run_cli(RC_ENVELOPE, '--source-path', 'requirements/envelope.json', '--out', out,
                                   '--board', RC_BOARD)
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertEqual(json.loads((out / 'round-trip.json').read_text())['outcome'], 'match')
+            self.assertEqual(json.loads((out / 'round-trip.json').read_text())['outcome'], 'unknown')
             expected = derive(RC_ENVELOPE.read_bytes(), source_path='requirements/envelope.json')
             for name, data in expected.items():
                 self.assertEqual((out / name).read_bytes(), data, name)
@@ -1431,7 +1433,8 @@ class EnvelopeCliTests(unittest.TestCase):
             self.assertEqual(offline.returncode, 1, offline.stderr)
             resolved = self.run_cli(*common, '--sources', inputs, '--board', RC_BOARD, '--out', tmp / 'resolved',
                                     '--original-requirements', intent)
-            self.assertEqual(resolved.returncode, 0, resolved.stderr)
+            self.assertEqual(resolved.returncode, 1, resolved.stderr)
+            self.assertEqual(json.loads((tmp / 'resolved/round-trip.json').read_text())['outcome'], 'unknown')
             expected = derive(envelope.read_bytes(), source_path='requirements/envelope.json', profile=profile,
                               captured=(files, inputs))
             for name, data in expected.items():
