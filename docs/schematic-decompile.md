@@ -45,11 +45,32 @@ Native KiCad 10.0.7 controls establish these connectivity rules for saved source
 - Interior wire crossings do not join without a junction or global label.
 - A pin or another wire endpoint on an **unsplit** segment's interior does not
   attach by itself. An explicit junction joins the incident conductors.
-- A global label attaches to a segment interior. Identical exact label text
-  joins remote anchors; case and Unicode spelling are preserved.
+- A global label attaches to a segment interior. Qualified native label identity
+  joins remote anchors, including encoded/decoded aliases described below.
+  Case and Unicode spelling are preserved.
 - Duplicate and zero-length wires retain their native connectivity. Overlapping
   collinear segments remain separate unless the qualified attachment rules join
   them. Diagonal segments use exact integer cross products.
+
+Global label identity is qualified against original-native KiCad 10.0.7 exports.
+`{slash}`, `{backslash}`, `{colon}`, `{space}` and `{quote}` decode to `/`,
+backslash, `:`, space and apostrophe respectively. Thus `A/B` and `A{slash}B`
+join one net; the IR net name is the exported `A/B`, while the diagnostic
+`global_labels` entries retain each original source spelling. Aliases on the
+same conductor also share that identity. Ordinary spaces and underscores,
+uppercase and lowercase, composed and decomposed Unicode, and `~{RESET}` versus
+`RESET` remain distinct. Standalone overbars `~{NAME}` with nonempty uppercase ASCII letters,
+digits or underscores are preserved verbatim. Other tilde forms are unsupported;
+for example native `~{slash}` joins `~/` with exported name `~{slash}`.
+
+Other brace forms, including `{brace}`, unknown encodings, unmatched braces,
+nested overbars and escaped literal token spellings, refuse the entire source.
+Native `{brace}` decoding can expose another token: `A{brace}slash}B` joins
+`A/B`. A generic single replacement pass would therefore produce incorrect
+connectivity. Dynamic `${...}` labels and control characters (including encoded
+`{tab}`) are unsupported. These refusals produce no partial IR even when other
+nets are fully supported. This is a bounded qualified grammar, not a general
+KiCad display-text interpreter.
 
 No grid snapping is performed. Inputs finer than KiCad's qualified 100 nm
 schematic lattice, nonfinite/sub-nanometre coordinates, or coordinates beyond

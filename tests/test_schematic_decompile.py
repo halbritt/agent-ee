@@ -121,6 +121,84 @@ class NativeDecompileTests(DecompileCase):
         self.assertTrue(report['correspondence_evaluated'])
         return result
 
+    def test_native_encoded_slash_collision(self):
+        from schematic_decompile_fixture import control
+        points = [(10,10), (20,10), (30,10), (40,10)]
+        labels = [('A/B', points[0]), ('A/B', points[1]),
+                  ('A{slash}B', points[2]), ('A{slash}B', points[3])]
+        source = control(points, labels=labels)
+        result = self.assert_native(source, [[('U1','1'), ('U2','1'), ('U3','1'), ('U4','1')]])
+        self.assertEqual(result['intent']['nets'][0]['name'], 'A/B')
+
+    def test_native_aliases_on_same_conductor(self):
+        from schematic_decompile_fixture import control
+        source = control([(10,10), (20,10)], wires=[((10,10),(20,10))],
+                         labels=[('A/B',(10,10)), ('A{slash}B',(20,10))])
+        result = self.assert_native(source, [[('U1','1'), ('U2','1')]])
+        self.assertEqual(result['intent']['nets'][0]['name'], 'A/B')
+        conflict = control([(10,10), (20,10)], wires=[((10,10),(20,10))],
+                           labels=[('A/B',(10,10)), ('A_B',(20,10))])
+        refused = self.extract(conflict)
+        self.assertEqual(refused['report']['execution'], 'unsupported')
+        self.assertIsNone(refused['intent'])
+        self.assertIsNone(refused['resolved'])
+
+    def test_native_qualified_label_names_and_distinct_controls(self):
+        from schematic_decompile_fixture import control
+        points = [(10,10), (20,10), (30,10), (40,10)]
+        joined = [[('U1','1'), ('U2','1'), ('U3','1'), ('U4','1')]]
+        separate = [[('U1','1'), ('U2','1')], [('U3','1'), ('U4','1')]]
+        cases = [
+            ('A{slash}B', 'A{slash}B', ['A/B']),
+            ('A'+chr(92)+'B', 'A{backslash}B', ['A'+chr(92)+'B']),
+            ('A:B', 'A{colon}B', ['A:B']),
+            ('A B', 'A{space}B', ['A B']),
+            ('A{backslash}{slash}{colon}{space}{quote}µ',
+             'A'+chr(92)+"/: 'µ", ['A'+chr(92)+"/: 'µ"]),
+            ("A'B", 'A{quote}B', ["A'B"]),
+            ('电源/µ', '电源{slash}µ', ['电源/µ']),
+            ('A B', 'A_B', ['A B', 'A_B']),
+            ('A', 'a', ['A', 'a']),
+            ('~{RESET}', 'RESET', ['RESET', '~{RESET}']),
+            ('A[0..1]', 'A0', ['A0', 'A[0..1]']),
+            ('é', 'e\u0301', ['e\u0301', 'é']),
+            ('A"B', "A'B", ['A"B', "A'B"])]
+        for a, b, names in cases:
+            with self.subTest(a=a, b=b):
+                source = control(points, labels=[(a, points[0]), (a, points[1]),
+                                                (b, points[2]), (b, points[3])])
+                result = self.assert_native(source, joined if len(names) == 1 else separate)
+                self.assertEqual(sorted(n['name'] for n in self.native(source)['nets'].values()), names)
+                self.assertEqual(sorted(n['name'] for n in result['intent']['nets']), names)
+                self.assertEqual(sorted(l['name'] for n in result['report']['nets']
+                                        for l in n['global_labels']), sorted([a,a,b,b]))
+                self.assertEqual(result, self.extract(source))
+
+    def test_native_unqualified_braces_and_dynamic_labels_refuse_whole_source(self):
+        from schematic_decompile_fixture import control
+        # Native literal/encoded collisions are observed, never inferred from
+        # two consumers of the shared resolver. This grammar refuses them all.
+        cases = [('A{B', 'A{brace}B', ['A{B']),
+                 ('A{slash}B', 'A{brace}slash}B', ['A/B']),
+                 ('A{unknown}B', 'A{unknown}B', ['A{unknown}B']),
+                 ('A}B', 'A{rbrace}B', ['A{rbrace}B', 'A}B']),
+                 ('~{slash}', '~/', ['~{slash}']),
+                 ('~{backslash}', '~'+chr(92), ['~'+chr(92), '~{backslash}'])]
+        points = [(10,10), (20,10), (30,10), (40,10)]
+        for a, b, names in cases:
+            with self.subTest(a=a, b=b):
+                source = control(points, labels=[(a,points[0]), (a,points[1]),
+                                                (b,points[2]), (b,points[3])])
+                native = self.native(source)
+                self.assertEqual(sorted(n['name'] for n in native['nets'].values()), names)
+                self.assertEqual(sorted(len(n['terminals']) for n in native['nets'].values()),
+                                 [4] if len(names) == 1 else [2,2])
+                result = self.extract(source)
+                self.assertEqual(result['report']['execution'], 'unsupported', result)
+                self.assertIsNone(result['intent'])
+                self.assertIsNone(result['resolved'])
+                self.assertEqual(result['report']['nets'], [])
+
     def test_original_native_matches_decompiled_imu(self):
         self.assert_native((FIXTURE / 'imu.kicad_sch').read_bytes(), [
             [('U1','1'), ('J1','1'), ('C1','1')],
@@ -276,6 +354,20 @@ class BoundaryTests(DecompileCase):
                        [('A',(90,90))]]:
             source = control([(10,10),(20,10)], labels=labels)
             self.assertIsNone(self.extract(source)['intent'])
+
+    def test_label_encoding_refusal_is_whole_source(self):
+        from schematic_decompile_fixture import control
+        points = [(10,10), (20,10), (30,10), (40,10)]
+        for name in ('${VALUE}', '{brace}', '{slash', 'A}', '~{A{slash}B}',
+                     '{unknown}', 'A'+chr(9)+'B', '{tab}', '{backslash}${VALUE}',
+                     '~{slash}', '~/', '~{RESET}suffix'):
+            with self.subTest(name=name):
+                result = self.extract(control(points, labels=[('Good', points[0]),
+                    ('Good', points[1]), (name, points[2]), (name, points[3])]))
+                self.assertEqual(result['report']['execution'], 'unsupported', result)
+                self.assertIsNone(result['intent'])
+                self.assertIsNone(result['resolved'])
+                self.assertEqual(result['report']['nets'], [])
 
     def test_graph_resource_limits_refuse_before_usable_output(self):
         from schematic_decompile_fixture import control

@@ -6,6 +6,7 @@ folder. Native qualification and emission remain separate tool operations.
 import argparse
 import hashlib
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from uuid import UUID
@@ -240,6 +241,24 @@ class _Graph:
             self.parents[max(a, b)] = min(a, b)
 
 
+def _global_label_name(name, location):
+    # Qualified against KiCad 10.0.7 original-native exports. In particular,
+    # {brace} can expose another escape; do not guess recursive decoding order.
+    escapes = {'{slash}': '/', '{backslash}': '\\', '{colon}': ':',
+               '{space}': ' ', '{quote}': "'"}
+    _require('${' not in name, location, 'text variables unsupported')
+    _require(not any(ord(c) < 32 or ord(c) == 127 for c in name), location,
+             'unqualified control character in global label')
+    if re.fullmatch(r'~\{[A-Z0-9_]+\}', name):
+        return name
+    _require('~' not in name, location, 'unqualified global label overbar semantics')
+    pattern = r'\{(?:slash|backslash|colon|space|quote)\}'
+    remainder = re.sub(pattern, '', name)
+    _require('{' not in remainder and '}' not in remainder, location,
+             'unqualified global label brace/encoding semantics')
+    return re.sub(pattern, lambda match: escapes.get(match[0], match[0]), name)
+
+
 def _nets(root, terminals):
     wires = children(root, 'wire')
     _require(len(wires) <= MAX_WIRES, '/wire', 'wire count limit')
@@ -257,13 +276,14 @@ def _nets(root, terminals):
         field(junction, 'uuid', 1)
         junctions.add(_position(junction))
     labels = []
+    label_names = {}
     for index, label in enumerate(children(root, 'global_label')):
         _allowed([label[0], *label[2:]], {'shape', 'at', 'effects', 'uuid', 'property', 'fields_autoplaced'},
                  f'/global_label/{index}')
         _require(len(label) > 1 and isinstance(label[1], str) and label[1],
                  f'/global_label/{index}', 'empty global label')
         field(label, 'uuid', 1)
-        _require('${' not in label[1], f'/global_label/{index}', 'text variables unsupported')
+        label_names[label[1]] = _global_label_name(label[1], f'/global_label/{index}')
         position, _ = _position(label, angle=True)
         labels.append((label[1], position))
     endpoints = {p for segment in segments for p in segment}
@@ -283,7 +303,8 @@ def _nets(root, terminals):
             if _on_segment(point, a, b):
                 graph.join(key, point_key(point))
     names = {}
-    for name, point in sorted(labels):
+    for raw_name, point in sorted(labels):
+        name = label_names[raw_name]
         if name in names:
             graph.join(point_key(names[name]), point_key(point))
         names[name] = point
@@ -299,10 +320,10 @@ def _nets(root, terminals):
         physical = group['terminals']
         _require(len(physical) >= 2, '/graph/' + repr(physical),
                  'singleton/unaccounted pin or conductor without two physical terminals')
-        label_names = {l['name'] for l in group['labels']}
-        _require(len(label_names) <= 1, '/graph/' + repr(physical), 'conflicting global net names')
+        native_names = {label_names[l['name']] for l in group['labels']}
+        _require(len(native_names) <= 1, '/graph/' + repr(physical), 'conflicting global net names')
         nid = 'n-' + _hash(_bytes(physical))
-        nets.append(dict(id=nid, name=next(iter(label_names), ''), terminals=[
+        nets.append(dict(id=nid, name=next(iter(native_names), ''), terminals=[
             dict(component=c, pin={'number': p}) for c, p in physical]))
         # Canonical star: a deterministic spanning tree over distinct physical
         # terminals; geometry determines membership, never this presentation.
