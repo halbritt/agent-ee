@@ -87,8 +87,10 @@ Any flagged part stops the package from completing.
 The native position file is rewritten: `Ref`→`Designator`, `PosX`→`Mid X`,
 `PosY`→`Mid Y`, `Side` `top|bottom`→`Layer` `Top|Bottom`, and `Rot`→`Rotation`.
 `Val` and `Package` are dropped. Coordinates are the native millimetre values in
-absolute board coordinates, the same frame as the Gerbers. Rows are in natural
-designator order. The check applies **no rotation, offset or pin-1 policy**:
+absolute board X and negated board Y, on both sides, with no auxiliary/drill-origin
+override. The anchor is the native footprint position. The consistency gate
+compares these coordinates with the exact native geometry probe within 0.01 mm.
+Rows are in natural designator order. The check applies **no rotation, offset or pin-1 policy**:
 `Rotation` is the native KiCad angle. JLC rotation correction belongs to
 AGENTEE-72. The position-file designators must equal the board's non-DNP
 footprints, or the output is malformed.
@@ -122,10 +124,13 @@ consumers.
 | Condition | Execution | Outcome |
 | --- | --- | --- |
 | Every step succeeded, every output validated, no flagged part, manifest verified | `ok` | `pass` |
-| Missing, empty or unparseable native output; a position file that disagrees with the board; unnormalisable timestamps; board bytes that differ from the captured digest | `malformed` | `unknown` |
+| Missing or unparseable native output; a position file that disagrees with the board; unnormalisable timestamps; board bytes that differ from the captured digest | `malformed` | `unknown` |
 | Unsupported board feature, missing part binding, non-ASCII text that cannot be mapped | `unsupported` | `unknown` |
-| `kicad-cli` nonzero exit | `failed` | `unknown` |
+| `kicad-cli` nonzero exit or an empty produced native file | `failed` | `unknown` |
 | Netlist prerequisite absent, later, failed or from another candidate | `not_run` | `unknown` |
+
+Pre-existing `fab/` staging or a native step's `out/` directory is refused as
+`malformed` before reuse; stale bytes cannot enter a new manifest.
 
 A failure after staging started renames `fab/` to `fab.incomplete/` without a
 manifest, so no partial package looks complete. The incomplete files stay as
@@ -143,8 +148,8 @@ empty.
 `pass` means only that the exports exist, parsed and were hashed and bound to
 the board. The check records whether the board, CPL and BOM designator sets
 agree in `details.designators`, but it does not gate on that. That cross-file
-consistency, LCSC-to-footprint uniqueness, CPL side and 3D-model checks belong
-to `fab_consistency` (AGENTEE-73), which reads this staging and manifest and
+consistency, LCSC-to-footprint uniqueness, CPL side/coordinate checks,
+export-log diagnostics and 3D-model checks belong to `fab_consistency` (AGENTEE-73), which reads this staging and manifest and
 never regenerates the exports.
 
 ## Fixture and tests

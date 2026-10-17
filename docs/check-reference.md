@@ -339,4 +339,16 @@ retained per-corner evidence and empirical-transfer refusal.
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check` and
-applies no CPL rotation policy.
+applies no CPL rotation policy. Empty produced native files are `failed/unknown`;
+pre-existing staging or native output directories are refused before reuse.
+
+[`fab_consistency`](fab-consistency.md) consumes that sealed export, its netlist
+and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,
+BOM/CPL/assembled-board reference parity, LCSC/footprint conflicts, CPL side,
+captured/embedded 3D models and recorded export-log diagnostics. CPL anchors
+must agree with exact native `position_nm` within 0.01 mm per axis, using
+absolute board X and negative board Y on either side. Missing exact positions
+or a missing sealed log is unknown coverage; broken hashes or malformed CSV
+are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
+through a sealed requirement/check witness. Rotation correction and DFM are
+outside this check.

@@ -482,6 +482,8 @@ def _step(ctx, name, argv):
     """Run one native step with its own /work so each record is retained."""
     from .executor import execute
     directory = ctx.work / 'steps' / name
+    if (directory / 'out').exists() or (directory / 'out').is_symlink():
+        raise _error('malformed', f'kicad-cli {name} output directory already exists; refusing stale outputs')
     config = ctx.work / 'kicad-config'
     if config.is_dir():
         shutil.copytree(config, directory / 'kicad-config', dirs_exist_ok=True)
@@ -518,7 +520,7 @@ def _outputs(directory, label):
         if path.is_symlink() or not path.is_file():
             raise _error('malformed', f'kicad-cli {label} output {name} is not a regular file')
         if path.stat().st_size == 0:
-            raise _error('malformed', f'kicad-cli {label} output {name} is empty')
+            raise _error('failed', f'kicad-cli {label} output {name} is empty')
     return found
 
 
@@ -570,6 +572,8 @@ def check_fab_export(ctx):
     layers = copper + [name for name, _, _ in FAB_LAYERS]
     ctx.seed_kicad_config()
     fab = ctx.work / 'fab'
+    if fab.exists() or fab.is_symlink():
+        raise _error('malformed', 'fab staging directory already exists; refusing stale outputs')
     try:
         _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
     except BaseException:

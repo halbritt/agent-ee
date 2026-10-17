@@ -376,7 +376,7 @@ class NativeFabExportTests(unittest.TestCase):
         for name, mutate in cases.items():
             with self.subTest(name=name):
                 run, result = self.damaged(mutate)
-                self.assert_incomplete(run, result, 'malformed')
+                self.assert_incomplete(run, result, 'failed' if name.startswith('empty') else 'malformed')
 
     def test_native_nonzero_exit_is_failed_with_no_package(self):
         path = self.source / 'fab.kicad_pcb'

@@ -55,6 +55,7 @@ def extract(board_path):
             "board_only": bool(fp.IsBoardOnly()),
             "uuid": fp.m_Uuid.AsString(),
             "position_mm": vec_mm(fp.GetPosition()),
+            "position_nm": [int(fp.GetPosition().x), int(fp.GetPosition().y)],
             "pads": [],
         }
         for pad in fp.Pads():
