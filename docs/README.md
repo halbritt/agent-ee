@@ -24,6 +24,7 @@ product's hardware qualification.
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
+| Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |

@@ -28,6 +28,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
+| `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -84,6 +85,15 @@ runs. Scope/2 and scope/3 bind exactly one requirement per routing check and
 freeze its rule document and captured native rule sidecars. Complete route and
 constraint coverage is required; unsupported topology or missing inputs are
 unknown. General DRC and schematic parity remain separate obligations.
+
+## Captured fabricator profiles
+
+The [fab profile check](fab-profile.md) accepts a captured `params.fab_profile`
+document whose limits each cite an exact quote in a captured UTF-8 source. It
+runs sourced physical minima as isolated native rules and compares layer count,
+fixed-axis outline extents and SMD presence with the saved board. Missing sources,
+missing profiles and unqualified outlines are unknown. Preferred-tier overruns
+are reported as extra charges, never defects. No real fabricator preset exists.
 
 ## Native netlist
 

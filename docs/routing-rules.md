@@ -91,4 +91,9 @@ review status even when all routing constraints pass. Tests establish coordinato
 and native tool behavior, not live-model quality, hardware or impedance
 qualification.
 
+The [fabricator profile check](fab-profile.md) reuses this runner for captured
+fabrication limits. Only its constraints stage project minima, add a saved-board
+fabrication inventory, or receive outline-gated extra-charge classification.
+Routing constraints keep the captured project settings unchanged.
+
 Native rule semantics: [KiCad 10 PCB documentation](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html).
