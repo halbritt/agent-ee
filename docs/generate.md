@@ -70,7 +70,12 @@ an LCSC number. Candidates rank by distance from the fixture's 0805 package,
 then larger package, then catalog quantity (parts fome-mc uses most), then LCSC
 number. The manifest keeps the chosen row, every rejected row with its reason
 and rank key, and the footprint file hash. MPN and manufacturer are absent from
-the BOM, so they are omitted, never invented.
+the BOM, so they are omitted, never invented. Every part also has an explicit
+`Datasheet` field: the raw catalog text when the catalog has a datasheet
+column, otherwise `null` with `datasheet_obligation:
+"missing:catalog_has_no_datasheet_column"`, so the obligation is never dropped.
+Each selection has a `selection_id`, the sha256 of the canonical JSON of its
+catalog sha256, catalog line, symbol, value and reference.
 
 A part the spec names hand-soldered (the header) gets
 `JLCPCB_Assembly: "not_assembled"` with its reason, and is refused if the

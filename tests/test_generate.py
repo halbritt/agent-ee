@@ -234,12 +234,19 @@ class PartsTest(unittest.TestCase):
             g.stage_parts(stage, state, {'catalog_checkout': checkout})
             manifest = json.loads(state['parts'].read_text())
             self.assertEqual(manifest['schema'], 'agent-ee.rung1-parts-manifest/0-experimental')
+            missing = {'Datasheet': None, 'datasheet_obligation': 'missing:catalog_has_no_datasheet_column'}
             self.assertEqual(manifest['parts']['J1'], {
                 'Footprint': 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical',
-                'JLCPCB_Assembly': 'not_assembled'})
+                'JLCPCB_Assembly': 'not_assembled', **missing})
+            selection = manifest['selections']['R1']
+            self.assertEqual(selection['selection_id'], g.sha256_bytes(g.canonical({
+                'catalog_sha256': manifest['catalog']['sha256'], 'catalog_line': 2, 'lib_id': 'Device:R',
+                'value': '10k', 'reference': 'R1'})))
+            self.assertEqual(len({s['selection_id'] for s in manifest['selections'].values()}), 3)
             self.assertEqual(manifest['assembly_exclusions'], [{'ref': 'J1', 'rule': 'JLCPCB_Assembly=not_assembled',
                                                                 'reason': 'through-hole header, hand-soldered'}])
-            self.assertEqual(manifest['parts']['R1'], {'Footprint': 'Resistor_SMD:R_0603_1608Metric', 'LCSC': 'C900001'})
+            self.assertEqual(manifest['parts']['R1'], {'Footprint': 'Resistor_SMD:R_0603_1608Metric', 'LCSC': 'C900001',
+                                                       **missing})
             self.assertNotIn('MPN', manifest['parts']['R1'])
             self.assertEqual((stage.dir / 'catalog' / 'BOM-fome-mc.csv').read_text(), HEADER + '\n'.join(ROWS) + '\n')
             # A header with a catalog row cannot be silently excluded.
@@ -281,6 +288,69 @@ class ScopeTest(unittest.TestCase):
         for locator in ('R-native:', 'R-width:', 'R-response:'):
             self.assertIn(locator, files['system.md'])
         self.assertIn('0.6321 V', files['targets.md'])
+
+
+FAKE_AGENT_EE = r"""
+import json, sys
+from pathlib import Path
+command, args = sys.argv[1], sys.argv[2:]
+if command == 'campaign':
+    out = Path(args[args.index('--out') + 1])
+    run = out / 'runs' / '1'
+    (run / 'inputs' / 'project').mkdir(parents=True)
+    (out / 'state.json').write_text(json.dumps({'state': STATE, 'diagnostic': {'state': STATE}}))
+    (run / 'result.json').write_text(json.dumps({'state': 'complete', 'outcome': STATE,
+        'checks': [{'id': 'erc', 'execution': 'ok', 'outcome': 'pass', 'summary': 'zero violations'}],
+        'findings': [{'id': 'physical/PHY-1', 'severity': 'minor', 'assessment': 'concern',
+                      'disposition': 'noted', 'disposition_reason': 'kept verbatim'}]}))
+    print(STATE)
+    raise SystemExit(0 if STATE == 'criteria_satisfied' else 1)
+if command == 'verify-campaign':
+    print(json.loads((Path(args[0]) / 'state.json').read_text())['state'])
+"""
+
+
+class CampaignStageTest(unittest.TestCase):
+    """Stage 6 parsing against a scripted agent-ee; no inference."""
+
+    def run_stage(self, verdict):
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-')
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        fake = root / 'fake_agent_ee.py'
+        fake.write_text(FAKE_AGENT_EE.replace('STATE', repr(verdict)))
+        scope = root / 'run' / 'scope' / 'rung1.scope.json'
+        scope.parent.mkdir(parents=True)
+        scope.write_text(json.dumps({'schematic': 'project/rung1_rc.kicad_sch', 'board': 'project/rung1_rc.kicad_pcb'}))
+        profile = ROOT / 'profiles/claude-baseline.json'
+        stage = g.Stage(root / 'run', 6, 'review')
+        stage.start()
+        state = {'scope': scope, 'name': 'rung1_rc'}
+        with mock.patch.object(g, 'agent_ee_argv', lambda *args: [g.sys.executable, str(fake), *map(str, args)]):
+            try:
+                status = g.stage_review(stage, state, {'profile': str(profile), 'max_seconds': 2400})
+                error = None
+            except g.StageFailure as exc:
+                status, error = 'failed', str(exc)
+        return stage, state, status, error
+
+    def test_satisfied_campaign_is_ok_and_findings_are_verbatim(self):
+        stage, state, status, error = self.run_stage('criteria_satisfied')
+        self.assertEqual((status, error), (None, None))
+        details = stage.receipt['details']
+        self.assertEqual((details['verdict'], details['verify_exit']), ('criteria_satisfied', 0))
+        self.assertIn('criteria_satisfied', details['verify_stdout'])
+        self.assertEqual(details['runs'][0]['findings'][0]['disposition_reason'], 'kept verbatim')
+        self.assertEqual(state['reviewed_inputs'], stage.dir / 'campaign' / 'runs' / '1' / 'inputs')
+        config = json.loads((stage.dir / 'campaign.json').read_text())
+        self.assertEqual((config['max_iterations'], config['max_seconds']), (3, 2400))
+        self.assertEqual(config['implementation']['model'], config['review_profile']['adjudicator']['model'])
+
+    def test_escalated_campaign_fails_the_stage(self):
+        stage, state, status, error = self.run_stage('escalated')
+        self.assertEqual(status, 'failed')
+        self.assertIn('escalated', error)
+        self.assertEqual(state['verdict'], 'escalated')
 
 
 class FabRewriteTest(unittest.TestCase):

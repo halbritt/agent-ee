@@ -558,6 +558,7 @@ def stage_parts(stage, state, options):
                              if chosen['package'] != default else 'fixture default package')}
     header = params['header']
     value = 'Conn_01x%02d' % header['pins']
+    datasheet_column = next((c for c in CATALOG_COLUMNS if c.lower() == 'datasheet'), None)
     footprint = 'Connector_PinHeader_2.54mm:PinHeader_1x%02d_P2.54mm_Vertical' % header['pins']
     catalog_rows = [i for i, row in enumerate(rows, start=2) if row['Comment'] == value]
     if catalog_rows:
@@ -570,6 +571,18 @@ def stage_parts(stage, state, options):
         'lib_id': 'Connector_Generic:' + value, 'value': value, 'chosen': None,
         'rejected': [], 'catalog_rows': [], 'reason': header['assembly_reason'],
         'footprint_file': {'path': str(path), 'sha256': digest(path), 'pads': pads}}
+    for ref, selection in selections.items():
+        line = selection['chosen']['catalog_line'] if selection['chosen'] else None
+        # Stable identity of this selection for downstream evidence (AGENTEE-33 datasheet lane).
+        selection['selection_id'] = sha256_bytes(canonical({
+            'catalog_sha256': source['sha256'], 'catalog_line': line, 'lib_id': selection['lib_id'],
+            'value': selection['value'], 'reference': ref}))
+        # The datasheet obligation stays explicit; the emitter ignores a null Datasheet.
+        if datasheet_column and line is not None:
+            parts[ref]['Datasheet'] = rows[line - 2][datasheet_column]
+        else:
+            parts[ref]['Datasheet'] = None
+            parts[ref]['datasheet_obligation'] = 'missing:catalog_has_no_datasheet_column'
     manifest = {
         'schema': PARTS_SCHEMA, 'qualification': QUALIFICATION,
         'catalog': {'path': stage.rel(copy), 'sha256': source['sha256'], 'source': source,
@@ -603,7 +616,7 @@ def connectivity_intent(params, parts, libraries):
     def component(ref, lib_id, value):
         return {'id': ref, 'reference': ref, 'lib_id': lib_id, 'value': value, 'units': [1],
                 'footprint': parts[ref]['Footprint'],
-                'part_binding': {k: v for k, v in parts[ref].items() if k != 'Footprint' and v}}
+                'part_binding': {k: v for k, v in parts[ref].items() if k != 'Footprint' and v is not None}}
     terminals = {}
     for pin, net in header['nets'].items():
         terminals.setdefault(net, []).append((header['ref'], pin))
@@ -970,7 +983,7 @@ def stage_review(stage, state, options):
         if (root / 'runs').is_dir() else []
     details = {'mode': 'campaign', 'campaign_exit': command['exit_code'], 'verdict': campaign_state.get('state'),
                'diagnostic': campaign_state.get('diagnostic'), 'verify_exit': verify['exit_code'],
-               'verify_stdout': (stage.dir / verify['stdout']).read_text()[-2000:] if verify['stdout'] else None,
+               'verify_stdout': (stage.rundir / verify['stdout']).read_text()[-2000:],
                'runs': []}
     for run in runs:
         if (run / 'result.json').is_file():
