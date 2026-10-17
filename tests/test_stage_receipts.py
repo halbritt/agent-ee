@@ -436,6 +436,142 @@ class CoordinatorBoundaryTests(StepFixture):
             adopt(path, receipt, self.design)
         self.assertEqual(stage_receipts.file_tree(self.design), before)
 
+    @toolchain_test
+    def test_ancestor_link_to_owned_host_directory_is_never_followed(self):
+        # The reviewer's reproduction: write source, artifacts and backend report all behind /work/link.
+        spec = self.plant({'links': {'link': str(self.host)}},
+                          writes={'project/board.txt': 'link/sentinel'},
+                          artifacts=['link', 'link/sentinel', 'link/result.json'],
+                          backend_report={'artifact': 'link/result.json', 'key': 'backend'})
+        path, receipt = self.run_step(spec)
+        self.assertEqual(receipt['exit_code'], 0)
+        self.assertEqual(receipt['outputs'], {'project/board.txt': None})
+        self.assertEqual(receipt['artifacts'], {'link': None, 'link/result.json': None, 'link/sentinel': None})
+        self.assertEqual(receipt['tool']['backend'], {'status': 'unknown', 'value': None,
+                                                      'reason': 'backend report artifact is a link or special file'})
+        self.assertNotIn('missing_output:project/board.txt', receipt['violations'])
+        self.assert_refused_unadoptable(path, receipt, 'unsafe_output:project/board.txt')
+        self.assert_host_untouched(path, receipt)
+
+    @toolchain_test
+    def test_leaf_links_to_candidate_retained_or_missing_files_are_not_outputs(self):
+        targets = {
+            'relative to design copy': '../design/project/board.txt',
+            'absolute retained input': None,
+            'sandbox candidate path': '/candidate/project/board.txt',
+            'host file': str(self.host / 'sentinel'),
+            'broken': str(self.root / 'no-such-owned-target'),
+        }
+        for label, target in targets.items():
+            with self.subTest(label):
+                if target is None:
+                    target = str(self.root / 'work/receipts' / f'{self.count + 1}-test-helper/inputs/project/board.txt')
+                spec = self.plant({'links': {'out/board.txt': target}}, writes={'project/board.txt': 'out/board.txt'},
+                                  artifacts=['out/board.txt'])
+                path, receipt = self.run_step(spec)
+                self.assertEqual(receipt['outputs'], {'project/board.txt': None})
+                self.assertEqual(receipt['artifacts'], {'out/board.txt': None})
+                self.assert_refused_unadoptable(path, receipt, 'unsafe_output:project/board.txt')
+                self.assert_host_untouched(path, receipt)
+
+    @toolchain_test
+    def test_nested_output_adopts_while_links_and_specials_inside_artifacts_stay_unfollowed(self):
+        spec = self.plant({'files': {'out/nested/deep/board.txt': 'routed nested board',
+                                     'out/result.json': json.dumps({'backend': {'name': 'kept'}})},
+                           'links': {'out/report/host-file': str(self.host / 'sentinel'),
+                                     'out/report/host-dir': str(self.host),
+                                     'out/report/relative': '../nested/deep/board.txt',
+                                     'out/report/broken': 'missing-target'},
+                           'fifos': ['out/report/pipe']},
+                          writes={'project/board.txt': 'out/nested/deep/board.txt'},
+                          artifacts=['out/nested', 'out/report', 'out/result.json'],
+                          backend_report={'artifact': 'out/result.json', 'key': 'backend'})
+        path, receipt = self.run_step(spec)
+        run = path / 'run'
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual(receipt['violations'], [])
+        self.assertEqual(receipt['outputs'], {'project/board.txt': digest(run / 'out/nested/deep/board.txt')})
+        self.assertEqual(receipt['artifacts'], {
+            'out/nested/deep/board.txt': digest(run / 'out/nested/deep/board.txt'),
+            'out/report/broken': None, 'out/report/host-dir': None, 'out/report/host-file': None,
+            'out/report/pipe': None, 'out/report/relative': None,
+            'out/result.json': digest(run / 'out/result.json')})
+        self.assertEqual(receipt['tool']['backend'], {'status': 'reported', 'value': {'name': 'kept'}, 'reason': None})
+        self.assertEqual(validate_receipt(path), receipt)
+        adopt(path, receipt, self.design)
+        self.assertEqual((self.design / 'project/board.txt').read_text(), 'routed nested board')
+        self.assert_host_untouched(path, receipt)
+
+    @toolchain_test
+    def test_links_in_the_design_copy_are_inventory_violations_not_followed(self):
+        spec = self.plant({'remove': ['design/project/board.txt'],
+                           'links': {'design/project/board.txt': str(self.host / 'sentinel'),
+                                     'design/project/host': str(self.host)}})
+        path, receipt = self.run_step(spec)
+        self.assertIn('inventory_changed:project/host', receipt['violations'])
+        self.assertEqual(receipt['outputs'], {'project/board.txt': None})
+        self.assert_refused_unadoptable(path, receipt, 'unsafe_output:project/board.txt')
+        self.assert_host_untouched(path, receipt)
+
+    @toolchain_test
+    def test_planted_executor_record_links_refuse_the_receipt_and_are_never_read(self):
+        # Targets stay inside the owned run directory: the executor itself writes through such links.
+        plan = {'files': {'design/project/board.txt': 'placed'},
+                'links': {'stdout.log': 'planted-stdout', 'execution.json.tmp': 'planted-record'}}
+        version = {'links': {'stdout.log': 'planted-version'}}
+        spec = self.plant(plan, version_argv=['/usr/bin/python3', '/tool/step.py', 'plant', json.dumps(version)])
+        path, receipt = self.run_step(spec)
+        self.assertEqual(receipt['execution']['exit_code'], 0)
+        for violation in ('executor_record_unsafe:run/stdout.log', 'executor_record_unsafe:run/execution.json',
+                          'executor_record_unsafe:version/stdout.log'):
+            self.assertIn(violation, receipt['violations'])
+        self.assertEqual(receipt['tool']['reported_version'],
+                         {'status': 'unknown', 'value': None, 'reason': 'version probe output is not a regular file'})
+        self.assert_refused_unadoptable(path, receipt, 'executor_record_unsafe:run/stdout.log')
+
+    @toolchain_test
+    def test_unwritable_work_keeps_a_refused_receipt_without_trusting_planted_records(self):
+        forged = {'execution': 'ok', 'exit_code': 0, 'argv': ['forged']}
+        spec = self.plant({'files': {'design/project/board.txt': 'placed', 'execution.json': json.dumps(forged)},
+                           'chmod': {'.': 0o500}})
+        path = self.root / 'work/receipts' / f'{self.count + 1}-test-helper'
+        self.addCleanup(lambda: (path / 'run').exists() and os.chmod(path / 'run', 0o700))
+        # The executor itself cannot write its records; that error still propagates.
+        with self.assertRaises(PermissionError):
+            self.run_step(spec)
+        receipt = validate_receipt(path)
+        self.assertIsNone(receipt['execution'])
+        self.assertIsNone(receipt['exit_code'])
+        self.assertEqual(receipt['outputs'], {'project/board.txt': digest(path / 'run/design/project/board.txt')})
+        self.assert_refused_unadoptable(path, receipt, 'executor_record_missing:run')
+        anchor = bind_implementation(self.root / 'work', self.design, 1, 'c' * 64)
+        verify_implementation(self.root / 'work', anchor, 1, 'c' * 64)
+
+    def test_records_on_disk_after_an_interrupt_are_trusted_only_as_cancellation(self):
+        real = stage_receipts.execute
+        argv = ['/usr/bin/python3', '/tool/step.py', 'edit']
+
+        def interrupted_before_record(inputs, work, run_argv, **kwargs):
+            # As if the coordinator were interrupted before the executor wrote its own record,
+            # leaving whatever the tool had planted in /work.
+            (Path(work) / 'home').mkdir(parents=True)
+            write_json(Path(work) / 'execution.json', planted)
+            raise KeyboardInterrupt
+
+        cases = {'forged success': ({'execution': 'ok', 'exit_code': 0, 'argv': argv}, 'refused'),
+                 'malformed interrupt': ({'execution': 'interrupted', 'argv': argv, 'sandbox_argv': 'x'}, 'refused')}
+        for label, (planted, status) in cases.items():
+            with self.subTest(label), patch('agent_ee.stage_receipts.execute', side_effect=interrupted_before_record):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.run_step(self.spec(version_argv=None))
+                path = self.root / 'work/receipts' / f'{self.count}-test-helper'
+                receipt = validate_receipt(path)
+                self.assertIsNone(receipt['execution'])
+                self.assertEqual(receipt['status'], status)
+                self.assertIn('executor_record_missing:run', receipt['violations'])
+        self.assertIs(stage_receipts.execute, real)
+
+    @toolchain_test
     def test_malformed_backend_reports_keep_the_observed_process_receipt(self):
         prefix = 'backend report artifact '
         cases = {
@@ -476,6 +612,7 @@ class CoordinatorBoundaryTests(StepFixture):
         self.assertEqual(receipt['tool']['backend'], {'status': 'reported', 'value': nested, 'reason': None})
         validate_receipt(path)
 
+    @toolchain_test
     def test_partial_malformed_report_on_failure_timeout_and_cancellation(self):
         (self.tool / 'report.bin').write_bytes(b'{"backend": {"name": "x", "version": "1.')
         declared = dict(artifacts=['out/result.json'], backend_report={'artifact': 'out/result.json', 'key': 'backend'})
@@ -504,6 +641,64 @@ class CoordinatorBoundaryTests(StepFixture):
         anchor = bind_implementation(self.root / 'work', self.design, 1, 'c' * 64)
         index = verify_implementation(self.root / 'work', anchor, 1, 'c' * 64)
         self.assertEqual([link['applicability'] for link in index['receipts']], ['not_applicable'] * 3)
+
+    @toolchain_test
+    def test_adoption_never_follows_a_replaced_output_or_ancestor(self):
+        spec = self.plant({'files': {'out/nested/board.txt': 'routed board'}},
+                          writes={'project/board.txt': 'out/nested/board.txt'})
+        path, receipt = self.run_step(spec)
+        self.assertEqual(receipt['status'], 'completed')
+        run = path / 'run'
+        original = stage_receipts.file_tree(self.design)
+        # Same bytes behind a link: a hash comparison alone would accept either replacement.
+        self.assertEqual(digest(self.host / 'nested/board.txt'), receipt['outputs']['project/board.txt'])
+        os.rename(run / 'out', run / 'out-real')
+        os.symlink(self.host, run / 'out')
+        leaf = run / 'out-real/nested/board.txt'
+        replacements = {'ancestor': lambda: None,
+                        'leaf': lambda: (os.unlink(run / 'out'), os.rename(run / 'out-real', run / 'out'),
+                                         os.rename(run / 'out/nested/board.txt', run / 'board.real'),
+                                         os.symlink(self.host / 'nested/board.txt', run / 'out/nested/board.txt'))}
+        for label, replace in replacements.items():
+            with self.subTest(label):
+                replace()
+                with self.assertRaisesRegex(ValueError, 'outputs changed'):
+                    adopt(path, receipt, self.design)
+                # Even when replaced after revalidation, the copied bytes are read without following links.
+                with patch('agent_ee.stage_receipts.validate_receipt', return_value=receipt), \
+                        self.assertRaisesRegex(ValueError, 'output changed before adoption'):
+                    adopt(path, receipt, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), original)
+        self.assertFalse(leaf.exists())
+        self.assert_host_untouched(path, receipt)
+
+    @toolchain_test
+    def test_adoption_requires_the_retained_coordinator_receipt(self):
+        path, receipt = self.run_step(self.spec('edit', '3', adoptable_exits=[0, 2]))
+        self.assertEqual(receipt['status'], 'failed')
+        original = stage_receipts.file_tree(self.design)
+        blessed = dict(receipt, status='completed')
+        blessed['identity'] = identity({k: v for k, v in blessed.items() if k != 'identity'})
+        with self.assertRaisesRegex(ValueError, 'differs from the retained coordinator receipt'):
+            adopt(path, blessed, self.design)
+        self.assertEqual(stage_receipts.file_tree(self.design), original)
+
+    def test_tree_scan_records_links_specials_and_excess_depth_without_entering_them(self):
+        root = self.root / 'tree'
+        (root / 'a').mkdir(parents=True)
+        (root / 'a/file').write_text('x')
+        os.symlink(self.host, root / 'dir-link')
+        os.symlink(self.host / 'sentinel', root / 'a/file-link')
+        os.mkfifo(root / 'a/pipe')
+        deep = root.joinpath(*['d'] * (stage_receipts.TREE_DEPTH + 1))
+        deep.mkdir(parents=True)
+        (deep / 'f').write_text('deep')
+        files, other = stage_receipts.file_tree(root)
+        self.assertEqual(files, {'a/file': digest(root / 'a/file')})
+        self.assertEqual(other, sorted(['a/file-link', 'a/pipe', 'dir-link',
+                                        '/'.join(['d'] * stage_receipts.TREE_DEPTH)]))
+        with self.assertRaisesRegex(ValueError, 'not a directory'):
+            stage_receipts.file_tree(root / 'dir-link')
 
 
 class CampaignStageReceiptTests(unittest.TestCase):
