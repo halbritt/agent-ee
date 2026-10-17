@@ -301,6 +301,7 @@ provenance closure, never by a directory prefix or author list. Executed nominal
 predictions remain unqualified diagnostics for fresh bench recovery. Historical
 calibration/1 does not acquire scope/3 qualification. See [bench feedback](bench-feedback.md).
 These contracts do not authenticate instruments or establish physical validation.
+
 ## Concern evidence replay
 
 [Standalone evidence requests](evidence-requests.md) bind unresolved concerns to
@@ -310,3 +311,14 @@ It supports no arbitrary shell, external tool, writable artifact or aggregate
 job-memory budget. Requests and replay assertions supply no acceptance coverage;
 graduation exports are inert proposals. Existing sealed coordinator check
 witnesses remain the only scope/2 and scope/3 acceptance path.
+
+## Packet navigation
+
+Packet navigation tests cover owned native RC source locators, candidate rename
+refresh, public verification after tampering, disconnected pins, duplicate
+references, arc/unknown primitive coverage, bounded views and explicit oversized
+entry pointers. Synthetic cross-domain records verify exact unit/condition
+preservation and unresolved entity scope. Peer marker tests verify the common
+index excludes undeclared files and preserves the existing adjudicator-only
+experiment mount. These are navigation/coordinator checks; model missed-defect
+performance and physical correctness are not established by an index.
