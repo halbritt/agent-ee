@@ -237,6 +237,21 @@ class NativeBoardBuildTest(unittest.TestCase):
         self.assertEqual({(f['ref'], p['number']): p['net'] for f in facts['footprints'] for p in f['pads']}, EXPECTED)
         self.assertEqual(refs['J1']['position_nm'], [103_810_000, 112_460_000])
 
+    def test_board_too_small_is_typed_defect_with_budget_and_no_placed_board(self):
+        # A 2mm strip is narrower than every stock RC courtyard at any angle.
+        self.envelope.write_text(json.dumps({**ENVELOPE, 'outline_mm': {'x': 100, 'y': 100, 'w': 2, 'h': 60}}))
+        receipt = self.build('small')
+        out = self.root / 'small'
+        self.assertEqual((receipt['status'], receipt['outcome']), ('not_placed', 'defect'), receipt.get('placement'))
+        placement = receipt['placement']
+        self.assertEqual((placement['status'], placement['outcome']), ('packing_infeasible', 'defect'))
+        self.assertEqual((placement['step_budget'], placement['steps_used']), (100000, 0))
+        plan = json.loads((out / placement['plan']).read_text())
+        self.assertEqual((plan['proof']['kind'], plan['placements']), ('min_width', []))
+        self.assertNotIn('placed', receipt)
+        self.assertFalse((out / 'placed').exists())
+        self.assertFalse((out / 'placement/proposal').exists())
+
     def test_pin_without_matching_pad_is_refused(self):
         text = self.netlist.read_text()
         # R1 pin 2 becomes pin 3 in both the symbol pin list and the net node.

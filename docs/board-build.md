@@ -27,7 +27,7 @@ python3 -m agent_ee.board_build PROJECTDIR --netlist NETLIST.xml --footprints FP
 | --- | --- |
 | 0 | Placed. The judge passes and the placed board has zero schematic-parity items. |
 | 1 | Input refused. The reason is on stderr and no receipt is written. |
-| 2 | Not placed. The placer returned a typed result such as `unsupported_geometry`, and the row stand-in was not requested or not applicable. |
+| 2 | Not placed. The placer returned a typed result such as `unsupported_geometry`, and the row stand-in was not requested or not applicable. A board too small for its parts is `packing_infeasible` with receipt `outcome: defect` and its proof in `placement/placement-plan.json`. |
 | 3 | Placed with defects (`outcome: defect`): the judge failed or parity items exist. For the row stand-in, any other violation also gives this result. |
 | 4 | The placement writer failed. Its `NAME-failure-*` diagnostics are kept under `OUTDIR/placement/`. |
 | 5 | A native tool failed. This is missing coverage, never a pass. |
