@@ -242,7 +242,6 @@ def check_prepared(prepared, manifest_path):
 
 def execute_batch(prepared, output):
     """Internal container entry: ordinary public checks-only review plus verify."""
-    from .cli import run_review, verify
     prepared = Path(prepared);output = Path(output)
     request = read_json(output.parent/'request.json')
     if (not re.fullmatch(r'[a-f0-9]{40}',request['expectation_commit']) or
@@ -258,10 +257,7 @@ def execute_batch(prepared, output):
     baselines = {}
     for scope in sorted(prepared.glob('*/scope.json')):
         cid = scope.parent.name;run = output/cid
-        result = run_review(scope,run,1800,checks_only=True)
-        verified = verify(run)
-        if result!=verified:
-            raise ValueError('verified review differs from returned result')
+        review_case(scope,run)
         baseline = read_json(run/'baseline.json')['baseline_id']
         board_id = read_json(scope)['name']
         if board_id in baselines and baselines[board_id]!=baseline:
@@ -489,3 +485,15 @@ def finding_count(record):
     if check['kind']=='erc' and raw is not None:
         return sum(len(s.get('violations',[])) for s in raw.get('sheets',[]))
     return 0
+
+
+def review_case(scope, run):
+    from .cli import run_review, verify
+    exit_code = run_review(scope,run,1800,checks_only=True)
+    verified = verify(run)
+    if exit_code != (0 if verified['outcome']=='criteria_satisfied' else 1):
+        raise ValueError('review exit code contradicts verified outcome')
+    expected = {c['id'] for c in read_json(scope)['checks']}
+    if {c['id'] for c in verified['checks']}!=expected or verified.get('error'):
+        raise ValueError('review failed before all declared checks were retained')
+    return verified

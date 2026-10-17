@@ -257,3 +257,20 @@ class PreregistrationTests(unittest.TestCase):
             data=copy.deepcopy(original);data['boards'][0]['native_file_sha256']['../escape']='0'*64;path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError,'unsafe'):
                 load_manifest(path)
+
+
+class NativeReviewTests(unittest.TestCase):
+    def test_checks_only_exit_one_is_not_a_native_execution_failure(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import review_case
+        source=Path(__file__).resolve().parents[1]/'fixtures/hardware-interface/control.scope.json'
+        with tempfile.TemporaryDirectory() as tmp:
+            result=review_case(source,Path(tmp)/'run')
+            self.assertEqual(result['state'],'incomplete')
+            self.assertEqual(result['outcome'],'incomplete')
+            self.assertTrue(all(c['execution']=='ok' for c in result['checks']),result['checks'])
+            self.assertEqual(result['reviews'],[])
+            self.assertFalse(result['adjudicated'])
