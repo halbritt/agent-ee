@@ -1,0 +1,14 @@
+{
+  "schema": "agent-ee.capability-mutations/1",
+  "provenance": "Repository RC control/seeded native designs, maintained coordinator test oracles; no third-party additions. Expectations specified independently of runtime check outputs.",
+  "limits": {"response_at_1ms_V": [0.62, 0.65], "routing_width_mm": 0.2},
+  "cases": {
+    "control": {"violated_requirements": [], "unknown_checks": [], "outcome": "criteria_satisfied"},
+    "wrong_rc": {"violated_requirements": ["R-response"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
+    "thin_track": {"violated_requirements": ["R-native", "R-width"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
+    "thin_arc": {"violated_requirements": ["R-native", "R-width"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
+    "rule_defect": {"violated_requirements": ["R-native"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
+    "unsupported_value": {"violated_requirements": [], "unknown_checks": ["rc-step"], "outcome": "incomplete"},
+    "malformed_schematic": {"violated_requirements": [], "unknown_checks": ["erc", "drc", "netlist", "rc-step"], "outcome": "incomplete"}
+  }
+}
