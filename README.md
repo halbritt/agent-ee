@@ -122,6 +122,11 @@ The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
 
+[Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
+with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
+captured library pin references. These checks do not yet establish that an
+assignment declaration covers the actual schematic inventory.
+
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
 ideal regulator feedback, complete typed power-pin inventory, USB protection
