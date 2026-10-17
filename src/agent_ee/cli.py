@@ -112,6 +112,8 @@ def verify(run, *, current_source=True):
         raise ValueError("review implementation changed; rerun under the current rules")
     if result.get("runtime_files") != runtime_files():
         raise ValueError("tool runtime changed; rerun under the current tools")
+    from .kicad_happy import verify_installations
+    verify_installations(result["checks"])
     if artifacts(run) != result.get("artifact_hashes"):
         raise ValueError("execution/review evidence changed; prior acceptance is stale")
     if digest(run / "candidate.json") != result.get("manifest_sha256"):
@@ -388,6 +390,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             result["limitations"].append("Wall-clock work budget exhausted; uncompleted work remains unknown.")
         verify_snapshot(run)
         verify_source(run)
+        from .kicad_happy import verify_installations
+        verify_installations(result["checks"])
         if result["policy_files"] != policy_files() or result["runtime_files"] != runtime_files():
             raise ValueError("implementation or tool runtime changed during review; rerun required")
         result["state"] = "complete" if not checks_only and result["adjudicated"] else "incomplete"
