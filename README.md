@@ -172,8 +172,10 @@ circuit acceptance. Real upstream catalog qualification remains pending.
 
 [Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
 URLs before offline checks, with byte limits, deadlines and per-part missing
-records. Automatic propagation from selected parts remains pending; capturing a
-PDF does not verify its applicability or its engineering claims.
+records. Explicit part manifests can preserve these obligations through capture
+and offline facts checks, including missing or uncited PDFs. Automatic propagation
+through the generation workflow remains pending; capturing a PDF does not verify
+its applicability or its engineering claims.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit and checks declared ports against the native sheet. It credits
