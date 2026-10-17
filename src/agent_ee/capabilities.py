@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness'))
+                   'netclass_completeness', 'assembly_readiness'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -243,6 +243,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             from .netclass_completeness import capability
             descriptor = capability(params, files, inputs)
             captured(params['project'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'assembly_readiness':
+            from .assembly_readiness import capability
+            captured(scope.get('schematic'))
+            descriptor = capability(params, files, inputs)
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
