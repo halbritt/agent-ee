@@ -45,6 +45,9 @@ Catalog reports bind the snapshot manifest pin, DB hash and as-of date.
 Selection retains that verified identity when requirements loading fails;
 unverifiable snapshots return failed/unknown with null date and DB hash.
 Neither catalog check acquires data or establishes current supplier inventory.
+The [pinned native feed](catalog.md#pinned-jlcparts-acquisition) is acquired on the
+host before capture; its explicit stocked-parts profile excludes zero-stock and
+unsupported-category rows. A missing row cannot establish upstream unavailability.
 
 ## Hierarchy validation
 

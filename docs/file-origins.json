@@ -1988,6 +1988,16 @@
         "AE"
       ],
       "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "catalog-sources/jlcparts-2026-09-14.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original source URL, commit, byte counts and SHA-256 facts recorded for AGENTEE-27. Contains no upstream catalog rows, library or design files."
     }
   ]
 }
