@@ -159,6 +159,9 @@ mapping table. Unmapped names are unknown; land-pattern geometry is not compared
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
+The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
+`fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
+board, the sealed netlist and the sealed geometry. Coordinates, Gerber geometry and DFM stay outside its coverage.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact

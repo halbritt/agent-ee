@@ -1,7 +1,7 @@
 """Extract saved-board geometry facts through pcbnew (runs inside the sandbox).
 
 Judgment-free: emits what the saved .kicad_pcb actually contains (footprints
-with DNP state, pads with size/drill/position/net, track segments, vias,
+with DNP/BOM/position/board-only attributes, pads with size/drill/position/net, track segments, vias,
 zones, nets, unconnected count). agent_ee.checks applies declared criteria.
 UUIDs use KIID.AsString() (str(KIID) is only a SWIG proxy repr).
 """
@@ -50,6 +50,9 @@ def extract(board_path):
             "ref": fp.GetReference(), "value": fp.GetValue(),
             "layer": board.GetLayerName(fp.GetLayer()),
             "dnp": bool(fp.IsDNP()),
+            "exclude_from_bom": bool(fp.IsExcludedFromBOM()),
+            "exclude_from_pos_files": bool(fp.IsExcludedFromPosFiles()),
+            "board_only": bool(fp.IsBoardOnly()),
             "uuid": fp.m_Uuid.AsString(),
             "position_mm": vec_mm(fp.GetPosition()),
             "pads": [],
