@@ -18,6 +18,7 @@ Owned assumptions that the saved board does not record (it has no stackup
 section and KiCad saves no copper weight): the 0.035 mm / 1 oz copper and 1.53 mm
 core split of the 1.6 mm total, J1's `from_top` mating direction for a vertical
 pin header, and the 0 mm tolerance. They are illustrative fixture values, not
-fabricator facts. `fab_profile` is `null` because no captured AGENTEE-75
-profile exists on main, so validation reports the profile predicates as
-unresolved rather than supplying defaults.
+fabricator facts. `fab_profile` is `null` because no real fabricator's
+AGENTEE-75 profile has been captured, so validation reports
+`fab_profile_selected` as unresolved rather than supplying defaults. Tests
+reference owned synthetic profiles written at run time, not fixture facts.

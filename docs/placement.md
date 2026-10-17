@@ -89,8 +89,10 @@ the check criteria. The AGENTEE-75 profile has only a copper-to-edge key
 (`min_edge_clearance_mm`); it is not reinterpreted as a courtyard limit.
 
 `connector-edge/1` reads a captured AGENTEE-85 `agent-ee.envelope/1` file through
-`board_envelope.validate`; until that module is integrated the check and its
-capability are unsupported. `placement_predicates.connector_access` is the
+`board_envelope.validate`. Capture requires that envelope to be declared in the
+scope with every derived obligation covered. One `connector-edge/1` check
+covers the fixed-footprint obligation of an envelope with one fixed footprint
+([baseline integration](board-envelope.md#baseline-integration)). `placement_predicates.connector_access` is the
 shared declared-edge predicate for AGENTEE-64. A declaration names reference,
 side, edge segment and outward axis, anchor, tolerance, optional rotation,
 insertion (`through_edge`, `from_top`, `from_bottom`) and an optional

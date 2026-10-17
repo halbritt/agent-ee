@@ -27,6 +27,7 @@ specific to the original workstation; adapt them before using it elsewhere.
 | `baseline` | Required for scope/2 | Requirement/check mappings and captured target/reference sources; see [closed-loop contract](closed-loop.md) |
 | `mutable_inputs` | Optional list | Campaign-editable captured design paths; default board and schematic |
 | `empirical` | Optional captured path | Coordinator-generated calibration bundle for bench feedback |
+| `envelope` | Scope/3 only: `{path, profile, dialog}` | Captured [board envelope](board-envelope.md#baseline-integration); its obligations are re-derived and enforced at capture |
 | `requirements` | List, default `[]` | Captured input-relative text files placed first in the packet |
 | `limitations` | List of strings, default `[]` | Explicit omitted conditions or analyses retained in the report |
 | `packet_inputs` | List; default root schematic and board | Captured input-relative source text selected for reviewers |

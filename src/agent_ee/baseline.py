@@ -11,6 +11,8 @@ def compile_baseline(scope, files, inputs=None):
     from .stages import declaration
     stages = declaration(scope, files)
     if scope.get("schema") == "agent-ee.scope/1":
+        if "envelope" in scope:
+            raise ValueError("a scope envelope requires agent-ee.scope/3 executable coverage")
         return None
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
         raise ValueError("unknown scope schema")
@@ -56,6 +58,11 @@ def compile_baseline(scope, files, inputs=None):
         if not isinstance(values, list) or not values:
             raise ValueError(f"baseline {category} must name captured sources")
         paths.update(str(safe_relative(p)) for p in values)
+    from .board_envelope import baseline_envelope
+    # Before coverage, so an omitted or unbound envelope obligation is named.
+    envelope = baseline_envelope(scope, files, inputs)
+    if envelope is not None:
+        paths.update(envelope["inputs"])
     coverage = None
     if audited:
         from .capabilities import compile_coverage
@@ -125,6 +132,8 @@ def compile_baseline(scope, files, inputs=None):
              "files": {p: files[p] for p in sorted(paths)}, "criteria": scope["checks"]}
     if stages is not None:
         value['stages'] = stages
+    if envelope is not None:
+        value["envelope"] = envelope["record"]
     if audited:
         value.update(schema="agent-ee.baseline/2", coverage=coverage)
     return {**value, "baseline_id": identity(value)}

@@ -381,10 +381,11 @@ class NativePlacementGates(unittest.TestCase):
             self.assertStatus(results['connector'], 'unsupported', 'unknown')
             self.assertIn('AGENTEE-85', results['connector']['summary'])
         else:
-            _, results = self.run_scope(source, [DRC_STAGE, spec, DRC_FULL])
-            self.assertStatus(results['connector'], 'ok', 'defect')
-            violation, = results['connector']['details']['defects'][0]['violations']
-            self.assertEqual((violation['edge'], violation['distance_mm']), ('left', 3.0))
+            # AGENTEE-85 integrated: a captured envelope must be declared with every obligation
+            # bound, so this generic-requirement scope is refused. The declared native connector
+            # run is test_board_envelope.EnvelopeNativeBaselineTests.
+            with self.assertRaisesRegex(ValueError, 'without a scope envelope declaration'):
+                self.run_scope(source, [DRC_STAGE, spec, DRC_FULL])
 
 
 class NativeTransformQualification(unittest.TestCase):
