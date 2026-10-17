@@ -1,0 +1,550 @@
+"""Placement-stage helper dispatch and placement-only write scope (AGENTEE-91).
+
+The coordinator, not the writer, runs the pinned AGENTEE-54 placer once per
+placement iteration as an AGENTEE-95 stage step, on a read-only snapshot of the
+delivered design and into a fresh scratch destination. A strict comparison of the
+complete saved boards admits only footprint translations and quarter turns.
+Receipts, the helper's own judgment and its local DRC are provenance only; the
+campaign's fresh captured checks grade every proposal.
+"""
+import argparse
+import copy
+import hashlib
+import json
+import subprocess
+import uuid
+from decimal import Decimal, InvalidOperation
+from pathlib import Path, PurePosixPath
+
+from .storage import digest, identity, read_json, write_json
+from .symbol_library import LibraryError, children, parse_sexpr
+
+ADAPTER_SCHEMA = 'agent-ee.placement-adapter/1'
+SCOPE_SCHEMA = 'agent-ee.placement-write-scope/1'
+RECORD_SCHEMA = 'agent-ee.placement-adapter-record/1'
+CONTEXT_SCHEMA = 'agent-ee.placement-writer-context/1'
+DRIVER_SCHEMA = 'agent-ee.placement-driver/1'
+HELPERS = ('agent-ee.placer/1',)
+STEP = 'agent-ee-placer'
+TOOL_AT, REQUEST_AT, ROOT = '/placement-tool', '/placement-request', '/work/placement'
+OUTPUT = 'placement/placed/candidate.kicad_pcb'
+RESULT = 'run/placement/placement-result.json'
+# Children whose saved `at` angle KiCad 10 stores as footprint plus local angle.
+ROTATED_CHILDREN = ('pad', 'property', 'fp_text')
+QUARTER_TURNS = (0, 90, 180, 270)
+LAUNCHER = '''"""Constant launcher: run the hashed read-only agent_ee snapshot, not /app."""
+import sys
+sys.path.insert(0, '/placement-tool')
+from agent_ee.placement_adapter import sandbox_main
+raise SystemExit(sandbox_main(sys.argv[1:]))
+'''
+
+
+def _relative(value, label):
+    path = PurePosixPath(value) if isinstance(value, str) and value else None
+    if path is None or path.is_absolute() or '..' in path.parts or str(path) != value:
+        raise ValueError(f'{label} must be a normalized relative candidate path')
+    return value
+
+
+def validate_declaration(value):
+    """Return the normalized campaign declaration; no placement default is implied."""
+    keys = {'schema', 'helper', 'policy', 'fixed_footprints', 'timeout_s'}
+    if not isinstance(value, dict) or value.get('schema') != ADAPTER_SCHEMA or set(value) != keys:
+        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)}')
+    helper, policy = value['helper'], value['policy']
+    if helper is not None and helper not in HELPERS:
+        raise ValueError(f'placement helper must be null or one of {HELPERS}')
+    if (helper is None) != (policy is None):
+        raise ValueError('a placement helper requires a captured packing policy, and only then')
+    if policy is not None:
+        _relative(policy, 'placement policy')
+    fixed = value['fixed_footprints']
+    if not isinstance(fixed, list) or len(set(map(str, fixed))) != len(fixed):
+        raise ValueError('fixed_footprints must be a unique list of native footprint UUIDs')
+    for item in fixed:
+        try:
+            if not isinstance(item, str) or str(uuid.UUID(item)) != item:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f'fixed footprint is not a canonical native UUID: {item!r}') from None
+    timeout = value['timeout_s']
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
+        raise ValueError('placement timeout_s must be an integer from 1 to 86400')
+    return {'schema': ADAPTER_SCHEMA, 'helper': helper, 'policy': policy,
+            'fixed_footprints': sorted(fixed), 'timeout_s': timeout}
+
+
+def is_placement_iteration(state, manifest):
+    """Placement-only dispatch: a staged scope whose earliest failing stage is placement."""
+    return (manifest['scope'].get('stages') is not None and bool(state['history']) and
+            state['history'][-1].get('earliest_failing_stage') == 'placement')
+
+
+def bind_declaration(declaration, manifest, mutable_inputs):
+    """Resolve the declaration against one captured candidate's immutable inputs."""
+    declaration = validate_declaration(declaration)
+    scope, files = manifest['scope'], manifest['files']
+    board, schematic = scope.get('board'), scope.get('schematic')
+    if board not in files or board not in mutable_inputs:
+        raise ValueError('placement scope requires the captured board to be a mutable design input')
+    if declaration['helper'] is not None:
+        if schematic not in files:
+            raise ValueError('placement helper requires the captured schematic for native netlist export')
+        if declaration['policy'] not in files or declaration['policy'] in mutable_inputs:
+            raise ValueError('placement policy must be a captured immutable input')
+    return {**declaration, 'board': board, 'schematic': schematic}
+
+
+# Strict structural comparison of complete saved boards.
+
+def _board(data):
+    try:
+        root = parse_sexpr(data)
+    except LibraryError as exc:
+        raise ValueError(f'board unparseable: {exc}') from exc
+    if root[0] != 'kicad_pcb':
+        raise ValueError('board root is not kicad_pcb')
+    return root
+
+
+def _uuid(node):
+    found = children(node, 'uuid')
+    if len(found) != 1 or len(found[0]) != 2 or not isinstance(found[0][1], str):
+        return None
+    return found[0][1]
+
+
+def footprints(root):
+    """Footprints by native UUID; refuses missing or duplicate identities."""
+    found = {}
+    for node in children(root, 'footprint'):
+        key = _uuid(node)
+        if key is None or key in found:
+            raise ValueError('footprint without one unique native UUID')
+        found[key] = node
+    return found
+
+
+def _reference(node):
+    props = [p for p in children(node, 'property') if len(p) >= 3 and p[1] == 'Reference']
+    return props[0][2] if len(props) == 1 and isinstance(props[0][2], str) else None
+
+
+def _locked(node):
+    return 'locked' in node[1:] or ['locked', 'yes'] in node[1:]
+
+
+def _at(node):
+    """(x, y, angle, tail) of a direct `at` child; the KiCad angle defaults to zero."""
+    found = children(node, 'at')
+    if len(found) != 1 or len(found[0]) < 3 or not all(isinstance(t, str) for t in found[0][1:]):
+        return None
+    tokens = found[0][1:]
+    try:
+        values = [Decimal(t) for t in tokens[:2]]
+        angle, tail = Decimal(0), tokens[2:]
+        if tail:
+            try:
+                angle, tail = Decimal(tail[0]), tail[1:]
+            except InvalidOperation:
+                pass
+    except InvalidOperation:
+        return None
+    if not all(v.is_finite() for v in (*values, angle)):
+        return None
+    return values[0], values[1], angle, tuple(tail)
+
+
+def _turn(angle):
+    return (angle % 360 + 360) % 360
+
+
+def _canonical(value):
+    return json.dumps(value, separators=(',', ':'))
+
+
+def _label(node):
+    key = _uuid(node) if isinstance(node, list) else None
+    tag = node[0] if isinstance(node, list) and node else repr(node)
+    return f'{tag} {key}' if key else str(tag)
+
+
+def _sequence_violations(before, after, where):
+    if before == after:
+        return []
+    removed, added = list(map(_canonical, before)), list(map(_canonical, after))
+    for item in list(removed):
+        if item in added:
+            removed.remove(item)
+            added.remove(item)
+    if not removed and not added:
+        return [f'{where}: item order changed']
+    labels = {_canonical(n): _label(n) for n in (*before, *after)}
+    return ([f'{where}: removed or changed {labels[i]}' for i in removed] +
+            [f'{where}: added or changed {labels[i]}' for i in added])
+
+
+def _rotated_child(before, after, rotation):
+    """Whether after equals before with only its `at` angle advanced by rotation."""
+    b_at, a_at = _at(before), _at(after)
+    if b_at is None or a_at is None:
+        return before == after
+    rest = [[c for c in node if not (isinstance(c, list) and c and c[0] == 'at')] for node in (before, after)]
+    return (rest[0] == rest[1] and b_at[:2] == a_at[:2] and b_at[3] == a_at[3] and
+            _turn(a_at[2]) == _turn(b_at[2] + rotation))
+
+
+def _footprint(key, before, after, protected, violations):
+    label = f'footprint {key} ({_reference(before) or "no reference"})'
+    count = len(violations)
+    if [t for t in before[1:] if isinstance(t, str)] != [t for t in after[1:] if isinstance(t, str)]:
+        violations.append(f'{label}: library identity or header changed')
+    if children(before, 'layer') != children(after, 'layer'):
+        violations.append(f'{label}: side or layer changed; side flips are not supported')
+    b_at, a_at = _at(before), _at(after)
+    if b_at is None or a_at is None:
+        violations.append(f'{label}: missing or malformed footprint position')
+        return None
+    rotation = _turn(a_at[2] - b_at[2])
+    moved = b_at[:2] != a_at[:2] or rotation != 0
+    if b_at[3] != a_at[3]:
+        violations.append(f'{label}: position tokens changed')
+    if key in protected and children(before, 'at') != children(after, 'at'):
+        violations.append(f'{label}: protected footprint transform changed')
+    if rotation not in QUARTER_TURNS:
+        violations.append(f'{label}: rotation delta {rotation} is not a quarter turn')
+    unkeyed = [[c for c in node[1:] if isinstance(c, list) and c and c[0] != 'at' and _uuid(c) is None]
+               for node in (before, after)]
+    violations += _sequence_violations(*unkeyed, label)
+    keyed = []
+    for node in (before, after):
+        items = {}
+        for child in node[1:]:
+            if isinstance(child, list) and child and _uuid(child) is not None:
+                if (child[0], _uuid(child)) in items:
+                    violations.append(f'{label}: duplicate child identity {_label(child)}')
+                items[child[0], _uuid(child)] = child
+        keyed.append(items)
+    for item in sorted(keyed[0].keys() ^ keyed[1].keys()):
+        violations.append(f'{label}: {"removed" if item in keyed[0] else "added"} {item[0]} {item[1]}')
+    for item in sorted(keyed[0].keys() & keyed[1].keys()):
+        old, new = keyed[0][item], keyed[1][item]
+        if old == new and (item[0] not in ROTATED_CHILDREN or rotation == 0 or _at(old) is None):
+            continue
+        if item[0] in ROTATED_CHILDREN and rotation in QUARTER_TURNS and _rotated_child(old, new, rotation):
+            continue
+        violations.append(f'{label}: {item[0]} {item[1]} changed beyond the footprint transform')
+    if len(violations) != count or not moved:
+        return None
+    return {'uuid': key, 'reference': _reference(before), 'rotation_deg': int(rotation),
+            'from': [str(v) for v in b_at[:3]], 'to': [str(v) for v in a_at[:3]]}
+
+
+def write_scope(before, after, protected=()):
+    """Compare complete saved boards; only movable footprint transforms are allowed."""
+    protected = sorted(set(protected))
+    report = {'schema': SCOPE_SCHEMA, 'before_sha256': hashlib.sha256(before).hexdigest(),
+              'after_sha256': hashlib.sha256(after).hexdigest(), 'protected': protected,
+              'transforms': [], 'violations': []}
+    violations = report['violations']
+    try:
+        roots = _board(before), _board(after)
+        prints = footprints(roots[0]), footprints(roots[1])
+    except ValueError as exc:
+        violations.append(str(exc))
+    else:
+        others = [[n for n in root[1:] if not (isinstance(n, list) and n and n[0] == 'footprint')]
+                  for root in roots]
+        violations += _sequence_violations(*others, 'board')
+        violations += [f'protected footprint {key} absent from source board'
+                       for key in protected if key not in prints[0]]
+        violations += [f'footprint {key} removed' for key in sorted(prints[0].keys() - prints[1].keys())]
+        violations += [f'footprint {key} added' for key in sorted(prints[1].keys() - prints[0].keys())]
+        for key in sorted(prints[0].keys() & prints[1].keys()):
+            moved = _footprint(key, prints[0][key], prints[1][key], protected, violations)
+            if moved:
+                report['transforms'].append(moved)
+    report['status'] = 'refused' if violations else 'allowed'
+    return report
+
+
+def protected_footprints(board, fixed_footprints, fixed_refs=()):
+    """Envelope-fixed UUIDs, policy-fixed references and locked parts on the source board."""
+    prints = footprints(_board(board))
+    by_ref = {}
+    for key, node in prints.items():
+        by_ref.setdefault(_reference(node), []).append(key)
+    missing = sorted(set(fixed_footprints) - prints.keys())
+    if missing:
+        raise ValueError(f'envelope-fixed footprints absent from source board: {missing}')
+    uuids = set(fixed_footprints) | {k for k, node in prints.items() if _locked(node)}
+    for ref in fixed_refs:
+        if len(by_ref.get(ref, [])) != 1:
+            raise ValueError(f'fixed reference {ref!r} does not name exactly one source footprint')
+        uuids.update(by_ref[ref])
+    refs = [_reference(prints[k]) for k in uuids]
+    if None in refs or len(set(refs)) != len(refs):
+        raise ValueError('protected footprints need unique native references')
+    return sorted(uuids), sorted(refs)
+
+
+def _files(root):
+    files = {}
+    for path in sorted(Path(root).rglob('*')):
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            raise ValueError(f'design contains a link or special file: {path.relative_to(root)}')
+        if path.is_file():
+            files[path.relative_to(root).as_posix()] = digest(path)
+    return files
+
+
+def proposal_scope(source_inputs, design, board, protected):
+    """Placement-iteration write scope of a delivered design against its source candidate."""
+    source_inputs, design = Path(source_inputs), Path(design)
+    before, after = _files(source_inputs), _files(design)
+    violations = [f'non-board file {"removed" if rel in before else "added"}: {rel}'
+                  for rel in sorted(before.keys() ^ after.keys())]
+    violations += [f'non-board file changed: {rel}' for rel in sorted(before.keys() & after.keys())
+                   if rel != board and before[rel] != after[rel]]
+    if board not in before or board not in after:
+        violations.append(f'board missing: {board}')
+        report = {'schema': SCOPE_SCHEMA, 'status': 'refused', 'protected': sorted(protected),
+                  'transforms': [], 'violations': []}
+    else:
+        report = write_scope((source_inputs / board).read_bytes(), (design / board).read_bytes(), protected)
+    report['violations'] = violations + report['violations']
+    report.update(board=board, status='refused' if report['violations'] else 'allowed')
+    return report
+
+
+# Coordinator-run helper step (AGENTEE-95 stage receipt).
+
+def helper_request(board, policy, protected_refs):
+    """Coordinator-derived placer request bound to the exact delivered board bytes."""
+    policy = copy.deepcopy(policy)
+    if not isinstance(policy, dict) or not isinstance(policy.get('fixed_refs'), list):
+        raise ValueError('placement policy must be an agent-ee.packing-policy/1 object')
+    policy['fixed_refs'] += [r for r in protected_refs if r not in policy['fixed_refs']]
+    return {'policy': policy, 'authorization': {
+        'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
+        'source_sha256': hashlib.sha256(board).hexdigest(), 'writable_root': ROOT}}
+
+
+def tool_snapshot(destination):
+    """Copy the agent_ee sources into a coordinator-owned tree the step mounts read-only."""
+    destination = Path(destination)
+    package = destination / 'agent_ee'
+    package.mkdir(parents=True)
+    for source in sorted(Path(__file__).resolve().parent.glob('*.py')):
+        package.joinpath(source.name).write_bytes(source.read_bytes())
+    (destination / 'launch.py').write_text(LAUNCHER)
+    return destination
+
+
+def step_declaration(step_dir, bound):
+    """The one placement stage-step declaration for a coordinator step directory."""
+    step_dir = Path(step_dir)
+    return {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': STEP,
+            'argv': ['/usr/bin/python3', '-B', '-I', f'{TOOL_AT}/launch.py',
+                     f"/candidate/{bound['board']}", f"/candidate/{bound['schematic']}",
+                     '--request', f'{REQUEST_AT}/request.json', '--root', ROOT],
+            'mounts': [{'source': str(step_dir / 'tool'), 'at': TOOL_AT},
+                       {'source': str(step_dir / 'request'), 'at': REQUEST_AT}],
+            'version_argv': ['/usr/bin/kicad-cli', 'version'], 'source': TOOL_AT,
+            'writes': {bound['board']: OUTPUT}, 'artifacts': ['placement'],
+            'adoptable_exits': [0], 'timeout_s': bound['timeout_s']}
+
+
+def prepare_step(step_dir, board, policy, bound, protected_refs):
+    """Write the tool snapshot and request for the delivered board bytes; return the step."""
+    request = helper_request(board, policy, protected_refs)
+    tool_snapshot(Path(step_dir) / 'tool')
+    write_json(Path(step_dir) / 'request' / 'request.json', request)
+    return step_declaration(step_dir, bound), request
+
+
+def qualify_receipt(receipt_dir, receipt, board, protected):
+    """Refuse a helper outcome unless its exact retained proposal is complete and in scope."""
+    if receipt['status'] != 'completed':
+        raise ValueError(f"placement helper {receipt['status']} (exit {receipt['exit_code']}); "
+                         'iteration incomplete, no default placement substituted')
+    receipt_dir = Path(receipt_dir)
+    result_path = receipt_dir / RESULT
+    try:
+        result = read_json(result_path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f'placement helper result missing or malformed: {exc}') from exc
+    if (not isinstance(result, dict) or result.get('status') != 'placed' or
+            result.get('authority') != 'disposable-unsealed-proposal' or
+            result.get('source_sha256') != receipt['inputs'].get(board) or
+            result.get('board_sha256') != receipt['outputs'].get(board) or not set(receipt['changed']) <= {board}):
+        raise ValueError('placement helper result does not bind the receipt input and output board')
+    scope = write_scope((receipt_dir / 'inputs' / board).read_bytes(),
+                        (receipt_dir / 'run' / OUTPUT).read_bytes(), protected)
+    if scope['status'] != 'allowed':
+        raise ValueError(f"placement helper proposal outside placement scope: {scope['violations']}")
+    return {'result_sha256': digest(result_path), 'scope': scope}
+
+
+def run_placement_iteration(work, design, source_inputs, manifest, state, declaration, deadline, *,
+                            receipts=None, cancellation=None):
+    """Run the declared helper once, adopt only a qualified proposal, then prove the write scope.
+
+    Called by the campaign under its existing writer lease, after the writer session and
+    the existing inventory checks. Any refusal, failure, timeout or cancellation raises and
+    leaves the iteration incomplete; the retained record and receipt index stay anchored.
+    """
+    work, design = Path(work), Path(design)
+    if not is_placement_iteration(state, manifest):
+        raise ValueError('placement adapter runs only when the earliest failing stage is placement')
+    bound = bind_declaration(declaration, manifest, state['mutable_inputs'])
+    board = bound['board']
+    source_board = (Path(source_inputs) / board).read_bytes()
+    policy = read_json(Path(source_inputs) / bound['policy']) if bound['policy'] else {'fixed_refs': []}
+    protected, refs = protected_footprints(source_board, bound['fixed_footprints'], policy['fixed_refs'])
+    record = {'schema': RECORD_SCHEMA, 'implementation': int(work.name),
+              'source_candidate_id': manifest['candidate_id'], 'stage': 'placement',
+              'declaration_sha256': identity(validate_declaration(declaration)), 'board': board,
+              'protected': protected, 'helper': None, 'proposal_scope': None,
+              'status': 'incomplete', 'error': None, 'authority': 'provenance-only'}
+    ran = False
+    try:
+        if bound['helper'] is not None:
+            if receipts is None:
+                from . import stage_receipts as receipts
+            if 'stage_receipts' not in state:
+                raise ValueError('campaign predates stage receipts; start a fresh campaign to run placement helpers')
+            index = len(list((work / 'receipts').glob('*'))) + 1 if (work / 'receipts').exists() else 1
+            step_dir = work / 'placement' / str(index)
+            spec, request = prepare_step(step_dir, (design / board).read_bytes(), policy, bound, refs)
+            receipt_dir = work / 'receipts' / f'{index}-{STEP}'
+            record['helper'] = {'receipt': receipt_dir.relative_to(work).as_posix(),
+                                'request_sha256': identity(request), 'status': None}
+            ran = True
+            receipt = receipts.run_step(receipt_dir, design, spec, {
+                'implementation': record['implementation'], 'source_candidate_id': manifest['candidate_id'],
+                'receipt_index': index}, deadline=deadline, cancellation=cancellation)
+            record['helper'].update(receipt_id=receipt['receipt_id'], status=receipt['status'],
+                                    receipt_sha256=digest(receipt_dir / 'receipt.json'))
+            record['helper'].update(qualify_receipt(receipt_dir, receipt, board, protected))
+            receipts.adopt(receipt_dir, receipt, design)
+        scope = proposal_scope(source_inputs, design, board, protected)
+        record['proposal_scope'] = scope
+        if scope['status'] != 'allowed':
+            record['status'] = 'refused'
+            raise ValueError(f"placement iteration changed more than footprint transforms: {scope['violations']}")
+        record['status'] = 'proposed'
+    except KeyboardInterrupt:
+        record.update(status='cancelled', error='KeyboardInterrupt')
+        raise
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        record['error'] = f'{type(exc).__name__}: {exc}'
+        raise
+    finally:
+        write_json(work / 'placement-adapter.json', record)
+        if ran:
+            state['stage_receipts'][work.name] = receipts.bind_implementation(
+                work, design, record['implementation'], manifest['candidate_id'])
+    return record
+
+
+def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, mutable_inputs, *, receipts=None):
+    """Recompute a proposed placement record from retained receipts and the captured proposal."""
+    work = Path(work)
+    stored = read_json(work / 'placement-adapter.json')
+    bound = bind_declaration(declaration, manifest, mutable_inputs)
+    if stored.get('status') != 'proposed' or stored.get('schema') != RECORD_SCHEMA:
+        raise ValueError('placement record is not a proposed placement iteration')
+    source_board = (Path(source_inputs) / bound['board']).read_bytes()
+    policy = read_json(Path(source_inputs) / bound['policy']) if bound['policy'] else {'fixed_refs': []}
+    protected, refs = protected_footprints(source_board, bound['fixed_footprints'], policy['fixed_refs'])
+    expected = {**stored, 'implementation': int(work.name), 'stage': 'placement',
+                'source_candidate_id': manifest['candidate_id'], 'protected': protected,
+                'declaration_sha256': identity(validate_declaration(declaration)), 'board': bound['board'],
+                'proposal_scope': proposal_scope(source_inputs, proposal_inputs, bound['board'], protected)}
+    if bound['helper'] is None:
+        expected['helper'] = None
+    else:
+        if receipts is None:
+            from . import stage_receipts as receipts
+        helper = stored.get('helper') or {}
+        receipt_dir = work / str(helper.get('receipt'))
+        index = int(receipt_dir.name.partition('-')[0])
+        receipt = receipts.validate_receipt(receipt_dir, binding={
+            'implementation': int(work.name), 'source_candidate_id': manifest['candidate_id'],
+            'receipt_index': index})
+        step_dir = work / 'placement' / str(index)
+        if receipt['spec'] != receipts.validate_step(step_declaration(step_dir, bound), host=False):
+            raise ValueError('placement receipt step differs from the placement declaration')
+        # The request is re-derived from the receipt's retained input board, never trusted.
+        request = helper_request((receipt_dir / 'inputs' / bound['board']).read_bytes(), policy, refs)
+        if read_json(step_dir / 'request' / 'request.json') != request:
+            raise ValueError('placement helper request differs from the coordinator derivation')
+        expected['helper'] = {'receipt': receipt_dir.relative_to(work).as_posix(),
+                              'request_sha256': identity(request), 'receipt_id': receipt['receipt_id'],
+                              'status': receipt['status'], 'receipt_sha256': digest(receipt_dir / 'receipt.json'),
+                              **qualify_receipt(receipt_dir, receipt, bound['board'], protected)}
+    if expected != stored:
+        raise ValueError('placement record differs from retained receipts or captured proposal')
+    return stored
+
+
+def writer_context(run, manifest):
+    """Sealed placement-stage facts for the writer prompt; context, never evidence of a pass."""
+    run = Path(run)
+    result = read_json(run / 'result.json')
+    stages = {c['id']: c.get('stage') for c in manifest['scope']['checks']}
+    hashes = result.get('artifact_hashes', {})
+    checks = []
+    for check in result['checks']:
+        if stages.get(check['id']) != 'placement':
+            continue
+        entry = {k: check.get(k) for k in ('id', 'kind', 'execution', 'outcome', 'summary', 'details', 'evidence')}
+        probe = f"work/{check['id']}/placement-probe.json"
+        # Only a retained artifact matching the sealed result hash is shown as geometry.
+        if probe in hashes and (run / probe).is_file() and digest(run / probe) == hashes[probe]:
+            entry['probe'] = read_json(run / probe)
+        checks.append(entry)
+    ids = {c['id'] for c in checks}
+    findings = [f for f in result.get('findings', []) if f.get('source') == 'check' and
+                f.get('status') == 'accepted' and f.get('local_id') in ids]
+    return {'schema': CONTEXT_SCHEMA, 'stage': 'placement', 'checks': checks, 'findings': findings,
+            'routing_feedback': {'status': 'unavailable',
+                                 'reason': 'no captured AGENTEE-93 routed-attempt receipt is integrated'},
+            'authority': 'context-only'}
+
+
+# In-sandbox driver: native netlist export, then the unchanged AGENTEE-54 writer.
+
+def sandbox_main(argv=None):
+    parser = argparse.ArgumentParser(description='placement helper step (sandbox side)')
+    parser.add_argument('board')
+    parser.add_argument('schematic')
+    parser.add_argument('--request', required=True)
+    parser.add_argument('--root', required=True)
+    args = parser.parse_args(argv)
+    root = Path(args.root)
+    root.mkdir()
+    netlist = root / 'netlist.xml'
+    command = ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', str(netlist), args.schematic]
+    record = {'schema': DRIVER_SCHEMA, 'netlist_export': {'argv': command, 'exit_code': None},
+              'status': 'running', 'error': None}
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        (root / 'netlist-export.stdout.txt').write_text(completed.stdout)
+        (root / 'netlist-export.stderr.txt').write_text(completed.stderr)
+        record['netlist_export']['exit_code'] = completed.returncode
+        if completed.returncode != 0 or not netlist.is_file():
+            record['status'] = 'netlist_export_failed'
+            return 3
+        from .placer_runner import main
+        code = main([args.board, str(netlist), '--request', args.request,
+                     '--destination', str(root / 'placed'), '--result', str(root / 'placement-result.json')])
+        record['status'] = 'placed' if code == 0 else 'not_placed'
+        return code
+    except BaseException as exc:
+        record.update(status='error', error=f'{type(exc).__name__}: {exc}')
+        raise
+    finally:
+        write_json(root / 'driver.json', record)

@@ -131,7 +131,10 @@ The [placement judge](docs/placement.md) checks supported saved-board outlines
 and courtyards. An [initial placer](docs/placer.md) proposes deterministic
 positions on an isolated copy and validates the saved result with native tools.
 These helpers are not yet registered as campaign placement gates; they do not
-establish routing quality or a fabrication-ready board.
+establish routing quality or a fabrication-ready board. A
+[placement campaign adapter](docs/placement-adapter.md) runs the placer as a
+receipted coordinator step. It refuses placement-iteration edits other than
+footprint translations and quarter turns. Its campaign wiring is pending.
 
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,

@@ -135,6 +135,14 @@ The initial captured scope owns that allowlist; campaign verification re-derives
 it. The implementation cannot broaden it by editing state or adding a file.
 This protects the supported proposal path, not arbitrary host filesystem writes.
 
+In a placement iteration the [placement adapter](placement-adapter.md) narrows
+the board further. It allows only footprint translations and quarter turns, and
+it protects fixed and locked footprints. Every other board change and every
+non-board byte change is refused. The coordinator, not the writer, runs the placer
+helper. The helper runs networkless, from a hashed read-only source copy, and
+writes to a fresh scratch destination. Its receipt and local checks are
+provenance only.
+
 The implementation call receives baseline and campaign history in its prompt.
 That is additional inference exposure compared with an initial reviewer. The
 same subscription credential/network limitations apply to it. Initial reviewers
