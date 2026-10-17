@@ -22,6 +22,7 @@ product's hardware qualification.
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
+| Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
@@ -90,6 +91,6 @@ context; they are not substitutes for the current references above.
 conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
-- [Placement geometry](placement.md) and [initial placement](placer.md) — saved-board polygon checks and an isolated proposal writer; campaign gate integration remains pending.
+- [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; campaign writer integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.

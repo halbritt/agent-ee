@@ -76,6 +76,25 @@ def prove_contours(primitives, missing, unproven):
     return {**record, 'status': 'proven', 'polygons': polygons}
 
 
+def rule_area(zone, owner):
+    """Every rule area is inventoried; only one straight hole-free contour qualifies."""
+    import pcbnew
+    poly = zone.Outline()
+    record = {'uuid': zone.m_Uuid.AsString(), 'name': zone.GetZoneName(), 'owner': owner,
+              'layers': sorted(pcbnew.LayerName(layer) for layer in zone.GetLayerSet().Seq()),
+              'forbid': {'footprints': bool(zone.GetDoNotAllowFootprints()),
+                         'tracks': bool(zone.GetDoNotAllowTracks()), 'vias': bool(zone.GetDoNotAllowVias()),
+                         'pads': bool(zone.GetDoNotAllowPads()),
+                         'zone_fills': bool(zone.GetDoNotAllowZoneFills())},
+              'placement_area': bool(zone.GetPlacementAreaEnabled())}
+    if poly.OutlineCount() != 1 or poly.HoleCount(0) or poly.COutline(0).ArcCount():
+        return {**record, 'outline': {'status': 'unsupported', 'outlines': poly.OutlineCount(),
+                                      'reason': 'multiple contours, holes or arcs'}}
+    chain = poly.COutline(0)
+    points = [vector_nm(chain.CPoint(i)) for i in range(chain.PointCount())]
+    return {**record, 'outline': {'status': 'proven', 'polygons': [points]}}
+
+
 def extract(board_path):
     import pcbnew
     path = Path(board_path)
@@ -83,7 +102,9 @@ def extract(board_path):
     board = pcbnew.LoadBoard(str(path))
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
     footprints = []
+    areas = [rule_area(z, 'board') for z in board.Zones() if z.GetIsRuleArea()]
     for fp in board.GetFootprints():
+        areas.extend(rule_area(z, fp.m_Uuid.AsString()) for z in fp.Zones() if z.GetIsRuleArea())
         graphics = list(fp.GraphicalItems()) + list(fp.GetFields())
         outline_shapes.extend(s for s in graphics if s.GetLayer() == pcbnew.Edge_Cuts)
         courtyards = {}
@@ -109,6 +130,7 @@ def extract(board_path):
         outline.update(status='outline_unproven', reason='multiple board contours unsupported')
     return {'schema': 'agent-ee.placement-probe/1', 'board_sha256': hashlib.sha256(before).hexdigest(),
             'pcbnew_version': pcbnew.Version(), 'outline': outline,
+            'rule_areas': sorted(areas, key=lambda a: (a['owner'], a['uuid'])),
             'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid']))}
 
 

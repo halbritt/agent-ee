@@ -71,6 +71,9 @@ def compile_baseline(scope, files, inputs=None):
             paths.update(descriptor["immutable_inputs"])
     for spec in checks.values():
         params = spec.get("params", {})
+        if spec.get("kind") in ("catalog", "part_selection"):
+            from .catalog_checks import capability
+            paths.update(capability(spec["kind"], params, scope, files, inputs, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "symbol_pins":
             from .symbol_checks import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
@@ -107,6 +110,9 @@ def compile_baseline(scope, files, inputs=None):
             from .dc_path import load_inputs
             _, dependencies = load_inputs(params, files, inputs)
             paths.update(dependencies)
+        if spec.get("kind") == "placement":
+            from .placement_check import parameters
+            paths.update(str(safe_relative(p)) for p in parameters(params))
         if spec.get("kind") == "passive_corners":
             paths.add(str(safe_relative(params["qualification"])))
         if spec.get("kind") == "measurements":

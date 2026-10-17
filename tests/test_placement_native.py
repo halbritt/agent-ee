@@ -140,36 +140,24 @@ class NativePlacementTest(unittest.TestCase):
         self.assertEqual(report['associations'][0]['distance_mm'], 12)
         self.assertEqual(report['associations'][0]['ic'], 'U1')
 
-    def test_coordinator_adapter_retains_facts_and_failure_boundaries(self):
+    def test_coordinator_adapter_refuses_undeclared_criteria_before_any_tool(self):
+        """Criterion checks with a native DRC prerequisite live in test_placement_gates_native."""
         import time
         from agent_ee.checks import Ctx, CheckError
         from agent_ee.placement_check import check_placement
-        for variant, outcome in [('control', 'pass'), ('overlap', 'defect'), ('missing_courtyard', 'unknown')]:
-            path = self.board(variant)
-            run = self.root / ('run-' + variant)
-            (run / 'inputs').mkdir(parents=True)
-            (run / 'inputs/board.kicad_pcb').write_bytes(path.read_bytes())
-            manifest = {'candidate_id': 'owned-' + variant, 'scope': {'board': 'board.kicad_pcb'},
-                        'files': {'board.kicad_pcb': hashlib.sha256(path.read_bytes()).hexdigest()}}
-            ctx = Ctx(run, manifest, {'id': 'placement', 'kind': 'placement'}, time.monotonic() + 60)
-            if outcome == 'unknown':
+        path = self.board('control')
+        run = self.root / 'run'
+        (run / 'inputs').mkdir(parents=True)
+        (run / 'inputs/board.kicad_pcb').write_bytes(path.read_bytes())
+        manifest = {'candidate_id': 'owned-control', 'scope': {'board': 'board.kicad_pcb'},
+                    'files': {'board.kicad_pcb': hashlib.sha256(path.read_bytes()).hexdigest()}}
+        for params in ({}, {'score_threshold': 70}, {'criterion': 'courtyard-overlap/1'},
+                       {'criterion': 'courtyard-overlap/1', 'drc_check': 'drc'}):
+            with self.subTest(params=params):
+                ctx = Ctx(run, manifest, {'id': 'placement', 'kind': 'placement', 'params': params},
+                          time.monotonic() + 60)
                 with self.assertRaises(CheckError) as caught:
                     check_placement(ctx)
-                self.assertEqual(caught.exception.execution, 'unsupported')
-            else:
-                check_placement(ctx)
-            self.assertEqual(ctx.result['outcome'], outcome)
-            self.assertIn('work/placement/placement-probe.json', ctx.result['evidence'])
-            self.assertIn('work/placement/placement-judgment.json', ctx.result['evidence'])
-            self.assertEqual(ctx.result['details']['candidate_id'], manifest['candidate_id'])
-            if variant == 'control':
-                unsupported = Ctx(run, manifest, {'id': 'score-only', 'kind': 'placement',
-                    'params': {'score_threshold': 70}}, time.monotonic() + 60)
-                with self.assertRaises(CheckError) as caught:
-                    check_placement(unsupported)
-                self.assertEqual(caught.exception.execution, 'unsupported')
-                self.assertEqual(unsupported.result['outcome'], 'unknown')
-                manifest['files']['board.kicad_pcb'] = 'b'*64
-                with self.assertRaises(CheckError) as caught:
-                    check_placement(ctx)
-                self.assertEqual(caught.exception.execution, 'malformed')
+                self.assertEqual(caught.exception.execution, 'unsupported' if 'drc_check' not in params else 'not_run')
+                self.assertEqual(ctx.result['outcome'], 'unknown')
+                self.assertNotIn('tool', ctx.result['details'])

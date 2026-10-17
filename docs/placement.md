@@ -1,4 +1,4 @@
-# Placement modules (AGENTEE-53)
+# Placement modules (AGENTEE-53, AGENTEE-92)
 
 The standalone placement modules read actual saved `.kicad_pcb` bytes using
 KiCad's `pcbnew` bindings. They add no dependencies and do not modify the board.
@@ -45,13 +45,83 @@ the upstream Konnect fixture or evidence of its exact numerical acceptance.
 No upstream code or design files were copied. That ticket criterion remains
 unmet pending qualified fixture provenance and publication authorization.
 
-`placement_check.check_placement(ctx)` uses the existing networkless executor,
-compares the probe hash to the candidate manifest, and retains
-`placement-probe.json` and `placement-judgment.json`. The integrator owns
-registration, scope/3 capability qualification and immutable policy dependency
-capture. The adapter alone grants no acceptance authority: existing coordinator
-sealing, requirement mapping and adjudication remain necessary. Standalone
-judgments explicitly identify themselves as unsealed.
+## Placement check kind
+
+`placement` (AGENTEE-92) is a registered coordinator check. The coordinator
+witness names a requirement and a check, not a predicate inside it, so each
+check evaluates exactly one `criterion`. Declare one check per requirement.
+Every check names an earlier `drc` check in `drc_check`:
+
+```json
+{"id": "courtyard", "kind": "placement",
+ "params": {"criterion": "courtyard-overlap/1", "drc_check": "drc-placement"}}
+```
+
+| `criterion` | Extra parameters | Defect | Unknown |
+| --- | --- | --- | --- |
+| `courtyard-overlap/1` | none | a native `courtyards_overlap` item of any severity, cited with its footprint UUIDs and positions | footprint without a courtyard on its mounting side; native `malformed_courtyard`; the native check ignored by project settings; helper geometry finds an overlap the native report lacks |
+| `outline-containment/1` | none | positive courtyard area outside the single proven outline (the judge above) | missing, open, curved or multiple outlines; missing or unproved courtyard |
+| `edge-clearance/1` | `min_courtyard_edge_mm` | exact courtyard-to-Edge.Cuts distance below the minimum, or courtyard crossing/outside the outline | unproved outline or courtyard |
+| `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; native check ignored |
+| `connector-edge/1` | `envelope` | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
+| `ratsnest-mst/1` | optional `max_manhattan_mm`, `max_euclidean_mm` | proved total above a declared maximum | Euclidean interval straddles a maximum; no netted pads |
+
+The prerequisite must be `execution=ok` with outcome `pass` or `defect` for the
+same candidate and board hash. A DRC defect is consumable evidence. It must
+retain `work/<drc>/drc.json` with all three raw lists and all severities, name
+the board file, and report the probe's KiCad version. A missing or failed
+prerequisite is `not_run`; a corrupt, foreign or version-drifted one is
+`malformed`. Both are unknown coverage. The placement check's only tool
+execution is the read-only probe; it cites the prerequisite's raw report rather
+than running DRC again. Use the DRC `placement-stage/1` projection at placement
+and a later full DRC for final acceptance ([DRC](check-reference.md#drc-and-schematic-parity)).
+
+Native semantics established on KiCad 10.0.7 fixtures: footprint keepouts test
+the courtyard on the footprint's side layer; boundary contact is not a
+violation; a copper-only rule area does not forbid footprints; a footprint
+without a courtyard is silently untested by DRC, so the predicate reports it
+unknown. `missing_courtyard` is ignored by default and its absence proves
+nothing, which is why courtyard presence comes from the probe. A proved defect
+remains a defect beside unrelated unknown coverage; pass needs complete coverage.
+
+`edge-clearance/1` takes an explicit scope minimum, bound into the baseline with
+the check criteria. The AGENTEE-75 profile has only a copper-to-edge key
+(`min_edge_clearance_mm`); it is not reinterpreted as a courtyard limit.
+
+`connector-edge/1` reads a captured AGENTEE-85 `agent-ee.envelope/1` file through
+`board_envelope.validate`; until that module is integrated the check and its
+capability are unsupported. `placement_predicates.connector_access` is the
+shared declared-edge predicate for AGENTEE-64. A declaration names reference,
+side, edge segment and outward axis, anchor, tolerance, optional rotation,
+insertion (`through_edge`, `from_top`, `from_bottom`) and an optional
+footprint-local mating axis. That axis is mapped to board axes by mirroring y on
+the back and rotating by the saved orientation, qualified against pcbnew pad
+transforms. No nearest-edge heuristic replaces a declaration.
+
+`ratsnest-mst/1` reports, per sorted net, every netted pad (duplicate pad
+numbers kept by pad UUID) and two minimum spanning trees over pad centres:
+Manhattan with exact integer nanometres, and Euclidean with exact squared-length
+ordering and an integer-nanometre interval per edge. Ties break by sorted pad
+identity, so the same saved bytes give byte-identical `ratsnest.json`. It is a
+proxy, not routed length or routability. Unnetted pads are listed and not
+measured; no net is excluded by name. Without a declared maximum the outcome is
+`info` and the check has no acceptance predicate. Declared maxima appear as
+`details.margins` for the convergence reducer.
+
+Optional advisory parameters never decide pass or defect. `policy` keeps the
+decoupling score described above. `routing_feedback` names a captured
+kicad-route `result.json` and the captured `reference_files` that kicad-route
+fingerprinted (08179cd `input_fingerprint`). It is applicable only when those
+files reproduce `input.fingerprint` and the entry for `input.board` has this
+candidate's board hash; otherwise it is `stale` or `unavailable`.
+Footprint blockers map to a board footprint UUID only through a unique
+reference.
+
+Each check retains `placement-probe.json`, `placement-judgment.json` (schema
+`agent-ee.placement-predicate/1`, with the prerequisite result and raw report
+hashes), and `ratsnest.json` for the MST proxy. Capability predicates are
+`placement:<criterion>`, or one `placement:ratsnest-mst/1:<metric>:max` per
+declared maximum. Envelope and routing paths are immutable inputs.
 
 Native tests generate owned boards, save/reload them, exercise the real probe
 inside Bubblewrap, and compare native DRC courtyard overlap with the judge.
