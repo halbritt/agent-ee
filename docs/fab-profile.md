@@ -52,21 +52,41 @@ Supported minimum/preferred keys:
 | `min_edge_clearance_mm` | mm | Native board edge clearance |
 | `min_hole_to_hole_mm` | mm | Native drilled-hole clearance |
 | `max_layers` | integer count | Saved board copper layer count |
-| `max_board_mm` | `[x,y]` mm | Closed straight-edge outline extents, fixed board axes |
+| `max_board_mm` | `[x,y]` mm | Extents of one simple closed straight-segment outline, saved axes, either quarter-turn |
 | `supports_smt` | boolean | Presence of saved SMD pads |
 
 Assembly coverage is limited to the declared presence of SMD pads. It does not
 establish assembly process compatibility, component sourcing or factory approval.
-Curved/open outlines leave board-size coverage unknown. Geometry violations cite
-board, edge or pad UUIDs in `actual`/`offender_ids`; these computed comparisons
-are distinct from the raw DRC `native_findings` records. Via/track violations retain the native offender UUIDs.
+
+Board size is measured only for one simple polygon built from exact saved
+board-level `Edge.Cuts` segment endpoints (integer nanometres, no chaining
+tolerance): every vertex joins exactly two segments, the segments form one ring
+of at least three edges, no two edges cross or touch except adjacent edges at
+their shared vertex, and the area is nonzero. Concave and non-rectangular
+polygons qualify; a side may be split into collinear segments. Size coverage is
+unknown, with the reason and saved `locator_ids`, for a missing outline,
+zero-length, coincident or reversed duplicate segments, open, branched or
+vertex-touching rings, crossing (for example a bowtie), overlapping or folded
+collinear edges, zero area, arcs, circles, rectangles, polygons, curves, text,
+more than one closed ring (cutouts or separate boards) and any footprint item on
+`Edge.Cuts`. Nothing is repaired or guessed. The extents are the outline's
+saved-axis bounding box compared with the limit in either orientation, so a
+20×15 mm board meets a `[15,20]` limit. A board drawn at a non-orthogonal
+angle is still measured on the saved axes; no arbitrary rotation is searched.
+
+Geometry violations cite saved identities in `actual`/`offender_ids`: edge or
+pad UUIDs, and for layer count the canonical copper layer names (`F.Cu`,
+`In1.Cu`, ...), because KiCad saves no board UUID (it invents one per load).
+These computed comparisons are distinct from the raw DRC `native_findings`
+records. Via/track violations retain the native offender UUIDs.
 
 Sourced physical minima generate custom DRC rules and staged `.kicad_pro`
 `board.design_settings.rules` limits. Every limit runs separately, preserving the
 captured candidate and avoiding rule precedence between profile limits.
 Minimum violations are defects. Preferred violations become `extra_charge`
 records only for offender IDs not already shown illegal under the evaluated
-minimum for the same key. A preferred limit without that minimum remains unknown.
+minimum for the same key; the record keeps those already-illegal IDs in
+`minimum_violation_ids`. A preferred limit without that minimum remains unknown.
 A 0.25 mm drill under an explicitly sourced 0.2 mm minimum and 0.3 mm preferred
 threshold therefore reports via IDs as extra charges. These numbers are test
 assumptions, not a bundled standard preset or quote from any fabricator.
@@ -79,9 +99,20 @@ that limit `execution=unsupported` and the aggregate outcome unknown; other
 established violations remain visible in the per-limit records. A changed profile
 or source document cannot reuse the captured candidate's acceptance.
 
+Native DRC edge clearance has nothing to measure without an outline, so a board
+with no `Edge.Cuts` reports `min_edge_clearance_mm` satisfied. `classify_preferred`
+accepts the probe's fabrication inventory and then leaves a satisfied edge
+clearance unknown unless the outline qualifies; the shared native runner must
+pass that inventory (`classify_preferred(records, probe['fabrication'])`) for
+the gate to apply. Until that one-line runner change is integrated, a passing
+edge clearance on a board without a qualified outline is not evidence.
+
 Owned native fixtures test 0.09 mm trace failure, 0.15 mm legal/preferred warning,
 undersized drills, 0.25 mm drill extra charges, excessive layer counts/outline
 extents, remaining native rule mappings, invalid source support and open outlines.
+Saved-board outline fixtures cover bowtie crossing, zero-area collinear rings,
+reversed and hand-edited coincident duplicates, arcs, cutout rings, footprint
+`Edge.Cuts`, a concave control, quarter-turn size and stable saved locators.
 The same tests seal actual native reports using production coordinator evidence
 logic, validate defect witnesses, and reject changed sealed artifacts and inputs.
 Owner review and peer review remain separate from these checks.

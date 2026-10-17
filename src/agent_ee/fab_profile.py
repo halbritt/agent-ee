@@ -140,45 +140,123 @@ def capability(params, scope, files, inputs, cid):
                            if c['execution'] == 'ready' and c['expected']['tier'] == 'minimum']}
 
 
+def cross(o, a, b):
+    return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+
+
+def touches(p, q, r, s):
+    """Exact integer test: closed segments pq and rs share at least one point."""
+    def within(a, b, c):
+        return min(a[0], b[0]) <= c[0] <= max(a[0], b[0]) and min(a[1], b[1]) <= c[1] <= max(a[1], b[1])
+    d1, d2, d3, d4 = cross(r, s, p), cross(r, s, q), cross(p, q, r), cross(p, q, s)
+    if ((d1 > 0) != (d2 > 0) and d1 and d2) and ((d3 > 0) != (d4 > 0) and d3 and d4):
+        return True
+    return ((not d1 and within(r, s, p)) or (not d2 and within(r, s, q)) or
+            (not d3 and within(p, q, r)) or (not d4 and within(p, q, s)))
+
+
+def simple_polygon(segments):
+    """Qualify one simple, nonzero-area polygon from exact saved segment endpoints.
+
+    Returns (extents_mm, None) or (None, (reason, locator_uuids)). Anything other
+    than one closed, non-self-touching ring stays unqualified; nothing is repaired.
+    """
+    def refuse(reason, *indices):
+        return None, (reason, sorted({segments[i][0] for i in indices}))
+    seen = {}
+    for index, (_, a, b) in enumerate(segments):
+        if a == b:
+            return refuse('zero-length Edge.Cuts segment', index)
+        pair = frozenset((a, b))
+        if pair in seen:
+            return refuse('coincident or reversed duplicate Edge.Cuts segments', seen[pair], index)
+        seen[pair] = index
+    incident = defaultdict(list)
+    for index, (_, a, b) in enumerate(segments):
+        incident[a].append(index); incident[b].append(index)
+    for vertex in sorted(incident):
+        if len(incident[vertex]) != 2:
+            return refuse('open, branched or vertex-touching Edge.Cuts outline', *incident[vertex])
+    order, ring, vertex, index = [], [], segments[0][1], 0
+    while not order or index != 0:
+        order.append(index); ring.append(vertex)
+        _, a, b = segments[index]
+        vertex = b if vertex == a else a
+        index = next(i for i in incident[vertex] if i != index)
+    if len(order) != len(segments):
+        return refuse('multiple closed Edge.Cuts outlines (cutouts or separate boards) unsupported',
+                      *set(range(len(segments))) - set(order))
+    for i, first in enumerate(order):
+        p, q = segments[first][1:]
+        for second in order[i+1:]:
+            r, s = segments[second][1:]
+            shared = {p, q} & {r, s}
+            if shared:
+                # Adjacent edges may meet only at the shared vertex, never fold back.
+                v = shared.pop()
+                u, w = (p if q == v else q), (r if s == v else s)
+                folded = not cross(v, u, w) and (u[0]-v[0])*(w[0]-v[0]) + (u[1]-v[1])*(w[1]-v[1]) > 0
+            else:
+                folded = touches(p, q, r, s)
+            if folded:
+                return refuse('self-intersecting or overlapping Edge.Cuts segments', first, second)
+    if not sum(cross((0, 0), a, b) for a, b in zip(ring, ring[1:] + ring[:1])):
+        return refuse('zero-area Edge.Cuts outline', *order)
+    xs, ys = zip(*ring)
+    return [(max(xs)-min(xs))/1e6, (max(ys)-min(ys))/1e6], None
+
+
 def native_inventory(board_path):
     import pcbnew as k
     board = k.LoadBoard(str(board_path))
     edges = [e for e in board.GetDrawings() if e.GetLayer() == k.Edge_Cuts]
-    outline, adjacency = None, defaultdict(list)
-    if edges and all(e.GetClass() == 'PCB_SHAPE' and e.GetShape() == k.SHAPE_T_SEGMENT for e in edges):
-        for edge in edges:
-            start, end = edge.GetStart(), edge.GetEnd()
-            a, b = (int(start.x), int(start.y)), (int(end.x), int(end.y))
-            adjacency[a].append(b); adjacency[b].append(a)
-        seen, pending = set(), [next(iter(adjacency))]
-        while pending:
-            vertex = pending.pop()
-            if vertex not in seen:
-                seen.add(vertex); pending.extend(adjacency[vertex])
-        if len(seen) == len(adjacency) and all(len(n) == 2 for n in adjacency.values()):
-            xs, ys = zip(*adjacency)
-            outline = [(max(xs)-min(xs))/1e6, (max(ys)-min(ys))/1e6]
-    return {'board_uuid': board.m_Uuid.AsString(), 'copper_layers': board.GetCopperLayerCount(),
-            'copper_layer_names': [board.GetLayerName(l) for l in board.GetEnabledLayers().Seq()
-                                   if board.GetLayerName(l).endswith('.Cu')],
-            'outline_xy_mm': outline, 'outline_ids': sorted(e.m_Uuid.AsString() for e in edges),
-            'smt_ids': sorted(p.m_Uuid.AsString() for fp in board.GetFootprints() for p in fp.Pads()
-                              if p.GetAttribute() == k.PAD_ATTRIB_SMD)}
+    # Footprint shapes on Edge.Cuts join KiCad's board outline (cutouts, tabs).
+    footprint_edges = [i for fp in board.GetFootprints() for i in (*fp.GraphicalItems(), *fp.GetFields())
+                       if i.GetLayer() == k.Edge_Cuts]
+    unsupported = [e for e in edges if e.GetClass() != 'PCB_SHAPE' or e.GetShape() != k.SHAPE_T_SEGMENT]
+    outline, problem = None, None
+    if not edges:
+        problem = ('no Edge.Cuts outline', [])
+    elif footprint_edges:
+        problem = ('footprint Edge.Cuts items unsupported',
+                   sorted(i.m_Uuid.AsString() for i in footprint_edges))
+    elif unsupported:
+        problem = ('only straight Edge.Cuts segments qualified',
+                   sorted(e.m_Uuid.AsString() for e in unsupported))
+    else:
+        outline, problem = simple_polygon(sorted(
+            (e.m_Uuid.AsString(), (int(e.GetStart().x), int(e.GetStart().y)),
+             (int(e.GetEnd().x), int(e.GetEnd().y))) for e in edges))
+    # KiCad does not save a board UUID (each load invents one); cite saved names/UUIDs only.
+    inventory = {'copper_layers': board.GetCopperLayerCount(),
+                 # Canonical saved layer names; user display names may omit '.Cu'.
+                 'copper_layer_names': [board.GetStandardLayerName(l) for l in board.GetEnabledLayers().Seq()
+                                        if k.IsCopperLayer(l)],
+                 'outline_xy_mm': outline, 'outline_ids': sorted(e.m_Uuid.AsString() for e in edges),
+                 'smt_ids': sorted(p.m_Uuid.AsString() for fp in board.GetFootprints() for p in fp.Pads()
+                                   if p.GetAttribute() == k.PAD_ATTRIB_SMD)}
+    if problem:
+        inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
+    return inventory
 
 
 def evaluate_geometry(constraint, inventory):
     limit = constraint['expected']
     record = {k: constraint[k] for k in ('id', 'requirement', 'expected')}
     key, value = limit['key'], limit['value']
-    ids = [inventory['board_uuid']]
     if key == 'max_layers':
         actual = inventory['copper_layers']; legal = actual <= value
+        ids = inventory['copper_layer_names']
     elif key == 'max_board_mm':
         actual = inventory['outline_xy_mm']; ids = inventory['outline_ids']
         if actual is None:
+            problem = inventory.get('outline_problem', {})
             return {**record, 'status': 'not_evaluated', 'execution': 'unsupported',
-                    'reason': 'closed straight-segment outline required'}
-        legal = all(a <= b for a, b in zip(actual, value))
+                    'reason': 'one simple closed straight-segment outline required: '
+                              + problem.get('reason', 'unqualified outline'),
+                    'locator_ids': problem.get('locator_ids', [])}
+        # Saved-axis extents; a fabricator's x/y size limit is not orientation-bound.
+        legal = all(a <= b for a, b in zip(sorted(actual), sorted(value)))
     else:
         actual = bool(inventory['smt_ids']); legal = value or not actual
         ids = inventory['smt_ids']
@@ -191,8 +269,20 @@ def offender_ids(record):
         i['uuid'] for f in record.get('native_findings', []) for i in f['items']}
 
 
-def classify_preferred(records):
-    """Only proved legal features can become extra charges, never defects."""
+def classify_preferred(records, inventory=None):
+    """Only proved legal features can become extra charges, never defects.
+
+    With the native inventory, an edge clearance is satisfied only against one
+    qualified outline: absent or malformed Edge.Cuts cannot prove clearance.
+    """
+    if inventory is not None and inventory['outline_xy_mm'] is None:
+        for record in records:
+            if record['expected']['key'] == 'min_edge_clearance_mm' and record['status'] == 'satisfied':
+                problem = inventory.get('outline_problem', {})
+                record.update(status='not_evaluated', execution='unsupported',
+                              reason='edge clearance requires one simple closed straight-segment outline: '
+                                     + problem.get('reason', 'unqualified outline'),
+                              locator_ids=problem.get('locator_ids', []))
     minima = {r['expected']['key']: r for r in records if r['expected']['tier'] == 'minimum'}
     for record in records:
         if record['expected']['tier'] != 'preferred':
@@ -202,8 +292,10 @@ def classify_preferred(records):
             record.update(status='not_evaluated', execution='unsupported',
                           reason='extra-charge classification requires evaluated minimum for same key')
         elif record['status'] == 'violation':
-            offenders = sorted(offender_ids(record) - offender_ids(minimum))
-            record.update(status='extra_charge' if offenders else 'satisfied', offender_ids=offenders)
+            found = offender_ids(record)
+            offenders = sorted(found - offender_ids(minimum))
+            record.update(status='extra_charge' if offenders else 'satisfied', offender_ids=offenders,
+                          minimum_violation_ids=sorted(found & offender_ids(minimum)))
     return records
 
 
