@@ -81,7 +81,7 @@ With native prerequisites, stock resources at the fixture's declared paths and
 working subscription authentication:
 
 ```sh
-python3 scripts/demo.py --out build/repeated-demo --seconds-per-run 1200
+python3 scripts/demo.py --profile profiles/claude.json --out build/repeated-demo --seconds-per-run 1200
 ```
 
 The output directory must be new. The script records the evaluation-plan hash,

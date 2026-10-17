@@ -154,11 +154,11 @@ Merely having citations does not prove the claim is true or that the reviewer
 received the entire cited document.
 
 Citations must name actual regular files under `inputs/`, `checks/` or
-`work/CHECK_ID/` inside this run. Absolute paths, backslashes, traversal and
+`work/CHECK_ID/` or `review-work/ROLE/experiments/` inside this run. Absolute paths, backslashes, traversal and
 symlink traversal are refused. Citation objects contain exactly `path` and a
 nonempty `locator`; use a native UUID/pin/net, page/section, measurement name or
-specific report item rather than a vague file-level claim. Other reviewers'
-outputs are not valid primary evidence citations.
+specific report item rather than a vague file-level claim. Reviewer prose alone is not independent engineering evidence; experiment citations
+should identify the actual command, input, measurement or fetched source.
 
 Adapter records identify the backend, requested model, subscription route,
 execution/diagnostics, harness binary digest and, on successful parsing,
@@ -229,6 +229,6 @@ execution record. The manifest and packet have separate hashes. `REPORT.md`,
 the top-level `error.log` and `result.json` itself are not signed or externally
 anchored acceptance evidence. Python policy hashes cover each `*.py` module in
 `src/agent_ee`; runtime fingerprints cover resolved kicad-cli, ngspice, bwrap,
-system Python, Claude and the `_pcbnew` extension. They do not hash the entire
+system Python, Claude/Codex/Agy binaries, the Codex tool host and the `_pcbnew` extension. They do not hash the entire
 OS/shared-library image. See [security](security.md) for the guarantees this
 provides and the host-modification limits.

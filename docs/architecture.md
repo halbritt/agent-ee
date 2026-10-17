@@ -59,7 +59,7 @@ atomic multi-file filesystem snapshot.
 Each subprocess receives the captured inputs read-only at `/candidate`, package
 source read-only at `/app`, and its own writable scratch at `/work`. Native tools
 have no network. Review inference has network and a read-only credential mount,
-with tools/MCP/hooks disabled. Other reviewers' scratch and the source checkout
+with ordinary tools enabled and fresh harness settings. Other reviewers' scratch and the source checkout
 are absent. These are OS-enforced child-process permissions; the privileged host
 remains outside this boundary. Details are in [security](security.md).
 
@@ -103,9 +103,8 @@ live-source availability. It still checks implementation and runtime equality.
 ## Design tradeoffs
 
 The [decision record](decisions.md) gives the original reasoning. The practical
-costs are intentional and visible: full reruns spend inference again; text
-reviewers cannot inspect omitted binary/image evidence or fetch references;
-default same-model reviews can share blind spots; and whole-review closure is
+costs are intentional and visible: full reruns spend inference again; reviewers may omit useful tool investigations;
+explicit model profiles still can share blind spots; and whole-review closure is
 stricter than closing one local defect while unrelated blockers remain.
 Broader analyses need explicit check/model/extraction additions and their own
 independent expectations, not longer unsupported reviewer assertions.

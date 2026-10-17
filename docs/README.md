@@ -42,3 +42,5 @@ The following are builder records, not the current operator reference:
 The current command parser and validators are the final authority if a historical
 agreement differs. The manual references their actual behavior and names limits
 that remain unenforced or outside the demonstrated scope.
+
+Reviewer routing and comparison: [Profiles](reviewer-profiles.md), [evaluation plan](model-evaluation-plan.md).

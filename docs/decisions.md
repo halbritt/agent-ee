@@ -49,19 +49,19 @@ outside a fully reproducible machine-image guarantee.
 
 ## Initial judgments and later adjudication
 
-The reusable default uses two fresh Claude subscription calls, with circuit and
-physical/verification lenses. Tools, MCP, hooks and cross-review outputs are
-unavailable to those calls. The same model can share blind spots; agent count or
-model diversity is not independent engineering proof. The requested Herdr Fable
-and Argon agents built/challenged the implementation; those builder conversations
-do not count as the separate initial fixture reviews.
+The original implementation used Fable for both roles and a hard-coded Fable
+adjudicator without comparative engineering evaluation. The owner rejected this
+choice. Explicit versioned profiles now select every harness/model/effort/timeout,
+including the adjudicator. Claude, Codex and Agy are supported subscription routes.
+The [selection experiment](model-evaluation-plan.md) measures engineering findings,
+control allegations and uncertainty separately from execution reliability.
 
-Text reviewers receive original native excerpts and machine-check results in a
-bounded packet. Omitted text/binary artifacts stay explicit. This is cheaper and
-more inspectable than giving reviewers broad autonomous tool access; the cost is
-that broader or image-dependent investigations require added evidence/checks or
-an external engineering investigation. A native result and calculation remain
-available to the operator in full.
+The owner also rejected disabling tools and excessive sandbox construction.
+Ordinary investigation tools are enabled in separate workspaces, with the existing
+read-only candidate mounts. No hermetic environment is required. Fixed packets
+remain an optional limited experiment mode, not the normal workflow. Initial
+judgments cannot see each other's findings; adjudication can inspect their
+retained experiments. Model diversity alone does not establish independence.
 
 Every claim is retained before adjudication. A fresh adjudicator sees both
 judgments and must explain acceptance, dismissal or deferral against evidence.

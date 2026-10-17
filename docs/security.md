@@ -28,15 +28,16 @@ adjudicator additionally sees initial judgments and collected findings. The
 current adapter is not an offline local-model path. Review only information
 appropriate for the configured provider/account.
 
-The parent locates `~/.claude/.credentials.json` and mounts it read-only during
+The parent locates the selected harness subscription credential (see
+[profiles](reviewer-profiles.md)) and mounts it read-only during
 the child call. Its contents are never copied into retained run files, and the
 temporary reviewer home is removed after the call. The execution record names
 the credential mount path, which is not the credential value. Parent API keys
 are omitted by the child's cleared environment. No subscription error enables
 an OpenRouter fallback.
 
-The harness is invoked in safe mode, without tools, MCP servers, setting sources,
-slash commands or session persistence. These flags reduce its allowed behavior;
+Harness settings, tool policies and subscription paths are explicit in the
+[profile documentation](reviewer-profiles.md). Ordinary tools are enabled. These settings reduce accidental cross-run coupling;
 they do not independently attest every provider implementation detail. Harness
 usage metadata is retained when available. Do not add host runtime sockets or
 credential copies to scratch as a convenience fix.
@@ -45,7 +46,7 @@ credential copies to scratch as a convenience fix.
 
 Design prose and extracted documents are untrusted evidence, not authority to
 change the review rules. Fixed instructions tell reviewers and adjudication to
-ignore such attempts. Tools are disabled and the candidate is read-only, but
+ignore such attempts. The candidate is read-only and experiments are separate, but
 this does not prove immunity to every prompt-injection or model judgment error.
 
 Citation validation proves that a path is allowed, exists in this run and has

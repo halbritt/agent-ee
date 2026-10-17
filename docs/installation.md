@@ -21,7 +21,7 @@ bindings. A virtual environment that hides system bindings is insufficient.
 | `pcbnew` / `_pcbnew` | Saved-board geometry and runtime identity |
 | `ngspice` | Passive transient check; also included in runtime fingerprints |
 | `bwrap` | Filesystem/process/network isolation for invoked checks and reviewers |
-| `claude` | Tool-free subscription review and adjudication |
+| `claude`, `codex`, `agy` | Selected subscription reviewer/adjudicator harnesses; install those used by your profile |
 | `bash` | Link installer |
 
 Bubblewrap must actually be allowed to create the required namespaces and mount
@@ -32,7 +32,7 @@ the boundary; the tests also attempt a forbidden candidate write.
 KiBot, kicad-happy, document conversion tools, Herdr, Cairn and Gemini were
 available to the builders. The normal review command does not require those
 systems. Herdr is not the runtime scheduler: the CLI starts its own bounded
-review subprocesses. The reusable adapter currently invokes Claude Code only.
+review subprocesses. Explicit profiles select Claude, Codex or Agy; see [profiles](reviewer-profiles.md).
 
 ## Checkout and links
 
@@ -74,11 +74,9 @@ installation or extra interpreter environment.
 
 ## Subscription authentication
 
-The adapter expects the installed Claude Code executable on `PATH` and an
-existing subscription credential at `~/.claude/.credentials.json`. Authenticate
-with the installed harness's normal subscription workflow before running a
-review. A login stored only in an alternative config directory does not satisfy
-this adapter's fixed credential-file lookup.
+Authenticate each selected harness through its subscription workflow. Credential
+paths, native executable discovery and overrides are documented in
+[reviewer profiles](reviewer-profiles.md). No API key is required.
 
 The credential file is mounted read-only during inference and is not copied
 into retained evidence. The child receives a cleared environment; parent API

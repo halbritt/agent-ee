@@ -12,7 +12,7 @@ isolation, troubleshooting, extension and evidence reproduction.
 cd ~/git/agent-ee
 ./scripts/install.sh
 agent-ee doctor
-agent-ee review scopes/donor.json --out build/donor-review --max-seconds 1200
+agent-ee review scopes/donor.json --profile profiles/claude.json --out build/donor-review --max-seconds 1200
 agent-ee inspect build/donor-review
 agent-ee verify build/donor-review
 ```
@@ -25,11 +25,14 @@ The editable Python package entry point is also available from `pyproject.toml`.
 Source remote: [halbritt/agent-ee](https://github.com/halbritt/agent-ee), private.
 Clone and authentication prerequisites are in [installation](docs/installation.md).
 
+Select every reviewer and the adjudicator explicitly using a
+[versioned profile](docs/reviewer-profiles.md). There is no implicit model default.
+
 ## Prerequisites and integration
 
 The demonstrated environment is Linux with KiCad 10.0.7, ngspice 42, Bubblewrap
 0.9.0 and Claude Code 2.1.302 authenticated through Claude Max. The CLI uses only
-the existing Claude subscription credentials; an auth/quota error stops that call
+explicit Claude, Codex or Agy subscription profiles; an auth/quota error stops that call
 and leaves the review incomplete. It does not fall back to another provider.
 Native prerequisite/version probes are separate from integration proof.
 
@@ -122,8 +125,9 @@ Every native tool and reviewer subprocess runs in Bubblewrap. Captured inputs,
 application code and system tool directories are mounted read-only; only that
 invocation's scratch is writable. The sandbox omits the host home directory,
 other reviewers' work directories, host `/tmp` and runtime sockets. Native tools
-have no network. Reviewers have network for subscription inference, no tools or
-MCP servers, and no project hooks. The subscription credential is a read-only
+have no network. Reviewers have ordinary investigation tools and network access, with fresh settings
+and separate workspaces. The installed system tools are used; no hermetic environment
+is claimed. The subscription credential is a read-only
 mount during the call; its contents are never copied into the retained run.
 
 This protects inputs from these subprocesses. It does not constrain the owner,
@@ -182,4 +186,4 @@ The archive manifest pins each group's implementation commit and recorded
 outcomes; historical failure attempts remain incomplete. Use a matching source
 version when replaying their integrity checks. To run the actual control, seed
 and disposable repair demonstration again, use
-`python3 scripts/demo.py --out build/my-demo` from the repository root.
+`python3 scripts/demo.py --profile profiles/claude.json --out build/my-demo` from the repository root.

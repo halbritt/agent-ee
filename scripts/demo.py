@@ -15,7 +15,7 @@ from agent_ee.cli import link_correction, run_review, verify
 from agent_ee.storage import digest, read_json, write_json
 
 
-def demonstrate(out, seconds):
+def demonstrate(out, seconds, profile):
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=False)
     plan = ROOT / "docs/evaluation-plan.md"
@@ -25,8 +25,8 @@ def demonstrate(out, seconds):
     subprocess.run([str(ROOT / "bin/agent-ee"), "doctor"], stdout=(out / "doctor.json").open("w"), check=True)
     control_scope = ROOT / "fixtures/rc/control.scope.json"
     seed_scope = ROOT / "fixtures/rc/seeded.scope.json"
-    run_review(control_scope, out / "control", seconds)
-    run_review(seed_scope, out / "seed", seconds)
+    run_review(control_scope, out / "control", seconds, profile=profile)
+    run_review(seed_scope, out / "seed", seconds, profile=profile)
     control, seed = read_json(out / "control/result.json"), read_json(out / "seed/result.json")
     by_id = {f["id"]: f for f in seed["findings"]}
     seed_findings = []
@@ -69,7 +69,7 @@ def demonstrate(out, seconds):
                            (path if path.is_absolute() else (seed_scope.parent / path).resolve()))
     repaired_scope = out / "repaired.scope.json"
     write_json(repaired_scope, config)
-    run_review(repaired_scope, out / "repair", seconds)
+    run_review(repaired_scope, out / "repair", seconds, profile=profile)
     repaired = read_json(out / "repair/result.json")
     native_checks = [c["id"] for c in repaired["checks"] if c["kind"] in ("erc", "drc", "rc_transient")]
     if repaired["outcome"] == "criteria_satisfied":
@@ -93,8 +93,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", required=True)
     p.add_argument("--seconds-per-run", type=float, default=1200)
+    p.add_argument("--profile", required=True)
     args = p.parse_args()
-    demonstrate(args.out, args.seconds_per_run)
+    demonstrate(args.out, args.seconds_per_run, args.profile)
 
 
 if __name__ == "__main__":

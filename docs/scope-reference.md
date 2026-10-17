@@ -26,7 +26,7 @@ specific to the original workstation; adapt them before using it elsewhere.
 | `packet_inputs` | List; default root schematic and board | Captured input-relative source text selected for reviewers |
 | `packet_artifacts` | List, default `[]` | Required generated evidence paths, relative to the run |
 | `packet_max_bytes` | Integer, default 240000 | Total artifact-text budget, allowed range 1024–1000000 |
-| `reviewers` | List; default circuit and physical Claude reviews | Role/model/lens/timeout settings |
+| `review_profile` | Explicit profile object; alternatively pass `--profile FILE` | Harness/model/effort/timeout for every reviewer and adjudicator |
 
 Both native paths and all requirement paths must actually be captured. Every
 review currently declares a board and a schematic, including a narrow circuit
@@ -117,29 +117,12 @@ meaning separately; changing that policy is an explicit implementation change.
 
 ## Reviewer specification
 
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `role` | Required in each explicit entry | Unique lowercase role ID using the check-ID pattern |
-| `model` | `claude-fable-5` | Requested model name passed to the Claude adapter |
-| `lens` | Built-in circuit/physical lens; other roles use circuit lens | Investigation instructions added to the fixed review rules |
-| `timeout_s` | 300 | Per-invocation maximum, further capped by the run deadline |
-
-Avoid reserved roles `check` and `adjudicator`. At least two successfully
-validated initial reviews are required for a complete review. Declaring more
-roles makes all of them required. Choose a finite positive timeout; the scope
-validator does not fully validate reviewer timeout types/ranges in advance.
-
-The default `circuit` lens challenges component/pin identity, function, operating
-limits, bias, interfaces and abnormal states. The default `physical` lens
-challenges geometry, connectivity, return/current paths, placement and thermal
-or manufacturing assumptions. Both challenge verification adequacy. A lens is a
-coverage request, not evidence that those investigations were possible. Reviewers
-must report omissions. They have no tools and cannot fetch a missing datasheet.
-
-Initial contexts are separate and do not contain each other's findings. They
-share the same evidence and may share assumptions. The adjudicator is always a
-fresh `claude-fable-5` call in the current implementation; its model is not a
-scope setting. Gemini/Herdr adapters are not implemented by adding a model name.
+Use an explicit [reviewer profile](reviewer-profiles.md), either embedded as
+`review_profile` or supplied with `--profile FILE`. The external file takes
+precedence and is independently hashed. No model default or fixed adjudicator
+remains. Initial contexts and experiment directories are separate. Tools are
+enabled by default so reviewers can inspect complete captured files and investigate.
+Role lenses request coverage; actual coverage still needs recorded evidence.
 
 ## Packet ordering and omissions
 

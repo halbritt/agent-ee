@@ -10,7 +10,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | Command | Arguments | Effect |
 | --- | --- | --- |
 | `doctor` | None | Probe prerequisite versions/imports; no design or inference run |
-| `review` | `SCOPE --out RUN [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
+| `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
 | `inspect` | `RUN` | Show recorded outcome/state, findings, checks, freshness and correction links |
 | `verify` | `RUN [--snapshot-only]` | Check input, policy, runtime and retained evidence consistency |
 | `resume` | `RUN --out NEW_RUN [--max-seconds N]` | Read the old manifest's scope path, recapture and rerun all work |
@@ -50,8 +50,8 @@ limit or a CPU/token quota.
 
 Checks run in declared order. A check with less than five seconds remaining
 does not begin. Native command timeouts are capped by the remaining deadline.
-Initial reviewer calls default to 300 seconds each, configurable per reviewer;
-the adjudicator has a 300-second maximum. Calls run sequentially. No automatic
+Every reviewer and the adjudicator has an explicit profile timeout; supplied
+evaluation profiles use 300 seconds. Calls run sequentially. No automatic
 retry occurs. See the [check reference](check-reference.md) for native ceilings.
 
 SIGINT attempts to preserve validated checks/reviews, unknown placeholders for
@@ -59,11 +59,9 @@ unfinished work, and useful findings. Invoked subprocess groups are killed on
 timeout or caught interrupt. A shell-level force kill or machine crash can
 leave a record with state `running`; inspection can project its durable records,
 but it does not prove the process is still alive or finalize acceptance.
-An interrupt caught inside the subprocess executor marks that invocation
-interrupted; the parent can continue other declared steps within the remaining
-budget. An interrupt caught by the outer run boundary finalizes the run as
-interrupted. Do not assume one SIGINT immediately cancels all later inference;
-check process status and the saved execution records.
+An interrupt caught inside the subprocess executor records the interrupted
+invocation and propagates to the outer boundary, which finalizes an interrupted
+run. Check process status and saved records after a force kill.
 
 ## `doctor`
 
@@ -130,3 +128,7 @@ the old review. The command records changed input hashes, candidate/run IDs,
 affected checks and the new result digest. It does not edit the design or mark
 the old candidate as passing. See the [operator guide](operator-guide.md) for
 the bounded repair workflow.
+
+`--profile FILE` captures an explicit reviewer/adjudicator configuration. An
+embedded scope `review_profile` is also accepted. Without either, native checks
+are preserved but full review is incomplete. See [profiles](reviewer-profiles.md).

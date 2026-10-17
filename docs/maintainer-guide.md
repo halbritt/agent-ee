@@ -113,8 +113,9 @@ independently justified expected behavior.
 
 ## Add a reviewer backend
 
-Implement an explicit subscription adapter alongside the current `claude_call`
-seam. A scope's `model` string alone does not choose another harness. Preserve
+Claude, Codex and Agy adapters are implemented behind `reviewer_call`; see
+[profiles](reviewer-profiles.md). Add another explicit subscription adapter there
+only when needed. A model string alone does not choose another harness. Preserve
 the same initial-context separation, role/candidate/run/packet binding, required
 coverage/limitations and schema/citation validation.
 

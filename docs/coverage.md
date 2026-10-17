@@ -46,12 +46,10 @@ explicit declaration, available evidence and failed-check diagnostics are suppli
 Every omitted binary and partial text extent is recorded. A reviewer cannot
 claim to have inspected omitted data just because its hash/path is present.
 
-Default initial roles are `circuit` and `physical`, each with a fresh Claude
-subscription invocation. A scope may supply `reviewers` entries with safe unique
-`role`, `model`, optional `lens`, and optional `timeout_s`. Additional roles do
-not prove independence, and every declared role must complete. The current
-adapter is Claude Code only; another harness requires an explicitly implemented,
-tested subscription adapter. There is no automatic provider fallback.
+Reviewers and adjudicator use explicit [profiles](reviewer-profiles.md). Claude,
+Codex and Agy subscription adapters support ordinary investigative tools. Every
+declared role must complete. More agents or model families do not prove independence.
+There is no automatic provider or account fallback.
 
 ## Adding an engineering check
 

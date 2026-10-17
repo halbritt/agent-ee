@@ -7,7 +7,7 @@ Run from the installed checkout with the prerequisites in
 
 ```sh
 agent-ee doctor
-agent-ee review fixtures/rc/control.scope.json \
+agent-ee review --profile profiles/claude.json fixtures/rc/control.scope.json \
   --out build/operator-control --max-seconds 1200
 agent-ee inspect build/operator-control
 agent-ee verify build/operator-control
@@ -23,7 +23,7 @@ width, not automotive or manufacturing qualification.
 For a native integration check without inference, use a different fresh path:
 
 ```sh
-agent-ee review fixtures/rc/control.scope.json \
+agent-ee review --profile profiles/claude.json fixtures/rc/control.scope.json \
   --out build/operator-native --max-seconds 120 --checks-only
 ```
 
@@ -49,7 +49,7 @@ RC limits into an unrelated circuit.
 For this workstation's real donor, the supplied command is:
 
 ```sh
-agent-ee review scopes/donor.json --out build/operator-donor --max-seconds 1200
+agent-ee review --profile profiles/claude.json scopes/donor.json --out build/operator-donor --max-seconds 1200
 ```
 
 That scope intentionally retains the as-received hierarchy problem. The
@@ -158,7 +158,7 @@ and explicitly link its closure too; no text matching silently closes it.
 The actual complete defect-and-repair exercise can be rerun with:
 
 ```sh
-python3 scripts/demo.py --out build/operator-demonstration --seconds-per-run 1200
+python3 scripts/demo.py --profile profiles/claude.json --out build/operator-demonstration --seconds-per-run 1200
 ```
 
 It performs real control/seed reviews, at most one disposable value repair and a

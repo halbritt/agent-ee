@@ -8,8 +8,9 @@ description: Runs candidate-bound adversarial PCB and electrical engineering rev
 Use the installed `agent-ee` CLI. Source and scope examples live at
 `~/git/agent-ee`; read its [README](../../README.md) for setup and scope authoring.
 The CLI coordinates checks and fresh initial reviewers; it does not need manual
-reviewer-prompt coordination. Current default reviewers use Claude subscription
-authentication. Do not add an OpenRouter fallback on auth/quota failure.
+reviewer-prompt coordination. Select an explicit [review profile](../../docs/reviewer-profiles.md) for Claude, Codex
+or Agy subscription calls. There is no implicit model default. Tools are enabled
+for investigation; keep source design read-only and experiments separate. Do not add an OpenRouter fallback on auth/quota failure.
 The [full manual](../../docs/README.md) includes exact scope/check/result
 contracts, operator workflows, troubleshooting and extension instructions.
 
@@ -18,7 +19,7 @@ contracts, operator workflows, troubleshooting and extension instructions.
    applicable requirements, models, and tool configuration as captured inputs.
    Existing examples are under `~/git/agent-ee/scopes/` and `fixtures/`.
 2. Run `agent-ee doctor`, then
-   `agent-ee review /absolute/path/scope.json --out /fresh/path/review --max-seconds 1200`.
+   `agent-ee review /absolute/path/scope.json --profile /absolute/path/profile.json --out /fresh/path/review --max-seconds 1200`.
 3. Read `REPORT.md`, `result.json`, raw native evidence and reviewer limitations.
    `agent-ee inspect /path/review` reports progress and freshness.
    For `review`, exit 0 means declared criteria satisfied. Exit 1 includes defects, unresolved
