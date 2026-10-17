@@ -1,0 +1,141 @@
+# Forward annotation
+
+`agent_ee.forward_annotation` (AGENTEE-52) pushes a native KiCad netlist into
+an existing placed and routed board without the KiCad GUI. It is a helper of
+the sole implementation writer. It neither places nor routes: new footprints
+land on a staging column beside the board outline. Its plan and result records
+are diagnostic. Native DRC with schematic parity and the coordinator's checks
+judge the board it writes.
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.forward_annotation plan project/board.kicad_pcb \
+  --netlist design.xml --manifest footprints.json --captures captured \
+  --work build/plan-work --record build/plan.json
+PYTHONPATH=src python3 -m agent_ee.forward_annotation apply project/board.kicad_pcb \
+  --netlist design.xml --manifest footprints.json --captures captured \
+  --plan build/plan.json --out project/board.kicad_pcb --backup-dir build/backup \
+  --work build/apply-work --record build/apply.json
+```
+
+Both commands exit 0 on success and 1 on refusal, and write their record to a
+new file. `--work` must name a new directory.
+
+## Inputs and binding
+
+- Native netlist: the actual `kicad-cli sch export netlist --format kicadxml`
+  output for the schematic. The complete component inventory, sheet paths,
+  unit UUIDs and nets come from AGENTEE-41's `agent_ee.native_netlist` reader;
+  this module has no other inventory source. Symbol fields such as
+  `Description` (which native parity compares) are read separately and must
+  cover exactly the same references. Do-not-populate and board-excluded symbols
+  are refused, because they are not qualified yet.
+- Board: the existing `.kicad_pcb`. pcbnew runs only in
+  `agent_ee.forward_annotation_probe`, a child process started through the
+  production Bubblewrap executor with networking unshared and the board copied
+  into a read-only input directory.
+- Footprints: an `agent-ee.footprint-libraries/1` manifest and its captured
+  files, indexed by AGENTEE-36 `index_footprints`
+  ([footprint libraries](footprint-libraries.md)). Every component's footprint
+  field must name an exact manifest member whose electrical pads equal the
+  symbol's pins. There is no library search and no package selection.
+
+A footprint binds to a component only through its native path: the
+component's sheet path plus any one of its unit UUIDs. References are never
+used for binding. A footprint without a path is kept as board-only. A path that
+matches no component is planned for removal.
+
+## Plan
+
+Schema `agent-ee.forward-annotation-plan/1`. The plan binds the SHA-256 of the
+board, netlist, manifest, board facts and each footprint file used, and lists:
+
+| Field | Meaning |
+| --- | --- |
+| `add` | New components with exact footprint member, native path, fields and staging position |
+| `remove` | Bound footprints whose component is gone |
+| `update` | Retained footprints whose reference, value or symbol fields change |
+| `retain`, `board_only` | Unchanged bindings, and footprints with no native path |
+| `renames` | Board nets whose retained pad membership equals exactly one netlist net with a new name |
+| `new_nets`, `pads` | Nets to create, and the complete pad-to-net assignment with previous values |
+| `stale_nets` | Nets no longer in the netlist that tracks, vias or zones still use; they are kept, and DRC reports them |
+| `counts` | Counts for each list, plus `pad_changes` |
+
+Staged footprints are placed in reference order in one column that starts
+5.08 mm right of the board outline, with anchors on the 1.27 mm grid.
+
+## Apply
+
+`apply` treats the supplied plan only as a declaration. It recomputes a fresh
+plan over the current bytes and refuses any difference (`stale_plan`), so an
+edited plan, a changed board or netlist, or a changed footprint capture is
+refused before pcbnew runs. If the plan makes no change, the output is a
+byte-for-byte copy of the input. Otherwise the child:
+
+- renames each `NETINFO_ITEM` in place, so tracks, vias, zones and pads keep
+  their binding;
+- creates new nets, removes footprints, and updates references, values and
+  fields;
+- loads each added footprint from the exact captured bytes, sets its path,
+  fields and staging position, and seeds its UUIDs from the native path;
+- assigns every planned pad net.
+
+A separate child process then reads the saved board. The parent refuses
+publication unless the footprint inventory matches the plan, retained
+footprints and pads have unchanged positions, orientation, side and identity,
+added footprints match the plan, every pad has its planned net, and every
+track, via and zone keeps its UUID and its (renamed) net. Existing routing and
+zone fills are never edited or refilled, and tracks of removed footprints stay
+in place for DRC to report. For an in-place apply, the source bytes are first
+copied to `--backup-dir`, which must lie outside the board's directory so that
+the backup never enters a captured candidate's file inventory. The output is
+replaced atomically.
+
+## Refusals (before any mutation)
+
+`native_reader_unavailable`, `native_netlist`, `board_exclusion_unsupported`,
+`dnp_unsupported`, `missing_footprint` (no assignment, or not an exact manifest
+member), `footprint_library_coverage` (unreadable, missing or changed manifest
+member), `pad_pin_mismatch`, `duplicate_native_path`,
+`multiunit_binding_ambiguous`, `footprint_change_unsupported` (a bound footprint
+whose identity differs from the symbol's), `plan_rejected`, `stale_plan`,
+`stale_input`, `backup_location`, `output_exists`, `native_child` and
+`verification`.
+
+## Evidence
+
+`tests/test_forward_annotation.py` uses the original routed fixture
+`fixtures/generation/regulator.kicad_pcb`: three placed footprints, tracks, two
+vias and a filled GND zone on B.Cu. Native DRC with schematic parity against
+the emitted regulator schematic reports no violations, no unconnected items and
+no parity issues. With KiCad 10.0.7, using the existing `geometry_probe` and
+raw copper S-expressions for independent extraction, the tests show:
+
+- Adding one capacitor adds exactly one footprint, with its full pad and net
+  inventory, on the staging grid. Every existing footprint pose, pad and copper
+  item is unchanged. DRC parity passes, and the new part's unrouted pads are
+  reported as unconnected. Reapplying the same inputs is a byte-identical no-op.
+- Renaming the ground net renames pads, tracks, both vias and the zone in
+  place, with no geometry change. DRC is clean.
+- Removing the output capacitor removes its footprint and keeps its copper.
+  DRC reports the retained track, and parity passes.
+- A missing footprint, an unreadable manifest member, a duplicate native path,
+  multi-unit ambiguity, a tampered plan, a changed netlist or board, and a
+  backup inside the board directory are each refused. The board bytes stay
+  unchanged and no backup is written.
+- A checks-only review of an annotated board passes ERC, DRC and netlist
+  checks. `verify` rejects a changed DRC report, a changed tool identity and a
+  changed source board.
+
+These tests are skipped until `agent_ee.native_netlist` (AGENTEE-41) is
+integrated.
+
+## Limits
+
+- Changing a footprint for a retained component, DNP and board exclusion are
+  refused. Binding handles hierarchical sheet paths, but no hierarchical design
+  has been tested, because the emitter is flat only.
+- Staging is not placement. Placement and routing quality, and fab readiness,
+  are outside this helper.
+- Net renames need an exact one-to-one match on retained pad membership.
+  Splits and merges are pad reassignments: the old copper keeps its net and
+  appears as a stale net for DRC to report.

@@ -20,6 +20,19 @@ the AGENTEE-40 schematic emitter and AGENTEE-52 forward-annotation tests on
   symbols are not netlist components; the regulator's pin 4 is an explicit
   no-connect). It was written before any emitter output existed.
 
+- `regulator-core.*` (the regulator without power or flag symbols, for
+  AGENTEE-41 parity) and `dual.*` (a two-unit part with a six-pad footprint,
+  for multi-unit binding) were added later. `footprints.manifest.json` declares
+  every owned footprint with its hash. `DUAL_6PAD.kicad_mod` was normalised
+  with `kicad-cli fp upgrade --force` like the other footprints.
+- `regulator.kicad_pcb`: an owned 30 x 20 mm two-layer board built once with
+  pcbnew 10.0.7 by a scratch script. It places J1, U1 and C1 from the owned
+  footprints, with native paths derived from the regulator layout namespace
+  through the emitter identity contract (`/` + uuid5 of `["symbol", id, 1]`).
+  It has 0.25 mm tracks, two GND vias and a filled B.Cu GND zone. Native
+  `kicad-cli pcb drc --schematic-parity` against the emitted regulator
+  schematic reports no violations, no unconnected items and no parity issues.
+
 The power flags in the regulator intent are explicit intent declarations that
 `J1` brings `VIN` and `GND` from off the board. The emitter never adds a flag,
 power symbol or other component that the intent does not declare.

@@ -1,0 +1,27 @@
+{
+  "schema": "agent-ee.footprint-libraries/1",
+  "complete": true,
+  "libraries": [
+    {
+      "name": "OwnedFP",
+      "members": [
+        {
+          "path": "lib/OwnedFP.pretty/CAP_2PAD.kicad_mod",
+          "sha256": "ea709653381ed3f2774ed177900b9d999b34aa8e4bc8e12992ddebfa9554b7a3"
+        },
+        {
+          "path": "lib/OwnedFP.pretty/CONN_1x3.kicad_mod",
+          "sha256": "e85f3a6a4f7a19cfd5e8a1646aa6b60acc3d9e87bda9d914de6c91835779bc11"
+        },
+        {
+          "path": "lib/OwnedFP.pretty/DUAL_6PAD.kicad_mod",
+          "sha256": "5248ab3c56b169d11c732f4e510de7cc9a7a48b15d3ed5a61230c165cb6b51f6"
+        },
+        {
+          "path": "lib/OwnedFP.pretty/REG_4PAD.kicad_mod",
+          "sha256": "337b56a97e5132e967ca6d21f4ea452f710ec942b7769a3fcc265b424ee8f396"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "schema": "agent-ee.connectivity-intent/1",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    }
+  ],
+  "components": [
+    {
+      "id": "dual",
+      "reference": "U1",
+      "lib_id": "OwnedGen:DUAL",
+      "value": "DUAL",
+      "footprint": "OwnedFP:DUAL_6PAD",
+      "units": [
+        1,
+        2
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "id": "d_a",
+      "name": "D_A",
+      "terminals": [
+        {
+          "component": "dual",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "dual",
+          "pin": {
+            "number": "4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d_b",
+      "name": "D_B",
+      "terminals": [
+        {
+          "component": "dual",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "dual",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d_p",
+      "name": "D_P",
+      "terminals": [
+        {
+          "component": "dual",
+          "pin": {
+            "number": "5"
+          }
+        },
+        {
+          "component": "dual",
+          "pin": {
+            "number": "6"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": []
+}
