@@ -240,3 +240,13 @@ Their integration must supply:
 
 Descriptor semantics are coordinator policy. Changes require capability version
 and policy review; old evidence never gains new audited coverage automatically.
+
+## Concern evidence replay
+
+[Standalone evidence requests](evidence-requests.md) bind unresolved concerns to
+exact retained candidates. The dedicated Linux x86-64 Python replay lane has
+networkless read-only isolation, single-process resource limits and bounded logs.
+It supports no arbitrary shell, external tool, writable artifact or aggregate
+job-memory budget. Requests and replay assertions supply no acceptance coverage;
+graduation exports are inert proposals. Existing sealed coordinator check
+witnesses remain the only scope/2 and scope/3 acceptance path.

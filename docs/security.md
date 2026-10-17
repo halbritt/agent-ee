@@ -189,3 +189,10 @@ sandbox. This bounded dialect does not qualify arbitrary vendor model syntax,
 model accuracy or publication rights. Retained decks, traces and bindings use
 the existing coordinator evidence seal.
 
+
+## Dedicated concern replay
+
+The [evidence-request lane](evidence-requests.md) uses a separate networkless,
+read-only, single-process Python sandbox. Requests, receipts and graduation
+exports carry no acceptance authority and never modify reviewed runs. This lane
+does not change provider-network access for existing reviewer harness tools.
