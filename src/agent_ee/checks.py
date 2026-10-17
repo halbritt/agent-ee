@@ -815,13 +815,14 @@ from .active_spice import check_active_spice
 from .kicad_happy import check_kicad_happy
 from .hardware_interface import check_hardware_interface
 from .passive_corners import check_passive_corners
+from .routing_rules import check_routing_rules
 from .library_checks import check_footprint_assignment
 from .symbol_checks import check_symbol_pins
 from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
 
 
-CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+CHECK_FUNCS = {"routing_rules": check_routing_rules, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,

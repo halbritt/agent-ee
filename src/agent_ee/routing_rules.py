@@ -4,6 +4,7 @@ No solver or design inference: names and physical units are explicit. Each
 constraint gets its own DRC invocation so KiCad's last-rule precedence cannot
 silently discard overlapping acceptance bounds.
 """
+import copy
 import hashlib
 import json
 import math
@@ -15,7 +16,7 @@ from .storage import digest, write_json
 ID = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
 NET = re.compile(r"[^'\"\\\x00-\x1f]+\Z")
 RULE_TYPES = {'length': ['length_out_of_range'], 'skew': ['skew_out_of_range'],
-              'via_count': ['via_count'], 'clearance': ['clearance']}
+              'via_count': ['too_many_vias'], 'clearance': ['clearance']}
 
 
 def sha_text(text):
@@ -32,7 +33,7 @@ def number(value, label, *, integer=False):
 
 def rule_text(name, condition, constraint):
     return ('(version 1)\n' + f'(rule "{name}"\n'
-            + f'  (condition {json.dumps(condition)})\n  (constraint {constraint}))\n')
+            + f'  (condition {json.dumps(condition, ensure_ascii=False)})\n  (constraint {constraint}))\n')
 
 
 def compile_constraint(spec):
@@ -47,7 +48,7 @@ def compile_constraint(spec):
     kind = spec.get('kind')
     marker = 'agent_ee_' + spec['id']
     base = {'id': spec['id'], 'requirement': spec['requirement'], 'nets': sorted(nets),
-            'kind': kind, 'marker': marker, 'expected': spec}
+            'kind': kind, 'marker': marker, 'expected': copy.deepcopy(spec)}
     allowed = {'id', 'requirement', 'nets', 'kind'}
     if kind == 'impedance':
         allowed |= {'target_ohm', 'tolerance_ohm', 'stackup', 'solver'}
@@ -83,7 +84,7 @@ def compile_constraint(spec):
     condition = ' || '.join(f"A.NetName == '{net}'" for net in sorted(nets))
     rules = rule_text(marker, condition, f'{kind} {bounds}')
     return {**base, 'execution': 'ready', 'rules': rules, 'rules_sha256': sha_text(rules),
-            'native_types': RULE_TYPES[kind]}
+            'native_types': list(RULE_TYPES[kind])}
 
 
 def compile_routing(document):
@@ -104,7 +105,7 @@ def compile_routing(document):
 
 def captured_file(inputs, files, relative):
     if (not isinstance(relative, str) or not relative or PurePosixPath(relative).is_absolute()
-            or '..' in PurePosixPath(relative).parts):
+            or '..' in PurePosixPath(relative).parts or str(PurePosixPath(relative)) != relative):
         raise ValueError('captured input needs a complete candidate-relative path')
     path = Path(inputs) / relative
     if path.is_symlink() or not path.resolve().is_relative_to(Path(inputs).resolve()):
@@ -120,17 +121,42 @@ def validate_mappings(constraints, scope, files, cid):
     mapped = {rid for rid, req in requirements.items() if cid in req['checks']}
     if declared != mapped:
         raise ValueError('rule requirement mappings must exactly match baseline check mappings')
+    if len(declared) != 1:
+        raise ValueError('routing check must bind exactly one requirement; constraints are conjunctive')
     for rid in declared:
         source = requirements[rid]['source']
         if source['path'] not in files or not source.get('locator'):
             raise ValueError('rule requirement needs captured source and locator')
 
 
+def load_document(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f'duplicate JSON key: {key}')
+            result[key] = value
+        return result
+    try:
+        return json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=unique)
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f'cannot read captured routing contract: {exc}') from exc
+
+
 def capability(params, scope, files, inputs, cid=None):
+    if set(params) != {'routing_rules'}:
+        raise ValueError('routing check requires only routing_rules')
+    captured_file(inputs, files, scope['board'])
     path = captured_file(inputs, files, params['routing_rules'])
-    compiled = compile_routing(json.loads(path.read_text(encoding='utf-8')))
+    compiled = compile_routing(load_document(path))
     validate_mappings(compiled['constraints'], scope, files, cid)
-    return {'compiled': compiled, 'immutable_inputs': [params['routing_rules']],
+    immutable = [params['routing_rules']]
+    for suffix in ('.kicad_pro', '.kicad_dru'):
+        sidecar = str(PurePosixPath(scope['board']).with_suffix(suffix))
+        if sidecar in files:
+            captured_file(inputs, files, sidecar)
+            immutable.append(sidecar)
+    return {'compiled': compiled, 'immutable_inputs': immutable,
             'predicates': ['routing:' + c['id'] for c in compiled['constraints']
                            if c['execution'] == 'ready']}
 
@@ -162,7 +188,8 @@ def run_compiled(ctx, compiled, source):
             raise CheckError('malformed', 'native rules result coverage mismatch')
     except (ValueError, KeyError, TypeError, OSError, json.JSONDecodeError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
-    complete = all(r['status'] in ('satisfied', 'violation') for r in records)
+    complete = all(r['execution'] == 'ok' and r['status'] in ('satisfied', 'violation')
+                   for r in records)
     violations = [r['id'] for r in records if r['status'] == 'violation']
     write_json(ctx.work / 'rules-evaluation.json', {
         'schema': 'agent-ee.rules-evaluation/1', 'candidate_id': ctx.manifest['candidate_id'],

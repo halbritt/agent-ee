@@ -71,6 +71,10 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "netclass_completeness":
             from .netclass_completeness import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
+        if spec.get("kind") == "routing_rules":
+            from .routing_rules import capability
+            descriptor = capability(params, scope, files, inputs, spec["id"])
+            paths.update(descriptor["immutable_inputs"])
         if spec.get("kind") == "hardware_interface":
             from .hardware_interface import capability
             descriptor = capability(params, scope, files, inputs, spec["id"])

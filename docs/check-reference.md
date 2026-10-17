@@ -27,6 +27,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
+| `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -74,6 +75,15 @@ all-severity audit. The [donor baseline](../evidence/BASELINE.md) distinguishes
 these rule failures from independently established manufacturing failures.
 Native DRC coverage also depends on the project's configured checks and ignored
 rules; passing these checks is not full circuit function or fab qualification.
+
+## Captured routing constraints
+
+The [routing check](routing-rules.md) accepts a captured `params.routing_rules`
+JSON document. It compiles explicit bounds into isolated native custom-rule
+runs. Scope/2 and scope/3 bind exactly one requirement per routing check and
+freeze its rule document and captured native rule sidecars. Complete route and
+constraint coverage is required; unsupported topology or missing inputs are
+unknown. General DRC and schematic parity remain separate obligations.
 
 ## Native netlist
 

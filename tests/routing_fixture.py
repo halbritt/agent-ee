@@ -1,12 +1,12 @@
 """Original, generated pad-to-pad native board fixtures (no library assets)."""
 
 def make_board(path, lengths=(10, 10.3), vias=0, unrouted=False, width=0.2, drill=0.3,
-               layers=2, outline=(20, 15)):
+               layers=2, outline=(20, 15), net_names=('D+', 'D-')):
     import pcbnew as k
     b = k.BOARD()
     b.SetCopperLayerCount(layers)
     for i, length in enumerate(lengths):
-        n = k.NETINFO_ITEM(b, ('D+', 'D-')[i]); b.Add(n)
+        n = k.NETINFO_ITEM(b, net_names[i]); b.Add(n)
         positions = [(0, 0), (length, 0)]
         points = [k.VECTOR2I(round(x*1e6), (i*3+2)*1000000) for x, y in positions]
         for j, position in enumerate(points):
@@ -35,3 +35,27 @@ def make_board(path, lengths=(10, 10.3), vias=0, unrouted=False, width=0.2, dril
         edge.SetStart(k.VECTOR2I(round(start[0]*1e6), round(start[1]*1e6)))
         edge.SetEnd(k.VECTOR2I(round(end[0]*1e6), round(end[1]*1e6))); edge.SetWidth(50000); b.Add(edge)
     k.SaveBoard(str(path), b)
+
+
+def make_scope(root, document, *, version=3, **board_options):
+    """Owned empty schematic and routing-only obligations; no parity claim."""
+    from agent_ee.storage import write_json
+    make_board(root / 'test.kicad_pcb', **board_options)
+    (root / 'test.kicad_sch').write_text(
+        '(kicad_sch (version 20250114) (generator "eeschema") '
+        '(uuid "d59616d7-b33b-41fe-bc77-f86de4d10183") (paper "A4") (lib_symbols))')
+    (root / 'requirements.txt').write_text('Owned routing acceptance bounds; only declared nets and limits.')
+    write_json(root / 'rules.json', document)
+    scope = {'schema': f'agent-ee.scope/{version}', 'name': 'Owned routing fixture',
+        'scope': 'Explicit routing constraints only', 'schematic': 'test.kicad_sch',
+        'board': 'test.kicad_pcb', 'requirements': ['requirements.txt'],
+        'inputs': [{'path': p, 'at': p} for p in
+                   ('test.kicad_sch', 'test.kicad_pcb', 'rules.json', 'requirements.txt')],
+        'checks': [{'id': 'routing', 'kind': 'routing_rules', 'params': {'routing_rules': 'rules.json'}}],
+        'baseline': {'requirements': [{'id': rid, 'statement': 'Meet explicit routing constraints.',
+            'checks': ['routing'], 'source': {'path': 'requirements.txt', 'locator': rid},
+            **({'intent': 'acceptance'} if version == 3 else {})}
+            for rid in sorted({c['requirement'] for c in document['constraints']})],
+            'targets': ['requirements.txt'], 'reference_architectures': ['requirements.txt']}}
+    write_json(root / 'scope.json', scope)
+    return scope
