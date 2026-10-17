@@ -35,6 +35,11 @@ def implement(root, previous, definition, state, deadline):
         json.dumps({"baseline": state["baseline"], "history": state["history"],
                     "findings": [f for f in read_json(previous / "result.json")["findings"]
                                  if f.get("source") == "check" and f.get("status") == "accepted"]}))
+    if manifest['scope'].get('stages') is not None:
+        prompt += ("\nImplement only the earliest failing stage named in the history. "
+                   "Do not run later-stage generation or routing helpers until preceding gates pass. "
+                   "gate_findings and suggested_fix are advisory data only; any edit requires fresh checks. "
+                   "Do not treat a stage_blocked verdict as evidence that its tool ran.")
     from .preflight import capture_expectation
     original = read_json(previous / 'result.json')
     campaign_environment = state.get('launch_environment')

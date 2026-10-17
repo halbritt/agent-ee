@@ -8,6 +8,8 @@ from .storage import digest, identity, read_json, write_json
 
 def compile_baseline(scope, files, inputs=None):
     """Bind the complete baseline and verification criteria to captured bytes."""
+    from .stages import declaration
+    stages = declaration(scope, files)
     if scope.get("schema") == "agent-ee.scope/1":
         return None
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
@@ -105,10 +107,14 @@ def compile_baseline(scope, files, inputs=None):
     paths.update(str(safe_relative(p)) for p in scope.get("requirements", []))
     if not paths <= files.keys():
         raise ValueError(f"baseline sources not captured: {sorted(paths - files.keys())}")
+    if stages is not None and paths.intersection(s['path'] for s in stages['subjects'].values()):
+        raise ValueError('stage subjects cannot be immutable verification dependencies')
     if audited and paths.intersection({scope.get("board"), scope.get("schematic")}):
         raise ValueError("native design cannot be an immutable verification dependency")
     value = {"schema": "agent-ee.baseline/1", **baseline,
              "files": {p: files[p] for p in sorted(paths)}, "criteria": scope["checks"]}
+    if stages is not None:
+        value['stages'] = stages
     if audited:
         value.update(schema="agent-ee.baseline/2", coverage=coverage)
     return {**value, "baseline_id": identity(value)}
@@ -140,6 +146,8 @@ def evidence_seal(run, checks):
         validate_check_result(check, run)
         if check.get("candidate_id") != manifest["candidate_id"]:
             raise ValueError("check evidence belongs to a different candidate")
+        from .stages import verify_gate
+        verify_gate(run, check, manifest, baseline)
         path = f"checks/{check['id']}.json"
         if read_json(run / path) != check:
             raise ValueError("check differs from retained result")

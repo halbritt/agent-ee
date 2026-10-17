@@ -862,7 +862,15 @@ def run_checks(run_dir, deadline):
                 raise CheckError("interrupted", "run deadline exhausted before this check started")
             if func is None:
                 raise CheckError("unsupported", f"unknown check kind {spec.get('kind')!r}")
-            func(ctx)
+            from .stages import before_check
+            if before_check(ctx, results):
+                func(ctx)
+            from .stages import validate_gate_findings
+            try:
+                validate_gate_findings(ctx.result)
+            except ValueError as exc:
+                ctx.result['details'].pop('gate_findings', None)
+                raise CheckError('malformed', str(exc)) from exc
         except CheckError as exc:
             ctx.result["execution"] = exc.execution
             ctx.result["outcome"] = "unknown"
