@@ -1,0 +1,84 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Owned CPL rotation control",
+  "scope": "Synthetic 2-layer board, schematic and supplier footprints; exercises JLC CPL rotation correction only.",
+  "schematic": "design/cpl.kicad_sch",
+  "board": "design/cpl.kicad_pcb",
+  "inputs": [
+    {
+      "path": ".",
+      "at": "design",
+      "include": [
+        "cpl.kicad_sch",
+        "cpl.kicad_pcb",
+        "jlc-cpl-policy.json",
+        "requirements.md",
+        "supplier/C910002.raweasy.json",
+        "supplier/C910002.provenance.json",
+        "supplier/C910008.raweasy.json",
+        "supplier/C910008.provenance.json",
+        "supplier/C910010.raweasy.json",
+        "supplier/C910010.provenance.json",
+        "supplier/C910020.raweasy.json",
+        "supplier/C910020.provenance.json"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "fab",
+      "kind": "fab_export",
+      "params": {
+        "netlist_check": "netlist"
+      }
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry"
+    },
+    {
+      "id": "cpl",
+      "kind": "cpl_rotation",
+      "params": {
+        "export_check": "fab",
+        "geometry_check": "geometry",
+        "policy": "design/jlc-cpl-policy.json",
+        "supplier_footprints": [
+          "design/supplier/C910002.provenance.json",
+          "design/supplier/C910008.provenance.json",
+          "design/supplier/C910010.provenance.json",
+          "design/supplier/C910020.provenance.json"
+        ],
+        "source_tolerance_nm": "200"
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-cpl",
+        "statement": "The JLC CPL rotation is policy- and pin-1-checked",
+        "source": {
+          "path": "design/requirements.md",
+          "locator": "R-cpl"
+        },
+        "checks": [
+          "netlist",
+          "fab",
+          "geometry",
+          "cpl"
+        ]
+      }
+    ],
+    "targets": [
+      "design/requirements.md"
+    ],
+    "reference_architectures": [
+      "design/requirements.md"
+    ]
+  }
+}

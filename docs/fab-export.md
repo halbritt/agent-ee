@@ -89,8 +89,8 @@ The native position file is rewritten: `Ref`→`Designator`, `PosX`→`Mid X`,
 `Val` and `Package` are dropped. Coordinates are the native millimetre values in
 absolute board coordinates, the same frame as the Gerbers. Rows are in natural
 designator order. The check applies **no rotation, offset or pin-1 policy**:
-`Rotation` is the native KiCad angle. JLC rotation correction belongs to
-AGENTEE-72. The position-file designators must equal the board's non-DNP
+`Rotation` is the native KiCad angle. JLC rotation correction is the separate
+[`cpl_rotation`](cpl-rotation.md) check (AGENTEE-72), which reads this staging. The position-file designators must equal the board's non-DNP
 footprints, or the output is malformed.
 
 ### Manifest

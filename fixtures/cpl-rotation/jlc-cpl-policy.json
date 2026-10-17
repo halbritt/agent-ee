@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "policy_id": "agent-ee-jlc-cpl-v1",
+  "provenance": "agent-ee owned policy, 2026-10-17. SOIC-8_3.9x4.9mm_P1.27mm +270: JLCPCB rendered a KiCad 10 SOIC-8 at native 90 deg a quarter turn off (Konnect issue #518, recorded as a fact), and agent-ee pin-1 frames give supplier bottomside_left to KiCad leftside_top = 270. USB_C_Receptacle_HRO_TYPE-C-31-M-12 +180: the same Konnect JLCPCB preview record, not re-derived here. No JLCKicadTools data.",
+  "footprint_rules": [
+    {
+      "id": "soic-8-3.9x4.9-p1.27",
+      "footprint_prefix": "SOIC-8_3.9x4.9mm_P1.27mm",
+      "rotation_degrees": 270
+    },
+    {
+      "id": "hro-type-c-31-m-12",
+      "footprint_prefix": "USB_C_Receptacle_HRO_TYPE-C-31-M-12",
+      "rotation_degrees": 180
+    }
+  ],
+  "component_overrides": []
+}

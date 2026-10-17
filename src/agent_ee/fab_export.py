@@ -13,8 +13,9 @@ fab lane interface contract v1 under `work/<check-id>/fab/`:
     pcb_summary.json  native `kicad-cli pcb export stats` JSON
     manifest.json     agent-ee.fab-manifest/1, written last and only on success
 
-No rotation, offset or pin-1 policy is applied to the CPL (AGENTEE-72 owns
-that); rotations are the native position-file values. Outcome `pass` means
+No rotation, offset or pin-1 policy is applied to the CPL; rotations are the
+native position-file values. The separate `cpl_rotation` check (AGENTEE-72)
+derives the corrected JLC CPL from this staging. Outcome `pass` means
 only that every export succeeded, validated and was hashed into a complete
 manifest. It does not establish DFM, BOM/CPL/board designator consistency
 (AGENTEE-73) or orderability. Missing, empty or unparseable output, an
@@ -728,7 +729,7 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
     details['manifest_sha256'] = digest(fab / 'manifest.json')
     ctx.result['limitations'] += [
         'CPL rotations are the native KiCad position-file values; no JLC rotation, offset or '
-        'pin-1 policy was applied (AGENTEE-72)',
+        'pin-1 policy was applied; the cpl_rotation check (AGENTEE-72) corrects them',
         'pass means the exports exist, parsed and are hashed; BOM/CPL/board designator '
         'consistency is gated by fab_consistency (AGENTEE-73), not by this check',
         'no DFM, panelisation, stock, price or orderability evaluation',

@@ -438,6 +438,7 @@
         "tests/test_capability_pipeline.py",
         "tests/test_checks.py",
         "tests/test_connectivity_ir.py",
+        "tests/test_cpl_rotation.py",
         "tests/test_execution_failures.py",
         "tests/test_findings.py",
         "tests/test_footprint_library.py",
@@ -1368,6 +1369,16 @@
     },
     {
       "paths": [
+        "fixtures/cpl-rotation/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
         "fixtures/generation/"
       ],
       "kind": "owned-fixture",
@@ -1478,6 +1489,36 @@
         "AE"
       ],
       "reviewed": "Original synthetic board/schematic output from fixtures/fab-export/generate.py; its module docstring records the invented geometry and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/cpl-rotation/cpl.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board, schematic and EasyEDA-format supplier records from fixtures/cpl-rotation/generate.py; its module docstring records the invented geometry, borrowed footprint-name facts and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/cpl-rotation/cpl.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board, schematic and EasyEDA-format supplier records from fixtures/cpl-rotation/generate.py; its module docstring records the invented geometry, borrowed footprint-name facts and placeholder part fields."
+    },
+    {
+      "paths": [
+        "fixtures/cpl-rotation/generate.py"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic board, schematic and EasyEDA-format supplier records from fixtures/cpl-rotation/generate.py; its module docstring records the invented geometry, borrowed footprint-name facts and placeholder part fields."
     },
     {
       "paths": [

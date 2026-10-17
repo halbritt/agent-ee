@@ -57,7 +57,8 @@ The checks that constitute "done" for each rung:
 `parts_subset`, `placement`, `block_provenance` and `fab_package` do not exist
 yet (AGENTEE-86, AGENTEE-92, AGENTEE-90, AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
-consistency gate and CPL rotation policy remain AGENTEE-73 and AGENTEE-72.
+consistency gate remains AGENTEE-73, and CPL rotation correction is
+[`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 

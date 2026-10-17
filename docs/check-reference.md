@@ -35,6 +35,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -340,3 +341,15 @@ See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check` and
 applies no CPL rotation policy.
+
+## JLCPCB CPL rotation
+
+`cpl_rotation` takes `export_check`, `geometry_check`, a captured `policy`,
+captured `supplier_footprints` provenance records and `source_tolerance_nm`.
+It writes a JLC CPL whose rows are native pad-box midpoints, and it applies the
+versioned policy. Every rotation is cross-checked against the pin-1 frame of
+the captured supplier footprint, which detects quarter-turn offsets,
+reflections and diode polarity. Each row appears in exactly one of
+`applied_corrections` or `unmatched_footprints`. Missing geometry or a
+duplicate designator never falls back to the anchor. The status stays
+`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).

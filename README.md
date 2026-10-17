@@ -164,6 +164,12 @@ not establish that the declared clearance or track-width values are suitable.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. Coordinates, Gerber geometry and DFM stay outside its coverage.
+The [CPL rotation check](docs/cpl-rotation.md) rewrites the exported CPL to
+native pad-box midpoints. It applies a captured, versioned rotation policy and
+requires every rotation to agree with the pin-1 frame of the captured supplier
+footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
+diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
+JLCPCB placement preview validates rotation physically.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact

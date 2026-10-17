@@ -32,6 +32,7 @@ product's hardware qualification.
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |
 | Export a captured board into a JLCPCB fab package | [Fab export](fab-export.md) |
 | Verify sealed fabrication outputs against captured design evidence | [Fab-package consistency](fab-consistency.md) |
+| Correct JLCPCB CPL midpoints and rotations against the supplier footprint | [CPL rotation](cpl-rotation.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
@@ -100,6 +101,7 @@ conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
 - [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement through a registered check.
+- [JLCPCB CPL rotation](cpl-rotation.md) — pad-box midpoints, versioned rotation policy and pin-1 frame verification against captured supplier footprints.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; the placement writer is integrated with staged campaigns.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.

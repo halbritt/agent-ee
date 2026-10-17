@@ -77,6 +77,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "land_pattern":
             from .land_pattern import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "cpl_rotation":
+            from .cpl_rotation import capability
+            paths.update(capability(params, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "symbol_pins":
             from .symbol_checks import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
