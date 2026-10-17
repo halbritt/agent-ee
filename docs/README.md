@@ -87,3 +87,4 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Placement geometry](placement.md) and [initial placement](placer.md) — saved-board polygon checks and an isolated proposal writer; campaign gate integration remains pending.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
+- [Fab-package consistency](fab-consistency.md) — checks a sealed fab_export staging tree against its manifest and the captured board; it never regenerates exports.

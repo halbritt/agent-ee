@@ -37,6 +37,10 @@ Check kinds and parameters:
   — list of `{name, at_ms, min?, max?}` with unique names, finite `at_ms`
   within (0, stop_ms], finite limits and min <= max; entries with limits are
   fixed acceptance criteria, entries without are informational.
+- `fab_consistency`: verifies the sealed staging tree of an earlier
+  same-candidate `fab_export` check (`params.export_check`) against its
+  `agent-ee.fab-manifest/1`, the captured board and the export's sealed
+  netlist prerequisite (`agent_ee.fab_consistency`); it never regenerates exports.
 
 Result shape (contract `docs/contracts.md`): `{id, kind, candidate_id,
 execution, outcome, summary, evidence, details, limitations}` with execution
@@ -819,6 +823,7 @@ from .library_checks import check_footprint_assignment
 from .symbol_checks import check_symbol_pins
 from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
+from .fab_consistency import check_fab_consistency
 
 
 CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
@@ -828,7 +833,8 @@ CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_f
                "drc": check_drc, "netlist": check_netlist,
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
-               "passive_corners": check_passive_corners, "dc_path": check_dc_path}
+               "passive_corners": check_passive_corners, "dc_path": check_dc_path,
+               "fab_consistency": check_fab_consistency}
 
 
 # ------------------------------------------------------------------ entry point

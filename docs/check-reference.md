@@ -27,6 +27,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
+| `fab_consistency` | Coordinator reads the earlier export's sealed staging tree, the captured board and the sealed netlist; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |

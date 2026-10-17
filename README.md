@@ -127,6 +127,9 @@ series/parallel networks; unsupported conductors leave coverage incomplete.
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
+The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
+`fab_export` staging tree against its manifest, the captured board and the sealed
+netlist. Coordinates, Gerber geometry and DFM stay outside its coverage.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes

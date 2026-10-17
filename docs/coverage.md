@@ -12,6 +12,7 @@ choices; the orchestration and checks contain no FOME-MC requirements.
 | `footprint_assignment` | [Captured library pad inventories and explicit assignments](footprint-libraries.md); checks declared symbol-pin/pad parity, not correspondence to the actual schematic inventory or physical fit. |
 | `symbol_pins` | [Captured symbol context](symbol-context.md) and declared pin-reference coverage; no automatic instance binding or datasheet-function proof. |
 | `netclass_completeness` | [Captured Default netclass field presence](netclass-completeness.md), qualified for KiCad 10.0.7 settings schema 5; no value or rendering validation. |
+| `fab_consistency` | [Sealed fab_export staging tree](fab-consistency.md) against its manifest, the captured board and the export's sealed netlist: inventory, layers, PTH/NPTH drill, BOM/CPL/board designator parity, LCSC footprint uniqueness, CPL side and 3D-model resolution. No coordinate, Gerber geometry or DFM coverage. |
 | `measurements` | Pinned installed producer, captured parser, candidate-bound scalar metrics and coordinator bounds; requires independently qualified models and parser semantics. |
 | `coupled_margins` | Same-condition results from distinct declared domains; conjunctive limits, retaining calibrated source intervals and source facts. |
 | `datasheet_facts` | Captured PDF hash/page/exact-quote/value verification with sandboxed hash/version-pinned Poppler. Textual support only; applicability and row/conditions remain engineer judgments. |
