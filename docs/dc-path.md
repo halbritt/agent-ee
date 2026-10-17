@@ -57,6 +57,20 @@ alone. The shipped qualification targets the repository's pinned native image.
 
 ## Geometry and physics limits
 
+Policy `endpoint-planar-dc/2` requires an explicit substrate inventory. Board
+and footprint Edge.Cuts together must form one closed axis-aligned outer
+rectangle and zero or more strictly internal, mutually disjoint rectangular
+cutouts. Each rectangle must consist of exactly four native straight segments.
+Missing, open, curved, rotated, touching, overlapping, nested or ambiguous
+boundaries refuse coverage; native rectangle primitives also remain unsupported.
+At most 128 boundary segments are allowed. Conductor native bounding boxes,
+expanded by the maximum dimensional width radius plus 2 nm, and terminal pad
+envelopes must lie strictly within retained substrate and clear every cutout.
+This box test deliberately refuses some physically clear paths near cutouts,
+particularly arcs; it cannot grant coverage across missing substrate.
+The native inventory retains every boundary UUID and supported shape geometry;
+the network retains qualified rectangles and tested copper envelopes.
+
 All board tracks must be on the declared net and F.Cu layer. All conductive
 branches are retained. An accepted network must reduce completely through
 series and parallel operations between the two declared terminals. The handler
@@ -78,7 +92,11 @@ least ten times its largest envelope width. Exactly two round, centered SMD
 pads on F.Cu are allowed; each diameter must fit inside the narrowest attached
 trace. Their native centers define ideal terminal anchors. Other pads, vias,
 all zones (even on unrelated nets), other net/layer tracks and copper graphics
-are unsupported. This deliberately conservative isolation policy does not claim
+are unsupported, including footprint Reference, Value and user PCB_FIELD objects
+from the native field collection (even hidden copper fields conservatively
+refuse). Board drawings and footprint graphical items retain all native classes
+on copper, and board/footprint zones remain globally unsupported.
+This deliberately conservative isolation policy does not claim
 arbitrary-board extraction. Pad/junction spreading and connector/component
 resistance are excluded idealizations, not measured copper truth.
 

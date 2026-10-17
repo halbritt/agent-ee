@@ -220,6 +220,68 @@ p.SaveBoard(path,b)
                 self.assertNotIn('metrics', ctx.result['details'])
                 self.assertFalse(read_json(ctx.work / 'analysis.json')['complete'])
 
+    def test_native_substrate_and_field_inventory(self):
+        mutation = """import pcbnew as p, sys
+path, kind = sys.argv[1:]
+b = p.LoadBoard(path)
+def v(x,y): return p.VECTOR2I(round(x*1e6),round(y*1e6))
+if kind in ('missing', 'open'):
+ for g in list(b.GetDrawings())[:(1 if kind == 'open' else 4)]: b.Remove(g)
+elif kind.startswith('field'):
+ fp=next(iter(b.GetFootprints()))
+ field = fp.Reference() if kind == 'field-reference' else fp.Value()
+ if kind == 'field-user':
+  field=p.PCB_FIELD(fp, p.FIELD_T_USER, 'Custom'); fp.Add(field)
+ field.SetText('COPPER'); field.SetVisible(True); field.SetLayer(p.F_Cu)
+elif kind == 'outside':
+ for t in b.GetTracks(): t.Move(v(40,0))
+ for fp in b.GetFootprints(): fp.Move(v(40,0))
+else:
+ owner=next(iter(b.GetFootprints())) if kind == 'footprint-cutout' else b
+ coords=((34,29),(36,29),(36,31),(34,31))
+ if kind == 'clear-cutout': coords=((22,22),(24,22),(24,24),(22,24))
+ if kind == 'envelope': coords=((34,30.13),(36,30.13),(36,31),(34,31))
+ if kind == 'touching': coords=((20,29),(36,29),(36,31),(20,31))
+ if kind == 'diagonal': coords=((22,22),(24,23),(24,24),(22,24))
+ if kind == 'nested': coords=((22,22),(24,22),(24,24),(22,24))
+ for a,z in zip(coords,coords[1:]+coords[:1]):
+  g=p.PCB_SHAPE(owner); g.SetLayer(p.Edge_Cuts); g.SetShape(p.SHAPE_T_SEGMENT)
+  g.SetStart(v(*a)); g.SetEnd(v(*z)); g.SetWidth(50000); owner.Add(g)
+ if kind in ('nested', 'overlap'):
+  coords=((22.5,22.5),(23.5,22.5),(23.5,23.5),(22.5,23.5)) if kind == 'nested' else ((35,29),(37,29),(37,31),(35,31))
+  for a,z in zip(coords,coords[1:]+coords[:1]):
+   g=p.PCB_SHAPE(b); g.SetLayer(p.Edge_Cuts); g.SetShape(p.SHAPE_T_SEGMENT)
+   g.SetStart(v(*a)); g.SetEnd(v(*z)); g.SetWidth(50000); b.Add(g)
+ if kind == 'curve':
+  g=p.PCB_SHAPE(b); g.SetLayer(p.Edge_Cuts); g.SetShape(p.SHAPE_T_CIRCLE)
+  g.SetStart(v(25,25)); g.SetEnd(v(26,25)); b.Add(g)
+p.SaveBoard(path,b)
+"""
+        for kind in ('cutout', 'footprint-cutout', 'clear-cutout', 'missing', 'open',
+                     'outside', 'curve', 'envelope', 'nested', 'overlap', 'touching', 'diagonal', 'field-reference', 'field-value', 'field-user'):
+            with self.subTest(kind=kind):
+                declared = contract()
+                declared['dimensions']['width_factors'] = [.9, 1.1]
+                root = self.prepare('inventory-' + kind, declared=declared)
+                completed = subprocess.run(['/usr/bin/python3', '-c', mutation,
+                    str(root / 'project/dc_path.kicad_pcb'), kind], capture_output=True, text=True, timeout=30)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                ctx = self.ctx(root)
+                if kind == 'clear-cutout':
+                    dc_path.check_dc_path(ctx)
+                    self.assertTrue(ctx.result['details']['analysis']['complete'])
+                else:
+                    with self.assertRaises(checks.CheckError):
+                        dc_path.check_dc_path(ctx)
+                    self.assertNotIn('metrics', ctx.result['details'])
+                    self.assertFalse(read_json(ctx.work / 'analysis.json')['complete'])
+                geo = read_json(ctx.work / 'geometry.json')
+                self.assertIn('substrate', geo)
+                if kind.startswith('field'):
+                    self.assertIn('PCB_FIELD', [g['native_class'] for g in geo['copper_graphics']])
+                if kind in ('cutout', 'footprint-cutout'):
+                    self.assertEqual(len(geo['substrate']['boundaries']), 8)
+
     def test_qualification_scope3_and_baseline_own_inputs(self):
         root = self.prepare('descriptor')
         ctx = self.ctx(root)

@@ -46,6 +46,15 @@ def make_board(path, kind):
         track.SetLayer(p.F_Cu)
         track.SetNet(net)
         b.Add(track)
+    corners = ((-10, -10), (30, -10), (30, 15), (-10, 15))
+    for a, z in zip(corners, corners[1:] + corners[:1]):
+        edge = p.PCB_SHAPE(b)
+        edge.SetShape(p.SHAPE_T_SEGMENT)
+        edge.SetLayer(p.Edge_Cuts)
+        edge.SetStart(vec(a))
+        edge.SetEnd(vec(z))
+        edge.SetWidth(50000)
+        b.Add(edge)
     p.SaveBoard(str(path), b)
 
 
