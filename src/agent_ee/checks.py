@@ -797,7 +797,7 @@ def check_rc_transient(ctx):
         ctx.result["outcome"] = "info"
         ctx.result["summary"] = "transient simulation completed; no limits were declared"
 
-    if ctx.scope.get("schema") == "agent-ee.scope/2":
+    if ctx.scope.get("schema") in ("agent-ee.scope/2", "agent-ee.scope/3"):
         from .measurements import finish
         limits = {name: {"unit": "V", "condition": metrics[name]["condition"],
             **{key: m[key] for key in ("min", "max") if m[key] is not None}}

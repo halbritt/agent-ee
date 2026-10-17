@@ -170,3 +170,63 @@ Unavailable prerequisites produce explicit skips by default;
 execution evidence. Parser, orchestration and failure tests that do not require
 those tools continue to run. See the [maintainer guide](maintainer-guide.md#development-and-checks)
 for the strict command. Production missing-tool classification is unchanged.
+
+## Opt-in executable coverage audit
+
+[Scope/3](scope-reference.md#version-3-executable-acceptance-coverage) audits
+configured predicates before launch. Netlist export and geometry without a width
+limit are supported informational checks. ERC/DRC have Boolean violation
+predicates; captured sibling `.kicad_pro` and `.kicad_dru` files are immutable
+verification dependencies because they define native rules. Geometry requires a valid positive finite limit; the optional
+`copper-width/1` contract also requires exact track/arc class coverage and explicit
+net exclusions. Passive transient checks require an earlier native netlist,
+valid simulation parameters, and at least one bounded measurement to cover an
+acceptance obligation. Unbounded transient measurements remain informational.
+
+Generic measurement checks require a captured parser, pinned producer declaration,
+captured program inputs and nonempty limits with matching metric unit/condition
+identities. Candidate program arguments must appear in immutable `tool.inputs`.
+Coupled margins require earlier measurement-producing sources, statically
+resolvable metric identities, distinct domains and consistent conditions.
+Adapters, producer inputs and calibration inputs are immutable baseline files
+and cannot become campaign repair targets.
+
+This audit establishes that a configured predicate can report a violation.
+It does not establish requirement completeness, model qualification, runtime
+coverage, electrical truth or a passing design. Native execution still decides
+whether the current design is supported and meets the declared bounds.
+
+The native scope/3 test corpus uses independently committed expectations in
+`tests/fixtures/capability-mutations.json`. Matched RC controls and wrong values,
+narrow straight tracks/arcs and native rule defects run through KiCad/ngspice,
+independent initial reviewer fixtures and centralized scripted adjudication.
+Malformed schematics and unsupported value notation are unknown coverage and are
+not counted as detected physical defects. The RC voltage oracle uses the
+independent analytical step equation. These are coordinator harness tests, not
+live-model detection performance or hardware validation.
+
+### Capability descriptors for new handlers
+
+Execution registration alone never grants scope/3 capability. A new kind remains
+unsupported until a focused pure validator in `capabilities.py` validates its
+actual parameters, prerequisites, predicates and immutable dependencies. The
+registry/execution agreement test intentionally requires this follow-up when
+handlers are integrated. No placeholder support exists for AGENTEE-17/18/19.
+Their integration must supply:
+
+- Installed analyzer: supported contract/version and explicit known blocking
+  rules, captured rule/program inputs and retained tool identity. Actual evaluated
+  rule coverage remains a runtime obligation; an empty blocking set is informational.
+- Facts verification: captured facts/PDF dependencies and citation support
+  semantics, distinguished from an electrical consumer's pin-function predicate.
+  A citation verifier that returns unsupported rather than defects for invalid
+  support is informational. A pin-map consumer needs declared mappings and
+  earlier verified facts/native connectivity; failed verification cannot pass.
+- Active SPICE: supported analyses and bounded measurements, earlier native
+  netlist, explicit model/subcircuit/pin maps and captured recursive model
+  dependencies. Runtime device coverage and model containment remain mandatory.
+  If static validation requires file contents, capture and baseline verification
+  must use the same narrow read-only captured-input interface.
+
+Descriptor semantics are coordinator policy. Changes require capability version
+and policy review; old evidence never gains new audited coverage automatically.

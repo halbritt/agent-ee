@@ -82,8 +82,8 @@ def run_campaign(config_path, out):
         raise ValueError("max_seconds must be between 1 and 86400")
     scope_path = (config_path.parent / config["scope"]).resolve()
     scope = read_json(scope_path)
-    if scope.get("schema") != "agent-ee.scope/2":
-        raise ValueError("campaign requires an immutable scope/2 baseline")
+    if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
+        raise ValueError("campaign requires an immutable scope/2 or scope/3 baseline")
     profile = validate_profile(config["review_profile"])
     # Reuse the subscription route validator for the implementation definition.
     validate_profile({**profile, "adjudicator": config["implementation"]})

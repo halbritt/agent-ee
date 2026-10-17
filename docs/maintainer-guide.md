@@ -185,11 +185,12 @@ than overwriting prior evidence. Restore/replay caveats and commands are in
 
 ## Closed-loop seams and preservation rules
 
-The scope/2 additions are explicit interfaces with separate ownership:
+The baseline and campaign additions are explicit interfaces with separate ownership:
 
 | Interface | Responsibility |
 | --- | --- |
-| `compile_baseline(scope, files)` / `load_baseline(run)` | Construct or reconstruct immutable requirements, criteria and baseline file hashes |
+| `compile_baseline(scope, files)` / `load_baseline(run)` | Construct or reconstruct immutable requirements, criteria, baseline file hashes and scope/3 coverage |
+| `describe_check(spec, check_specs=..., files=..., scope=...)` / `compile_coverage(scope, files)` | Pure scope/3 capability descriptions and executable acceptance coverage; never tool execution or inference |
 | `freeze_evidence(run, checks)` / `verify_evidence(run, checks, required=...)` | Seal coordinator outputs before review; reconstruct that seal during verification |
 | `validate_witnesses(run, witnesses, evidence)` | Bind a claimed defect to a mapped, executed, failed check and unchanged raw evidence |
 | `check_measurements(ctx)` | Execute declared producer and captured parser, validate identities/provenance and evaluate limits |
@@ -255,3 +256,11 @@ syntax with `bash -n`, and counts Mermaid blocks. It does not execute examples,
 fetch external URLs, render diagrams or verify prose against implementation.
 Run interface examples separately with their real validators and render changed
 Mermaid diagrams before reviewing their meaning and readability.
+
+
+Scope/3 execution extensions require matching focused capability validators in
+`capabilities.py`. Include prerequisites and immutable verification dependencies;
+unknown kinds fail closed even when execution is registered. The registry
+agreement test catches missing descriptors. Preserve historical scope/1 and
+scope/2 semantics and baseline/1 serialization when changing this interface.
+See [descriptor extension requirements](coverage.md#capability-descriptors-for-new-handlers).

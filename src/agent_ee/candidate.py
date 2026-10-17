@@ -64,8 +64,8 @@ def capture(scope_path, run_dir, profile_path=None):
     scope_path, run_dir = Path(scope_path).resolve(), Path(run_dir).resolve()
     scope_bytes = scope_path.read_bytes()
     scope = read_json(scope_path)
-    if scope.get("schema") not in ("agent-ee.scope/1", "agent-ee.scope/2"):
-        raise ValueError("expected agent-ee.scope/1 or agent-ee.scope/2")
+    if scope.get("schema") not in ("agent-ee.scope/1", "agent-ee.scope/2", "agent-ee.scope/3"):
+        raise ValueError("expected agent-ee.scope/1, agent-ee.scope/2 or agent-ee.scope/3")
     profile_source = None
     if profile_path:
         profile_source = Path(profile_path).expanduser().resolve()

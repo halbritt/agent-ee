@@ -248,3 +248,50 @@ including under scope/2. To include native arcs, explicitly set
 [coverage contract](coverage.md) for counts, evidence and incomplete outcomes.
 Changing these captured check parameters creates a different baseline; it cannot
 broaden an existing campaign's acceptance coverage.
+
+## Version 3 executable acceptance coverage
+
+`agent-ee.scope/3` explicitly opts into `agent-ee.baseline/2`. Scope/1 and
+scope/2 retain their historical interpretation; scope/2 still serializes
+baseline/1 without an audit. Unknown scope versions are refused by capture and
+baseline verification.
+
+Each baseline requirement has the existing `id`, `statement`, `source`, and
+`checks`, plus required `intent: "acceptance"` or `"informational"`. All
+requirements and checks remain mapped. At least one acceptance requirement is
+required. Every acceptance requirement must map to a supported check with an
+executable violation predicate. A defect-capable check must have an acceptance
+mapping, even when it also supplies informational requirements. No waiver field
+or automatic downgrade is supported.
+
+Baseline/2 embeds one authoritative `coverage` report (`agent-ee.coverage/1`,
+policy `executable-acceptance/1`). Its `checks` map includes every check's ID,
+kind, capability version, supported status, `can_evaluate_bound`, predicate
+locators, ordered prerequisites, immutable dependency paths, and unsupported
+reasons. Its `requirements` map includes intent, mapped checks and eligible
+acceptance checks. `coverage_id` hashes the canonical report excluding that ID;
+`baseline_id` hashes the full baseline including coverage. There are no candidate
+design hashes or timestamps in coverage. The full baseline is available to
+reviewers at `/evidence/baseline.json`, regardless of packet text truncation.
+
+Capture refuses missing acceptance coverage, unknown kinds/criteria, malformed
+bounds, uncaptured verification dependencies and unresolved, wrong-kind or
+forward prerequisites before checks or inference. The retained baseline is
+recompiled from captured scope and inventory during verification and compared
+exactly. Changing report booleans, intent, predicates or mappings cannot assert
+capability. Native design files cannot be declared immutable verification inputs.
+
+A scope/3 accepted witness must name an acceptance requirement and one of its
+audited defect-capable checks, in addition to the existing failed coordinator
+check, current candidate, cited result and sealed raw-evidence requirements.
+Informational witnesses cannot establish accepted defects. Runtime unsupported,
+malformed or failed executions remain unknown coverage, even for statically
+supported declarations.
+
+To convert an existing scope/2, use the pure
+`agent_ee.capabilities.convert_scope(scope)` helper and write its return value to
+a **new** scope file. It preserves every requirement and defaults every intent
+to acceptance. A netlist-only requirement will therefore refuse compilation
+until the owner defines an executable acceptance plan. Conversion does not edit
+historical scopes, evidence or campaigns. Scope/1 needs an owner-authored baseline
+before conversion. Intent changes define a new contract.

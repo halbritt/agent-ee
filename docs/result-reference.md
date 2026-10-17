@@ -14,10 +14,10 @@ and compact separators before SHA-256 hashing.
 ```text
 RUN/
   candidate.json                 selected input manifest and scope
-  baseline.json                  immutable scope/2 baseline, when applicable
+  baseline.json                  immutable scope/2 or scope/3 baseline, when applicable
   inputs/                        exact captured source/library/requirement bytes
   work/CHECK_ID/                  isolated native scratch and raw evidence
-  work/verification/evidence.json scope/2 check and raw-artifact seal
+  work/verification/evidence.json scope/2 or scope/3 check and raw-artifact seal
   checks/CHECK_ID.json            interpreted check result
   packet.json                    bounded evidence supplied to initial reviewers
   reviews/ROLE.json              validated initial judgment
@@ -255,6 +255,7 @@ scope/2 guarantees: inspect its captured scope and baseline.
 | Record | Fields and ownership |
 | --- | --- |
 | `baseline.json`, `agent-ee.baseline/1` | Coordinator-owned `requirements`, `targets`, `reference_architectures`, `files`, `criteria`, `baseline_id` |
+| `baseline.json`, `agent-ee.baseline/2` | Scope/3 adds requirement `intent` and coordinator-owned `coverage` (`agent-ee.coverage/1`), covered by `baseline_id` |
 | `work/verification/evidence.json`, `agent-ee.evidence/1` | Coordinator-owned `candidate_id`, `baseline_id`, and `checks` map of check IDs to `{result, artifacts}` hashes |
 | Packet extension | `baseline` contains the full structured baseline; `baseline_access` describes its sandbox location |
 | Finding extension | `witnesses` array of `{requirement_id, check_id}` pairs |
@@ -343,3 +344,14 @@ carry a standalone schema version in the current implementation. Their fields
 are described in the measurement and bench guides. Hash inventories and campaign
 snapshots remain trusted local records, not signatures against a privileged
 party capable of replacing all records and expected hashes.
+
+
+## Scope/3 audited witnesses
+
+Scope/3 retains the candidate, packet, result, review, decision and seal `/1`
+record names. Its baseline/2 embeds the complete executable coverage report.
+An accepted witness must additionally reference an acceptance-intent requirement
+and one of its audited defect-capable mapped checks. Informational mappings never
+establish an accepted defect. Capture and verification reconstruct coverage;
+a retained flag cannot promote an unsupported check. See the
+[scope contract](scope-reference.md#version-3-executable-acceptance-coverage).

@@ -613,7 +613,9 @@ def adjudicate(findings, decisions, run_dir):
                 witnesses = target_finding.get("witnesses")
                 if target_finding.get("source") == "check":
                     witnesses = [{"requirement_id": r["id"], "check_id": target_finding["local_id"]}
-                        for r in baseline["requirements"] if target_finding["local_id"] in r["checks"]]
+                        for r in baseline["requirements"] if target_finding["local_id"] in r["checks"]
+                        and (baseline["schema"] == "agent-ee.baseline/1" or
+                             target_finding["local_id"] in baseline["coverage"]["requirements"][r["id"]]["acceptance_checks"])]
                 validate_witnesses(run_dir, witnesses, validated_ev)
             if target_finding.get("assessment") != "defect":
                 raise ValueError(
