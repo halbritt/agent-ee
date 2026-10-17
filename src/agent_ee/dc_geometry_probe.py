@@ -36,13 +36,23 @@ def extract(board_path):
                 'shape': int(pad.GetShape(pcbnew.F_Cu)),
                 'copper_layers': [board.GetLayerName(l) for l in pad.GetLayerSet().Seq()
                                   if pcbnew.IsCopperLayer(l)]})
-    graphics = list(board.GetDrawings()) + [g for fp in board.GetFootprints() for g in fp.GraphicalItems()]
-    return {'schema': 'agent-ee.dc-geometry/1', 'pcbnew_version': pcbnew.Version(),
+    graphics = list(board.GetDrawings()) + [g for fp in board.GetFootprints() for g in list(fp.GraphicalItems()) + list(fp.GetFields())]
+    boundaries = []
+    for g in graphics:
+        if g.GetLayer() == pcbnew.Edge_Cuts:
+            entry = {'uuid': g.m_Uuid.AsString(), 'native_class': g.GetClass()}
+            if g.GetClass() == 'PCB_SHAPE':
+                entry.update(shape=int(g.GetShape()), start_nm=point(g.GetStart()), end_nm=point(g.GetEnd()))
+            boundaries.append(entry)
+    return {'schema': 'agent-ee.dc-geometry/2', 'pcbnew_version': pcbnew.Version(),
             'tracks': tracks, 'pads': pads,
+            'substrate': {'boundaries': boundaries},
             'footprint_refs': [fp.GetReference() for fp in board.GetFootprints()],
             'zones': [z.m_Uuid.AsString() for z in list(board.Zones()) +
                       [z for fp in board.GetFootprints() for z in fp.Zones()]],
-            'copper_graphics': [g.m_Uuid.AsString() for g in graphics if pcbnew.IsCopperLayer(g.GetLayer())]}
+            'copper_graphics': [{'uuid': g.m_Uuid.AsString(), 'native_class': g.GetClass(),
+                                 'layer': board.GetLayerName(g.GetLayer())}
+                                for g in graphics if pcbnew.IsCopperLayer(g.GetLayer())]}
 
 
 def main():

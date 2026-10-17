@@ -6,7 +6,7 @@ from pathlib import Path
 from .measurements import finite, evaluate_limits
 from .storage import digest, identity, read_json, write_json
 
-POLICY = 'endpoint-planar-dc/1'
+POLICY = 'endpoint-planar-dc/2'
 RESIDUAL = 1e-9
 TOOLS = {'/usr/bin/python3': 'e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f',
          '/usr/lib/python3/dist-packages/pcbnew.py': '50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458',
@@ -257,14 +257,86 @@ def separated(a, b, max_width_factor):
             raise ValueError('unqualified possible arc contact')
 
 
+def qualify_substrate(geo, c):
+    """Qualify only four-segment rectangles; boxes conservatively enclose copper."""
+    boundaries = geo['substrate']['boundaries']
+    if not 4 <= len(boundaries) <= 128:
+        raise ValueError('missing substrate outline or boundary budget exceeded')
+    adjacency = {}
+    segments = set()
+    for edge in boundaries:
+        if edge['native_class'] != 'PCB_SHAPE' or edge.get('shape') != 0:
+            raise ValueError('unsupported substrate boundary class/curve')
+        a, b = tuple(edge['start_nm']), tuple(edge['end_nm'])
+        if a == b or (a[0] != b[0] and a[1] != b[1]):
+            raise ValueError('substrate boundary must be axis aligned')
+        segment = tuple(sorted((a, b)))
+        if segment in segments:
+            raise ValueError('duplicate substrate boundary')
+        segments.add(segment)
+        adjacency.setdefault(a, []).append(b)
+        adjacency.setdefault(b, []).append(a)
+    if any(len(neighbors) != 2 for neighbors in adjacency.values()):
+        raise ValueError('open or ambiguous substrate boundary')
+    remaining = set(adjacency)
+    rectangles = []
+    while remaining:
+        component, pending = set(), [next(iter(remaining))]
+        while pending:
+            node = pending.pop()
+            if node in component:
+                continue
+            component.add(node)
+            pending.extend(adjacency[node])
+        remaining -= component
+        xs, ys = sorted({p[0] for p in component}), sorted({p[1] for p in component})
+        if len(component) != 4 or len(xs) != 2 or len(ys) != 2:
+            raise ValueError('substrate boundary is not a four-segment rectangle')
+        rectangles.append([xs[0], ys[0], xs[1], ys[1]])
+
+    def contains(outer, inner):
+        return all(outer[i] < inner[i] and inner[i + 2] < outer[i + 2] for i in (0, 1))
+
+    def disjoint(a, b):
+        return any(a[i + 2] < b[i] or b[i + 2] < a[i] for i in (0, 1))
+
+    outers = [r for r in rectangles if all(r == other or contains(r, other) for other in rectangles)]
+    if len(outers) != 1:
+        raise ValueError('ambiguous outer substrate rectangle')
+    outer = outers[0]
+    cutouts = [r for r in rectangles if r != outer]
+    for i, hole in enumerate(cutouts):
+        if any(not disjoint(hole, other) for other in cutouts[i + 1:]):
+            raise ValueError('overlapping or nested substrate cutouts')
+    envelopes = []
+    for track in geo['tracks']:
+        if track['native_class'] not in ('PCB_TRACK', 'PCB_ARC'):
+            raise ValueError('unmodeled conductor class')
+        # Native bbox already includes nominal width; extra maximum radius is
+        # conservative for arcs and all dimensional cases, including round caps.
+        radius = track['width_nm'] * c['dimensions']['width_factors'][1] / 2 + 2
+        box = track['bbox_nm']
+        envelopes.append([box[0] - radius, box[1] - radius, box[2] + radius, box[3] + radius])
+    for pad in geo['pads']:
+        x, y = pad['position_nm']
+        rx, ry = (v / 2 + 2 for v in pad['size_nm'])
+        envelopes.append([x - rx, y - ry, x + rx, y + ry])
+    for box in envelopes:
+        if not contains(outer, box) or any(not disjoint(box, hole) for hole in cutouts):
+            raise ValueError('copper envelope intersects substrate boundary/cutout or lies outside board')
+    return {'outer_nm': outer, 'cutouts_nm': cutouts, 'copper_envelopes_nm': envelopes,
+            'native_boundaries': len(boundaries), 'policy': 'rectangular-substrate/1'}
+
+
 def extract_network(geo, c):
     validate_contract(c)
-    if geo['schema'] != 'agent-ee.dc-geometry/1' or geo['pcbnew_version'] != '10.0.7':
+    if geo['schema'] != 'agent-ee.dc-geometry/2' or geo['pcbnew_version'] != '10.0.7':
         raise ValueError('unqualified native geometry version')
     if geo['zones'] or geo['copper_graphics']:
         raise ValueError('unmodeled zones or copper graphics')
     if len(set(geo['footprint_refs'])) != len(geo['footprint_refs']):
         raise ValueError('ambiguous native footprint references')
+    substrate = qualify_substrate(geo, c)
     tracks = geo['tracks']
     if not 1 <= len(tracks) <= 128:
         raise ValueError('incomplete conductor inventory/budget')
@@ -319,7 +391,7 @@ def extract_network(geo, c):
     if terminals[0] == terminals[1]:
         raise ValueError('coincident terminal anchors')
     series_parallel(edges, terminals)
-    return {'policy': POLICY, 'edges': edges, 'terminals_nm': [list(t) for t in terminals],
+    return {'policy': POLICY, 'substrate': substrate, 'edges': edges, 'terminals_nm': [list(t) for t in terminals],
             'terminal_resolution': resolved, 'coverage': {'native_tracks': len(tracks),
             'modeled_edges': len(edges), 'pads': 2, 'excluded_conductors': [], 'complete': True}}
 
