@@ -37,6 +37,15 @@ class NativeCapabilityPipelineTests(unittest.TestCase):
         self.oracle_hash = digest(ORACLE)
         self.oracle = read_json(ORACLE)
         self.calls = []
+        # The completion image intentionally has no subscription harness. Supply
+        # only the scripted transport's admission identity; retain native hashes.
+        from agent_ee.cli import runtime_files
+        runtime = runtime_files()
+        for name in ('codex', 'codex_tool_host'):
+            runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+        admission = patch('agent_ee.cli.runtime_files', return_value=runtime)
+        admission.start()
+        self.addCleanup(admission.stop)
 
     def prepare(self, name):
         root = self.root / name
@@ -167,7 +176,7 @@ pcbnew.SaveBoard(p, b)
         response = next(c for c in scope['checks'] if c['kind'] == 'rc_transient')
         response['params']['calibration_inputs'] = ['requirements/system.md']
         write_json(root / 'scope.json', scope)
-        with patch('agent_ee.reviewers.reviewer_call', side_effect=self.agent), \
+        with patch('agent_ee.reviewers.dispatch', side_effect=self.agent), \
              contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_review(root / 'scope.json', root / 'source', 180), 0)
             original = verify(root / 'source')
