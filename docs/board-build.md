@@ -20,15 +20,15 @@ authority.
 ```sh
 python3 -m agent_ee.board_build PROJECTDIR --netlist NETLIST.xml --footprints FPDIR \
   --envelope ENVELOPE.json --template-board TEMPLATE.kicad_pcb \
-  --placement-request REQ.json --out OUTDIR
+  --placement-request REQ.json --out OUTDIR [--placement-fallback row]
 ```
 
 | Exit | Meaning |
 | --- | --- |
 | 0 | Placed. The judge passes and the placed board has zero schematic-parity items. |
 | 1 | Input refused. The reason is on stderr and no receipt is written. |
-| 2 | Not placed. The placer returned a typed result such as `unsupported_geometry`. |
-| 3 | Placed, but the judge failed or parity items exist (`outcome: defect`). |
+| 2 | Not placed. The placer returned a typed result such as `unsupported_geometry`, and the row stand-in was not requested or not applicable. |
+| 3 | Placed with defects (`outcome: defect`): the judge failed or parity items exist. For the row stand-in, any other violation also gives this result. |
 | 4 | The placement writer failed. Its `NAME-failure-*` diagnostics are kept under `OUTDIR/placement/`. |
 | 5 | A native tool failed. This is missing coverage, never a pass. |
 
@@ -36,6 +36,14 @@ The command is meant to run under the networkless executor sandbox, with
 inputs below `/candidate` and `OUTDIR` below `/work`. It never writes outside
 `OUTDIR`, and it refuses an `OUTDIR` that exists and is not empty. The tests
 run it directly and also under `executor.execute`.
+
+In the sandbox, the copied `fp-lib-table` resolves
+`${KICAD10_FOOTPRINT_DIR}` to `/candidate/stock/footprints`. Put the
+footprint libraries at that path and pass the same path as `--footprints`.
+If they are absent, native DRC reports `lib_footprint_issues` for every
+footprint. The row stand-in counts these as violations (exit 3). This was
+observed with the RC inputs: 3 `lib_footprint_issues` without the mount, and
+0 violations with it, with a board byte-identical to the host build.
 
 ## Inputs
 
@@ -147,6 +155,62 @@ and native DRC reports them as `lib_footprint_mismatch`. Placing stock
 footprints needs the placer to accept these pad shapes (AGENTEE-109). The packer and the
 judge use pad centres and courtyards only, not pad outlines.
 
+## Row stand-in (`--placement-fallback row`)
+
+The row stand-in is **unqualified**. It lets rung 1 continue with real stock
+footprints until AGENTEE-109 changes the placer, and it does not replace that
+change. Without the flag, behaviour is unchanged.
+
+The stand-in is used in one case only: the landed placer returns
+`unsupported_geometry` with the pad-shape reason. Any other placer result
+remains `not_placed`.
+
+The stand-in places each movable footprint as follows:
+
+- All movable footprints are in one row on the outline's horizontal centre
+  line. The courtyard bounding box of each footprint is centred on that
+  line.
+- The footprints are in reference order, from left to right. The row starts
+  at the right courtyard edge of the rightmost fixed reference, or at the
+  left edge of the outline, plus the request's `gap_nm`. Adjacent courtyards
+  are separated by `gap_nm`.
+- Rotation is 0 and the side does not change.
+
+A fresh pcbnew child applies the row to a copy of the unplaced board in
+`placement/row-standin/`. Fixed (locked) parts do not move. The stand-in
+then runs the landed `placement.judge` on the saved board and native parity
+DRC on a copy of the project.
+
+The board is published as `placed/` (exit 0) only when all of these are true:
+
+- The judge verdict is `pass`.
+- There are zero schematic-parity items.
+- There are zero violations other than unconnected items.
+
+A judge `hard_fail`, a parity item or any other violation gives
+`placed_with_defects` (exit 3). The evidence stays under
+`placement/row-standin/` and `checks/row-standin/`, and nothing is
+published as placed.
+
+The receipt records the following:
+
+- `"placer": "rung1-row-standin-experimental"`
+- `"placer_reason": "placer.pack refused stock pad shapes (AGENTEE-109)"`
+- `judge_verdict`
+- The placer's own typed result
+- The row placements, the judgment and the parity counts
+
+`placement-result.json` uses the schema
+`agent-ee.rung1-row-standin-result/0-experimental`. The row ignores
+wire length, decoupling, connector edges and everything else that the packer
+optimises. It shows only that the stock-footprint board can be placed and
+checked.
+
+With the fixture inputs, the row puts C1 at (107.78, 115.00) mm and R1 at
+(111.66, 115.00) mm, and J1 stays fixed. The judge verdict is `pass`. Parity
+DRC finds 0 parity items, 0 violations and 4 unconnected items. Two builds
+give byte-identical boards.
+
 ## Tests
 
 ```sh
@@ -169,3 +233,6 @@ following:
 - A footprint that is missing from FPDIR is refused.
 - An `OUTDIR` that is not empty is refused.
 - Envelope, request and netlist validation work as specified.
+- With stock footprints, the row stand-in gives a judge pass, zero parity
+  items, zero violations other than unconnected items, and byte-identical
+  boards from two builds. The row arithmetic is checked separately.

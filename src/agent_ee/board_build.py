@@ -342,8 +342,8 @@ def construct(netlist, envelope, template, footprints, output, seed_hashes):
         raise BoardBuildError(f'pcbnew failed to save {output}')
 
 
-def construct_isolated(spec, scratch):
-    """Run ``construct`` in a fresh interpreter.
+def construct_isolated(spec, scratch, mode='--construct'):
+    """Run ``construct`` (or ``apply_row``) in a fresh interpreter.
 
     KiCad's seeded KIID generator is process-global and its footprint plugin
     caches parsed libraries, so a second build in one process would not repeat
@@ -351,9 +351,9 @@ def construct_isolated(spec, scratch):
     and leaves the caller's process unseeded.
     """
     scratch.mkdir(parents=True, exist_ok=True)
-    spec_path = scratch / 'construct-spec.json'
+    spec_path = scratch / f'{mode[2:]}-spec.json'
     write_json(spec_path, spec)
-    argv = [sys.executable, '-B', '-m', 'agent_ee.board_build', '--construct', str(spec_path)]
+    argv = [sys.executable, '-B', '-m', 'agent_ee.board_build', mode, str(spec_path)]
     try:
         # The child imports this same package source, whatever the caller's path.
         env = {**os.environ, 'PYTHONPATH': os.pathsep.join(
@@ -361,11 +361,12 @@ def construct_isolated(spec, scratch):
         completed = subprocess.run(argv, capture_output=True, text=True, timeout=300, env=env)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ToolFailure(f'pcbnew construction could not run: {exc}') from exc
-    (scratch / 'construct.stderr.txt').write_text(completed.stderr)
+    (scratch / f'{mode[2:]}.stderr.txt').write_text(completed.stderr)
     if completed.returncode == CONSTRUCT_REFUSED:
         raise BoardBuildError(completed.stdout.strip())
     if completed.returncode != 0 or not Path(spec['output']).is_file():
-        raise ToolFailure(f'pcbnew construction failed (exit {completed.returncode}); see construct/construct.stderr.txt')
+        raise ToolFailure(f'pcbnew {mode[2:]} failed (exit {completed.returncode}); '
+                          f'see {scratch.name}/{mode[2:]}.stderr.txt')
 
 
 CONSTRUCT_REFUSED = 3
@@ -376,6 +377,79 @@ def _construct_main(spec_path):
     try:
         construct(spec['netlist'], spec['envelope'], Path(spec['template']),
                   {k: Path(v) for k, v in spec['footprints'].items()}, Path(spec['output']), spec['seed_hashes'])
+    except BoardBuildError as exc:
+        print(exc)
+        return CONSTRUCT_REFUSED
+    return 0
+
+
+# --------------------------------------------------------------------------
+# Row stand-in placement (unqualified; AGENTEE-109 is the owned fix)
+
+ROW_PLACER = 'rung1-row-standin-experimental'
+ROW_REASON = 'placer.pack refused stock pad shapes (AGENTEE-109)'
+PAD_SHAPE_REFUSAL = 'only axis-aligned rectangular pads supported'
+
+
+def row_plan(facts, envelope, gap_nm):
+    """One deterministic row on the outline's horizontal centre line.
+
+    Movable footprints keep their side, get rotation 0 and follow the fixed
+    references left to right in reference order, spaced by courtyard width
+    plus the request's gap. Returns (placements, None) or (None, reason).
+    """
+    box = envelope['outline_nm']
+    centre_y = box['y'] + box['h'] // 2
+    fixed = {f['ref'] for f in envelope['fixed_refs']}
+
+    def bounds(fp):
+        courtyard = fp['courtyards'].get(fp['side'], {})
+        if courtyard.get('status') != 'proven':
+            return None
+        points = [p for poly in courtyard['polygons'] for p in poly]
+        return (min(p[0] for p in points), min(p[1] for p in points),
+                max(p[0] for p in points), max(p[1] for p in points))
+
+    left = box['x']
+    for fp in facts['footprints']:
+        if fp['ref'] in fixed:
+            edges = bounds(fp)
+            if edges is None:
+                return None, f"fixed {fp['ref']} has no proven courtyard on its side"
+            left = max(left, edges[2])
+    left += gap_nm
+    placements = []
+    for fp in sorted((f for f in facts['footprints'] if f['ref'] not in fixed), key=lambda f: f['ref']):
+        edges = bounds(fp)
+        if edges is None or fp['rotation_deg'] % 360:
+            return None, f"{fp['ref']}: needs a proven mounting-side courtyard at rotation 0"
+        x, y = fp['position_nm']
+        width = edges[2] - edges[0]
+        placements.append({'ref': fp['ref'], 'side': fp['side'], 'rotation_deg': 0,
+                           'position_nm': [left - (edges[0] - x),
+                                           centre_y - ((edges[1] - y) + (edges[3] - y)) // 2]})
+        left += width + gap_nm
+    return placements, None
+
+
+def apply_row(board_path, placements, output):
+    import pcbnew
+    board = pcbnew.LoadBoard(str(board_path))
+    for item in placements:
+        fp = board.FindFootprintByReference(item['ref'])
+        if fp is None or fp.IsLocked():
+            raise BoardBuildError(f"row stand-in cannot move {item['ref']}")
+        fp.SetOrientationDegrees(item['rotation_deg'])
+        fp.SetPosition(_vector(item['position_nm']))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if not pcbnew.SaveBoard(str(output), board, True):
+        raise BoardBuildError(f'pcbnew failed to save {output}')
+
+
+def _row_main(spec_path):
+    spec = read_json(spec_path)
+    try:
+        apply_row(Path(spec['board']), spec['placements'], Path(spec['output']))
     except BoardBuildError as exc:
         print(exc)
         return CONSTRUCT_REFUSED
@@ -489,8 +563,11 @@ def _fresh_out(out):
     return out.resolve()
 
 
-def build(project_dir, netlist_path, fpdir, envelope_path, template_board, request_path, out):
+def build(project_dir, netlist_path, fpdir, envelope_path, template_board, request_path, out,
+          placement_fallback=None):
     """Build, place and parity-check; return the receipt (also written to OUTDIR)."""
+    if placement_fallback not in (None, 'row'):
+        raise BoardBuildError(f'unknown placement fallback {placement_fallback!r}')
     from .placement import judge
     from .placement_probe import extract
     from .placer_runner import place_candidate
@@ -551,9 +628,13 @@ def build(project_dir, netlist_path, fpdir, envelope_path, template_board, reque
     receipt['placement'] = {'status': report.get('status'), 'outcome': report.get('outcome'),
                             'reason': report.get('reason'), 'steps_used': plan.get('steps_used'),
                             'step_budget': plan.get('step_budget')}
+    receipt['placer'] = 'agent_ee.placer.pack (AGENTEE-54)'
     if report['status'] != 'placed':
         write_json(root / 'placement-plan.json', report)
         receipt['placement']['plan'] = 'placement/placement-plan.json'
+        if (placement_fallback == 'row' and report['status'] == 'unsupported_geometry'
+                and report.get('reason') == PAD_SHAPE_REFUSAL):
+            return _row_standin(receipt, out, name, files, paths, unplaced, envelope, request)
         receipt.update(status='not_placed', outcome=report.get('outcome', 'unknown'))
         return _finish(receipt, out)
 
@@ -577,6 +658,48 @@ def build(project_dir, netlist_path, fpdir, envelope_path, template_board, reque
     return _finish(receipt, out)
 
 
+def _row_standin(receipt, out, name, files, paths, unplaced, envelope, request):
+    """Unqualified row placement; published as placed only when every check is clean."""
+    from .placement import judge
+    from .placement_probe import extract
+    receipt.update(placer=ROW_PLACER, placer_reason=ROW_REASON)
+    placements, refusal = row_plan(extract(unplaced), envelope, request['policy']['gap_nm'])
+    if placements is None:
+        receipt['row_standin'] = {'status': 'not_placed', 'reason': refusal}
+        receipt.update(status='not_placed', outcome='unknown')
+        return _finish(receipt, out)
+    staging = out / 'placement' / 'row-standin'
+    write_project(name, files, paths['template_project'], staging)
+    board = staging / f'{name}.kicad_pcb'
+    construct_isolated({'board': str(unplaced), 'placements': placements, 'output': str(board)},
+                       out / 'placement' / 'row-apply', mode='--row-apply')
+    judgment = judge(extract(board))
+    write_json(out / 'checks' / 'row-standin' / 'placement-judgment.json', judgment)
+    parity = _relative(parity_drc(board, out / 'checks' / 'row-standin'), out)
+    result = {'schema': 'agent-ee.rung1-row-standin-result/0-experimental',
+              'qualification': 'experimental-unqualified', 'placer': ROW_PLACER, 'placer_reason': ROW_REASON,
+              'source_sha256': digest(unplaced), 'board_sha256': digest(board),
+              'gap_nm': request['policy']['gap_nm'], 'placements': placements,
+              'judgment': {'verdict': judgment['verdict'], 'outcome': judgment['outcome']}}
+    write_json(staging / 'placement-result.json', result)
+    clean = (judgment['verdict'] == 'pass' and parity['schematic_parity'] == 0
+             and parity['violations'] == 0)
+    record = {'board': str(board.relative_to(out)), 'sha256': digest(board),
+              'placements': placements, 'placement_result': str((staging / 'placement-result.json').relative_to(out)),
+              'judgment': {'verdict': judgment['verdict'], 'outcome': judgment['outcome'],
+                           'path': 'checks/row-standin/placement-judgment.json'},
+              'parity': parity}
+    receipt['row_standin'] = record
+    receipt['judge_verdict'] = judgment['verdict']
+    if not clean:
+        receipt.update(status='placed_with_defects', outcome='defect')
+        return _finish(receipt, out)
+    shutil.copytree(staging, out / 'placed')
+    receipt['placed'] = {**record, 'board': f'placed/{name}.kicad_pcb', 'placement_result': 'placed/placement-result.json'}
+    receipt.update(status='placed', outcome='info')
+    return _finish(receipt, out)
+
+
 def _relative(record, out):
     record['report'] = str(Path(record['report']).relative_to(out))
     return record
@@ -596,6 +719,8 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ['--construct'] and len(argv) == 2:
         return _construct_main(argv[1])
+    if argv[:1] == ['--row-apply'] and len(argv) == 2:
+        return _row_main(argv[1])
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('project_dir')
     parser.add_argument('--netlist', required=True)
@@ -604,10 +729,12 @@ def main(argv=None):
     parser.add_argument('--template-board', required=True)
     parser.add_argument('--placement-request', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--placement-fallback', choices=['row'],
+                        help='unqualified row stand-in when the placer refuses stock pad shapes (AGENTEE-109)')
     args = parser.parse_args(argv)
     try:
         receipt = build(args.project_dir, args.netlist, args.footprints, args.envelope,
-                        args.template_board, args.placement_request, args.out)
+                        args.template_board, args.placement_request, args.out, args.placement_fallback)
     except BoardBuildError as exc:
         print(f'board_build: refused: {exc}', file=sys.stderr)
         return 1

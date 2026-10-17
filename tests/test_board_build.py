@@ -84,6 +84,24 @@ class EnvelopeAndRequestTest(unittest.TestCase):
             read_netlist(xml)
 
 
+class RowPlanTest(unittest.TestCase):
+    def test_row_follows_fixed_courtyards_with_gap_on_centre_line(self):
+        def fp(ref, x0, x1, at):
+            box = [[x0, -1000], [x1, -1000], [x1, 1000], [x0, 1000]]
+            return {'ref': ref, 'side': 'F', 'rotation_deg': 0.0, 'position_nm': at,
+                    'courtyards': {'F': {'status': 'proven', 'polygons': [box]}}}
+        envelope = read_envelope({**ENVELOPE, 'fixed_refs': [dict(ENVELOPE['fixed_refs'][0], ref='J1')]})
+        facts = {'footprints': [fp('J1', 101_000_000, 104_000_000, [0, 0]),
+                                fp('R1', -2_000, 2_000, [0, 0]), fp('C1', -3_000, 1_000, [0, 0])]}
+        placements, reason = board_build.row_plan(facts, envelope, 500)
+        self.assertIsNone(reason)
+        self.assertEqual([(p['ref'], p['position_nm']) for p in placements],
+                         [('C1', [104_000_500 + 3_000, 115_000_000]),
+                          ('R1', [104_000_500 + 4_000 + 500 + 2_000, 115_000_000])])
+        facts['footprints'][1]['courtyards'] = {}
+        self.assertIsNone(board_build.row_plan(facts, envelope, 500)[0])
+
+
 class NativeBoardBuildTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -191,6 +209,31 @@ class NativeBoardBuildTest(unittest.TestCase):
         self.assertEqual(execution['exit_code'], 0, (work / 'console.log').read_text()[-4000:])
         for name in ('unplaced/rc_filter.kicad_pcb', 'placed/rc_filter.kicad_pcb'):
             self.assertEqual((work / 'out' / name).read_bytes(), (self.root / 'one' / name).read_bytes(), name)
+
+    def test_row_standin_places_stock_footprints_with_clean_judge_and_parity(self):
+        from agent_ee.placement import judge
+        from agent_ee.placement_probe import extract
+        first = board_build.build(self.project, self.netlist, STOCK, self.envelope,
+                                  self.template / 'rc_filter.kicad_pcb', self.request, self.root / 'row1', 'row')
+        second = board_build.build(self.project, self.netlist, STOCK, self.envelope,
+                                   self.template / 'rc_filter.kicad_pcb', self.request, self.root / 'row2', 'row')
+        self.assertEqual(first['placement']['status'], 'unsupported_geometry')  # The placer still refuses.
+        self.assertEqual((first['status'], first['placer'], first['placer_reason'], first['judge_verdict']),
+                         ('placed', 'rung1-row-standin-experimental',
+                          'placer.pack refused stock pad shapes (AGENTEE-109)', 'pass'))
+        board = self.root / 'row1/placed/rc_filter.kicad_pcb'
+        self.assertEqual(board.read_bytes(), (self.root / 'row2/placed/rc_filter.kicad_pcb').read_bytes())
+        facts = extract(board)
+        self.assertEqual(judge(facts)['verdict'], 'pass')
+        report = json.loads((self.root / 'row1' / first['placed']['parity']['report']).read_text())
+        self.assertEqual((report['schematic_parity'], report['violations']), ([], []))
+        self.assertGreater(len(report['unconnected_items']), 0)
+        refs = {f['ref']: f for f in facts['footprints']}
+        self.assertEqual({(f['ref'], p['number']): p['net'] for f in facts['footprints'] for p in f['pads']}, EXPECTED)
+        # Single row on the outline's centre line (y = 115 mm), C1 left of R1, J1 untouched.
+        self.assertEqual([refs[r]['rotation_deg'] for r in ('C1', 'R1')], [0.0, 0.0])
+        self.assertLess(refs['C1']['position_nm'][0], refs['R1']['position_nm'][0])
+        self.assertEqual(refs['J1']['position_nm'], [103_810_000, 112_460_000])
 
     def test_pin_without_matching_pad_is_refused(self):
         text = self.netlist.read_text()
