@@ -9,9 +9,12 @@ adapted from fome-mc `toolchain/eda.py` (read at fome-mc commit c43ad7b).
 
 Check kinds and parameters:
 
-- `erc`, `drc`, `netlist`: no parameters. ERC validates sheet-instance
-  coverage against the hierarchy; DRC runs with `--schematic-parity` on the
-  as-saved board and detects kicad-cli's silent parity skip; `netlist`
+- `erc`, `netlist`: no parameters; `drc`: optional `projection`. ERC
+  validates sheet-instance coverage against the hierarchy; DRC runs with
+  `--schematic-parity` on the as-saved board and detects kicad-cli's silent
+  parity skip. `projection: "placement-stage/1"` grades violations and parity
+  only; the raw report and unconnected count are retained ungraded, and a
+  later full DRC must be declared; `netlist`
   exports the native XML netlist, verifies the sheet hierarchy is complete
   (a missing sheet file means the netlist cannot be complete), and derives
   `connectivity.json` with per-component DNP, libsource and sheet/UUID
@@ -268,7 +271,31 @@ def check_erc(ctx):
         ctx.result["summary"] = f"ERC ran on {len(sheets)} sheet instance(s) with zero violations"
 
 
+# One native DRC execution; a projection only changes which raw categories are
+# graded. Unrouted connectivity is expected while placing, never globally.
+DRC_PROJECTIONS = {"placement-stage/1": ("violations", "schematic_parity")}
+
+
+def drc_projection(params):
+    projection = params.get("projection")
+    if projection is not None and projection not in DRC_PROJECTIONS:
+        raise ValueError(f"unknown DRC projection {projection!r}")
+    return projection
+
+
+def require_later_full_drc(specs, spec):
+    later = specs[specs.index(spec) + 1:]
+    if not any(s.get("kind") == "drc" and "projection" not in s.get("params", {}) for s in later):
+        raise ValueError("a DRC projection requires a later full drc check")
+
+
 def check_drc(ctx):
+    try:
+        projection = drc_projection(ctx.params)
+        if projection:
+            require_later_full_drc(ctx.scope.get("checks", []), ctx.spec)
+    except ValueError as exc:
+        raise CheckError("unsupported", str(exc)) from exc
     board = ctx.candidate_path(ctx.scope["board"])
     ctx.candidate_path(ctx.scope["schematic"])  # parity needs it alongside
     ctx.seed_kicad_config()
@@ -296,10 +323,24 @@ def check_drc(ctx):
         "ignored_checks": [c.get("key") for c in report.get("ignored_checks", [])],
     })
     ctx.result["execution"] = "ok"
-    if v or u or p:
+    if projection:
+        ctx.result["details"].update(projection=projection, graded=list(DRC_PROJECTIONS[projection]),
+                                     ungraded={"unconnected_items": len(u)})
+        ctx.result["limitations"].append(
+            f"{projection}: unconnected items are retained in drc.json but not graded; "
+            "a later full DRC with connectivity remains required")
+        failing = v or p
+    else:
+        failing = v or u or p
+    if failing:
         ctx.result["outcome"] = "defect"
         ctx.result["summary"] = (f"DRC with schematic parity reported {len(v)} violation(s), "
-                                 f"{len(u)} unconnected item(s), {len(p)} parity issue(s)")
+                                 f"{len(u)} unconnected item(s), {len(p)} parity issue(s)"
+                                 + (f"; {projection} grades violations and parity only" if projection else ""))
+    elif projection:
+        ctx.result["outcome"] = "pass"
+        ctx.result["summary"] = (f"{projection} DRC with schematic parity reported zero violations and "
+                                 f"parity issues; {len(u)} unconnected item(s) retained ungraded")
     else:
         ctx.result["outcome"] = "pass"
         ctx.result["summary"] = "DRC with schematic parity reported zero issues on the saved board"
@@ -819,6 +860,7 @@ from .library_checks import check_footprint_assignment
 from .symbol_checks import check_symbol_pins
 from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
+from .placement_check import check_placement
 
 
 CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
@@ -828,7 +870,8 @@ CHECK_FUNCS = {"symbol_pins": check_symbol_pins, "footprint_assignment": check_f
                "drc": check_drc, "netlist": check_netlist,
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
-               "passive_corners": check_passive_corners, "dc_path": check_dc_path}
+               "passive_corners": check_passive_corners, "dc_path": check_dc_path,
+               "placement": check_placement}
 
 
 # ------------------------------------------------------------------ entry point
