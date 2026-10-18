@@ -386,7 +386,10 @@ def record_iteration(root, state, run, config):
     epoch = state.get("epoch", 0)
     comparable = [h for h in state["history"] if h["epoch"] == epoch]
     budget = config["max_iterations"] - (len(state["history"]) - len(comparable))
-    record, diagnostic = advance(comparable, result, manifest, budget)
+    from .fab_stage import campaign_context, pending_checks, verify_check_context
+    context = campaign_context(root, state, config, manifest['scope'])
+    verify_check_context(run, result, context)
+    record, diagnostic = advance(comparable, result, manifest, budget, pending_fab=pending_checks(result))
     snapshot = root / "history" / f"{len(state['history']) + 1}.json"
     snapshot.parent.mkdir(exist_ok=True)
     shutil.copyfile(run / "result.json", snapshot)
@@ -444,9 +447,11 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
             if initial_run is None:
                 if len(state["history"]) >= config["max_iterations"] or time.monotonic() >= deadline:
                     raise ValueError("campaign iteration or wall-clock budget exhausted")
+                from .fab_stage import campaign_context
+                context = campaign_context(root, state, config, read_json(scope_path))
                 run_review(scope_path, run, deadline - time.monotonic(), profile=root / "profile.json",
                            expected_baseline=state.get("baseline"),
-                           max_schema_resubmissions=config.get("max_schema_resubmissions", 1))
+                           max_schema_resubmissions=config.get("max_schema_resubmissions", 1), fab_context=context)
             initial_run = None
             record_iteration(root, state, run, config)
             verify_campaign(root)
@@ -567,7 +572,11 @@ def verify_campaign_records(root, *, observations=None):
             raise ValueError("calibration changed without an empirical epoch transition")
         comparable = [h for h in history if h["epoch"] == stored["epoch"]]
         budget = config["max_iterations"] - (len(history) - len(comparable))
-        record, diagnostic = advance(comparable, result, manifest, budget)
+        from .fab_stage import campaign_context, pending_checks, verify_check_context
+        preceding = {**state, 'history': history}
+        context = campaign_context(root, preceding, config, manifest['scope'])
+        verify_check_context(run, result, context)
+        record, diagnostic = advance(comparable, result, manifest, budget, pending_fab=pending_checks(result))
         metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id", "bench_transaction", "bench_attempt_id"}
         if record != {k: v for k, v in stored.items() if k not in metadata}:
             raise ValueError("campaign history projection differs from evidence")

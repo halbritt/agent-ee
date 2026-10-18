@@ -22,7 +22,10 @@ from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, ass
                                  scan_sexpr, validate_params, variant_parts, verify_manifest, write_zip,
                                  GERBER_TIMES, VARIANT_BOM_FIELDS)
 from agent_ee.storage import digest, read_json, write_json
-from toolchain import require_toolchain
+try:
+    from toolchain import require_toolchain
+except ImportError:
+    from tests.toolchain import require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures' / 'fab-export'
 BOARD = (FIXTURE / 'fab.kicad_pcb').read_bytes()

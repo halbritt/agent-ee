@@ -201,3 +201,13 @@ correction without a pass fails the gate, and two declared corrections are
 unsupported. A second generation campaign on that scope shows the named reason
 in verify-campaign output, keeps the rung-1 record not done, and becomes done
 only when the constant is patched to admit `PREVIEW_REQUIRED`.
+
+## Declared fab producer
+
+In a staged campaign with a declared fab step, this gate grades the receipted
+package after comparing it with fresh sandbox exports and correction. It cannot
+pass before that step runs. Missing output stays unknown; a completed fab turn
+can leave the board bytes unchanged while adding the required package evidence.
+The gate's sealed artifacts, rotation status and declared-stage done binding
+are all still required. See [declared fab steps](fab-export.md#declared-fab-steps)
+for receipt applicability, comparison rules and the pending-step scheduling path.

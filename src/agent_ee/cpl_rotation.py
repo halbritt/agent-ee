@@ -695,3 +695,6 @@ def check_cpl_rotation(ctx):
         'diode polarity is checked only for D*/LED* designators from pad pinfunction and supplier symbol '
         'pin names',
     ]
+    if (execution, outcome) == ('ok', 'pass'):
+        from .fab_stage import grade_cpl
+        grade_cpl(ctx)
