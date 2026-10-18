@@ -194,6 +194,18 @@ Campaigns created before this change have no anchors and no index, and they veri
   Exit 2 is a partial proposal requiring fresh checks; exits 1, 3 and 4 stop the
   implementation without a proposal. The AGENTEE-54 placer runs through the
   [placement adapter](placement-adapter.md). Generic step tests use an original test program.
+- The [rung 1 driver](rung1-campaign.md) runs its `write-scaffold` step (stage `scaffold`)
+  through `run_step` before the campaign exists, so its receipt is kept beside the campaign in
+  `RUNDIR/scaffold-receipt/`, not in an implementation. The driver-written generation inputs and
+  requirements (including `requirements/fab-package.md`) are receipt inputs; the empty project and
+  builder template are its outputs. The rung 1 record's `done` requires the receipt's after-tree to
+  equal the first captured candidate on `project/`, `generation/` and `requirements/`, both ways.
+- `verify-campaign` does not cover the scaffold receipt. It verifies only receipts under
+  `<campaign>/implementations/`; a scaffold edited before the first capture still verifies. Only the
+  rung 1 record's `done` checks the scaffold receipt. Its tool identity is anchored only by the
+  record in the same run directory, and the record stores the receipt as an absolute path, so a moved
+  run directory rebuilds as unbound. A campaign/1 `pre_receipts` follow-up item would move this check
+  into verify-campaign.
 - A completed receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.

@@ -353,10 +353,13 @@ class GenerationCampaignTests(unittest.TestCase):
         rundir = self.root / 'rung1'
         rundir.mkdir()
 
-        def record_for(current):
-            # campaign_record names RUNDIR/campaign; this campaign root stays where it ran.
+        def record_for(current, scaffold=None):
+            # campaign_record names RUNDIR/campaign; this campaign root stays where it ran. This campaign
+            # has no rung-1 scaffold step, so the scaffold receipt binding is stubbed (default: bound).
             with mock.patch.object(rc, 'run_logged', side_effect=in_process), \
                     mock.patch.object(rc, 'campaign_summary', return_value=(current, [], [])), \
+                    mock.patch.object(rc, 'first_capture_binding',
+                                      return_value=scaffold or {'bound': True, 'differences': []}), \
                     mock.patch.object(rc, 'agent_ee_command', side_effect=lambda *a: ['agent-ee', str(root)]):
                 return rc.campaign_record(rundir, {}, None)
         record = record_for(state)
@@ -365,6 +368,10 @@ class GenerationCampaignTests(unittest.TestCase):
                          state['fab_artifacts']['files'])
         self.assertTrue(record['fab_artifacts_verified'])
         self.assertTrue(record['done'])
+        # Verified fab hashes do not make the record done when the scaffold receipt is unbound.
+        unbound = record_for(state, {'bound': False, 'differences': ['project/rung1_rc.kicad_dru']})
+        self.assertTrue(unbound['fab_artifacts_verified'])
+        self.assertFalse(unbound['done'])
 
         # A changed sealed artifact or a forged state hash fails verify-campaign closed.
         cpl = final / 'work/fab/fab/cpl.csv'

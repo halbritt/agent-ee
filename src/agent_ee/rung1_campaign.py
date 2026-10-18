@@ -51,6 +51,9 @@ FAB_PACKAGE_TEXT = ('# Fab package requirement\n\nR-fab: The accepted candidate 
 # kicad-route: 0 complete and valid; 2 valid but incomplete; 3 fails validation (never adoptable).
 NEVER_ADOPTABLE = {'routing': {1, 2, 3, 4}}
 MOUNT_STEPS, MOUNT_SOURCE, MOUNT_ROUTE = '/tool/steps', '/tool/agent-ee', '/tool/kicad-route'
+MOUNT_TEMPLATE = '/tool/template'
+# Scaffold top-level directories; the first capture must equal the scaffold receipt's after-tree on these.
+SCAFFOLD_DIRS = ('project', 'generation', 'requirements')
 DROPPED_BOARD_ITEMS = ('footprint', 'gr_line', 'gr_rect', 'gr_arc', 'gr_circle', 'gr_poly', 'gr_text',
                        'segment', 'arc', 'via', 'zone', 'group', 'dimension', 'image', 'net')
 
@@ -213,21 +216,72 @@ def lib_table_check(project_dir):
             raise PrepareFailure(f'{table} must use stock references only')
 
 
-def write_scaffold(rundir, prep):
-    """RUNDIR/scaffold/{project,requirements,generation}; returns a scaffold record."""
-    scaffold = Path(rundir) / 'scaffold'
-    project, generation = scaffold / 'project', scaffold / 'generation'
-    project.mkdir(parents=True)
-    root = root_sheet_uuid(prep['resolved'])
-    template_pro = (FIXTURE_PROJECT / 'rc_filter.kicad_pro').read_bytes()
-    pro = project_bytes(template_pro, root)
-    board, dropped = empty_board((FIXTURE_PROJECT / 'rc_filter.kicad_pcb').read_text(), prep['envelope'])
-    (project / f'{NAME}.kicad_pro').write_bytes(pro)
-    (project / f'{NAME}.kicad_sch').write_bytes(empty_schematic(root))
-    (project / f'{NAME}.kicad_pcb').write_bytes(board)
+def scaffold_files(resolved, envelope, template_dir):
+    """The empty native project and builder template, by scaffold path, from one resolved record."""
+    template_dir = Path(template_dir)
+    root = root_sheet_uuid(resolved)
+    pro = project_bytes((template_dir / 'rc_filter.kicad_pro').read_bytes(), root)
+    board, dropped = empty_board((template_dir / 'rc_filter.kicad_pcb').read_text(), envelope)
+    files = {f'project/{NAME}.kicad_pro': pro, f'project/{NAME}.kicad_sch': empty_schematic(root),
+             f'project/{NAME}.kicad_pcb': board,
+             # Immutable template for board_build (sibling .kicad_pro required); the writer cannot alter it.
+             f'generation/template/{NAME}.kicad_pcb': board, f'generation/template/{NAME}.kicad_pro': pro}
     for table in ('sym-lib-table', 'fp-lib-table'):
-        shutil.copyfile(FIXTURE_PROJECT / table, project / table)
-    lib_table_check(project)
+        data = (template_dir / table).read_bytes()
+        if b'${KIPRJMOD}' in data:
+            raise PrepareFailure(f'{table} must use stock references only')
+        files[f'project/{table}'] = data
+    return files, root, dropped
+
+
+def scaffold_main(argv=None):
+    """Sandboxed `write-scaffold` step: write scaffold_files beneath --out; nothing else."""
+    parser = argparse.ArgumentParser(description=scaffold_main.__doc__)
+    parser.add_argument('resolved', type=Path)
+    parser.add_argument('envelope', type=Path)
+    parser.add_argument('--template', required=True, type=Path)
+    parser.add_argument('--out', required=True, type=Path)
+    args = parser.parse_args(argv)
+    try:
+        files, _, _ = scaffold_files(json.loads(args.resolved.read_text()), json.loads(args.envelope.read_text()),
+                                     args.template)
+    except PrepareFailure as exc:
+        print(f'write-scaffold refused: {exc}', file=sys.stderr)
+        return 3
+    for path, data in files.items():
+        target = args.out / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    return 0
+
+
+def scaffold_step(source_root, steps_dir, template_dir):
+    """agent-ee.stage-step/1 for the empty scaffold; the driver runs it before the campaign exists."""
+    paths = [f'project/{NAME}.{ext}' for ext in ('kicad_pro', 'kicad_sch', 'kicad_pcb')] + \
+        ['project/sym-lib-table', 'project/fp-lib-table'] + \
+        [f'generation/template/{NAME}.{ext}' for ext in ('kicad_pcb', 'kicad_pro')]
+    return {'schema': 'agent-ee.stage-step/1', 'stage': 'scaffold', 'step': 'write-scaffold',
+            'argv': ['/usr/bin/python3', '-B', '-P', f'{MOUNT_STEPS}/scaffold.py',
+                     '/candidate/generation/resolved.json', '/candidate/generation/envelope.json',
+                     '--template', MOUNT_TEMPLATE, '--out', '/work/out'],
+            'mounts': [{'source': str(Path(steps_dir)), 'at': MOUNT_STEPS},
+                       {'source': str(Path(source_root)), 'at': MOUNT_SOURCE},
+                       {'source': str(Path(template_dir)), 'at': MOUNT_TEMPLATE}],
+            'source': MOUNT_SOURCE, 'version_argv': ['/usr/bin/python3', '--version'],
+            'writes': {path: 'out/' + path for path in paths}, 'adoptable_exits': [0], 'timeout_s': 120}
+
+
+def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR, template_dir=FIXTURE_PROJECT):
+    """RUNDIR/scaffold/{project,requirements,generation}; returns the scaffold directory and record.
+
+    The driver writes the immutable generation inputs; the empty project and the builder template
+    come only from the sandboxed `write-scaffold` step, whose stage receipt is kept in
+    RUNDIR/scaffold-receipt and adopted exactly.
+    """
+    from .stage_receipts import ADOPTABLE, adopt, run_step
+    scaffold = Path(rundir) / 'scaffold'
+    generation = scaffold / 'generation'
+    scaffold.mkdir()
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(REVIEW_CONVENTIONS)
     (scaffold / 'requirements' / 'fab-package.md').write_text(FAB_PACKAGE_TEXT)
@@ -239,19 +293,54 @@ def write_scaffold(rundir, prep):
     shutil.copytree(catalog, generation / 'catalog')
     write_json(generation / 'envelope.json', prep['envelope'])
     write_json(generation / 'placement-request.json', prep['request'])
-    # Immutable template for board_build (sibling .kicad_pro required); the writer cannot alter it.
-    (generation / 'template').mkdir()
-    (generation / 'template' / f'{NAME}.kicad_pcb').write_bytes(board)
-    (generation / 'template' / f'{NAME}.kicad_pro').write_bytes(pro)
+    receipt_dir = Path(rundir) / 'scaffold-receipt'
+    receipt = run_step(receipt_dir, scaffold, scaffold_step(source_root, steps_dir, template_dir),
+                       {'rung1': 'scaffold', 'receipt_index': 1})
+    if receipt['status'] not in ADOPTABLE:
+        raise PrepareFailure(f"write-scaffold step {receipt['status']} (exit {receipt['exit_code']}, "
+                             f"violations {receipt['violations']}); receipt kept at {receipt_dir}")
+    adopt(receipt_dir, receipt, scaffold)
+    # Metadata only; the files themselves are the adopted step outputs.
+    _, root, dropped = scaffold_files(prep['resolved'], prep['envelope'], template_dir)
     files = {p.relative_to(scaffold).as_posix(): digest(p) for p in sorted(scaffold.rglob('*')) if p.is_file()}
     record = {'schema': SCAFFOLD_SCHEMA, 'qualification': QUALIFICATION, 'root_sheet_uuid': root,
-              'template_project': {'path': str(FIXTURE_PROJECT), 'sha256': {
-                  n: digest(FIXTURE_PROJECT / n) for n in ('rc_filter.kicad_pro', 'rc_filter.kicad_pcb')}},
+              'template_project': {'path': str(template_dir), 'sha256': {
+                  n: digest(Path(template_dir) / n) for n in ('rc_filter.kicad_pro', 'rc_filter.kicad_pcb')}},
               'board_items_dropped_from_template': dropped, 'files': files,
+              'stage_receipt': receipt_summary(receipt_dir),
               'catalog': {k: prep['catalog'][k] for k in ('path', 'sha256')} | {
                   'source': prep['catalog'].get('source')}}
     write_json(Path(rundir) / 'scaffold.json', record)
     return scaffold, record
+
+
+def scaffold_binding(record, candidate_manifest):
+    """Whether the scaffold receipt's after-tree equals the first capture on SCAFFOLD_DIRS, both ways."""
+    from .stage_receipts import after_tree, validate_receipt
+    path = Path(record['stage_receipt']['receipt'])
+    receipt = validate_receipt(path.parent, binding={'rung1': 'scaffold', 'receipt_index': 1})
+    if digest(path) != record['stage_receipt']['receipt_sha256']:
+        raise ValueError('scaffold stage receipt changed after it was recorded')
+    produced = after_tree(receipt)
+    captured = {rel: sha for rel, sha in candidate_manifest['files'].items()
+                if rel.split('/', 1)[0] in SCAFFOLD_DIRS}
+    differences = sorted(rel for rel in set(produced) | set(captured) if produced.get(rel) != captured.get(rel))
+    return {'receipt': str(path), 'status': receipt['status'], 'bound': not differences,
+            'differences': differences}
+
+
+def first_capture_binding(base, run):
+    """scaffold_binding against RUN/candidate.json; a missing or invalid receipt is unbound, never skipped."""
+    record = base.get('scaffold') or {}
+    manifest = Path(run) / 'candidate.json'
+    if not record.get('stage_receipt'):
+        return {'bound': False, 'error': 'no scaffold stage receipt recorded'}
+    if not manifest.is_file():
+        return {'bound': False, 'error': f'no captured candidate at {manifest}'}
+    try:
+        return scaffold_binding(record, read_json(manifest))
+    except (ValueError, OSError) as exc:
+        return {'bound': False, 'error': f'{type(exc).__name__}: {exc}'}
 
 
 def scaffold_load_checks(rundir, scaffold):
@@ -585,17 +674,19 @@ def artifacts_agree(stored, recomputed):
                                                for k in ('artifacts_id', 'candidate_id', 'files'))
 
 
-def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None):
+def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None, scaffold=None):
     exists = bool(fab and fab['exports_exist'])
     verified = artifacts_agree(fab_artifacts, recomputed)
-    done = verdict == 'criteria_satisfied' and verified
+    scaffold_bound = bool(scaffold and scaffold.get('bound'))
+    done = verdict == 'criteria_satisfied' and verified and scaffold_bound
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
               'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_artifacts': fab_artifacts,
               'fab_artifacts_recomputed_by_verify_campaign': recomputed, 'fab_artifacts_verified': verified,
-              'done': done,
+              'scaffold_receipt_binding': scaffold, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied AND the final campaign state lists the fab '
                             'artifact hashes of the passing fab_package done check AND verify-campaign recomputed '
-                            'the same hashes from the retained run')}
+                            'the same hashes from the retained run AND the scaffold receipt\'s after-tree is exactly the '
+                            'first captured candidate on project/, generation/ and requirements/')}
     write_json(Path(rundir) / 'rung1-campaign-record.json', record)
     return record
 
@@ -626,7 +717,8 @@ def build(spec, rundir, *, profile_path, kicad_route, catalog_checkout=None, max
             'kicad_route': route_identity(kicad_route),
             'prep_receipts': prep['prep_receipts'],
             'scaffold': {'path': 'scaffold.json', 'sha256': digest(rundir / 'scaffold.json'),
-                         'root_sheet_uuid': scaffold_record['root_sheet_uuid'], 'load_checks': loads},
+                         'root_sheet_uuid': scaffold_record['root_sheet_uuid'], 'load_checks': loads,
+                         'stage_receipt': scaffold_record['stage_receipt']},
             'scope': {'path': 'scope.json', 'sha256': digest(scope_path), **validation},
             'campaign_config': {'path': 'campaign.json', 'sha256': digest(config_path),
                                 'profile': str(Path(profile_path).absolute()), 'profile_sha256': digest(profile_path),
@@ -685,8 +777,10 @@ def run(spec, rundir, *, profile_path, kicad_route, dry_run, catalog_checkout=No
         base, scope_path, config_path = build(spec, rundir, profile_path=profile_path, kicad_route=kicad_route,
                                               catalog_checkout=catalog_checkout, max_seconds=max_seconds)
     except (PrepareFailure, ValueError, OSError) as exc:
-        return write_record(rundir, {'mode': 'dry_run' if dry_run else 'campaign',
-                                     'error': f'{type(exc).__name__}: {exc}'})
+        failed = {'mode': 'dry_run' if dry_run else 'campaign', 'error': f'{type(exc).__name__}: {exc}'}
+        if (rundir / 'scaffold-receipt' / 'receipt.json').is_file():
+            failed['scaffold_stage_receipt'] = receipt_summary(rundir / 'scaffold-receipt')
+        return write_record(rundir, failed)
     logs = rundir / 'logs'
     if dry_run:
         run_dir = rundir / 'dry-run' / 'empty-checks-only'
@@ -702,7 +796,7 @@ def run(spec, rundir, *, profile_path, kicad_route, dry_run, catalog_checkout=No
             'empty_review': {'command': command, 'result': empty},
             'rehearsal': {'receipts': receipts, 'note': 'rehearsal outside any campaign; not acceptance evidence'},
             'rehearsed_review': {'command': after_command, 'result': after}})
-        return write_record(rundir, base, fab=fab)
+        return write_record(rundir, base, fab=fab, scaffold=first_capture_binding(base, run_dir))
     root = rundir / 'campaign'
     command = run_logged(agent_ee_command('campaign', config_path, '--out', root), logs, 'campaign',
                          max_seconds + 3600)
@@ -744,7 +838,8 @@ def campaign_record(rundir, base, command, source=PACKAGE_ROOT):
     elif verdict == 'criteria_satisfied':
         verdict = 'unverified:' + verdict
     return write_record(rundir, base, verdict=verdict, fab=fab,
-                        fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed)
+                        fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed,
+                        scaffold=first_capture_binding(base, root / 'runs' / '1'))
 
 
 def rebuild_record(rundir):

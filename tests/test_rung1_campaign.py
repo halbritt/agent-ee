@@ -1,8 +1,10 @@
 """Rung 1 as a staged repair campaign from an empty candidate: scaffold, scope, steps, dry run.
 
-No test here runs the campaign or any inference. The native tests load the empty
-scaffold in kicad-cli and run a checks-only review of the empty candidate.
+No test here runs the campaign or any inference. The scaffold is written by the sandboxed
+`write-scaffold` step, so every scaffold test needs Bubblewrap. The native tests load the
+empty scaffold in kicad-cli and run a checks-only review of the empty candidate.
 """
+import shutil
 import json
 import os
 from pathlib import Path
@@ -14,7 +16,9 @@ from unittest import mock
 
 from agent_ee import generate as g
 from agent_ee import rung1_campaign as rc
+from agent_ee.stage_receipts import validate_receipt
 from agent_ee.stages import declaration, native_references
+from agent_ee.storage import digest
 try:
     from toolchain import require_toolchain
     from test_generate import HEADER, ROWS, git_catalog
@@ -42,6 +46,7 @@ class Prepared(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         require_stock()
+        require_toolchain()
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-campaign-')
         root = Path(cls.tmp.name)
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
@@ -97,6 +102,72 @@ class ScaffoldTest(Prepared):
                          (self.scaffold / 'project/rung1_rc.kicad_pcb').read_bytes())
         parts = json.loads((generation / 'parts-manifest.json').read_text())
         self.assertEqual(parts['parts']['J1']['JLCPCB_Assembly'], 'not_assembled')
+
+    def test_scaffold_files_are_the_adopted_outputs_of_a_retained_scaffold_receipt(self):
+        summary = self.record['stage_receipt']
+        receipt_dir = Path(summary['receipt']).parent
+        self.assertEqual(receipt_dir, self.rundir / 'scaffold-receipt')
+        receipt = validate_receipt(receipt_dir, binding={'rung1': 'scaffold', 'receipt_index': 1})
+        self.assertEqual((summary['stage'], summary['step'], summary['status'], summary['exit_code']),
+                         ('scaffold', 'write-scaffold', 'completed', 0))
+        self.assertEqual(summary['receipt_sha256'], digest(receipt_dir / 'receipt.json'))
+        self.assertEqual(receipt['violations'], [])
+        self.assertIn('--unshare-net', receipt['execution']['sandbox_argv'])
+        self.assertEqual(receipt['tool']['executable']['sha256'], digest('/usr/bin/python3'))
+        self.assertEqual(receipt['tool']['reported_version']['status'], 'reported')
+        self.assertEqual([m['at'] for m in receipt['tool']['mounts']],
+                         ['/tool/steps', '/tool/agent-ee', '/tool/template'])
+        self.assertIsNotNone(receipt['tool']['source_tree']['sha256'])
+        # Inputs are the immutable generation inputs only; every project file is a step output.
+        self.assertFalse(any(rel.startswith('project/') for rel in receipt['inputs']))
+        self.assertIn('generation/resolved.json', receipt['inputs'])
+        self.assertEqual(sorted(receipt['outputs']), sorted(receipt['changed']))
+        self.assertEqual(len(receipt['outputs']), 7)
+        for rel, sha in receipt['outputs'].items():
+            self.assertEqual(digest(self.scaffold / rel), sha, rel)
+            self.assertEqual(self.record['files'][rel], sha, rel)
+
+    def test_scaffold_binding_is_exact_against_the_first_capture(self):
+        base = {'scaffold': {'stage_receipt': self.record['stage_receipt']}}
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            self.assertEqual(rc.first_capture_binding(base, run)['bound'], False)
+            files = dict(self.record['files'], **{'stock/symbols/Device.kicad_sym': 'x'})
+            (run / 'candidate.json').write_text(json.dumps({'files': files}))
+            binding = rc.first_capture_binding(base, run)
+            self.assertEqual((binding['bound'], binding['differences']), (True, []))
+            # A file planted in a scaffold directory before capture is not in the receipt: unbound.
+            for planted in ('project/rung1_rc.kicad_dru', 'generation/extra.json', 'requirements/extra.md'):
+                (run / 'candidate.json').write_text(json.dumps({'files': dict(files, **{planted: '1' * 64})}))
+                binding = rc.first_capture_binding(base, run)
+                self.assertEqual((binding['bound'], binding['differences']), (False, [planted]))
+            files['project/rung1_rc.kicad_pcb'] = '0' * 64
+            (run / 'candidate.json').write_text(json.dumps({'files': files}))
+            binding = rc.first_capture_binding(base, run)
+            self.assertEqual((binding['bound'], binding['differences']), (False, ['project/rung1_rc.kicad_pcb']))
+            del files['project/rung1_rc.kicad_pcb']
+            (run / 'candidate.json').write_text(json.dumps({'files': files}))
+            self.assertFalse(rc.first_capture_binding(base, run)['bound'])
+            self.assertEqual(rc.first_capture_binding({}, run),
+                             {'bound': False, 'error': 'no scaffold stage receipt recorded'})
+            forged = {'scaffold': {'stage_receipt': dict(self.record['stage_receipt'], receipt_sha256='0' * 64)}}
+            self.assertIn('changed after it was recorded', rc.first_capture_binding(forged, run)['error'])
+
+    def test_failed_scaffold_step_keeps_its_receipt_and_writes_no_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            template = Path(tmp) / 'template'
+            shutil.copytree(rc.FIXTURE_PROJECT, template)
+            (template / 'fp-lib-table').write_text('(fp_lib_table (lib (name "x") (uri "${KIPRJMOD}/x")))\n')
+            rundir = Path(tmp) / 'run'
+            rundir.mkdir()
+            with self.assertRaisesRegex(rc.PrepareFailure, 'write-scaffold step failed'):
+                rc.write_scaffold(rundir, self.prep, template_dir=template)
+            receipt = validate_receipt(rundir / 'scaffold-receipt')
+            self.assertEqual((receipt['status'], receipt['exit_code']), ('failed', 3))
+            self.assertIn(b'must use stock references only',
+                          (rundir / 'scaffold-receipt/run/stderr.log').read_bytes())
+            self.assertFalse((rundir / 'scaffold' / 'project').exists())
+            self.assertFalse((rundir / 'scaffold.json').exists())
 
     def test_staged_scope_validates_with_the_real_loaders(self):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
@@ -162,6 +233,17 @@ class StepTest(unittest.TestCase):
         self.assertEqual(steps[2]['backend_report'], {'artifact': 'out/result.json', 'key': 'backend'})
         self.assertEqual(steps[3]['writes'], {'project/rung1_rc.kicad_pcb': 'design/project/rung1_rc.kicad_pcb'})
 
+    def test_scaffold_step_is_a_valid_networkless_scaffold_stage_declaration(self):
+        from agent_ee.stage_receipts import validate_step
+        step = validate_step(rc.scaffold_step(rc.PACKAGE_ROOT, rc.STEPS_DIR, rc.FIXTURE_PROJECT))
+        self.assertEqual((step['stage'], step['step'], step['adoptable_exits']), ('scaffold', 'write-scaffold', [0]))
+        self.assertEqual(sorted(step['writes']), [
+            'generation/template/rung1_rc.kicad_pcb', 'generation/template/rung1_rc.kicad_pro',
+            'project/fp-lib-table', 'project/rung1_rc.kicad_pcb', 'project/rung1_rc.kicad_pro',
+            'project/rung1_rc.kicad_sch', 'project/sym-lib-table'])
+        self.assertTrue(all(source == 'out/' + target for target, source in step['writes'].items()))
+        self.assertEqual(step['source'], '/tool/agent-ee')
+
     def test_step_with_adoptable_exit_3_is_rejected(self):
         route = dict(self.steps[2], adoptable_exits=[0, 3])
         with self.assertRaisesRegex(ValueError, 'never adoptable'):
@@ -193,14 +275,17 @@ class RecordTest(unittest.TestCase):
     def test_done_requires_verdict_and_fab_hashes_recomputed_by_verify_campaign(self):
         stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}}
         with tempfile.TemporaryDirectory() as tmp:
-            done = lambda verdict, recomputed, artifacts=stored: rc.write_record(
-                tmp, {}, verdict=verdict, fab_artifacts=artifacts, recomputed=recomputed)['done']
+            bound = {'bound': True}
+            done = lambda verdict, recomputed, artifacts=stored, scaffold=bound: rc.write_record(
+                tmp, {}, verdict=verdict, fab_artifacts=artifacts, recomputed=recomputed, scaffold=scaffold)['done']
             self.assertTrue(done('criteria_satisfied', dict(stored)))
             self.assertFalse(done('criteria_satisfied', None))
             self.assertFalse(done('criteria_satisfied', None, None))
             self.assertFalse(done('criteria_satisfied', {**stored, 'files': {'work/fab/fab/bom.csv': '2' * 64}}))
             self.assertFalse(done('criteria_satisfied', {**stored, 'candidate_id': 'other'}))
             self.assertFalse(done('escalated', dict(stored)))
+            for scaffold in (None, {'bound': False, 'differences': ['project/rung1_rc.kicad_pcb']}):
+                self.assertFalse(done('criteria_satisfied', dict(stored), scaffold=scaffold))
             record = json.loads((Path(tmp) / 'rung1-campaign-record.json').read_text())
             self.assertEqual(record['done_rule'].split(' AND ')[0], 'campaign verdict criteria_satisfied')
 

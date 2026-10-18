@@ -299,7 +299,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   (scaffold, placers, kicad-route) get [stage receipts](stage-receipts.md)
   (AGENTEE-95). The campaign runs declared kicad-route steps through the routing
   adapter and verifies their receipts and semantics before adoption and on replay.
-  The placement adapter also uses this receipt pipeline.
+  The placement adapter also uses this receipt pipeline. The [rung 1 campaign
+  driver](rung1-campaign.md) also records a receipt for its scaffold step, which its
+  record's `done` binds to the first capture; verify-campaign does not check it.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings
