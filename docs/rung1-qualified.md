@@ -213,7 +213,12 @@ either source tree was changed.
 | `rung1-qualified-record.json` | `agent-ee.rung1-qualified-record/0-experimental` |
 
 `done` is the campaign verdict `criteria_satisfied` with `verify-campaign`
-exit 0. The fab package is graded by checks inside the scope.
+exit 0, and the final state lists the `agent-ee.stage-done/1` binding that
+verify-campaign recomputed (`stage_receipts_done.bound`). The schematic must be
+`emit-schematic`'s output. The board must come from `forward-annotate`, then the
+placement adapter's footprint moves, then the routing step, with no other edit
+([done through declared steps](stage-receipts.md#done-through-declared-steps)).
+The fab package is graded by checks inside the scope.
 
 ## Recorded run (2026-10-17)
 

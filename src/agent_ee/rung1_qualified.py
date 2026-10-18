@@ -895,15 +895,20 @@ def campaign_record(rundir, base, command):
         verify_campaign={'exit_code': verify['exit_code'], 'stdout_tail': verify['stdout_tail'],
                          'stderr_tail': verify['stderr_tail']})
     final_fab = iterations[-1]['fab'] if iterations else None
-    return write_record(rundir, base, verdict=verdict, verify_exit=verify['exit_code'], fab=final_fab)
+    from .stage_done import driver_term
+    return write_record(rundir, base, verdict=verdict, verify_exit=verify['exit_code'], fab=final_fab,
+                        stage=driver_term(root, state))
 
 
-def write_record(rundir, base, *, verdict=None, verify_exit=None, fab=None):
-    done = verdict == 'criteria_satisfied' and verify_exit == 0
+def write_record(rundir, base, *, verdict=None, verify_exit=None, fab=None, stage=None):
+    done = verdict == 'criteria_satisfied' and verify_exit == 0 and (stage is None or stage['bound'])
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
-              'fab_manifest': fab, 'done': done,
+              'fab_manifest': fab, 'stage_receipts_done': stage, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied and verify-campaign exit 0; the fab package is '
-                            'graded inside the check set by fab_export and fab_consistency')}
+                            'graded inside the check set by fab_export and fab_consistency; with declared stage '
+                            'steps, the final state lists the agent-ee.stage-done/1 binding verify-campaign '
+                            "recomputed: each declared stage's graded content is its step receipt output "
+                            '(decision 1 amendment)')}
     write_json(Path(rundir) / 'rung1-qualified-record.json', record)
     return record
 

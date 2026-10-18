@@ -953,7 +953,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with patch('agent_ee.reviewers.dispatch', side_effect=preparing_writer):
             status, state = self.campaign([self.step(), self.step(stage='routing', step='route-helper',
                 writes={'design/schematic': 'out/schematic'})])
-        self.assertEqual(status, 0, state)
+        # Every check passes, but the routing step never ran: its writer-prepared output is not done
+        # (decision 1 amendment, AGENTEE-144).
+        self.assertEqual((status, state['state'], state['diagnostic']['state']),
+                         (1, 'incomplete', 'criteria_satisfied'))
+        self.assertIn('stage_step_unreceipted: routing/route-helper has no adopted receipt producing '
+                      'design/schematic', state['error'])
         work = self.root / 'campaign/implementations/1'
         context = json.loads((work / 'implementation-prompt.txt').read_text().split(
             '\nDeclared implementation steps:\n', 1)[1])
@@ -963,7 +968,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         index = read_json(work / 'stage-receipts.json')
         self.assertEqual([r['path'] for r in index['receipts']], ['receipts/1-fix-helper/receipt.json'])
         self.assertEqual((self.root / 'campaign/runs/2/inputs/design/schematic').read_text(), 'prepared input')
-        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
 
     @toolchain_test
     def test_coordinator_step_receipt_bound_to_captured_proposal(self):

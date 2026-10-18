@@ -585,17 +585,19 @@ def artifacts_agree(stored, recomputed):
                                                for k in ('artifacts_id', 'candidate_id', 'files'))
 
 
-def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None):
+def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None, stage=None):
     exists = bool(fab and fab['exports_exist'])
     verified = artifacts_agree(fab_artifacts, recomputed)
-    done = verdict == 'criteria_satisfied' and verified
+    done = verdict == 'criteria_satisfied' and verified and (stage is None or stage['bound'])
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
               'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_artifacts': fab_artifacts,
               'fab_artifacts_recomputed_by_verify_campaign': recomputed, 'fab_artifacts_verified': verified,
-              'done': done,
+              'stage_receipts_done': stage, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied AND the final campaign state lists the fab '
                             'artifact hashes of the passing fab_package done check AND verify-campaign recomputed '
-                            'the same hashes from the retained run')}
+                            'the same hashes from the retained run AND, with declared stage steps, the final state '
+                            'lists the agent-ee.stage-done/1 binding verify-campaign recomputed: each declared '
+                            "stage's graded content is its step receipt output (decision 1 amendment)")}
     write_json(Path(rundir) / 'rung1-campaign-record.json', record)
     return record
 
@@ -743,8 +745,10 @@ def campaign_record(rundir, base, command, source=PACKAGE_ROOT):
         recomputed = recomputed_artifacts(stdout, final_run) if final_run else None
     elif verdict == 'criteria_satisfied':
         verdict = 'unverified:' + verdict
+    from .stage_done import driver_term
     return write_record(rundir, base, verdict=verdict, fab=fab,
-                        fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed)
+                        fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed,
+                        stage=driver_term(root, state))
 
 
 def rebuild_record(rundir):

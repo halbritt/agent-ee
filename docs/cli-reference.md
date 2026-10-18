@@ -218,7 +218,9 @@ recorded Python/runtime identities and retained evidence. It prints the verified
 campaign state and exits 0 on integrity success, including for honestly incomplete
 or escalated campaigns. For a satisfied generation campaign it recomputes the final
 run's sealed fab artifact hashes, refuses a state whose `fab_artifacts` differ, and
-prints them after the state ([done gate](fab-package.md#campaign-state)). It uses the root writer lease and can refuse while a
+prints them after the state ([done gate](fab-package.md#campaign-state)). With declared stage steps
+it also recomputes the [stage-step done binding](stage-receipts.md#done-through-declared-steps) and
+refuses a satisfied state whose `stage_done` differs. It uses the root writer lease and can refuse while a
 campaign is active. See [history verification](campaign-guide.md#retained-files-and-verification).
 
 ## `bench-review` and `campaign-feedback`

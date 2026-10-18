@@ -244,6 +244,7 @@ Maintain these boundaries when extending behavior:
 | [test_applicability.py](../tests/test_applicability.py) | Exact design inventories, provenance closure, omission/tamper refusal, unqualified prediction diagnostics and strict migration |
 | [test_campaign.py](../tests/test_campaign.py) | Real coordinator with scripted model replies: repair, fresh review, history, restricted write authority and accumulated empirical epochs |
 | [test_stage_receipts.py](../tests/test_stage_receipts.py) | Coordinator-run step receipts in the real sandbox: identity, unknown versions, exit/scope status, malformed backend reports, tool-planted links and executor records, adoption races, tamper/foreign refusal, exact applicability and campaign anchoring |
+| [test_stage_done.py](../tests/test_stage_done.py) | Done through declared stage steps (AGENTEE-144): receipt provenance of each declared stage's graded content, writer-made content refusal, undeclared and excluded stages, tamper refusal in verify-campaign, and the rung-1 drivers' done term |
 
 The final implementation verification recorded 98 passing tests. That count is
 historical, not a requirement that forbids adding tests. Scripted replies test
