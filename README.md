@@ -126,7 +126,9 @@ An [offline intent importer](docs/design-intent.md) preserves source requirement
 and exact voltage values. [Decision capture](docs/design-dialog.md) records
 answers and their dependencies; missing answers remain unresolved. These tools
 prepare inputs, but do not choose executable acceptance checks or generate a
-verified circuit.
+verified circuit. The [requirement-record compiler](docs/requirement-scope.md)
+turns an owner-authored record of spec quotes and check mappings into a scope/2;
+it refuses unmapped requirements and uncited spec sentences.
 
 [Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
 and derived requirements into the captured baseline. A reference document becomes

@@ -13,6 +13,8 @@ board facts through pcbnew.
 [Stage-one intent import](design-intent.md) prepares source-bound requirements
 and incomplete interface stubs for later capture. Its lint outcome covers only
 the declared lexical checks; executable checks must supply acceptance evidence.
+The [requirement-record compiler](requirement-scope.md) maps quoted spec
+requirements to the check specifications on this page; it adds no check kind.
 
 ## Execution and engineering result
 

@@ -37,7 +37,7 @@ What must exist at each stage before a rung can run:
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
-| 1 Requirements | Requirement IDs (the fixture's `R-native`, `R-width`, `R-response`); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
+| 1 Requirements | Requirement IDs `R-native`, `R-width`, `R-response`, `R-fab`, `R-parts`, compiled from the spec by the [requirement-record compiler](requirement-scope.md) (AGENTEE-100); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
 | 2 Parts | Approved-parts manifest: R, C and header with LCSC bindings; stock footprints | Block manifest with snapshot stock state | Merged block manifests; assembly readiness | About 492 footprints against one catalogue snapshot |
 | 3 Schematic | One sheet; netlist parity with the fixture | One captured block, adapted, plus a root sheet | Several blocks integrated block-first | 15 sheets from power, MCU core, CAN, wideband and driver blocks |
 | 4 Placement | Three footprints placed and graded | Decoupling distance, connector on edge | Sub-layout reuse, congestion report | Budget measurements before any limit change |
