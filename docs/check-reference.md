@@ -504,7 +504,13 @@ hash-valid. Empty selections, absent exact footprint names, missing or extra
 electrical pad numbers, connector count mismatches and assembly mismatches are
 defects. Duplicate thermal pad numbers count once; qualified paste-only and
 unnumbered mechanical pads do not participate in electrical parity. Library
-read or parse failures leave unknown coverage.
+read or parse failures leave unknown coverage. An optional captured
+`declarations` file (`agent-ee.footprint-declarations/1`, an immutable input)
+can declare mechanical copper pads (MP), thermal-via pads, custom pad numbering,
+assembly for attr-less footprints, and pinless symbols. Declared pads are
+reported as mechanical. Undeclared cases keep their extra-pad defect or unknown
+result, and a declaration that applies to nothing is unknown
+([owner declarations](footprint-libraries.md#owner-declarations)).
 
 Adding `netlist_check` binds each declaration to every native board component
 and its captured whole-device pin inventory. Missing declarations or ambiguous

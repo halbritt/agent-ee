@@ -197,6 +197,221 @@ class AssignmentTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'info')
 
 
+def fixture(name, pads, attr='(attr smd)'):
+    return (f'(footprint "{name}" (version 20240108) (generator "owned") (layer "F.Cu") {attr}'
+            + ''.join(pads) + ')')
+
+
+def smd(number, x, y=0, layers='"F.Cu" "F.Paste" "F.Mask"', shape='rect', extra=''):
+    return f'(pad "{number}" smd {shape} (at {x} {y}) (size 1 1) {extra}(layers {layers}))'
+
+
+def tht(number, x, y=0, kind='thru_hole', drill=0.3, layers='"*.Cu" "*.Mask"'):
+    return f'(pad "{number}" {kind} circle (at {x} {y}) (size 0.6 0.6) (drill {drill}) (layers {layers}))'
+
+
+# Owned land patterns for each declared case; none is copied from a stock library.
+CONN_MP = fixture('ConnMP', [smd(1, 0), smd(2, 1), smd('MP', -2, 2), smd('MP', 3, 2)])
+QFN_TV = fixture('QfnTV', [smd(n, n) for n in (1, 2, 3, 4)] + [smd(5, 2, 3, layers='"F.Cu" "F.Mask"'),
+                 tht(5, 1.5, 3), tht(5, 2.5, 3), smd('', 2, 3, layers='"F.Paste"')])
+MOUNTING_HOLE = fixture('MountingHole', [tht('', 0, kind='np_thru_hole', drill=3)],
+                        '(attr exclude_from_pos_files exclude_from_bom)')
+MOUNTING_PAD = fixture('MountingPad', [tht(1, 0, drill=3)], '(attr exclude_from_pos_files exclude_from_bom)')
+FIDUCIAL = fixture('Fiducial', [smd('', 0, layers='"F.Cu" "F.Mask"', shape='circle')], '(attr smd exclude_from_bom)')
+NO_ATTR = SOT3.replace(' (attr smd)', '').replace('"SOT3"', '"NoAttr"', 1)
+CUSTOM = fixture('CustomPad', [smd(1, 0, shape='custom', extra='(options (clearance outline) (anchor rect)) '
+                               '(primitives (gr_poly (pts (xy -0.5 -0.5) (xy 1 -0.5) (xy 1 0.5)) (width 0) (fill yes))) '),
+                               smd(2, 1), smd(3, 0, 2)])
+FIXTURES = dict(ConnMP=CONN_MP, QfnTV=QFN_TV, MountingHole=MOUNTING_HOLE, MountingPad=MOUNTING_PAD,
+                Fiducial=FIDUCIAL, NoAttr=NO_ATTR, CustomPad=CUSTOM)
+
+
+def library(*names):
+    manifest = {'schema': 'agent-ee.footprint-libraries/1', 'complete': True,
+                'libraries': [{'name': 'Owned', 'members': []}]}
+    files = {}
+    for name in names:
+        data = FIXTURES[name].encode()
+        path = f'owned.pretty/{name}.kicad_mod'
+        manifest['libraries'][0]['members'].append({'path': path, 'sha256': hashlib.sha256(data).hexdigest()})
+        files[path] = data
+    return manifest, files
+
+
+def owner_declarations(footprints=(), pinless=()):
+    entries = []
+    for footprint, changes in footprints:
+        entry = dict(footprint=footprint, mechanical_pads=[], thermal_via_pads=[], custom_pads=[],
+                     assembly=None, rationale='owner reviewed land pattern')
+        entry.update(changes)
+        entries.append(entry)
+    return dict(schema='agent-ee.footprint-declarations/1', footprints=entries,
+                pinless_symbols=[dict(lib_id=x, rationale='owner reviewed non-electrical part') for x in pinless])
+
+
+class DeclarationTests(unittest.TestCase):
+    def check(self, names, numbers, components, declarations=None):
+        from agent_ee.footprint_library import check_assignments
+        manifest, files = library(*names)
+        lib, data = symbol_capture(numbers)
+        files[lib['path']] = data
+        declaration = declarations_for(lib, components)
+        return check_assignments(manifest, files, declaration, declarations=declarations)
+
+    def codes(self, result):
+        return sorted(f['code'] for f in result['findings'])
+
+    def test_undeclared_mp_pads_stay_extra_and_declared_ones_are_mechanical(self):
+        component = [dict(footprint='Owned:ConnMP', connector={'rows': 1, 'columns': 2})]
+        result = self.check(['ConnMP'], ('1', '2'), component)
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertEqual(result['findings'][0]['extra_pads'], ['MP'])
+        self.assertEqual(self.codes(result), ['connector_count', 'pad_pin_parity'])
+        declared = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP']))])
+        result = self.check(['ConnMP'], ('1', '2'), component, declared)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['findings'])
+        assignment = result['assignments'][0]
+        self.assertEqual(assignment['mechanical_pads'], ['MP'])
+        self.assertEqual(assignment['footprint_declaration'], declared['footprints'][0])
+        self.assertEqual(result['declarations_sha256'], result['index']['declarations_sha256'])
+        pads = [p for p in result['index']['footprints'][0]['pads'] if p['number'] == 'MP']
+        self.assertEqual([(p['role'], p['declared']) for p in pads], [('mechanical', 'mechanical')] * 2)
+
+    def test_declared_mechanical_pads_do_not_hide_bad_designs(self):
+        declared = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP']))])
+        component = [dict(footprint='Owned:ConnMP', connector={'rows': 1, 'columns': 3})]
+        result = self.check(['ConnMP'], ('1', '2', '3'), component, declared)
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertEqual(result['findings'][0]['missing_pads'], ['3'])
+        self.assertEqual(result['findings'][1], dict(code='connector_count', expected=3, actual=2,
+                         reference='X1', footprint='Owned:ConnMP', lib_id='Owned:Four'))
+        result = self.check(['ConnMP'], ('1', '2', 'MP'), [dict(footprint='Owned:ConnMP')], declared)
+        self.assertEqual((result['outcome'], result['findings'][0]['missing_pads']), ('defect', ['MP']))
+
+    def test_stale_or_unknown_declarations_are_unknown_not_pass(self):
+        component = [dict(footprint='Owned:ConnMP')]
+        for declared in (owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP', 'X']))]),
+                         owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'])),
+                                             ('Owned:Absent', dict(mechanical_pads=['MP']))]),
+                         owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'], custom_pads=['1']))]),
+                         owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'], thermal_via_pads=['1']))])):
+            with self.subTest(declared=declared):
+                result = self.check(['ConnMP'], ('1', '2'), component, declared)
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['assignments'][0]['status'], 'unknown')
+
+    def test_malformed_declarations_are_malformed(self):
+        good = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP']))])
+        bad = [dict(good, schema='agent-ee.footprint-declarations/0'), dict(good, extra=1),
+               owner_declarations([('Owned:ConnMP', {})]),
+               owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP', 'MP']))]),
+               owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'], thermal_via_pads=['MP']))]),
+               owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'], rationale=''))]),
+               owner_declarations([('ConnMP', dict(mechanical_pads=['MP']))]),
+               owner_declarations([('Owned:ConnMP', dict(assembly='mixed'))]),
+               owner_declarations(pinless=['Owned:Four', 'Owned:Four'])]
+        for declared in bad:
+            with self.subTest(declared=declared):
+                result = self.check(['ConnMP'], ('1', '2'), [dict(footprint='Owned:ConnMP')], declared)
+                self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'))
+                self.assertEqual({f['code'] for f in result['findings']}, {'declaration'})
+
+    def test_declared_pinless_mounting_hole_and_fiducial(self):
+        components = [dict(footprint='Owned:MountingHole', assembly='through_hole')]
+        self.assertEqual(self.check(['MountingHole'], (), components)['outcome'], 'unknown')
+        pinless = owner_declarations(pinless=['Owned:Four'])
+        # No native smd/through_hole attribute: assembly stays unknown until declared.
+        self.assertEqual(self.check(['MountingHole'], (), components, pinless)['outcome'], 'unknown')
+        declared = owner_declarations([('Owned:MountingHole', dict(assembly='through_hole'))], ['Owned:Four'])
+        result = self.check(['MountingHole'], (), components, declared)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['findings'])
+        self.assertEqual(result['assignments'][0]['pinless'], declared['pinless_symbols'][0])
+        mismatch = self.check(['MountingHole'], (), [dict(components[0], assembly='smd')], declared)
+        self.assertEqual(self.codes(mismatch), ['assembly_mismatch'])
+        undeclared = self.check(['Fiducial'], (), [dict(footprint='Owned:Fiducial')], pinless)
+        self.assertEqual((undeclared['execution'], undeclared['outcome']), ('failed', 'unknown'))
+        declared = owner_declarations([('Owned:Fiducial', dict(mechanical_pads=['']))], ['Owned:Four'])
+        result = self.check(['Fiducial'], (), [dict(footprint='Owned:Fiducial')], declared)
+        self.assertEqual(result['outcome'], 'pass', result['findings'])
+        self.assertEqual(result['assignments'][0]['mechanical_pads'], [''])
+
+    def test_pinless_declaration_keeps_bad_designs_failing(self):
+        declared = owner_declarations([('Owned:MountingPad', dict(assembly='through_hole'))], ['Owned:Four'])
+        result = self.check(['MountingPad'], (), [dict(footprint='Owned:MountingPad', assembly='through_hole')], declared)
+        self.assertEqual((result['outcome'], result['findings'][0]['extra_pads']), ('defect', ['1']))
+        result = self.check(['MountingPad'], (), [dict(footprint='', assembly='through_hole')], declared)
+        self.assertEqual(self.codes(result), ['empty_footprint'])
+        declared = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP']))], ['Owned:Four'])
+        result = self.check(['ConnMP'], ('1', '2'), [dict(footprint='Owned:ConnMP')], declared)
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+        self.assertIn('contradicts', result['assignments'][0]['findings'][0]['message'])
+
+    def test_thermal_via_qfn_requires_declaration_and_keeps_parity(self):
+        component = [dict(footprint='Owned:QfnTV')]
+        pins = ('1', '2', '3', '4', '5')
+        undeclared = self.check(['QfnTV'], pins, component)
+        self.assertEqual((undeclared['execution'], undeclared['outcome']), ('failed', 'unknown'))
+        self.assertIn('mixed', undeclared['assignments'][0]['findings'][0]['message'])
+        declared = owner_declarations([('Owned:QfnTV', dict(thermal_via_pads=['5']))])
+        result = self.check(['QfnTV'], pins, component, declared)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['findings'])
+        vias = [p for p in result['index']['footprints'][0]['pads'] if p.get('thermal_via')]
+        self.assertEqual([(p['number'], p['type'], p['role']) for p in vias], [('5', 'thru_hole', 'electrical')] * 2)
+        missing = self.check(['QfnTV'], pins[:4], component, declared)
+        self.assertEqual((missing['outcome'], missing['findings'][0]['extra_pads']), ('defect', ['5']))
+        wrong = self.check(['QfnTV'], pins, [dict(footprint='Owned:QfnTV', assembly='through_hole')], declared)
+        self.assertEqual(self.codes(wrong), ['assembly_mismatch'])
+        stale = owner_declarations([('Owned:QfnTV', dict(thermal_via_pads=['5', '1']))])
+        self.assertEqual(self.check(['QfnTV'], pins, component, stale)['outcome'], 'unknown')
+
+    def test_attr_less_footprint_uses_declared_assembly_only(self):
+        component = [dict(footprint='Owned:NoAttr')]
+        pins = ('1', '2', '3')
+        self.assertEqual(self.check(['NoAttr'], pins, component)['outcome'], 'unknown')
+        declared = owner_declarations([('Owned:NoAttr', dict(assembly='smd'))])
+        self.assertEqual(self.check(['NoAttr'], pins, component, declared)['outcome'], 'pass')
+        wrong = self.check(['NoAttr'], pins, [dict(footprint='Owned:NoAttr', assembly='through_hole')], declared)
+        self.assertEqual(self.codes(wrong), ['assembly_mismatch'])
+        contradiction = owner_declarations([('Owned:NoAttr', dict(assembly='through_hole'))])
+        result = self.check(['NoAttr'], pins, [dict(footprint='Owned:NoAttr', assembly='through_hole')], contradiction)
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+        redundant = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'], assembly='smd'))])
+        result = self.check(['ConnMP'], ('1', '2'), [dict(footprint='Owned:ConnMP')], redundant)
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+
+    def test_declared_custom_pad_participates_in_numbering_only(self):
+        component = [dict(footprint='Owned:CustomPad')]
+        pins = ('1', '2', '3')
+        self.assertEqual(index_footprints(*library('CustomPad'))['outcome'], 'unknown')
+        declared = owner_declarations([('Owned:CustomPad', dict(custom_pads=['1']))])
+        result = self.check(['CustomPad'], pins, component, declared)
+        self.assertEqual(result['outcome'], 'pass', result['findings'])
+        pad = next(p for p in result['index']['footprints'][0]['pads'] if p['number'] == '1')
+        self.assertEqual((pad['shape'], pad['geometry']), ('custom', 'declared_custom'))
+        self.assertEqual(self.check(['CustomPad'], pins[:2], component, declared)['outcome'], 'defect')
+        FIXTURES['Padstack'] = CUSTOM.replace('"CustomPad"', '"Padstack"', 1).replace(
+            '(options', '(padstack (mode front_inner_back)) (options', 1)
+        self.addCleanup(FIXTURES.pop, 'Padstack')
+        manifest, files = library('Padstack')
+        result = index_footprints(manifest, files, owner_declarations([('Owned:Padstack', dict(custom_pads=['1']))]))
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+
+    def test_declarations_are_deterministic_and_change_identity(self):
+        manifest, files = library('ConnMP')
+        declared = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP']))])
+        first = index_footprints(manifest, files, declared)
+        self.assertEqual(first, index_footprints(manifest, dict(files), declared))
+        self.assertNotEqual(first['canonical_sha256'], index_footprints(manifest, files)['canonical_sha256'])
+
+
+def declarations_for(lib, components):
+    declaration = declarations(lib)
+    declaration['components'] = [dict(declaration['components'][0], reference=f'X{i}', **c)
+                                 for i, c in enumerate(components, 1)]
+    return declaration
+
+
 class NativePadTests(unittest.TestCase):
     def test_owned_native_inventory_matches_pcbnew(self):
         from toolchain import require_toolchain
@@ -220,3 +435,34 @@ class NativePadTests(unittest.TestCase):
                 self.assertEqual(indexed['execution'], 'ok')
                 self.assertEqual(sorted(p['number'] for p in indexed['footprints'][0]['pads']), actual)
                 self.assertEqual(indexed['footprints'][0]['electrical_numbers'], ['1', '2', '3'])
+
+    def test_declared_fixtures_match_pcbnew_pad_inventory(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import tempfile
+        import pcbnew
+        from pathlib import Path
+        declared = owner_declarations([('Owned:ConnMP', dict(mechanical_pads=['MP'])),
+                                       ('Owned:QfnTV', dict(thermal_via_pads=['5'])),
+                                       ('Owned:MountingHole', dict(assembly='through_hole')),
+                                       ('Owned:MountingPad', dict(assembly='through_hole')),
+                                       ('Owned:Fiducial', dict(mechanical_pads=[''])),
+                                       ('Owned:NoAttr', dict(assembly='smd')),
+                                       ('Owned:CustomPad', dict(custom_pads=['1']))])
+        manifest, files = library(*FIXTURES)
+        indexed = index_footprints(manifest, files, declared)
+        self.assertEqual(indexed['execution'], 'ok', indexed['findings'])
+        kinds = {pcbnew.PAD_ATTRIB_SMD: 'smd', pcbnew.PAD_ATTRIB_PTH: 'thru_hole', pcbnew.PAD_ATTRIB_NPTH: 'np_thru_hole'}
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in FIXTURES.items():
+                with self.subTest(name=name):
+                    (Path(tmp) / f'{name}.kicad_mod').write_text(text)
+                    native = pcbnew.FootprintLoad(tmp, name)
+                    self.assertIsNotNone(native)
+                    actual = sorted((p.GetNumber(), kinds[p.GetAttribute()]) for p in native.Pads())
+                    fp = next(x for x in indexed['footprints'] if x['name'] == name)
+                    self.assertEqual(sorted((p['number'], p['type']) for p in fp['pads']), actual)
+                    native_smd = bool(native.GetAttributes() & pcbnew.FP_SMD)
+                    native_tht = bool(native.GetAttributes() & pcbnew.FP_THROUGH_HOLE)
+                    self.assertEqual(native_smd, 'smd' in fp['attributes'])
+                    self.assertEqual(native_tht, 'through_hole' in fp['attributes'])
