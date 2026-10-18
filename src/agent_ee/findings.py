@@ -1,7 +1,9 @@
 """Finding validation, non-voting collection, and evidence-grounded adjudication."""
 
 import copy
+import json
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
 from .candidate import verify_snapshot
@@ -38,6 +40,10 @@ DECISIONS_TOP_KEYS = frozenset(("schema", "candidate_id", "run_id", "decisions")
 DECISION_REQUIRED_KEYS = frozenset(("finding_id", "disposition", "reason", "evidence"))
 DECISION_OPTIONAL_KEYS = frozenset(("duplicate_of", "checks", "previous_run"))
 
+STRUCTURED_CITATION_FIELDS = frozenset(("pointer", "lines", "xpath"))
+REVIEW_VERSION = "agent-ee.review/2"
+DECISIONS_VERSION = "agent-ee.decisions/2"
+
 
 def safe_id(value, label="id"):
     if not isinstance(value, str) or not SAFE_ID_RE.fullmatch(value) or ".." in value:
@@ -55,6 +61,54 @@ def _str_list(value, label):
     if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
         raise ValueError(f"{label} must be a list of non-empty strings")
     return list(value)
+
+
+def _validate_pointer(data, pointer):
+    if not isinstance(pointer, str) or (pointer and not pointer.startswith("/")) or re.search(r"~(?![01])", pointer):
+        raise ValueError("citation pointer must be an RFC 6901 JSON pointer")
+    try:
+        node = json.loads(data)
+    except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+        raise ValueError("citation pointer requires a valid JSON document") from exc
+    for token in pointer.split("/")[1:] if pointer else []:
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict) and token in node:
+            node = node[token]
+        elif isinstance(node, list) and re.fullmatch(r"0|[1-9][0-9]*", token) and int(token) < len(node):
+            node = node[int(token)]
+        else:
+            raise ValueError(f"citation pointer {pointer!r} does not resolve")
+
+
+def _validate_lines(data, lines):
+    if (not isinstance(lines, list) or len(lines) != 2 or
+            any(type(n) is not int for n in lines) or not 1 <= lines[0] <= lines[1]):
+        raise ValueError("citation lines must be [start, end] with 1-based inclusive integers")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("citation lines require UTF-8 text") from exc
+    if "\x00" in text or data.startswith((b"%" + b"PDF-", b"\x89PNG")):
+        raise ValueError("citation lines require UTF-8 text")
+    if lines[1] > len(text.splitlines()):
+        raise ValueError("citation lines out of range")
+
+
+def _validate_xpath(data, xpath):
+    _nonempty_str(xpath, "citation xpath")
+    try:
+        root = ET.fromstring(data)
+        # ElementTree paths are root-relative; accept an explicit /root prefix too.
+        path = xpath
+        if xpath.startswith("/"):
+            head, sep, tail = xpath[1:].partition("/")
+            if head != root.tag:
+                raise ValueError(f"citation xpath {xpath!r} does not resolve")
+            path = "./" + tail if sep else "."
+        if not root.findall(path):
+            raise ValueError(f"citation xpath {xpath!r} does not resolve")
+    except (ET.ParseError, SyntaxError, KeyError, TypeError, RecursionError) as exc:
+        raise ValueError("citation xpath requires valid XML and an ElementTree-supported path") from exc
 
 
 def validate_citation_path(path_value, run_dir):
@@ -101,12 +155,23 @@ def validate_citation_path(path_value, run_dir):
     return rel.as_posix()
 
 
-def validate_citation(item, run_dir):
-    if not isinstance(item, dict) or set(item.keys()) != {"path", "locator"}:
+def validate_citation(item, run_dir, *, require_structured=False):
+    if (not isinstance(item, dict) or not {"path", "locator"} <= item.keys() or
+            item.keys() - {"path", "locator"} - STRUCTURED_CITATION_FIELDS):
         raise ValueError(f"malformed evidence citation: {item!r}")
     path_norm = validate_citation_path(item["path"], run_dir)
     locator = _nonempty_str(item["locator"], "evidence locator")
-    return {"path": path_norm, "locator": locator}
+    fields = item.keys() & STRUCTURED_CITATION_FIELDS
+    if require_structured and not fields:
+        raise ValueError("evidence citation requires pointer, lines or xpath")
+    # Descriptive locators in retained /1 records are deliberately never parsed.
+    if fields:
+        data = (Path(run_dir) / path_norm).read_bytes()
+        for key, validate in (("pointer", _validate_pointer), ("lines", _validate_lines), ("xpath", _validate_xpath)):
+            if key in fields:
+                validate(data, item[key])
+    return {"path": path_norm, "locator": locator,
+            **{key: copy.deepcopy(item[key]) for key in STRUCTURED_CITATION_FIELDS if key in item}}
 
 
 def validate_check_result(check, run_dir=None):
@@ -136,6 +201,8 @@ def validate_check_result(check, run_dir=None):
             raise ValueError(f"check {cid}: invalid evidence entry {entry!r}")
         if run_dir is not None:
             validate_citation_path(p, run_dir)
+            if isinstance(entry, dict) and ("locator" in entry or STRUCTURED_CITATION_FIELDS & entry.keys()):
+                validate_citation(entry, run_dir)
     return check
 
 
@@ -164,8 +231,8 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
     missing_top = REVIEW_TOP_KEYS - set(value.keys())
     if missing_top or unknown_top:
         raise ValueError(f"review keys mismatch: missing={sorted(missing_top)}, extra={sorted(unknown_top)}")
-    if value.get("schema") != "agent-ee.review/1":
-        raise ValueError(f"expected schema 'agent-ee.review/1', got {value.get('schema')!r}")
+    if value.get("schema") not in ("agent-ee.review/1", REVIEW_VERSION):
+        raise ValueError(f"unsupported review schema: {value.get('schema')!r}")
     if value.get("candidate_id") != candidate_id:
         raise ValueError("stale or mismatched review candidate_id")
     if value.get("run_id") != run_id:
@@ -213,7 +280,7 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
         raw_ev = item.get("evidence")
         if not isinstance(raw_ev, list):
             raise ValueError(f"finding {fid}: evidence must be a list")
-        evidence = [validate_citation(c, run_dir) for c in raw_ev]
+        evidence = [validate_citation(c, run_dir, require_structured=value["schema"] == REVIEW_VERSION) for c in raw_ev]
 
         normalized = {
             "id": fid,
@@ -246,7 +313,7 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
         validated_findings.append(normalized)
 
     return {
-        "schema": "agent-ee.review/1",
+        "schema": value["schema"],
         "candidate_id": candidate_id,
         "run_id": run_id,
         "packet_sha256": packet_sha256,
@@ -277,7 +344,8 @@ def collect_findings(reviews, checks):
         ev_list = []
         for entry in check.get("evidence", []):
             if isinstance(entry, dict):
-                ev_list.append({"path": entry["path"], "locator": entry.get("locator", f"check:{cid}")})
+                ev_list.append({"path": entry["path"], "locator": entry.get("locator", f"check:{cid}"),
+                                **{key: copy.deepcopy(entry[key]) for key in STRUCTURED_CITATION_FIELDS if key in entry}})
             else:
                 ev_list.append({"path": str(entry), "locator": f"check:{cid}"})
 
@@ -542,8 +610,8 @@ def adjudicate(findings, decisions, run_dir):
     missing_top = DECISIONS_TOP_KEYS - set(decisions.keys())
     if missing_top or unknown_top:
         raise ValueError(f"decisions keys mismatch: missing={sorted(missing_top)}, extra={sorted(unknown_top)}")
-    if decisions.get("schema") != "agent-ee.decisions/1":
-        raise ValueError(f"expected schema 'agent-ee.decisions/1', got {decisions.get('schema')!r}")
+    if decisions.get("schema") not in ("agent-ee.decisions/1", DECISIONS_VERSION):
+        raise ValueError(f"unsupported decisions schema: {decisions.get('schema')!r}")
 
     cand_id = _nonempty_str(decisions.get("candidate_id"), "decisions candidate_id")
     run_id = _nonempty_str(decisions.get("run_id"), "decisions run_id")
@@ -606,7 +674,7 @@ def adjudicate(findings, decisions, run_dir):
         raw_ev = item.get("evidence")
         if not isinstance(raw_ev, list):
             raise ValueError(f"decision {fid}: evidence must be a list")
-        validated_ev = [validate_citation(c, run_dir) for c in raw_ev]
+        validated_ev = [validate_citation(c, run_dir, require_structured=decisions["schema"] == DECISIONS_VERSION) for c in raw_ev]
 
         dup_of = item.get("duplicate_of")
         if disp == "duplicate":

@@ -67,7 +67,9 @@ requirements, checks and models.
    the same candidate, requirements and check evidence. They cannot read each
    other's initial judgments. The two calls run concurrently in separate
    contexts and workspaces; adjudication waits for both to settle.
-5. **Adjudicate centrally.** Findings get explicit dispositions. Under scope/2 and scope/3,
+5. **Adjudicate centrally.** Findings get explicit dispositions. New reviewer
+   and adjudicator citations include [validated document locations](docs/result-reference.md#structured-citations);
+   retained records keep their versioned compatibility rule. Under scope/2 and scope/3,
    an accepted defect must be a coordinator check finding backed by sealed
    evidence and a mapped requirement violation. Reviewer hypotheses need
    reproduction or remain concerns; agreement alone cannot establish a defect.

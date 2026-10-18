@@ -25,6 +25,13 @@ field from the retained coordinator records. Changing a claimed output hash, fil
 version, removing network isolation or relabelling a failed exit is refused,
 even when the forger also recomputes the receipt identity.
 
+Review and adjudication of a stage use the same [structured citation
+contract](result-reference.md#structured-citations) as other reviews. Fresh `/2`
+responses require a resolving `pointer`, `lines` or `xpath` on every citation;
+retained `/1` records may keep descriptive locators alone. Any supplied structured
+field is checked even in `/1`. A resolving location does not make a receipt into
+sealed check evidence or replace the accepted-defect witness gate.
+
 ## Step declaration
 
 ```json

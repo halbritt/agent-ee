@@ -47,7 +47,9 @@ output is never schema-resubmitted. Campaigns may resubmit only model records
 under the [bounded output rule](campaign-guide.md#bounded-output-resubmission).
 Adjudicator citations may reference the verified immutable `baseline.json` for
 context, but accepted defects still require their sealed failed-check citation.
-See [response and citation rules](result-reference.md).
+New reviewer and adjudicator `/2` citations require a resolvable JSON `pointer`,
+text `lines` range or XML `xpath`; descriptive locators in retained `/1` records
+keep their compatibility rule. See [response and citation rules](result-reference.md#structured-citations).
 
 Opt-in [staged scopes](staged-campaign.md) first check declared native content.
 A successful native probe that confirms missing expected symbols, footprints or

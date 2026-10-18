@@ -139,7 +139,7 @@ not preserve interleaved timing.
 
 ## Initial review
 
-Schema `agent-ee.review/1` has exactly these top-level keys:
+New reviews use schema `agent-ee.review/2`, with exactly these top-level keys:
 
 `schema`, `candidate_id`, `run_id`, `packet_sha256`, `role`, `coverage`,
 `limitations`, `findings`.
@@ -156,7 +156,7 @@ structurally allowed. Findings may be empty. Each finding requires:
 | `mechanism` | How the alleged failure occurs |
 | `severity` | `blocking`, `major`, `minor`, or `info` |
 | `assessment` | `defect` or `concern` |
-| `evidence` | List of `{ "path": "...", "locator": "..." }` |
+| `evidence` | List of [structured citations](#structured-citations) |
 | `reasoning` | Relationship between condition, source evidence and conclusion |
 
 Required text fields must be nonempty. Optional normalization fields are
@@ -167,15 +167,49 @@ paths, duplicate local IDs and malformed structures invalidate the review.
 Merely having citations does not prove the claim is true or that the reviewer
 received the entire cited document.
 
-Citations may name `baseline.json` when it matches the captured scope/2 or scope/3
-immutable baseline, or actual regular files under `inputs/`, `checks/` or
-`work/CHECK_ID/` or `review-work/ROLE/experiments/` inside this run. Absolute paths, backslashes, traversal and
-symlink traversal are refused. Citation objects contain exactly `path` and a
-nonempty `locator`; use a native UUID/pin/net, page/section, measurement name or
-specific report item rather than a vague file-level claim. Reviewer prose alone is not independent engineering evidence; experiment citations
-should identify the actual command, input, measurement or fetched source.
-The baseline citation establishes declared requirements or context; it cannot
-replace the sealed failed-check citation required for an accepted defect.
+### Structured citations
+
+New reviewer and adjudicator responses use `agent-ee.review/2` and
+`agent-ee.decisions/2`. Every citation requires `path`, a nonempty descriptive
+`locator`, and at least one of the following fields. No other citation keys are
+allowed. Every supplied structured field must resolve; a valid field cannot
+compensate for another invalid field.
+
+| Field | Resolution rule |
+| --- | --- |
+| `pointer` | RFC 6901 JSON pointer into the cited document. Empty string selects the root; `/` selects an empty key. Escape `~` as `~0` and `/` as `~1` in keys. Array indices are zero-based decimal integers without leading zeros; IDs, negative indices and `-` do not select array elements. |
+| `lines` | `[start, end]`, inclusive 1-based integers within the cited UTF-8 text file. Reversed, empty or out-of-range selections and binary documents are refused. |
+| `xpath` | An `xml.etree.ElementTree` supported element path in cited XML, such as `/export/components/comp[@ref='R1']/value` or `./components/comp`. Absolute paths must begin with the document root tag. Full XPath functions and namespace-prefix mappings are unsupported. |
+
+For example, `{"path":"work/netlist/connectivity.json","locator":"IN net membership",
+"pointer":"/nets/~1IN"}` selects the `/IN` net. A line range identifies a text
+location; it does not assert that a prose quote or engineering claim is true.
+The same limit applies to a pointer or XML element selection.
+
+Citations may name `baseline.json` when its raw file bytes match the canonical
+serialized bytes of the captured scope/2 or scope/3 immutable baseline (never
+merely parsed JSON equality), or actual regular files under `inputs/`, `checks/`,
+`work/CHECK_ID/` or `review-work/ROLE/experiments/` inside this run. Absolute file
+paths, backslashes, traversal and symlink traversal are refused.
+
+Retained `/1` reviews and decisions keep their original compatibility rule:
+`locator` is a nonempty description and the cited path must exist and pass the
+same containment and baseline checks. Descriptions are never parsed as pointers,
+net names, quotes, counts or line ranges. Optional structured fields in `/1`
+records are nevertheless validated strictly when present. This versioned
+exception preserves retained evidence; fresh model calls must return `/2` and
+cannot downgrade to `/1`. The response schemas require at least one structured
+field, and runtime validation refuses a missing or invalid field as malformed
+output, eligible for the configured bounded resubmission. Native check records
+and repair-closure citations retain their existing contracts, with strict
+validation of any structured fields they supply.
+
+Use a native UUID/pin/net, page/section, measurement name or specific report item
+in the descriptive locator. Reviewer prose alone is not independent engineering
+evidence; experiment citations should identify the actual command, input,
+measurement or fetched source. The baseline citation establishes requirements or
+context; it cannot replace the sealed failed-check citation required for an
+accepted defect.
 
 Adapter records identify the backend, requested model, subscription route,
 execution/diagnostics, harness binary digest and, on successful parsing,
@@ -189,7 +223,8 @@ native criteria become `check/CHECK_ID`. Check defects default to blocking and
 remain distinct from physical-failure claims. Findings begin unresolved and
 retain their original evidence, source, assessment and attribution.
 
-Manual decision files have schema `agent-ee.decisions/1`, exact `candidate_id`
+Decision files use schema `agent-ee.decisions/2` (retained/manual `/1` files remain
+readable under the compatibility rule above), exact `candidate_id`
 and `run_id`, and a `decisions` list. Each item requires `finding_id`,
 `disposition`, `reason`, `evidence`. Optional keys are `duplicate_of`, `checks`
 and `previous_run`. This is a structural example requiring real identities,
@@ -252,9 +287,9 @@ provides and the host-modification limits.
 
 ## Version-2 witnesses and evidence seal
 
-Version 2 changes the **scope** contract; candidate, packet, result, review and
-decision records retain their existing `/1` schema names with the extensions
-below. Legacy scope/1 runs do not require a baseline file, seal or witnesses; their
+Scope version 2 changes the **scope** contract; candidate, packet and result
+records retain their `/1` schema names with the extensions below. Review and
+decision version 2 independently adds the structured citation requirement above. Legacy scope/1 runs do not require a baseline file, seal or witnesses; their
 absence in such a run is not evidence tampering. There is no blanket inference that an old `/1` result has the stronger
 scope/2 guarantees: inspect its captured scope and baseline.
 

@@ -417,8 +417,8 @@ class GenerationCampaignTests(unittest.TestCase):
         packet = read_json(Path(run) / 'packet.json')
         identity = {k: packet[k] for k in ('candidate_id', 'run_id')}
         if label == 'adjudicator':
-            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/1', **identity, 'decisions': []}
-        return {'execution': 'ok'}, {'schema': 'agent-ee.review/1', **identity,
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2', **identity, 'decisions': []}
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/2', **identity,
                                      'packet_sha256': packet['packet_sha256'], 'role': label,
                                      'coverage': ['protocol'], 'limitations': ['scripted test response'],
                                      'findings': []}

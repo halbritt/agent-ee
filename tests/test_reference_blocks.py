@@ -424,9 +424,9 @@ class NativeReferenceBlockTests(unittest.TestCase):
             packet = read_json(Path(run) / 'packet.json')
             identity = {k: packet[k] for k in ('candidate_id', 'run_id')}
             if label == 'adjudicator':
-                return dict(execution='ok'), dict(schema='agent-ee.decisions/1', **identity, decisions=[])
+                return dict(execution='ok'), dict(schema='agent-ee.decisions/2', **identity, decisions=[])
             self.assertNotIn('"initial_reviews"', prompt)
-            return dict(execution='ok'), dict(schema='agent-ee.review/1', **identity,
+            return dict(execution='ok'), dict(schema='agent-ee.review/2', **identity,
                 packet_sha256=packet['packet_sha256'], role=label, coverage=['Owned fixture'],
                 limitations=['Scripted transport, no model inference'], findings=[])
         runtime = runtime_files()
