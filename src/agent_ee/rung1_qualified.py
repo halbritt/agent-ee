@@ -102,23 +102,32 @@ def sha(raw):
 # ------------------------------------------------------------------ owned generation inputs
 
 def qualified_intent(prep):
-    """The generate intent with emitter-safe local net names.
+    """The generate intent with emitter-safe local net names and a native ground symbol.
 
     The emitter's label names exclude '/': KiCad prefixes a root-sheet local label with the
-    sheet path, so labels IN, OUT and GND export as /IN, /OUT and /GND. No power symbol is
-    declared: the emitter writes power symbols with in_bom/on_board yes (from the library
-    definition), and the staged presence probe then refuses the schematic subject because its
-    bounded reader counts #PWR/#FLG references that the native netlist omits (recorded in the
-    doc). Every pin is passive, so ERC needs no power flag."""
+    sheet path, so labels IN and OUT export as /IN and /OUT. The ground net is driven by a
+    declared power:GND symbol with a power:PWR_FLAG (every other pin is passive, so the flag
+    drives the GND power input for ERC). It is a global power net and exports as GND. The
+    emitter writes both symbols in_bom/on_board no, KiCad's native convention, so the staged
+    presence probe and the native netlist agree on C1, J1 and R1 (AGENTEE-123)."""
     intent = copy.deepcopy(prep['intent'])
+    ground = ground_net(prep['params'])
     for net in intent['nets']:
         net['name'] = net['name'].lstrip('/')
+    nets = [n for n in intent['nets'] if n['name'] == ground]
+    if ground != 'GND' or len(nets) != 1:
+        # The stock power:GND symbol names exactly one net GND; no other ground is approximated.
+        raise PrepareFailure(f'ground net {ground!r} has no stock power symbol in the intent')
+    for cid, ref, symbol in (('pwr_gnd', '#PWR01', 'GND'), ('flg_gnd', '#FLG01', 'PWR_FLAG')):
+        intent['components'].append({'id': cid, 'reference': ref, 'lib_id': 'power:' + symbol,
+                                     'value': symbol, 'footprint': '', 'units': [1]})
+        nets[0]['terminals'].append({'component': cid, 'pin': {'number': '1'}})
     return intent
 
 
-def native_net(name):
-    """The native netlist name of a root-sheet local label."""
-    return '/' + name.lstrip('/')
+def ground_net(params):
+    """The native netlist name of the ground net: a global power net, without a sheet prefix."""
+    return params['nets']['ground'].lstrip('/')
 
 
 def layout():
@@ -206,7 +215,7 @@ def packing_policy(params, outline):
     """agent-ee.packing-policy/1 for the placer helper. J1 is not fixed here: forward annotation
     stages it off-board, and the envelope fixed-footprint binding cannot be captured (see gaps)."""
     return {'schema': 'agent-ee.packing-policy/1', 'step_budget': 200000, 'gap_nm': 1_000_000,
-            'fixed_refs': [], 'priority_refs': [], 'ground_nets': [native_net(params['nets']['ground'])],
+            'fixed_refs': [], 'priority_refs': [], 'ground_nets': [ground_net(params)],
             'obstacles': edge_bands(outline)}
 
 
@@ -392,8 +401,8 @@ def compile_staged_scope(params, scope_dir, scaffold):
                       'This is a disposable benchmark board.')
     by_id = {c['id']: c for c in scope['checks']}
     rc_step = copy.deepcopy(by_id['rc-step'])
-    # The same ground node as the spec's GND, under its native local-label name.
-    rc_step['params']['ground_net'] = native_net(params['nets']['ground'])
+    # The spec's GND, the global power net of the declared power:GND symbol.
+    rc_step['params']['ground_net'] = ground_net(params)
     scope['checks'] = [
         {'id': 'erc', 'kind': 'erc', 'stage': 'schematic'},
         {'id': 'netlist', 'kind': 'netlist', 'stage': 'schematic'},

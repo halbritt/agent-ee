@@ -358,6 +358,11 @@ def _plan(resolved, captured, intent_libraries, transforms):
     for comp in resolved['components']:
         location = '/components/' + comp['id']
         embedded, flags, properties = symbols[comp['id']]
+        if comp['power']:
+            # Eeschema places power symbols and flags as virtual markers: the
+            # instance is excluded from BOM and board whatever the library says,
+            # while the embedded library copy keeps its own flags.
+            flags = dict(flags, in_bom='no', on_board='no')
         context = build_context(intent_libraries, captured, comp['lib_id'])
         if context['execution'] != 'ok':
             raise EmissionError('symbol_context', context.get('message', 'symbol context unavailable'), location)

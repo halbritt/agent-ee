@@ -67,6 +67,12 @@ KiCad 10.0):
   A stack spanning two nets, or holding a no-connect pin, is refused.
 - Power and flag symbols appear only where the intent declares them as
   components. The emitter never adds a power symbol or flag.
+- Power symbol and flag instances are written `in_bom no` and `on_board no`,
+  as eeschema places them, even though the stock library definitions say
+  `yes`. The embedded `lib_symbols` copy keeps the captured flags, and
+  `exclude_from_sim` and `in_pos_files` come from the library. The staged
+  presence probe ([staged campaign](staged-campaign.md)) therefore counts the
+  same physical references as the native netlist (AGENTEE-123).
 - Pin offsets must be exactly representable on the native 100 nm coordinate
   lattice. Coordinates are never snapped. The editor's customary 1.27 mm grid
   is not an electrical-connectivity restriction; native ERC may still report
@@ -196,6 +202,12 @@ executor with networking unshared:
   The shared parity adapter records the virtual `#` symbols that native XML
   omits; moving a capacitor terminal onto the wrong rail still fails topology.
   A scope/3 coordinator run retains the normalization in its sealed report.
+- The same regulator, as the schematic subject of a staged scope/3
+  (AGENTEE-48/88), passes the native presence probe: the bounded reader and
+  KiCad's XML both give `C1, J1, U1`, and ERC, netlist and parity pass with
+  sealed evidence. With the power instances rewritten to `in_bom yes`/
+  `on_board yes`, every staged check is `unknown` because the probe refuses
+  (`bounded inventory disagrees with native reader`).
 - `tests/test_schematic_hierarchy.py` emits an original two-level design
   (`two_level.*`): a root connector and capacitor, and a `filter` child with
   three capacitors. It has two shared nets, an internal `LOCAL_SAME` net on each

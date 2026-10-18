@@ -71,16 +71,45 @@ class IntentAndLayoutTest(unittest.TestCase):
         return {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
                 for lib in g.SYMBOL_LIBRARIES}
 
-    def test_intent_uses_local_label_names_and_no_power_symbols(self):
+    def test_intent_declares_native_ground_symbol_and_local_signal_labels(self):
         from agent_ee.connectivity_ir import resolve_intent
         intent = q.qualified_intent(self.prep)
         resolved = resolve_intent(intent, self.captures())
         self.assertEqual((resolved['execution'], resolved['outcome'], resolved['coverage']), ('ok', 'pass', 'complete'))
         self.assertEqual(sorted(n['name'] for n in intent['nets']), ['GND', 'IN', 'OUT'])
-        self.assertEqual(sorted(c['reference'] for c in intent['components']), ['C1', 'J1', 'R1'])
-        self.assertEqual(q.native_net('GND'), '/GND')
+        self.assertEqual(sorted(c['reference'] for c in intent['components']), ['#FLG01', '#PWR01', 'C1', 'J1', 'R1'])
+        ground = next(n for n in intent['nets'] if n['name'] == 'GND')
+        self.assertEqual({t['component'] for t in ground['terminals']} & {'pwr_gnd', 'flg_gnd'}, {'pwr_gnd', 'flg_gnd'})
+        self.assertEqual(q.ground_net(self.prep['params']), 'GND')
         # The generate intent is not changed in place.
         self.assertIn('/IN', [n['name'] for n in self.prep['intent']['nets']])
+        self.assertEqual(len(self.prep['intent']['components']), 3)
+        other = dict(self.prep, params=dict(self.prep['params'], nets=dict(self.prep['params']['nets'], ground='AGND')))
+        with self.assertRaisesRegex(q.PrepareFailure, 'no stock power symbol'):
+            q.qualified_intent(other)
+
+    def test_emitted_power_symbols_pass_the_native_staged_presence_probe(self):
+        # AGENTEE-123: the stage probe's bounded reader and the native netlist agree on the
+        # physical references, so the schematic subject is accepted with power symbols present.
+        from agent_ee.executor import execute
+        from agent_ee.schematic_emitter import emit_schematic
+        require_toolchain(native=True)
+        intent = canonical(q.qualified_intent(self.prep))
+        result, files = emit_schematic(intent, self.captures(), canonical(q.layout()))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-presence-') as tmp:
+            project, work = Path(tmp) / 'project', Path(tmp) / 'work'
+            project.mkdir()
+            work.mkdir()
+            for name, data in files.items():
+                (project / name).write_bytes(data)
+            record = execute(project, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.stages',
+                                             f'/candidate/{q.NAME}.kicad_sch', 'symbols', '/work/references.json'],
+                             timeout=120)
+            self.assertEqual(record['execution'], 'ok', (work / 'console.log').read_text())
+            self.assertEqual(json.loads((work / 'references.json').read_text()), ['C1', 'J1', 'R1'])
+            self.assertEqual(json.loads((work / 'native-observation.json').read_text())['native_references'],
+                             ['C1', 'J1', 'R1'])
 
     def test_scaffold_root_sheet_is_the_emitters_root(self):
         from agent_ee.schematic_emitter import emit_schematic
@@ -106,7 +135,7 @@ class IntentAndLayoutTest(unittest.TestCase):
         from agent_ee.placement import qualified_polygons
         policy = q.packing_policy(self.prep['params'], {'x': 100.0, 'y': 100.0, 'w': 50.0, 'h': 30.0})
         self.assertEqual((policy['schema'], policy['fixed_refs']), ('agent-ee.packing-policy/1', []))
-        self.assertEqual(policy['ground_nets'], ['/GND'])
+        self.assertEqual(policy['ground_nets'], ['GND'])
         self.assertEqual([o['side'] for o in policy['obstacles']], ['F'] * 4 + ['B'] * 4)
         for obstacle in policy['obstacles']:
             self.assertEqual(len(qualified_polygons({'status': 'proven', 'polygons': obstacle['polygons']})), 1)
@@ -194,7 +223,7 @@ class ScopeTest(unittest.TestCase):
         for kind in ('netlist_parity', 'placement', 'part_binding', 'fab_export', 'fab_consistency'):
             self.assertIn(kind, kinds.values())
         rc_step = next(c for c in self.scope['checks'] if c['id'] == 'rc-step')
-        self.assertEqual((rc_step['params']['input_net'], rc_step['params']['ground_net']), ('/IN', '/GND'))
+        self.assertEqual((rc_step['params']['input_net'], rc_step['params']['ground_net']), ('/IN', 'GND'))
         self.assertEqual(self.scope['stages']['finding_retry_limit'], 3)
 
     def test_real_loaders_accept_the_scope_and_freeze_generation_inputs(self):

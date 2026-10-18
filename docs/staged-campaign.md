@@ -63,6 +63,9 @@ captured inventory. It counts top-level placed symbols or footprints by explicit
 or saved straight/arc segments. Nested library definitions are not instances. Symbols explicitly excluded from
 both BOM and board (`in_bom no`, `on_board no`) are outside component presence;
 the resulting inventory must still agree with native export.
+Eeschema places power symbols and `PWR_FLAG` that way, and the owned
+[schematic emitter](schematic-emitter.md) writes them the same way, so a
+schematic with power symbols passes the probe.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
 bounded to 32 MiB and 128 levels. The qualified source-version set is schematic
