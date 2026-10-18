@@ -349,6 +349,27 @@
         "src/agent_ee/viewer_assets/vendor/LICENSE",
         "src/agent_ee/viewer_assets/vendor/manifest.json"
       ]
+    },
+    "T15": {
+      "name": "FOME-MC seeded-benchmark records (private store; not tracked)",
+      "description": "Records about the FOME-MC control commit used by the AGENTEE-108 seeded corpus: the expectations manifest and two run-1 reports. They embed FOME-MC design structure: sheet file names, reference designators, pin numbers and pin-to-net maps, net names, wire coordinates and UUIDs, footprint paths and UUIDs, values, LCSC numbers, design-rule keys, and SHA-256 inventories of the native files, project-local libraries and exports. They are kept in a private Git-backed store (build/fome-mc-benchmark or AGENT_EE_FOME_MC_BENCHMARK), not in this repository. The repository tracks only their SHA-256 hashes (scripts/fome_mc_benchmark_store.py) and a summary of commit identities, catalogue class ids and counts (docs/seeded-benchmark.md).",
+      "upstream": {
+        "repository": "https://github.com/halbritt/fome-mc",
+        "local_path": "/home/halbritt/git/fome-mc",
+        "revisions": {
+          "5954c3aff35b4d49fd62dc967a0e5def8e0c45ea": "Control: first commit after FOMEMC-17..20.",
+          "c582b290dd1dc62d168b96683a050b9b23cb9842": "Source of the pre-FOMEMC-18 land pattern used by seed F26 (hash only)."
+        },
+        "license_file": null
+      },
+      "upstream_license": "No license found; FOME-MC has no LICENSE or COPYING file. Shared ../kicad-libraries are recorded by Git object identity only.",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Confirm whether these records may be published in agent-ee (AGENTEE-118). Until then they stay in the private store; seeded copies and run artifacts stay outside the repository (docs/seeded-benchmark.md).",
+      "evidence": [
+        "docs/seeded-benchmark.md",
+        "scripts/fome_mc_benchmark_store.py"
+      ]
     }
   },
   "rules": [
@@ -446,6 +467,7 @@
         "tests/test_hardware_interface.py",
         "tests/test_packet_index.py",
         "tests/test_seeded_benchmark.py",
+        "tests/test_seeded_operations.py",
         "tests/test_shared_sexpr.py",
         "tests/test_symbol_context.py"
       ],

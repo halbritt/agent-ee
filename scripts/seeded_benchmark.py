@@ -18,6 +18,8 @@ def main():
         if name=='fetch':
             command.add_argument('cache',type=Path)
             command.add_argument('--archives',type=Path)
+            command.add_argument('--git-source',action='append',default=[],metavar='BOARD=REPOSITORY',
+                                 help='read an owner board from a local Git repository (read-only)')
         elif name=='prepare':
             command.add_argument('cache',type=Path)
             command.add_argument('output',type=Path)
@@ -33,7 +35,8 @@ def main():
     internal.add_argument('prepared',type=Path);internal.add_argument('output',type=Path)
     args = parser.parse_args()
     if args.command=='fetch':
-        print(benchmark.fetch(args.manifest,args.cache,archives=args.archives))
+        sources = dict(item.split('=',1) for item in args.git_source)
+        print(benchmark.fetch(args.manifest,args.cache,archives=args.archives,git_sources=sources))
     elif args.command=='prepare':
         print(benchmark.prepare(args.manifest,args.cache,args.output))
     elif args.command=='run':

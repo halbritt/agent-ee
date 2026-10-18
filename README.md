@@ -82,8 +82,11 @@ also acquire process leases to prevent concurrent campaign mutations.
 
 The [synthetic benchmark utilities](docs/seeded-benchmark.md) preregister five
 pinned public boards and 30 assembly, schematic-wiring and pad-geometry mutations.
-Sources and generated designs remain outside the repository; dependency closure
-and owner review are outstanding.
+A second corpus seeds 16 review-derived defect classes into scratch copies of the
+hierarchical fome-mc board; its expectations and reports live in a private
+Git-backed store until the owner decides on publication (AGENTEE-118). Sources
+and generated designs remain outside the repository; dependency closure and
+owner review are outstanding.
 
 ## Beyond a single review
 

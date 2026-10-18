@@ -43,10 +43,21 @@ def load_manifest(path):
         if len(set(ids)) != len(ids):
             raise ValueError('duplicate benchmark identity')
     board_ids = {b['id'] for b in boards}
+    if manifest.get('corpus', 'agentee-21-public') not in MINIMUM_CORPUS:
+        raise ValueError('unknown benchmark corpus')
+    if not re.fullmatch(r'agent-ee-[a-z0-9-]+-', manifest.get('container_prefix', 'agent-ee-21-')):
+        raise ValueError('invalid container prefix')
     for b in boards:
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',b['repo']) or not re.fullmatch(r'[a-f0-9]{40}',b['commit']):
             raise ValueError('unpinned upstream source')
-        if not b['license']['hardware_grant'] or b['license']['publication'] != 'not authorized; no repository copy':
+        owner = owner_source(b)
+        if owner and not re.fullmatch(r'[a-f0-9]{40}', owner['tree']):
+            raise ValueError('unpinned owner source tree')
+        # An owner repository without a licence file stays scratch-only; it
+        # never borrows a hardware grant it does not declare.
+        grant = b['license']['hardware_grant'] or (owner and b['license']['hardware_grant'] is None
+                                                    and b['license'].get('status'))
+        if not grant or b['license']['publication'] != 'not authorized; no repository copy':
             raise ValueError('license/publication declaration required')
         for p,h in b['native_file_sha256'].items():
             safe_path(Path('/unused'),p)
@@ -57,7 +68,50 @@ def load_manifest(path):
             raise ValueError('incomplete expectation')
         if c['status'] != 'structurally-registered-not-executed' or not c['structural_receipt']['structural_only']:
             raise ValueError('unverified structural recipe')
+        for check in c['expected_checks']:
+            if check['kind'] == 'planned' and (check['expected_execution'] != 'unsupported'
+                                               or not re.fullmatch(r'AGENTEE-[0-9]+', check['detector'])):
+                raise ValueError('planned detector must be preregistered as unsupported')
+        if 'native_visibility' in c and type(c['native_visibility'].get('real_defect')) is not bool:
+            raise ValueError('native visibility must be an explicit Boolean')
     return manifest
+
+
+# Minimum committed (boards, cases) per corpus before any scored execution.
+MINIMUM_CORPUS = {'agentee-21-public': (5, 30), 'fome-mc': (1, 6)}
+
+
+def owner_source(board):
+    source = board.get('source')
+    if source is None:
+        return None
+    if source.get('kind') != 'owner_git':
+        raise ValueError('unknown benchmark source kind')
+    return source
+
+
+def git_output(repository, *args):
+    return subprocess.run(['git', '-C', str(repository), *args], capture_output=True, check=True).stdout
+
+
+def owner_tree(repository, board, target):
+    """Export only pinned paths of one owner commit; the repository is read, never written."""
+    repository = Path(repository)
+    commit = board['commit']
+    if git_output(repository, 'rev-parse', '--verify', commit+'^{commit}').decode().strip() != commit:
+        raise ValueError('owner commit identity mismatch')
+    if git_output(repository, 'rev-parse', '--verify', commit+'^{tree}').decode().strip() != board['source']['tree']:
+        raise ValueError('owner tree identity mismatch')
+    paths = sorted({**board['native_file_sha256'], **board['captured_dependency_sha256']})
+    archive = target/'source.tar.gz'
+    with archive.open('xb') as out:
+        out.write(git_output(repository, 'archive', '--format=tar.gz', '--prefix=tree/', commit, '--', *paths))
+    extracted = target/'unpacked';extracted.mkdir()
+    root = extract_archive(archive, extracted)
+    root.rename(target/'tree');extracted.rmdir()
+    for rel, expected in {**board['native_file_sha256'], **board['captured_dependency_sha256']}.items():
+        if sha(safe_path(target/'tree', rel).read_bytes()) != expected:
+            raise ValueError('owner source hash mismatch: '+rel)
 
 
 def extract_archive(archive, destination):
@@ -79,11 +133,16 @@ def extract_archive(archive, destination):
     return roots[0]
 
 
-def fetch(manifest_path, cache, *, archives=None, footprint_library='/usr/share/kicad/footprints/Connector_PinHeader_1.27mm.pretty'):
+def fetch(manifest_path, cache, *, archives=None, git_sources=None, footprint_library='/usr/share/kicad/footprints/Connector_PinHeader_1.27mm.pretty'):
     manifest = load_manifest(manifest_path)
     cache = fresh(cache)
     for board in manifest['boards']:
         target = cache/board['id'];target.mkdir()
+        if owner_source(board):
+            if board['id'] not in (git_sources or {}):
+                raise ValueError('owner source requires an explicit local repository: '+board['id'])
+            owner_tree(git_sources[board['id']], board, target)
+            continue
         archive = target/'source.tar.gz'
         if archives:
             source = safe_path(archives,board['repo'].split('/')[-1]+'.tar.gz')
@@ -111,6 +170,25 @@ def fetch(manifest_path, cache, *, archives=None, footprint_library='/usr/share/
         if sha(data)!=license['sha256'] or blob!=license['git_blob_sha']:
             raise ValueError('upstream license hash mismatch')
     alternates = cache/'alternate-footprints';alternates.mkdir()
+    boards = {b['id']:b for b in manifest['boards']}
+    installed = False
+    for case in manifest['cases']:
+        m = case['mutation']
+        if m['operation'] != 'replace_embedded_physical_footprint':
+            continue
+        if 'alternate_git' not in m:
+            installed = True
+            continue
+        # An earlier owner revision of the same project supplies the pattern.
+        name = Path(m['alternate_source']).name
+        board = boards[case['board_id']]
+        data = git_output(git_sources[board['id']], 'show', m['alternate_git']['commit']+':'+m['alternate_git']['path'])
+        if sha(data)!=m['alternate_sha256'] or not re.fullmatch(r'[a-f0-9]{40}',m['alternate_git']['commit']):
+            raise ValueError('owner alternate footprint differs from pin')
+        safe_path(alternates,name).write_bytes(data)
+    if not installed:
+        write_json(cache/'cache.json',{'manifest_sha256':digest(manifest_path),'licenses_overridden':False})
+        return cache
     library = read_json(Path(manifest_path).parent/'alternate-library.json')
     license_data = Path('/usr/share/doc/kicad-footprints/LICENSE.md').read_bytes()
     if sha(license_data)!=library['license_sha256']:
@@ -119,7 +197,7 @@ def fetch(manifest_path, cache, *, archives=None, footprint_library='/usr/share/
     write_json(alternates/'provenance.json',library)
     for case in manifest['cases']:
         m = case['mutation']
-        if m['operation'] == 'replace_embedded_physical_footprint':
+        if m['operation'] == 'replace_embedded_physical_footprint' and 'alternate_git' not in m:
             name = Path(m['alternate_source']).name
             data = safe_path(footprint_library,name).read_bytes()
             if sha(data)!=m['alternate_sha256']:
@@ -138,17 +216,22 @@ def contract_for(board, cases):
             predicates = check['predicate'] if isinstance(check['predicate'],list) else [check['predicate']]
             for i,predicate in enumerate(predicates):
                 predicate = copy.deepcopy(predicate)
-                ref = predicate.pop('reference')
-                selector = next(s for s in case['source_selectors'] if s['reference']==ref)
-                contract['components'][ref] = {'locations':[{'sheet':'/','reference':ref}],
-                    'symbols':[selector['schematic']['lib_id']]}
-                pin = predicate.pop('pin',None)
-                if pin is None:
-                    predicate['component'] = ref
-                else:
+                def terminal(ref, pin):
+                    selector = next(s for s in case['source_selectors'] if s['reference']==ref)
+                    # Hierarchical selectors carry the native netlist sheet path.
+                    contract['components'][ref] = {'locations':[{'sheet':selector['schematic'].get('native_sheet','/'),
+                        'reference':ref}],'symbols':[selector['schematic']['lib_id']]}
+                    if pin is None:
+                        return ref
                     tid = f'{ref}-{pin}'
                     contract['terminals'][tid] = {'component':ref,'pin':pin}
-                    predicate['terminal'] = tid
+                    return tid
+                if 'terminals' in predicate:
+                    predicate['terminals'] = [terminal(t['reference'],t['pin']) for t in predicate['terminals']]
+                else:
+                    ref = predicate.pop('reference')
+                    pin = predicate.pop('pin',None)
+                    predicate['component' if pin is None else 'terminal'] = terminal(ref,pin)
                 predicate.update(id=f'{case["id"]}-{i}',requirement='assembly',
                     source={'path':'benchmark/requirements.json','locator':board['id']})
                 contract['invariants'].append(predicate)
@@ -196,7 +279,7 @@ def prepare(manifest_path, cache, output):
             write_json(destination/'benchmark/contract.json',contract)
             native = board['native_files']
             scope = {'schema':'agent-ee.scope/2','name':board['id'],
-                'scope':'Synthetic assembly, schematic wiring and physical pad geometry benchmark; no functional qualification.',
+                'scope':manifest.get('scope_statement','Synthetic assembly, schematic wiring and physical pad geometry benchmark; no functional qualification.'),
                 'schematic':native['schematic'],'board':native['pcb'],
                 'inputs':[{'path':p,'at':p} for p in sorted(files|{'benchmark/requirements.json','benchmark/contract.json'})],
                 'requirements':['benchmark/requirements.json'],
@@ -217,18 +300,39 @@ def prepare(manifest_path, cache, output):
     return output
 
 
-def committed_manifest(manifest_path, commit, repository=REPOSITORY):
-    path = Path(manifest_path).resolve();repository = Path(repository).resolve()
+def manifest_store(manifest_path):
+    """The Git checkout that tracks a manifest: this repository, or a private Git-backed store.
+
+    Preregistration is proven by Git ancestry, so a manifest kept outside Git, or
+    untracked (for example under the ignored build/), has no proof and is refused.
+    """
+    path = Path(manifest_path).resolve()
+    top = subprocess.run(['git','-C',str(path.parent),'rev-parse','--show-toplevel'],capture_output=True,text=True)
+    if top.returncode:
+        raise ValueError('expectation manifest is not in a Git checkout; preregistration cannot be proven')
+    store = Path(top.stdout.strip()).resolve()
+    rel = str(path.relative_to(store))
+    if subprocess.run(['git','-C',str(store),'ls-files','--error-unmatch','--',rel],capture_output=True).returncode:
+        raise ValueError('expectation manifest is not tracked by its Git checkout; preregistration cannot be proven')
+    return store, rel
+
+
+def committed_manifest(manifest_path, commit, repository=None):
+    path = Path(manifest_path).resolve()
     if not re.fullmatch(r'[a-f0-9]{40}',commit):
         raise ValueError('expectation commit must be a full commit identity')
-    rel = str(path.relative_to(repository))
+    store, rel = manifest_store(path)
+    if repository is not None and Path(repository).resolve() != store:
+        raise ValueError('expectation manifest is not tracked by the named Git checkout')
+    repository = store
     subprocess.run(['git','-C',str(repository),'merge-base','--is-ancestor',commit,'HEAD'],check=True,capture_output=True)
     original = subprocess.run(['git','-C',str(repository),'show',commit+':'+rel],check=True,capture_output=True).stdout
     if original != path.read_bytes():
         raise ValueError('expectation bytes differ from committed preregistration')
     manifest = load_manifest(path)
-    if len(manifest['boards'])<5 or len(manifest['cases'])<30:
-        raise ValueError('five boards and thirty committed mutations required')
+    boards, cases = MINIMUM_CORPUS[manifest.get('corpus','agentee-21-public')]
+    if len(manifest['boards'])<boards or len(manifest['cases'])<cases:
+        raise ValueError(f'{boards} board(s) and {cases} committed mutations required')
     return manifest
 
 
@@ -294,12 +398,13 @@ def run(manifest_path, cache_prepared, output, expectation_commit, image):
     import io
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(source,filter='data')
-    request = {'schema':'agent-ee.benchmark-request/1','expectation_commit':expectation_commit,
+    store = 'agent-ee' if manifest_store(manifest_path)[0]==REPOSITORY.resolve() else 'private-git'
+    request = {'schema':'agent-ee.benchmark-request/1','expectation_commit':expectation_commit,'expectation_store':store,
         'manifest_sha256':digest(manifest_path),'implementation_commit':implementation,
         'implementation_archive_sha256':sha(archive),'image_id':image,'prepared_sha256':digest(prepared/'prepared.json'),
         'strict_toolchain':True,'model_pass':False}
     write_json(output/'request.json',request)
-    command = ['docker','run','--rm','--init','--name','agent-ee-21-'+output.name,
+    command = ['docker','run','--rm','--init','--name',manifest.get('container_prefix','agent-ee-21-')+output.name,
         '--network','none','--user',f'{os.getuid()}:{os.getgid()}','-e','HOME=/tmp',
         '-e','AGENT_EE_REQUIRE_TOOLCHAIN=1','--security-opt','seccomp=unconfined',
         '--security-opt','apparmor=agent-ee-container','--security-opt','systempaths=unconfined',
@@ -382,6 +487,12 @@ def observations(run):
 
 
 def classify(expected, record, case, control=None):
+    if expected['kind']=='planned':
+        # A planned detector is preregistered with no scope check; any
+        # retained record would mean the expectation no longer describes it.
+        if record is not None:
+            raise ValueError('planned detector unexpectedly executed; preregister a new expectation')
+        return 'unsupported'
     if record is None:
         return 'not_evaluated'
     check = record['check']
@@ -416,14 +527,26 @@ def classify(expected, record, case, control=None):
         target = set()
         if section=='schematic_parity':
             pins = predicate.get('pins',[predicate['pin']] if 'pin' in predicate else [])
-            for selector in case['source_selectors']:
+            # A predicate naming its component targets only that footprint; other
+            # selectors exist for interface relations, not for this native record.
+            selectors = [s for s in case['source_selectors']
+                         if 'reference' not in predicate or s.get('reference')==predicate['reference']]
+            if not selectors:
+                return 'not_evaluated'
+            for selector in selectors:
                 footprint = selector['pcb']['footprint_uuid']
                 mapping = record['pcb_pad_uuids'].get(footprint,{})
                 if any(pin not in mapping for pin in pins) or not pins:
                     return 'not_evaluated'
                 target.update(pad for pin in pins for pad in mapping[pin])
-        if section=='unconnected_items':
+        if section=='unconnected_items' and 'before_pad_geometry' in case['mutation']:
             target = {p['uuid'] for p in case['mutation']['before_pad_geometry'] if p['number']!='1'}
+        elif section=='unconnected_items':
+            # Declared pad numbers of the selected footprint, by retained UUID.
+            mapping = record['pcb_pad_uuids'].get(case['source_selectors'][0]['pcb']['footprint_uuid'],{})
+            if not predicate['pads'] or any(pad not in mapping for pad in predicate['pads']):
+                return 'not_evaluated'
+            target = {uuid for pad in predicate['pads'] for uuid in mapping[pad]}
         def identities(row):
             return {item['uuid'] for item in row.get('items',[]) if 'uuid' in item}
         baseline = control['native'][section] if control and control['native'] is not None else []
@@ -435,7 +558,57 @@ def classify(expected, record, case, control=None):
         if relevant and not matched and baseline_keys:
             return 'control_unresolved'
         return 'detection' if matched else 'miss'
+    if expected['kind']=='erc':
+        # Credit needs the predicted native violation type at a registered
+        # schematic item UUID that the paired control does not already report.
+        raw = record['native']
+        if raw is None:
+            return 'execution_error'
+        if control is None or control['native'] is None or control['check']['execution']!='ok':
+            return 'control_unresolved'
+        predicate = expected['predicate']
+        targets = set(predicate['item_uuids'])
+        if not targets:
+            raise ValueError('ERC prediction requires target item UUIDs')
+        def keys(native):
+            return {(v.get('type'),item['uuid']) for sheet in native.get('sheets',[]) for v in sheet.get('violations',[])
+                    for item in v.get('items',[]) if item.get('uuid') in targets}
+        observed = {k for k in keys(raw) if k[0]==predicate['type']}
+        if observed - keys(control['native']):
+            return 'detection'
+        return 'control_unresolved' if observed else 'miss'
     raise ValueError('no qualified matcher for expected check kind')
+
+
+def native_records(record):
+    """Native finding identities: type plus sorted item UUIDs, as a multiset."""
+    raw = record['native'] if record else None
+    if raw is None:
+        return None
+    if record['check']['kind']=='erc':
+        rows = [v for sheet in raw.get('sheets',[]) for v in sheet.get('violations',[])]
+    else:
+        rows = [v for k in ('violations','unconnected_items','schematic_parity') for v in raw.get(k,[])]
+    result = {}
+    for row in rows:
+        key = canonical([row.get('type'),sorted(i.get('uuid','') for i in row.get('items',[]))])
+        result[key] = result.get(key,0)+1
+    return result
+
+
+def native_delta(observed, control):
+    """New native ERC/DRC records in a variant relative to its paired control."""
+    delta = {}
+    for cid,record in observed.items():
+        kind = record['check']['kind']
+        if kind not in ('erc','drc'):
+            continue
+        new,old = native_records(record),native_records(control.get(cid))
+        if new is None or old is None or record['check']['execution']!='ok':
+            delta[kind] = None
+            continue
+        delta[kind] = sum(max(0,n-old.get(k,0)) for k,n in new.items())
+    return delta
 
 
 def report(manifest_path, first, second=None):
@@ -454,7 +627,7 @@ def report(manifest_path, first, second=None):
             raise ValueError('retained result changed')
         observed[entry['id']] = observations(run)
     cases = []
-    counts = {k:{'detection':0,'miss':0,'unsupported':0,'not_evaluated':0,'execution_error':0,'control_unresolved':0} for k in ('hardware_interface','drc','erc','netlist')}
+    counts = {k:{'detection':0,'miss':0,'unsupported':0,'not_evaluated':0,'execution_error':0,'control_unresolved':0} for k in ('hardware_interface','drc','erc','netlist','planned')}
     detected = 0;evaluated = 0
     for case in manifest['cases']:
         predictions = []
@@ -465,10 +638,17 @@ def report(manifest_path, first, second=None):
             counts.setdefault(kind,{}).setdefault(status,0);counts[kind][status]+=1
             predictions.append({'check_id':expectation['check_id'],'kind':kind,'status':status,
                 'qualifying_locator':expectation['qualifying_locator']})
+            if kind=='planned':
+                predictions[-1]['detector'] = expectation['detector']
         statuses = {p['status'] for p in predictions}
         detected += 'detection' in statuses
         evaluated += bool(statuses & {'detection','miss'})
-        cases.append({'id':case['id'],'predictions':predictions})
+        row = {'id':case['id'],'predictions':predictions}
+        if 'native_visibility' in case:
+            row['native_visibility'] = {'real_defect':case['native_visibility']['real_defect'],
+                'native_prediction_detected':any(p['status']=='detection' for p in predictions if p['kind'] in ('erc','drc')),
+                'new_native_records':native_delta(observed[case['id']],observed[case['board_id']+'-control'])}
+        cases.append(row)
     controls = []
     unresolved = {k:0 for k in counts}
     for board in manifest['boards']:
@@ -519,7 +699,24 @@ def report(manifest_path, first, second=None):
             'all_seed_fraction':detected/len(cases),'evaluated_fraction':detected/evaluated if evaluated else None},
         'false_alarms':{'per_kind':{k:{'confirmed':0,'unresolved_control_findings':unresolved[k],'negative_opportunities':0,'rate':None} for k in counts},
             'status':'No control findings independently adjudicated; zero confirmed is not proof of no false alarms.'},
-        'rerun':comparison,'limitations':manifest['limitations']}
+        'native_visibility':visibility(cases),'rerun':comparison,'limitations':manifest['limitations']}
+
+
+def visibility(cases):
+    """Separate seeds whose real defect native ERC/DRC can see from the rest."""
+    rows = [c for c in cases if 'native_visibility' in c]
+    if not rows:
+        return None
+    def group(visible):
+        selected = [c for c in rows if c['native_visibility']['real_defect'] is visible]
+        return {'cases':[c['id'] for c in selected],
+            'native_prediction_detected':[c['id'] for c in selected if c['native_visibility']['native_prediction_detected']],
+            'any_new_native_record':[c['id'] for c in selected if any(v for v in c['native_visibility']['new_native_records'].values())],
+            'native_unavailable':[c['id'] for c in selected if None in c['native_visibility']['new_native_records'].values()],
+            'detected_by_any_prediction':[c['id'] for c in selected if any(p['status']=='detection' for p in c['predictions'])]}
+    return {'native_visible_real_defect':group(True),'native_invisible_real_defect':group(False),
+        'basis':'Catalogue judgement of the real defect, not the seed. Schematic-only seeds keep PCB copper and can '
+                'add parity records that a synchronized real defect would not; those are seed artifacts.'}
 
 
 def finding_count(record):
