@@ -26,10 +26,11 @@ STOCK_REVISIONS = (
     "8975715167d1a76f9b44be155ac02326f704cdbb",
     "417c4ea884a0d1501061f511730604890bbb0a35",
 )
-_RECEIPT = ".agent-ee-models.json"
+STOCK_RECEIPT = ".agent-ee-models.json"
+STOCK_VARIABLE = re.compile(r"KICAD\d+_3DMODEL_DIR|KISYS3DMOD")
 _TOKEN = re.compile(r'\s+|;[^\n]*|"(?:\\.|[^"\\])*"|[()]|[^()\s";]+')
 _VARIABLE = re.compile(r"\$\{([^{}]+)\}|\$\(([^()]+)\)")
-_STOCK_REFERENCE = re.compile(r"^\$\{(KICAD\d+_3DMODEL_DIR|KISYS3DMOD)\}/(.+)$")
+_STOCK_REFERENCE = re.compile(r"^\$\{(" + STOCK_VARIABLE.pattern + r")\}/(.+)$")
 
 
 class ModelFetchError(ValueError):
@@ -227,21 +228,37 @@ def _atomic_json(path, document):
 
 
 def _read_receipt(cache):
-    path = cache / _RECEIPT
+    path = cache / STOCK_RECEIPT
     if path.is_symlink():
         raise ModelFetchError(f"model cache receipt must not be a symlink: {path}")
     if not path.exists():
         return {"schema": "agent-ee.stock-models/1", "repository": STOCK_REPOSITORY, "files": {}}
+    return parse_stock_receipt(path.read_bytes(), path)
+
+
+def parse_stock_receipt(raw, label):
+    """Validated `agent-ee.stock-models/1` receipt from its bytes; ModelFetchError otherwise."""
     try:
-        receipt = json.loads(path.read_text())
+        receipt = json.loads(raw.decode("utf-8"))
     except ValueError as exc:
-        raise ModelFetchError(f"invalid model cache receipt: {path}") from exc
+        raise ModelFetchError(f"invalid model cache receipt: {label}") from exc
     if (not isinstance(receipt, dict) or receipt.get("schema") != "agent-ee.stock-models/1"
             or receipt.get("repository") != STOCK_REPOSITORY or not isinstance(receipt.get("files"), dict)):
-        raise ModelFetchError(f"unsupported model cache receipt: {path}")
+        raise ModelFetchError(f"unsupported model cache receipt: {label}")
     for relative, entry in receipt["files"].items():
         _validate_receipt_entry(relative, entry)
     return receipt
+
+
+def stock_reference(path):
+    """`(variable, library-relative path)` for an exact stock model reference, else None.
+
+    An unsafe or unsupported path beneath a stock variable raises ModelFetchError.
+    """
+    match = _STOCK_REFERENCE.fullmatch(path or "")
+    if match is None:
+        return None
+    return match[1], _stock_relative(match[2]).as_posix()
 
 
 def _validate_receipt_entry(relative, entry):
@@ -320,12 +337,12 @@ def _required_stock_models(inventory):
         for model in footprint["models"]:
             if not model["enabled"]:
                 continue
-            match = _STOCK_REFERENCE.fullmatch(model["path"] or "")
-            if match is None:
+            stock = stock_reference(model["path"])
+            if stock is None:
                 skipped.append({"reference": footprint["reference"], "path": model["path"],
                                 "reason": "not an explicit KiCad stock model variable reference"})
                 continue
-            relative = _stock_relative(match[2]).as_posix()
+            relative = stock[1]
             required.setdefault(relative, []).append(footprint["reference"])
     return required, skipped
 
@@ -378,7 +395,7 @@ def fetch_stock_models(board: Path, cache: Path, *, env=None, timeout=30,
     for relative, references in required.items():
         record = _fetch_one(cache, relative, receipt, timeout=timeout, max_file_bytes=max_file_bytes)
         files.append({"path": relative, "references": references, **record})
-        _atomic_json(cache / _RECEIPT, receipt)
+        _atomic_json(cache / STOCK_RECEIPT, receipt)
     missing = sum(record["status"] == "not-found" for record in files)
     return {"schema": "agent-ee.models-fetch/1", "board": inventory["board"], "cache": str(cache),
             "repository": STOCK_REPOSITORY, "revisions": list(STOCK_REVISIONS),

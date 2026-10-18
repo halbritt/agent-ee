@@ -14,6 +14,8 @@ from agent_ee.models3d import (
     ModelFetchError,
     fetch_stock_models,
     inspect_models,
+    parse_stock_receipt,
+    stock_reference,
 )
 
 
@@ -317,6 +319,37 @@ class StockModelFetchTests(unittest.TestCase):
                     with self.assertRaisesRegex(ModelFetchError, "invalid model cache"):
                         fetch_stock_models(self.board, self.cache)
                 request.assert_not_called()
+
+
+class StockReceiptHelperTests(unittest.TestCase):
+    """Helpers that fab_consistency reuses to read a captured stock library (AGENTEE-124)."""
+
+    def test_stock_reference_is_exact_and_refuses_unsafe_paths(self):
+        self.assertEqual(stock_reference("${KICAD9_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.wrl"),
+                         ("KICAD9_3DMODEL_DIR", "Resistor_SMD.3dshapes/R_0603_1608Metric.wrl"))
+        self.assertEqual(stock_reference("${KISYS3DMOD}/Lib.3dshapes/a.step"), ("KISYS3DMOD", "Lib.3dshapes/a.step"))
+        for path in ("${KIPRJMOD}/Lib.3dshapes/a.step", "$(KICAD10_3DMODEL_DIR)/Lib.3dshapes/a.step",
+                     "/usr/share/kicad/3dmodels/Lib.3dshapes/a.step", None):
+            with self.subTest(path=path):
+                self.assertIsNone(stock_reference(path))
+        for path in ("${KICAD10_3DMODEL_DIR}/../Lib.3dshapes/a.step", "${KICAD10_3DMODEL_DIR}/Lib/a.step",
+                     "${KICAD10_3DMODEL_DIR}/Lib.3dshapes/sub/a.step"):
+            with self.subTest(path=path), self.assertRaisesRegex(ModelFetchError, "unsafe or unsupported"):
+                stock_reference(path)
+
+    def test_parse_stock_receipt_validates_schema_and_provenance(self):
+        relative = "Lib.3dshapes/a.step"
+        entry = {"sha256": "a" * 64, "size_bytes": 3, "commit": STOCK_REVISIONS[0],
+                 "source_url": f"{STOCK_REPOSITORY}/-/raw/{STOCK_REVISIONS[0]}/{relative}"}
+        receipt = {"schema": "agent-ee.stock-models/1", "repository": STOCK_REPOSITORY, "files": {relative: entry}}
+        self.assertEqual(parse_stock_receipt(json.dumps(receipt).encode(), "r")["files"], {relative: entry})
+        for raw, message in ((b"\xff", "invalid model cache receipt"), (b"[]", "unsupported model cache receipt"),
+                             (json.dumps({**receipt, "repository": "https://example.invalid"}).encode(),
+                              "unsupported model cache receipt"),
+                             (json.dumps({**receipt, "files": {relative: {**entry, "commit": "0" * 40}}}).encode(),
+                              "invalid model cache provenance")):
+            with self.subTest(raw=raw[:40]), self.assertRaisesRegex(ModelFetchError, message):
+                parse_stock_receipt(raw, "r")
 
 
 if __name__ == "__main__":

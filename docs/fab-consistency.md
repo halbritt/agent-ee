@@ -1,10 +1,11 @@
 # Fab-package consistency gate
 
 `fab_consistency` checks that a staged fab package describes the captured
-board. Its only parameter is `export_check`, the ID of an earlier `fab_export`
+board. Its required parameter is `export_check`, the ID of an earlier `fab_export`
 check for the same candidate. That export check must declare its own earlier
 `netlist_check`, and the scope must run at least one `geometry` check before
-the gate. The gate never runs `kicad-cli` and never regenerates exports. It
+the gate. The optional `model_libraries` parameter maps stock 3D-model variables
+to captured, pinned model libraries (see [Stock model libraries](#stock-model-libraries)). The gate never runs `kicad-cli` and never regenerates exports. It
 reads these sources only:
 
 - `work/EXPORT/fab/` and its `manifest.json` (`agent-ee.fab-manifest/1`).
@@ -18,6 +19,8 @@ reads these sources only:
   be bound to the captured board digest, and all must agree.
 - The captured board bytes. The gate parses their S-expression for layers,
   footprint library IDs, sides, attributes, model paths and embedded files.
+- The captured stock-model receipt for each declared `model_libraries` variable,
+  and the captured library files that it lists.
 
 The manifest is a claim to verify, never an authority:
 
@@ -40,7 +43,9 @@ The manifest is a claim to verify, never an authority:
   as `{"designator", "schematic_dnp", "board_dnp"}`. The producer's own
   `details.dnp_disagreements` is not trusted for this.
 
-Scope/3 requires the parameters to be exactly `{export_check}`. The export,
+Scope/3 accepts `{export_check}` and an optional `model_libraries`. Any other
+parameter is unsupported. Each declared receipt is a captured, immutable
+baseline input. The export,
 its netlist and a geometry check must all come earlier in scope order. The check declares
 the `fab-package:inventory`, `fab-package:designator-parity`,
 `fab-package:lcsc-footprint`, `fab-package:cpl-side`,
@@ -78,7 +83,9 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | A native export console has a warning, error or fatal diagnostic | `ok`, `defect` |
 | An assembled board footprint that the sealed netlist marks DNP or excluded from BOM/position files | `ok`, `defect` |
 | A model path that resolves to a missing captured input. An embedded model that is absent, has no data, is not base64, is not one complete zstd frame with a declared content size, decodes to nothing, or lacks a matching checksum. | `ok`, `defect` |
-| A model path through a library variable other than `KIPRJMOD`, an absolute path outside the captured sources, or a path that escapes the inputs. Several differing embedded records with one name; an embedded frame that needs a dictionary or decodes to more than 64 MiB. | `unsupported`, `unknown` |
+| A model path through a library variable other than `KIPRJMOD` that no `model_libraries` entry maps, an absolute path outside the captured sources, or a path that escapes the inputs. Several differing embedded records with one name; an embedded frame that needs a dictionary or decodes to more than 64 MiB. | `unsupported`, `unknown` |
+| A stock-variable model that is not in its declared receipt, has no pinned upstream revision (`existing-local`), is not captured, or differs from its receipt hash; a receipt that is not the captured input or is invalid | `unsupported`, `unknown` |
+| `model_libraries` empty, not an object, mapping a variable that is not `KICADn_3DMODEL_DIR` or `KISYS3DMOD`, or naming a path that is not a captured `.agent-ee-models.json` | `unsupported`, `unknown` |
 
 The assembled board set holds every footprint without `dnp`,
 `exclude_from_bom` or `exclude_from_pos_files`. Defects take priority over
@@ -116,10 +123,58 @@ Model paths resolve as follows:
   variant (seed `0xABBA2345`, tail zero-padded to 4 bytes); a 64-digit
   checksum is SHA-256. Native pcbnew drops a record whose checksum fails and
   discards a record without data when it saves.
+- `${KICAD10_3DMODEL_DIR}/...` and other stock variables resolve only through
+  `model_libraries`, described below. The gate never reads a host KiCad
+  installation or the process environment.
 
-Stock KiCad model libraries are not captured. A board that uses
-`${KICAD10_3DMODEL_DIR}` therefore gives an unknown result until a later
-contract maps library roots to captured inputs.
+## Stock model libraries
+
+Stock KiCad footprints name their models through a stock variable, for example
+`${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0805_2012Metric.step`.
+The pinned toolchain does not install these models. The owner therefore
+captures a stock-model cache built by
+[`render3d --fetch-models`](pcb-renders.md#component-models)
+(`models3d.fetch_stock_models`) as an ordinary scope input. Such a cache holds
+the `agent-ee.stock-models/1` receipt `.agent-ee-models.json`. Each receipt entry
+records a file's SHA-256, its size, and either the kicad-packages3D commit and
+URL it was downloaded from or `existing-local`. The scope then maps each
+variable to that captured receipt:
+
+```json
+{"id": "fab-consistency", "kind": "fab_consistency",
+ "params": {"export_check": "fab",
+            "model_libraries": {"KICAD10_3DMODEL_DIR": "lib3d/.agent-ee-models.json"}}}
+```
+
+Variables are `KICADn_3DMODEL_DIR` or `KISYS3DMOD`. One receipt may serve
+several variables only if the scope maps each one explicitly. The gate never
+treats `KICAD9_3DMODEL_DIR` as an alias of `KICAD10_3DMODEL_DIR`. A model resolves when all of
+these hold:
+
+1. The path is exactly `${VARIABLE}/Library.3dshapes/file.step` (or `.stp` or
+   `.wrl`), using the `models3d` stock-path rules. `$(VAR)` forms, nested
+   directories and `..` are refused.
+2. The variable is declared, and its receipt is the captured input and passes
+   `models3d` receipt validation.
+3. The receipt lists the file with a pinned kicad-packages3D commit.
+   `existing-local` entries are unpinned.
+4. The file next to the receipt is a captured input whose bytes match both the
+   capture digest and the receipt SHA-256.
+
+The model record then carries `sha256` and
+`library: {variable, receipt, member, commit}`. `details.models.libraries`
+lists each declared receipt and its captured digest. Any failure is an
+`uncovered` record and a `model_coverage` gap. The gate never reports it as a
+`model_unresolved` defect, because a receipt lists only the files fetched for
+one board, not the complete library. The receipt is
+frozen in the baseline, and its hashes bind every member. Editing a member
+leaves that model unknown. Editing the receipt changes the baseline.
+
+The receipt records where a file was fetched from. The gate does not fetch
+again and does not compare the bytes with upstream, so the claim is "captured
+bytes equal the pinned receipt", not "upstream holds these bytes". Captured
+`${KIPRJMOD}`, relative and absolute models also record their captured
+`sha256`.
 
 ## Evidence
 
@@ -138,7 +193,8 @@ so the evidence seal accepts the result.
   conservation and outline bounds.
   Plot identity comes only from `FileFunction` attributes.
 - Model resolution proves that a captured file, or a decodable embedded
-  payload with a matching checksum, exists. It does not check the model
+  payload with a matching checksum, exists. For stock models, it proves that the
+  captured file matches its pinned receipt. It does not check the model
   content or fit.
 - The tool check pins the binary by path and digest. The version string is
   checked only against the export's own sealed version run; the gate does not
@@ -155,7 +211,13 @@ geometry. The parity ground-truth cases run the real `netlist` check: on the
 owned RC control (R1, C1, J1) and on the owned pins schematic (U1 only) under a
 board that claims more parts. `fixtures/rc/embedded-models/` holds the RC board
 re-saved by pcbnew with owned embedded models; see `fixtures/rc/PROVENANCE.md`.
-A test confirms that pcbnew reproduces it byte for byte. One test exports real
+A test confirms that pcbnew reproduces it byte for byte.
+The stock-library cases use the RC control board, whose stock KiCad 10
+footprints keep their `${KICAD10_3DMODEL_DIR}` paths. They capture a receipt
+and owned placeholder STEP members, never KiCad library models. The cases cover
+a pass, a missing root, an undeclared variable, an unlisted, uncaptured,
+mismatched or unpinned member, a malformed receipt, and a `KICAD9_3DMODEL_DIR`
+root. A scope/3 native-pipeline case freezes the receipt in the baseline. One test exports real
 KiCad 10.0.7 drill and Gerber files from a synthetic board. It confirms that
 the plating and `FileFunction` classifiers accept native output. These tests
 need KiCad, pcbnew and bubblewrap; `AGENT_EE_REQUIRE_TOOLCHAIN=1` turns a

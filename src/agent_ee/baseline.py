@@ -116,6 +116,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "part_binding":
             from .part_binding import capability
             paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
+        if spec.get("kind") == "fab_consistency":
+            from .fab_consistency import model_libraries
+            paths.update(str(safe_relative(p)) for p in model_libraries(params).values())
         if spec.get("kind") == "package_consistency":
             from .package_consistency import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
