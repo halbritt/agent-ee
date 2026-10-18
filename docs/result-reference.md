@@ -167,12 +167,15 @@ paths, duplicate local IDs and malformed structures invalidate the review.
 Merely having citations does not prove the claim is true or that the reviewer
 received the entire cited document.
 
-Citations must name actual regular files under `inputs/`, `checks/` or
+Citations may name `baseline.json` when it matches the captured scope/2 or scope/3
+immutable baseline, or actual regular files under `inputs/`, `checks/` or
 `work/CHECK_ID/` or `review-work/ROLE/experiments/` inside this run. Absolute paths, backslashes, traversal and
 symlink traversal are refused. Citation objects contain exactly `path` and a
 nonempty `locator`; use a native UUID/pin/net, page/section, measurement name or
 specific report item rather than a vague file-level claim. Reviewer prose alone is not independent engineering evidence; experiment citations
 should identify the actual command, input, measurement or fetched source.
+The baseline citation establishes declared requirements or context; it cannot
+replace the sealed failed-check citation required for an accepted defect.
 
 Adapter records identify the backend, requested model, subscription route,
 execution/diagnostics, harness binary digest and, on successful parsing,

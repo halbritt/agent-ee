@@ -529,15 +529,17 @@ validates structured responses so that a valid judgment is not lost to a path or
   (captured sources, for example `inputs/requirements/system.md`), `checks/<check-id>.json`,
   `work/<check-id>/<file>` (raw tool outputs) or `review-work/<role>/experiments/<file>`
   (your own retained experiments). The baseline file (`baseline.json`, mounted at
-  `/evidence/baseline.json`) is sealed context and is **not** a citable path: cite the captured
-  requirement files under `inputs/requirements/` instead.
+  `/evidence/baseline.json`) is citable when it matches the immutable captured baseline.
+  Cite requirements there or in the captured source files under `inputs/requirements/`.
 - A witness for an accepted defect must name an existing requirement id from the baseline and
   the id of a coordinator check whose retained result is cited unchanged. Do not restate,
   summarise or alter a check result inside a witness; reviewer hypotheses without a failed
   coordinator check remain concerns.
 - Locators must point at content that exists in the cited file. Each citation is validated
   against the retained run; a single invalid citation or witness invalidates the whole
-  response and the run is recorded incomplete without a retry.
+  response. A structured-output refusal permits one separately recorded resubmission
+  (`max_schema_resubmissions`, default 1) with the exact error and unchanged inputs; a
+  second refusal stays incomplete. Checks are never resubmitted.
 """
 
 

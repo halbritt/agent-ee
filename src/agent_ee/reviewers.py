@@ -10,9 +10,10 @@ from pathlib import Path
 from .executor import Cancellation, execute
 from .storage import digest, identity, read_json, write_json
 from .review_run import OutputFormatRefusal
+from .findings import CITATION_PATH_RULE
 
 EVIDENCE_SCHEMA = {"type": "array", "items": {"type": "object", "required": ["path", "locator"],
-    "properties": {"path": {"type": "string"}, "locator": {"type": "string"}}, "additionalProperties": False}}
+    "properties": {"path": {"type": "string", "description": "Run-relative file: " + CITATION_PATH_RULE}, "locator": {"type": "string"}}, "additionalProperties": False}}
 REVIEW_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["schema", "candidate_id", "run_id", "packet_sha256", "role", "coverage", "limitations", "findings"],
     "properties": {**{k: {"type": "string"} for k in ("schema", "candidate_id", "run_id", "packet_sha256", "role")},
@@ -217,6 +218,7 @@ def dispatch(run_dir, label, definition, prompt, schema, timeout, *, cancellatio
 def workspace_instructions(role):
     return ("Native candidate files are read-only at /candidate (cite inputs/<relative path>). "
         "When supplied, /evidence/baseline.json is immutable ground truth, including targets and reference architectures. "
+        f"Allowed citation paths are {CITATION_PATH_RULE}. Cite the baseline as baseline.json, never /evidence/baseline.json. "
         "Read the complete baseline source files, not only packet excerpts. For a defect in a baseline-bound run, "
         "include witnesses [{requirement_id, check_id}] naming a failed declared check and cite checks/<check_id>.json. "
         "An unsupported hypothesis stays a concern until the coordinator reproduces it as a declared check. "

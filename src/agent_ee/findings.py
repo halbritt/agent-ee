@@ -11,6 +11,10 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SEVERITIES = ("blocking", "major", "minor", "info")
 ASSESSMENTS = ("defect", "concern")
 DISPOSITIONS = ("accepted", "noted", "dismissed", "deferred", "duplicate", "closed")
+CITATION_PATH_RULE = (
+    "baseline.json (verified immutable baseline), inputs/, checks/, work/<check-id>/, "
+    "or review-work/<role>/experiments/"
+)
 CHECK_EXECUTIONS = (
     "ok",
     "failed",
@@ -60,7 +64,9 @@ def validate_citation_path(path_value, run_dir):
     if rel.is_absolute() or not rel.parts or any(part in ("", ".", "..") for part in rel.parts):
         raise ValueError(f"unsafe citation path: {path_value!r}")
     head = rel.parts[0]
-    if head in ("inputs", "checks"):
+    if path_value == "baseline.json":
+        pass  # Verify the coordinator baseline after the common file/link guards.
+    elif head in ("inputs", "checks"):
         if len(rel.parts) < 2:
             raise ValueError(f"citation path must reference a file inside {head}/: {path_value!r}")
     elif head == "review-work":
@@ -73,7 +79,7 @@ def validate_citation_path(path_value, run_dir):
         safe_id(rel.parts[1], "work check id")
     else:
         raise ValueError(
-            f"citation path must reside under inputs/, checks/, or work/<check-id>/: {path_value!r}"
+            f"citation path must name {CITATION_PATH_RULE}: {path_value!r}"
         )
 
     root = Path(run_dir)
@@ -88,6 +94,10 @@ def validate_citation_path(path_value, run_dir):
     resolved_target = cur.resolve()
     if not resolved_target.is_relative_to(resolved_root) or not cur.is_file():
         raise ValueError(f"cited artifact does not exist in run: {path_value!r}")
+    if path_value == "baseline.json":
+        from .baseline import load_baseline
+        if load_baseline(root) is None:
+            raise ValueError("baseline.json citation requires an immutable scope/2 or scope/3 baseline")
     return rel.as_posix()
 
 

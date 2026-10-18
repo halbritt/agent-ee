@@ -348,6 +348,7 @@ an unavailable prerequisite stops the call with a retained diagnostic.
 Campaigns allow one [bounded output resubmission](docs/campaign-guide.md#bounded-output-resubmission)
 per role per iteration by default. Both calls and the original validation error
 are retained; checks, execution failures and environment drift remain terminal.
+Adjudicators may cite the verified immutable `baseline.json`.
 
 [Packet navigation](docs/result-reference.md#factual-packet-navigation) links
 native components, pins, nets and board primitives to declared checks and

@@ -197,6 +197,21 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "coverage": ["protocol"], "limitations": ["scripted test response"], "findings": []}
 
     @toolchain_test
+    def test_adjudicator_can_cite_verified_baseline(self):
+        def answer(*args, **kwargs):
+            record, value = self.agent(*args, **kwargs)
+            if args[1] == 'adjudicator':
+                value['decisions'][0]['evidence'].append({'path': 'baseline.json', 'locator': 'requirements/R1'})
+            return record, value
+        with patch('agent_ee.reviewers.dispatch', side_effect=answer), contextlib.redirect_stdout(io.StringIO()):
+            run_review(self.root / 'scope.json', self.root / 'run', 30)
+        result = verify(self.root / 'run')
+        self.assertTrue(result['adjudicated'])
+        self.assertEqual(result['findings'][0]['status'], 'accepted')
+        execution = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertEqual(execution['resubmissions_used'], 0)
+
+    @toolchain_test
     def test_single_writer_repair_then_fresh_independent_reviews(self):
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(self.root / "campaign.json", self.root / "campaign")
@@ -860,7 +875,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         def agent(*args, **kwargs):
             record, response = self.agent(*args, **kwargs)
             if args[1] == 'adjudicator' and self.calls.count('adjudicator') == 1:
-                response['decisions'][0]['evidence'][0]['path'] = 'baseline.json'
+                response['decisions'][0]['evidence'][0]['path'] = 'outside.json'
             return record, response
         with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
@@ -869,9 +884,9 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(record['resubmissions_used'], 1)
         self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
         first, second = [run / a['path'] for a in record['attempts']]
-        self.assertIn('citation path must reside', read_json(first / 'execution.json')['error'])
+        self.assertIn('citation path must name', read_json(first / 'execution.json')['error'])
         self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
-        self.assertEqual(read_json(first / 'response.json')['decisions'][0]['evidence'][0]['path'], 'baseline.json')
+        self.assertEqual(read_json(first / 'response.json')['decisions'][0]['evidence'][0]['path'], 'outside.json')
         verify_campaign(self.root / 'campaign')
 
     @toolchain_test
