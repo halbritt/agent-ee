@@ -146,3 +146,41 @@ Native tests generate owned boards, save/reload them, exercise the real probe
 inside Bubblewrap, and compare native DRC courtyard overlap with the judge.
 These are software geometry qualifications, not fabrication approval. Copper,
 clearance, thermal, EMC and decoupling-loop physics remain separate checks.
+
+## Native qualification
+
+The following tests qualify the AGENTEE-92 predicates. The connector criterion
+has standalone native coverage; its normal coordinator path remains blocked by
+the envelope capture gate described below.
+
+| Criterion | Test and observation |
+| --- | --- |
+| Overlapping R/C courtyards cite native DRC | `test_placement_gates_native.NativePlacementGates.test_overlapping_rc_courtyards_defect_cites_the_native_item` checks a defect with C1/R1 UUIDs and the retained native report hash, then verifies the sealed witness |
+| Missing courtyard or unproved outline stays unknown | `test_placement_gates_native.NativePlacementGates.test_missing_courtyard_is_unknown_for_geometric_predicates` rejects a missing C1 courtyard as unknown; `test_placement_native.NativePlacementTest.test_saved_native_control_mutations_and_hash_binding` saves open, missing and curved outline variants and checks unknown results |
+| Moving the header names edge and distance | `test_placement_gates_native.NativePlacementGates.test_connector_edge_on_rc_header` saves a moved J1 and checks the declared `left` edge and 3 mm displacement |
+| Same saved board gives identical ratsnest totals | `test_placement_gates_native.NativePlacementGates.test_ratsnest_byte_identical_oracle_and_declared_maxima` compares complete `ratsnest.json` bytes across captures and checks an independent Manhattan MST oracle and exact maximum boundaries |
+
+Run these modules on the native host, with the test helper directory on the
+import path:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_placement_predicates tests.test_placement_gates_native \
+  tests.test_placement_native -v
+```
+
+The connector predicate qualification does not establish a complete envelope
+campaign. `test_board_envelope.EnvelopeNativeBaselineTests` exercises native
+connector checks and witness binding with test stand-ins for unrelated
+envelope obligations. Production envelope capture still refuses unresolved
+stackup manufacturing authority; that gate must remain closed. Likewise,
+`min_courtyard_edge_mm` is a captured scope declaration, not a fabricator-sourced
+courtyard limit. The optional routing test uses an owned result record to
+qualify parsing and advisory behavior, not to claim a routing attempt.
+
+An unpatched scope/3 declaration mapping outline, layer count and stackup to
+their `board_envelope` criteria, the fixed header to `connector-edge/1`, and the
+profile to `fab_profile` is refused before candidate creation:
+`R-envelope-rc-filter-stackup` lacks executable coverage because
+`copper_weight_oz` needs qualified captured manufacturing authority. A passing
+standalone connector judgment cannot close this coordinator-path acceptance gap.

@@ -504,7 +504,8 @@ unknown, never pass, and the table hash is recorded in the evidence. See
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
-authority and unknown boundaries.
+authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
+for the acceptance tests and remaining campaign and fabrication-limit gaps.
 
 ## Board envelope predicates
 

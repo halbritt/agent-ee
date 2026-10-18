@@ -57,8 +57,10 @@ The checks that constitute "done" for each rung:
 The [`parts_subset`](approved-parts.md) check and immutable manifest are
 registered for scope/2 and scope/3 (AGENTEE-86); real rung inputs and migration
 from the experimental generator's parts record remain pending.
-`placement` is also registered ([details](placement.md)); `block_provenance`
-and `fab_package` remain pending (AGENTEE-90, AGENTEE-94). The export half of the
+`placement` is also registered ([details](placement.md#placement-check-kind));
+its native qualification does not establish a complete generation campaign
+(AGENTEE-92). `block_provenance` and `fab_package` remain pending (AGENTEE-90,
+AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
 [consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
 CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
@@ -196,16 +198,23 @@ admits group-local copper.
 
 | Predicate | Source | Outcome |
 | --- | --- | --- |
-| Courtyard overlap, malformed or missing courtyard | Native `kicad-cli pcb drc` JSON from the preceding `drc` check | Defect; missing courtyard is unknown for that footprint |
+| Courtyard overlap, malformed or missing courtyard | Native `kicad-cli pcb drc` JSON from the preceding `drc` check, plus probe courtyard inventory | Native overlap is a defect; malformed or missing courtyard is unknown for that footprint |
 | Ratsnest length | pcbnew probe: per-net minimum spanning tree over pad centres, Manhattan and Euclidean | Metric bounds the reducer can compare; a proxy, not routed length |
-| Keepouts and edge clearance | Probe geometry against rule areas that forbid footprints and the fab profile's edge minimum | Defect |
+| Keepouts and edge clearance | Native footprint-keepout DRC plus probe cross-check; exact courtyard-to-outline distance against explicit `min_courtyard_edge_mm` | Proved violation is a defect; unqualified geometry is unknown |
 | Connector on edge | Envelope declarations (AGENTEE-85) with the AGENTEE-64 predicate: edge, tolerance, insertion direction | Defect; outline not provably closed is unknown |
 | Connector facing, test-point access and coverage | [`dfa_dft`](dfa-dft.md) (AGENTEE-64): declared insertion direction against the nearest saved edge; declared test points against same-side courtyards; declared probe points on every rail and acceptance-measured net, with `bringup_plan.json` | Defect; undeclared values, unproven courtyards and corners are unknown |
 | Routability | A captured kicad-route `result.json`: `routing.blocked_by` and `kicad-route blocked` | Information only; never a pass |
 
 Unconnected items are expected before routing and are not graded by
-`placement`. The probe does not yet extract courtyards or outlines; the
-`impl/placement-judge` branch adds that.
+`placement`. The saved-board probe extracts courtyards, outlines, rule areas
+and pad centres. Placement checks reuse the preceding native DRC report;
+they do not run a second DRC. The [placement reference](placement.md#native-qualification)
+maps the ticket's acceptance criteria to executable tests.
+
+The fab profile's `min_edge_clearance_mm` is a copper-to-edge limit. It does
+not supply a courtyard-to-edge minimum. Binding a sourced fabrication limit
+for courtyards and adopting these checks in a complete generation campaign
+remain separate work.
 
 ## kicad-route integration contract
 
