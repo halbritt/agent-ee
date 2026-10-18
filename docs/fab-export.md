@@ -120,8 +120,9 @@ absolute board X and negated board Y, on both sides, with no auxiliary/drill-ori
 override. The anchor is the native footprint position. The consistency gate
 compares these coordinates with the exact native geometry probe within 0.01 mm.
 Rows are in natural designator order. The check applies **no rotation, offset or pin-1 policy**:
-`Rotation` is the native KiCad angle. JLC rotation correction belongs to
-AGENTEE-72. The BOM and position-file designators must both equal the board's
+`Rotation` is the native KiCad angle. JLC rotation correction is the separate
+[`cpl_rotation`](cpl-rotation.md) check (AGENTEE-72), which reads this staging.
+The BOM and position-file designators must both equal the board's
 non-DNP footprints before a manifest is written. The DNP authority rule makes
 them agree when the netlist and board name the same parts. A remaining
 mismatch, such as a renamed footprint or a part missing from one side, makes

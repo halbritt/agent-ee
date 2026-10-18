@@ -70,6 +70,8 @@ CPL rotation policy remains AGENTEE-72.
 
 CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
 The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
+
+CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
