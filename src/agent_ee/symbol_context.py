@@ -28,6 +28,38 @@ def _metadata(sources, captured_files, cache):
     return properties, units
 
 
+def _arc_points(graphic):
+    import math
+    from .symbol_library import field, nanometres, LibraryError
+    s, m, e = (tuple(map(nanometres, field(graphic, key, 2))) for key in ('start', 'mid', 'end'))
+    d = 2 * (s[0] * (m[1] - e[1]) + m[0] * (e[1] - s[1]) + e[0] * (s[1] - m[1]))
+    if not d:
+        raise LibraryError('degenerate arc')
+    ss, mm, ee = s[0] ** 2 + s[1] ** 2, m[0] ** 2 + m[1] ** 2, e[0] ** 2 + e[1] ** 2
+    nx = ss * (m[1] - e[1]) + mm * (e[1] - s[1]) + ee * (s[1] - m[1])
+    ny = ss * (e[0] - m[0]) + mm * (s[0] - e[0]) + ee * (m[0] - s[0])
+    if d < 0:
+        d, nx, ny = -d, -nx, -ny
+    r2_d2 = (d * s[0] - nx) ** 2 + (d * s[1] - ny) ** 2
+    if r2_d2 <= 0:
+        raise LibraryError('degenerate arc')
+    r_floor = math.isqrt(r2_d2)
+    r_ceil = r_floor if r_floor * r_floor == r2_d2 else r_floor + 1
+    dx, dy = e[0] - s[0], e[1] - s[1]
+    side_m = (m[0] - s[0]) * dy - (m[1] - s[1]) * dx
+    points = [s, e]
+    for sx, sy, px, py in (
+        (1, 0, -((-nx - r_ceil) // d), ny // d),
+        (0, 1, nx // d, -((-ny - r_ceil) // d)),
+        (-1, 0, (nx - r_ceil) // d, ny // d),
+        (0, -1, nx // d, (ny - r_ceil) // d),
+    ):
+        if any(((nx + sx * r - d * s[0]) * dy - (ny + sy * r - d * s[1]) * dx) * side_m >= 0
+               for r in (r_floor, r_ceil)):
+            points.append((px, py))
+    return points
+
+
 def _bounds(units, pins, unit):
     from .symbol_library import children, field, nanometres, LibraryError
     points = []
@@ -71,6 +103,8 @@ def _bounds(units, pins, unit):
                     if radius <= 0:
                         raise LibraryError('invalid circle radius')
                     points.extend(((x - radius, y - radius), (x + radius, y + radius)))
+                elif kind == 'arc':
+                    points.extend(_arc_points(graphic))
                 elif kind in ('text', 'text_box'):
                     continue
                 else:
