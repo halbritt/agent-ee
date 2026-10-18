@@ -121,6 +121,7 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; the placement writer is integrated with staged campaigns.
 - [Assembly and test access](dfa-dft.md) — declared connector orientation, test-point probe access and coverage, and the derived `bringup_plan.json`.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
+- [Spec capture](spec-record.md) — markdown requirements spec (headings, pipe tables, bullet and numbered lists) to `agent-ee.spec-record/1` with declared-code IDs and byte-exact locators; malformed or unsupported markdown is refused with its byte offset.
 - [Requirement record to scope](requirement-scope.md) — deterministic compilation of a spec-quoting requirement record into a scope/2 with every requirement and check mapped; the rung-1 instance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison used by the supplier/native check.
