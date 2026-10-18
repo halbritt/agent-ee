@@ -2215,6 +2215,16 @@
         "AE-RUN"
       ],
       "note": "Actual generation, checks-only and KRT stage receipts over original agent-ee fixtures. These are retained provenance excerpts and tool-identity facts, not portable complete evidence stores or copies of external designs."
+    },
+    {
+      "paths": [
+        "tests/test_campaign.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original campaign regression tests; the KiCad text is an inline-authored minimal project (AGENTEE-121 SaveBoard sibling reproduction) and synthetic design literals, no third-party design or library bytes."
     }
   ]
 }

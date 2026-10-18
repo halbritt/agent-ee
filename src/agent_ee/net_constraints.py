@@ -29,6 +29,7 @@ OZ_MM = Decimal('0.034798')  # 1 oz/ft^2 nominal copper, 1.37 mil
 METHOD = {
     'width': 'ipc-2152-generic-chart-fit/1',
     'fit': 'A_mil2 = (117.555*dT^-0.913 + 1.15) * I_A^(0.84*dT^-0.108 + 1.159)',
+    'fit_source': 'smps.us trace-width calculator curve fit of the IPC-2152 generic chart, restated; cited 2026-10-18',
     'chart': 'IPC-2152 generic chart (3 oz, 0.070 in polyimide, still air, no planes)',
     'modifiers': 'none; the generic chart is the conservative unmodified case',
     'fit_range': {'temperature_rise_c': [2, 100], 'current_ma': [0, 30000]},
