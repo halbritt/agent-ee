@@ -60,7 +60,7 @@ Nets that the document does not declare stay in Default.
 
 The minimum width comes from a published curve fit of the IPC-2152 generic chart
 (the smps.us trace-width calculator fit, as cited by the AGENTEE-47 worker on
-2026-10-18; the six coefficients are restated in `net_constraints.FIT`, no code or
+2026-10-18; the six coefficients are restated in `net_constraints.METHOD`, no code or
 chart data is copied, and the IPC-2152 standard itself is not in this repository)
 (3 oz copper on a 0.070 in polyimide board, still air, no planes):
 
