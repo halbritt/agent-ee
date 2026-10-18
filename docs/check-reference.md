@@ -35,6 +35,12 @@ leaves later checks `not_run/unknown`. Once the stage opens, missing simulation
 nets remain unknown coverage. Scopes without stage declarations keep their
 ordinary handler results and convergence rules.
 
+Schematic presence excludes a symbol only when its embedded library definition
+has a power flag and its instance declares both `in_bom no` and `on_board no`.
+A `#` Reference that fails those conditions refuses the probe, even though
+KiCad's XML exporter omits it. This disagreement is failed/unknown coverage,
+never a passing probe or a `stage_not_reached` absence witness.
+
 For [staged campaign implementations](stage-receipts.md#campaign-integration), declared coordinator
 steps own their scheduled outputs. A writer byte change to one of those candidate paths stops the
 implementation as `incomplete`, with `writer_step_output_edit` in `state.json.error`, before step execution or capture.

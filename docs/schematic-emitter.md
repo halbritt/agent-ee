@@ -231,6 +231,11 @@ executor with networking unshared:
   of the physical graph and records each omission. Nets must retain at least
   two physical terminals. Parity cannot prove the presence of a power marker
   or flag; native ERC remains a separate check.
+- The staged presence probe refuses power symbols counted as physical
+  (`in_bom yes` or `on_board yes`). Exclusion requires an embedded library power
+  flag and explicit no/no instance flags. An ordinary part renamed with a `#`
+  prefix is also refused, even when marked no/no, because KiCad would silently
+  omit it from the native netlist. See [stage gate evidence](staged-campaign.md#gate-evidence).
 - Label packing is conservative, not a visual-quality claim. The emitter does
   not draw wires, route, or choose parts or units.
 - Writing the project file is a scaffold concern (AGENTEE-87). A campaign
