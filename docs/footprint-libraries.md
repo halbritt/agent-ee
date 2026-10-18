@@ -159,3 +159,32 @@ Exit 0 means verified, 1 unverified, 2 refused and 3 an internal error. The
 telemetry pod's AMPSEAL-23 header is the first use
 ([fixture](../fixtures/pod/ampseal/README.md)). That fixture shows the
 `Conn_01x23` assignment and a land comparison against TE drawing 776228.
+
+## Footprint-owned keepout rule areas and ESP32-S3-WROOM-1
+
+Native footprint `(zone ...)` nodes that declare `(keepout ...)` on copper
+layers (`F.Cu`, `B.Cu`, `In1.Cu`..`In30.Cu`) without a copper net are parsed and
+qualified as `rule_areas` on each indexed footprint and attached to its
+`footprint_assignment` entry. Each rule-area record retains `uuid`, `name`,
+`layers`, `forbid`, `keepout`, `polygon_nm`, `polygon_mm`, and `bounds_mm`;
+copper zones with nets, non-copper layers, empty forbid sets, or
+self-intersecting polygons refuse coverage. `probe_rule_areas(data, ...)`
+produces a sealed `agent-ee.footprint-rule-areas/1` record directly from
+captured `.kicad_mod` bytes.
+
+For the telemetry pod's `RF_Module:ESP32-S3-WROOM-1` footprint (KiCad 10.0.7
+`RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod`, SHA-256
+`d0cfbb31fef0c47396c0d061ec5a3bff60f0567d8d4ea8dd4769c84f52bd656f`), the
+committed metadata in `fixtures/telemetry-pod/esp32-s3-wroom-1/` and runtime
+helper `capture_esp32_s3_wroom_1` record:
+
+- `footprint-declarations.json`: `thermal_via_pads: ["41"]` for the 12
+  `0.2 mm` thru-hole thermal vias sharing exposed pad `41` (the 9 unnumbered
+  `F.Paste` apertures are already classified as `paste`).
+- `datasheet-facts.json`: four `keepout_dimension` facts citing page 45,
+  `Section 11.1 PCB Land Pattern, Figure 11-1. ESP32-S3-WROOM-1 Recommended PCB
+  Land Pattern` (`18 mm` body width, `25.5 mm` body length, `6 mm` antenna depth,
+  `15 mm` base-board keepout clearance), from which `derive_antenna_keepout`
+  derives the `(-24, -6.75)..(24, -27.75) mm` rectangle matching the footprint's
+  owned rule area across all 32 copper layers (`rule-area.json`).
+
