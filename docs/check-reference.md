@@ -35,6 +35,13 @@ leaves later checks `not_run/unknown`. Once the stage opens, missing simulation
 nets remain unknown coverage. Scopes without stage declarations keep their
 ordinary handler results and convergence rules.
 
+For [staged campaign implementations](stage-receipts.md#campaign-integration), declared coordinator
+steps own their scheduled outputs. A writer byte change to one of those candidate paths stops the
+implementation as `incomplete`, with `writer_step_output_edit` in `state.json.error`, before step execution or capture.
+This is a writer-authority refusal; it does not produce a check verdict or a passing receipt.
+The retained `implementations/N/implementation-prompt.txt` lists all declared stages, step names and
+write mappings, with the scheduled outputs reserved for coordinator steps.
+
 The native commands below show sandbox paths; `/candidate` is the captured
 `inputs/`, `/work` is this check's scratch. They document the emitted arguments,
 not commands to paste into a host shell with nonexistent sandbox paths.

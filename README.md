@@ -123,8 +123,10 @@ earlier gates. Missing expected design content requires a native observation; it
 cannot pass merely because an empty design produces no rule violations. Progress
 is measured in the earliest failing stage, with regression and retry limits.
 Existing unstaged campaigns keep their convergence rules. Coordinator steps
-follow the earliest failing stage; arbitrary writer commands have no stage-specific
-OS allowlist. A complete generation rung with live model review and fabrication
+follow the earliest failing stage. The retained writer prompt lists declared steps
+and their outputs; staged campaigns refuse writer edits to outputs owned by a
+scheduled step. Arbitrary writer commands have no stage-specific OS allowlist.
+A complete generation rung with live model review and fabrication
 acceptance remains pending.
 
 An [offline intent importer](docs/design-intent.md) preserves source requirements

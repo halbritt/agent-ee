@@ -135,11 +135,30 @@ In a staged campaign the plan holds only the steps of the earliest failing stage
 [placement adapter](placement-adapter.md) on placement turns. Unstaged campaigns, and campaigns
 created before the plan existed, run every declared step as before. Receipt indexes follow the
 plan's order. After the writer session, the coordinator first applies the existing
-proposal checks to the writer's design. It then runs each planned step on that design, and checks that every write target
+proposal checks to the writer's design. In staged campaigns it also refuses writer changes to any
+candidate path in a planned step's `writes`, with `writer_step_output_edit` naming the step and paths.
+The comparison is against the source candidate's exact bytes, including out-of-place step outputs.
+Refusal stops the implementation as `incomplete` before any step executes or a proposal is captured;
+there is no step receipt for a step that never ran. The immutable-input guard is unchanged.
+It then runs each planned step on that design, and checks that every write target
 is in `mutable_inputs` before launch. An adoptable step's exact outputs are copied back only
 while the design still equals the receipt's inputs. An unadoptable step stops the repair as
 `incomplete`. No default output is substituted and no proposal is captured. Afterwards the
 existing inventory, immutable-input, baseline and adapter checks run again.
+
+The exact writer prompt is retained at `implementations/N/implementation-prompt.txt`, outside the
+writer's writable directory. When a staged campaign declares `implementation_steps`, the prompt lists
+every declaration's `stage`, `step` and `writes`, marks the steps scheduled for this implementation,
+and names their candidate-relative output paths. Declared steps own their stages: the writer prepares
+other mutable inputs and must not perform a stage a declared step will run. It may return a no-op
+summary when the planned steps cover the repair. Deferred steps remain gated; their outputs may
+still be inputs prepared in an earlier stage. Unstaged prompts retain their exact previous bytes,
+even when steps are declared, and unstaged steps retain their previous overwrite behavior.
+
+`CampaignStageReceiptTests` in `tests/test_stage_receipts.py` exercises retained prompts, a no-op writer
+followed by exact coordinator outputs, named refusal before execution, input preparation for deferred
+steps, staged repairs without steps, and byte-for-byte unstaged prompt compatibility. These tests use
+scripted writers and original synthetic measurement tools in the real executor sandbox.
 
 Every implementation in a new campaign writes `implementations/N/stage-receipts.json`
 (`agent-ee.stage-receipt-index/1`), even when it holds no receipts. The index lists every receipt with its

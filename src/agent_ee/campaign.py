@@ -124,6 +124,20 @@ def implement(root, previous, definition, state, deadline):
                    "proposal graded by fresh checks.\n" + json.dumps({
                        "placement": writer_context(previous, manifest), "board": bound["board"],
                        "protected_references": refs}))
+    if manifest['scope'].get('stages') is not None and config.get('implementation_steps'):
+        scheduled = [entry['spec'] for entry in plan if entry['kind'] == 'step']
+        scheduled_stages = {spec['stage'] for spec in scheduled}
+        prompt += ("\nDeclared steps own their stages. The writer prepares inputs and must not perform a stage "
+                   "a declared step will run. Only steps marked scheduled run after this writer session; "
+                   "other steps wait for their stage gate. Step-owned outputs are candidate-relative mutable "
+                   "files these scheduled steps will overwrite. Do not edit them: any byte change is refused "
+                   "as writer_step_output_edit before any step runs. Prepare other in-scope inputs, or return "
+                   "a no-op summary when the steps cover the repair. Fresh checks still grade every proposal."
+                   "\nDeclared implementation steps:\n" + json.dumps({
+                       'implementation_steps': [{**{key: spec[key] for key in ('stage', 'step', 'writes')},
+                           'scheduled': spec['stage'] in scheduled_stages} for spec in config['implementation_steps']],
+                       'step_owned_outputs': sorted({rel for spec in scheduled for rel in spec['writes']})}))
+    (work / 'implementation-prompt.txt').write_text(prompt, encoding='utf-8')
     from .preflight import capture_expectation
     original = read_json(previous / 'result.json')
     campaign_environment = state.get('launch_environment')
@@ -156,6 +170,13 @@ def implement(root, previous, definition, state, deadline):
     if record["execution"] != "ok" or response is None:
         raise ValueError("implementation execution failed; no provider fallback: " + record.get('error', record['execution']))
     check_proposal(design, manifest, state)
+    if manifest['scope'].get('stages') is not None:
+        for entry in plan:
+            if entry['kind'] == 'step':
+                spec = entry['spec']
+                changed = sorted(rel for rel in spec['writes'] if digest(design / rel) != manifest['files'][rel])
+                if changed:
+                    raise ValueError(f"writer_step_output_edit: {spec['stage']}/{spec['step']} owns {changed}")
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
     if "stage_receipts" in state:

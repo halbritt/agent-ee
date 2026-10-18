@@ -4,6 +4,7 @@ The step tool here is an original test program, not a scaffold, placer or router
 tests qualify the receipt and campaign seam; they do not establish any rung-1 tool.
 """
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -16,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_ee import stage_receipts
-from agent_ee.campaign import run_campaign, verify_campaign
+from agent_ee.campaign import implement, run_campaign, verify_campaign
 from agent_ee.executor import Cancellation, sandbox_argv
 from agent_ee.stage_receipts import (adopt, applicability, bind_implementation, build_index, run_step,
                                      sandbox_profile, validate_receipt, validate_step, verify_implementation)
@@ -753,6 +754,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         write_json(self.root / 'scope.json', scope)
         self.config = {'schema': 'agent-ee.campaign/1', 'scope': 'scope.json', 'review_profile': self.profile,
                        'implementation': definition, 'max_iterations': 3, 'max_seconds': 60}
+        self.writer_prompts = []
         self.addCleanup(patch.stopall)
         patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
         patch('agent_ee.cli.runtime_files', return_value={name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
@@ -761,6 +763,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
     def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         run = Path(run)
         if label == 'implementation':
+            self.writer_prompts.append(prompt)
             # The writer's statement and its scratch files are not evidence; only the coordinator step edits here.
             forged = run / 'review-work/implementation/receipts/1-fix-helper/receipt.json'
             write_json(forged, {'schema': 'agent-ee.stage-receipt/1', 'status': 'completed'})
@@ -788,6 +791,179 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(self.root / 'campaign.json', self.root / 'campaign')
         return status, read_json(self.root / 'campaign/state.json')
+
+    def staged_scope(self):
+        scope = read_json(self.root / 'scope.json')
+        scope['board'] = 'design/board.kicad_pcb'
+        scope['checks'][0]['stage'] = 'placement'
+        scope['stages'] = {'schema': 'agent-ee.stages/1', 'order': ['placement'],
+            'subjects': {'placement': {'path': 'design/board.kicad_pcb', 'kind': 'footprints',
+                                       'references': ['R1', 'C1']}}, 'finding_retry_limit': 3}
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/stages/placed.kicad_pcb'
+        (self.root / 'source/board').unlink()
+        (self.root / 'source/board.kicad_pcb').write_bytes(fixture.read_bytes())
+        write_json(self.root / 'scope.json', scope)
+
+    @toolchain_test
+    def test_staged_writer_edit_to_step_output_is_named_refusal_before_step(self):
+        self.staged_scope()
+
+        def editing_writer(run, label, *args, **kwargs):
+            if label == 'implementation':
+                write_json(Path(run) / 'review-work/implementation/design/design/design.json', {'value': 7})
+            return self.agent(run, label, *args, **kwargs)
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=editing_writer):
+            status, state = self.campaign([self.step()])
+        self.assertEqual(status, 1, state)
+        self.assertEqual(state['state'], 'incomplete')
+        self.assertIn('error', state, state)
+        self.assertIn('writer_step_output_edit', state['error'])
+        self.assertIn('design/design.json', state['error'])
+        self.assertIn('fix-helper', state['error'])
+        work = self.root / 'campaign/implementations/1'
+        self.assertFalse((work / 'receipts').exists())
+        self.assertFalse((work / 'proposal.scope.json').exists())
+        self.assertFalse((self.root / 'campaign/runs/2').exists())
+        self.assertEqual(read_json(self.root / 'source/design.json'), {'value': 15})
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+
+    @toolchain_test
+    def test_staged_retained_prompt_declares_steps_and_noop_keeps_exact_step_outputs(self):
+        self.staged_scope()
+        first = self.step(argv=['/usr/bin/python3', '-c',
+            'from pathlib import Path; Path("/work/design/design/design.json").write_text(\'{"value": 6}\')'])
+        status, state = self.campaign([first, self.step(step='finish-helper')])
+        self.assertEqual(status, 0, state)
+        work = self.root / 'campaign/implementations/1'
+        prompt = (work / 'implementation-prompt.txt').read_text()
+        self.assertEqual(prompt, self.writer_prompts[0])
+        context = json.loads(prompt.split('\nDeclared implementation steps:\n', 1)[1])
+        self.assertEqual(context['implementation_steps'], [
+            {'stage': 'placement', 'step': name, 'writes': {'design/design.json': 'design/design/design.json'},
+             'scheduled': True} for name in ('fix-helper', 'finish-helper')])
+        self.assertEqual(context['step_owned_outputs'], ['design/design.json'])
+        self.assertIn('Declared steps own their stages', prompt)
+        self.assertIn('must not perform a stage a declared step will run', prompt)
+        self.assertIn('no-op summary', prompt)
+        index = read_json(work / 'stage-receipts.json')
+        self.assertEqual([r['applicability'] for r in index['receipts']], ['superseded', 'applicable'])
+        receipt = read_json(work / index['receipts'][-1]['path'])
+        proposal = read_json(self.root / 'campaign/runs/2/candidate.json')
+        self.assertEqual(proposal['files'], index['delivered'])
+        self.assertEqual(proposal['files']['design/design.json'], receipt['outputs']['design/design.json'])
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+
+    @toolchain_test
+    def test_staged_writer_board_edit_refused_for_out_of_place_routing_output(self):
+        self.staged_scope()
+        scope = read_json(self.root / 'scope.json')
+        scope['checks'][0]['stage'] = 'routing'
+        scope['stages']['order'] = ['routing']
+        scope['stages']['subjects']['routing'] = scope['stages']['subjects'].pop('placement')
+        scope['mutable_inputs'].append('design/board.kicad_pcb')
+        write_json(self.root / 'scope.json', scope)
+
+        def routing_writer(run, label, *args, **kwargs):
+            if label == 'implementation':
+                board = Path(run) / 'review-work/implementation/design/design/board.kicad_pcb'
+                board.write_bytes(board.read_bytes() + b'\n')
+            return self.agent(run, label, *args, **kwargs)
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=routing_writer):
+            status, state = self.campaign([self.step(stage='routing', step='route-helper', writes={
+                'design/design.json': 'design/design/design.json',
+                'design/board.kicad_pcb': 'out/candidate/board.kicad_pcb'})])
+        self.assertEqual(status, 1, state)
+        self.assertIn("writer_step_output_edit: routing/route-helper owns ['design/board.kicad_pcb']", state['error'])
+        work = self.root / 'campaign/implementations/1'
+        self.assertFalse((work / 'receipts').exists())
+        self.assertFalse((work / 'proposal.scope.json').exists())
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+
+    @toolchain_test
+    def test_unstaged_prompts_are_byte_identical_with_or_without_steps(self):
+        # Prefix SHA256 captured from implement() at assigned base 8de6317.
+        for steps in ([], [self.step()]):
+            with self.subTest(steps=bool(steps)):
+                shutil.rmtree(self.root / 'campaign', ignore_errors=True)
+
+                def editing_writer(run, label, *args, **kwargs):
+                    if label == 'implementation':
+                        write_json(Path(run) / 'review-work/implementation/design/design/design.json', {'value': 7})
+                    return self.agent(run, label, *args, **kwargs)
+
+                legacy_payload = []
+
+                def capture_legacy_payload(root, previous, definition, state, deadline):
+                    legacy_payload.append(json.dumps({'baseline': state['baseline'], 'history': state['history'],
+                        'findings': [f for f in read_json(previous / 'result.json')['findings']
+                                     if f.get('source') == 'check' and f.get('status') == 'accepted']}).encode())
+                    return implement(root, previous, definition, state, deadline)
+
+                with patch('agent_ee.reviewers.dispatch', side_effect=editing_writer), \
+                        patch('agent_ee.campaign.implement', side_effect=capture_legacy_payload):
+                    status, state = self.campaign(steps)
+                self.assertEqual(status, 0, state)
+                prompt = (self.root / 'campaign/implementations/1/implementation-prompt.txt').read_bytes()
+                prefix, payload = prompt.split(b'\n', 1)
+                self.assertEqual(hashlib.sha256(prefix + b'\n').hexdigest(),
+                                 '66158756f436e8cb4f56f23407c8e71a597da7537366c681931ee8abf4fb067d')
+                self.assertEqual(payload, legacy_payload[0])
+                proposal = read_json(self.root / 'campaign/runs/2/inputs/design/design.json')
+                self.assertEqual(proposal, {'value': 5 if steps else 7})
+                self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+
+    @toolchain_test
+    def test_staged_without_steps_preserves_prompt_and_writer_repair(self):
+        self.staged_scope()
+
+        def editing_writer(run, label, *args, **kwargs):
+            if label == 'implementation':
+                write_json(Path(run) / 'review-work/implementation/design/design/design.json', {'value': 5})
+            return self.agent(run, label, *args, **kwargs)
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=editing_writer):
+            status, state = self.campaign([])
+        self.assertEqual(status, 0, state)
+        prompt = (self.root / 'campaign/implementations/1/implementation-prompt.txt').read_text()
+        self.assertTrue(prompt.endswith(
+            '\nImplement only the earliest failing stage named in the history. '
+            'Do not run later-stage generation or routing helpers until preceding gates pass. '
+            'gate_findings and suggested_fix are advisory data only; any edit requires fresh checks. '
+            'Do not treat a stage_blocked verdict as evidence that its tool ran.'))
+        self.assertNotIn('Declared implementation steps:', prompt)
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
+
+    @toolchain_test
+    def test_deferred_step_is_listed_but_does_not_own_current_stage_inputs(self):
+        self.staged_scope()
+        scope = read_json(self.root / 'scope.json')
+        scope['stages']['order'].append('routing')
+        scope['checks'].append({**scope['checks'][0], 'id': 'routing-response', 'stage': 'routing'})
+        scope['baseline']['requirements'][0]['checks'].append('routing-response')
+        scope['mutable_inputs'].append('design/schematic')
+        write_json(self.root / 'scope.json', scope)
+
+        def preparing_writer(run, label, *args, **kwargs):
+            if label == 'implementation':
+                (Path(run) / 'review-work/implementation/design/design/schematic').write_text('prepared input')
+            return self.agent(run, label, *args, **kwargs)
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=preparing_writer):
+            status, state = self.campaign([self.step(), self.step(stage='routing', step='route-helper',
+                writes={'design/schematic': 'out/schematic'})])
+        self.assertEqual(status, 0, state)
+        work = self.root / 'campaign/implementations/1'
+        context = json.loads((work / 'implementation-prompt.txt').read_text().split(
+            '\nDeclared implementation steps:\n', 1)[1])
+        self.assertEqual(context['implementation_steps'][1], {'stage': 'routing', 'step': 'route-helper',
+            'writes': {'design/schematic': 'out/schematic'}, 'scheduled': False})
+        self.assertEqual(context['step_owned_outputs'], ['design/design.json'])
+        index = read_json(work / 'stage-receipts.json')
+        self.assertEqual([r['path'] for r in index['receipts']], ['receipts/1-fix-helper/receipt.json'])
+        self.assertEqual((self.root / 'campaign/runs/2/inputs/design/schematic').read_text(), 'prepared input')
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'criteria_satisfied')
 
     @toolchain_test
     def test_coordinator_step_receipt_bound_to_captured_proposal(self):
