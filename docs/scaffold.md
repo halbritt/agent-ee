@@ -13,13 +13,13 @@ PYTHONPATH=src python3 -m agent_ee.cli review build/empty/scope.json \
   --out build/empty-checks --checks-only
 ```
 
-The command requires an explicit stage-one scope/2 or scope/3. Neither the
+`--scope` takes an explicit stage-one scope/2 or scope/3. Neither the
 [envelope](board-envelope.md) nor the [parts manifest](approved-parts.md) defines
 all requirement/check mappings, targets, reference architectures or qualified
-project rules. The command preserves these from `PLAN`; it does not invent
-requirements or lower their coverage. The two-positional-argument interface
-without `--scope` and automatic compilation of fab-profile rules are not yet
-available.
+project rules. With `--scope` the command preserves these from `PLAN`; it does
+not invent requirements or lower their coverage. `--plan` instead runs the
+[stage-two producer](#stage-two-producer), which derives the checks, mappings,
+stage policy and project rules. Exactly one of the two is required.
 
 ## Planning inputs
 
@@ -57,12 +57,83 @@ sources remain immutable. Only the root schematic, pre-created child schematics
 and board appear in `mutable_inputs`. A writer still cannot add or delete a
 captured file, or edit an immutable file.
 
+## Stage-two producer
+
+`agent-ee scaffold ENVELOPE PARTS --plan PLAN --out DIR` (AGENTEE-141) derives
+the scope/2 and the `.kicad_pro` design rules through the same module, then
+publishes exactly as stage one does. `PLAN` is an `agent-ee.scaffold-plan/1`
+with exactly these fields, none of which the envelope or parts manifest states:
+
+```json
+{
+  "schema": "agent-ee.scaffold-plan/1",
+  "name": "rc filter", "scope": "Native validity, parts membership and fab rules.",
+  "limitations": [],
+  "inputs": [{"path": "planning/envelope.json", "at": "envelope.json"}],
+  "project": "project/design",
+  "template": "templates/native.kicad_pro",
+  "fab_profile": "fab/profile.json",
+  "native_requirement": {"id": "native", "statement": "Native ERC and DRC pass.",
+                         "source": {"path": "native.md", "locator": "line 1"}},
+  "targets": ["targets.md"], "reference_architectures": ["reference.md"],
+  "finding_retry_limit": 3
+}
+```
+
+`inputs` must capture everything stage one needs except the project file, plus
+the template, the fab profile and the profile's cited sources. `project` is the
+shared basename of the schematic, board and `.kicad_pro`.
+
+Derived from the inputs:
+
+| Output | Derivation |
+| --- | --- |
+| Checks | `erc`, `netlist`, `parts` (`parts_subset` over the manifest), `drc`, `fab` (`fab_profile` over the referenced profile), in that order |
+| Requirements | The plan's native requirement maps `erc` and `drc`. `parts-membership` maps `netlist` and `parts` at the manifest's `declaration_source`. The profile's single limit requirement maps `fab` at `PROFILE /limits` |
+| Stages | `schematic` (erc, netlist, parts), `placement` (drc), `routing` (fab). Symbol and footprint subjects are the manifest's required selectors; the routing subject is one saved track, because the `fab_profile` check's native rule-loading witness needs a track |
+| Project rules | `board.design_settings.rules` `min_clearance`, `min_track_width`, `min_via_diameter`, `min_through_hole_diameter`, `min_copper_edge_clearance` and `min_hole_to_hole` from the profile's minimum limits, through `fab_profile.compile_profile` |
+| Default net class | `clearance`, `track_width`, `via_diameter`, `via_drill` from the preferred limit when present, otherwise the minimum |
+| Board | Outline, layer count and stackup from the envelope, as in stage one |
+
+The template supplies every other project setting. It must be a complete
+`kicad-10.0.7-net-settings-5` project, such as the owned
+[native project](../fixtures/netclass-completeness/native.kicad_pro), whose only
+net class is a complete Default. The derived `.kicad_pro` and the profile are
+immutable baseline criteria, so a repair cannot relax them.
+
+The producer refuses, naming the cause, and publishes nothing when:
+
+- the envelope's `fab_profile` is null, the profile bytes differ from its
+  reference, or any envelope predicate stays unresolved against the capture
+  (for example no minimum `max_layers` limit, or an unverified source);
+- any profile limit is not source-verified, one of the six rule keys has no
+  minimum limit, a preferred value is below its minimum, the Default via pad
+  does not exceed its drill, or the limits name more than one requirement;
+- the parts manifest lacks required datasheet provenance, or an envelope fixed
+  footprint is not a declared parts instance;
+- a `.kicad_pro` or `.kicad_dru` is captured at the project path, or the template
+  has other net classes, patterns or assignments, an `ignore` severity for a
+  derived rule type, DRC exclusions, missing Default fields or another settings
+  version;
+- the plan has missing or unknown fields, a requirement ID collides with a
+  derived one, or `finding_retry_limit` is outside 2 to 100.
+
+If a required selector is on a child sheet, the staged presence checker cannot
+observe it. The producer then emits no stage policy and records why in the
+receipt. Net classes other than Default wait on AGENTEE-47 net constraints.
+KiCad rule settings outside the six keys keep the template values. The producer
+derives no `fab_package` done gate and no scope/3 envelope acceptance.
+
 ## Output and evidence
 
 `DIR/inputs/` contains the complete selected inventory; `DIR/scope.json` uses
 relative paths into it. `DIR/scaffold-receipt.json` records input and output
 hashes, candidate and baseline identities, root/sheet identities, Python version
-and hashes of the agent-ee policy modules. It has no timestamp or absolute
+and hashes of the agent-ee policy modules. With `--plan` the receipt is
+`agent-ee.scaffold-receipt/2`: it records `plan_sha256` in place of
+`scope_sha256`, and a `derivation` naming the envelope, profile, template and
+manifest hashes and each derived rule's setting, value, limit ID, tier and
+`/limits/N` locator. It has no timestamp or absolute
 output path. Identical planning bytes and tool versions produce byte-identical
 outputs and the same candidate hash at different output paths.
 
@@ -92,6 +163,13 @@ envelope baseline also continues to refuse uncovered stackup and other
 obligations. Supplying an envelope as an uncited generation input does not make
 it an acceptance authority. Complete production generation needs those coverage
 gaps and producer migrations resolved before the envelope can become binding.
+
+[test_scaffold_producer.py](../tests/test_scaffold_producer.py) covers the
+producer on owned synthetic envelope, profile and parts fixtures: byte-identical
+outputs, the derived mappings, rules and stages, every refusal above, and a
+native run. In that run pcbnew loads the derived rules and Default class from the
+produced project, and each of the five checks reports `stage_not_reached` on the
+empty candidate.
 
 The original synthetic tests in [test_scaffold.py](../tests/test_scaffold.py)
 exercise byte identity and capture hashes, native ERC/DRC, local library tables,

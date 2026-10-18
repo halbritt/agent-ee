@@ -119,9 +119,11 @@ remain blocked by unresolved third-party rights.
 The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
 projects from captured envelope and parts records plus an explicit stage-one
 scope. It preserves project rules, checks and baseline sources, pre-creates child
-sheets and leaves native execution to the ordinary review/campaign workflow.
-Automatic stage-one scope compilation and hierarchical staged presence remain
-unavailable.
+sheets and leaves native execution to the ordinary review/campaign workflow. Its
+stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
+rules from the envelope, its fab profile and the parts manifest instead, and
+refuses incomplete inputs. Per-net classes and hierarchical staged presence
+remain unavailable.
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it

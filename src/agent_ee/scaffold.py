@@ -1,8 +1,12 @@
 """Create an empty native candidate from captured planning and verification inputs.
 
-The caller supplies the stage-one scope and project rules. Scaffolding preserves
-its baseline and checks; it cannot choose acceptance criteria or waive uncovered
-board-envelope obligations. No native-tool or owner-approval claim is made here.
+Stage one: the caller supplies the scope and project rules; scaffolding preserves
+its baseline and checks. Stage two: a producer plan supplies only what neither
+record defines (native-validity requirement, targets, references, a native
+project template); checks, mappings and design rules are derived from the
+envelope, its fabricator profile and the parts manifest. Neither mode can choose
+acceptance criteria or waive uncovered board-envelope obligations. No
+native-tool or owner-approval claim is made here.
 """
 import copy
 import hashlib
@@ -15,6 +19,7 @@ import uuid
 from . import board_envelope
 from .candidate import safe_relative, source_manifest
 from .catalog import strict_json
+from .fab_profile import NATIVE, compile_profile
 from .footprint_library import _members
 from .parts_manifest import load_manifest, qualify_manifest, read_captured
 from .schematic_emit import Quoted as Q, format_sexpr
@@ -22,6 +27,24 @@ from .storage import digest, identity, json_bytes
 
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/scaffold/1')
 SCHEMA = 'agent-ee.scaffold-receipt/1'
+PRODUCED_SCHEMA = 'agent-ee.scaffold-receipt/2'
+PLAN_SCHEMA = 'agent-ee.scaffold-plan/1'
+PLAN_FIELDS = ('schema', 'name', 'scope', 'limitations', 'inputs', 'project', 'template', 'fab_profile',
+               'native_requirement', 'targets', 'reference_architectures', 'finding_retry_limit')
+# Every fab-profile key with a native KiCad project rule; each is required.
+RULE_KEYS = ('min_clearance_mm', 'min_trace_mm', 'min_via_pad_mm', 'min_via_drill_mm',
+             'min_edge_clearance_mm', 'min_hole_to_hole_mm')
+NETCLASS_FIELDS = {'min_clearance_mm': 'clearance', 'min_trace_mm': 'track_width',
+                   'min_via_pad_mm': 'via_diameter', 'min_via_drill_mm': 'via_drill'}
+PARTS_REQUIREMENT = 'parts-membership'
+PRODUCER_LIMITATIONS = [
+    'Producer-derived rules: the Default net class and six minimum project rules come from the '
+    'captured fab profile; other KiCad rule settings keep the captured template values.',
+    'Stage subjects are the parts manifest required root-sheet selectors; no fab_package done gate, '
+    'scope/3 envelope acceptance or per-net classes are derived.']
+# Stage of each derived check. The fab check's native loading witness needs a saved track.
+STAGES = (('erc', 'schematic'), ('netlist', 'schematic'), ('parts', 'schematic'),
+          ('drc', 'placement'), ('fab', 'routing'))
 
 
 def sexpr(node):
@@ -144,41 +167,264 @@ def captured_name(path, sources):
     return matches[0]
 
 
-def scaffold(envelope_path, parts_path, out, *, scope_path):
+def canonical(value, label):
+    if not isinstance(value, str) or str(safe_relative(value)) != value:
+        raise ValueError(f'producer plan {label} must be a canonical relative path')
+    return value
+
+
+def validate_plan(plan):
+    """Exact producer plan fields; nothing the envelope or parts manifest defines."""
+    if not isinstance(plan, dict) or plan.get('schema') != PLAN_SCHEMA:
+        raise ValueError('producer plan must be ' + PLAN_SCHEMA)
+    missing, unknown = sorted(set(PLAN_FIELDS) - plan.keys()), sorted(plan.keys() - set(PLAN_FIELDS))
+    if missing or unknown:
+        raise ValueError(f'producer plan fields: missing {missing}, unknown {unknown}')
+    for field in ('name', 'scope'):
+        if not isinstance(plan[field], str) or not plan[field].strip():
+            raise ValueError(f'producer plan requires nonempty {field}')
+    if (not isinstance(plan['limitations'], list) or
+            any(not isinstance(item, str) or not item.strip() for item in plan['limitations'])):
+        raise ValueError('producer plan limitations must be a list of nonempty strings')
+    if (not isinstance(plan['inputs'], list) or not plan['inputs'] or
+            any(not isinstance(item, dict) or set(item) != {'path', 'at'} for item in plan['inputs'])):
+        raise ValueError('producer plan inputs must be a nonempty list of {path, at}')
+    project = canonical(plan['project'], 'project')
+    if PurePosixPath(project).suffix or not PurePosixPath(project).name.replace('-', '').replace('_', '').isalnum():
+        raise ValueError('producer plan project is a basename path without suffix, e.g. project/design')
+    if not canonical(plan['template'], 'template').endswith('.kicad_pro'):
+        raise ValueError('producer plan template must be a captured .kicad_pro')
+    canonical(plan['fab_profile'], 'fab_profile')
+    native = plan['native_requirement']
+    if (not isinstance(native, dict) or set(native) != {'id', 'statement', 'source'} or
+            not isinstance(native['source'], dict) or set(native['source']) != {'path', 'locator'}):
+        raise ValueError('native_requirement needs exactly id, statement and source {path, locator}')
+    canonical(native['source']['path'], 'native_requirement source')
+    for field in ('targets', 'reference_architectures'):
+        if not isinstance(plan[field], list) or not plan[field]:
+            raise ValueError(f'producer plan {field} must name captured sources')
+        for item in plan[field]:
+            canonical(item, field)
+    limit = plan['finding_retry_limit']
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 2 <= limit <= 100:
+        raise ValueError('producer plan finding_retry_limit must be an integer from 2 to 100')
+    return plan
+
+
+def produced_envelope(plan, files, inputs, envelope_rel):
+    """Validate the envelope with its referenced profile against the capture; refuse anything unresolved."""
+    raw = read_captured(inputs, envelope_rel)
+    envelope = board_envelope.load(raw)
+    if isinstance(envelope, dict) and 'fab_profile' in envelope and envelope['fab_profile'] is None:
+        raise ValueError('envelope is incomplete: fab_profile is null, so design rules cannot be derived')
+    profile = read_captured(inputs, plan['fab_profile'])
+    record = board_envelope.validate(raw, profile=profile, captured=(files, inputs))
+    if record['unresolved']:
+        raise ValueError('envelope is incomplete: unresolved ' + '; '.join(
+            f"{item['predicate']} ({item['reason']})" for item in record['unresolved']))
+    return record
+
+
+def produced_rules(plan, files, inputs):
+    """Map source-verified fab limits onto KiCad project rules and the Default class."""
+    profile = strict_json(read_captured(inputs, plan['fab_profile']))
+    compiled = compile_profile(profile, files, inputs)
+    unverified = [f"{c['id']} ({c['reason']})" for c in compiled['constraints'] if c['execution'] != 'ready']
+    if unverified:
+        # The derived fab_profile check would stay unknown for these forever.
+        raise ValueError('fab profile is incomplete: limits not source-verified: ' + '; '.join(unverified))
+    ready = {(c['expected']['key'], c['expected']['tier']): c for c in compiled['constraints']}
+    missing = [key for key in RULE_KEYS if (key, 'minimum') not in ready]
+    if missing:
+        raise ValueError('fab profile is incomplete: no minimum-tier limit for ' + ', '.join(missing))
+    requirements = sorted({c['requirement'] for c in compiled['constraints']})
+    if len(requirements) != 1:
+        raise ValueError('fab profile limits must name exactly one requirement, got ' + ', '.join(requirements))
+    locators = {limit['id']: f'/limits/{index}' for index, limit in enumerate(profile['limits'])}
+
+    def cite(constraint, setting, value):
+        return dict(setting=setting, value=value, key=constraint['expected']['key'],
+                    tier=constraint['expected']['tier'], limit_id=constraint['id'],
+                    locator=locators[constraint['id']])
+
+    rules, netclass = [], []
+    for key in RULE_KEYS:
+        minimum = ready[key, 'minimum']
+        (setting, value), = minimum['project_rules'].items()
+        rules.append(cite(minimum, 'board.design_settings.rules.' + setting, value))
+        if key in NETCLASS_FIELDS:
+            # A preferred limit avoids a surcharge; the floor still applies.
+            chosen = ready.get((key, 'preferred'), minimum)
+            if chosen['expected']['value'] < value:
+                raise ValueError(f'fab profile {key} preferred value is below its minimum')
+            netclass.append(cite(chosen, 'net_settings.classes.Default.' + NETCLASS_FIELDS[key],
+                                 chosen['expected']['value']))
+    values = {item['setting'].rsplit('.', 1)[1]: item['value'] for item in netclass}
+    if values['via_diameter'] <= values['via_drill']:
+        raise ValueError('fab profile via pad must exceed via drill for the Default class')
+    return compiled, requirements[0], rules, netclass
+
+
+def produced_project(inputs, template_rel, rules, netclass):
+    """Apply derived rules to a native template that carries no other rule authority."""
+    from .netclass_completeness import PROFILE, evaluate
+    project = strict_json(read_captured(inputs, template_rel))
+    absent = evaluate(project)
+    if absent is None:
+        raise ValueError('template net settings are not the qualified ' + PROFILE)
+    if absent:
+        raise ValueError('template Default net class lacks native fields: ' + ', '.join(absent[0]['keys']))
+    settings = project['net_settings']
+    if ([c['name'] for c in settings['classes']] != ['Default'] or settings.get('netclass_patterns') or
+            settings.get('netclass_assignments')):
+        raise ValueError('template net classes beyond Default need AGENTEE-47 net constraints; '
+                         'the producer derives only Default')
+    design = project.get('board', {})
+    design = design.get('design_settings', {}) if isinstance(design, dict) else None
+    severities = design.get('rule_severities', {}) if isinstance(design, dict) else None
+    if not isinstance(severities, dict) or not isinstance(design.get('rules', {}), dict):
+        raise ValueError('template board design settings must be JSON objects')
+    silenced = sorted(kind for _, kind, _ in NATIVE.values() if severities.get(kind) == 'ignore')
+    if silenced or design.get('drc_exclusions'):
+        raise ValueError('template must not ignore derived rule severities or exclude DRC findings: '
+                         + ', '.join(silenced or ['drc_exclusions']))
+    target = project.setdefault('board', {}).setdefault('design_settings', {}).setdefault('rules', {})
+    for item in rules:
+        target[item['setting'].rsplit('.', 1)[1]] = item['value']
+    default = settings['classes'][0]
+    for item in netclass:
+        default[item['setting'].rsplit('.', 1)[1]] = item['value']
+    return project
+
+
+def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb):
+    """Derive the scope/2 checks, mappings and project rules; refuse incomplete inputs by name."""
+    record = produced_envelope(plan, files, inputs, envelope_rel)
+    if qualification['missing_provenance']:
+        raise ValueError('parts manifest is incomplete: required datasheet provenance unavailable for ' +
+                         ', '.join(item['part_id'] for item in qualification['missing_provenance']))
+    references = {s['reference'] for part in document['parts'] for s in part['instances']}
+    stray = sorted(item['reference'] for item in record['fixed_footprints'] if item['reference'] not in references)
+    if stray:
+        raise ValueError('envelope fixed footprints are not declared parts instances: ' + ', '.join(stray))
+    compiled, fab_requirement, rules, netclass = produced_rules(plan, files, inputs)
+    project = produced_project(inputs, plan['template'], rules, netclass)
+    native = plan['native_requirement']
+    ids = [native['id'], PARTS_REQUIREMENT, fab_requirement]
+    if len(set(ids)) != len(ids):
+        raise ValueError('derived requirement IDs collide: ' + ', '.join(ids))
+    declaration = document['declaration_source']
+    profile_rel = plan['fab_profile']
+    requirements = [
+        dict(id=native['id'], statement=native['statement'], source=dict(native['source']), checks=['erc', 'drc']),
+        dict(id=PARTS_REQUIREMENT, statement=f'Every populated native instance matches the approved parts '
+             f'manifest {parts_rel}, and every required selector is present.',
+             source=dict(path=declaration['path'], locator=declaration['locator']), checks=['netlist', 'parts']),
+        dict(id=fab_requirement, statement=f"The saved board satisfies every source-verified minimum limit "
+             f"of fabricator profile {compiled['name']}.",
+             source=dict(path=profile_rel, locator='/limits'), checks=['fab'])]
+    specs = dict(erc=dict(id='erc', kind='erc'), netlist=dict(id='netlist', kind='netlist'),
+                 parts=dict(id='parts', kind='parts_subset', params=dict(
+                     manifest=parts_rel, netlist_check='netlist', requirement_id=PARTS_REQUIREMENT)),
+                 drc=dict(id='drc', kind='drc'), fab=dict(id='fab', kind='fab_profile',
+                                                         params=dict(fab_profile=profile_rel)))
+    required = [s for part in document['parts'] if part['required'] for s in part['instances']]
+    hierarchical = sorted(s['reference'] for s in required if s['sheet'] != '/')
+    stages = None
+    if hierarchical:
+        checks = [specs[cid] for cid, _ in STAGES]
+        staging = dict(status='not_derived', reason='the staged presence checker refuses hierarchy; '
+                       'required selectors on child sheets: ' + ', '.join(hierarchical))
+    else:
+        # Expected inventory is the manifest's explicit required selectors, never inferred.
+        references = sorted(s['reference'] for s in required)
+        checks = [dict(specs[cid], stage=stage) for cid, stage in STAGES]
+        stages = dict(schema='agent-ee.stages/1', order=['schematic', 'placement', 'routing'],
+                      subjects=dict(schematic=dict(path=sch, kind='symbols', references=references),
+                                    placement=dict(path=pcb, kind='footprints', references=references),
+                                    routing=dict(path=pcb, kind='tracks', minimum=1)),
+                      finding_retry_limit=plan['finding_retry_limit'])
+        staging = dict(status='derived', source=parts_rel + ' required selectors',
+                       routing='fab_profile needs a saved track for its native rule-loading witness')
+    scope = dict(schema='agent-ee.scope/2', name=plan['name'], scope=plan['scope'],
+                 limitations=[*plan['limitations'], *PRODUCER_LIMITATIONS], inputs=plan['inputs'],
+                 schematic=sch, board=pcb, mutable_inputs=[], checks=checks,
+                 requirements=sorted({r['source']['path'] for r in requirements}),
+                 baseline=dict(requirements=requirements, targets=plan['targets'],
+                               reference_architectures=plan['reference_architectures']))
+    if stages is not None:
+        scope['stages'] = stages
+    derivation = dict(
+        envelope=dict(path=envelope_rel, sha256=record['envelope_sha256'], layer_count=record['layer_count'],
+                      copper_layers=record['copper_layers'], profile_support=record['fab_profile']['support']),
+        fab_profile=dict(path=profile_rel, sha256=files[profile_rel], name=compiled['name'],
+                         as_of=compiled['as_of'], requirement=fab_requirement),
+        template=dict(path=plan['template'], sha256=files[plan['template']]),
+        parts=dict(path=parts_rel, sha256=files[parts_rel], declaration_source=declaration),
+        rules=rules, netclasses=netclass, stages=staging,
+        checks=[dict(id='erc', kind='erc', source='plan native_requirement'),
+                dict(id='netlist', kind='netlist', source=parts_rel),
+                dict(id='parts', kind='parts_subset', source=parts_rel + ' declaration_source'),
+                dict(id='drc', kind='drc', source='plan native_requirement; project rules from ' + profile_rel),
+                dict(id='fab', kind='fab_profile', source=envelope_rel + ' /fab_profile')],
+        not_derived=['Net classes other than Default: AGENTEE-47 net constraints are unavailable.',
+                     'KiCad rule settings outside the six fab-profile keys keep the template values.',
+                     'fab_package done gate and envelope obligation coverage.'])
+    protected = {profile_rel, plan['template'], native['source']['path'], *compiled['immutable_inputs']}
+    return record, scope, project, derivation, protected
+
+
+def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None):
     """Copy explicit inputs, replace native design with emptiness, validate, publish.
 
-    scope_path is required: neither an envelope nor a parts manifest defines the
-    stage-one requirement/check mappings, targets, reference architectures or
-    qualified project rules. We preserve these rather than inventing them.
+    Exactly one of scope_path (stage one) or plan_path (producer) is required.
+    Stage one preserves the caller's requirement/check mappings and project
+    rules. The producer derives them from the envelope, its referenced fab
+    profile and the parts manifest, and refuses rather than inventing anything
+    those records do not state.
     """
     from .baseline import compile_baseline
     from .cli import policy_files, validate_scope
     from .stages import declaration
 
-    scope_path, out = Path(scope_path).resolve(), Path(out).absolute()
-    scope_raw = scope_path.read_bytes()
+    if (scope_path is None) == (plan_path is None):
+        raise ValueError('scaffold requires exactly one of a stage-one scope or a producer plan')
+    planning_path, out = Path(scope_path or plan_path).resolve(), Path(out).absolute()
+    scope_raw = planning_path.read_bytes()
     scope = strict_json(scope_raw)
-    if scope.get('schema') not in ('agent-ee.scope/2', 'agent-ee.scope/3'):
+    if plan_path is not None:
+        validate_plan(scope)
+        sch, pcb = scope['project'] + '.kicad_sch', scope['project'] + '.kicad_pcb'
+    elif scope.get('schema') not in ('agent-ee.scope/2', 'agent-ee.scope/3'):
         raise ValueError('scaffold requires a stage-one scope/2 or scope/3')
-    validate_scope(scope)
-    files, sources, _ = source_manifest(scope, scope_path.parent)
+    else:
+        validate_scope(scope)
+    files, sources, _ = source_manifest(scope, planning_path.parent)
     envelope_rel = captured_name(envelope_path, sources)
     parts_rel = captured_name(parts_path, sources)
-    sch, pcb = (str(safe_relative(scope[key])) for key in ('schematic', 'board'))
-    if (PurePosixPath(sch).suffix != '.kicad_sch' or PurePosixPath(pcb).suffix != '.kicad_pcb' or
-            PurePosixPath(sch).with_suffix('') != PurePosixPath(pcb).with_suffix('')):
-        raise ValueError('schematic and board must share a project basename')
-    if sch != scope['schematic'] or pcb != scope['board']:
-        raise ValueError('canonical native design paths required')
+    if plan_path is None:
+        sch, pcb = (str(safe_relative(scope[key])) for key in ('schematic', 'board'))
+        if (PurePosixPath(sch).suffix != '.kicad_sch' or PurePosixPath(pcb).suffix != '.kicad_pcb' or
+                PurePosixPath(sch).with_suffix('') != PurePosixPath(pcb).with_suffix('')):
+            raise ValueError('schematic and board must share a project basename')
+        if sch != scope['schematic'] or pcb != scope['board']:
+            raise ValueError('canonical native design paths required')
     pro = str(PurePosixPath(sch).with_suffix('.kicad_pro'))
-    if pro not in files:
+    if plan_path is None and pro not in files:
         raise ValueError('capture a project template with stage-one design rules and net classes')
+    if plan_path is not None:
+        for rel in (pro, str(PurePosixPath(sch).with_suffix('.kicad_dru'))):
+            if rel in files:
+                raise ValueError('the producer derives project rules; refusing captured ' + rel)
+        for field in ('template', 'fab_profile'):
+            if scope[field] not in files:
+                raise ValueError(f'producer plan {field} is not captured: {scope[field]}')
     if out.exists() or out.is_symlink():
         raise ValueError('scaffold output must not exist')
     out = out.resolve()
     for item in scope['inputs']:
         source = Path(item['path']).expanduser()
-        source = (scope_path.parent / source).resolve() if not source.is_absolute() else source.resolve()
+        source = (planning_path.parent / source).resolve() if not source.is_absolute() else source.resolve()
         if source.is_dir() and (out == source or source in out.parents):
             raise ValueError('scaffold output must be outside every source input directory')
     out.mkdir(parents=True)
@@ -190,14 +436,23 @@ def scaffold(envelope_path, parts_path, out, *, scope_path):
             shutil.copyfile(source, target)
             if digest(target) != files[rel]:
                 raise ValueError('input changed during scaffolding: ' + rel)
-        record = board_envelope.validate(read_captured(inputs, envelope_rel))
+        plan = scope if plan_path is not None else None
+        if plan is None:
+            record = board_envelope.validate(read_captured(inputs, envelope_rel))
         document = load_manifest(inputs, parts_rel)
         qualification = qualify_manifest(document, inputs)
+        protected = set(qualification['dependencies']) | {parts_rel, envelope_rel}
+        if plan is None:
+            project, derivation = strict_json(read_captured(inputs, pro)), None
+        else:
+            record, scope, project, derivation, extra = produce(
+                plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb)
+            validate_scope(scope)
+            protected |= extra
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
             raise ValueError('scaffold mutable inputs may contain only planned native design files')
-        protected = set(qualification['dependencies']) | {parts_rel, envelope_rel}
         if protected & (generated | {pro}):
             raise ValueError('native scaffold collides with immutable planning inputs')
         seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
@@ -206,7 +461,6 @@ def scaffold(envelope_path, parts_path, out, *, scope_path):
         outputs = {path: schematic(root, key, plans, project_name)
                    for key, (path, _) in plans.items()}
         outputs[pcb] = board(record, seed)
-        project = strict_json(read_captured(inputs, pro))
         project.setdefault('meta', {})['filename'] = PurePosixPath(pro).name
         project['sheets'] = [[root, 'Root']] + [
             [key.strip('/').split('/')[-1], PurePosixPath(path).stem]
@@ -230,21 +484,27 @@ def scaffold(envelope_path, parts_path, out, *, scope_path):
         baseline = compile_baseline(scope, captured, inputs)
         if generated & baseline['files'].keys():
             raise ValueError('native scaffold is an immutable verification dependency')
-        after, _, _ = source_manifest(strict_json(scope_raw), scope_path.parent)
-        if after != files or scope_path.read_bytes() != scope_raw:
+        after, _, _ = source_manifest(strict_json(scope_raw), planning_path.parent)
+        if after != files or planning_path.read_bytes() != scope_raw:
             raise ValueError('source or scope changed during scaffolding')
-        receipt = dict(schema=SCHEMA, status='completed',
+        planning_key = 'scope_sha256' if plan is None else 'plan_sha256'
+        receipt = dict(schema=SCHEMA if plan is None else PRODUCED_SCHEMA, status='completed',
             candidate_id=identity(dict(scope=scope, files=captured)), baseline_id=baseline['baseline_id'],
             root_sheet_uuid=root, sheets={key: path for key, (path, _) in plans.items()},
-            inputs=dict(scope_sha256=hashlib.sha256(scope_raw).hexdigest(), files=files),
+            inputs={planning_key: hashlib.sha256(scope_raw).hexdigest(), 'files': files},
             outputs={**{'inputs/' + rel: sha for rel, sha in captured.items()},
                      'scope.json': digest(out / 'scope.json')},
             tool=dict(module='agent_ee.scaffold', python=sys.version.split()[0],
                       policy_files=policy_files()),
             limitations=['Scaffold receipt is provenance, not native execution or design acceptance.',
-                         'Stage-one scope owns requirement mappings, project rules and envelope coverage.',
+                         'Stage-one scope owns requirement mappings, project rules and envelope coverage.'
+                         if plan is None else
+                         'Derived checks, mappings and project rules cite their captured sources in derivation; '
+                         'envelope obligation coverage is not derived.',
                          'Hierarchical staged presence remains unsupported by the existing stage checker.'],
             missing_parts_provenance=qualification['missing_provenance'])
+        if derivation is not None:
+            receipt['derivation'] = derivation
         (out / 'scaffold-receipt.json').write_bytes(json_bytes(receipt))
         return receipt
     except BaseException:

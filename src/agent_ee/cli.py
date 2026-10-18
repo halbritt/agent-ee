@@ -636,7 +636,9 @@ def main(argv=None):
     scaffold_parser = sub.add_parser('scaffold', help='create an empty native candidate from captured planning inputs')
     scaffold_parser.add_argument('envelope')
     scaffold_parser.add_argument('parts')
-    scaffold_parser.add_argument('--scope', required=True, help='stage-one scope/2 or scope/3 with captured project rules')
+    planning = scaffold_parser.add_mutually_exclusive_group(required=True)
+    planning.add_argument('--scope', help='stage-one scope/2 or scope/3 with captured project rules')
+    planning.add_argument('--plan', help='agent-ee.scaffold-plan/1; derive checks and project rules')
     scaffold_parser.add_argument('--out', required=True)
     catalog = sub.add_parser('capture-catalog', help='prepare a pinned local catalog; no upstream authentication')
     catalog.add_argument('manifest')
@@ -733,7 +735,7 @@ def main(argv=None):
     try:
         if args.command == 'scaffold':
             from .scaffold import scaffold
-            receipt = scaffold(args.envelope, args.parts, args.out, scope_path=args.scope)
+            receipt = scaffold(args.envelope, args.parts, args.out, scope_path=args.scope, plan_path=args.plan)
             print(receipt['candidate_id'])
             return 0
         if args.command == 'capture-catalog':

@@ -811,8 +811,10 @@ duplicate designator never falls back to the anchor. The status stays
 ## Scaffold preparation
 
 [Empty-candidate scaffolding](scaffold.md) prepares inputs for these checks; its
-receipt is provenance and cannot satisfy a requirement. `scaffold` preserves the
-explicit planning scope's checks and baseline. Native ERC/DRC run through the
+receipt is provenance and cannot satisfy a requirement. `scaffold --scope`
+preserves the explicit planning scope's checks and baseline. `scaffold --plan`
+derives `erc`, `netlist`, `parts_subset`, `drc` and `fab_profile` checks, their
+mappings and the project rules from the envelope, profile and parts manifest. Native ERC/DRC run through the
 ordinary `review` command. Staged absence is a coordinator defect only after a
 successful native presence observation; hierarchical presence and uncovered
 production envelope obligations continue to fail closed.
