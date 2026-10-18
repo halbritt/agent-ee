@@ -424,7 +424,7 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
             if state["state"] != "repair":
                 return 0 if state["state"] == "criteria_satisfied" else 1
             with writer_lock(run):
-                verify(run)
+                verify(run, invoked=[config["implementation"]])
                 scope_path = implement(root, run, config["implementation"], state, deadline)
     except (ValueError, OSError, KeyError, TypeError, KeyboardInterrupt) as exc:
         state.update(state="incomplete", error=f"{type(exc).__name__}: {exc}")
@@ -432,13 +432,13 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
         return 1
 
 
-def verify_campaign(root):
+def verify_campaign(root, *, observations=None):
     root = Path(root).resolve()
     with writer_lock(root):
-        return verify_campaign_records(root)
+        return verify_campaign_records(root, observations=observations)
 
 
-def verify_campaign_records(root):
+def verify_campaign_records(root, *, observations=None):
     """Existing integrity decisions; caller establishes coherent reads if needed."""
     from .cli import verify
 
@@ -478,6 +478,8 @@ def verify_campaign_records(root):
             from .review_run import verify_role_call
             verify_role_call(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation',
                              limit=state.get('max_schema_resubmissions'))
+    # The writer ran in this campaign, so its harness gates drift for every run.
+    writer = [config['implementation']] if config.get('implementation') else []
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
@@ -493,7 +495,11 @@ def verify_campaign_records(root):
         if (str(run) != stored["run"] or str(snapshot) != stored["result_snapshot"] or
                 digest(snapshot) != stored["result_sha256"]):
             raise ValueError("campaign history result link changed")
-        current = verify(run, current_source=False)
+        changes = []
+        current = verify(run, current_source=False, observations=changes, invoked=writer)
+        if observations is not None:
+            # Every retained run reports the same unused-harness change; record it once.
+            observations.extend(change for change in changes if change not in observations)
         if ('max_schema_resubmissions' in state and
                 current.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
             raise ValueError('review resubmission bound differs from campaign configuration')

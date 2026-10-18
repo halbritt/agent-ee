@@ -302,6 +302,65 @@ class PreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing or foreign'):
             verify_receipt(self.run, {'execution': 'ok'}, self.expected, 'circuit', 'initial')
 
+    def test_unused_harness_change_is_recorded_and_launch_proceeds(self):
+        from toolchain import require_toolchain
+        from agent_ee.preflight import verify_receipt
+        from agent_ee.storage import digest, write_json
+        require_toolchain()
+        agy = self.run / 'agy'
+        agy.write_bytes(b'\x7fELFunused harness v1')
+        self.runtime['agy'] = {'path': str(agy), 'sha256': digest(agy)}
+        self.optional_expectation([])
+        changed = {'path': str(agy), 'sha256': 'replaced-by-host-update'}
+        # The codex profile never invokes agy or claude.
+        self.runtime = {**self.runtime, 'agy': changed, 'claude': {'path': None, 'sha256': None}}
+        with patch('agent_ee.reviewers.dispatch', return_value=({'execution': 'ok'}, {})) as provider:
+            record, _ = self.call()
+        provider.assert_called_once()
+        verify_receipt(self.run, record, self.expected, 'circuit', 'initial')
+        path = self.run / record['preflight']['path']
+        receipt = read_json(path)
+        self.assertEqual(receipt['result'], 'ok')
+        self.assertEqual(receipt['runtime_classification'], {
+            'agy': 'unused', 'claude': 'unused', 'codex': 'used', 'codex_tool_host': 'used'})
+        self.assertEqual([c['name'] for c in receipt['unused_runtime_changes']], ['agy', 'claude'])
+        self.assertEqual(receipt['unused_runtime_changes'][0]['observed'], changed)
+        # The recorded observation is bound to the observed runtime; it cannot be dropped.
+        receipt['unused_runtime_changes'] = []
+        write_json(path, receipt)
+        record['preflight']['sha256'] = digest(path)
+        with self.assertRaisesRegex(ValueError, 'observation mismatch'):
+            verify_receipt(self.run, record, self.expected, 'circuit', 'initial')
+
+    def test_used_harness_and_tool_host_changes_still_refuse(self):
+        for name in ('codex', 'codex_tool_host'):
+            with self.subTest(name=name):
+                self.runtime = {**self.runtime, name: {**self.runtime[name], 'sha256': 'replaced'}}
+                record = self.assert_refused('runtime_drift')
+                receipt = read_json(self.run / record['preflight']['path'])
+                self.assertEqual(receipt['runtime_drift'], [name])
+                self.runtime = {**self.runtime, name: self.expected['runtime_files'][name]}
+                (self.run / record['preflight']['path']).unlink()
+
+    def test_adjudicator_harness_counts_as_used_for_reviewer_launch(self):
+        from agent_ee.preflight import runtime_drift
+        definitions = [{'harness': 'codex'}, {'harness': 'claude'}]
+        drift = runtime_drift({'claude': {'sha256': 'a'}}, {'claude': {'sha256': 'b'}}, definitions)
+        self.assertEqual(drift['gated'], ['claude'])
+        self.assertEqual(drift['unused_changes'], [])
+
+    def test_unknown_definitions_and_native_tools_fail_closed(self):
+        from agent_ee.preflight import runtime_drift
+        before, after = {'agy': {'sha256': 'a'}, 'kicad-cli': {'sha256': 'a'}}, {'agy': {'sha256': 'b'}, 'kicad-cli': {'sha256': 'b'}}
+        self.assertEqual(runtime_drift(before, after, [{'harness': 'claude'}])['gated'], ['kicad-cli'])
+        for definitions in (None, [{'harness': 'other'}], ['malformed']):
+            with self.subTest(definitions=definitions):
+                drift = runtime_drift(before, after, definitions)
+                self.assertEqual(drift['gated'], ['agy', 'kicad-cli'])
+                self.assertEqual(drift['unused_changes'], [])
+        self.assertEqual(runtime_drift(before, {**before, 'new': {}}, [{'harness': 'claude'}])['gated'], ['new'])
+
+
 class RuntimeProbeCleanupTests(unittest.TestCase):
     def test_cancelled_probe_cleans_descendant_holding_output_pipe(self):
         import os

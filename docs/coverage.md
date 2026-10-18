@@ -302,7 +302,12 @@ Pre-inference drift tests count scripted provider dispatches below the productio
 guard. They cover initial, adjudication and implementation refusal, independent
 concurrent calls and the adjudication barrier, a real invalid Bubblewrap option,
 Claude executable override mounting, and real SIGINT during a slow networkless
-probe. Retained receipt tampering is checked separately. These tests establish
+probe. Retained receipt tampering is checked separately. Unused-harness tests
+replace an unused harness after checks and before reviewer and writer launch,
+and the review and campaign complete with recorded observations. Replacing the
+used harness or its tool host still refuses. A mixed-harness campaign (claude
+writer, codex reviewers) refuses `verify-campaign` when the writer's harness
+changes after completion and reports an unused harness once. These tests establish
 coordinator behavior, not provider quota, live-model quality or elimination of
 external upgrade races. See [preflight receipts](result-reference.md#pre-inference-environment-receipts).
 

@@ -53,7 +53,7 @@ temporarily changed design.
 | `review scope changed; evidence is stale` | Exact scope file bytes changed; inspect the change and recapture |
 | `candidate snapshot changed; evidence is stale` | Copied inputs were edited, added, removed or linked; restore only from trusted original evidence or rerun |
 | `review implementation changed` | Python policy differs; use matching historical implementation for inspection or rerun current policy |
-| `tool runtime changed` | A fingerprinted executable/path/extension differs; historical binary portability is not promised |
+| `tool runtime changed` | A fingerprinted native tool, or a harness the run's profile (or, for `verify-campaign`, the campaign writer) invokes, differs; historical binary portability is not promised. An unused harness prints an `observation:` line instead |
 | `execution/review evidence changed` | Raw or interpreted retained artifacts differ; preserve and investigate the discrepancy |
 | `stored result contradicts its execution and finding records` | Outcome projection does not match its contents; do not accept it |
 | `check projection differs` / `review projection differs` | Final result and retained check/review records disagree; investigate rather than patching acceptance |

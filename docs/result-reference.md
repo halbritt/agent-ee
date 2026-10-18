@@ -91,6 +91,7 @@ below and [packet ordering](scope-reference.md#packet-ordering-and-omissions).
 | Freshness | `policy_files`, `runtime_files`, `artifact_hashes`, `manifest_sha256`, `packet_file_sha256` when available |
 | Physical supersession | `empirical_feedback` when registered; forces the current outcome to incomplete |
 | Diagnostics | `error` when present; `prior_errors` when a manual update completes a previously failed projection |
+| Runtime observations | `runtime_observations` after the final environment check: changes to unused harnesses ([preflight receipts](#used-and-unused-harnesses)) |
 
 State is `running`, `complete`, `incomplete` or `interrupted`. State `complete`
 does not imply acceptable design or complete engineering coverage. Outcome is:
@@ -387,7 +388,39 @@ The separate pcbnew version probe also owns a process group, including descendan
 that retain output pipes after the leader exits. Timeout cleanup records a
 diagnostic refusal rather than leaving a receipt with no reason.
 
-Missing prerequisites, observable drift, invalid expectations, duplicate receipts
+### Used and unused harnesses
+
+`runtime_files` hashes every installed harness (`claude`, `codex` with
+`codex_tool_host`, and `agy`) as provenance. Drift refusal applies only to the
+harnesses that the pinned definitions invoke, plus every native tool entry. For
+a review those definitions are the profile's reviewers and adjudicator; for a
+campaign writer it is the implementation definition. Each receipt records
+`runtime_classification`, which maps every harness entry to `used` or `unused`,
+and `unused_runtime_changes`, a list of `{name, expected, observed}` for unused
+harnesses whose identity changed since capture. A refused receipt also names the
+gated entries in `runtime_drift`. A native tool, an unrecognized runtime entry,
+a definition with an unknown harness, or a run without a captured launch
+expectation always counts as used. Verification recomputes the classification
+and rejects an `ok` receipt whose recorded classification or changes differ from
+its observed inventory, or whose observation contains drift in a used entry.
+
+The final environment check of a review writes the same changes to
+`result.json.runtime_observations`, and `REPORT.md` lists them under
+Limitations. They are observations, not findings: no harness that changed ran in
+the review. `verify` and `verify-campaign` print one `observation:` line for
+each unused harness that differs from a retained run's capture, and still exit
+0. `verify-campaign` adds the campaign's implementation definition to every
+retained run's used set, because the writer ran in the campaign: a change to the
+writer's harness refuses the campaign even when no reviewer uses that harness,
+while `verify` of a single review run observes it. A used harness or native tool change still refuses with `runtime_drift` at
+launch, `implementation or tool runtime changed during review; rerun required`
+at completion, and `tool runtime changed` at verification.
+
+A resubmission under the [bounded resubmission decision](decisions.md#bounded-resubmission-after-an-output-format-refusal-2026-10-17)
+is a new call, so it passes a new guard. A used harness that no longer matches
+its pinned hash refuses that call, and the drift is the finding.
+
+Missing prerequisites, observable drift in a used entry, invalid expectations, duplicate receipts
 and unsuccessful or malformed probes refuse inference. A refusal records
 `execution: not_run` and leaves the review or campaign incomplete. It adds no
 design finding and grants no adjudication or repair authority. Verification

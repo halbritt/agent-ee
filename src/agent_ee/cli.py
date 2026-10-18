@@ -153,25 +153,37 @@ def artifacts(run):
     return found
 
 
-def verify(run, *, current_source=True):
+def verify(run, *, current_source=True, observations=None, invoked=()):
+    """Raise on integrity failure; unused-harness changes are appended to observations.
+
+    invoked names further definitions that ran against this run (a campaign
+    writer); their harnesses gate drift like the profile's."""
     run = Path(run).resolve()
     from .locking import reader_lock
     from .bench_transactions import verify_publications
     with reader_lock(run):
         result = read_json(run / "result.json")
         verify_publications(run, result)
-        return verify_records(run, result, current_source=current_source)
+        return verify_records(run, result, current_source=current_source, observations=observations,
+                              invoked=invoked)
 
 
-def verify_records(run, result, *, current_source=True):
+def verify_records(run, result, *, current_source=True, observations=None, invoked=()):
     """Validate an explicit projection; callers separately bind publication intent."""
     manifest = verify_source(run) if current_source else verify_snapshot(run)
     if manifest["candidate_id"] != result.get("candidate_id"):
         raise ValueError("result candidate identity differs from snapshot")
     if result.get("policy_files") != policy_files():
         raise ValueError("review implementation changed; rerun under the current rules")
-    if result.get("runtime_files") != runtime_files():
+    from .preflight import profile_definitions, runtime_drift
+    # Without a captured launch expectation every harness counts as used.
+    drift = runtime_drift(result.get("runtime_files") or {}, runtime_files(),
+                          [*profile_definitions(manifest["scope"]), *invoked]
+                          if "launch_expectation" in result else None)
+    if not isinstance(result.get("runtime_files"), dict) or drift["gated"]:
         raise ValueError("tool runtime changed; rerun under the current tools")
+    if observations is not None:
+        observations.extend(drift["unused_changes"])
     from .kicad_happy import verify_installations
     verify_installations(result["checks"])
     if artifacts(run) != result.get("artifact_hashes"):
@@ -278,6 +290,9 @@ def render(run, result):
     lines += ["## Limitations", ""]
     for limitation in result.get("limitations", []):
         lines.append("- " + limitation)
+    for change in result.get("runtime_observations", []):
+        lines.append(f"- Runtime observation: unused harness `{change['name']}` changed during the run; "
+                     "it was not invoked, so the review was not refused.")
     if result.get("error"):
         lines += ["", "Run error: " + result["error"]]
     for path in sorted((run / "events").glob("*-correction.json")):
@@ -424,10 +439,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
                       expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
-        from .preflight import capture_expectation
-        selected = m['scope'].get('review_profile', {})
-        definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
-                       for d in [*selected.get('reviewers', []), *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
+        from .preflight import capture_expectation, profile_definitions
+        definitions = profile_definitions(m['scope'])
         result['launch_expectation'] = capture_expectation(result, m, definitions, inputs=run / 'inputs')
         launch_context = {'expected': result['launch_expectation'],
                           'max_schema_resubmissions': max_schema_resubmissions}
@@ -472,7 +485,11 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         verify_source(run)
         from .kicad_happy import verify_installations
         verify_installations(result["checks"])
-        if result["policy_files"] != policy_files() or result["runtime_files"] != runtime_files():
+        from .preflight import runtime_drift
+        drift = runtime_drift(result["runtime_files"], runtime_files(), definitions)
+        # A harness this profile never invokes is recorded, not a reason to discard the review.
+        result["runtime_observations"] = drift["unused_changes"]
+        if result["policy_files"] != policy_files() or drift["gated"]:
             raise ValueError("implementation or tool runtime changed during review; rerun required")
         result["state"] = "complete" if not checks_only and result["adjudicated"] else "incomplete"
     except KeyboardInterrupt:
@@ -600,6 +617,12 @@ def render3d(args):
         return 130
     print(f"3D render manifest: {manifest}", flush=True)
     return 0
+
+
+def print_runtime_observations(observations):
+    for change in observations:
+        print(f"observation: unused harness runtime {change['name']} changed since capture; "
+              "this run never invoked it, so integrity still holds")
 
 
 def main(argv=None):
@@ -773,7 +796,8 @@ def main(argv=None):
             return campaign_feedback(args.campaign, args.report, args.out, args.max_seconds)
         if args.command == "verify-campaign":
             from .campaign import verify_campaign
-            state = verify_campaign(args.campaign)
+            observations = []
+            state = verify_campaign(args.campaign, observations=observations)
             print(state["state"])
             artifacts = state.get("fab_artifacts")
             if artifacts:
@@ -781,6 +805,7 @@ def main(argv=None):
                 print(f"fab_artifacts {artifacts['artifacts_id']} candidate {artifacts['candidate_id']}")
                 for rel, sha in artifacts["files"].items():
                     print(f"{sha}  {run}/{rel}")
+            print_runtime_observations(observations)
             return 0
         if args.command == "campaign":
             from .campaign import run_campaign
@@ -813,8 +838,10 @@ def main(argv=None):
                 "checks": result.get("checks", []), "findings": result.get("findings", []),
                 "corrections": corrections}, indent=2))
         elif args.command == "verify":
-            result = verify(args.run, current_source=not args.snapshot_only)
+            observations = []
+            result = verify(args.run, current_source=not args.snapshot_only, observations=observations)
             print(f"fresh {result['outcome']}: {result['candidate_id']}")
+            print_runtime_observations(observations)
         elif args.command == "resume":
             old = read_json(Path(args.run) / "candidate.json")
             return run_review(old["scope_path"], args.out, args.max_seconds, previous=str(Path(args.run).resolve()), profile=old.get("profile_path"))
