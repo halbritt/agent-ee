@@ -183,6 +183,15 @@ these rule failures from independently established manufacturing failures.
 Native DRC coverage also depends on the project's configured checks and ignored
 rules; passing these checks is not full circuit function or fab qualification.
 
+Those project settings remain immutable during a campaign. A writer's
+`pcbnew.SaveBoard` may rewrite sibling `.kicad_pro`/`.kicad_prl` files and trip
+the immutable-input guard; the diagnostic names this likely cause when the
+same-stem board also changed. Follow the
+[board-saving writer rule](campaign-guide.md#saving-boards-without-changing-project-siblings)
+to restore or exclude siblings through the sandboxed step runner, or save to
+staging and copy back only the board. The guard still refuses the changed
+verification input; a stage receipt cannot waive it.
+
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route

@@ -99,6 +99,28 @@ runs record the configured bound in `result.json`; their reviewer execution
 records contain the count used. Adjudicator and writer counts are retained in
 `adjudicator-execution.json` and `implementation-execution.json` respectively.
 
+### Saving boards without changing project siblings
+
+`pcbnew.SaveBoard` can also rewrite the board's same-directory, same-stem
+`.kicad_pro` and `.kicad_prl`: a native save can expand defaults and add
+`3dviewports` to the project even when the writer intended only a board edit.
+These siblings remain immutable verification inputs. When a changed immutable
+project sibling accompanies a changed board, the guard still refuses the
+proposal and names this known side effect as the likely cause. The diagnostic
+is a hint, not proof of which tool wrote the file or permission to alter it.
+
+Writers and stage steps must preserve the captured siblings byte for byte and
+keep the captured file inventory. Save through the networkless
+[sandboxed step runner](stage-receipts.md) with a wrapper that restores the
+original siblings and removes newly generated siblings before it exits, or
+save to a separate staging copy and copy back only the declared board output.
+The runner does not restore siblings automatically: an in-place step that
+leaves an undeclared sibling change is refused. Out-of-place steps must leave
+their `run/design` copy intact and declare only the staged board in `writes`.
+Do not add project siblings to `mutable_inputs` to accommodate a native save;
+they carry verification settings and rules. See the
+[placement adapter's write scope](placement-adapter.md#placement-write-scope).
+
 ## Execution sequence
 
 ```mermaid

@@ -204,7 +204,15 @@ def check_proposal(design, manifest, state):
         raise ValueError("implementation changed the captured file inventory")
     for rel, sha in manifest["files"].items():
         if rel not in state["mutable_inputs"] and actual[rel] != sha:
-            raise ValueError(f"implementation changed immutable verification input: {rel}")
+            message = f"implementation changed immutable verification input: {rel}"
+            board = Path(rel).with_suffix(".kicad_pcb").as_posix()
+            if (Path(rel).suffix in (".kicad_pro", ".kicad_prl") and board in actual
+                    and actual[board] != manifest["files"][board]):
+                message += (f"; likely pcbnew.SaveBoard side effect: saving sibling board {board} "
+                            "can rewrite .kicad_pro/.kicad_prl. Project siblings remain immutable. "
+                            "Save boards through a sandboxed step runner that restores or excludes "
+                            "project siblings, or use a staging copy and copy back only the board.")
+            raise ValueError(message)
     for rel, sha in state["baseline"]["files"].items():
         if not (design / rel).is_file() or digest(design / rel) != sha:
             raise ValueError(f"implementation changed immutable baseline source: {rel}")

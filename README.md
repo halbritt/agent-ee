@@ -302,6 +302,11 @@ and refuses edits other than footprint translations, quarter turns and qualified
 side flips. Fresh checks grade every proposal. These checks do not establish
 routing quality or a fabrication-ready board.
 
+Campaign writers must account for `pcbnew.SaveBoard` rewriting sibling project
+files. The immutable-input guard diagnoses this likely cause and still refuses
+the change. Follow the [board-saving writer rule](docs/campaign-guide.md#saving-boards-without-changing-project-siblings)
+to preserve project siblings while adopting a saved board.
+
 An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
 ideal regulator feedback, complete typed power-pin inventory, USB protection

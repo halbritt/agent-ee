@@ -44,6 +44,14 @@ even when the forger also recomputes the receipt identity.
 | `artifacts` | Work paths retained and hashed, for example `out/result.json`, `out/validate` |
 | `adoptable_exits` | Must include 0. kicad-route's partial-but-valid exit 2 would be listed here. A failed validation (3) never is |
 
+Native `pcbnew.SaveBoard` can also rewrite sibling `.kicad_pro`/`.kicad_prl`
+files. The runner refuses undeclared changes in `run/design`; it does not
+restore project siblings automatically. A board-saving wrapper must restore
+their captured bytes and inventory before exiting, or write to a staging copy
+outside `run/design` and declare only the staged board in `writes`. Follow the
+[campaign writer rule](campaign-guide.md#saving-boards-without-changing-project-siblings)
+without broadening the campaign's mutable inputs. Receipts remain provenance.
+
 ## Receipt fields and status
 
 Schema `agent-ee.stage-receipt/1`, `receipts/<k>-<step>/receipt.json`, retained with
