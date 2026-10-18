@@ -1,138 +1,186 @@
-"""Bounded structured-output resubmissions; refused calls remain separate evidence."""
+"""Bounded output resubmission; each call and refusal remains separate evidence."""
 
 import copy
 import shutil
-import time
 from pathlib import Path
 
-from .storage import digest, read_json, write_json
-
-ERROR_PREFIX = "\nVALIDATION ERROR:\n"
+from .storage import digest, identity, read_json, write_json
 
 
-def resubmission_limit(value=1):
-    if isinstance(value, bool) or not isinstance(value, int) or value not in (0, 1):
-        raise ValueError("output_resubmissions must be 0 or 1")
+class OutputFormatRefusal(ValueError):
+    """A successful provider turn returned an unusable structured payload."""
+
+
+def resubmission_limit(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 1:
+        raise ValueError("max_schema_resubmissions must be 0 or 1")
     return value
 
 
-def _verify_inputs(run, packet_sha):
-    from .baseline import verify_evidence
-    from .candidate import verify_snapshot
+def input_identity(run):
+    files = {}
+    for parent in ('inputs', 'checks', 'work'):
+        for path in sorted((run / parent).rglob('*')):
+            if path.is_file():
+                files[path.relative_to(run).as_posix()] = digest(path)
+    for name in ('candidate.json', 'packet.json', 'baseline.json', 'launch-expectation.json'):
+        if (run / name).is_file():
+            files[name] = digest(run / name)
+    return identity(files)
 
-    verify_snapshot(run)
-    if digest(run / "packet.json") != packet_sha:
-        raise ValueError("resubmission packet changed")
-    verify_evidence(run, read_json(run / "packet.json")["checks"], required=True)
 
+def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invariant=None, execution_path=None):
+    """Reissue only malformed output, never execution failures or changed inputs.
 
-def structured_call(run, role, prompt, schema, call, validate, *, limit=1, deadline):
-    """Repeat only malformed output, with a frozen prompt and the exact error.
-
-    `call` must use the ordinary pinned preflight on every invocation. Archiving
-    its scratch preserves raw output and frees the same sandbox path for a fresh
-    context; no previous response is supplied to the new call.
+    ``call`` launches the same pinned definition with a fresh preflight each time.
+    ``validate`` is the role's existing validator, not a repair or a fallback.
     """
-    from .findings import safe_id, OutputFormatError
-
-    safe_id(role, "structured call role")
-    if role == "check":
-        raise ValueError("checks cannot be resubmitted")
-    limit = resubmission_limit(limit)
     run = Path(run)
-    calls = run / "review-executions" / (role + "-calls")
-    calls.mkdir(parents=True, exist_ok=False)
-    packet_sha = digest(run / "packet.json")
-    records = []
-    current_prompt = prompt
-    interrupted = False
+    limit = resubmission_limit(limit)
+    if limit:
+        prompt += ('\nIf an OUTPUT VALIDATION ERROR is appended to this prompt, reissue only the '
+                   'structured record with the same judgment and finding set. Do not edit inputs '
+                   'or the implementation design during resubmission. The same evidence rules apply.')
+    original_inputs = input_identity(run)
+    work = run / 'review-work' / role
+    attempts = []
+    retry_design = None
+    finding_ids = None
+    target = execution_path or (run / 'review-executions' / (role + '.json')
+        if role not in ('adjudicator', 'implementation') else run / (role + '-execution.json'))
     for number in range(limit + 1):
-        if number:
-            # Recheck captured inputs and sealed artifacts before even attempting
-            # another preflight. The call itself rechecks the pinned runtime.
-            try:
-                _verify_inputs(run, packet_sha)
-            except KeyboardInterrupt:
-                interrupted = True
-                break
-            except (ValueError, OSError, KeyError, TypeError) as exc:
-                record["resubmission_refusal"] = str(exc)
-                write_json(calls / f"{number - 1}.json", records[-1])
-                break
-            archive = run / "review-work/.refused" / role / str(number - 1)
-            archive.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(run / "review-work" / role, archive)
-            previous = records[-1]
-            previous["execution_record"]["preflight"]["path"] = (
-                (archive / "preflight/receipt.json").relative_to(run).as_posix())
-            write_json(calls / f"{number - 1}.json", previous)
-        prompt_path = calls / f"{number}-prompt.txt"
-        prompt_path.write_text(current_prompt)
-        write_json(calls / f"{number}-schema.json", schema)
+        if number and (input_identity(run) != original_inputs or
+                       (retry_design is not None and tree_identity(work / 'design') != retry_design)):
+            final['resubmission_blocked'] = 'inputs changed before resubmission'
+            write_json(target, final)
+            return final, None
+        supplied_prompt = prompt if number == 0 else (
+            prompt + '\nOUTPUT VALIDATION ERROR:\n' + attempts[-1]['error'])
+        interrupted = False
         try:
-            record, value = call(current_prompt)
+            record, value = call(supplied_prompt)
         except KeyboardInterrupt:
-            # reviewer_call retains this record before propagating cancellation.
-            record = read_json(run / "review-work" / role / "launch-execution.json")
-            value, interrupted = None, True
+            path = work / 'launch-execution.json'
+            record = read_json(path) if path.is_file() else {'execution': 'interrupted'}
+            value = None
+            interrupted = True
         record = copy.deepcopy(record)
-        if record["execution"] == "malformed":
-            record["refusal_class"] = "output_format"
-        if value is not None and record["execution"] == "ok":
+        accepted = None
+        if record['execution'] == 'ok':
+            if value is None:
+                record.update(execution='malformed', refusal_kind='structured_output', error='missing structured output')
+            else:
+                try:
+                    accepted = validate(copy.deepcopy(value))
+                except (ValueError, KeyError, TypeError) as exc:
+                    record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+        if invariant is not None:
             try:
-                validate(value)
-            except (ValueError, KeyError, TypeError) as exc:
-                record.update(execution="malformed", error=str(exc))
-                record["refusal_class"] = ("output_format" if isinstance(exc, (OutputFormatError, KeyError, TypeError))
-                                           else "judgment_or_evidence")
-        retained = {"execution_record": record, "response": value,
-                    "prompt": prompt_path.relative_to(run).as_posix(),
-                    "schema": (calls / f"{number}-schema.json").relative_to(run).as_posix()}
-        records.append(retained)
-        write_json(calls / f"{number}.json", retained)
-        if (record.get("refusal_class") != "output_format" or number == limit or
-                time.monotonic() >= deadline):
-            break
-        if not isinstance(record.get("error"), str) or not record["error"]:
-            break
-        current_prompt = prompt + ERROR_PREFIX + record["error"]
-    result = {**record, "resubmissions": {"limit": limit, "used": len(records) - 1,
-        "calls": [(calls / f"{n}.json").relative_to(run).as_posix() for n in range(len(records))]}}
-    if interrupted:
-        write_json(run / (role + "-execution.json"), result)
-        raise KeyboardInterrupt
-    return result, value if record["execution"] == "ok" else None
+                invariant()
+            except ValueError as exc:
+                record.update(execution='refused', error=str(exc))
+                accepted = None
+        ids = output_finding_ids(value)
+        if number == 0:
+            finding_ids = ids
+        elif finding_ids is not None and ids is not None and ids != finding_ids:
+            record.update(execution='refused', error='resubmission changed finding set')
+            accepted = None
+        if input_identity(run) != original_inputs:
+            record.update(execution='refused', error='resubmission inputs changed')
+            accepted = None
+        if number and retry_design is not None and tree_identity(work / 'design') != retry_design:
+            record.update(execution='refused', error='resubmission changed implementation design')
+            accepted = None
+        archive = run / 'review-attempts' / role / str(number)
+        archive.mkdir(parents=True)
+        write_json(archive / 'execution.json', record)
+        write_json(archive / 'response.json', value)
+        write_json(archive / 'schema.json', schema)
+        (archive / 'prompt.txt').write_text(supplied_prompt)
+        if work.exists():
+            shutil.copytree(work, archive / 'review-work' / role, symlinks=True)
+        attempt = {'path': archive.relative_to(run).as_posix(), 'execution': record['execution'],
+                   'execution_sha256': digest(archive / 'execution.json'),
+                   'artifact_hashes': tree_hashes(archive)}
+        if 'error' in record:
+            attempt['error'] = record['error']
+        attempts.append(attempt)
+        final = {**record, 'max_schema_resubmissions': limit, 'resubmissions_used': number,
+                 'attempts': copy.deepcopy(attempts), 'input_identity': original_inputs}
+        # Publish after every settled call, including the refusal before a retry.
+        write_json(target, final)
+        if interrupted:
+            raise KeyboardInterrupt
+        if (record['execution'] != 'malformed' or record.get('refusal_kind') != 'structured_output'
+                or number == limit):
+            return final, accepted
+        # Keep the role's own experiments and writer output; never expose a peer's
+        # judgment. Original bytes remain in the separately retained workspace.
+        saved = archive / 'review-work' / role
+        if (work / 'design').is_dir():
+            retry_design = tree_identity(work / 'design')
+        if work.exists():
+            shutil.rmtree(work)
+        for name in ('experiments', 'design'):
+            if (saved / name).exists():
+                shutil.copytree(saved / name, work / name, symlinks=True)
 
 
-def recorded_calls(run, record, role):
-    """Verify the retained prompt/error chain and expose each preflight record."""
-    detail = record.get("resubmissions")
-    if detail is None:
-        return [(record, role)]
-    limit = resubmission_limit(detail["limit"])
-    used = detail["used"]
-    if isinstance(used, bool) or not isinstance(used, int) or not 0 <= used <= limit:
-        raise ValueError("invalid resubmission count")
-    paths = [f"review-executions/{role}-calls/{n}.json" for n in range(used + 1)]
-    if detail["calls"] != paths:
-        raise ValueError("resubmission call inventory changed")
-    result = []
-    base_prompt = None
-    base_schema = None
-    previous = None
-    for n, path in enumerate(paths):
-        saved = read_json(Path(run) / path)
-        if saved["prompt"] != f"review-executions/{role}-calls/{n}-prompt.txt" or saved["schema"] != f"review-executions/{role}-calls/{n}-schema.json":
-            raise ValueError("foreign resubmission prompt or schema")
-        prompt = (Path(run) / saved["prompt"]).read_text()
-        schema = read_json(Path(run) / saved["schema"])
-        if n == 0:
-            base_prompt, base_schema = prompt, schema
-        elif (previous.get("execution") != "malformed" or previous.get("refusal_class") != "output_format" or not previous.get("error") or
-                prompt != base_prompt + ERROR_PREFIX + previous["error"] or schema != base_schema):
-            raise ValueError("resubmission changed prompt/schema or lacks a malformed refusal")
-        previous = saved["execution_record"]
-        result.append((previous, f".refused/{role}/{n}" if n < used else role))
-    if previous != {k: v for k, v in record.items() if k != "resubmissions"}:
-        raise ValueError("resubmission projection differs from final call")
-    return result
+def output_finding_ids(value):
+    if isinstance(value, dict):
+        for field, key in (('findings', 'id'), ('decisions', 'finding_id')):
+            records = value.get(field)
+            if isinstance(records, list) and all(isinstance(r, dict) and isinstance(r.get(key), str) for r in records):
+                return sorted(r[key] for r in records)
+    return None
+
+
+def tree_hashes(root):
+    # Preserve links as links; never copy their external targets into evidence.
+    return {p.relative_to(root).as_posix():
+            {'symlink': str(p.readlink())} if p.is_symlink() else digest(p)
+            for p in sorted(root.rglob('*')) if p.is_symlink() or p.is_file()}
+
+
+def tree_identity(root):
+    return identity(tree_hashes(root))
+
+
+def verify_role_call(run, record, expected, role, boundary, *, limit=None):
+    """Verify each distinct launch receipt, including refused prior outputs."""
+    from .preflight import verify_receipt
+    invocation = verify_receipt(run, record, expected, role, boundary)
+    if limit is not None and (record.get('max_schema_resubmissions') != limit or 'attempts' not in record):
+        raise ValueError('structured resubmission declaration changed')
+    if 'attempts' not in record:
+        return {invocation}
+    limit = resubmission_limit(record.get('max_schema_resubmissions'))
+    attempts = record['attempts']
+    if (not isinstance(attempts, list) or not 1 <= len(attempts) <= limit + 1 or
+            record.get('resubmissions_used') != len(attempts) - 1):
+        raise ValueError('invalid structured resubmission count')
+    invocations = set()
+    for number, attempt in enumerate(attempts):
+        path = f'review-attempts/{role}/{number}'
+        if attempt.get('path') != path:
+            raise ValueError('foreign structured resubmission attempt')
+        archive = Path(run) / path
+        raw = read_json(archive / 'execution.json')
+        if (digest(archive / 'execution.json') != attempt['execution_sha256'] or
+                tree_hashes(archive) != attempt['artifact_hashes'] or
+                raw['execution'] != attempt['execution'] or
+                raw.get('error') != attempt.get('error') or
+                (number < len(attempts) - 1 and
+                 (raw['execution'] != 'malformed' or raw.get('refusal_kind') != 'structured_output'))):
+            raise ValueError('structured resubmission record changed')
+        call_id = verify_receipt(archive, raw, expected, role, boundary)
+        if call_id in invocations:
+            raise ValueError('duplicate preflight invocation identity')
+        invocations.add(call_id)
+    projected = {k: v for k, v in record.items() if k not in
+                 ('attempts', 'max_schema_resubmissions', 'resubmissions_used', 'input_identity',
+                  'resubmission_blocked', 'role')}
+    if projected != {k: v for k, v in raw.items() if k != 'role'} or invocation != call_id:
+        raise ValueError('structured resubmission final projection changed')
+    return invocations

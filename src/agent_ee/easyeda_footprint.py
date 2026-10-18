@@ -316,3 +316,33 @@ def parse_package(data, lcsc, tolerance_nm):
                      ignored_noncopper=dict(sorted(ignored.items())))
     return dict(identity=record, pattern=pattern, pad_locators=locators, hole_locators=hole_locators,
                 inventory=inventory, tolerance_nm=text(tolerance_nm), units='nm', frame='easyeda-origin/y-down')
+
+
+def symbol_pins(data, lcsc):
+    """Symbol pin records of the same captured component: number, displayed number and name.
+
+    A ``P`` record is seven ``^^`` segments; the settings segment carries the
+    pin number (field 3), the name segment its text (field 4) and the number
+    segment the displayed number (field 4). Records are returned verbatim, not
+    reconciled: a caller that relies on one pin must require its number and
+    displayed number to agree. Other symbol records are not interpreted.
+    """
+    component = strict_json(data)
+    record, _, _ = identity(component, lcsc)
+    shapes = component['dataStr'].get('shape', [])
+    if not isinstance(shapes, list) or len(shapes) > MAX_RECORDS:
+        _malformed('symbol shape list required (bounded)')
+    pins = []
+    for index, raw in enumerate(shapes):
+        if not isinstance(raw, str):
+            _malformed(f'symbol shape #{index} is not a text record')
+        if not raw.startswith('P~'):
+            continue
+        segments = raw.split('^^')
+        if len(segments) != 7:
+            _malformed(f'symbol pin #{index} has {len(segments)} segments, not 7')
+        settings, name, shown = (segments[i].split('~') for i in (0, 3, 4))
+        if len(settings) != 9 or len(name) < 5 or len(shown) < 5 or not settings[3]:
+            _malformed(f'symbol pin #{index} lacks its number, name or displayed number')
+        pins.append(dict(index=index, number=settings[3], displayed=shown[4], name=name[4]))
+    return dict(identity=record, pins=pins)

@@ -183,8 +183,7 @@ class NativeRoutingTest(unittest.TestCase):
                          {'usb': 'violation', 'permissive': 'satisfied'})
 
     def test_native_disabled_via_check_is_enabled_in_staging(self):
-        import json
-        project = json.dumps({'board': {'design_settings': {'rule_severities': {'too_many_vias': 'ignore'}}}})
+        project = {'board': {'design_settings': {'rule_severities': {'too_many_vias': 'ignore'}}}}
         result = self.run_rules(contract('via_count', max_count=2), vias=3, project=project)
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
 
@@ -197,7 +196,7 @@ class NativeRoutingTest(unittest.TestCase):
     def test_native_bad_custom_rules_are_missing_coverage(self):
         from agent_ee.checks import CheckError
         try:
-            result = self.run_rules(contract(max_mm=0.15), custom='(version 1) (rule "broken" (constraint nonsense))')
+            result = self.run_rules(contract(max_mm=0.15), custom_rules='(version 1) (rule "broken" (constraint nonsense))')
         except CheckError as failed:
             self.assertIn(failed.execution, ('failed', 'malformed'))
         else:

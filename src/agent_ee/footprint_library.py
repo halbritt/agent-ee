@@ -82,7 +82,73 @@ def _members(manifest):
     return sorted(entries, key=lambda x: (x[0], x[1]['path']))
 
 
-def _footprint(data, library, source):
+DECLARATIONS_SCHEMA = 'agent-ee.footprint-declarations/1'
+DECLARED_SHAPES = ('custom', 'trapezoid')
+
+
+def _numbers(value):
+    if not isinstance(value, list) or len(set(map(str, value))) != len(value):
+        raise FootprintError('declared pad numbers must be a list of unique strings')
+    return [_text(x, empty=True) for x in value]
+
+
+def validate_declarations(declarations):
+    """Owner-captured pad/assembly/pinless declarations; nothing is guessed from names.
+
+    Returns ``(footprints, pinless)`` keyed by exact footprint and symbol identity.
+    """
+    _object(declarations, ('schema', 'footprints', 'pinless_symbols'))
+    if declarations['schema'] != DECLARATIONS_SCHEMA:
+        raise FootprintError('unsupported footprint declaration schema')
+    if not isinstance(declarations['footprints'], list) or not isinstance(declarations['pinless_symbols'], list):
+        raise FootprintError('footprint and pinless declaration lists required')
+    footprints, pinless = {}, {}
+    for entry in declarations['footprints']:
+        _object(entry, ('footprint', 'mechanical_pads', 'thermal_via_pads', 'custom_pads', 'assembly', 'rationale'))
+        lib_id = _text(entry['footprint'])
+        if lib_id.count(':') != 1 or not all(lib_id.split(':')) or lib_id in footprints:
+            raise FootprintError('unique exact library:footprint declaration required')
+        mechanical, thermal, custom = (_numbers(entry[k]) for k in ('mechanical_pads', 'thermal_via_pads', 'custom_pads'))
+        if set(mechanical) & set(thermal) or '' in thermal:
+            raise FootprintError('thermal-via pads must be numbered and not declared mechanical')
+        if entry['assembly'] not in (None, 'smd', 'through_hole'):
+            raise FootprintError('declared assembly must be null, smd or through_hole')
+        if not (mechanical or thermal or custom or entry['assembly']):
+            raise FootprintError('footprint declaration declares nothing')
+        _text(entry['rationale'])
+        footprints[lib_id] = entry
+    for entry in declarations['pinless_symbols']:
+        _object(entry, ('lib_id', 'rationale'))
+        lib_id = _text(entry['lib_id'])
+        if lib_id.count(':') != 1 or not all(lib_id.split(':')) or lib_id in pinless:
+            raise FootprintError('unique exact library:symbol pinless declaration required')
+        _text(entry['rationale'])
+        pinless[lib_id] = entry
+    return footprints, pinless
+
+
+def _apply_declaration(pads, attributes, entry):
+    """Every declared number must change a pad's handling; a stale declaration is unknown."""
+    if entry is None:
+        return
+    for number in entry['mechanical_pads']:
+        if not any(p['number'] == number and p.get('declared') == 'mechanical' for p in pads):
+            raise FootprintError(f'declared mechanical pad {number!r} matches no copper or numbered NPTH pad')
+    for number in entry['thermal_via_pads']:
+        types = {p['type'] for p in pads if p['number'] == number and p['role'] == 'electrical'}
+        if types != {'smd', 'thru_hole'}:
+            raise FootprintError(f'declared thermal-via pad {number!r} needs SMD and through-hole copper pads')
+        for pad in pads:
+            if pad['number'] == number and pad['type'] == 'thru_hole':
+                pad['thermal_via'] = True
+    for number in entry['custom_pads']:
+        if not any(p['number'] == number and p.get('geometry') == 'declared_custom' for p in pads):
+            raise FootprintError(f'declared custom pad {number!r} matches no custom/trapezoid pad')
+    if entry['assembly'] is not None and set(attributes) & {'smd', 'through_hole'}:
+        raise FootprintError('declared assembly contradicts or duplicates a native assembly attribute')
+
+
+def _footprint(data, library, source, declared=None):
     # Shared reader owned by AGENTEE-39; no competing S-expression parser.
     try:
         from .symbol_library import parse_sexpr, children, field, nanometres, LibraryError
@@ -102,6 +168,9 @@ def _footprint(data, library, source):
         if field(node, 'layer', 1)[0] not in ('F.Cu', 'B.Cu'):
             raise LibraryError('unqualified footprint side')
         attr = attrs[0][1:] if attrs else []
+        entry = (declared or {}).get(library + ':' + node[1])
+        mechanical = set(entry['mechanical_pads']) if entry else set()
+        custom = set(entry['custom_pads']) if entry else set()
         metadata = {}
         for key in ('descr', 'tags'):
             metadata[key] = field(node, key, 1)[0] if children(node, key) else ''
@@ -110,9 +179,13 @@ def _footprint(data, library, source):
             if len(pad) < 4 or any(not isinstance(x, str) for x in pad[:4]):
                 raise LibraryError('invalid pad header')
             number, kind, shape = pad[1:4]
-            if kind not in ('smd', 'thru_hole', 'np_thru_hole') or shape not in ('rect', 'circle', 'oval', 'roundrect'):
+            # Declared custom geometry is accepted for numbering only, never qualified.
+            geometry = 'declared_custom' if number in custom and (
+                shape in DECLARED_SHAPES or any(children(pad, x) for x in ('primitives', 'options'))) else None
+            if kind not in ('smd', 'thru_hole', 'np_thru_hole') or (
+                    shape not in ('rect', 'circle', 'oval', 'roundrect') and geometry is None):
                 raise LibraryError('unsupported native pad type/geometry')
-            if any(children(pad, x) for x in ('primitives', 'padstack', 'options')):
+            if children(pad, 'padstack') or (geometry is None and any(children(pad, x) for x in ('primitives', 'options'))):
                 raise LibraryError('unsupported custom padstack')
             layers = children(pad, 'layers')
             if len(layers) != 1 or len(layers[0]) < 2 or any(not isinstance(x, str) for x in layers[0][1:]):
@@ -145,41 +218,61 @@ def _footprint(data, library, source):
                     raise LibraryError('nonpositive drill')
             elif drill:
                 raise LibraryError('SMD drill unsupported')
+            extra = {}
             if kind == 'np_thru_hole':
-                if number:
+                if number and number not in mechanical:
                     raise LibraryError('numbered mechanical pad unsupported')
                 role = 'mechanical'
+                if number:
+                    extra['declared'] = 'mechanical'
             elif not copper:
                 if kind != 'smd' or not layers or any(not x.endswith('.Paste') for x in layers):
                     raise LibraryError('noncopper pad is not qualified paste-only')
                 role = 'paste'
+            elif number in mechanical:
+                role, extra['declared'] = 'mechanical', 'mechanical'
             else:
                 if not number:
                     raise LibraryError('unnumbered copper pad unsupported')
                 role = 'electrical'
+            if geometry:
+                extra['geometry'] = geometry
             pads.append(dict(number=number, type=kind, shape=shape, layers=layers,
                              x_nm=x, y_nm=y, orientation_microdegrees=angle,
-                             size_nm=size, drill=drill[0][1:] if drill else None, role=role, native=pad))
+                             size_nm=size, drill=drill[0][1:] if drill else None, role=role, native=pad, **extra))
         if not pads:
             raise LibraryError('footprint contains no pads')
-        return dict(lib_id=library + ':' + node[1], name=node[1], description=metadata['descr'],
-                    tags=metadata['tags'], attributes=sorted(attr), pads=sorted(pads, key=canonical),
-                    electrical_numbers=sorted({p['number'] for p in pads if p['role'] == 'electrical'}),
-                    source=dict(source))
+        _apply_declaration(pads, attr, entry)
+        result = dict(lib_id=library + ':' + node[1], name=node[1], description=metadata['descr'],
+                      tags=metadata['tags'], attributes=sorted(attr), pads=sorted(pads, key=canonical),
+                      electrical_numbers=sorted({p['number'] for p in pads if p['role'] == 'electrical'}),
+                      source=dict(source))
+        if entry is not None:
+            result['declaration'] = entry
+        return result
     except (LibraryError, TypeError) as exc:
         raise FootprintError(str(exc)) from exc
 
 
-def index_footprints(manifest, captured_files):
-    """Validate every declared member before any selected-name absence claim."""
+def index_footprints(manifest, captured_files, declarations=None):
+    """Validate every declared member before any selected-name absence claim.
+
+    Optional ``declarations`` are captured owner pad/assembly declarations
+    (``validate_declarations``); without them the index is unchanged.
+    """
     result = dict(schema='agent-ee.footprint-index/1', execution='ok', outcome='info',
                   coverage='complete', footprints=[], findings=[], manifest_sha256=None)
+    if declarations is not None:
+        result['declarations_sha256'] = digest(declarations)
+    code = 'manifest'
     try:
         entries = _members(manifest)
         result['manifest_sha256'] = digest(manifest)
+        code = 'declaration'
+        declared = validate_declarations(declarations)[0] if declarations is not None else {}
     except (FootprintError, TypeError, ValueError) as exc:
         result.update(execution='malformed', outcome='unknown', coverage='missing')
-        result['findings'].append(dict(code='manifest', message=str(exc)))
+        result['findings'].append(dict(code=code, message=str(exc)))
         return _seal(result)
     total_bytes = 0
     for library, member in entries:
@@ -190,13 +283,18 @@ def index_footprints(manifest, captured_files):
             total_bytes += len(data)
             if total_bytes > 64 * 1024 * 1024:
                 raise FootprintError('footprint inventory exceeds 64 MiB byte limit')
-            footprint = _footprint(data, library, member)
+            footprint = _footprint(data, library, member, declared)
             if any(x['lib_id'] == footprint['lib_id'] for x in result['footprints']):
                 raise FootprintError('duplicate exact footprint identity')
             result['footprints'].append(footprint)
         except FootprintError as exc:
             result.update(execution='failed', outcome='unknown', coverage='missing')
             result['findings'].append(dict(code='library_coverage', path=member['path'], message=str(exc)))
+    names = {library + ':' + PurePosixPath(member['path']).stem for library, member in entries}
+    for lib_id in sorted(set(declared) - names):
+        result.update(execution='failed', outcome='unknown', coverage='missing')
+        result['findings'].append(dict(code='declaration', footprint=lib_id,
+                                       message='declared footprint is not a manifest member'))
     result['footprints'].sort(key=lambda x: x['lib_id'])
     return _seal(result)
 
@@ -286,7 +384,7 @@ def validate_declaration(declaration):
                 raise FootprintError('connector requires positive integer rows/columns')
 
 
-def check_assignments(manifest, captured_files, declaration, native_membership=False):
+def check_assignments(manifest, captured_files, declaration, native_membership=False, declarations=None):
     """Check declared physical components against full shared-resolver pin inventory.
 
     Declaration bytes must be captured by the coordinator before using this as
@@ -294,15 +392,21 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
     No schematic/intent reference-name inference or package choice is performed.
     With native_membership the caller has already established native board
     membership; captured power/on_board flags are recorded but exclude nothing.
+    Optional captured ``declarations`` declare mechanical copper pads, thermal
+    vias, custom pads, attr-less assembly and pinless symbols; anything
+    undeclared keeps the default defect/unknown handling.
     """
-    index = index_footprints(manifest, captured_files)
+    index = index_footprints(manifest, captured_files, declarations)
     result = dict(schema='agent-ee.footprint-assignments/1', execution=index['execution'],
                   outcome='pass' if index['execution'] == 'ok' else 'unknown',
                   coverage=index['coverage'], index=index, index_sha256=index['canonical_sha256'],
                   declaration_sha256=None, assignments=[], findings=list(index['findings']))
+    if declarations is not None:
+        result['declarations_sha256'] = digest(declarations)
     try:
         result['declaration_sha256'] = digest(declaration)
         validate_declaration(declaration)
+        pinless = validate_declarations(declarations)[1] if declarations is not None else {}
     except (ValueError, TypeError) as exc:
         result.update(execution='malformed', outcome='unknown', coverage='missing')
         result['findings'].append(dict(code='declaration', message=str(exc)))
@@ -326,8 +430,12 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
             if power or not on_board:
                 assignment.update(status='excluded', exclusion='pinned native power symbol' if power else 'pinned native on_board=no')
                 continue
-            if not pins:
+            if pins and comp['lib_id'] in pinless:
+                raise FootprintError('pinless declaration contradicts the symbol pin inventory')
+            if not pins and comp['lib_id'] not in pinless:
                 raise FootprintError('physical symbol has no qualified pins')
+            if not pins:
+                assignment['pinless'] = pinless[comp['lib_id']]
             if index['coverage'] != 'complete':
                 raise FootprintError('footprint index incomplete; absence/parity unavailable')
             if not comp['footprint']:
@@ -337,6 +445,9 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
             else:
                 fp = footprints[comp['footprint']]
                 assignment['footprint_source'] = fp['source']
+                if 'declaration' in fp:
+                    assignment['footprint_declaration'] = fp['declaration']
+                    assignment['mechanical_pads'] = sorted({p['number'] for p in fp['pads'] if p.get('declared')})
                 numbers = set(fp['electrical_numbers'])
                 missing = sorted(set(assignment['pin_numbers']) - numbers)
                 extra = sorted(numbers - set(assignment['pin_numbers']))
@@ -346,10 +457,16 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
                     expected = comp['connector']['rows'] * comp['connector']['columns']
                     if len(numbers) != expected:
                         assignment['findings'].append(dict(code='connector_count', expected=expected, actual=len(numbers)))
-                types = {p['type'] for p in fp['pads'] if p['role'] == 'electrical'}
+                # Declared thermal vias are electrical but do not make an SMD part through-hole.
+                types = {p['type'] for p in fp['pads'] if p['role'] == 'electrical' and not p.get('thermal_via')}
                 attrs = set(fp['attributes']) & {'smd', 'through_hole'}
+                declared_assembly = (fp.get('declaration') or {}).get('assembly')
+                if declared_assembly is not None:
+                    attrs = {declared_assembly}  # The index refuses one beside a native attribute.
                 technology = {frozenset({'smd'}): 'smd', frozenset({'thru_hole'}): 'through_hole',
                               frozenset({'smd', 'thru_hole'}): 'mixed'}.get(frozenset(types))
+                if not types and not pins and len(attrs) == 1:
+                    technology = next(iter(attrs))  # Declared pinless: no electrical pads to compare.
                 if technology is None or not attrs or (technology == 'smd' and attrs != {'smd'}) or (technology == 'through_hole' and attrs != {'through_hole'}):
                     raise FootprintError('ambiguous/missing native assembly attributes')
                 if technology == 'mixed':
@@ -422,18 +539,21 @@ def main(argv=None):
     parser.add_argument('manifest')
     parser.add_argument('--captures', required=True)
     parser.add_argument('--assignments')
+    parser.add_argument('--declarations', help='captured agent-ee.footprint-declarations/1 file')
     parser.add_argument('--query', help='literal exact footprint identity; never shell syntax')
     parser.add_argument('--out', required=True, help='new output JSON file')
     args = parser.parse_args(argv)
     try:
         manifest = load_document(args.manifest)
         declaration = load_document(args.assignments) if args.assignments else None
+        declarations = load_document(args.declarations) if args.declarations else None
         members = _members(manifest)
         paths = [member['path'] for _, member in members]
         if declaration is not None:
             paths += [lib['path'] for lib in declaration['libraries']]
         captures = read_captures(args.captures, paths)
-        result = check_assignments(manifest, captures, declaration) if declaration is not None else index_footprints(manifest, captures)
+        result = (check_assignments(manifest, captures, declaration, declarations=declarations)
+                  if declaration is not None else index_footprints(manifest, captures, declarations))
         if args.query is not None:
             result = dict(schema='agent-ee.footprint-query/1', query=args.query,
                           index_sha256=result['canonical_sha256'], execution=result['execution'],

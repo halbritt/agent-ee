@@ -1,0 +1,48 @@
+{
+ "dataStr": {
+  "head": {
+   "c_para": {
+    "Manufacturer Part": "OWNED",
+    "Supplier Part": "C910020",
+    "package": "OWNED-SOD-123"
+   },
+   "docType": "2",
+   "puuid": "697e3ba5afaa5f239325f4be5eda6ce9",
+   "uuid": "166eb0722d2a5aa297bd6a599761cabc",
+   "x": 0,
+   "y": 0
+  },
+  "shape": [
+   "P~show~0~1~-20~0~0~gpin1~0^^-20~0^^M -20 0 h 10~#880000^^1~-20~4~0~K~start~~~#0000FF^^1~-20~-4~0~1~end~~~#0000FF^^0~-20~0^^0~M -20 0",
+   "P~show~0~2~20~0~0~gpin2~0^^20~0^^M 20 0 h 10~#880000^^1~20~4~0~A~start~~~#0000FF^^1~20~-4~0~2~end~~~#0000FF^^0~20~0^^0~M 20 0"
+  ]
+ },
+ "docType": 2,
+ "lcsc": {
+  "id": 1,
+  "number": "C910020"
+ },
+ "packageDetail": {
+  "dataStr": {
+   "head": {
+    "docType": "4",
+    "uuid": "697e3ba5afaa5f239325f4be5eda6ce9",
+    "x": 4000,
+    "y": 3000
+   },
+   "shape": [
+    "PAD~RECT~3993.7~3000~3.5~4.7~1~~1~0~3991.95 2997.65 3995.45 2997.65 3995.45 3002.35 3991.95 3002.35~0~d1~0~~Y~0~0~0.2~3993.7,3000",
+    "PAD~RECT~4006.3~3000~3.5~4.7~1~~2~0~4004.55 2997.65 4008.05 2997.65 4008.05 3002.35 4004.55 3002.35~0~d2~0~~Y~0~0~0.2~4006.3,3000"
+   ]
+  },
+  "docType": 4,
+  "title": "OWNED-SOD-123",
+  "uuid": "697e3ba5afaa5f239325f4be5eda6ce9"
+ },
+ "szlcsc": {
+  "id": 1,
+  "number": "C910020"
+ },
+ "title": "OWNED C910020",
+ "uuid": "bc8b6da6ade15b8d81c81395da66b435"
+}

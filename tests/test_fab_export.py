@@ -16,7 +16,8 @@ from agent_ee.baseline import compile_baseline, freeze_evidence, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import CheckError, Ctx, run_checks
-from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, board_facts, bom_rows,
+from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, assembled_parts,
+                                 assembly_exclusions, board_facts, bom_rows,
                                  check_fab_export, cpl_rows, inventory, normalise, render_bom,
                                  scan_sexpr, validate_params, verify_manifest, write_zip,
                                  GERBER_TIMES)
@@ -25,6 +26,31 @@ from toolchain import require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures' / 'fab-export'
 BOARD = (FIXTURE / 'fab.kicad_pcb').read_bytes()
+RULE = 'JLCPCB_Assembly=not_assembled'
+
+
+def mark_schematic(text, ref, value='not_assembled', unbind=False):
+    """Give one fixture symbol the rung-1 JLCPCB_Assembly field; optionally drop its binding."""
+    start = text.index(f'(property "Reference" "{ref}"')
+    end = text.index('(instances', start)
+    symbol = text[start:end]
+    if unbind:
+        for name in ('LCSC', 'Manufacturer', 'Partnumber'):
+            at = symbol.index(f'(property "{name}"')
+            symbol = symbol[:at] + symbol[symbol.index('(hide yes)))', at) + len('(hide yes)))'):]
+    field = (f'(property "JLCPCB_Assembly" "{value}" (at 0 0 0) (effects (font (size 1.27 1.27)) '
+             '(hide yes)))')
+    return text[:start] + field + symbol + text[end:]
+
+
+def mark_board(text, ref, value='not_assembled'):
+    """Give one fixture footprint the same property, as board_build copies symbol fields."""
+    start = text.index(f'(property "Reference" "{ref}"')
+    at = text.index('\t\t(property "Value"', start)
+    field = (f'\t\t(property "JLCPCB_Assembly" "{value}"\n\t\t\t(at 0 0 0)\n\t\t\t(layer "F.Fab")\n'
+             '\t\t\t(hide yes)\n\t\t\t(uuid "00000000-0000-4000-8000-0000000000a1")\n'
+             '\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size 1.27 1.27)\n\t\t\t\t)\n\t\t\t)\n\t\t)\n')
+    return text[:at] + field + text[at:]
 
 
 def part(lcsc='C900001', value='1µF', footprint='lib:C', maker='Maker', number='PN-1'):
@@ -181,6 +207,116 @@ class PackagingTests(unittest.TestCase):
                 inventory(fab)
 
 
+def component(dnp=False, excluded=(), marker=None, **fields):
+    binding = part(**fields)
+    return {'dnp': dnp, 'excluded': sorted(excluded), 'value': binding['value'],
+            'footprint': binding['footprint'], 'lcsc': binding['lcsc'],
+            'manufacturer': binding['manufacturer'], 'Partnumber': binding['partnumber'], 'PartNumber': '',
+            'fields': {} if marker is None else {'JLCPCB_Assembly': marker}}
+
+
+def footprint(ref, dnp=False, marker=None):
+    return {'ref': ref, 'side': 'Top', 'dnp': dnp, 'attributes': ['dnp'] if dnp else [],
+            'fields': {} if marker is None else {'JLCPCB_Assembly': marker}}
+
+
+class AssemblyAuthorityTests(unittest.TestCase):
+    def test_board_dnp_flags_decide_the_bom_and_disagreements_are_recorded(self):
+        components = {'C1': component(), 'J1': component(dnp=True), 'R1': component(), 'R2': component(dnp=True)}
+        footprints = [footprint('C1'), footprint('J1'), footprint('R1', dnp=True), footprint('R2', dnp=True)]
+        parts, disagreements, unsupported = assembled_parts(components, footprints)
+        self.assertEqual(unsupported, [])
+        self.assertEqual(sorted(parts), ['C1', 'J1'])
+        self.assertEqual(parts['J1']['partnumber'], 'PN-1')
+        self.assertEqual(disagreements, [{'designator': 'J1', 'schematic_dnp': True, 'board_dnp': False},
+                                         {'designator': 'R1', 'schematic_dnp': False, 'board_dnp': True}])
+
+    def test_component_without_footprint_keeps_its_schematic_state(self):
+        components = {'C1': component(), 'R5': component(), 'R6': component(dnp=True, excluded=['exclude_from_board'])}
+        parts, disagreements, unsupported = assembled_parts(components, [footprint('C1')])
+        # R5 reaches the BOM and must then fail designator agreement with the board.
+        self.assertEqual((sorted(parts), disagreements, unsupported), (['C1', 'R5'], [], []))
+
+    def test_exclusions_are_refused_for_any_part_populated_in_either_source(self):
+        for schematic_dnp, board_dnp in ((False, False), (False, True), (True, False)):
+            with self.subTest(schematic_dnp=schematic_dnp, board_dnp=board_dnp):
+                components = {'C1': component(dnp=schematic_dnp, excluded=['exclude_from_bom'])}
+                parts, _, unsupported = assembled_parts(components, [footprint('C1', dnp=board_dnp)])
+                self.assertEqual(parts, {})
+                self.assertIn('v1 refuses non-DNP exclusions', unsupported[0])
+        parts, _, unsupported = assembled_parts({'C1': component(dnp=True, excluded=['exclude_from_bom'])},
+                                                [footprint('C1', dnp=True)])
+        self.assertEqual((parts, unsupported), ({}, []))
+        conflict = component()
+        conflict['PartNumber'] = 'PN-2'
+        _, _, unsupported = assembled_parts({'C1': conflict}, [footprint('C1')])
+        self.assertIn('conflicting Partnumber', unsupported[0])
+
+
+class AssemblyExclusionTests(unittest.TestCase):
+    def test_declared_rule_excludes_a_marked_populated_part_and_keeps_dnp_and_assembled_parts(self):
+        unbound = component(marker='not_assembled', lcsc='', maker='', number='')
+        components = {'C1': component(), 'C3': component(dnp=True, marker='not_assembled'), 'J1': unbound}
+        footprints = [footprint('C1'), footprint('C3', dnp=True, marker='not_assembled'),
+                      footprint('J1', marker='not_assembled')]
+        excluded, unsupported = assembly_exclusions(RULE, components, footprints)
+        self.assertEqual((excluded, unsupported), ([{'designator': 'J1', 'rule': RULE}], []))
+        parts, _, problems = assembled_parts(components, footprints, {'J1'})
+        # J1 needs no binding once excluded; DNP C3 stays a DNP omission, not a rule exclusion.
+        self.assertEqual((sorted(parts), problems), (['C1'], []))
+        self.assertEqual(bom_rows(parts)[1], [])
+        parts, _, _ = assembled_parts(components, footprints)
+        self.assertEqual(sorted(parts), ['C1', 'J1'])
+        self.assertEqual([f['reference'] for f in bom_rows(parts)[1]], ['J1'])
+
+    def test_marked_part_is_never_excluded_silently(self):
+        marked = [footprint('C1'), footprint('J1', marker='not_assembled')]
+        cases = {
+            'no rule declared': (None, {'C1': component(), 'J1': component(marker='not_assembled')}, marked,
+                                 'no matching assembly_exclusion rule'),
+            'board lacks the property': (RULE, {'J1': component(marker='not_assembled')}, [footprint('J1')],
+                                         'assembly fields disagree'),
+            'netlist lacks the field': (RULE, {'J1': component()}, [footprint('J1', marker='not_assembled')],
+                                        'assembly fields disagree'),
+            'values differ': (RULE, {'J1': component(marker='not_assembled')},
+                              [footprint('J1', marker='assembled')], 'assembly fields disagree'),
+            'unknown marker': (RULE, {'J1': component(marker='assembled')}, [footprint('J1', marker='assembled')],
+                               'not a recognised assembly marker'),
+            'no board footprint': (RULE, {'J1': component(marker='not_assembled')}, [],
+                                   'has no board footprint'),
+            'board-only footprint': (RULE, {}, [footprint('J1', marker='not_assembled')], 'has no component'),
+        }
+        for name, (rule, components, footprints, text) in cases.items():
+            with self.subTest(name):
+                excluded, unsupported = assembly_exclusions(rule, components, footprints)
+                self.assertEqual(excluded, [])
+                self.assertEqual(len(unsupported), 1, unsupported)
+                self.assertIn(text, unsupported[0])
+
+    def test_board_dnp_stays_authoritative_over_a_disagreeing_marker(self):
+        # A board-DNP part is omitted by DNP whatever either source carries.
+        components = {'J1': component(marker='not_assembled')}
+        self.assertEqual(assembly_exclusions(RULE, components, [footprint('J1', dnp=True)]), ([], []))
+        self.assertEqual(assembly_exclusions(None, components, [footprint('J1', dnp=True)]), ([], []))
+        # A schematic-DNP part populated on the board is populated: the rule applies to it.
+        components = {'J1': component(dnp=True, marker='not_assembled')}
+        self.assertEqual(assembly_exclusions(RULE, components, [footprint('J1', marker='not_assembled')]),
+                         ([{'designator': 'J1', 'rule': RULE}], []))
+
+    def test_native_exclusion_attributes_stay_refused_for_rule_excluded_parts(self):
+        components = {'J1': component(excluded=['exclude_from_bom'], marker='not_assembled')}
+        _, _, unsupported = assembled_parts(components, [footprint('J1', marker='not_assembled')], {'J1'})
+        self.assertIn('v1 refuses non-DNP exclusions', unsupported[0])
+
+    def test_board_facts_read_the_rule_property_once(self):
+        text = mark_board(BOARD.decode(), 'J1')
+        fields = {f['ref']: f['fields'] for f in board_facts(text.encode())['footprints']}
+        self.assertEqual(fields['J1'], {'JLCPCB_Assembly': 'not_assembled'})
+        self.assertEqual(fields['R1'], {})
+        with self.assertRaisesRegex(ValueError, 'repeats an assembly rule property'):
+            board_facts(mark_board(text, 'J1').encode())
+
+
 class CapabilityTests(unittest.TestCase):
     def setUp(self):
         self.scope = read_json(FIXTURE / 'control.scope.json')
@@ -208,9 +344,17 @@ class CapabilityTests(unittest.TestCase):
             changed['checks'][1]['params'] = params
             with self.subTest(params=params):
                 self.assertEqual(self.describe(changed)['status'], 'unsupported')
-        for params in ([], {'netlist_check': 3}, {'netlist_check': 'n', 'output': 'x'}):
+        for params in ([], {'netlist_check': 3}, {'netlist_check': 'n', 'output': 'x'},
+                       {'netlist_check': 'n', 'assembly_exclusion': 'JLCPCB_Assembly=x'},
+                       {'netlist_check': 'n', 'assembly_exclusion': ['JLCPCB_Assembly=not_assembled']},
+                       {'assembly_exclusion': RULE}):
             with self.subTest(params=params), self.assertRaises(ValueError):
                 validate_params(params)
+        ruled = copy.deepcopy(scope)
+        ruled['checks'][1]['params']['assembly_exclusion'] = RULE
+        self.assertEqual(self.describe(ruled)['status'], 'supported')
+        ruled['checks'][1]['params']['assembly_exclusion'] = 'Value=10k'
+        self.assertEqual(self.describe(ruled)['status'], 'unsupported')
 
 
 class NativeFabExportTests(unittest.TestCase):
@@ -284,8 +428,11 @@ class NativeFabExportTests(unittest.TestCase):
         # DNP C3 is in the schematic and on the board, and in no fab output.
         self.assertEqual(bom_refs, cpl_refs)
         self.assertEqual(sorted(manifest['designators']['board_non_dnp']), cpl_refs)
+        self.assertEqual((manifest['designators']['excluded'], manifest['designators']['exclusion_rule']),
+                         ([], None))
         self.assertNotIn('C3', cpl_refs)
         self.assertIn('C3', read_json(run / 'work/netlist/connectivity.json')['components'])
+        self.assertEqual(result['details']['dnp_disagreements'], [])
         self.assertEqual({r[0]: r[3] for r in cpl_rows_}['R2'], 'Bottom')
         summary = read_json(fab / 'pcb_summary.json')
         self.assertEqual(summary['metadata']['date'], '1970-01-01T00:00:00')
@@ -343,6 +490,32 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertIn('R99', sets['cpl'])
         self.assertFalse(sets['agree'])
 
+    def test_schematic_board_dnp_disagreement_follows_the_board_and_is_recorded(self):
+        schematic, board = self.source / 'fab.kicad_sch', self.source / 'fab.kicad_pcb'
+        original_schematic, original_board = schematic.read_text(), board.read_text()
+        for dnp_source in ('schematic', 'board'):
+            with self.subTest(dnp_source=dnp_source):
+                # J1 is the fixture's first schematic instance and only through-hole footprint.
+                schematic.write_text(original_schematic.replace('(dnp no)', '(dnp yes)', 1)
+                                     if dnp_source == 'schematic' else original_schematic)
+                board.write_text(original_board.replace('(attr through_hole)', '(attr through_hole dnp)', 1)
+                                 if dnp_source == 'board' else original_board)
+                run, result = self.run_case()
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+                sets = result['details']['designators']
+                self.assertTrue(sets['agree'])
+                self.assertEqual(sets['bom'], sets['cpl'])
+                self.assertEqual(sets['bom'], sets['board_non_dnp'])
+                self.assertEqual('J1' in sets['bom'], dnp_source == 'schematic')
+                self.assertEqual(result['details']['dnp_disagreements'], [
+                    {'designator': 'J1', 'schematic_dnp': dnp_source == 'schematic',
+                     'board_dnp': dnp_source == 'board'}])
+                self.assertEqual('J1' in result['details']['schematic_dnp'], dnp_source == 'schematic')
+                self.assertTrue(any('disagree on J1' in item for item in result['limitations']))
+                manifest = read_json(run / 'work/fab/fab/manifest.json')
+                self.assertEqual(manifest['designators']['board_non_dnp'], sets['board_non_dnp'])
+                self.assertEqual(verify_manifest(run / 'work/fab/fab', manifest), manifest['files'])
+
     def test_real_export_is_consumed_by_consistency_gate_and_sealed(self):
         self.scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
         self.scope['checks'].append({'id': 'consistency', 'kind': 'fab_consistency',
@@ -356,6 +529,79 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertEqual(result['kind'], 'fab_consistency')
         freeze_evidence(run, results)
         verify_evidence(run, results, required=True)
+
+    def mark(self, schematic=True, board=True, unbind=True):
+        if schematic:
+            path = self.source / 'fab.kicad_sch'
+            path.write_text(mark_schematic(path.read_text(), 'J1', unbind=unbind))
+        if board:
+            path = self.source / 'fab.kicad_pcb'
+            path.write_text(mark_board(path.read_text(), 'J1'))
+
+    def test_declared_exclusion_omits_the_marked_part_lists_it_and_passes_consistency(self):
+        self.mark()
+        self.scope['checks'][1]['params']['assembly_exclusion'] = RULE
+        self.scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
+        self.scope['checks'].append({'id': 'consistency', 'kind': 'fab_consistency',
+                                     'params': {'export_check': 'fab'}})
+        self.scope['baseline']['requirements'][0]['checks'] += ['geometry', 'consistency']
+        run, consistency = self.run_case()
+        result = read_json(run / 'checks/fab.json')
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual((consistency['execution'], consistency['outcome']), ('ok', 'pass'), consistency)
+        fab = run / 'work/fab/fab'
+        manifest = read_json(fab / 'manifest.json')
+        self.assertEqual(manifest['designators'], {
+            'board_non_dnp': ['C1', 'C2', 'C10', 'J1', 'R1', 'R2'],
+            'excluded': [{'designator': 'J1', 'rule': RULE}], 'exclusion_rule': RULE})
+        bom_refs = [ref for row in list(csv.reader(io.StringIO((fab / 'bom.csv').read_text())))[1:]
+                    for ref in row[0].split(',')]
+        cpl_refs = [row[0] for row in list(csv.reader(io.StringIO((fab / 'cpl.csv').read_text())))[1:]]
+        self.assertEqual(sorted(bom_refs), sorted(cpl_refs))
+        self.assertEqual(sorted(cpl_refs), ['C1', 'C10', 'C2', 'R1', 'R2'])  # J1 excluded, C3 DNP
+        sets = result['details']['designators']
+        self.assertEqual((sets['excluded'], sets['native_pos'], sets['agree']),
+                         (['J1'], ['C1', 'C2', 'C10', 'J1', 'R1', 'R2'], True))
+        self.assertIn('J1', (run / 'work/fab/steps/pos/out/pos.csv').read_text())
+        exclusion = result['details']['assembly_exclusion']
+        candidate = read_json(run / 'candidate.json')
+        self.assertEqual(exclusion['scope_sha256'], candidate['scope_sha256'])
+        self.assertEqual(candidate['scope']['checks'][2]['params']['assembly_exclusion'], RULE)
+        self.assertTrue(any('J1 populated but excluded' in item for item in result['limitations']))
+        self.assertEqual(consistency['details']['designators']['excluded'], manifest['designators']['excluded'])
+        self.assertEqual(consistency['details']['designators']['parity_violations'], [])
+        results = [read_json(run / 'checks' / (spec['id'] + '.json')) for spec in self.scope['checks']]
+        freeze_evidence(run, results)
+        verify_evidence(run, results, required=True)
+
+    def test_marked_part_without_rule_or_with_one_source_is_refused_before_export(self):
+        schematic, board = self.source / 'fab.kicad_sch', self.source / 'fab.kicad_pcb'
+        original_schematic, original_board = schematic.read_text(), board.read_text()
+        for name, rule, sources, text in (('no rule', None, (True, True), 'no matching assembly_exclusion'),
+                                          ('schematic only', RULE, (True, False), 'assembly fields disagree'),
+                                          ('board only', RULE, (False, True), 'assembly fields disagree')):
+            with self.subTest(name):
+                schematic.write_text(original_schematic)
+                board.write_text(original_board)
+                self.mark(*sources, unbind=False)
+                params = {'netlist_check': 'netlist'}
+                if rule:
+                    params['assembly_exclusion'] = rule
+                self.scope['checks'][1]['params'] = params
+                run, result = self.run_case()
+                self.assert_incomplete(run, result, 'unsupported')
+                self.assertNotIn('tools', result['details'])
+                self.assertTrue(any(text in item for item in result['details']['unsupported']),
+                                result['details']['unsupported'])
+
+    def test_declared_rule_without_marked_parts_is_recorded_and_changes_nothing(self):
+        self.scope['checks'][1]['params']['assembly_exclusion'] = RULE
+        run, result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        manifest = read_json(run / 'work/fab/fab/manifest.json')
+        self.assertEqual((manifest['designators']['excluded'], manifest['designators']['exclusion_rule']),
+                         ([], RULE))
+        self.assertIn('J1', result['details']['designators']['cpl'])
 
     def test_missing_part_binding_flags_row_and_never_completes(self):
         path = self.source / 'fab.kicad_sch'

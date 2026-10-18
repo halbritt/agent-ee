@@ -37,7 +37,7 @@ What must exist at each stage before a rung can run:
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
-| 1 Requirements | Requirement IDs (the fixture's `R-native`, `R-width`, `R-response`); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
+| 1 Requirements | Requirement IDs `R-native`, `R-width`, `R-response`, `R-fab`, `R-parts`, compiled from the spec by the [requirement-record compiler](requirement-scope.md) (AGENTEE-100); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
 | 2 Parts | Approved-parts manifest: R, C and header with LCSC bindings; stock footprints | Block manifest with snapshot stock state | Merged block manifests; assembly readiness | About 492 footprints against one catalogue snapshot |
 | 3 Schematic | One sheet; netlist parity with the fixture | One captured block, adapted, plus a root sheet | Several blocks integrated block-first | 15 sheets from power, MCU core, CAN, wideband and driver blocks |
 | 4 Placement | Three footprints placed and graded | Decoupling distance, connector on edge | Sub-layout reuse, congestion report | Budget measurements before any limit change |
@@ -54,13 +54,39 @@ The checks that constitute "done" for each rung:
 | 3 | Rung 2 set for every block instance and the integrated board, plus DFM geometry and fab profile rules | `fab_package` passes, round trip conserved |
 | 4 | Rung 3 set at FOME-MC scale, plus FOME-MC's own rules (for example HV clearance) | `fab_package` passes |
 
-`parts_subset`, `placement`, `block_provenance` and `fab_package` do not exist
-yet (AGENTEE-86, AGENTEE-92, AGENTEE-90, AGENTEE-94). The export half of the
+The [`parts_subset`](approved-parts.md) check and immutable manifest are
+registered for scope/2 and scope/3 (AGENTEE-86); real rung inputs and migration
+from the experimental generator's parts record remain pending.
+`placement` is also registered ([details](placement.md#placement-check-kind));
+its native qualification does not establish a complete generation campaign
+(AGENTEE-92). `block_provenance` and `fab_package` remain pending (AGENTEE-90,
+AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
 [consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
+CPL coordinate and export-log checks. The separate
+[Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74) compares
+layer presence, drill histograms, copper pad/via flashes and outline bounds.
+CPL rotation policy remains AGENTEE-72.
+
 CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
+The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
+
+CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
+
+[`fab_package`](fab-package.md)
+(AGENTEE-94) is the done gate: declared last, it runs the
+[`fab_export`](fab-export.md) producer (AGENTEE-23) and the
+[consistency gate](fab-consistency.md) (AGENTEE-73), including native CPL
+coordinate and export-log checks, and seals the artifact hashes. A scope with a
+`generation` marker is refused at capture without it.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
+
+The [original RC stage fixtures](rc-stage-fixtures.md) provide unplaced,
+placed-unrouted and seeded placement inputs with native checks and a recorded
+KRT attempt. They are independent alternatives to the FOME-MC reference;
+AGENTEE-103's exact control-derived variants remain blocked by unresolved
+third-party rights. These fixtures do not qualify the complete rung.
 
 ## Starting a campaign from an empty candidate
 
@@ -131,6 +157,12 @@ hierarchical staged presence and complete production envelope acceptance remain
 unavailable. The experimental rung-1 driver still uses its earlier
 [RC campaign scaffold](rung1-campaign.md).
 
+The [block adapter](block-adaptation.md) can now fill pre-created child sheets
+from captured flat blocks, freeze instance records and map block requirements
+to fresh board checks. It is a standalone scaffold seam; AGENTEE-87 still owns
+the command that creates the complete empty candidate. Two properties of the
+current reducer also stop a generation campaign early, and AGENTEE-88 addresses them:
+
 Opt-in [staged campaigns](staged-campaign.md) implement AGENTEE-48/88 in the
 existing check scheduler and convergence reducer:
 
@@ -193,16 +225,23 @@ admits group-local copper.
 
 | Predicate | Source | Outcome |
 | --- | --- | --- |
-| Courtyard overlap, malformed or missing courtyard | Native `kicad-cli pcb drc` JSON from the preceding `drc` check | Defect; missing courtyard is unknown for that footprint |
+| Courtyard overlap, malformed or missing courtyard | Native `kicad-cli pcb drc` JSON from the preceding `drc` check, plus probe courtyard inventory | Native overlap is a defect; malformed or missing courtyard is unknown for that footprint |
 | Ratsnest length | pcbnew probe: per-net minimum spanning tree over pad centres, Manhattan and Euclidean | Metric bounds the reducer can compare; a proxy, not routed length |
-| Keepouts and edge clearance | Probe geometry against rule areas that forbid footprints and the fab profile's edge minimum | Defect |
+| Keepouts and edge clearance | Native footprint-keepout DRC plus probe cross-check; exact courtyard-to-outline distance against explicit `min_courtyard_edge_mm` | Proved violation is a defect; unqualified geometry is unknown |
 | Connector on edge | Envelope declarations (AGENTEE-85) with the AGENTEE-64 predicate: edge, tolerance, insertion direction | Defect; outline not provably closed is unknown |
 | Connector facing, test-point access and coverage | [`dfa_dft`](dfa-dft.md) (AGENTEE-64): declared insertion direction against the nearest saved edge; declared test points against same-side courtyards; declared probe points on every rail and acceptance-measured net, with `bringup_plan.json` | Defect; undeclared values, unproven courtyards and corners are unknown |
 | Routability | A captured kicad-route `result.json`: `routing.blocked_by` and `kicad-route blocked` | Information only; never a pass |
 
 Unconnected items are expected before routing and are not graded by
-`placement`. The probe does not yet extract courtyards or outlines; the
-`impl/placement-judge` branch adds that.
+`placement`. The saved-board probe extracts courtyards, outlines, rule areas
+and pad centres. Placement checks reuse the preceding native DRC report;
+they do not run a second DRC. The [placement reference](placement.md#native-qualification)
+maps the ticket's acceptance criteria to executable tests.
+
+The fab profile's `min_edge_clearance_mm` is a copper-to-edge limit. It does
+not supply a courtyard-to-edge minimum. Binding a sourced fabrication limit
+for courtyards and adopting these checks in a complete generation campaign
+remain separate work.
 
 ## kicad-route integration contract
 
@@ -254,8 +293,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   checkout, catalogue or network source.
 - Tool versions and executable hashes are recorded per run. Writer-side tools
   (scaffold, placers, kicad-route) get [stage receipts](stage-receipts.md)
-  (AGENTEE-95). The receipt format and the campaign seam exist; no scaffold,
-  placer or kicad-route step is wired to them yet.
+  (AGENTEE-95). The campaign runs declared kicad-route steps through the routing
+  adapter and verifies their receipts and semantics before adoption and on replay.
+  The placement adapter also uses this receipt pipeline.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings

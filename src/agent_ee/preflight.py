@@ -16,11 +16,11 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
     tools, installations = {}, {}
     required_runtime = {'/usr/bin/python3', 'bwrap'}
     native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
-                           'fab_export': 'kicad-cli',
+                           'fab_export': 'kicad-cli', 'fab_package': 'kicad-cli',
                            'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
                            'passive_corners': '/usr/bin/ngspice', 'dc_path': 'pcbnew',
                            'assembly_readiness': 'kicad-cli',
-                           'board_envelope': 'pcbnew'}
+                           'board_envelope': 'pcbnew', 'dfm_geometry': 'pcbnew'}
     for spec in manifest['scope'].get('checks', []):
         if spec.get('kind') in ('routing_rules', 'fab_profile'):
             required_runtime.update(('kicad-cli', 'pcbnew'))
@@ -174,10 +174,10 @@ def guard(run, role, definition, context, cancellation=None):
     return receipt, link, executable
 
 
-def verify_receipt(run, record, expected, role, boundary, *, workspace=None):
+def verify_receipt(run, record, expected, role, boundary):
     validate_expectation(expected)
     link = record.get('preflight')
-    if not isinstance(link, dict) or link.get('path') != f'review-work/{workspace or role}/preflight/receipt.json':
+    if not isinstance(link, dict) or link.get('path') != f'review-work/{role}/preflight/receipt.json':
         raise ValueError('missing or foreign preflight receipt')
     path = Path(run) / link['path']
     if digest(path) != link.get('sha256'):
@@ -238,17 +238,16 @@ def verify_calls(run, result, manifest):
     for record in result.get('review_executions', []):
         if record.get('admission') == 'not_attempted' and not record.get('preflight'):
             continue
-        invocation = verify_receipt(run, record, expected, record['role'], 'initial')
-        if invocation in invocation_ids:
+        from .review_run import verify_role_call
+        calls = verify_role_call(run, record, expected, record['role'], 'initial',
+                                 limit=result.get('max_schema_resubmissions'))
+        if calls & invocation_ids:
             raise ValueError('duplicate preflight invocation identity')
-        invocation_ids.add(invocation)
+        invocation_ids.update(calls)
     if (Path(run) / 'adjudicator-execution.json').is_file():
-        from .review_run import recorded_calls
-        execution = read_json(Path(run) / 'adjudicator-execution.json')
-        if execution.get('resubmissions', {}).get('limit', result.get('output_resubmissions', 1)) != result.get('output_resubmissions', 1):
-            raise ValueError('adjudicator resubmission bound differs from run')
-        for record, workspace in recorded_calls(run, execution, 'adjudicator'):
-            invocation = verify_receipt(run, record, expected, 'adjudicator', 'adjudicator', workspace=workspace)
-            if invocation in invocation_ids:
-                raise ValueError('duplicate preflight invocation identity')
-            invocation_ids.add(invocation)
+        from .review_run import verify_role_call
+        calls = verify_role_call(run, read_json(Path(run) / 'adjudicator-execution.json'),
+                                 expected, 'adjudicator', 'adjudicator',
+                                 limit=result.get('max_schema_resubmissions'))
+        if calls & invocation_ids:
+            raise ValueError('duplicate preflight invocation identity')

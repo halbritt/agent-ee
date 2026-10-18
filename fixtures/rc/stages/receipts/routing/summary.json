@@ -1,0 +1,25 @@
+{
+  "classification": "complete",
+  "proposal": "eligible",
+  "coverage": "routing_complete",
+  "router_exit": 0,
+  "candidate_sha256": "4c38968b8d0438efeb0a982f1113237bec585e1d313a3e68d66b55bf888759ba",
+  "backend": {
+    "status": "reported",
+    "value": {
+      "name": "krt",
+      "version": "0.23.1",
+      "build": "v0.23.1-dirty",
+      "commit": "295f9ee197517e8323726853361eb137cc08ba9e",
+      "source": "https://github.com/drandyhaas/KiCadRoutingTools",
+      "rust_router": "0.23.1"
+    },
+    "reason": null
+  },
+  "tool_version": {
+    "status": "unknown",
+    "value": null,
+    "reason": "kicad-route at the pin has no --version; identity is the pinned code"
+  },
+  "reproducibility": "deterministic backend, repeatability not qualified by this attempt"
+}

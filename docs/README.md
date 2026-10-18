@@ -26,14 +26,20 @@ product's hardware qualification.
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
+| Capture a design's block plan as draft block entries; check a block adaptation | [Block inventory](block-inventory.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
+| Run DFM geometry rules (annular ring, aspect ratio, acid traps, bridge gap, spacing, skew, copper balance) | [DFM geometry](dfm-geometry.md) |
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |
 | Gate the BOM for JLC assembly: LCSC binding, stock freshness, Extended parts | [Assembly readiness](assembly-readiness.md) |
 | Check part-binding properties in symbols and footprints | [Part binding](part-binding.md) |
 | Export a captured board into a JLCPCB fab package | [Fab export](fab-export.md) |
 | Verify sealed fabrication outputs against captured design evidence | [Fab-package consistency](fab-consistency.md) |
+| Compare Gerber/Excellon counts and outline with native geometry | [Fab round-trip conservation](fab-roundtrip.md) |
+| Correct JLCPCB CPL midpoints and rotations against the supplier footprint | [CPL rotation](cpl-rotation.md) |
+
+| Gate generation "done" on a passing, hash-sealed fab package | [Fab package done gate](fab-package.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
@@ -102,9 +108,11 @@ conduction model, explicit material contracts and independent owned oracles.
 
 - [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
 - [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement through a registered check.
+- [JLCPCB CPL rotation](cpl-rotation.md) — pad-box midpoints, versioned rotation policy and pin-1 frame verification against captured supplier footprints.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; the placement writer is integrated with staged campaigns.
 - [Assembly and test access](dfa-dft.md) — declared connector orientation, test-point probe access and coverage, and the derived `bringup_plan.json`.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
+- [Requirement record to scope](requirement-scope.md) — deterministic compilation of a spec-quoting requirement record into a scope/2 with every requirement and check mapped; the rung-1 instance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison used by the supplier/native check.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.

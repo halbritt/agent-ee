@@ -332,4 +332,4 @@ def bench_review(run, report, out, max_seconds, *, review_out=None):
         scope["empirical"] = "empirical/calibration.json"
         write_json(out / "scope.json", scope)
         return run_review(out / "scope.json", review_out, max_seconds, previous=str(run),
-                          output_resubmissions=original.get("output_resubmissions", 1))
+                          max_schema_resubmissions=original.get("max_schema_resubmissions", 0))

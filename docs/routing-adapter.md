@@ -18,9 +18,9 @@ The adapter has two halves:
   attempt as an AGENTEE-95 `agent-ee.stage-step/1`, and `verify()` re-derives
   the outcome from the retained bytes.
 
-Campaign integration, the AGENTEE-95 receipt module and the shared stage gate
-are separate items. Root integrates them; this page describes the adapter and
-the interface it expects from them.
+Campaigns opt in with `routing_adapter` and run it through the existing step plan.
+The coordinator verifies both the generic receipt and routing semantics before
+adoption, and repeats those checks in `verify-campaign`.
 
 ## Pinned compatibility
 
@@ -62,6 +62,38 @@ state=None, budget=300, timeout=None, backend='krt')` returns:
 | `timeout_s` | the attempt timeout plus 300 s for hashing and retention |
 
 There is no `version_argv`. The coordinator, not the writer, declares the step.
+
+Include a strict declaration in the campaign's frozen configuration. For example,
+where `config` is an `agent-ee.campaign/1` object:
+
+```python
+config["routing_adapter"] = {
+    "schema": "agent-ee.routing-adapter/1",
+    "project": "project", "board": "rc_filter.kicad_pcb", "schematic": "rc_filter.kicad_sch",
+    "name": "rc_filter", "label": "routing", "checkout": "/opt/kicad-route", "budget": 120,
+}
+```
+
+The declaration allows only the fields shown plus `state`, `timeout` and `backend`.
+Defaults match `step()`: state is the checkout, backend is KRT, budget is 300 s,
+and timeout is twice the budget plus 300 s. No argv, mount, environment or pin override
+is accepted. The selected board and schematic must equal the scope's identities,
+and the board must be in `mutable_inputs`. The scope must be staged and declare
+routing. The campaign dispatches exactly one routing entry only when routing is
+its earliest failing stage; explicit routing `implementation_steps` cannot accompany
+this opt-in. The writer must leave the complete placed source tree unchanged on
+that turn. A writer edit stops before the router starts.
+
+The first captured candidate freezes `state.json.routing_binding`: the canonical
+step, production adapter hash and pin, executable, source tree and complete mount
+identities. The adapter hash must match the captured policy. Before launch, a
+changed checkout or backend state is refused rather than rebaselined. Receipt
+observations before and after execution must equal this binding. Replay first
+checks the anchored receipt chain, then the routing binding and exact executor
+command, including read-only mount source/target pairs and network isolation.
+It does not require the external checkout still to exist.
+Generic stage-step programs, including historical rung scripts, retain their
+existing behavior and do not produce the adapter's qualified routing evidence.
 
 Inside the sandbox the attempt script accepts only those options. Each value
 must match a fixed pattern. The script does not use argparse, because its usage
@@ -261,7 +293,7 @@ checks decide:
 
 - DRC with schematic parity and zero unconnected items;
 - `copper-width/1`;
-- the compiled routing rules (AGENTEE-63, not yet integrated);
+- the configured compiled routing rules (AGENTEE-63);
 - preservation of placement and outline.
 
 Freerouting attempts carry the label "attempt only; never a reproducible
@@ -286,16 +318,19 @@ following from that draft:
   plus its outputs. A later writer edit to the board makes the receipt
   `not_applicable`.
 
-`verify(run, receipt=receipt)` is the routing-specific check that campaign
-integration must call after `validate_receipt`, both before adoption and when
-verifying a campaign. Generic stage-receipt checks do not interpret the routing
-report. `test_kicad_route_stage_receipt.py` and the receipt case in
+`verify_campaign_receipt(receipt_dir, expected=..., binding=...)` checks the
+implementation/source/index binding, frozen tool identity, command and mounts,
+then calls `verify(run, receipt=receipt)` after `validate_receipt`, both before
+adoption and when verifying a campaign. Generic stage-receipt checks do not
+interpret the routing report. A crashed or killed adapter with no report remains
+an unadoptable receipt with unknown routing coverage; a missing report never
+authorizes a proposal. `test_kicad_route_stage_receipt.py` and the receipt case in
 `test_kicad_route_native.py` import `agent_ee.stage_receipts` unconditionally;
 a missing or broken module fails their collection.
 
 ## Qualification on the original placed RC
 
-The placed RC is the hand-made [RC control](../fixtures/rc/PROVENANCE.md) with
+The placed RC is the existing [RC control](../fixtures/rc/PROVENANCE.md) with
 every track, via and zone removed through pcbnew. Footprint placement, outline,
 schematic, project and library tables are unchanged.
 [`test_kicad_route_native.py`](../tests/test_kicad_route_native.py) runs the
@@ -323,6 +358,16 @@ exits 0 to 4, contradictions, timeout and cancellation with a coordinator-owned
 fixture router. Its retained-verification cases forge one claim at a time with
 fresh hashes and identity. Those tests qualify adapter policy, not KRT
 behaviour.
+
+[`test_routing_campaign.py`](../tests/test_routing_campaign.py) exercises exits
+0 through 4 through the campaign writer and checks the anchored implementation
+record and receipt applicability for each exit. It also rejects altered command,
+mount, timeout and adoption declarations, and a rehashed execution record claiming
+a writable state mount. Its native case routes the placed RC inside a staged
+campaign, checks the full host checkout identity and OS-refused write probes, and
+runs fresh DRC and `copper-width/1` checks on the captured proposal. Reviewers are
+scripted in these orchestration tests; native tool evidence is produced by the
+installed KiCad and pinned KRT processes.
 
 ## Limits
 

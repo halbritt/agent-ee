@@ -126,15 +126,25 @@ it at run time and assert the following:
 - all 144 physical pins resolve, with type counts and key pins taken from the
   raw source text, and bind to the source hash;
 - a native forced re-save (`kicad-cli sym upgrade --force`) reproduces the
-  subset byte for byte.
+  subset byte for byte;
+- an emitter-generated `STM32H723ZGTx` core sheet passes native KiCad 10.0.7
+  ERC with zero violations of any severity. The sheet embeds the capture, ties
+  the 11 VDD pins, VBAT, VREF+, VDDA, VDD33USB and PDR_ON to `+3V3`, ties the
+  9 VSS pins, VSSA and BOOT0 to `GND`, decouples each VCAP pin with an owned
+  capacitor and marks the other 115 pins no-connect. The project library table
+  points at the captured subset, and the stock LQFP-144 footprint is copied
+  into the temporary project at run time only. The native XML netlist equals
+  those nets pin for pin. A control without the `+3V3` power flag makes ERC
+  report only `power_pin_not_driven`, which shows that ERC evaluated the MCU's
+  power pins.
 
 Strict mode (`AGENT_EE_REQUIRE_TOOLCHAIN=1`) fails rather than skips when that
-library is missing.
+library or footprint is missing.
 
-Not yet qualified: native ERC of an emitter-generated sheet that embeds
-`STM32H723ZGTx`. The symbol places 9 VSS pins on one connection point. The
-current [schematic emitter](schematic-emitter.md) refuses any shared pin
-endpoint (`impossible_pin_endpoint`). Every symbol in both over-limit stock
-libraries has such stacked pins. Supporting them is an emitter change.
-Generated FOME consumption also remains with the generator and block-library
+The symbol stacks its 9 VSS pins on one connection point. The
+[schematic emitter](schematic-emitter.md) emits such a stack with one label
+when all its pins are on one net. Moving one stacked VSS pin to another net or
+to a no-connect refuses with `impossible_pin_endpoint`.
+
+Generated FOME consumption remains with the generator and block-library
 owners.

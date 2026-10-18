@@ -38,6 +38,16 @@ UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/age
 STAGE_ORDER = ['schematic', 'placement', 'routing', 'verification']
 CHECK_STAGES = {'erc': 'schematic', 'netlist': 'schematic', 'drc': 'placement',
                 'geometry': 'routing', 'rc-step': 'verification'}
+# The generation done gate (decision 1, AGENTEE-94): declared last, mapped to an acceptance requirement.
+DONE_CHECK = {'id': 'fab', 'kind': 'fab_package', 'params': {'netlist_check': 'netlist'}, 'stage': 'verification'}
+FAB_REQUIREMENT = {'id': 'R-fab', 'statement': 'A JLCPCB fab package is exported from the captured design, '
+                   'passes the fab consistency gate and is sealed',
+                   'source': {'path': 'requirements/fab-package.md', 'locator': 'R-fab'}, 'checks': ['fab']}
+FAB_PACKAGE_TEXT = ('# Fab package requirement\n\nR-fab: The accepted candidate must yield a JLCPCB fab package '
+                    '(Gerber zip, PTH/NPTH drill files, BOM and CPL with a hash manifest) exported by the pinned '
+                    'kicad-cli from the captured board and schematic, with no fab consistency defect or coverage gap. '
+                    'This establishes package existence and internal consistency, not DFM, CPL rotation policy, '
+                    'stock or orderability.\n')
 # kicad-route: 0 complete and valid; 2 valid but incomplete; 3 fails validation (never adoptable).
 NEVER_ADOPTABLE = {'routing': {1, 2, 3, 4}}
 MOUNT_STEPS, MOUNT_SOURCE, MOUNT_ROUTE = '/tool/steps', '/tool/agent-ee', '/tool/kicad-route'
@@ -220,6 +230,7 @@ def write_scaffold(rundir, prep):
     lib_table_check(project)
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(REVIEW_CONVENTIONS)
+    (scaffold / 'requirements' / 'fab-package.md').write_text(FAB_PACKAGE_TEXT)
     generation.mkdir()
     write_json(generation / 'intent.json', prep['intent'])
     (generation / 'resolved.json').write_bytes(prep['resolved_bytes'])
@@ -296,18 +307,23 @@ def compile_staged_scope(params, scope_dir, scaffold):
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs
     scope['name'] = 'Rung-1 RC low-pass, staged repair campaign from an empty candidate'
-    scope['requirements'] = list(scope.get('requirements', [])) + ['requirements/review-conventions.md']
+    scope['requirements'] = list(scope.get('requirements', [])) + ['requirements/fab-package.md',
+                                                                    'requirements/review-conventions.md']
     scope['scope'] = ('Review the rung-1 RC low-pass candidate against the requirements compiled from its '
                       'one-paragraph spec. The campaign starts from an empty native project (no symbols, '
                       'footprints or copper). After each implementation session the coordinator runs the '
                       'declared generation steps (schematic emitter, board build with row placement, '
                       'kicad-route KRT, fab export) on the delivered design and records stage receipts; '
-                      'only fresh checks and reviews of the captured result decide acceptance. Immutable '
+                      'only fresh checks and reviews of the captured result decide acceptance, ending with '
+                      'the fab_package done gate. Immutable '
                       'generation inputs are under generation/. This is a disposable benchmark board.')
     by_id = {c['id']: c for c in scope['checks']}
     if set(by_id) != set(CHECK_STAGES):
         raise PrepareFailure(f'scope template checks {sorted(by_id)} differ from {sorted(CHECK_STAGES)}')
     scope['checks'] = [{**by_id[cid], 'stage': stage} for cid, stage in CHECK_STAGES.items()]
+    scope['checks'].append(json.loads(json.dumps(DONE_CHECK)))
+    scope['baseline']['requirements'].append(json.loads(json.dumps(FAB_REQUIREMENT)))
+    scope['generation'] = {'schema': 'agent-ee.generation/1', 'done_check': DONE_CHECK['id']}
     scope['stages'] = {
         'schema': 'agent-ee.stages/1', 'order': list(STAGE_ORDER),
         'subjects': {
@@ -431,9 +447,9 @@ validates structured responses so that a valid judgment is not lost to a path or
   coordinator check remain concerns.
 - Locators must point at content that exists in the cited file. Each citation is validated
   against the retained run; a single invalid citation or witness invalidates the whole
-  response. An adjudicator format refusal permits one separately recorded resubmission
-  by default with the exact error and unchanged inputs; a second refusal stays incomplete.
-  Checks are never resubmitted.
+  response. A structured-output refusal permits one separately recorded resubmission
+  (`max_schema_resubmissions`, default 1) with the exact error and unchanged inputs; a
+  second refusal stays incomplete. Checks are never resubmitted.
 """
 
 
@@ -442,7 +458,8 @@ def campaign_config(scope_path, profile, steps, max_seconds=3600, max_iterations
     return {'schema': 'agent-ee.campaign/1', 'scope': Path(scope_path).name, 'review_profile': profile,
             'implementation': {'harness': adjudicator['harness'], 'model': adjudicator['model'],
                                'effort': adjudicator['effort'], 'timeout_s': 900},
-            'max_iterations': max_iterations, 'max_seconds': max_seconds, 'implementation_steps': steps}
+            'max_iterations': max_iterations, 'max_seconds': max_seconds, 'max_schema_resubmissions': 1,
+            'implementation_steps': steps}
 
 
 # ------------------------------------------------------------------ records
@@ -547,14 +564,40 @@ def campaign_summary(root):
     return state, iterations, implementations
 
 
-def write_record(rundir, base, *, verdict=None, fab=None, fab_bound=False):
+def recomputed_artifacts(stdout, run):
+    """The fab artifact hashes verify-campaign printed for the final run, or None."""
+    lines = stdout.splitlines()
+    header = next((i for i, line in enumerate(lines) if line.startswith('fab_artifacts ')), None)
+    if header is None:
+        return None
+    fields = lines[header].split()
+    if len(fields) != 4 or fields[2] != 'candidate':
+        return None
+    files, prefix = {}, f'{run}/'
+    for line in lines[header + 1:]:
+        sha, sep, path = line.partition('  ')
+        if not sep or not path.startswith(prefix) or not re.fullmatch(r'[0-9a-f]{64}', sha):
+            return None
+        files[path[len(prefix):]] = sha
+    return {'artifacts_id': fields[1], 'candidate_id': fields[3], 'files': files}
+
+
+def artifacts_agree(stored, recomputed):
+    return bool(stored and recomputed) and all(stored.get(k) == recomputed[k]
+                                               for k in ('artifacts_id', 'candidate_id', 'files'))
+
+
+def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None):
     exists = bool(fab and fab['exports_exist'])
-    done = verdict == 'criteria_satisfied' and exists and fab_bound
+    verified = artifacts_agree(fab_artifacts, recomputed)
+    done = verdict == 'criteria_satisfied' and verified
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
-              'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_bound_to_accepted_candidate': fab_bound,
+              'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_artifacts': fab_artifacts,
+              'fab_artifacts_recomputed_by_verify_campaign': recomputed, 'fab_artifacts_verified': verified,
               'done': done,
-              'done_rule': ('campaign verdict criteria_satisfied AND fab exports exist, are nonempty and match '
-                            'their manifest AND the fab step consumed the accepted candidate\'s board and schematic')}
+              'done_rule': ('campaign verdict criteria_satisfied AND the final campaign state lists the fab '
+                            'artifact hashes of the passing fab_package done check AND verify-campaign recomputed '
+                            'the same hashes from the retained run')}
     write_json(Path(rundir) / 'rung1-campaign-record.json', record)
     return record
 
@@ -695,10 +738,15 @@ def campaign_record(rundir, base, command, source=PACKAGE_ROOT):
         fab_matches_final_captured_candidate=fab_final,
         verify_campaign={'exit_code': verify['exit_code'], 'stdout_tail': verify['stdout_tail'],
                          'stderr_tail': verify['stderr_tail']})
-    if verify['exit_code'] != 0 and verdict == 'criteria_satisfied':
+    recomputed = None
+    if verify['exit_code'] == 0:
+        stdout = (rundir / 'logs' / verify['stdout']).read_text(errors='replace') if verify.get('stdout') else ''
+        final_run = state['history'][-1]['run'] if state and state.get('history') else None
+        recomputed = recomputed_artifacts(stdout, final_run) if final_run else None
+    elif verdict == 'criteria_satisfied':
         verdict = 'unverified:' + verdict
     return write_record(rundir, base, verdict=verdict, fab=fab,
-                        fab_bound=fab_final and verdict == 'criteria_satisfied')
+                        fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed)
 
 
 def rebuild_record(rundir):
@@ -744,7 +792,7 @@ def main(argv=None):
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_campaign refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'fab_exports_exist',
-                                                 'fab_bound_to_accepted_candidate', 'done')}))
+                                                 'fab_artifacts_verified', 'done')}))
     return 0 if record['done'] else 1
 
 

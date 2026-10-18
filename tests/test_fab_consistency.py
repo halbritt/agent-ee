@@ -285,7 +285,7 @@ class FabCase(unittest.TestCase):
                      'files': {rel: hashlib.sha256(data).hexdigest() for rel, data in content.items()},
                      'copper_layers': 2, 'enabled_fab_layers': list(LAYERS),
                      'drill': {'pth': 'board-PTH.drl', 'npth': 'board-NPTH.drl'},
-                     'designators': {'board_non_dnp': list(claimed)},
+                     'designators': {'board_non_dnp': list(claimed), 'excluded': [], 'exclusion_rule': None},
                      'generated_utc': '2026-10-17T00:00:00Z'}
             if manifest_edit:
                 manifest_edit(value)
@@ -426,6 +426,15 @@ class FabConsistencyTests(FabCase):
             'drill': (lambda m: m.update(drill={'pth': 'board-PTH.drl', 'npth': 'board-PTH.drl'}), 'distinct'),
             'board_non_dnp stale': (lambda m: m['designators'].update(board_non_dnp=['C1', 'R1', 'R2', 'U1']),
                                     "board_non_dnp ['TP1']"),
+            'designators key': (lambda m: m['designators'].pop('excluded'), 'designators must hold'),
+            'unknown rule': (lambda m: m['designators'].update(exclusion_rule='Value=10k'),
+                             'not a known assembly rule'),
+            'excluded off board': (lambda m: m['designators'].update(excluded=[{'designator': 'ZZ9', 'rule': None}]),
+                                   'designators.excluded must be'),
+            'rule not captured': (lambda m: m['designators'].update(exclusion_rule='JLCPCB_Assembly=not_assembled'),
+                                  'not the captured export rule'),
+            'excluded stale': (lambda m: m['designators'].update(excluded=[{'designator': 'R1', 'rule': None}]),
+                               'stale: manifest excluded'),
         }
         for name, (edit, text) in edits.items():
             with self.subTest(name):
@@ -849,9 +858,11 @@ class NativeFabPipelineTests(unittest.TestCase):
                 '(attr smd)', '(attr smd)\n\t\t(model "${KIPRJMOD}/owned.step")', 1))
         self.runs = 0
 
-    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None):
+    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None, rule=None):
         scope = read_json(REPO / 'fixtures/fab-export/control.scope.json')
         scope.update(schema='agent-ee.scope/3', board='design/' + board)
+        if rule:
+            scope['checks'][1]['params']['assembly_exclusion'] = rule
         scope['inputs'][0]['path'] = str(self.source)
         scope['inputs'][0]['include'].append('owned.step')
         scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
@@ -987,9 +998,51 @@ class NativeFabPipelineTests(unittest.TestCase):
                 self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
                 self.assertIn('J1', result['location'])
                 self.assertIn('designator_parity', {d['code'] for d in result['details']['defects']})
+                # The package follows the board flags, so BOM, CPL and board agree; the named
+                # defect is the schematic/board disagreement itself.
+                self.assertEqual(result['details']['designators']['parity_violations'], [])
+                self.assertEqual(result['details']['designators']['dnp_disagreements'], [
+                    {'designator': 'J1', 'schematic_dnp': dnp_source == 'schematic',
+                     'board_dnp': dnp_source == 'board'}])
+                self.assertEqual(self.results[-2]['details']['dnp_disagreements'],
+                                 result['details']['designators']['dnp_disagreements'])
                 if dnp_source == 'schematic':
                     self.assertIn('netlist_exclusion_assembled', {d['code'] for d in result['details']['defects']})
                 self.assert_witness(result, accepted=True)
+
+    def test_native_rule_exclusion_is_rederived_and_held_to_parity(self):
+        from test_fab_export import RULE, mark_board, mark_schematic
+        schematic, board = self.source / 'fab.kicad_sch', self.source / 'fab.kicad_pcb'
+        schematic.write_text(mark_schematic(schematic.read_text(), 'J1', unbind=True))
+        board.write_text(mark_board(board.read_text(), 'J1'))
+        result = self.run_case(rule=RULE)
+        self.assertEqual((self.results[-2]['execution'], self.results[-2]['outcome']), ('ok', 'pass'))
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        designators = result['details']['designators']
+        self.assertEqual((designators['excluded'], designators['exclusion_rule'], designators['board_assembled']),
+                         ([{'designator': 'J1', 'rule': RULE}], RULE, 5))
+        self.assertEqual(designators['parity_violations'], [])
+        self.assertNotIn('J1', [r['ref'] for r in result['details']['coordinates']['records']])
+
+        # An excluded designator that reappears in the CPL is not assembled on the board: parity defect.
+        def restore_row(ctx, stage):
+            native = list(csv.reader(io.StringIO((ctx.work / 'steps/pos/out/pos.csv').read_text())))
+            row = next(r for r in native if r[0] == 'J1')
+            self.edit_csv(stage, 'cpl.csv', lambda rows: rows.append(
+                ['J1', row[3], row[4], 'Top', row[5]]))
+        result = self.run_case(rule=RULE, mutate=restore_row)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertEqual(result['details']['designators']['parity_violations'],
+                         [{'designator': 'J1', 'bom': False, 'cpl': True, 'board': False}])
+
+        # The manifest claim is checked against the sealed sources, never trusted.
+        def forget(ctx, stage):
+            manifest = read_json(stage / 'manifest.json')
+            manifest['designators']['excluded'] = []
+            write_json(stage / 'manifest.json', manifest)
+        result = self.run_case(rule=RULE, mutate=forget)
+        self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'), result)
+        self.assertIn('stale: manifest excluded', result['summary'])
 
     def test_native_coordinates_include_the_exact_tolerance_on_both_sides(self):
         def boundary(ctx, stage):

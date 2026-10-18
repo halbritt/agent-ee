@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .executor import Cancellation, execute
 from .storage import digest, identity, read_json, write_json
+from .review_run import OutputFormatRefusal
 from .findings import CITATION_PATH_RULE
 
 EVIDENCE_SCHEMA = {"type": "array", "items": {"type": "object", "required": ["path", "locator"],
@@ -105,7 +106,7 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
     work = run_dir / "review-work" / label
     config = work / "home" / ".claude"
     config.mkdir(parents=True)
-    (work / "experiments").mkdir()
+    (work / "experiments").mkdir(exist_ok=True)
     credentials = Path.home() / ".claude" / ".credentials.json"
     record = {"backend": "claude", "model_requested": model, "billing_route": "subscription",
               "execution": "unavailable", "effort": effort, "limitations": []}
@@ -151,13 +152,17 @@ def claude_call(run_dir, label, model, prompt, schema, timeout, effort="high", t
                 return record, None
             value = raw.get("structured_output")
             if value is None:
-                value = json.loads(raw["result"])
+                from .harnesses import structured_payload
+                value = structured_payload(raw.get("result"))
             if not isinstance(value, dict):
-                raise ValueError("reviewer response is not an object")
+                raise OutputFormatRefusal("reviewer response is not an object")
             record["model_usage"] = raw.get("modelUsage", {})
             record["harness_session"] = raw.get("session_id")
             record["duration_api_ms"] = raw.get("duration_api_ms")
             return record, value
+        except OutputFormatRefusal as exc:
+            record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+            return record, None
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             record["execution"] = "malformed"
             record["error"] = str(exc)
@@ -287,36 +292,45 @@ def initial_reviews(run_dir, packet, deadline, *, launch_context=None):
             context = {**(launch_context or {}), 'boundary': 'initial', 'deadline': deadline,
                        'admit': admit, 'refuse': refuse}
             try:
-                record, value = reviewer_call(run_dir, role, definition, prompt, schema, timeout,
-                                              cancellation=cancellation, launch_context=context)
+                from .review_run import structured_call
+                def validate(value):
+                    review = validate_review(value, packet["candidate_id"], packet["run_id"],
+                                             packet["packet_sha256"], Path(run_dir))
+                    if review["role"] != role:
+                        raise ValueError("reviewer returned a different role")
+                    return review
+                def call(supplied):
+                    execution, value = reviewer_call(run_dir, role, definition, supplied, schema,
+                        min(timeout, max(.001, deadline - time.monotonic())),
+                        cancellation=cancellation, launch_context=context)
+                    with launch_lock:
+                        if execution["execution"] in ("failed", "unavailable", "timeout", "interrupted"):
+                            stopped.add(definition["harness"])
+                    return execution, value
+                record, review = structured_call(run_dir, role, prompt, schema, call, validate,
+                    limit=context.get('max_schema_resubmissions', 0),
+                    execution_path=Path(run_dir) / 'review-executions' / f'{role}.json')
             except KeyboardInterrupt:
-                record.pop("admission", None)
-                record.update(backend=definition["harness"], model_requested=definition["model"],
-                              effort=definition["effort"], billing_route="subscription")
-                work_record = Path(run_dir) / 'review-work' / role / 'launch-execution.json'
-                if not work_record.is_file():
-                    work_record = Path(run_dir) / "review-work" / role / "execution.json"
-                if work_record.is_file():
-                    record.update(read_json(work_record))
+                retained = Path(run_dir) / 'review-executions' / f'{role}.json'
+                if retained.is_file() and 'attempts' in read_json(retained):
+                    record = read_json(retained)
                 else:
-                    record["execution"] = "interrupted"
+                    record.pop("admission", None)
+                    record.update(backend=definition["harness"], model_requested=definition["model"],
+                                  effort=definition["effort"], billing_route="subscription")
+                    work_record = Path(run_dir) / 'review-work' / role / 'launch-execution.json'
+                    if not work_record.is_file():
+                        work_record = Path(run_dir) / "review-work" / role / "execution.json"
+                    if work_record.is_file():
+                        record.update(read_json(work_record))
+                    else:
+                        record["execution"] = "interrupted"
                 record["role"] = role
                 write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
                 raise
-            with launch_lock:
-                if record["execution"] in ("failed", "unavailable", "timeout", "interrupted"):
-                    stopped.add(definition["harness"])
             record["role"] = role
-            if value is not None:
-                try:
-                    review = validate_review(value, packet["candidate_id"], packet["run_id"], packet["packet_sha256"], Path(run_dir))
-                    if review["role"] != role:
-                        raise ValueError("reviewer returned a different role")
-                    write_json(Path(run_dir) / "reviews" / f"{role}.json", review)
-                except ValueError as exc:
-                    review = None
-                    record["execution"] = "malformed"
-                    record["error"] = str(exc)
+            if review is not None:
+                write_json(Path(run_dir) / "reviews" / f"{role}.json", review)
         write_json(Path(run_dir) / "review-executions" / f"{role}.json", record)
         return review, record
 
@@ -371,16 +385,15 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
     definition = read_json(Path(run_dir) / "candidate.json")["scope"]["review_profile"]["adjudicator"]
     definition = {**definition, "tool_mode": read_json(Path(run_dir) / "candidate.json")["scope"]["review_profile"].get("tool_mode", "investigate")}
     prompt = workspace_instructions("adjudicator") + prompt
-    from .findings import adjudicate, OutputFormatError
+    from .findings import adjudicate
     from .review_run import structured_call
-
     def validate(value):
         if {d["finding_id"] for d in value.get("decisions", [])} != {f["id"] for f in findings}:
-            raise OutputFormatError("adjudicator did not disposition every finding")
+            raise ValueError("adjudicator did not disposition every finding")
         adjudicate(findings, value, run_dir)
-
+        return value
+    context = {**(launch_context or {}), "boundary": "adjudicator", "deadline": deadline}
     return structured_call(run_dir, "adjudicator", prompt, schema,
-        lambda current_prompt: reviewer_call(run_dir, "adjudicator", definition, current_prompt, schema,
+        lambda supplied: reviewer_call(run_dir, "adjudicator", definition, supplied, schema,
             min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
-            launch_context={**(launch_context or {}), "boundary": "adjudicator", "deadline": deadline}),
-        validate, limit=(launch_context or {}).get("output_resubmissions", 1), deadline=deadline)
+            launch_context=context), validate, limit=context.get('max_schema_resubmissions', 0))

@@ -106,6 +106,11 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+Original [RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
+placed-unrouted and seeded placement defects with native checks and a KRT
+input receipt. The exact FOME-MC control derivatives requested by AGENTEE-103
+remain blocked by unresolved third-party rights.
+
 The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
 projects from captured envelope and parts records plus an explicit stage-one
 scope. It preserves project rules, checks and baseline sources, pre-creates child
@@ -118,15 +123,19 @@ earlier gates. Missing expected design content requires a native observation; it
 cannot pass merely because an empty design produces no rule violations. Progress
 is measured in the earliest failing stage, with regression and retry limits.
 Existing unstaged campaigns keep their convergence rules. Coordinator steps
-follow the earliest failing stage; arbitrary writer commands have no stage-specific
-OS allowlist. A complete generation rung with live model review and fabrication
+follow the earliest failing stage. The retained writer prompt lists declared steps
+and their outputs; staged campaigns refuse writer edits to outputs owned by a
+scheduled step. Arbitrary writer commands have no stage-specific OS allowlist.
+A complete generation rung with live model review and fabrication
 acceptance remains pending.
 
 An [offline intent importer](docs/design-intent.md) preserves source requirements
 and exact voltage values. [Decision capture](docs/design-dialog.md) records
 answers and their dependencies; missing answers remain unresolved. These tools
 prepare inputs, but do not choose executable acceptance checks or generate a
-verified circuit.
+verified circuit. The [requirement-record compiler](docs/requirement-scope.md)
+turns an owner-authored record of spec quotes and check mappings into a scope/2;
+it refuses unmapped requirements and uncited spec sentences.
 
 [Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
 and derived requirements into the captured baseline. A reference document becomes
@@ -190,20 +199,47 @@ Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
 The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
 board-bound manifest offline. It requires identical assembled designators
-across the board and CSVs before completing the package.
+across the board and CSVs before completing the package. A declared
+`JLCPCB_Assembly=not_assembled` rule leaves marked populated parts out of the
+BOM and CPL and lists them in the manifest.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor
 coordinates within 0.01 mm and sealed export logs for warnings. Gerber geometry,
 DFM and assembly rotation corrections stay outside its coverage.
+The [fab round-trip check](docs/fab-roundtrip.md) re-parses native Gerber and
+Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill
+histograms, copper pad/via flash counts and outline bounds within 1 µm. Its
+narrow parser fails closed on unsupported constructs; artwork is not compared.
+The [CPL rotation check](docs/cpl-rotation.md) rewrites the exported CPL to
+native pad-box midpoints. It applies a captured, versioned rotation policy and
+requires every rotation to agree with the pin-1 frame of the captured supplier
+footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
+diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
+JLCPCB placement preview validates rotation physically.
+
+The [fab package done gate](docs/fab-package.md) (`fab_package`, declared last)
+runs that export and gate in one check and seals the package's file hashes. A
+scope with a `generation` marker is refused at capture without it, and a
+satisfied generation campaign's `state.json` lists the hashes, which
+`verify-campaign` recomputes.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
+The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
+with read-only state, retains hashed attempt diagnostics, and verifies routing
+semantics before adopting a proposal. Fresh checks determine acceptance.
 The [fab profile check](docs/fab-profile.md) runs captured, source-cited
 fabrication limits through the same native rules. It also compares layer count
 and outline size with the saved board and lists legal surcharged features
 separately. No real fabricator preset is supplied or qualified.
+The [DFM geometry check](docs/dfm-geometry.md) applies seven deterministic rules
+with captured thresholds to exact pcbnew geometry from the saved board: annular
+ring, via aspect ratio, acid traps, SMD bridge gap, courtyard spacing,
+differential-pair skew including arcs, and copper balance. It reports coded
+findings with coordinates and gives no score. A missing fact, such as the saved
+board thickness, leaves that rule unknown.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. A pinned jlcparts feed
@@ -213,6 +249,10 @@ compares declared intervals and stock within that snapshot. Both now have checks
 that use the captured baseline, sandbox and coordinator seal; selection binds one
 explicit requirement. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
+and their catalog, CAD and datasheet provenance in the campaign baseline.
+The `parts_subset` check compares native symbol/footprint/supplier identities
+and required instances; absent native evidence leaves coverage unknown.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
 are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap
@@ -227,10 +267,19 @@ onto the symbol; capturing a PDF does not verify its applicability or its
 engineering claims.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
-pinned local commit and checks declared ports against the native sheet. It credits
+pinned local commit without Git transports or replacement refs, and checks
+declared ports against the native sheet. Missing local blobs are refused. It credits
 sealed interface evidence only for the block's actual native components and
-hierarchy. Parts subsets, layouts and adapted designs still need qualification;
+hierarchy. [Block adaptation](docs/block-adaptation.md) copies a flat block into
+a pre-created child, freezes its provenance and maps its requirements to fresh board checks.
+Its native provenance check lists value/connectivity edits and grades boundary
+bindings. Parts subsets and layouts still need qualification;
 a passing run on a separate schematic cannot qualify the block.
+[Block inventory capture](docs/block-inventory.md) writes one draft entry per
+planned block from a pinned design commit, all unverified, each with its
+reference set, a derived interface contract, library hashes and sourced pending
+requirements. It also replays block adaptation fixtures. The owner's fome-mc
+inventory and captures stay private until the owner decides on publication.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
@@ -266,11 +315,10 @@ Before each reviewer, adjudicator or implementation call, a
 [preflight guard](docs/result-reference.md#pre-inference-environment-receipts)
 checks captured tool and policy identities and tests sandbox execution. Drift or
 an unavailable prerequisite stops the call with a retained diagnostic.
-Adjudicators may cite the verified immutable `baseline.json`. An output-format
-refusal permits one separately recorded adjudicator resubmission by default,
-using the same evidence and pinned environment plus the exact validation error.
-The [campaign configuration](docs/campaign-guide.md) can disable it; a second
-refusal leaves the run incomplete. Checks are never resubmitted.
+Campaigns allow one [bounded output resubmission](docs/campaign-guide.md#bounded-output-resubmission)
+per role per iteration by default. Both calls and the original validation error
+are retained; checks, execution failures and environment drift remain terminal.
+Adjudicators may cite the verified immutable `baseline.json`.
 
 [Packet navigation](docs/result-reference.md#factual-packet-navigation) links
 native components, pins, nets and board primitives to declared checks and
@@ -293,6 +341,9 @@ Thermal solvers, post-layout parasitic extraction, DFM analysis and BOM
 lifecycle services are **not bundled**. The [`dfa_dft` check](docs/dfa-dft.md)
 covers only declared connector orientation, test-point probe access and
 test-point coverage, and derives a bring-up plan. They need separately qualified tools,
+
+Thermal solvers, post-layout parasitic extraction, DFA/DFT analysis, DFM beyond the
+seven geometry rules, and BOM lifecycle services are **not bundled**. They need separately qualified tools,
 models and adapters. The built-in passive simulation is not a general active
 circuit simulator. The [coverage guide](docs/coverage.md) spells out these limits.
 

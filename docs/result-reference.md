@@ -176,34 +176,6 @@ should identify the actual command, input, measurement or fetched source.
 The baseline citation establishes declared requirements or context; it cannot
 replace the sealed failed-check citation required for an accepted defect.
 
-Adjudicator output-format refusals permit one separate resubmission by default.
-The campaign's `output_resubmissions` field sets the bound to 0 or 1; the frozen
-campaign config and each run's result record retain it. `adjudicator-execution.json`
-records `resubmissions.limit`, `used` and the ordered call-record paths.
-`used` counts resubmission attempts, including a refused preflight; a `not_run`
-execution records that the harness was never dispatched.
-`refusal_class=output_format` permits resubmission; `judgment_or_evidence`
-refusals, such as trying to dismiss an authoritative failed check, stop immediately.
-`review-executions/adjudicator-calls/N.json` retains each response and its
-interpreted execution/error, alongside the exact prompt and response schema.
-When resubmitting, the first call's raw workspace moves to
-`review-work/.refused/adjudicator/0/`; the new call gets a fresh
-`review-work/adjudicator/` workspace and its own preflight receipt. The original
-receipt's invocation identity is preserved in the archived workspace. Refused
-workspaces are neither mounted into the next call nor valid citation paths.
-
-The new call receives the same prompt plus `VALIDATION ERROR:` and the exact
-validation message. Candidate, packet, sealed checks, finding set, schema,
-harness/model definition and pinned environment stay fixed. Historical verification
-checks the prompt/error chain, count, final projection and both preflight receipts.
-A second malformed output leaves the run incomplete. Failed provider calls are
-never resubmitted. A new preflight refuses changed runtime identities before
-dispatch. Changed candidate, packet or sealed evidence stops resubmission with
-the original refusal and a `resubmission_refusal` diagnostic retained; it consumes
-no further call. Checks are never resubmitted. This change connects adjudication to the
-shared helper. Other roles still need their own validation integration;
-reviewer-witness and runtime-drift work are tracked in AGENTEE-115 and AGENTEE-112.
-
 Adapter records identify the backend, requested model, subscription route,
 execution/diagnostics, harness binary digest and, on successful parsing,
 model-usage/session/API-duration metadata supplied by the harness. A requested
@@ -321,7 +293,9 @@ a `witnesses` field for every scope/2 finding; an empty array is appropriate for
 a concern without a reproduced requirement violation.
 
 A scope/2 defect without a valid witness is refused, rather than receiving the
-legacy no-evidence downgrade. The whole malformed review remains invalid.
+legacy no-evidence downgrade. The malformed response remains invalid. A campaign may request a separately
+recorded [bounded resubmission](campaign-guide.md#bounded-output-resubmission);
+that new output must pass the same validator.
 An accepted scope/2 decision must target `check/CHECK_ID` and cite its failed
 check JSON; arbitrary reviewer prose cannot become a separate accepted defect
 by borrowing that check's witness. Reviewer analysis may be retained as a
@@ -340,7 +314,7 @@ paths, lifecycle, verification and recovery.
 
 | Schema or record | Required meaning |
 | --- | --- |
-| `agent-ee.campaign/1` | Operator configuration: scope, review profile, implementation definition and iteration/time limits |
+| `agent-ee.campaign/1` | Operator configuration: scope, review profile, implementation definition, iteration/time limits and `max_schema_resubmissions` (0 or 1, default 1) |
 | `agent-ee.campaign-state/1` | Coordinator state, `config_sha256`, `history`; after the first retained review also `baseline`, `mutable_inputs`, `diagnostic`; `epoch` defaults to zero and is stored when feedback advances it |
 | History entry | `candidate_id`, `design_id`, `run_id`, `failed`, `passing`, `outcome`, `margins`, `run`, `result_sha256`, `result_snapshot`, `epoch`, `calibration_id` |
 | `history/N.json` | Exact original `agent-ee.result/1` bytes copied when the coordinator records that iteration |

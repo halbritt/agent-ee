@@ -1,0 +1,14 @@
+{
+  "kicad_cli_version": "10.0.7",
+  "pcbnew_version": "10.0.7",
+  "purpose": "Original alternative; control-derived AGENTEE-103 fixtures remain owner-gated.",
+  "sources": {
+    "agent_ee/board_build.py": "2b4b7682e8a1752f171cabc1cafcd7fed497bf68e8077dcd2a999b04aa254a55",
+    "agent_ee/connectivity_ir.py": "a0fa5f121ffb2b5d52fa0089afb5544f5b157f214a80742cb916df3fd021a36b",
+    "agent_ee/schematic_emitter.py": "e7dcd18ed251f4b1d065da0a419040a24d36551d6aca80d6a93fa9281ae217c0",
+    "agent_ee/symbol_library.py": "2f4adc30193fdc252df562bacaa9854e14ba648eeb051af4aa5d09ba7905ad85",
+    "generate.py": "7cc8203dae999cabf950688078bdef261b2ca9dc890c6c4286e71ec9bad8db71",
+    "lib/Owned_Gen.kicad_sym": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1",
+    "lib/StageRC.kicad_sym": "89f88dee4eaa462e730f645d29a4f14d73507dd8bf56fe266bc8bd39c02399c0"
+  }
+}

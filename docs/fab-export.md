@@ -10,11 +10,14 @@ price queries, and it does not place an order.
 
 ## Parameters and coverage
 
-Parameters are exactly `{"netlist_check": "<id>"}`. The named check must be an
+Parameters are `{"netlist_check": "<id>"}` plus an optional
+`"assembly_exclusion": "JLCPCB_Assembly=not_assembled"` (see
+[assembly exclusions](#assembly-exclusions)). The named check must be an
 earlier `netlist` check in the same scope. Its result must be `execution=ok` for
 the same candidate, and its retained `design.xml` must match its
 `connectivity.json`. Otherwise the check is `not_run`. v1 refuses any other key,
-for example a layer or output override, as `unsupported`. In scope/3 the check
+for example a layer or output override, and any other exclusion rule text, as
+`unsupported`. In scope/3 the check
 declares the predicate `fab-export:jlcpcb-package/1`, so it must be mapped to an
 acceptance requirement. The board stays mutable candidate input. A captured
 `.kicad_pro` next to the board becomes an immutable dependency.
@@ -62,12 +65,42 @@ malformed. The zip is byte-identical for the same zlib implementation.
 
 ### BOM
 
-The BOM comes from the native XML netlist of the prerequisite, never from the
-board. Power symbols (`#` references) and DNP components are excluded. The
-symbol fields that bind a part follow AGENTEE-32: `LCSC` (`^C[1-9][0-9]*$`),
+Part bindings come from the native XML netlist of the prerequisite, never from
+the board. Power symbols (`#` references) are excluded. The symbol fields that bind a part follow AGENTEE-32: `LCSC` (`^C[1-9][0-9]*$`),
 `Manufacturer`, and `Partnumber` (or `PartNumber` when `Partnumber` is unset;
 two different values are refused). `Value` and `Footprint` (the full library id)
 are also required.
+
+#### DNP authority
+
+The board's footprint `dnp` attribute decides which parts the package
+assembles. The same flags drive the BOM, `--exclude-dnp` in the position file
+and `designators.board_non_dnp`, so the three agree by construction:
+
+- A netlist component with a board footprint is in the BOM exactly when that
+  footprint is not DNP. Its schematic DNP flag does not matter here; a
+  schematic-DNP part whose footprint is populated is bound from its netlist
+  fields and listed.
+- A netlist component with no board footprint keeps its schematic state. A
+  schematic-DNP part off the board is left out. A populated part off the board
+  stays in the BOM and then fails designator agreement (`malformed`).
+- A board footprint with no netlist component has no binding and is never in
+  the BOM, so it also fails designator agreement.
+- `exclude_from_bom` or `exclude_from_board` on a component that is populated
+  in either the schematic or the board is refused as `unsupported`, also when
+  the component is excluded by the declared rule below.
+
+The export never resolves a schematic/board DNP disagreement silently. Each
+disagreeing designator is listed in `details.dnp_disagreements` as
+`{"designator", "schematic_dnp", "board_dnp"}`, and a limitation names it.
+`details.schematic_dnp` keeps the schematic DNP references. The package still
+completes, because the board flags fully define it. The
+[consistency gate](fab-consistency.md) reads the sealed netlist and geometry
+itself and reports every such designator as a `designator_parity` defect. The
+manifest's `designators.board_non_dnp` follows the board flags alone. The board is
+the authority because it is the artefact that the Gerbers, drill and position
+file come from. Building the BOM from the schematic would let BOM and CPL
+disagree whenever the two sources did.
 
 Rows are grouped by LCSC number. Designators within a row are in natural order
 (`C1,C2,C10`), and `Quantity` is the designator count. Rows are ordered by their
@@ -82,6 +115,47 @@ are refused as `unsupported`. A part with a missing or malformed binding is
 written with an empty `LCSC Part #` cell and listed in `details.flagged_parts`.
 Any flagged part stops the package from completing.
 
+#### Assembly exclusions
+
+A populated part can stay on the board but out of JLC assembly, for example
+the rung-1 through-hole header J1 that is hand-soldered. The rung-1 generator
+marks such a symbol with the field `JLCPCB_Assembly=not_assembled`, and
+`board_build` copies the field to the footprint as a property. `fab_export`
+honours the marker only when the scope declares the same rule as a check
+parameter, `"assembly_exclusion": "JLCPCB_Assembly=not_assembled"`. The
+parameter is part of the captured scope, so it is hashed into the
+candidate identity (`candidate_id`, `scope_sha256`). v1 knows only this rule.
+
+A part is excluded only when both of these hold:
+
+- its board footprint is not DNP (DNP stays the board's decision, and a DNP
+  part is omitted as DNP, never listed as excluded);
+- the native netlist field and the board footprint property are both
+  `not_assembled`.
+
+The excluded part needs no `LCSC`, `Manufacturer` or `Partnumber` binding. It
+is left out of `bom.csv`. The native position file still lists it, because it
+is populated. The native designators must equal `board_non_dnp` before the
+excluded rows are dropped from `cpl.csv`. The BOM and CPL designators must then
+equal the assembled set, `board_non_dnp` less the excluded designators. The
+manifest lists each excluded designator with its rule, and a limitation names
+it: the part is still on the board, in the Gerbers and drill files, and must be
+fitted outside JLC assembly.
+
+Nothing is excluded silently. These cases are refused as `unsupported` before
+any native export:
+
+- a populated part carries the field and the scope declares no matching rule;
+- the netlist field and the board property differ, or only one of them is
+  present;
+- the field has a value other than `not_assembled`;
+- a marked netlist component has no board footprint;
+- a marked board footprint has no netlist component.
+
+A declared rule that matches no part is recorded in the manifest
+(`exclusion_rule`) with an empty `excluded` list, and the package is otherwise
+unchanged.
+
 ### CPL
 
 The native position file is rewritten: `Ref`→`Designator`, `PosX`→`Mid X`,
@@ -91,10 +165,14 @@ absolute board X and negated board Y, on both sides, with no auxiliary/drill-ori
 override. The anchor is the native footprint position. The consistency gate
 compares these coordinates with the exact native geometry probe within 0.01 mm.
 Rows are in natural designator order. The check applies **no rotation, offset or pin-1 policy**:
-`Rotation` is the native KiCad angle. JLC rotation correction belongs to
-AGENTEE-72. The BOM and position-file designators must both equal the board's
-non-DNP footprints before a manifest is written. A mismatch makes the output
-malformed and retains the files only in `fab.incomplete/`.
+`Rotation` is the native KiCad angle. JLC rotation correction is the separate
+[`cpl_rotation`](cpl-rotation.md) check (AGENTEE-72), which reads this staging.
+The native position-file designators must equal the board's non-DNP
+footprints, and the BOM and CPL designators must equal the board's assembled
+footprints (non-DNP less rule-excluded parts), before a manifest is written.
+The DNP authority and exclusion rules make them agree when the netlist and board name the same parts. A remaining
+mismatch, such as a renamed footprint or a part missing from one side, makes
+the output malformed and retains the files only in `fab.incomplete/`.
 
 ### Manifest
 
@@ -105,7 +183,9 @@ malformed and retains the files only in `fab.incomplete/`.
  "files": {"bom.csv": "<sha256>", "gerbers/fab-F_Cu.gtl": "<sha256>", "...": "..."},
  "copper_layers": 2, "enabled_fab_layers": ["F.Cu", "B.Cu", "F.Mask", "..."],
  "drill": {"pth": "fab-PTH.drl", "npth": "fab-NPTH.drl"},
- "designators": {"board_non_dnp": ["C1", "C2", "C10", "..."]},
+ "designators": {"board_non_dnp": ["C1", "C2", "C10", "J1", "..."],
+                 "excluded": [{"designator": "J1", "rule": "JLCPCB_Assembly=not_assembled"}],
+                 "exclusion_rule": "JLCPCB_Assembly=not_assembled"},
  "generated_utc": "2026-10-17T19:04:46Z"}
 ```
 
@@ -114,7 +194,9 @@ malformed and retains the files only in `fab.incomplete/`.
 candidate-manifest digest of the captured board. The check also confirms that
 the captured bytes still have that digest. `drill` gives file names inside
 `drill/`. `designators.board_non_dnp` comes from the board's footprint inventory,
-not from the position file. `tool.path` and `tool.sha256` identify the
+not from the position file. `designators.excluded` lists the rule-excluded
+designators, a subset of `board_non_dnp`, and `designators.exclusion_rule` is
+the declared rule or `null`. Both keys are always present. `tool.path` and `tool.sha256` identify the
 `kicad-cli` on the sandbox `PATH`, the same file `doctor` and `runtime_files`
 fingerprint. The check reads the manifest back and verifies it against the
 staging before it reports `pass`. `verify_manifest` is the same comparison for
@@ -126,7 +208,7 @@ consumers.
 | --- | --- | --- |
 | Every step succeeded, every output validated, no flagged part, manifest verified | `ok` | `pass` |
 | Missing or unparseable native output; BOM or position designators that disagree with the board; unnormalisable timestamps; board bytes that differ from the captured digest | `malformed` | `unknown` |
-| Unsupported board feature, missing part binding, non-ASCII text that cannot be mapped | `unsupported` | `unknown` |
+| Unsupported board feature, missing part binding, non-ASCII text that cannot be mapped, an assembly marker without a matching declared rule or with sources that disagree | `unsupported` | `unknown` |
 | `kicad-cli` nonzero exit or an empty produced native file | `failed` | `unknown` |
 | Netlist prerequisite absent, later, failed or from another candidate | `not_run` | `unknown` |
 
@@ -142,13 +224,17 @@ layers; a missing mask, paste, silkscreen or `Edge.Cuts` layer; blind, buried or
 micro vias; drill spans other than `F.Cu..B.Cu`; castellated or press-fit pads;
 a missing board outline; assembly variants on the board or schematic; duplicate
 or non-plain references; and populated footprints or symbols marked `board_only`,
-`exclude_from_bom`, `exclude_from_pos_files` or `exclude_from_board`. A board
+`exclude_from_bom`, `exclude_from_pos_files` or `exclude_from_board` (the
+declared `JLCPCB_Assembly` rule is the supported way to keep a populated part
+out of assembly). A board
 with no populated footprints is also refused, because the package would be
 empty.
 
 `pass` means that the exports exist, parsed, agree on designators and were
-hashed and bound to the board. `details.designators` records the board, CPL
-and BOM sets even on a mismatch. LCSC-to-footprint uniqueness, CPL
+hashed and bound to the board. `details.designators` records the board
+non-DNP, excluded, assembled, native position-file, CPL and BOM sets even on a
+mismatch. `details.assembly_exclusion` records the rule, the scope check that
+declared it, the captured `scope_sha256` and the excluded designators. LCSC-to-footprint uniqueness, CPL
 side/coordinate checks, export-log diagnostics and 3D-model checks belong to
 `fab_consistency` (AGENTEE-73), which reads this staging and manifest and
 never regenerates the exports.
@@ -166,6 +252,14 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 - the 2-layer and 4-layer packages, sealed;
 - byte-identical repeat runs whose raw native Gerber timestamps differ;
 - mismatched BOM/board references refused before completion;
+- schematic/board DNP disagreement in both directions: the package follows the
+  board, completes, and records `details.dnp_disagreements`;
+- the DNP authority and exclusion rules as unit cases;
+- the declared `JLCPCB_Assembly=not_assembled` rule: an unbound, marked J1 is
+  left out of the BOM and CPL, listed in the manifest, and the package passes
+  `fab_consistency` with sealed evidence; DNP C3 stays a DNP omission;
+- a marked part with no declared rule, or marked in only the schematic or only
+  the board, refused before export; a declared rule that matches nothing;
 - real netlist → geometry → fab export → consistency checks with sealed evidence;
 - DNP exclusion, a missing part binding, and empty, removed or truncated native
   outputs;
@@ -175,3 +269,8 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 
 The native tests need Bubblewrap and `kicad-cli` in the sandbox. They skip when
 these are absent, and fail under `AGENT_EE_REQUIRE_TOOLCHAIN=1`.
+
+The separate [fab round-trip check](fab-roundtrip.md) consumes this manifest
+and exact zip bytes alongside sealed native geometry to check layer, drill,
+flash-count and outline conservation. Export success alone does not establish
+those comparisons.

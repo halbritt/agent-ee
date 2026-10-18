@@ -1,0 +1,185 @@
+{
+  "baseline": {
+    "reference_architectures": [
+      "requirements/spec.md"
+    ],
+    "requirements": [
+      {
+        "checks": [
+          "erc",
+          "drc",
+          "netlist"
+        ],
+        "id": "R-native",
+        "source": {
+          "locator": "Native ERC and DRC must pass and the netlist must export.",
+          "path": "requirements/spec.md"
+        },
+        "statement": "Native ERC and DRC pass and the netlist exports"
+      },
+      {
+        "checks": [
+          "geometry"
+        ],
+        "id": "R-width",
+        "source": {
+          "locator": "Copper tracks must be at least 0.20 mm wide.",
+          "path": "requirements/spec.md"
+        },
+        "statement": "Copper tracks and arcs are at least 0.20 mm wide"
+      },
+      {
+        "checks": [
+          "rc-step"
+        ],
+        "id": "R-response",
+        "source": {
+          "locator": "With an ideal unloaded 1 V step at /IN, /OUT at 1 ms must be between 0.62 V and 0.65 V inclusive.",
+          "path": "requirements/spec.md"
+        },
+        "statement": "Unloaded 1 V step response at /OUT at 1 ms in [0.62,0.65] V"
+      },
+      {
+        "checks": [
+          "fab"
+        ],
+        "id": "R-fab",
+        "source": {
+          "locator": "R1 and C1 are JLCPCB-assembled SMD parts",
+          "path": "requirements/spec.md"
+        },
+        "statement": "The board yields a JLCPCB assembly package: Gerbers, drill, BOM and CPL"
+      },
+      {
+        "checks": [
+          "netlist",
+          "rc-step",
+          "fab"
+        ],
+        "id": "R-parts",
+        "source": {
+          "locator": "A 10k resistor R1 connects /IN to /OUT, and a 100n capacitor C1 connects /OUT to GND.",
+          "path": "requirements/spec.md"
+        },
+        "statement": "R1 (10k, /IN to /OUT) and C1 (100n, /OUT to GND) are exported populated parts, each bound to an LCSC part in the BOM"
+      }
+    ],
+    "targets": [
+      "requirements/record.json"
+    ]
+  },
+  "board": "project/rung1_rc.kicad_pcb",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "drc",
+      "kind": "drc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "geometry",
+      "kind": "geometry",
+      "params": {
+        "covered_primitives": [
+          "PCB_TRACK",
+          "PCB_ARC"
+        ],
+        "criterion": "copper-width/1",
+        "exclude_nets": [],
+        "min_track_width_mm": 0.2
+      }
+    },
+    {
+      "id": "rc-step",
+      "kind": "rc_transient",
+      "params": {
+        "ground_net": "GND",
+        "input_net": "/IN",
+        "measurements": [
+          {
+            "at_ms": 1.0,
+            "max": 0.65,
+            "min": 0.62,
+            "name": "vout_1ms"
+          },
+          {
+            "at_ms": 5.0,
+            "name": "vout_5ms"
+          }
+        ],
+        "netlist_check": "netlist",
+        "output_net": "/OUT",
+        "step_v": 1.0,
+        "stop_ms": 5.0
+      }
+    },
+    {
+      "id": "fab",
+      "kind": "fab_export",
+      "params": {
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "at": "project",
+      "path": "scaffold/project"
+    },
+    {
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ],
+      "path": "/usr/share/kicad/symbols"
+    },
+    {
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ],
+      "path": "/usr/share/kicad/footprints"
+    },
+    {
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ],
+      "path": "/usr/share/kicad/template"
+    },
+    {
+      "at": "requirements",
+      "path": "scaffold/requirements"
+    }
+  ],
+  "limitations": [
+    "Ideal unloaded step response only; tolerance, temperature, loading, ADC sampling, EMI and hardware behavior are untested.",
+    "Zone fill is evaluated as saved; the read-only candidate forbids a refill pass.",
+    "fab_export checks that the package exports and that every BOM line is bound; stock, price, DFM and fab_consistency are not evaluated.",
+    "Not checked: \"A 3-pin header J1 carries the input /IN on pin 1, the output /OUT on pin 2 and GND on pin 3.\" (header pin assignment needs a hardware_interface contract, which is not in the rung-1 check list)",
+    "Not checked: \"The board is a 2-layer 50 mm x 30 mm rectangle with J1 on the left edge.\" (outline, layer count and connector edge need the board_envelope check (AGENTEE-85), which is not in the rung-1 check list)",
+    "Not checked: \"SMD parts; the through-hole header J1 is hand-soldered.\" (package class and hand-solder assembly class are not checked; fab_export requires an LCSC binding for every non-DNP BOM line, including J1)"
+  ],
+  "mutable_inputs": [
+    "project/rung1_rc.kicad_sch",
+    "project/rung1_rc.kicad_pcb"
+  ],
+  "name": "Rung-1 RC low-pass board",
+  "requirements": [
+    "requirements/spec.md"
+  ],
+  "schema": "agent-ee.scope/2",
+  "schematic": "project/rung1_rc.kicad_sch",
+  "scope": "Review the rung-1 RC low-pass board generated from the one-paragraph spec against the requirement IDs compiled from it. This is a disposable benchmark board, not an ECU circuit."
+}

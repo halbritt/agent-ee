@@ -61,7 +61,9 @@ its native observation and, for schematics, the raw XML netlist. Public verifica
 requires successful probe execution and checks these observations against the
 captured inventory. It counts top-level placed symbols or footprints by explicit Reference property,
 or saved straight/arc segments. Nested library definitions are not instances. Symbols explicitly excluded from
-both BOM and board (`in_bom no`, `on_board no`) are outside component presence;
+both BOM and board (`in_bom no`, `on_board no`) are outside component presence,
+and so are symbols whose Reference starts with `#` (power symbols and `PWR_FLAG`,
+which KiCad's netlist export omits whatever their `in_bom`/`on_board` flags);
 the resulting inventory must still agree with native export.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
@@ -158,7 +160,11 @@ and routing writer constraints remain separate lanes. The writer prompt limits w
 failing stage; arbitrary writer investigative commands are not a stage-specific
 OS allowlist. Coordinator-run steps honor the same gate: a staged campaign's step plan holds
 only the earliest failing stage's [implementation steps](stage-receipts.md#campaign-integration),
-and the [placement adapter](placement-adapter.md) runs only on placement turns. Owner convergence-contract acceptance remains outstanding.
+and the [placement adapter](placement-adapter.md) runs only on placement turns. When steps are declared,
+the retained writer prompt lists all steps and their write paths, identifies the scheduled steps, and
+reserves their stages for coordinator execution. A writer change to a scheduled step's output is
+refused as `writer_step_output_edit` before any step runs. The writer can prepare other mutable inputs
+or return a no-op summary. Owner convergence-contract acceptance remains outstanding.
 
 The ordered scheduler changes the identity of `checks.py`, which the existing
 passive-corner contract pins as its parser module. Requalification compared the

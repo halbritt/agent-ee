@@ -144,7 +144,7 @@ def doctor(checks_only=False):
 
 def artifacts(run):
     found = {p.relative_to(run).as_posix(): digest(p) for parent in
-            ("inputs", "work", "checks", "reviews", "review-work", "review-executions")
+            ("inputs", "work", "checks", "reviews", "review-work", "review-executions", "review-attempts")
             for p in sorted((run / parent).rglob("*")) if p.is_file()}
     for p in (run / "events").glob("*.json"):
         found[p.relative_to(run).as_posix()] = digest(p)
@@ -377,22 +377,21 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, output_resubmissions=1):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=0):
     from .locking import writer_lock
     with writer_lock(out):
         return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
                            previous=previous, profile=profile, expected_baseline=expected_baseline, output_stream=output_stream,
-                           output_resubmissions=output_resubmissions)
+                           max_schema_resubmissions=max_schema_resubmissions)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, output_resubmissions=1):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=0):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
+
     from .review_run import resubmission_limit
-
-    output_resubmissions = resubmission_limit(output_resubmissions)
-
+    max_schema_resubmissions = resubmission_limit(max_schema_resubmissions)
     run = Path(out).resolve()
     if not math.isfinite(max_seconds) or not 0 <= max_seconds <= 86400:
         raise ValueError("max-seconds must be finite and between 0 and 86400")
@@ -402,7 +401,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         "policy_files": policy_files(), "runtime_files": runtime_files(),
         "checks": [], "reviews": [], "review_executions": [],
         "findings": [], "adjudicated": False, "limitations": [], "previous_run": previous,
-        "output_resubmissions": output_resubmissions}
+        "max_schema_resubmissions": max_schema_resubmissions}
     deadline = time.monotonic() + max_seconds
     save_result(run, result)
     try:
@@ -430,7 +429,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
                        for d in [*selected.get('reviewers', []), *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
         result['launch_expectation'] = capture_expectation(result, m, definitions, inputs=run / 'inputs')
-        launch_context = {'expected': result['launch_expectation'], 'output_resubmissions': output_resubmissions}
+        launch_context = {'expected': result['launch_expectation'],
+                          'max_schema_resubmissions': max_schema_resubmissions}
         save_result(run, result)
         result["checks"] = run_checks(run, deadline)
         from .baseline import freeze_evidence
@@ -775,6 +775,12 @@ def main(argv=None):
             from .campaign import verify_campaign
             state = verify_campaign(args.campaign)
             print(state["state"])
+            artifacts = state.get("fab_artifacts")
+            if artifacts:
+                run = state["history"][-1]["run"]
+                print(f"fab_artifacts {artifacts['artifacts_id']} candidate {artifacts['candidate_id']}")
+                for rel, sha in artifacts["files"].items():
+                    print(f"{sha}  {run}/{rel}")
             return 0
         if args.command == "campaign":
             from .campaign import run_campaign

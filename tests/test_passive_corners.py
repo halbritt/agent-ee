@@ -136,6 +136,7 @@ class NativeCornerTests(unittest.TestCase):
                     witness = [{'requirement_id': 'R-response', 'check_id': 'rc-step'}]
                     evidence = [{'path': 'checks/rc-step.json', 'locator': 'outcome'}]
                     validate_witnesses(root / 'run', witness, evidence)
+                    self.assert_coupling_keeps_envelope(check)
                     for rel in ('ensemble.json', 'corner-00/deck.cir', 'corner-00/result.raw',
                                 'corner-00/metrics.json'):
                         path = root / 'run/work/rc-step' / rel
@@ -144,6 +145,42 @@ class NativeCornerTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, 'changed'):
                             validate_witnesses(root / 'run', witness, evidence)
                         path.write_bytes(original)
+
+    def assert_coupling_keeps_envelope(self, corner):
+        # The native corner result joins a protocol thermal result in a separate run directory.
+        from agent_ee.measurements import check_coupled_margins
+        metric = corner['details']['metrics']['vout_1ms']
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            manifest = {'candidate_id': corner['candidate_id'], 'files': {}, 'scope': {
+                'schema': 'agent-ee.scope/1',
+                'checks': [{'id': 'rc-step'}, {'id': 'thermal'}, {'id': 'joint'}]}}
+            write_json(run / 'checks/rc-step.json', corner)
+            write_json(run / 'checks/thermal.json', {
+                'candidate_id': corner['candidate_id'], 'execution': 'ok',
+                'details': {'producer': {'domain': 'thermal'}, 'metrics': {'peak': {
+                    'value': 40, 'unit': 'degC', 'condition': metric['condition']}}}})
+            for change in (None, 'condition', 'unit'):
+                with self.subTest(coupling=change):
+                    limit = {'unit': 'mV' if change == 'unit' else 'V',
+                             'condition': metric['condition'], 'min': .60, 'max': .68}
+                    ctx = checks.Ctx(run, manifest, {'id': 'joint', 'kind': 'coupled_margins', 'params': {
+                        'condition': metric['condition'] + (';load=1k' if change == 'condition' else ''),
+                        'members': [{'name': 'vout', 'check': 'rc-step', 'metric': 'vout_1ms'},
+                                    {'name': 'heat', 'check': 'thermal', 'metric': 'peak'}],
+                        'limits': {'vout': limit, 'heat': {'unit': 'degC', 'max': 85,
+                                                           'condition': metric['condition']}}}},
+                        time.monotonic() + 30)
+                    if change:
+                        with self.assertRaisesRegex(checks.CheckError, change):
+                            check_coupled_margins(ctx)
+                        self.assertNotIn('margins', ctx.result['details'])
+                        continue
+                    check_coupled_margins(ctx)
+                    self.assertEqual(ctx.result['outcome'], 'defect')
+                    self.assertEqual(ctx.result['details']['metrics']['vout'], metric)
+                    self.assertEqual(ctx.result['details']['margins']['vout'],
+                                     corner['details']['margins']['vout_1ms'])
 
     def test_partial_ensembles_and_identity_changes_never_pass(self):
         root = self.prepare('corner-failures')
@@ -254,6 +291,33 @@ class StaticCornerCoverageTests(unittest.TestCase):
             invalid['params'].update(override)
             report = describe_check(invalid, check_specs=[scope['checks'][0], invalid], files=files, scope=scope)
             self.assertEqual(report['status'], 'unsupported', report)
+
+    def test_coupling_requires_canonical_corner_condition(self):
+        from agent_ee.capabilities import describe_check
+        scope = read_json(REPO / 'fixtures/passive-corners/control.scope.json')
+        files = {p: '0' * 64 for p in ('qualification.json', 'requirements/system.md',
+                 'requirements/reference.md', 'requirements/targets.md', scope['schematic'],
+                 'adapter.py', 'solver.py')}
+        corner = scope['checks'][1]
+        expected = passive_corners.condition(corner['params'], corner['params']['measurements'][0])
+        self.assertIn('ramp=1ns;initial=0V;at=1ms;independent-tolerances=', expected)
+        thermal = {'id': 'thermal', 'kind': 'measurements', 'params': {
+            'adapter': 'adapter.py', 'tool': {'argv': ['/usr/bin/python3', '/candidate/solver.py'],
+                'sha256': 'a' * 64, 'domain': 'thermal', 'inputs': ['solver.py']},
+            'limits': {'peak': {'unit': 'degC', 'condition': expected, 'max': 85}}}}
+        for condition, status in ((expected, 'supported'),
+                                  (expected.replace('step=1V', 'step=2V'), 'unsupported'),
+                                  ('ideal-unloaded-1.0V-step-at-1.0ms', 'unsupported')):
+            coupled = {'id': 'joint', 'kind': 'coupled_margins', 'params': {
+                'condition': condition,
+                'members': [{'name': 'vout', 'check': 'rc-step', 'metric': 'vout_1ms'},
+                            {'name': 'heat', 'check': 'thermal', 'metric': 'peak'}],
+                'limits': {'vout': {'unit': 'V', 'condition': condition, 'min': .55, 'max': .72},
+                           'heat': {'unit': 'degC', 'condition': condition, 'max': 85}}}}
+            specs = [*scope['checks'], thermal, coupled]
+            with self.subTest(condition=condition):
+                report = describe_check(coupled, check_specs=specs, files=files, scope=scope)
+                self.assertEqual(report['status'], status, report)
 
     def test_only_qualified_topology_is_supported(self):
         params = {**copy.deepcopy(BASE_PARAMS), 'tolerances': {
