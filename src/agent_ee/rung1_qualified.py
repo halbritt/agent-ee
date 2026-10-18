@@ -4,6 +4,8 @@ Run ``python3 -m agent_ee.rung1_qualified SPEC.md --out RUNDIR [--profile P] [--
 (see docs/rung1-qualified.md). It follows ``agent_ee.rung1_campaign`` but replaces every
 experimental stand-in with the owned module now on main:
 
+- scaffold: ``scaffold.native_files`` (AGENTEE-87) through rung1_campaign's in-place
+  ``write-scaffold`` step, imported by the campaign as a pre-receipt (AGENTEE-134);
 - schematic: ``schematic_emitter`` (AGENTEE-40) on a connectivity intent, layout and captures;
 - board population: ``forward_annotation`` (AGENTEE-52) from the native netlist and a
   captured ``agent-ee.footprint-libraries/1`` manifest, into the empty scaffold board;
@@ -43,6 +45,7 @@ NAME = g.PROJECT_NAME
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 STEPS_DIR = REPO_ROOT / 'fixtures' / 'rung1' / 'qualified' / 'steps'
+ENVELOPE = 'generation/envelope/envelope.json'
 IMAGE_KICAD_ROUTE = Path('/opt/kicad-route')
 # The pinned kicad-route checkout: AGENT_EE_KICAD_ROUTE_CHECKOUT when set, else the
 # standard image path. routing_adapter.preflight still qualifies whatever is named.
@@ -160,34 +163,10 @@ def layout():
 
 
 def root_sheet_uuid():
-    from .schematic_emitter import _uuid
-    return _uuid(uuid.UUID(LAYOUT_NAMESPACE), 'sheet', '/')
+    return rc.layout_root_uuid(layout())
 
 
-def envelope_record(params):
-    """agent-ee.envelope/1 (AGENTEE-85): outline, stackup and the fixed J1 on the left edge."""
-    board, header = params['board'], params['header']
-    x0, y0 = 100, 100
-    x1, y1 = x0 + board['width_mm'], y0 + board['height_mm']
-    pitch = 2.54
-    # Pin 1 is the footprint origin; the column of pins is centred vertically, one pitch inside.
-    pin1_y = round(y0 + board['height_mm'] / 2 - pitch * (header['pins'] - 1) / 2, 4)
-    return {
-        'schema': 'agent-ee.envelope/1', 'id': 'rung1-rc',
-        'outline': {'edges': [
-            {'name': 'top', 'start': [x0, y0], 'end': [x1, y0]},
-            {'name': 'right', 'start': [x1, y0], 'end': [x1, y1]},
-            {'name': 'bottom', 'start': [x1, y1], 'end': [x0, y1]},
-            {'name': 'left', 'start': [x0, y1], 'end': [x0, y0]}]},
-        'layer_count': board['copper_layers'],
-        'stackup': {'thickness_mm': 1.6, 'layers': [
-            {'name': 'F.Cu', 'kind': 'copper', 'thickness_mm': 0.035, 'copper_weight_oz': 1},
-            {'name': 'core', 'kind': 'dielectric', 'thickness_mm': 1.53},
-            {'name': 'B.Cu', 'kind': 'copper', 'thickness_mm': 0.035, 'copper_weight_oz': 1}]},
-        'fab_profile': None, 'mounting_holes': [], 'keepouts': [],
-        'fixed_footprints': [{'reference': header['ref'], 'side': 'front', 'edge': 'left',
-                              'position_mm': round(y1 - pin1_y, 4), 'inset_mm': pitch, 'rotation_deg': 0,
-                              'insertion': 'from_top', 'tolerance_mm': 0.5}]}
+envelope_record = rc.envelope_record  # agent-ee.envelope/1 (AGENTEE-85); shared with the scaffold board
 
 
 def outline_rectangle(validation):
@@ -353,19 +332,23 @@ def catalog_attempt(prep, work):
 # ------------------------------------------------------------------ scaffold
 
 def write_scaffold(rundir, prep):
-    """RUNDIR/scaffold/{project,requirements,generation} from owned records; returns its record."""
+    """RUNDIR/scaffold/{project,requirements,generation} from owned records; returns its record.
+
+    The driver writes requirements/ and the immutable generation inputs; the empty project
+    comes only from rung1_campaign's sandboxed `write-scaffold` step (agent_ee.scaffold's
+    builder), run in place and kept in RUNDIR/scaffold-receipt as the campaign pre_receipt.
+    """
     from .board_envelope import derive, round_trip, stage_one_requirements
     from .connectivity_ir import resolve_intent
     rundir = Path(rundir)
     scaffold = rundir / 'scaffold'
-    project, generation = scaffold / 'project', scaffold / 'generation'
-    project.mkdir(parents=True)
-    generation.mkdir()
-    # Envelope (AGENTEE-85): validated, obligations derived; the scaffold outline comes from it.
+    generation = scaffold / 'generation'
+    generation.mkdir(parents=True)
+    # Envelope (AGENTEE-85): validated, obligations derived; the scaffold board comes from it.
     envelope = envelope_record(prep['params'])
     envelope_raw = canonical(envelope) + b'\n'
     try:
-        artifacts = derive(envelope_raw, source_path='generation/envelope/envelope.json')
+        artifacts = derive(envelope_raw, source_path=ENVELOPE)
         dialog = prep['dialog_requirements'].read_bytes()
         artifacts['stage-one-requirements.json'] = stage_one_requirements(dialog,
                                                                           artifacts['dialog-requirements.json'])
@@ -376,18 +359,6 @@ def write_scaffold(rundir, prep):
         (generation / 'envelope' / name).write_bytes(data)
     validation = json.loads(artifacts['envelope-validation.json'])
     outline = outline_rectangle(validation)
-    root = root_sheet_uuid()
-    template_pro = (g.FIXTURE_PROJECT / 'rc_filter.kicad_pro').read_bytes()
-    pro = rc.project_bytes(template_pro, root)
-    board, dropped = rc.empty_board((g.FIXTURE_PROJECT / 'rc_filter.kicad_pcb').read_text(),
-                                    {'outline_mm': outline})
-    (project / f'{NAME}.kicad_pro').write_bytes(pro)
-    (project / f'{NAME}.kicad_sch').write_bytes(rc.empty_schematic(root))
-    (project / f'{NAME}.kicad_pcb').write_bytes(board)
-    for table in ('sym-lib-table', 'fp-lib-table'):
-        shutil.copyfile(g.FIXTURE_PROJECT / table, project / table)
-    rc.lib_table_check(project)
-    trip = round_trip(envelope_raw, board)
     # Requirements.
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(rc.REVIEW_CONVENTIONS)
@@ -426,10 +397,16 @@ def write_scaffold(rundir, prep):
     golden, golden_record = golden_netlist(rundir / 'golden-export')
     (generation / 'golden').mkdir()
     (generation / 'golden' / 'rc_control.xml').write_bytes(golden)
+    step = rc.scaffold_step(rc.PACKAGE_ROOT, rc.STEPS_DIR, g.FIXTURE_PROJECT, envelope=ENVELOPE,
+                            root=('--layout', 'generation/layout.json'))
+    stage_receipt = rc.run_scaffold_step(rundir, scaffold, step)
+    project = scaffold / 'project'
+    trip = round_trip(envelope_raw, (project / f'{NAME}.kicad_pcb').read_bytes())
+    root = root_sheet_uuid()
     files = {p.relative_to(scaffold).as_posix(): digest(p) for p in sorted(scaffold.rglob('*')) if p.is_file()}
     record = {'schema': SCAFFOLD_SCHEMA, 'qualification': QUALIFICATION, 'root_sheet_uuid': root,
-              'layout_namespace': LAYOUT_NAMESPACE, 'outline_mm': outline,
-              'envelope': {'path': 'generation/envelope/envelope.json', 'sha256': sha(envelope_raw),
+              'layout_namespace': LAYOUT_NAMESPACE, 'outline_mm': outline, 'builder': 'agent_ee.scaffold.native_files',
+              'envelope': {'path': ENVELOPE, 'sha256': sha(envelope_raw),
                            'unresolved': validation.get('unresolved'),
                            'obligations': [r['id'] for r in json.loads(
                                artifacts['envelope-requirements.json'])['requirements']],
@@ -439,9 +416,8 @@ def write_scaffold(rundir, prep):
                                                 'obligation is bound; see probes.envelope_scope')},
               'resolved_intent_sha256': resolved['canonical_sha256'],
               'golden_netlist': golden_record,
-              'template_project': {'path': str(g.FIXTURE_PROJECT), 'sha256': {
-                  n: digest(g.FIXTURE_PROJECT / n) for n in ('rc_filter.kicad_pro', 'rc_filter.kicad_pcb')}},
-              'board_items_dropped_from_template': dropped, 'files': files}
+              'template_project': rc.template_record(g.FIXTURE_PROJECT), 'files': files,
+              'stage_receipt': stage_receipt}
     write_json(rundir / 'scaffold.json', record)
     return scaffold, record
 
@@ -777,6 +753,8 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
     steps = check_steps(step_specs(kicad_route, fab=any(c['kind'] == 'cpl_rotation' for c in scope['checks'])),
                         scope['mutable_inputs'])
     config = campaign_config(scope_path, profile, steps, max_seconds=max_seconds, max_iterations=max_iterations)
+    # The scaffold is a pre_receipt (AGENTEE-139), never an implementation step or a stage.
+    config['pre_receipts'] = [rc.scaffold_pre_receipt(scaffold_record)]
     from .profiles import validate_profile
     validate_profile(config['review_profile'])
     validate_profile({**config['review_profile'], 'adjudicator': config['implementation']})
@@ -800,7 +778,7 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
                                            ['assembly_readiness', 'package_consistency', 'parts_subset'])},
             'scaffold': {'path': 'scaffold.json', 'sha256': digest(rundir / 'scaffold.json'),
                          'root_sheet_uuid': scaffold_record['root_sheet_uuid'], 'load_checks': loads,
-                         'envelope': scaffold_record['envelope']},
+                         'envelope': scaffold_record['envelope'], 'stage_receipt': scaffold_record['stage_receipt']},
             'scope': {'path': 'scope.json', 'sha256': digest(scope_path), **validation,
                       'checks': [{'id': c['id'], 'kind': c['kind'], 'stage': c['stage']} for c in scope['checks']]},
             'probes': probes,

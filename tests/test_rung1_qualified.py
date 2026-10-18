@@ -15,7 +15,7 @@ import uuid
 from agent_ee import generate as g
 from agent_ee import rung1_campaign as rc
 from agent_ee import rung1_qualified as q
-from agent_ee.storage import canonical
+from agent_ee.storage import canonical, digest
 try:
     from toolchain import require_kicad_route, require_toolchain
     from test_generate import HEADER, ROWS, git_catalog
@@ -214,7 +214,7 @@ class ScopeTest(unittest.TestCase):
         require_toolchain(native=True)
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-qualified-scope-')
         root = Path(cls.tmp.name)
-        catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
+        cls.catalog = catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
         cls.rundir.mkdir()
         from tests.test_fab_stage import rotation_inputs
@@ -288,6 +288,71 @@ class ScopeTest(unittest.TestCase):
         self.assertEqual(trip['/outline'], 'match')
         self.assertEqual(trip['/fixed_footprints/0'], 'mismatch')
         self.assertFalse(self.record['envelope']['consumed_by_scope'])
+
+    def test_scaffold_is_the_shared_builder_run_in_place_as_the_write_scaffold_step(self):
+        from agent_ee.stage_receipts import validate_receipt
+        summary = self.record['stage_receipt']
+        self.assertEqual(self.record['builder'], 'agent_ee.scaffold.native_files')
+        receipt = validate_receipt(self.rundir / 'scaffold-receipt', binding={'pre_receipt': 1})
+        self.assertEqual((receipt['spec']['stage'], receipt['spec']['step'], receipt['status'], receipt['violations']),
+                         ('scaffold', 'write-scaffold', 'completed', []))
+        self.assertEqual(summary['receipt'], 'scaffold-receipt/receipt.json')
+        self.assertIn('--unshare-net', receipt['execution']['sandbox_argv'])
+        # In place: the envelope and layout are read at their candidate paths; no project file is an input.
+        for rel in (q.ENVELOPE, 'generation/layout.json'):
+            self.assertIn(rel, receipt['inputs'])
+            self.assertIn('/candidate/' + rel, receipt['argv'])
+        self.assertFalse(any(rel.startswith('project/') for rel in receipt['inputs']))
+        envelope_raw = (self.scaffold / q.ENVELOPE).read_bytes()
+        self.assertEqual(envelope_raw, canonical(q.envelope_record(self.prep['params'])) + b'\n')
+        files = rc.scaffold_files(envelope_raw, q.root_sheet_uuid(), g.FIXTURE_PROJECT)
+        self.assertEqual(sorted(receipt['outputs']), sorted(files))
+        for rel, data in files.items():
+            self.assertEqual(receipt['outputs'][rel], digest(self.scaffold / rel), rel)
+            self.assertEqual(data, (self.scaffold / rel).read_bytes(), rel)
+        self.assertIn(f'(uuid "{q.root_sheet_uuid()}")'.encode(), files[f'project/{q.NAME}.kicad_sch'])
+
+    def test_scaffold_pre_receipt_binds_the_first_capture_of_the_staged_scope(self):
+        from agent_ee.candidate import capture
+        from agent_ee.stage_receipts import import_pre_receipts, verify_pre_receipts
+        link = rc.scaffold_pre_receipt(self.record)
+        self.assertEqual(link['binding'], {'pre_receipt': 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'campaign'
+            links = import_pre_receipts(root, [link], self.rundir)
+            run = root / 'runs' / '1'
+            run.mkdir(parents=True)
+            capture(self.scope_path, run)
+            state = {'history': [{'run': str(run)}], 'pre_receipts': {links[0]['path']: links[0]['sha256']}}
+            verify_pre_receipts(root, state, links)
+            manifest = json.loads((run / 'candidate.json').read_text())
+            original = json.loads(json.dumps(manifest))
+            for planted, value in ((f'project/{q.NAME}.kicad_pcb', '0' * 64), ('generation/extra.json', '1' * 64)):
+                manifest['files'] = dict(original['files'], **{planted: value})
+                (run / 'candidate.json').write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, 'pre_receipt output differs from first capture: ' + planted):
+                    verify_pre_receipts(root, state, links)
+            (run / 'candidate.json').write_text(json.dumps(original))
+            with self.assertRaisesRegex(ValueError, 'anchors differ'):
+                verify_pre_receipts(root, {**state, 'pre_receipts': {}}, links)
+
+    def test_build_declares_scaffold_only_as_a_pre_receipt(self):
+        from unittest import mock
+        route = Path(require_kicad_route())
+        built = self.rundir.parent / 'built'
+        built.mkdir()
+        real = q.prepare
+        # The owned synthetic catalog in place of the default fome-mc checkout; everything else is real.
+        with mock.patch.object(q, 'prepare', lambda spec, rundir, **kw: real(spec, rundir, catalog_checkout=self.catalog, **kw)):
+            base, scope_path, config_path = q.build(SPEC, built, profile_path=ROOT / 'profiles/claude-baseline.json',
+                                                    kicad_route=route, max_seconds=3600, max_iterations=4)
+        config = json.loads(config_path.read_text())
+        summary = base['scaffold']['stage_receipt']
+        self.assertEqual(config['pre_receipts'], [{'path': 'scaffold-receipt/receipt.json',
+                                                   'sha256': summary['receipt_sha256'], 'binding': {'pre_receipt': 1}}])
+        self.assertEqual(digest(built / config['pre_receipts'][0]['path']), summary['receipt_sha256'])
+        self.assertNotIn('scaffold', [s['stage'] for s in config['implementation_steps']])
+        self.assertNotIn('scaffold', json.loads(scope_path.read_text())['stages']['order'])
 
     def test_golden_reference_is_a_native_export_of_the_rc_control(self):
         golden = (self.scaffold / 'generation/golden/rc_control.xml').read_text()

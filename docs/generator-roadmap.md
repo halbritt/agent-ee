@@ -167,8 +167,9 @@ and preserves checks and baseline mappings. Its stage-two producer (AGENTEE-141)
 compiles the scope/2 checks, mappings, stage policy and `.kicad_pro` rules from
 the envelope's fab profile and the parts manifest. Per-net classes (AGENTEE-47),
 hierarchical staged presence and complete production envelope acceptance remain
-unavailable. The experimental rung-1 driver still uses its earlier
-[RC campaign scaffold](rung1-campaign.md).
+unavailable. Both rung-1 drivers build their empty project with the same
+module's builder (AGENTEE-134; [RC campaign scaffold](rung1-campaign.md#empty-scaffold)),
+from their own generation inputs and stock library tables rather than through the command.
 
 The [block adapter](block-adaptation.md) can now fill pre-created child sheets
 from captured flat blocks, freeze instance records and map block requirements

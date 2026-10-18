@@ -57,6 +57,18 @@ sources remain immutable. Only the root schematic, pre-created child schematics
 and board appear in `mutable_inputs`. A writer still cannot add or delete a
 captured file, or edit an immutable file.
 
+### Shared builder
+
+`agent_ee.scaffold.native_files` is the only empty-scaffold builder on main. Given
+a validated envelope record, it builds the root and pre-created child schematics,
+the board and the project file metadata. Both modes of this command use it, and so
+do the rung-1 drivers ([RC campaign](rung1-campaign.md#empty-scaffold) and
+[rung1_qualified](rung1-qualified.md#empty-scaffold), AGENTEE-134). Those drivers
+supply the root UUID that their schematic emitter derives, together with stock
+library tables. They run the builder as an in-place `write-scaffold` stage step
+that is imported as a campaign pre-receipt. The physical layer order and
+byte-identity tests here are the single source of truth for the board it emits.
+
 ## Stage-two producer
 
 `agent-ee scaffold ENVELOPE PARTS --plan PLAN --out DIR` (AGENTEE-141) derives

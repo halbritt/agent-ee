@@ -137,6 +137,28 @@ def board(record, seed):
     return sexpr(node)
 
 
+def native_files(record, sch, project, root, seed, plans=None):
+    """The one empty-scaffold builder: schematics, board and .kicad_pro by candidate path.
+
+    record is a board_envelope.validate record; project is the parsed .kicad_pro template,
+    of which only filename and sheet metadata change. plans defaults to a flat root sheet.
+    """
+    plans = plans or {'/': (sch, None)}
+    pcb, pro = (str(PurePosixPath(sch).with_suffix(suffix)) for suffix in ('.kicad_pcb', '.kicad_pro'))
+    name = PurePosixPath(sch).stem
+    outputs = {path: schematic(root, key, plans, name) for key, (path, _) in plans.items()}
+    outputs[pcb] = board(record, seed)
+    project = copy.deepcopy(project)
+    project.setdefault('meta', {})['filename'] = PurePosixPath(pro).name
+    project['sheets'] = [[root, 'Root']] + [
+        [key.strip('/').split('/')[-1], PurePosixPath(path).stem]
+        for key, (path, _) in plans.items() if key != '/']
+    project.setdefault('schematic', {})['top_level_sheets'] = [
+        dict(filename=PurePosixPath(sch).name, name=name, uuid=root)]
+    outputs[pro] = json_bytes(project)
+    return outputs
+
+
 def library_tables(document, inputs, project):
     """Build project-local tables pointing exclusively at captured CAD members."""
     assignments = strict_json(read_captured(inputs, document['cad']['assignments']['path']))
@@ -457,17 +479,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
             raise ValueError('native scaffold collides with immutable planning inputs')
         seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
         root = str(uuid.uuid5(NAMESPACE, seed + ':root'))
-        project_name = PurePosixPath(sch).stem
-        outputs = {path: schematic(root, key, plans, project_name)
-                   for key, (path, _) in plans.items()}
-        outputs[pcb] = board(record, seed)
-        project.setdefault('meta', {})['filename'] = PurePosixPath(pro).name
-        project['sheets'] = [[root, 'Root']] + [
-            [key.strip('/').split('/')[-1], PurePosixPath(path).stem]
-            for key, (path, _) in plans.items() if key != '/']
-        project.setdefault('schematic', {})['top_level_sheets'] = [
-            dict(filename=PurePosixPath(sch).name, name=project_name, uuid=root)]
-        outputs[pro] = json_bytes(project)
+        outputs = native_files(record, sch, project, root, seed, plans)
         outputs.update(library_tables(document, inputs, str(PurePosixPath(sch).parent)))
         if protected & outputs.keys():
             raise ValueError('scaffold library tables collide with immutable planning inputs')

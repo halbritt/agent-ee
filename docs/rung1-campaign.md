@@ -54,7 +54,7 @@ the package that ran the campaign, and spends no inference.
 | `prep/stages/1-requirements`, `prep/stages/2-parts` | `agent_ee.generate` stage-1 and stage-2 receipts, the compiled requirements and the parts manifest |
 | `scaffold/project/` | `rung1_rc.kicad_pro`, an empty `rung1_rc.kicad_sch`, an empty `rung1_rc.kicad_pcb`, and the stock library tables |
 | `scaffold/requirements/` | `spec.md`, `system.md`, `targets.md`, `reference.md` from stage 1 |
-| `scaffold/generation/` | Connectivity intent, resolved record, parts manifest and catalog copy, envelope, placement request, and an immutable template board |
+| `scaffold/generation/` | Connectivity intent, resolved record, parts manifest and catalog copy, the board builder's envelope, the scaffold's `agent-ee.envelope/1` (`board-envelope.json`), placement request, and an immutable template board |
 | `scaffold-receipt/` | The `write-scaffold` [stage receipt](stage-receipts.md) with its retained inputs, run and version records |
 | `campaign/pre-receipts/1/` | The imported scaffold receipt that `verify-campaign` revalidates against the first capture |
 | `scaffold-checks/` | kicad-cli ERC, XML netlist export and parity DRC of the empty files, on sandboxed copies |
@@ -64,24 +64,30 @@ the package that ran the campaign, and spends no inference.
 
 ### Empty scaffold
 
-The schematic has version 20260306, no symbols, one sheet instance, and the
-root-sheet UUID that the schematic emitter derives from the resolved record. The
-project file therefore names the same root sheet before and after emission.
-The board keeps the layers, setup and stackup of the fixture board
-`fixtures/rc/control/rc_filter.kicad_pcb` (version 20260206). It has no
-footprints, copper, zones or nets. Its Edge.Cuts rectangle is the envelope
-outline (50 x 30 mm at 100,100 mm). Both versions are in
-`stages.PRESENCE_VERSIONS`. Before the scope is written, kicad-cli must load
-both files in the sandbox.
+The empty schematic, board and project come from `agent_ee.scaffold.native_files`,
+the one empty-scaffold builder on main, shared with the
+[`scaffold` command](scaffold.md) and [rung1_qualified](rung1-qualified.md)
+(AGENTEE-134). The schematic has version 20260306, no symbols, one sheet instance,
+and the root-sheet UUID that the schematic emitter derives from the resolved record.
+The project file therefore names the same root sheet before and after emission. The
+board (version 20260206) is built from the captured `agent-ee.envelope/1`
+`generation/board-envelope.json`: its Edge.Cuts outline (50 x 30 mm at 100,100 mm),
+copper layer count, thickness and stackup, with the layer table in physical stack order.
+It has no footprints, copper, zones or nets. Both versions are in
+`stages.PRESENCE_VERSIONS`. Before the scope is written, kicad-cli must load both
+files in the sandbox.
 
 The driver writes only `requirements/` and the generation inputs itself. The project
 files, the stock library tables and `generation/template/` are written by the
 `write-scaffold` step (stage `scaffold`, program `steps/scaffold.py`). The step runs through
-`stage_receipts.run_step` in the networkless sandbox on that directory. It mounts the step
+`stage_receipts.run_step` in the networkless sandbox on that directory, in place: it reads
+`/candidate/generation/board-envelope.json` and `/candidate/generation/resolved.json` at
+their candidate paths, so the receipt's after-tree is the first capture. It mounts the step
 programs, the agent-ee source tree (recorded as the Python source tree) and the fixture
-project `fixtures/rc/control` read-only at `/tool/template`. It reads
-`/candidate/generation/resolved.json` and `envelope.json`. Only exit 0 is adopted, through
-`stage_receipts.adopt`. A table that uses `${KIPRJMOD}` exits 3. Any other status stops the
+project `fixtures/rc/control` read-only at `/tool/template`; from the fixture it takes
+only the `.kicad_pro` settings and the stock library tables. Only exit 0 is adopted, through
+`stage_receipts.adopt`. A table that uses `${KIPRJMOD}`, or an envelope the builder refuses
+(for example an odd copper layer count), exits 3. Any other status stops the
 preparation with `PrepareFailure`, keeps the receipt and leaves no project.
 
 ### Staged scope
@@ -217,6 +223,12 @@ snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 `incomplete`, so `done` is false.
 That run predates the `write-scaffold` step: its scaffold was written by the driver
 itself and has no stage receipt, so a rebuilt record of it stays unbound and not `done`.
+It also predates the shared builder (AGENTEE-134): its empty board kept the fixture
+board's setup and had no stackup, so its candidate bytes are not reproduced by the
+current driver. The empty-candidate outcome of its iteration 1 (`stage_not_reached`
+for `erc`, `netlist`, `drc` and `geometry`, `stage_blocked` for `rc-step`) is
+reproduced natively on the current scaffold by
+`test_checks_only_review_of_the_empty_candidate_witnesses_stage_absence`.
 
 - Iteration 1 reviewed the empty candidate. `erc`, `netlist`, `drc` and
   `geometry` were `stage_not_reached`, and `rc-step` was `stage_blocked`. Both
@@ -263,10 +275,11 @@ itself and has no stage receipt, so a rebuilt record of it stays unbound and not
 PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_rung1_campaign -v
 ```
 
-The tests check that the scaffold is valid and deterministic, that its files are the adopted
+The tests check that the scaffold is valid, deterministic and byte-equal to
+`scaffold.native_files` on the captured envelope, that an unbuildable envelope exits 3, that its files are the adopted
 outputs of a valid `write-scaffold` receipt, that a failing scaffold step keeps its receipt and
-writes no project, and that the scaffold binding detects a changed, missing or planted extra file. They check that its project
-file and tables equal the emitter's, and that the scope validates with the
+writes no project, and that the scaffold binding detects a changed, missing or planted extra file. They check that its tables
+equal the emitter's and its project file is the same JSON as the emitter's, and that the scope validates with the
 real loaders. They check that widened write authority, an adoptable exit 3 and
 reserved mount points are refused. With the native toolchain, they check that
 kicad-cli loads the empty files and that a checks-only review of the empty
