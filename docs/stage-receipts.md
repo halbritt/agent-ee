@@ -200,6 +200,44 @@ sha256 and applicability, together with the delivered design tree. Its digest is
 
 Campaigns created before this change have no anchors and no index, and they verify as before.
 
+## Receipts before the first capture
+
+`agent-ee.campaign/1` accepts an optional `pre_receipts` list (AGENTEE-139):
+
+```json
+{"pre_receipts": [{"path": "scaffold-receipt/receipt.json",
+                   "sha256": "<sha256 of receipt.json>", "binding": {"pre_receipt": 1}}]}
+```
+
+Each entry has exactly `path`, `sha256` and `binding`. The path names `receipt.json`,
+relative to the configuration file or absolute. The digest is 64 lowercase hex characters;
+the nonempty binding object must equal the retained coordinator receipt's binding exactly.
+Start refuses missing, changed, invalid or unadoptable receipts before creating the campaign.
+It copies each complete retained receipt directory into `<campaign>/pre-receipts/N/`,
+preserving artifact links without following them, and revalidates the copy. The frozen
+`config.json` replaces the source path with `pre-receipts/N/receipt.json` and retains the
+declared digest and binding. `state.json.pre_receipts` maps these local paths to their
+digests. Replay needs neither the original receipt directory nor the live host tool tree.
+
+`verify-campaign`, through `verify_campaign_receipts`, requires the imported inventory and
+state anchors to agree with the frozen configuration, revalidates every receipt and requires
+its after-tree to equal run 1's capture exactly in every top-level folder represented by its
+inputs or outputs. Missing or changed files and extra captured files within those folders
+refuse verification. Other captured folders, such as stock libraries absent from the receipt,
+are permitted. Each pre-receipt must bind independently to that same first capture. A receipt
+without a first capture is unbound and refuses verification.
+
+Pre-receipts do not become `implementation_steps` and do not supply the declared-stage
+`stage_done` binding. In rung 1, `scaffold` remains outside the scope's stage order. Its
+pre-receipt binds only the initial empty candidate; the existing schematic and routing
+receipts must still produce the final graded content. Campaigns without pre-receipts retain
+their earlier verification behavior; an undeclared imported directory or state anchor refuses.
+
+The digest in the frozen configuration also anchors the receipt's recorded tool identity.
+Rewriting the retained tool hashes, receipt identity and state anchor cannot update that
+configuration digest. This is integrity within the campaign's existing trust boundary,
+not an external signature or a retained copy of the tool binaries.
+
 ## Done through declared steps
 
 Decision 1's done (every check passes on one captured candidate and, for a generation scope, the
@@ -244,8 +282,8 @@ validated every receipt. It refuses a `criteria_satisfied` state whose `stage_do
 forged or different from the recomputed binding. A state relabelled `criteria_satisfied` after a
 refusal fails with the refusal's reason. A changed receipt output hash fails receipt validation
 first. Initial content is never receipted, so a campaign whose initial candidate already passes a
-declared stage is not done. Receipts made before the campaign (AGENTEE-139 `pre_receipts`) are
-not yet considered. `tests/test_stage_done.py` covers the rule on synthetic records and in real
+declared stage is not done. Pre-receipts bind the initial capture separately and do not satisfy
+this rule. `tests/test_stage_done.py` covers the rule on synthetic records and in real
 sandboxed campaigns: a receipted routing step passes, a hand edit of the routing output in a
 later turn fails although every check passes, and a campaign without steps is unaffected.
 
@@ -266,12 +304,10 @@ later turn fails although every check passes, and a campaign without steps is un
   requirements (including `requirements/fab-package.md`) are receipt inputs; the empty project and
   builder template are its outputs. The rung 1 record's `done` requires the receipt's after-tree to
   equal the first captured candidate on `project/`, `generation/` and `requirements/`, both ways.
-- `verify-campaign` does not cover the scaffold receipt. It verifies only receipts under
-  `<campaign>/implementations/`; a scaffold edited before the first capture still verifies. Only the
-  rung 1 record's `done` checks the scaffold receipt. Its tool identity is anchored only by the
-  record in the same run directory, and the record stores the receipt as an absolute path, so a moved
-  run directory rebuilds as unbound. A campaign/1 `pre_receipts` follow-up item would move this check
-  into verify-campaign.
+- New rung 1 campaigns import the scaffold receipt as a pre-receipt. Older campaigns without
+  that declaration retain their historical verification behavior; only their rung 1 record
+  checks the scaffold binding. Import paths are relative, but other campaign history records
+  still contain absolute paths; this does not establish general campaign relocation support.
 - A completed write-bearing receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.

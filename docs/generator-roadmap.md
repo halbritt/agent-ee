@@ -317,7 +317,8 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   adapter and verifies their receipts and semantics before adoption and on replay.
   The placement adapter also uses this receipt pipeline. The [rung 1 campaign
   driver](rung1-campaign.md) also records a receipt for its scaffold step, which its
-  record's `done` binds to the first capture; verify-campaign does not check it.
+  record's `done` binds to the first capture. New campaign configurations import it under
+  `pre_receipts`, so verify-campaign revalidates it against that capture as well.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings

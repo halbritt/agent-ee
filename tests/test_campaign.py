@@ -17,7 +17,10 @@ from agent_ee.cli import run_review, verify
 from agent_ee.empirical import bench_review
 from agent_ee.storage import digest, read_json, write_json
 
-from toolchain import require_toolchain, toolchain_test
+try:
+    from toolchain import require_toolchain, toolchain_test
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.toolchain import require_toolchain, toolchain_test
 
 
 class ImmutableInputGuardTests(unittest.TestCase):

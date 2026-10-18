@@ -873,12 +873,103 @@ def verify_implementation(work, anchor, implementation, source_candidate_id, *, 
     return stored
 
 
+def validate_pre_receipts(declarations):
+    """Validate the campaign's explicit receipt hashes and expected coordinator bindings."""
+    if not isinstance(declarations, list):
+        raise ValueError('pre_receipts must be a list')
+    for link in declarations:
+        if not isinstance(link, dict) or set(link) != {'path', 'sha256', 'binding'}:
+            raise ValueError('pre_receipt needs exactly path, sha256 and binding')
+        if (not isinstance(link['path'], str) or not link['path'] or
+                Path(link['path']).name != 'receipt.json'):
+            raise ValueError('pre_receipt path must name receipt.json')
+        if not isinstance(link['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', link['sha256']):
+            raise ValueError('pre_receipt sha256 must be an exact digest')
+        if not isinstance(link['binding'], dict) or not link['binding']:
+            raise ValueError('pre_receipt binding must be a nonempty object')
+    return declarations
+
+
+def validate_pre_receipt(base, link):
+    path = Path(base) / link['path']
+    state, sha = _regular(path.parent, path.name)
+    if state != 'file' or sha != link['sha256']:
+        raise ValueError('pre_receipt changed, unsafe or missing')
+    receipt = validate_receipt(path.parent, binding=link['binding'])
+    if identity(receipt['binding']) != identity(link['binding']):
+        raise ValueError('foreign stage receipt binding')
+    if receipt['status'] not in ADOPTABLE:
+        raise ValueError('pre_receipt is not adoptable: ' + receipt['status'])
+    return receipt
+
+
+def import_pre_receipts(root, declarations, source):
+    """Copy retained runs, preserving artifact links without following them, then revalidate."""
+    imported = []
+    for index, link in enumerate(validate_pre_receipts(declarations), 1):
+        validate_pre_receipt(source, link)
+        receipt_dir = (Path(source) / link['path']).parent
+        target = Path(root) / 'pre-receipts' / str(index)
+        if target.resolve().is_relative_to(receipt_dir.resolve()):
+            raise ValueError('pre_receipt import destination is inside its source')
+        shutil.copytree(receipt_dir, target, symlinks=True)
+        retained = {**link, 'path': f'pre-receipts/{index}/receipt.json'}
+        validate_pre_receipt(root, retained)
+        imported.append(retained)
+    return imported
+
+
+def pre_receipt_binding(receipt, captured, *, folders=None):
+    """Exact first-capture relation in every top-level folder of the receipt's after-tree."""
+    produced = after_tree(receipt)
+    if folders is None:
+        folders = {rel.split('/', 1)[0] for rel in produced}
+    selected = {rel: sha for rel, sha in captured.items() if rel.split('/', 1)[0] in folders}
+    differences = sorted(rel for rel in produced.keys() | selected.keys()
+                         if produced.get(rel) != selected.get(rel))
+    return {'status': receipt['status'], 'bound': not differences, 'differences': differences}
+
+
+def verify_pre_receipts(root, state, declarations):
+    """Revalidate imported runs and bind them to run 1, independently of declared stage steps."""
+    root = Path(root)
+    declarations = validate_pre_receipts(declarations)
+    expected = {f'pre-receipts/{k}/receipt.json': link['sha256']
+                for k, link in enumerate(declarations, 1)}
+    if any(link['path'] != f'pre-receipts/{k}/receipt.json' for k, link in enumerate(declarations, 1)):
+        raise ValueError('pre_receipt path is not campaign-local')
+    retained = root / 'pre-receipts'
+    if retained.is_symlink() or (retained.exists() and (
+            not retained.is_dir() or {p.name for p in retained.iterdir()} !=
+            {str(k) for k in range(1, len(declarations) + 1)})):
+        raise ValueError('pre_receipt inventory differs from campaign declarations')
+    if state.get('pre_receipts', {}) != expected:
+        raise ValueError('pre_receipt anchors differ from campaign declarations')
+    captured = None
+    if declarations:
+        if not state['history']:
+            raise ValueError('pre_receipt has no first capture binding')
+        first = root / 'runs' / '1'
+        if Path(state['history'][0]['run']) != first:
+            raise ValueError('pre_receipt requires campaign run 1')
+        captured = read_json(first / 'candidate.json')['files']
+    for link in declarations:
+        receipt = validate_pre_receipt(root, link)
+        if captured is not None:
+            relation = pre_receipt_binding(receipt, captured)
+            if not relation['bound']:
+                raise ValueError('pre_receipt output differs from first capture: ' +
+                                 ', '.join(relation['differences']))
+
+
 def verify_campaign_receipts(root, state, steps=None, plans=None):
     """Campaign-level anchors; legacy campaigns without receipts keep verifying.
 
     plans, when given, maps each implementation name to its own expected ordered step list,
     as re-derived by the campaign verifier; otherwise every implementation shares steps."""
     root = Path(root)
+    config = read_json(root / 'config.json')
+    verify_pre_receipts(root, state, config.get('pre_receipts', []))
     anchors = state.get('stage_receipts')
     implementations = sorted((root / 'implementations').glob('*'), key=lambda p: p.name)
     indexed = {p.name for p in implementations if (p / 'stage-receipts.json').exists() or (p / 'receipts').exists()}

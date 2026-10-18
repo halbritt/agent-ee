@@ -20,6 +20,10 @@ with `writes: {}` and nonempty `artifacts`. They retain artifact hashes without
 design outputs; they remain provenance and cannot satisfy an acceptance check.
 An artifact-only step with a null artifact entry is refused with
 `missing_artifact:<path>` and cannot be adopted.
+Campaign [`pre_receipts`](stage-receipts.md#receipts-before-the-first-capture) bind
+coordinator receipts made before the campaign to its first capture. Start copies and
+revalidates them; `verify-campaign` refuses changed, missing or unbound imports.
+They do not replace fresh checks or the declared-stage done binding.
 
 [Stage-one intent import](design-intent.md) prepares source-bound requirements
 and incomplete interface stubs for later capture. Its lint outcome covers only

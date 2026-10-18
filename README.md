@@ -140,6 +140,8 @@ scheduled step. Arbitrary writer commands have no stage-specific OS allowlist.
 [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
 such as fab export, with an empty write scope and retained artifact hashes.
 An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
+Optional campaign `pre_receipts` import coordinator receipts made before run 1;
+`verify-campaign` revalidates them against the exact initial capture in their folders.
 A complete generation rung with live model review and fabrication
 acceptance remains pending.
 

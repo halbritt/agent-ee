@@ -52,7 +52,6 @@ FAB_PACKAGE_TEXT = ('# Fab package requirement\n\nR-fab: The accepted candidate 
 NEVER_ADOPTABLE = {'routing': {1, 2, 3, 4}}
 MOUNT_STEPS, MOUNT_SOURCE, MOUNT_ROUTE = '/tool/steps', '/tool/agent-ee', '/tool/kicad-route'
 MOUNT_TEMPLATE = '/tool/template'
-# Scaffold top-level directories; the first capture must equal the scaffold receipt's after-tree on these.
 SCAFFOLD_DIRS = ('project', 'generation', 'requirements')
 DROPPED_BOARD_ITEMS = ('footprint', 'gr_line', 'gr_rect', 'gr_arc', 'gr_circle', 'gr_poly', 'gr_text',
                        'segment', 'arc', 'via', 'zone', 'group', 'dimension', 'image', 'net')
@@ -296,7 +295,7 @@ def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DI
     write_json(generation / 'placement-request.json', prep['request'])
     receipt_dir = Path(rundir) / 'scaffold-receipt'
     receipt = run_step(receipt_dir, scaffold, scaffold_step(source_root, steps_dir, template_dir),
-                       {'rung1': 'scaffold', 'receipt_index': 1})
+                       {'pre_receipt': 1})
     if receipt['status'] not in ADOPTABLE:
         raise PrepareFailure(f"write-scaffold step {receipt['status']} (exit {receipt['exit_code']}, "
                              f"violations {receipt['violations']}); receipt kept at {receipt_dir}")
@@ -308,29 +307,30 @@ def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DI
               'template_project': {'path': str(template_dir), 'sha256': {
                   n: digest(Path(template_dir) / n) for n in ('rc_filter.kicad_pro', 'rc_filter.kicad_pcb')}},
               'board_items_dropped_from_template': dropped, 'files': files,
-              'stage_receipt': receipt_summary(receipt_dir),
+              'stage_receipt': {**receipt_summary(receipt_dir), 'receipt': 'scaffold-receipt/receipt.json',
+                                'binding': {'pre_receipt': 1}},
               'catalog': {k: prep['catalog'][k] for k in ('path', 'sha256')} | {
                   'source': prep['catalog'].get('source')}}
     write_json(Path(rundir) / 'scaffold.json', record)
     return scaffold, record
 
 
-def scaffold_binding(record, candidate_manifest):
-    """Whether the scaffold receipt's after-tree equals the first capture on SCAFFOLD_DIRS, both ways."""
-    from .stage_receipts import after_tree, validate_receipt
-    path = Path(record['stage_receipt']['receipt'])
-    receipt = validate_receipt(path.parent, binding={'rung1': 'scaffold', 'receipt_index': 1})
+def scaffold_binding(record, candidate_manifest, *, receipt_root):
+    """Whether the scaffold receipt's after-tree equals the first capture in its folders, both ways."""
+    from .stage_receipts import pre_receipt_binding, validate_receipt
+    summary = record['stage_receipt']
+    path = Path(receipt_root) / summary['receipt']
+    binding = {'pre_receipt': 1} if 'binding' in summary else {'rung1': 'scaffold', 'receipt_index': 1}
+    if summary.get('binding', binding) != binding:
+        raise ValueError('foreign scaffold stage receipt binding')
+    receipt = validate_receipt(path.parent, binding=binding)
     if digest(path) != record['stage_receipt']['receipt_sha256']:
         raise ValueError('scaffold stage receipt changed after it was recorded')
-    produced = after_tree(receipt)
-    captured = {rel: sha for rel, sha in candidate_manifest['files'].items()
-                if rel.split('/', 1)[0] in SCAFFOLD_DIRS}
-    differences = sorted(rel for rel in set(produced) | set(captured) if produced.get(rel) != captured.get(rel))
-    return {'receipt': str(path), 'status': receipt['status'], 'bound': not differences,
-            'differences': differences}
+    return {'receipt': summary['receipt'],
+            **pre_receipt_binding(receipt, candidate_manifest['files'], folders=SCAFFOLD_DIRS)}
 
 
-def first_capture_binding(base, run):
+def first_capture_binding(base, run, *, receipt_root):
     """scaffold_binding against RUN/candidate.json; a missing or invalid receipt is unbound, never skipped."""
     record = base.get('scaffold') or {}
     manifest = Path(run) / 'candidate.json'
@@ -339,8 +339,21 @@ def first_capture_binding(base, run):
     if not manifest.is_file():
         return {'bound': False, 'error': f'no captured candidate at {manifest}'}
     try:
-        return scaffold_binding(record, read_json(manifest))
-    except (ValueError, OSError) as exc:
+        campaign = Path(run).parent.parent
+        config_path = campaign / 'config.json'
+        if config_path.is_file() and 'pre_receipts' in read_json(config_path):
+            from .stage_receipts import verify_pre_receipts
+            config = read_json(config_path)
+            verify_pre_receipts(campaign, read_json(campaign / 'state.json'), config['pre_receipts'])
+            summary = record['stage_receipt']
+            links = [link for link in config['pre_receipts'] if link['binding'] == summary.get('binding')
+                     and link['sha256'] == summary['receipt_sha256']]
+            if len(links) != 1:
+                raise ValueError('scaffold pre_receipt missing from campaign')
+            record = {'stage_receipt': {**summary, 'receipt': links[0]['path']}}
+            receipt_root = campaign
+        return scaffold_binding(record, read_json(manifest), receipt_root=receipt_root)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
         return {'bound': False, 'error': f'{type(exc).__name__}: {exc}'}
 
 
@@ -543,6 +556,11 @@ validates structured responses so that a valid judgment is not lost to a path or
 """
 
 
+def scaffold_pre_receipt(record):
+    summary = record['stage_receipt']
+    return {'path': summary['receipt'], 'sha256': summary['receipt_sha256'], 'binding': summary['binding']}
+
+
 def campaign_config(scope_path, profile, steps, max_seconds=3600, max_iterations=2):
     adjudicator = profile['adjudicator']
     return {'schema': 'agent-ee.campaign/1', 'scope': Path(scope_path).name, 'review_profile': profile,
@@ -713,6 +731,7 @@ def build(spec, rundir, *, profile_path, kicad_route, catalog_checkout=None, max
     profile = read_json(profile_path)
     steps = check_steps(step_specs(PACKAGE_ROOT, STEPS_DIR, kicad_route), scope['mutable_inputs'])
     config = campaign_config(scope_path, profile, steps, max_seconds=max_seconds)
+    config['pre_receipts'] = [scaffold_pre_receipt(scaffold_record)]
     from .profiles import validate_profile
     validate_profile(config['review_profile'])
     validate_profile({**config['review_profile'], 'adjudicator': config['implementation']})
@@ -802,7 +821,7 @@ def run(spec, rundir, *, profile_path, kicad_route, dry_run, catalog_checkout=No
             'empty_review': {'command': command, 'result': empty},
             'rehearsal': {'receipts': receipts, 'note': 'rehearsal outside any campaign; not acceptance evidence'},
             'rehearsed_review': {'command': after_command, 'result': after}})
-        return write_record(rundir, base, fab=fab, scaffold=first_capture_binding(base, run_dir))
+        return write_record(rundir, base, fab=fab, scaffold=first_capture_binding(base, run_dir, receipt_root=rundir))
     root = rundir / 'campaign'
     command = run_logged(agent_ee_command('campaign', config_path, '--out', root), logs, 'campaign',
                          max_seconds + 3600)
@@ -846,7 +865,7 @@ def campaign_record(rundir, base, command, source=PACKAGE_ROOT):
     from .stage_done import driver_term
     return write_record(rundir, base, verdict=verdict, fab=fab,
                         fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed,
-                        scaffold=first_capture_binding(base, root / 'runs' / '1'),
+                        scaffold=first_capture_binding(base, root / 'runs' / '1', receipt_root=rundir),
                         stage=driver_term(root, state))
 
 
