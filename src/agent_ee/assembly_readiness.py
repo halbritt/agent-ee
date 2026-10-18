@@ -194,6 +194,7 @@ def _normalize_part_entry(lcsc_key, raw):
             raise ValueError(f"catalog part {lcsc} has unsupported library_tier {tier_raw!r}")
         is_basic_flag = tier_norm == "Basic"
         is_preferred_flag = tier_norm == "Preferred"
+        class_known = True
     else:
         if is_basic is not None and not isinstance(is_basic, (bool, int)):
             raise ValueError(f"catalog part {lcsc} is_basic must be bool or 0/1")
@@ -205,6 +206,8 @@ def _normalize_part_entry(lcsc_key, raw):
             raise ValueError(f"catalog part {lcsc} is_preferred integer must be 0 or 1")
         is_basic_flag = bool(is_basic)
         is_preferred_flag = bool(is_preferred) and not is_basic_flag
+        # Basic is decided by is_basic alone; Preferred and Extended need both flags.
+        class_known = is_basic_flag or (is_basic is not None and is_preferred is not None)
         if is_basic_flag:
             tier_norm = "Basic"
         elif is_preferred_flag:
@@ -231,6 +234,7 @@ def _normalize_part_entry(lcsc_key, raw):
         "is_basic": is_basic_flag,
         "is_preferred": is_preferred_flag,
         "tier": tier_norm,
+        "class_known": class_known,
         "last_seen": last_seen.strip() if isinstance(last_seen, str) else None,
     }
 

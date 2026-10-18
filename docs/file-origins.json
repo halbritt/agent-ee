@@ -1431,6 +1431,16 @@
     },
     {
       "paths": [
+        "fixtures/jlc-cost/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-77 original pricing table, catalog snapshot and scope; round test values, not JLCPCB prices. The table structure follows atopile's MIT-licensed cost_estimation mechanism; no atopile code, constant or text is copied. See fixtures/jlc-cost/PROVENANCE.md."
+    },
+    {
+      "paths": [
         "fixtures/generation/"
       ],
       "kind": "owned-fixture",
@@ -1991,6 +2001,16 @@
         "AE"
       ],
       "reviewed": "Original regression-test code for the AGENTEE-94 fab_package done gate; it reuses the owned fixtures/fab-export board and scripts reviewer responses only."
+    },
+    {
+      "paths": [
+        "tests/test_jlc_cost.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code for the AGENTEE-77 cost estimate; its only KiCad text is short synthetic footprint/pad literals for the joint counter, and it reuses the owned fixtures/fab-export board and fixtures/jlc-cost inputs."
     },
     {
       "paths": [
