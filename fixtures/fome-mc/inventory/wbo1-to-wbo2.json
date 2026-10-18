@@ -1,0 +1,48 @@
+{
+ "schema": "agent-ee.block-adaptation-fixture/1",
+ "design": "fome-mc",
+ "source": "wbo1",
+ "target": "wbo2",
+ "description": "AGENTEE-90 fixture: copy the wbo1 entry with references +100 and the WBO2 suffix; the only connectivity differences from the committed wbo2 entry are the channel straps on U402 (STM32F042K6T6 pin 15 PB1, pin 18 PA8). Applying the strap (PB1 open, PA8 to +3V3_WBO2) reproduces wbo2 exactly.",
+ "parameters": {
+  "reference_offset": 100,
+  "renames": [
+   [
+    "WBO1",
+    "WBO2"
+   ],
+   [
+    "/wbo1/",
+    "/wbo2/"
+   ]
+  ],
+  "straps": [
+   {
+    "reference": "U402",
+    "pin": "15",
+    "net": null
+   },
+   {
+    "reference": "U402",
+    "pin": "18",
+    "net": "+3V3_WBO2"
+   }
+  ]
+ },
+ "expected_without_straps": [
+  {
+   "reference": "U402",
+   "field": "pin",
+   "pin": "15",
+   "adapted": "named:GND",
+   "captured": "disconnected"
+  },
+  {
+   "reference": "U402",
+   "field": "pin",
+   "pin": "18",
+   "adapted": "disconnected",
+   "captured": "named:+3V3_WBO2"
+  }
+ ]
+}

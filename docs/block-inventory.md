@@ -7,15 +7,20 @@ entries, one private directory per block. Every entry it writes is
 through the existing run path, with a complete sealed run, its requirement
 coverage and an independent review (AGENTEE-106/107 for the rung-2 blocks).
 
-The tool and its tests carry no design of the owner's. Every fixture in the
-repository is the original two-channel design in
-`tests/block_inventory_fixture.py`. The owner's fome-mc inventory and its
-captures are private material. See [fome-mc capture](#fome-mc-capture-private-agentee-118).
+The tool's own tests use the original two-channel design in
+`tests/block_inventory_fixture.py`. The fome-mc inventory and its capture are
+committed fixtures under `fixtures/fome-mc/inventory/`. See
+[fome-mc capture](#fome-mc-capture-committed-fixtures).
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.block_inventory capture INVENTORY.json \
-  --repo LOCAL_DESIGN --library-repo NAME=LOCAL_LIBRARY_REPO --out NEW_PRIVATE_DIRECTORY
+  --repo LOCAL_DESIGN --library-repo NAME=LOCAL_LIBRARY_REPO \
+  [--repository-label NAME] --out NEW_DIRECTORY
 ```
+
+`source.repository` in each entry is the resolved local repository path, or
+`NAME` with `--repository-label`. A committed capture uses the label so that its
+bytes do not depend on where the source was cloned.
 
 ## Inventory document
 
@@ -89,8 +94,12 @@ yet, and they keep the block unverified.
 
 `inventory-report.json` records the commit, the inventory identity, the
 exporter version and console, and each block's status, `block.json` and
-`block-contract.json` SHA-256 values. Two captures of the same commit with the
-same KiCad and stock libraries produce byte-identical directories.
+`block-contract.json` SHA-256 values. Its `source_files` maps every pinned
+source path that was exported or copied to its SHA-256, its Git blob id and
+`captured` (whether a block copies it). A blob id can be checked with
+`git rev-parse COMMIT:PATH` in any clone. Two captures of the same commit with
+the same KiCad, stock libraries and repository label produce byte-identical
+directories.
 
 ## Libraries
 
@@ -134,54 +143,76 @@ An `agent-ee.block-adaptation-fixture/1` document records one such expectation:
 `design`, `source` and `target` block directories, `description`, `parameters`
 and `expected_without_straps` (the exact difference list).
 
-## Private qualification
+## Qualification
 
 `scripts/qualify_block_inventory.py` is a manual host-side step. It is not part
-of the discovered test suite. It captures the inventory's pinned commit twice
-into a new output directory and requires both captures to be byte-identical.
-Every inventory block must be an unverified entry with no runs. Each adaptation
-fixture must give exactly its expected differences without straps and none with
-them. It writes `qualification.json` beside the two captures. Exit status is 0
-when qualified, 1 when a check fails and 2 when refused.
+of the discovered test suite, because it needs the source repository and the
+host's KiCad. It captures the inventory's pinned commit twice into a new output
+directory and requires both captures to be byte-identical. Every inventory block
+must be an unverified entry with no runs. Each adaptation fixture must give
+exactly its expected differences without straps and none with them. With an
+expected capture, the first capture must also equal it byte for byte; the
+differing paths are reported. It writes `qualification.json` beside the two
+captures. Exit status is 0 when qualified, 1 when a check fails and 2 when
+refused.
 
 The output directory must lie outside any Git work tree or be ignored by it.
 Otherwise the script refuses before writing, because captures copy design files.
-Its defaults point at the owner's private fome-mc layout:
+Its defaults qualify the committed fome-mc inventory:
 
 | Setting | Default |
 | --- | --- |
-| `AGENT_EE_FOME_MC_CAPTURE` | `build/fome-mc-inventory` (ignored through `build/`), holding `block-inventory.json` and adaptation fixtures |
-| `AGENT_EE_FOME_MC_CHECKOUT` | `~/git/fome-mc` |
-| `--out` | `CAPTURE/captures/COMMIT12-N`, the first unused `N` |
+| `--inventory` | `fixtures/fome-mc/inventory/block-inventory.json`, or `block-inventory.json` in `AGENT_EE_FOME_MC_CAPTURE` when that override is set |
+| `--repo` | `AGENT_EE_FOME_MC_CHECKOUT`, else `~/git/fome-mc`. Only Git objects at the pinned commit are read |
+| `--out` | `build/fome-mc-inventory/captures/COMMIT12-N` (ignored through `build/`), or `OVERRIDE/captures/COMMIT12-N`, the first unused `N` |
+| `--expect` | the `capture/` directory beside the inventory, if there is one |
+| `--repository-label` | the inventory's design name |
 | `--adaptation` | every adaptation fixture beside the inventory |
 | `--library-repo` | each declared external library's sibling checkout of `--repo` |
 
-The strict suite runs this script on the owned fixture only
+The strict suite runs this script on the owned fixture
 (`QualificationScriptTests`). It never needs fome-mc and never skips on its
 account.
 
-## fome-mc capture (private, AGENTEE-118)
+## fome-mc capture (committed fixtures)
 
-The fome-mc inventory, its adaptation fixture and every capture stay out of this
-repository until the owner decides on publication (AGENTEE-118). fome-mc has no
-licence file, and its sheets derive from upstream checkouts without one. Even
-the inventory's facts are derived design structure: sheet paths, reference
-designators, boundary net names, strap pins and requirement paraphrases.
+The owner decided on 2026-10-18 that captured fome-mc reference sheets are
+committed as fixtures ([decisions](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures)).
+[`fixtures/fome-mc/LICENSE-NOTICE.md`](../fixtures/fome-mc/LICENSE-NOTICE.md)
+states the rights, the capture rules and the provenance.
+[`file-origins.json`](file-origins.json) classifies the files under origin `T15`.
 
-The inventory was first written in commit `219dd68` on the local branch
-`impl/ee105-fome-inventory`. That commit is not for publication. From a local
-clone that holds it, restore the files to the private directory and qualify:
+| Path | Content |
+| --- | --- |
+| `fixtures/fome-mc/inventory/block-inventory.json` | 19 blocks at fome-mc `df304f3321296f7e517e0d2e2aa52e1380d52993`. All 14 catalogue entries of fome-mc `docs/BLOCK_LIBRARY.md` are covered, and the root connectors are listed as unassigned |
+| `fixtures/fome-mc/inventory/wbo1-to-wbo2.json` | The AGENTEE-90 channel adaptation fixture: offset +100, `WBO1`/`/wbo1/` to `WBO2`/`/wbo2/`, strap U402 pin 18 (PA8) to `+3V3_WBO2` and pin 15 (PB1) open |
+| `fixtures/fome-mc/inventory/capture/` | The capture: one unverified draft entry per block and `inventory-report.json` |
+
+The capture came from the owner's fome-mc repository's object store at the pinned
+commit. Its working tree was at another commit with local edits and was not
+read. It used `--library-repo kicad-libraries=~/git/kicad-libraries` (pinned
+`ab9c5f8`) and `--repository-label fome-mc`. A fresh qualification reproduces it
+byte for byte on a host with the same KiCad 10.0.7 stock libraries:
 
 ```sh
-mkdir -p build/fome-mc-inventory
-git show 219dd68:references/fome-mc/block-inventory.json > build/fome-mc-inventory/block-inventory.json
-git show 219dd68:references/fome-mc/wbo1-to-wbo2.json > build/fome-mc-inventory/wbo1-to-wbo2.json
 PYTHONPATH=src python3 scripts/qualify_block_inventory.py
 ```
 
-With fome-mc at its pinned commit and `~/git/kicad-libraries` beside it, the
-result covers every planned block. All are unverified with no runs, and the
-channel adaptation fixture reproduces its two expected strap differences.
+`FomeMcInventoryFixtureTests` in the strict suite reads only the committed files,
+so it needs neither fome-mc nor KiCad. It checks the following:
+
+- the inventory pins the commit and names the licence notice;
+- the report binds the inventory identity and every entry's hashes;
+- every planned block validates as unverified with no runs;
+- every catalogue heading of the captured plan has an entry;
+- every copied file equals its recorded SHA-256 and Git blob id;
+- the wbo1-to-wbo2 adaptation gives exactly the U402 pin 15 and pin 18
+  differences without straps and none with them, through both the API and the
+  `adapt` command;
+- a tampered entry is refused.
+
+A private inventory still works as an override. Set `AGENT_EE_FOME_MC_CAPTURE` to
+a directory holding `block-inventory.json` and its adaptation fixtures.
 
 ## Limits
 
@@ -194,3 +225,6 @@ channel adaptation fixture reproduces its two expected strap differences.
 - The library hash identifies the host's stock library. Another KiCad install
   gives different stock hashes and therefore different entries.
 - Without `--catalog`, `parts.json` has `catalog: null`.
+- The committed fome-mc capture was taken without `--catalog`, because the
+  repository holds no captured catalog snapshot. Its LCSC numbers are native
+  properties with no snapshot presence.

@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""Host-side qualification of a private block inventory; never writes repository data.
+"""Host-side qualification of a block inventory against its pinned source commit.
 
 Captures the inventory's pinned commit twice, requires byte-identical entries,
 requires every planned block to be an unverified entry with no runs, and replays
 each adaptation fixture: without straps it must give exactly the expected
-differences, with straps none. Inventory, fixtures and captures are the owner's
-private material (fome-mc is unpublished, AGENTEE-118), so the output directory
+differences, with straps none. With an expected capture (by default the
+committed fome-mc capture beside the committed inventory) the first capture must
+also equal it byte for byte. Captures copy design files, so the output directory
 must lie outside any Git work tree or be ignored by it.
 
-Defaults serve the owner's fome-mc capture; each is overridable:
+Defaults qualify the committed fome-mc inventory (fixtures/fome-mc/inventory,
+owner decision of 2026-10-18); each is overridable:
 
-    AGENT_EE_FOME_MC_CAPTURE   private directory (default build/fome-mc-inventory)
-                               holding block-inventory.json and adaptation fixtures;
-                               captures go to its captures/ subdirectory
-    AGENT_EE_FOME_MC_CHECKOUT  source repository (default ~/git/fome-mc)
+    AGENT_EE_FOME_MC_CAPTURE   private override directory holding block-inventory.json
+                               and adaptation fixtures; captures go to its captures/
+    AGENT_EE_FOME_MC_CHECKOUT  source repository (default ~/git/fome-mc); only its
+                               Git objects at the pinned commit are read
 
     PYTHONPATH=src python3 scripts/qualify_block_inventory.py
 
-This is a manual opt-in step, not part of the discovered test suite. Exit 0 when
-qualified, 1 when a qualification check fails, 2 when refused.
+This is a manual step, not part of the discovered test suite: it needs the
+source repository and the host's KiCad. Exit 0 when qualified, 1 when a
+qualification check fails, 2 when refused.
 """
 import argparse
 import json
@@ -37,8 +40,13 @@ from agent_ee.storage import write_json
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def private_directory():
-    return Path(os.environ.get('AGENT_EE_FOME_MC_CAPTURE', ROOT / 'build/fome-mc-inventory'))
+COMMITTED = ROOT / 'fixtures/fome-mc/inventory'
+
+
+def inventory_directory():
+    """The private override directory if set, else the committed fome-mc inventory."""
+    override = os.environ.get('AGENT_EE_FOME_MC_CAPTURE')
+    return Path(override) if override else COMMITTED
 
 
 def require_private(path):
@@ -71,7 +79,7 @@ def fixtures(directory):
     return found
 
 
-def qualify(inventory, repository, out, adaptations, library_repos):
+def qualify(inventory, repository, out, adaptations, library_repos, expect=None, repository_label=None):
     validate_inventory(inventory)
     documents = []
     for path in adaptations:
@@ -80,20 +88,31 @@ def qualify(inventory, repository, out, adaptations, library_repos):
         if document['design'] != inventory['design']['name']:
             raise ValueError(f'adaptation fixture {path} names another design')
         documents.append((str(path), document))
+    if expect is not None and not Path(expect).is_dir():
+        raise ValueError(f'expected capture is not a directory: {expect}')
     out = Path(out)
     require_private(out)
     if out.exists() or out.is_symlink():
         raise FileExistsError(str(out))
     out.mkdir(parents=True)
     try:
-        first = capture_inventory(inventory, repository, out / 'first', library_repos=library_repos)
-        second = capture_inventory(inventory, repository, out / 'second', library_repos=library_repos)
+        first = capture_inventory(inventory, repository, out / 'first', library_repos=library_repos,
+                                  repository_label=repository_label)
+        second = capture_inventory(inventory, repository, out / 'second', library_repos=library_repos,
+                                   repository_label=repository_label)
     except BaseException:
         shutil.rmtree(out, ignore_errors=True)
         raise
     failures = []
     if first != second or tree(out / 'first') != tree(out / 'second'):
         failures.append('two captures of the pinned commit differ')
+    expected = None
+    if expect is not None:
+        captured, committed = tree(out / 'first'), tree(expect)
+        differing = sorted(p for p in set(captured) | set(committed) if captured.get(p) != committed.get(p))
+        expected = dict(directory=str(expect), differing=differing)
+        if differing:
+            failures.append(f'capture differs from the expected capture {expect} in {len(differing)} files')
     planned = sorted(b['id'] for b in inventory['blocks'])
     if sorted(b['directory'] for b in first['blocks']) != planned:
         failures.append('captured blocks differ from the inventory blocks')
@@ -120,18 +139,24 @@ def qualify(inventory, repository, out, adaptations, library_repos):
         replayed.append(dict(fixture=path, without_straps=without, with_straps=strapped))
     result = dict(schema='agent-ee.block-inventory-qualification/1', design=inventory['design']['name'],
                   commit=first['commit'], components=first['components'], blocks=statuses,
-                  adaptations=replayed, failures=failures, status='failed' if failures else 'qualified')
+                  adaptations=replayed, expected=expected, failures=failures,
+                  status='failed' if failures else 'qualified')
     write_json(out / 'qualification.json', result)
     return result
 
 
 def main(argv=None):
-    private = private_directory()
+    directory = inventory_directory()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--inventory', default=str(private / 'block-inventory.json'))
+    parser.add_argument('--inventory', default=str(directory / 'block-inventory.json'))
     parser.add_argument('--repo', default=os.environ.get('AGENT_EE_FOME_MC_CHECKOUT',
                                                          str(Path.home() / 'git/fome-mc')))
-    parser.add_argument('--out', help='new private output directory (default PRIVATE/captures/COMMIT-N)')
+    parser.add_argument('--out', help='new private output directory (default build/fome-mc-inventory/captures/'
+                                      'COMMIT-N, or OVERRIDE/captures/COMMIT-N)')
+    parser.add_argument('--expect', help='capture the first capture must equal (default: the capture/ '
+                                         'directory beside the inventory, if any)')
+    parser.add_argument('--repository-label', help='source repository name recorded in the entries '
+                                                   '(default: the inventory design name)')
     parser.add_argument('--adaptation', action='append', metavar='FIXTURE',
                         help='adaptation fixture (default: every fixture beside the inventory)')
     parser.add_argument('--library-repo', action='append', default=[], metavar='NAME=PATH',
@@ -154,11 +179,18 @@ def main(argv=None):
                     repos[name] = str(sibling)
         out = args.out
         if out is None:
-            captures = Path(args.inventory).parent / 'captures'
+            parent = Path(args.inventory).parent
+            # The committed inventory's captures go to the ignored build/ tree, never beside it.
+            home = ROOT / 'build/fome-mc-inventory' if parent.resolve() == COMMITTED.resolve() else parent
+            captures = home / 'captures'
             stem = inventory['design']['commit'][:12]
             out = next(captures / f'{stem}-{n}' for n in range(1, 10000) if not (captures / f'{stem}-{n}').exists())
         adaptations = args.adaptation if args.adaptation is not None else fixtures(Path(args.inventory).parent)
-        result = qualify(inventory, args.repo, out, adaptations, repos)
+        expect = args.expect
+        if expect is None and (Path(args.inventory).parent / 'capture').is_dir():
+            expect = Path(args.inventory).parent / 'capture'
+        result = qualify(inventory, args.repo, out, adaptations, repos, expect=expect,
+                         repository_label=args.repository_label or inventory['design']['name'])
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as exc:
         print(json.dumps(dict(schema='agent-ee.block-inventory-qualification/1', status='refused', error=str(exc))))
         return 2

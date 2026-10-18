@@ -1,0 +1,686 @@
+{
+ "schema": "agent-ee.block-inventory/1",
+ "design": {
+  "name": "fome-mc",
+  "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+  "root": "fome-mc.kicad_sch",
+  "plan": "plan",
+  "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json).",
+  "external_libraries": {
+   "kicad-libraries": "ab9c5f8a1517a04b9cada6880d67d190bfd48c05"
+  }
+ },
+ "documents": {
+  "plan": "docs/BLOCK_LIBRARY.md",
+  "design": "docs/DESIGN.md"
+ },
+ "unassigned": [
+  {
+   "instance": "/",
+   "references": [
+    "C1",
+    "J1",
+    "J2",
+    "R219"
+   ],
+   "reason": "Root sheet: AMPSEAL connectors J1/J2, C1 bulk and R219 gear pull-up (FOMEMC-14); docs/BLOCK_LIBRARY.md lists them on the root, outside every block."
+  }
+ ],
+ "blocks": [
+  {
+   "id": "psu",
+   "role": "power",
+   "title": "Power supply (psu.kicad_sch without CAN)",
+   "origin": "FOME-Tech Polygonus psu at b3176cb (docs/DESIGN.md section 2/3)",
+   "instances": [
+    {
+     "path": "/psu/",
+     "references": [
+      "C10",
+      "C108",
+      "C11",
+      "C12",
+      "C13",
+      "C14",
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8",
+      "C9",
+      "D1",
+      "D19",
+      "D3",
+      "L1",
+      "L2",
+      "Q1",
+      "R1",
+      "R124",
+      "R2",
+      "R3",
+      "R4",
+      "R5",
+      "R6",
+      "U1",
+      "U2",
+      "U3",
+      "U6"
+     ]
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)"
+   },
+   "pending": [
+    {
+     "id": "psu-load-dump",
+     "statement": "The input survives load dump with the SMCJ24A TVS clamp at 38.9 V and blocks reverse battery without a series diode drop.",
+     "document": "design",
+     "locator": "6.3 Power Supply, Keep-Alive, Cranking Brownout Margin",
+     "conditions": [
+      "Automotive 12 V system, load dump"
+     ],
+     "blocked_by": "AGENTEE-19 active models for a load-dump simulation; datasheet facts via AGENTEE-18"
+    },
+    {
+     "id": "psu-rails",
+     "statement": "+5V is 5.00 V within 2 % above 5.5 V input; 5V_SENSOR_1/2 are 5.00 V within 1 %; +3V3 is 3.30 V within 1 %.",
+     "document": "design",
+     "locator": "3. Circuit-Reuse, Adaptation & Upstream Bug Resolution Table; 6.3",
+     "conditions": [
+      "Input above 5.5 V"
+     ],
+     "blocked_by": "AGENTEE-19 active regulator models (LMR16020, TLS115D0E, TLV757)"
+    },
+    {
+     "id": "psu-brownout",
+     "statement": "Regulation holds down to the connector brownout floor; the guaranteed loaded floor is 4.65 to 4.8 V (typical UVLO 4.0 to 4.2 V).",
+     "document": "design",
+     "locator": "6.3 Power Supply, Keep-Alive, Cranking Brownout Margin",
+     "conditions": [
+      "Cranking"
+     ],
+     "blocked_by": "AGENTEE-19 cranking simulation; LMR16020 UVLO datasheet facts via AGENTEE-18"
+    },
+    {
+     "id": "psu-derating",
+     "statement": "Capacitor voltage ratings carry derating margin on the 12 V rails.",
+     "document": "plan",
+     "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)",
+     "conditions": [],
+     "blocked_by": "AGENTEE-61 derating check with AGENTEE-27 catalog data"
+    }
+   ]
+  },
+  {
+   "id": "keep-alive",
+   "role": "power",
+   "title": "Keep-alive (Keep_Alive.kicad_sch)",
+   "origin": "Polygonus-Universal-112 Keep_Alive at ddcf0f7",
+   "instances": [
+    {
+     "path": "/Keep_Alive/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Keep-alive (Keep_Alive.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "keep-alive-behaviour",
+     "statement": "Key-off is detected while /12V_MR holds /12V_RAW, and VBAT backup comes from Perm_Live; the main-relay hold spans lowside_quad4 (U1202) and the MCU (PE0).",
+     "document": "plan",
+     "locator": "Block catalogue / Keep-alive (Keep_Alive.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "Multi-block behavioural contract (FOMEMC-22) and bench items in docs/VALIDATION.md section 3"
+    }
+   ]
+  },
+  {
+   "id": "mcu",
+   "role": "controller",
+   "title": "MCU core (mcu.kicad_sch)",
+   "origin": "FOME-Tech Polygonus mcu at b3176cb with the fome-mc brain-module pin remap c43ad7b",
+   "instances": [
+    {
+     "path": "/mcu/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / MCU core (mcu.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "mcu-vref",
+     "statement": "VREF+ is a fixed 3.30 V reference (REF3333) and the ADC is non-ratiometric.",
+     "document": "design",
+     "locator": "6.3 Non-Ratiometric VREF+ Architecture",
+     "conditions": [],
+     "blocked_by": "AGENTEE-59 datasheet pin contracts"
+    },
+    {
+     "id": "mcu-sdmmc-dfu",
+     "statement": "SDMMC1 bus termination and DFU entry through BOOT0 are present.",
+     "document": "plan",
+     "locator": "Block catalogue / MCU core (mcu.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "AGENTEE-59 pin contracts and AGENTEE-31 land-pattern check"
+    }
+   ]
+  },
+  {
+   "id": "can",
+   "role": "interface",
+   "title": "CAN transceivers (inside psu.kicad_sch)",
+   "origin": "FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7",
+   "instances": [
+    {
+     "path": "/psu/",
+     "references": [
+      "D4",
+      "D5",
+      "R10",
+      "R7",
+      "R8",
+      "R9",
+      "U4",
+      "U5"
+     ]
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / CAN (inside psu.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "can-bus",
+     "statement": "Both buses run at 500 kbps with one 120 ohm termination per bus end (60 to 120 ohm bus resistance) and transceiver Vref pin 5 open.",
+     "document": "design",
+     "locator": "3. Circuit-Reuse, Adaptation & Upstream Bug Resolution Table, row 1",
+     "conditions": [
+      "500 kbps"
+     ],
+     "blocked_by": "Parts binding of R7/R8 versus R9/R10 (FOMEMC-24) and a bus-load check"
+    }
+   ]
+  },
+  {
+   "id": "wbo1",
+   "role": "sensor-interface",
+   "title": "Wideband channel 1 (wbo1.kicad_sch)",
+   "origin": "mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (MIT, Matthew Kennedy 2023)",
+   "instances": [
+    {
+     "path": "/wbo1/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Wideband channel (wbo1.kicad_sch, wbo2.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "wbo1-function",
+     "statement": "1.65 V virtual ground, Nernst ESR injection, heater PWM under CAN control and a separate VDDA per channel.",
+     "document": "design",
+     "locator": "5. Dual Integrated Wideband Controller Architecture",
+     "conditions": [],
+     "blocked_by": "AGENTEE-19 active simulation of the pump-current loop; LSU 4.9 datasheet facts"
+    },
+    {
+     "id": "wbo1-can-id",
+     "statement": "The PB1 strap to GND selects CAN IDs 0x190/0x191 at 500 kbps.",
+     "document": "design",
+     "locator": "5. Dual Integrated Wideband Controller Architecture",
+     "conditions": [
+      "500 kbps"
+     ],
+     "blocked_by": "Strap decode source (wideband firmware port.cpp) captured as a requirement source"
+    }
+   ]
+  },
+  {
+   "id": "wbo2",
+   "role": "sensor-interface",
+   "title": "Wideband channel 2 (wbo2.kicad_sch)",
+   "origin": "mck1117 wideband Rev C at ca2adce (MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap",
+   "instances": [
+    {
+     "path": "/wbo2/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Wideband channel (wbo1.kicad_sch, wbo2.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "wbo2-function",
+     "statement": "1.65 V virtual ground, Nernst ESR injection, heater PWM under CAN control and a separate VDDA per channel.",
+     "document": "design",
+     "locator": "5. Dual Integrated Wideband Controller Architecture",
+     "conditions": [],
+     "blocked_by": "AGENTEE-19 active simulation of the pump-current loop; LSU 4.9 datasheet facts"
+    },
+    {
+     "id": "wbo2-can-id",
+     "statement": "The PA8 strap to +3V3_WBO2 selects CAN IDs 0x192/0x193 at 500 kbps.",
+     "document": "design",
+     "locator": "5. Dual Integrated Wideband Controller Architecture",
+     "conditions": [
+      "500 kbps"
+     ],
+     "blocked_by": "Strap decode source (wideband firmware port.cpp) captured as a requirement source"
+    }
+   ]
+  },
+  {
+   "id": "ign-igbt",
+   "role": "driver",
+   "title": "Ignition IGBT (ign_igbt.kicad_sch with /ign1/)",
+   "origin": "Polygonus-Universal-112 IGBT outputs at ddcf0f7 and FOME-Tech Polygonus ign4 at b3176cb",
+   "instances": [
+    {
+     "path": "/ign_igbt/",
+     "references": "all"
+    },
+    {
+     "path": "/ign1/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Ignition IGBT (ign_igbt.kicad_sch with /ign1/)"
+   },
+   "pending": [
+    {
+     "id": "ign-igbt-safety",
+     "statement": "Gates sit at 0 V during MCU reset and the coil turn-off clamp is 400 V.",
+     "document": "plan",
+     "locator": "Block catalogue / Ignition IGBT (ign_igbt.kicad_sch with /ign1/)",
+     "conditions": [],
+     "blocked_by": "Datasheet facts (FGD3040G2-F085, MIC4427) via AGENTEE-18"
+    },
+    {
+     "id": "ign-igbt-clearance",
+     "statement": "Collector copper keeps HV clearance and coil traces are 1.2 mm.",
+     "document": "plan",
+     "locator": "Block catalogue / Ignition IGBT (ign_igbt.kicad_sch with /ign1/)",
+     "conditions": [],
+     "blocked_by": "HV netclass as a captured rule (FOMEMC-19) and clearance check AGENTEE-47/63; layout capture AGENTEE-56"
+    }
+   ]
+  },
+  {
+   "id": "ign-logic",
+   "role": "driver",
+   "title": "Logic ignition (/ign2/, ign4.kicad_sch)",
+   "origin": "FOME-Tech Polygonus ign4 at b3176cb",
+   "instances": [
+    {
+     "path": "/ign2/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Logic ignition (/ign2/, ign4.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "ign-logic-drive",
+     "statement": "IGN5..8 are driven by MIC4427 through 100 ohm series resistors.",
+     "document": "plan",
+     "locator": "Block catalogue / Logic ignition (/ign2/, ign4.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "Owner requirement for logic-level coil drive; README/DESIGN naming defect FOMEMC-23"
+    }
+   ]
+  },
+  {
+   "id": "lowside-quad",
+   "role": "driver",
+   "title": "Low-side quad (lowside_quad.kicad_sch, three instances)",
+   "origin": "FOME-Tech Polygonus lowside_quad at b3176cb",
+   "instances": [
+    {
+     "path": "/lowside_quad1/",
+     "references": "all"
+    },
+    {
+     "path": "/lowside_quad2/",
+     "references": "all"
+    },
+    {
+     "path": "/lowside_quad4/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Low-side quad (lowside_quad.kicad_sch, three instances)"
+   },
+   "pending": [
+    {
+     "id": "lowside-drive",
+     "statement": "5 V gate drive, 42 V active clamp, and injector channels without external freewheel diodes.",
+     "document": "plan",
+     "locator": "Block catalogue / Low-side quad (lowside_quad.kicad_sch, three instances)",
+     "conditions": [],
+     "blocked_by": "Datasheet facts (VNLD5090) via AGENTEE-18; shared PB8 question FOMEMC-22"
+    }
+   ]
+  },
+  {
+   "id": "highside-quad",
+   "role": "driver",
+   "title": "High-side quad (highside_quad.kicad_sch)",
+   "origin": "FOME-Tech Polygonus highside_quad at b3176cb",
+   "instances": [
+    {
+     "path": "/highside_quad/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / High-side quad (highside_quad.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "highside-use",
+     "statement": "A requirement that uses the BTS716G outputs; they are not connected to J1/J2 (spare).",
+     "document": "plan",
+     "locator": "Block catalogue / High-side quad (highside_quad.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "Owner requirement; no connector-facing output exists"
+    }
+   ]
+  },
+  {
+   "id": "quad-analog",
+   "role": "sensor-interface",
+   "title": "Quad analog (quad_analog.kicad_sch, three instances)",
+   "origin": "FOME-Tech Polygonus quad_analog at b3176cb",
+   "instances": [
+    {
+     "path": "/quad_analog1/",
+     "references": "all"
+    },
+    {
+     "path": "/quad_analog2/",
+     "references": "all"
+    },
+    {
+     "path": "/quad_analog3/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Quad analog (quad_analog.kicad_sch, three instances) and pull-up variant (quad_analog_pullup.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "quad-analog-range",
+     "statement": "0 to 5 V inputs scale to the 3.30 V ADC with ESD protection on every input.",
+     "document": "design",
+     "locator": "4.4 Gear Position Ladder",
+     "conditions": [],
+     "blocked_by": "rc_transient or passive_corners check of the divider/filter with owner-declared limits"
+    }
+   ]
+  },
+  {
+   "id": "quad-analog-pullup",
+   "role": "sensor-interface",
+   "title": "Quad analog pull-up variant (quad_analog_pullup.kicad_sch)",
+   "origin": "FOME-Tech Polygonus quad_analog_pullup at b3176cb",
+   "instances": [
+    {
+     "path": "/quad_analog_temp/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Quad analog (quad_analog.kicad_sch, three instances) and pull-up variant (quad_analog_pullup.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "quad-analog-pullup-range",
+     "statement": "CLT and IAT inputs use 2.7 kohm pull-ups to 5V_SENSOR_1 and scale to the 3.30 V ADC.",
+     "document": "plan",
+     "locator": "Block catalogue / Quad analog (quad_analog.kicad_sch, three instances) and pull-up variant (quad_analog_pullup.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "rc_transient or passive_corners check with owner-declared limits"
+    }
+   ]
+  },
+  {
+   "id": "triggers",
+   "role": "sensor-interface",
+   "title": "Triggers (triggers.kicad_sch)",
+   "origin": "FOME-Tech Polygonus triggers at b3176cb",
+   "instances": [
+    {
+     "path": "/triggers/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Triggers (triggers.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "triggers-vr",
+     "statement": "MAX9924 Mode A1 adaptive threshold with differential input over 50 mVpp to 100 Vpp.",
+     "document": "design",
+     "locator": "3. Circuit-Reuse, Adaptation & Upstream Bug Resolution Table, row 6",
+     "conditions": [
+      "50 mVpp to 100 Vpp VR input"
+     ],
+     "blocked_by": "Datasheet facts (MAX9924) via AGENTEE-18; active model AGENTEE-19"
+    }
+   ]
+  },
+  {
+   "id": "knock",
+   "role": "sensor-interface",
+   "title": "Knock (knock.kicad_sch)",
+   "origin": "FOME-Tech Polygonus knock at b3176cb",
+   "instances": [
+    {
+     "path": "/knock/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Knock (knock.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "knock-band",
+     "statement": "The band-pass gain and pass band suit ADC3 sampling.",
+     "document": "plan",
+     "locator": "Block catalogue / Knock (knock.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "Owner pass-band numbers and AGENTEE-19 active SPICE"
+    }
+   ]
+  },
+  {
+   "id": "stepper",
+   "role": "driver",
+   "title": "Stepper driver (stepper_etb.kicad_sch reference set)",
+   "origin": "fome-mc stepper_etb (FOMEMC-5 repair)",
+   "instances": [
+    {
+     "path": "/stepper_etb/",
+     "references": [
+      "C203",
+      "C204",
+      "C205",
+      "C206",
+      "R211",
+      "R213",
+      "R214",
+      "R215",
+      "R216",
+      "U202"
+     ]
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "stepper-current",
+     "statement": "R215/R216 set VREF = 0.767 V; with R213/R214 = 0.20 ohm the DRV8825 current limit is 0.77 A against the 0.75 A target.",
+     "document": "plan",
+     "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "passive_corners or datasheet_facts check of the current-limit formula; README/io-map defect FOMEMC-23"
+    }
+   ]
+  },
+  {
+   "id": "etb2-hbridge",
+   "role": "driver",
+   "title": "Second H-bridge, inline TLE9201 (stepper_etb.kicad_sch reference set)",
+   "origin": "FOME-Tech Polygonus etb-9201 at b3176cb, drawn inline",
+   "instances": [
+    {
+     "path": "/stepper_etb/",
+     "references": [
+      "U203"
+     ]
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "etb2-equivalence",
+     "statement": "U203 repeats the etb-9201 circuit; a second instance of etb-9201.kicad_sch would replace it.",
+     "document": "plan",
+     "locator": "Block catalogue / H-bridge (etb-9201.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "Design change to instantiate etb-9201.kicad_sch twice"
+    }
+   ]
+  },
+  {
+   "id": "lowside-clamps",
+   "role": "protection",
+   "title": "Low-side flyback clamps (stepper_etb.kicad_sch reference set)",
+   "origin": "fome-mc stepper_etb",
+   "instances": [
+    {
+     "path": "/stepper_etb/",
+     "references": [
+      "D201",
+      "D202",
+      "D203",
+      "D204",
+      "D205",
+      "D206",
+      "D207",
+      "D208",
+      "D209",
+      "R212"
+     ]
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Low-side quad (lowside_quad.kicad_sch, three instances)"
+   },
+   "pending": [
+    {
+     "id": "lowside-clamps-scope",
+     "statement": "Clamp diodes D201..D209 and the /LS8 pull-up R212 serve the low-side channels from another sheet; the contract must name those cross-block nets.",
+     "document": "plan",
+     "locator": "Block catalogue / Low-side quad (lowside_quad.kicad_sch, three instances)",
+     "conditions": [],
+     "blocked_by": "Per-sheet boundary contracts FOMEMC-22"
+    }
+   ]
+  },
+  {
+   "id": "dfu-entry",
+   "role": "controller-support",
+   "title": "DFU entry network (stepper_etb.kicad_sch reference set)",
+   "origin": "fome-mc stepper_etb",
+   "instances": [
+    {
+     "path": "/stepper_etb/",
+     "references": [
+      "D210",
+      "D211",
+      "R209",
+      "R217",
+      "R218"
+     ]
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "dfu-entry-function",
+     "statement": "J1-35 USB VBUS raises BOOT0 for DFU entry through D210, R209, R217, R218 and D211.",
+     "document": "design",
+     "locator": "7.5 Log Retrieval, Single-Owner Filesystem Handoff & Post-Potting Firmware Recovery",
+     "conditions": [],
+     "blocked_by": "Owner threshold requirement and a dc_path or passive_corners check"
+    }
+   ]
+  },
+  {
+   "id": "hbridge",
+   "role": "driver",
+   "title": "H-bridge (etb-9201.kicad_sch)",
+   "origin": "FOME-Tech Polygonus etb-9201 at b3176cb",
+   "instances": [
+    {
+     "path": "/etb1/",
+     "references": "all"
+    }
+   ],
+   "boundary": {
+    "document": "plan",
+    "locator": "Block catalogue / H-bridge (etb-9201.kicad_sch)"
+   },
+   "pending": [
+    {
+     "id": "hbridge-drive",
+     "statement": "TLE9201SG drives ETB1_OUT+/- from 12V_MR under PWM, DIR and DIS control.",
+     "document": "plan",
+     "locator": "Block catalogue / H-bridge (etb-9201.kicad_sch)",
+     "conditions": [],
+     "blocked_by": "Datasheet facts (TLE9201SG) via AGENTEE-18 and owner current limits"
+    }
+   ]
+  }
+ ]
+}

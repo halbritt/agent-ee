@@ -18,6 +18,7 @@ SPEC.loader.exec_module(origins)
 REAL = json.loads((ROOT / 'docs/file-origins.json').read_text())
 UNRESOLVED = 'unresolved-owner-decision-required'
 PROPOSED = 'proposed-mit-pending-owner-approval'
+CONFIRMED = 'owner-confirmed'
 
 
 def origin(status, **extra):
@@ -129,11 +130,29 @@ class RepositoryInventoryTests(unittest.TestCase):
 
     def test_only_agent_ee_origins_are_proposed_for_mit(self):
         for item in self.files.values():
-            if item['permission_status'] != UNRESOLVED:
+            if item['permission_status'] == PROPOSED:
                 self.assertLessEqual(set(item['origins']), origins.OWNED, item['path'])
+        # The one confirmed third-party origin is the owner decision of 2026-10-18 on fome-mc fixtures.
+        confirmed = {key for key, value in REAL['origins'].items() if value['permission_status'] == CONFIRMED}
+        self.assertEqual(confirmed, {'T15'})
         for key, value in REAL['origins'].items():
-            if key not in origins.OWNED:
+            if key not in origins.OWNED and key not in confirmed:
                 self.assertEqual(value['permission_status'], UNRESOLVED, key)
+
+    def test_fome_mc_fixtures_follow_the_recorded_owner_decision(self):
+        t15 = REAL['origins']['T15']
+        self.assertIn('fome-mc reference sheets are committed as fixtures', t15['owner_record'])
+        self.assertIn('### fome-mc reference sheets are committed as fixtures',
+                      (ROOT / 'docs/decisions.md').read_text())
+        self.assertIn('df304f3321296f7e517e0d2e2aa52e1380d52993', t15['upstream']['revisions'])
+        sheet = self.files['fixtures/fome-mc/inventory/capture/wbo1/sheets/wbo1.kicad_sch']
+        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
+                         ('copied-design', ['T15'], CONFIRMED))
+        entry = self.files['fixtures/fome-mc/inventory/capture/wbo1/block.json']
+        self.assertEqual((entry['kind'], entry['permission_status']), ('retained-output', CONFIRMED))
+        self.assertEqual(self.files['fixtures/fome-mc/LICENSE-NOTICE.md']['permission_status'], PROPOSED)
+        inventory_file = self.files['fixtures/fome-mc/inventory/block-inventory.json']
+        self.assertEqual((inventory_file['origins'], inventory_file['permission_status']), (['AE', 'T15'], CONFIRMED))
 
     def test_walk_exclusions_mirror_gitignore(self):
         lines = {line.strip() for line in (ROOT / '.gitignore').read_text().splitlines()
@@ -212,6 +231,16 @@ class InventoryBoundaryTests(unittest.TestCase):
             errors, summary = tree.check(inventory(rules, T1=record))
             self.assertEqual(errors, [])
             self.assertEqual(summary['inventory'][0]['permission_status'], 'owner-confirmed')
+
+    def test_confirmed_origin_mixed_with_agent_ee_is_not_proposed_for_mit(self):
+        with SyntheticTree({'fixture/a.json': 'x', 'fixture/b.json': 'y', 'fixture/c.json': 'z'}) as tree:
+            record = origin(CONFIRMED, owner_record='2026-10-18 owner decision in docs/decisions.md')
+            rules = [rule(['fixture/a.json'], ['AE', 'T1'], 'owned-metadata'),
+                     rule(['fixture/b.json'], ['AE', 'T1', 'T3'], 'owned-metadata'),
+                     rule(['fixture/c.json'], ['AE'], 'owned-metadata')]
+            errors, summary = tree.check(inventory(rules, T1=record))
+        self.assertEqual(errors, [])
+        self.assertEqual([f['permission_status'] for f in summary['inventory']], [CONFIRMED, UNRESOLVED, PROPOSED])
 
     def test_third_party_origin_cannot_be_proposed_for_mit(self):
         with SyntheticTree({'src/a.py': 'x'}) as tree:

@@ -163,10 +163,11 @@ def classify(inventory, paths):
 
 
 def status(inventory, ids):
+    """Unresolved if any origin is; else owner-confirmed if any origin is; MIT is proposed only when all are."""
     statuses = {inventory['origins'][key]['permission_status'] for key in ids}
     if UNRESOLVED in statuses:
         return UNRESOLVED
-    return PROPOSED if PROPOSED in statuses else CONFIRMED
+    return CONFIRMED if CONFIRMED in statuses else PROPOSED
 
 
 def capture_origins(inventory, manifest):

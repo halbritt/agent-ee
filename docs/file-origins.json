@@ -16,7 +16,7 @@
   "permission_statuses": {
     "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
     "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
-    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given). No origin has this status."
+    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given)."
   },
   "kinds": {
     "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
@@ -32,7 +32,7 @@
     "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
     "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
-  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved.",
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved, otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
   "origins": {
     "AE": {
@@ -348,6 +348,35 @@
       "evidence": [
         "src/agent_ee/viewer_assets/vendor/LICENSE",
         "src/agent_ee/viewer_assets/vendor/manifest.json"
+      ]
+    },
+    "T15": {
+      "name": "fome-mc reference block captures",
+      "description": "Byte copies of fome-mc sheets, project libraries and planning documents captured through the offline Git path at a pinned commit, and the block entries, contracts and reports agent-ee generates from them. fixtures/fome-mc/LICENSE-NOTICE.md states the rights, scope, rules and capture provenance.",
+      "upstream": {
+        "repository": "https://github.com/halbritt/fome-mc",
+        "local_path": "/home/halbritt/git/fome-mc (object store only; the working tree is never read)",
+        "revisions": {
+          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory (AGENTEE-105, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files."
+        },
+        "license_file": null
+      },
+      "upstream_license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee. fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117/wideband Rev C ca2adce (MIT; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md).",
+      "license_verified": true,
+      "embedded_origins": [
+        "T3",
+        "T4",
+        "T6",
+        "T8",
+        "T9"
+      ],
+      "permission_status": "owner-confirmed",
+      "owner_record": "2026-10-18, docs/decisions.md \"fome-mc reference sheets are committed as fixtures\": captured fome-mc PSU and wideband sheets go into agent-ee under fixtures/, each with the fome-mc commit and sha256 it was captured from, through the offline Git capture path; the owner holds the rights to both repositories.",
+      "owner_decision": "Recorded on 2026-10-18 (owner_record). The decision does not choose a licence for these files; the MIT proposal does not cover them.",
+      "evidence": [
+        "docs/decisions.md",
+        "fixtures/fome-mc/LICENSE-NOTICE.md",
+        "fixtures/fome-mc/inventory/capture/inventory-report.json"
       ]
     }
   },
@@ -2214,6 +2243,55 @@
         "AE-RUN"
       ],
       "note": "Actual generation, checks-only and KRT stage receipts over original agent-ee fixtures. These are retained provenance excerpts and tool-identity facts, not portable complete evidence stores or copies of external designs."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/LICENSE-NOTICE.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Notice written for agent-ee. It names the upstream projects and reproduces the upstream MIT notice recorded for T9."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/inventory/block-inventory.json",
+        "fixtures/fome-mc/inventory/wbo1-to-wbo2.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T15"
+      ],
+      "note": "fome-mc block inventory and adaptation fixture written for agent-ee (AGENTEE-105). They name fome-mc sheet paths, references, nets and requirement paraphrases."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/inventory/capture/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T15"
+      ],
+      "note": "Block entries, interface contracts, connectivity, parts listings and the inventory report generated by agent_ee.block_inventory from fome-mc df304f3."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/inventory/capture/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T15"
+      ],
+      "suffixes": [
+        ".kicad_sch",
+        ".kicad_mod",
+        ".lib",
+        ".md"
+      ],
+      "note": "Byte copies of fome-mc blobs at df304f3321296f7e517e0d2e2aa52e1380d52993 (sheets, project libraries, docs/BLOCK_LIBRARY.md and docs/DESIGN.md); SHA-256 and Git blob ids in inventory-report.json source_files."
     }
   ]
 }

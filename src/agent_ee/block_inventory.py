@@ -497,12 +497,25 @@ def _pinned(repository, commit):
         raise ValueError('inventory commit must be a full exact commit')
 
 
+def _source_files(repository, commit, blobs, requests):
+    """Pinned source files exported or captured: SHA-256, Git blob id and whether a block copies it."""
+    captured = {path for _, record, _ in requests for path in record['source']['paths'].values()}
+    files = {}
+    for path in sorted(set(blobs) | captured):
+        data = blobs[path] if path in blobs else _blob(repository, commit, path)
+        files[path] = dict(sha256=hashlib.sha256(data).hexdigest(),
+                           git_blob=hashlib.sha1(b'blob %d\x00' % len(data) + data).hexdigest(),
+                           captured=path in captured)
+    return files
+
+
 def capture_inventory(inventory, repository, destination, *, catalog=None, catalog_manifest_sha256=None,
-                      stock_root=STOCK_ROOT, library_repos=None):
+                      stock_root=STOCK_ROOT, library_repos=None, repository_label=None):
     """Capture every inventory block from its pinned commit into a new private directory.
 
     ``library_repos`` maps declared ``external_libraries`` names to local repositories;
-    an undeclared or absent one leaves its libraries unresolved.
+    an undeclared or absent one leaves its libraries unresolved. ``repository_label``
+    is recorded instead of the local repository path (see ``capture_block``).
     """
     validate_inventory(inventory)
     commit = inventory['design']['commit']
@@ -558,7 +571,8 @@ def capture_inventory(inventory, repository, destination, *, catalog=None, catal
         blocks = []
         for block_id, record, supplements in requests:
             out = stage / block_id
-            report = capture_block(record, repository, commit, out, supplements=supplements)
+            report = capture_block(record, repository, commit, out, supplements=supplements,
+                                   repository_label=repository_label)
             blocks.append(dict(id=record['id'], directory=block_id, status=report['status'],
                                block_sha256=digest(out / 'block.json'),
                                contract_sha256=digest(out / 'block-contract.json'),
@@ -568,10 +582,12 @@ def capture_inventory(inventory, repository, destination, *, catalog=None, catal
         summary = dict(schema='agent-ee.block-inventory-report/1', design=inventory['design']['name'],
                        commit=commit, inventory_sha256=identity(inventory), exporter=tool,
                        exporter_console=console, components=len(components), blocks=blocks,
+                       source_files=_source_files(repository, commit, blobs, requests),
                        unassigned=inventory['unassigned'],
                        limitations=['Draft entries: derived contracts restate the pinned design and need owner '
                                     'approval; no block is verified without a complete run and review.',
-                                    'Captured third-party design files stay private until owner publication approval.'])
+                                    'Captured design files are the pinned source blobs; publishing them follows '
+                                    'the source design licence statement and the owner decision that covers it.'])
         write_json(stage / 'inventory-report.json', summary)
         rename_noreplace(stage, target)
     except BaseException:
@@ -684,6 +700,8 @@ def main(argv=None):
     capture.add_argument('--stock-root', default=STOCK_ROOT)
     capture.add_argument('--library-repo', action='append', default=[], metavar='NAME=PATH',
                          help='local repository for a declared external library')
+    capture.add_argument('--repository-label',
+                         help='record this name instead of the local repository path')
     adapt = commands.add_parser('adapt')
     adapt.add_argument('source', help='captured source block directory')
     adapt.add_argument('target', help='captured target block directory')
@@ -701,7 +719,8 @@ def main(argv=None):
                 repos[name] = path
             report = capture_inventory(_read(args.inventory), args.repo, args.out, catalog=args.catalog,
                                        catalog_manifest_sha256=args.catalog_manifest_sha256,
-                                       stock_root=args.stock_root, library_repos=repos)
+                                       stock_root=args.stock_root, library_repos=repos,
+                                       repository_label=args.repository_label)
             print(json.dumps(report, sort_keys=True))
             return 0
         projections = []

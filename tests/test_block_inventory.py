@@ -109,6 +109,27 @@ class InventoryCaptureTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.capture('first')
 
+    def test_repository_label_and_source_file_identities(self):
+        report = self.capture(repository_label='owned-design')
+        record = read_json(self.root / 'capture/ch1/block.json')
+        self.assertEqual(record['source']['repository'], 'owned-design')
+        files = report['source_files']
+        self.assertEqual(files, read_json(self.root / 'capture/inventory-report.json')['source_files'])
+        for path in ('sheets/chan1.kicad_sch', 'owned.kicad_sch', 'docs/PLAN.md'):
+            blob = subprocess.run(['git', '-C', str(self.root / 'design'), 'rev-parse', f'{self.commit}:{path}'],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(files[path]['git_blob'], blob, path)
+        self.assertTrue(files['sheets/chan1.kicad_sch']['captured'])
+        self.assertFalse(files['owned.kicad_sch']['captured'])  # exported root, never copied into a block
+        self.assertEqual(sorted(files), ['docs/PLAN.md', 'libs/Owned.kicad_sym', 'libs/owned_fp.pretty/QFN-6.kicad_mod',
+                                         'owned.kicad_sch', 'sheets/chan1.kicad_sch', 'sheets/chan2.kicad_sch'])
+        for local, source in record['source']['paths'].items():
+            self.assertEqual(record['files'][local], files[source]['sha256'], local)
+        default = self.capture('unlabelled')
+        self.assertEqual(read_json(self.root / 'unlabelled/ch1/block.json')['source']['repository'],
+                         str((self.root / 'design').resolve()))
+        self.assertEqual(default['source_files'], files)
+
     def test_adaptation_reproduces_second_channel_except_straps(self):
         self.capture()
         source = read_json(self.root / 'capture/ch1/connectivity.json')
@@ -223,6 +244,127 @@ class InventoryCaptureTests(unittest.TestCase):
                     validate_block(target)
 
 
+class FomeMcInventoryFixtureTests(unittest.TestCase):
+    """The committed fome-mc inventory and its capture (owner decision of 2026-10-18).
+
+    Reads committed files only, so it needs neither fome-mc nor KiCad and always runs.
+    Re-capturing from fome-mc is the manual qualify_block_inventory.py step.
+    """
+    FIXTURE = REPO / 'fixtures/fome-mc/inventory'
+    COMMIT = 'df304f3321296f7e517e0d2e2aa52e1380d52993'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.inventory = read_json(cls.FIXTURE / 'block-inventory.json')
+        cls.capture = cls.FIXTURE / 'capture'
+        cls.report = read_json(cls.capture / 'inventory-report.json')
+        cls.ids = [b['id'] for b in cls.inventory['blocks']]
+
+    def test_inventory_pins_the_commit_and_names_the_licence_notice(self):
+        validate_inventory(self.inventory)
+        self.assertEqual(self.inventory['design']['name'], 'fome-mc')
+        self.assertEqual(self.inventory['design']['commit'], self.COMMIT)
+        self.assertIn('fixtures/fome-mc/LICENSE-NOTICE.md', self.inventory['design']['license'])
+        notice = (REPO / 'fixtures/fome-mc/LICENSE-NOTICE.md').read_text()
+        self.assertIn(self.COMMIT, notice)
+        self.assertIn('owner holds the rights', notice)
+
+    def test_report_binds_the_inventory_and_every_entry(self):
+        from agent_ee.storage import identity
+        self.assertEqual((self.report['design'], self.report['commit']), ('fome-mc', self.COMMIT))
+        self.assertEqual(self.report['inventory_sha256'], identity(self.inventory))
+        self.assertEqual([b['directory'] for b in self.report['blocks']], self.ids)
+        self.assertEqual(sorted(p.name for p in self.capture.iterdir()), sorted(self.ids + ['inventory-report.json']))
+        for block in self.report['blocks']:
+            with self.subTest(block=block['directory']):
+                directory = self.capture / block['directory']
+                self.assertEqual(block['id'], 'fome-mc/' + block['directory'])
+                self.assertEqual(block['status'], 'unverified')
+                self.assertEqual(digest(directory / 'block.json'), block['block_sha256'])
+                self.assertEqual(digest(directory / 'block-contract.json'), block['contract_sha256'])
+
+    def test_every_planned_block_is_an_unverified_entry_without_runs(self):
+        planned = {b['id']: b for b in self.inventory['blocks']}
+        for block_id in self.ids:
+            with self.subTest(block=block_id):
+                directory = self.capture / block_id
+                report = validate_block(directory)
+                self.assertEqual((report['status'], report['runs']), ('unverified', []))
+                record = read_json(directory / 'block.json')
+                self.assertEqual(record['source']['commit'], self.COMMIT)
+                self.assertEqual(record['source']['repository'], 'fome-mc')
+                self.assertEqual([i['path'] for i in record['instances']],
+                                 [i['path'] for i in planned[block_id]['instances']])
+                self.assertEqual([r['id'] for r in record['requirements']],
+                                 [block_id + '-native', block_id + '-interface'])
+                self.assertEqual([r['id'] for r in record['pending_requirements']],
+                                 [r['id'] for r in planned[block_id]['pending']])
+                self.assertEqual(read_json(directory / 'interface.json')['schema'], 'agent-ee.interface/1')
+
+    def test_every_catalogue_block_of_the_plan_has_an_entry(self):
+        plan = self.inventory['documents'][self.inventory['design']['plan']]
+        text = (self.capture / self.ids[0] / 'sources' / plan).read_text()
+        catalogue = text.split('\n## Block catalogue\n', 1)[1].split('\n## ', 1)[0]
+        headings = {line[4:].replace('`', '') for line in catalogue.splitlines() if line.startswith('### ')}
+        self.assertEqual(len(headings), 14)
+        locators = {b['boundary']['locator'].removeprefix('Block catalogue / ') for b in self.inventory['blocks']}
+        self.assertEqual(locators, headings)
+
+    def test_captured_files_are_the_pinned_source_blobs(self):
+        import hashlib
+        files = self.report['source_files']
+        copied = set()
+        for block_id in self.ids:
+            directory = self.capture / block_id
+            record = read_json(directory / 'block.json')
+            for local, source in record['source']['paths'].items():
+                with self.subTest(block=block_id, path=local):
+                    data = (directory / local).read_bytes()
+                    self.assertEqual(hashlib.sha256(data).hexdigest(), files[source]['sha256'])
+                    self.assertEqual(record['files'][local], files[source]['sha256'])
+                    self.assertEqual(hashlib.sha1(b'blob %d\x00' % len(data) + data).hexdigest(),
+                                     files[source]['git_blob'])
+                    copied.add(source)
+        self.assertEqual(copied, {path for path, entry in files.items() if entry['captured']})
+        self.assertIn('sheets/psu.kicad_sch', copied)
+        self.assertIn('sheets/wbo1.kicad_sch', copied)
+
+    def test_wbo1_adaptation_reproduces_wbo2_except_u402_straps(self):
+        from agent_ee.block_inventory import validate_adaptation_fixture
+        document = read_json(self.FIXTURE / 'wbo1-to-wbo2.json')
+        validate_adaptation_fixture(document)
+        self.assertEqual((document['design'], document['source'], document['target']), ('fome-mc', 'wbo1', 'wbo2'))
+        parameters = document['parameters']
+        self.assertEqual(parameters['reference_offset'], 100)
+        source, target = (read_json(self.capture / name / 'connectivity.json') for name in ('wbo1', 'wbo2'))
+        without = compare_connectivity(adapt_connectivity(source, dict(parameters, straps=[])), target)
+        self.assertEqual(without, document['expected_without_straps'])
+        self.assertEqual([(d['reference'], d['pin']) for d in without], [('U402', '15'), ('U402', '18')])
+        self.assertEqual(compare_connectivity(adapt_connectivity(source, parameters), target), [])
+        with tempfile.TemporaryDirectory(prefix='agent-ee-105-fome-') as tmp:
+            for straps, code in ((parameters['straps'], 0), ([], 1)):
+                path = Path(tmp) / 'parameters.json'
+                write_json(path, dict(parameters, straps=straps))
+                result = subprocess.run([sys.executable, '-m', 'agent_ee.block_inventory', 'adapt',
+                                         str(self.capture / 'wbo1'), str(self.capture / 'wbo2'),
+                                         '--parameters', str(path)], capture_output=True, text=True,
+                                        env=dict(os.environ, PYTHONPATH=str(REPO / 'src')), timeout=300)
+                self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                self.assertEqual(json.loads(result.stdout)['differences'], [] if code == 0 else without)
+
+    def test_tampered_committed_entry_is_refused(self):
+        import shutil
+        with tempfile.TemporaryDirectory(prefix='agent-ee-105-fome-') as tmp:
+            for edit in ('sheets/wbo1.kicad_sch', 'connectivity.json'):
+                with self.subTest(edit=edit):
+                    target = Path(tmp) / edit.replace('/', '-')
+                    shutil.copytree(self.capture / 'wbo1', target)
+                    with (target / edit).open('ab') as stream:
+                        stream.write(b' ')
+                    with self.assertRaisesRegex(ValueError, 'hash differs'):
+                        validate_block(target)
+
+
 class QualificationScriptTests(unittest.TestCase):
     """The opt-in private-inventory qualification, exercised on the owned design only."""
 
@@ -284,6 +426,27 @@ class QualificationScriptTests(unittest.TestCase):
         (self.root / 'design' / '.gitignore').write_text('captured/\n')
         code, report = self.run_script('--out', str(tracked))
         self.assertEqual((code, report['status']), (0, 'qualified'))
+
+    def test_expected_capture_must_match_byte_for_byte(self):
+        code, report = self.run_script('--out', str(self.root / 'reference'))
+        self.assertEqual(code, 0, report)
+        self.assertIsNone(report['expected'])
+        reference = self.root / 'reference' / 'first'
+        self.assertEqual(read_json(reference / 'ch1/block.json')['source']['repository'], 'owned')
+        # An expected capture/ beside the inventory is the default comparison.
+        import shutil
+        shutil.copytree(reference, self.private / 'capture')
+        code, report = self.run_script('--out', str(self.root / 'same'))
+        self.assertEqual((code, report['status']), (0, 'qualified'))
+        self.assertEqual(report['expected'], dict(directory=str(self.private / 'capture'), differing=[]))
+        with (self.private / 'capture/ch1/connectivity.json').open('ab') as stream:
+            stream.write(b' ')
+        code, report = self.run_script('--out', str(self.root / 'differs'))
+        self.assertEqual((code, report['status']), (1, 'failed'))
+        self.assertEqual(report['expected']['differing'], ['ch1/connectivity.json'])
+        code, report = self.run_script('--out', str(self.root / 'missing'), '--expect', str(self.root / 'absent'))
+        self.assertEqual((code, report['status']), (2, 'refused'))
+        self.assertFalse((self.root / 'missing').exists())
 
 
 if __name__ == '__main__':
