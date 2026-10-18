@@ -162,6 +162,14 @@ rules; passing these checks is not full circuit function or fab qualification.
 
 ## Captured routing constraints
 
+The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
+in the writer's sandbox with a read-only checkout and state directory. Its receipt
+records provenance and applicability; it is not an acceptance check. The campaign
+verifies the retained routing result before adopting an exit-0 or exit-2 board and
+on replay. Exits 1, 3 and 4 produce no proposal. Fresh DRC (including parity and
+unconnected items), `copper-width/1` and configured routing constraints still
+determine the captured board's outcome.
+
 The [routing check](routing-rules.md) accepts a captured `params.routing_rules`
 JSON document. It compiles explicit bounds into isolated native custom-rule
 runs. Scope/2 and scope/3 bind exactly one requirement per routing check and

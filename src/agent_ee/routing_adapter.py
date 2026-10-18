@@ -64,18 +64,155 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
     args = ['--project', project, '--board', board, '--schematic', schematic, '--name', name,
             '--label', label, '--budget', str(budget), '--timeout', str(timeout), '--backend', backend,
             '--state', 'separate' if separate else 'checkout']
-    attempt.parse_request(args)  # the same validation the sandbox applies
+    request = attempt.parse_request(args)  # the same validation the sandbox applies
+    return _step(request, check['checkout'], check['state'] if separate else None)
+
+
+def _step(request, checkout, state):
+    """Pure declaration construction, also used for retained campaign replay."""
     mounts = [{'source': str(ADAPTER_SOURCE), 'at': ADAPTER_AT},
-              {'source': check['checkout'], 'at': attempt.SANDBOX['checkout']}]
-    if separate:
-        mounts.append({'source': check['state'], 'at': attempt.SANDBOX['state']})
-    target = f'{project}/{board}'
-    return {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': f'kicad-route-{backend}',
-            'argv': [attempt.PYTHON, '-I', '-B', ADAPTER_AT, *args],
+              {'source': checkout, 'at': attempt.SANDBOX['checkout']}]
+    if state is not None:
+        mounts.append({'source': state, 'at': attempt.SANDBOX['state']})
+    target = f'{request["project"]}/{request["board"]}'
+    return {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': f'kicad-route-{request["backend"]}',
+            'argv': [attempt.PYTHON, '-I', '-B', ADAPTER_AT, *_request_argv(request)],
             'mounts': mounts, 'source': attempt.SANDBOX['checkout'] + '/src',
             'backend_report': {'artifact': 'routing/attempt/result.json', 'key': 'backend'},
             'writes': {target: f'routing/candidate/{target}'}, 'artifacts': list(ARTIFACTS),
-            'adoptable_exits': [0, 2], 'timeout_s': timeout + STEP_MARGIN_S}
+            'adoptable_exits': [0, 2], 'timeout_s': request['timeout_s'] + STEP_MARGIN_S}
+
+
+def validate_declaration(value):
+    """Strict campaign opt-in; command, mounts, pin and environment are not configurable."""
+    required = {'schema', 'project', 'board', 'schematic', 'name', 'label', 'checkout'}
+    optional = {'state', 'budget', 'timeout', 'backend'}
+    if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.routing-adapter/1' or
+            not required <= set(value) or not set(value) <= required | optional):
+        raise ValueError('expected agent-ee.routing-adapter/1 declaration')
+    budget = value.get('budget', 300)
+    timeout = value.get('timeout', 2 * budget + 300) if isinstance(budget, int) else None
+    state = value.get('state')
+    checkout = value['checkout']
+    for path in (checkout, state):
+        if path is not None and (not isinstance(path, str) or not Path(path).is_absolute() or
+                                 '..' in Path(path).parts or str(Path(path)) != path):
+            raise ValueError('routing checkout/state must be normalized absolute host paths')
+    if checkout is None:
+        raise ValueError('routing checkout is required')
+    separate = state is not None and state != checkout
+    request = attempt.parse_request(_request_argv({
+        **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
+        'backend': value.get('backend', 'krt'), 'budget_s': budget, 'timeout_s': timeout,
+        'state': 'separate' if separate else 'checkout'}))
+    return {'schema': value['schema'], **{k: request[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
+            'checkout': checkout, 'state': state if separate else None, 'budget': request['budget_s'],
+            'timeout': request['timeout_s'], 'backend': request['backend']}
+
+
+def campaign_spec(declaration, manifest, mutable):
+    from .stage_receipts import validate_step
+    value = validate_declaration(declaration)
+    scope = manifest['scope']
+    stages = scope.get('stages')
+    if not isinstance(stages, dict) or 'routing' not in stages.get('order', []):
+        raise ValueError('routing_adapter requires a staged scope with a routing stage')
+    board = f'{value["project"]}/{value["board"]}'
+    schematic = f'{value["project"]}/{value["schematic"]}'
+    if board != scope['board'] or schematic != scope['schematic'] or board not in mutable:
+        raise ValueError('routing adapter must select the scope board/schematic and a mutable board')
+    request = attempt.parse_request(_request_argv({
+        **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label', 'backend')},
+        'budget_s': value['budget'], 'timeout_s': value['timeout'],
+        'state': 'separate' if value['state'] else 'checkout'}))
+    return validate_step(_step(request, value['checkout'], value['state']), host=False)
+
+
+def campaign_binding(declaration, manifest, mutable):
+    from .stage_receipts import observe_tool
+    spec = campaign_spec(declaration, manifest, mutable)
+    validate_campaign_step(spec)
+    return {'spec': spec, 'tool': observe_tool(spec), 'pin': attempt.PIN,
+            'adapter_sha256': digest(ADAPTER_SOURCE)}
+
+
+def validate_binding(binding, declaration, manifest, mutable, policy_files):
+    expected = campaign_spec(declaration, manifest, mutable)
+    if (not isinstance(binding, dict) or set(binding) != {'spec', 'tool', 'pin', 'adapter_sha256'} or
+            binding['spec'] != expected or binding['pin'] != attempt.PIN or
+            binding['adapter_sha256'] != policy_files['kicad_route_attempt.py']):
+        raise ValueError('campaign routing binding differs from its declaration or captured policy')
+    return expected
+
+
+def validate_live_binding(binding):
+    from .stage_receipts import observe_tool
+    spec = validate_campaign_step(binding['spec'])
+    if digest(ADAPTER_SOURCE) != binding['adapter_sha256'] or observe_tool(spec) != binding['tool']:
+        raise ValueError('routing adapter, checkout or backend state changed since campaign binding')
+
+
+def validate_campaign_step(spec, *, host=True):
+    """Bind the complete coordinator command, mounts and timeout to this adapter."""
+    from .stage_receipts import validate_step
+
+    spec = validate_step(spec, host=host)
+    request = attempt.parse_request(spec['argv'][4:])
+    mounts = {m['at']: m['source'] for m in spec['mounts']}
+    checkout = mounts.get(attempt.SANDBOX['checkout'])
+    separate = request['state'] == 'separate'
+    state = mounts.get(attempt.SANDBOX['state']) if separate else None
+    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout']}
+    if separate:
+        expected_mounts.add(attempt.SANDBOX['state'])
+    if (set(mounts) != expected_mounts or spec['argv'][:4] != [attempt.PYTHON, '-I', '-B', ADAPTER_AT] or
+            (host and mounts[ADAPTER_AT] != str(ADAPTER_SOURCE))):
+        raise ValueError('campaign routing step differs from the pinned adapter command or mounts')
+    if host:
+        check = preflight(checkout, state, request['backend'])
+        if check['problems']:
+            raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
+        if checkout != check['checkout'] or (state is not None and state != check['state']):
+            raise ValueError('routing mount sources must use resolved host paths')
+    _receipt_step({'spec': spec}, request)
+    if spec['timeout_s'] != request['timeout_s'] + STEP_MARGIN_S:
+        raise ValueError('campaign routing step differs from the pinned adapter timeout')
+    return spec
+
+
+def verify_campaign_receipt(receipt_dir, *, expected=None, binding=None):
+    """Verify coordinator execution and routing semantics before adoption and on replay."""
+    from .executor import sandbox_argv
+    from .stage_receipts import ADOPTABLE, file_tree, validate_receipt
+
+    receipt_dir = Path(receipt_dir)
+    receipt = validate_receipt(receipt_dir)
+    spec = validate_campaign_step(receipt['spec'], host=False)
+    if expected is not None and receipt['binding'] != expected:
+        raise ValueError('foreign routing receipt binding')
+    if binding is not None:
+        observed = {k: receipt['tool'][k] for k in ('executable', 'mounts', 'source_tree')}
+        if (spec != binding['spec'] or observed != binding['tool'] or receipt['tool_after'] != binding['tool']):
+            raise ValueError('routing receipt differs from the frozen campaign tool binding')
+    execution = receipt['execution']
+    if execution is not None:
+        expected = sandbox_argv(receipt_dir / 'inputs', receipt_dir / 'run', spec['argv'], network=False,
+                                extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
+        if execution['sandbox_argv'] != expected:
+            raise ValueError('campaign routing sandbox differs from the declared read-only mounts')
+    # A killed or crashed adapter can leave no report. Its failed receipt remains provenance,
+    # but supplies no routing coverage and can never authorize an output.
+    if receipt['artifacts'].get('routing/adapter-report.json') is None:
+        if receipt['status'] not in ADOPTABLE:
+            return None
+        raise ValueError('adoptable routing receipt lacks a safe adapter report')
+    for name in ('attempt', 'candidate'):
+        path = receipt_dir / 'run/routing' / name
+        if os.path.lexists(path):
+            _, other = file_tree(path)
+            if other:
+                raise ValueError('retained routing evidence contains links or special files')
+    return verify(receipt_dir / 'run', receipt=receipt)
 
 
 def _report(run):
