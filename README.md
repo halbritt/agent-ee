@@ -209,6 +209,12 @@ footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
 diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
 JLCPCB placement preview validates rotation physically.
 
+The [fab package done gate](docs/fab-package.md) (`fab_package`, declared last)
+runs that export and gate in one check and seals the package's file hashes. A
+scope with a `generation` marker is refused at capture without it, and a
+satisfied generation campaign's `state.json` lists the hashes, which
+`verify-campaign` recomputes.
+
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.

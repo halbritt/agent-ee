@@ -1933,6 +1933,16 @@
     },
     {
       "paths": [
+        "tests/test_fab_package.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code for the AGENTEE-94 fab_package done gate; it reuses the owned fixtures/fab-export board and scripts reviewer responses only."
+    },
+    {
+      "paths": [
         "tests/test_fab_profile.py"
       ],
       "kind": "owned-source",

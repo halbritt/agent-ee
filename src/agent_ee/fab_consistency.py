@@ -73,6 +73,13 @@ def capability(params, scope, prerequisite, captured):
     export_params = export.get('params', {})
     prerequisite(export_params.get('netlist_check') if isinstance(export_params, dict) else None,
                  ('netlist',))
+    earlier_geometry(scope, prerequisite, 'fab_consistency')
+    captured(scope.get('board'))
+    return list(PREDICATES)
+
+
+def earlier_geometry(scope, prerequisite, kind):
+    """At least one geometry check declared before the gating check (scope/3 capability)."""
     earlier = []
     for spec in scope.get('checks', []):
         if spec.get('kind') == 'geometry':
@@ -81,9 +88,8 @@ def capability(params, scope, prerequisite, captured):
             except ValueError:
                 pass  # a later geometry check cannot supply this gate's evidence
     if not earlier:
-        raise ValueError('fab_consistency needs an earlier geometry check for native footprint evidence')
-    captured(scope.get('board'))
-    return list(PREDICATES)
+        raise ValueError(f'{kind} needs an earlier geometry check for native footprint evidence')
+    return earlier
 
 
 class Malformed(ValueError):
@@ -759,8 +765,12 @@ def resolve_model(ctx, path, footprint, board):
 # ------------------------------------------------------------------------- check
 
 def check_fab_consistency(ctx):
+    gate(ctx, *export_prerequisite(ctx))
+
+
+def gate(ctx, eid, export_spec, export_result, stage):
+    """Verify one sealed export staging tree; `fab_package` runs this on its own export (eid == ctx.cid)."""
     from .checks import CheckError
-    eid, export_spec, export_result, stage = export_prerequisite(ctx)
     nid, netlist = netlist_components(ctx, export_spec)
     geometry_ids, geometry = geometry_footprints(ctx)
     details = ctx.result['details']

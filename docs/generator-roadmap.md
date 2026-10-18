@@ -72,6 +72,13 @@ CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
 The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
 
 CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
+
+[`fab_package`](fab-package.md)
+(AGENTEE-94) is the done gate: declared last, it runs the
+[`fab_export`](fab-export.md) producer (AGENTEE-23) and the
+[consistency gate](fab-consistency.md) (AGENTEE-73), including native CPL
+coordinate and export-log checks, and seals the artifact hashes. A scope with a
+`generation` marker is refused at capture without it.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
