@@ -14,6 +14,82 @@ def request(**changes):
 
 
 class PlacerTest(unittest.TestCase):
+    def keepout_board(self, *, owner='U1', layers=('F.Cu', 'B.Cu'), shape=None):
+        from test_placement import rectangle
+        board = capture([part('U1', 2, 2), part('C1', 2, 2)])
+        board['rule_areas'] = [{'uuid': 'owned-zone', 'owner': next(
+            fp['uuid'] for fp in board['footprints'] if fp['ref'] == owner),
+            'layers': list(layers), 'forbid': {'footprints': True},
+            'outline': {'status': 'proven', 'polygons': [shape or rectangle(0, 0, 7, 5)]}}]
+        return board
+
+    def test_owned_keepout_obstacle(self):
+        import copy
+        from agent_ee.placer import transform
+        from agent_ee.placement import intersection_area, qualified_polygons
+        for fixed, priority in ((['U1'], []), ([], ['U1']), ([], ['C1'])):
+            board = self.keepout_board()
+            original = copy.deepcopy(board)
+            plan = pack(board, request(fixed_refs=fixed, priority_refs=priority, step_budget=100000))
+            self.assertEqual(plan['status'], 'planned', plan)
+            self.assertEqual(board, original)
+            placed = {}
+            for fp in board['footprints']:
+                at = next(p for p in plan['placements'] if p['ref'] == fp['ref'])
+                placed[fp['ref']] = transform(fp, at['position_nm'], at['rotation_deg'])
+            # Independent vertex transform for the actual exclusion, including
+            # when the owner was placed after C1 and must not engulf it.
+            owner = board['footprints'][0]
+            at = next(p for p in plan['placements'] if p['ref'] == 'U1')
+            points = []
+            for x, y in board['rule_areas'][0]['outline']['polygons'][0]:
+                x, y = x-owner['position_nm'][0], y-owner['position_nm'][1]
+                for _ in range(at['rotation_deg']//90):
+                    x, y = y, -x
+                points.append([x+at['position_nm'][0], y+at['position_nm'][1]])
+            polygon, = qualified_polygons({'status': 'proven', 'polygons': [points]})
+            courtyard, = qualified_polygons(placed['C1']['courtyards']['F'])
+            self.assertEqual(intersection_area(polygon, courtyard), 0)
+
+    def test_owned_keepout_conflicting_fixed_parts_fail_and_opposite_side_is_free(self):
+        board = self.keepout_board()
+        # Remove courtyard overlap so only the owned keepout causes refusal.
+        from test_placement import part
+        board['footprints'][1] = part('C1', 5, 2)
+        self.assertEqual(pack(board, request(fixed_refs=['U1', 'C1']))['status'], 'fixed_conflict')
+        board['rule_areas'][0]['layers'] = ['B.Cu']
+        self.assertEqual(pack(board, request(fixed_refs=['U1', 'C1']))['status'], 'planned')
+        board['rule_areas'][0]['layers'] = ['F.Cu']
+        board['rule_areas'][0]['forbid']['footprints'] = False
+        self.assertEqual(pack(board, request(fixed_refs=['U1', 'C1']))['status'], 'planned')
+
+    def test_owned_keepout_uses_polygon_instead_of_bounding_box(self):
+        from test_placement import MM, part
+        # C1 fits in the notch of this L, inside its bounding box.
+        shape = [[x*MM, y*MM] for x, y in ((0, 0), (7, 0), (7, 1), (1, 1), (1, 7), (0, 7))]
+        board = self.keepout_board(shape=shape)
+        board['footprints'][1] = part('C1', 5, 5)
+        self.assertEqual(pack(board, request(fixed_refs=['U1', 'C1']))['status'], 'planned')
+
+    def test_owned_keepout_unknown_geometry_and_owner_never_plan(self):
+        import copy
+        for mutation in ('owner', 'outline', 'flag', 'layers'):
+            board = self.keepout_board()
+            area = board['rule_areas'][0]
+            if mutation == 'owner':
+                area['owner'] = 'missing-footprint'
+            elif mutation == 'outline':
+                area['outline']['status'] = 'unsupported'
+            elif mutation == 'flag':
+                area['forbid']['footprints'] = 'yes'
+            else:
+                area['layers'] = None
+            original = copy.deepcopy(board)
+            plan = pack(board, request())
+            self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                             ('unsupported_geometry', 'unknown', []))
+            self.assertEqual(board, original)
+
     def test_deterministic_plan_keeps_static_part_and_passes_judge(self):
         board = capture([part('U1', 2, 2), part('C1', 2, 2)])
         first = pack(board, request())
