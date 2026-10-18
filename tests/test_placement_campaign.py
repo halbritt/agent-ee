@@ -1001,7 +1001,10 @@ class StagedStepPlanTest(unittest.TestCase):
             status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
         root = fixture.root / 'campaign'
         state = verify_campaign(root)
-        self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
+        # Every check passes, but the declared routing step never ran: not done (AGENTEE-144).
+        self.assertEqual((status, state['state'], state['diagnostic']['state']),
+                         (1, 'incomplete', 'criteria_satisfied'), state)
+        self.assertIn('stage_step_unreceipted: routing/routing-step', state['error'])
         index = read_json(root / 'implementations/1/stage-receipts.json')
         self.assertEqual([r['path'] for r in index['receipts']], ['receipts/1-schematic-step/receipt.json'])
         # Read as a legacy campaign, the same records would need every declared step.

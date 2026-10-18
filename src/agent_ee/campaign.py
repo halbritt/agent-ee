@@ -381,6 +381,11 @@ def record_iteration(root, state, run, config):
         artifacts = fab_artifacts(run)
         if artifacts is not None:
             state["fab_artifacts"] = artifacts
+    state.pop("stage_done", None)
+    if state["state"] == "criteria_satisfied":
+        # Decision 1 amendment: each declared stage's graded content must be its step receipt's output.
+        from .stage_done import record_done
+        record_done(root, state, config)
     if state["state"] == "escalated":
         write_json(root / "tradeoff.json", diagnostic)
     write_json(root / "state.json", state)
@@ -586,6 +591,8 @@ def verify_campaign_records(root, *, observations=None):
                     following = read_json(Path(state['history'][int(name)]['run']) / 'candidate.json')
                     if following.get('scope_path') != str(work / 'proposal.scope.json'):
                         raise ValueError('next campaign run was not captured from this routing proposal')
+    from .stage_done import verify_done
+    verify_done(root, state, config)
     return {**state, "state": "empirical_superseded"} if feedback_seen else state
 
 

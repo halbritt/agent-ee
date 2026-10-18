@@ -18,7 +18,9 @@ routing, and FOME-MC supplies the reference blocks and the final benchmark.
 
 "Done" has one meaning (decision 1): a campaign reaches `criteria_satisfied`,
 so every declared check passed on the same captured candidate, and a fab package
-check found the exports present and consistent. Model prose, a writer's summary
+check found the exports present and consistent. Since 2026-10-18, each stage with a
+declared step must also have produced its graded content through that step's receipt
+([done through declared steps](stage-receipts.md#done-through-declared-steps)). Model prose, a writer's summary
 or a router's self-report never establishes done.
 
 ## Benchmark ladder

@@ -5,7 +5,11 @@ itself: the exact argv, the tool identity, the input and output file hashes, the
 status, the timing and the sandbox profile. Receipts are provenance (decisions 5 and 6 in
 [implementation decisions](decisions.md#generator-direction-2026-10-17)).
 A receipt never makes a check pass. Acceptance still comes only from fresh
-sealed checks of the captured proposal. The module is
+sealed checks of the captured proposal. Since the owner decision of 2026-10-18
+([done requires each stage through its declared step](decisions.md#done-requires-each-stage-through-its-declared-step-amends-decision-1)),
+receipts are also part of the done rule: passing checks are not done when a declared
+stage's graded content is not its step receipt's output
+([Done through declared steps](#done-through-declared-steps)). The module is
 [stage_receipts.py](../src/agent_ee/stage_receipts.py) (AGENTEE-95).
 
 ## Authority
@@ -195,6 +199,55 @@ sha256 and applicability, together with the delivered design tree. Its digest is
   while its outputs differ from the captured proposal fails with that message.
 
 Campaigns created before this change have no anchors and no index, and they verify as before.
+
+## Done through declared steps
+
+Decision 1's done (every check passes on one captured candidate and, for a generation scope, the
+fab artifacts are sealed) has a third condition (AGENTEE-144,
+[stage_done.py](../src/agent_ee/stage_done.py)). The declared steps are `implementation_steps` and
+the `routing_adapter` step. In a staged campaign only steps of stages in the scope's
+`stages.order` count. The step plan never runs another stage, so such a step is listed in
+`excluded`. For example, rung 1's `export-fab` has stage `fab`, which is not a rung-1 scope stage.
+For every candidate path a counted step writes:
+
+- every stage with a counted step writing the path has an adoptable receipt of that step, adopted
+  in an implementation whose proposal the next run captured;
+- the final run's graded bytes of the path equal the output of the path's last counted step
+  receipt;
+- after a stage's last receipt, nothing else changes the path. A writer edit in any later turn is
+  refused, including turns of stages with no declared step, and so is a change the coordinator
+  did not receipt or a run not captured from an implementation. A writer edit before the stage's
+  last receipt is an input the step consumed. The one exception is the
+  [placement adapter](placement-adapter.md): its writer moves and helper receipt may change the
+  path after the receipts of stages that precede placement. Its retained record already limits
+  them to footprint transforms. Rung 1 qualified forward-annotates the board, places it through
+  the adapter and then routes it.
+
+Paths no counted step writes, and campaigns that declare no step, are unaffected. There the
+writer remains the producer. The rule works on whole files, as receipts do. A step that keeps its
+input bytes in place, such as an in-place pass-through, vouches for those bytes.
+
+The coordinator applies the rule when a run reaches `criteria_satisfied`. A pass is recorded as
+`state.json` `stage_done` (`agent-ee.stage-done/1`). For each bound path it lists the graded
+sha256, the producing receipt, and each stage's last receipt by implementation, index and receipt
+sha256. A failure leaves the campaign `incomplete`, with exit 1, no `fab_artifacts` and an
+error naming the reason:
+
+- `stage_step_unreceipted: <stage>/<step> has no adopted receipt producing <path>`: the stage's
+  content was writer-made (or initial) and passed its checks without the step.
+- `writer_made_stage_content: <path> changed by <writer|adapter_writer|coordinator|outside_implementation>
+  in implementation N (turn <stage>) after the last receipt of declared stage <stage>`, or graded
+  content that differs from its last step output.
+
+`verify-campaign` recomputes the binding from the anchored indexes and receipts, after it has
+validated every receipt. It refuses a `criteria_satisfied` state whose `stage_done` is missing,
+forged or different from the recomputed binding. A state relabelled `criteria_satisfied` after a
+refusal fails with the refusal's reason. A changed receipt output hash fails receipt validation
+first. Initial content is never receipted, so a campaign whose initial candidate already passes a
+declared stage is not done. Receipts made before the campaign (AGENTEE-139 `pre_receipts`) are
+not yet considered. `tests/test_stage_done.py` covers the rule on synthetic records and in real
+sandboxed campaigns: a receipted routing step passes, a hand edit of the routing output in a
+later turn fails although every check passes, and a campaign without steps is unaffected.
 
 ## Limits
 

@@ -166,9 +166,15 @@ verify-campaign printed after recomputing them from the final run.
   missing capture. A record of a campaign from before the scaffold receipt existed is
   therefore never `done` when it is rebuilt. `verify-campaign` does not check this binding;
   only this record's `done` does.
+- The final state lists the `agent-ee.stage-done/1` binding that verify-campaign
+  recomputed (`stage_receipts_done.bound`). The schematic must be `emit-schematic`'s
+  output, and the board must have passed through `build-board` and then `route-krt`
+  with no writer edit after either
+  ([done through declared steps](stage-receipts.md#done-through-declared-steps)).
 
 The `export-fab` step's stage `fab` is not a declared scope stage, so a staged
 campaign's step plan never selects it; the done gate is the `fab` check. The
+stage-step binding lists it under `excluded`. The
 step remains in the configuration for `--dry-run` rehearsals.
 
 ## Recorded run (2026-10-17)

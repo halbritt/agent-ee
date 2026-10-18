@@ -251,7 +251,10 @@ recomputed convergence projection. For a generation scope in state
 [fab artifact hashes](fab-package.md#campaign-state) and requires them to equal
 `state.json` `fab_artifacts`. In campaigns that anchor stage receipts, it
 also validates every receipt index and receipt. It refuses the campaign when a
-receipt claiming to apply has outputs that differ from the next run's captured proposal. It requires the same implementation/runtime
+receipt claiming to apply has outputs that differ from the next run's captured proposal. For a
+`criteria_satisfied` campaign with declared stage steps, it recomputes the
+[stage-step done binding](stage-receipts.md#done-through-declared-steps) and requires it to equal
+`state.json` `stage_done`. It requires the same implementation/runtime
 as the recorded runs, even though it skips their original live-source comparison.
 An exit code of 0 means integrity checks succeeded; require the printed state
 `criteria_satisfied` for campaign acceptance. An honestly incomplete campaign
