@@ -94,9 +94,9 @@ roles come only from the profile.
 | `lib_id` absent from the sheet's `lib_symbols`, unresolved inheritance, unsupported transform or alternate body style | Missing coverage for that symbol on every library-dependent rule. |
 | Body graphics outside the bounded subset, such as arcs | Missing coverage for that symbol on the overlap and label rules. |
 | Symbol with no native component, or a pin without native membership | Missing coverage for that symbol on the net rules. |
-| Native inventory refused | One design-level gap on every net rule. KiCad still exports a netlist around an unresolved symbol, but drops the component and invents `Net-(D1-Pad??)`. The strict reader refuses that netlist. |
+| Native inventory refused | One design-level gap on every net rule, with `native_inventory: refused` in `lint.json`. The `netlist` producer audits only component identities, so it passes a design whose XML the lint's strict reader refuses. A pinless symbol, such as a mounting hole whose `libpart` has no `<pins>`, is one such case. |
 | Comparison work limit (4,000,000 per sheet) exceeded | Missing coverage for that rule on that sheet. |
-| Missing, failed or later `netlist` prerequisite | `execution=failed` or `unsupported`. |
+| Missing, failed or later `netlist` prerequisite | `execution=failed` or `unsupported`. An unresolved symbol ends here. KiCad still exports a netlist around it, but drops the component and invents `Net-(D1-Pad??)`. The producer then fails with `unexplained_omission`, and the lint does not run. |
 | Unreadable sheet, broken hierarchy, or sheet instances that differ from the native hierarchy | `execution=malformed`. |
 
 The outcome is `defect` if any finding's rule is at `defect`. Otherwise it is
