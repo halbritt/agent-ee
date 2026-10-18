@@ -114,7 +114,7 @@ context; they are not substitutes for the current references above.
 [PCB DC path resistance](dc-path.md) specifies the optional native endpoint-only
 conduction model, explicit material contracts and independent owned oracles.
 
-- [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
+- [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity; [pinned legacy footprint conversion](footprint-libraries.md#converting-pinned-legacy-footprints) through `kicad-cli fp upgrade`.
 - [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement through a registered check.
 - [JLCPCB CPL rotation](cpl-rotation.md) — pad-box midpoints, versioned rotation policy and pin-1 frame verification against captured supplier footprints.
 - [JLCPCB cost estimate](jlc-cost-estimate.md) — informational fab and assembly cost from a captured, versioned pricing table; unknown part classes stay unknown.

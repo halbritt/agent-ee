@@ -1,0 +1,15 @@
+{
+  "schema": "agent-ee.footprint-libraries/1",
+  "complete": true,
+  "libraries": [
+    {
+      "name": "ampseal",
+      "members": [
+        {
+          "path": "ampseal-capture/ampseal.pretty/ampseal-23.kicad_mod",
+          "sha256": "09eeab39c4b2c21c8cca8b38da3c996540768856771830b1f57094843852e950"
+        }
+      ]
+    }
+  ]
+}

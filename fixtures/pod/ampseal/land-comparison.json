@@ -1,0 +1,432 @@
+{
+  "contacts": [
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "9.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "9.7",
+        "6.8"
+      ],
+      "number": "1",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "13.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "13.7",
+        "6.8"
+      ],
+      "number": "2",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "17.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "17.7",
+        "6.8"
+      ],
+      "number": "3",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "21.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "21.7",
+        "6.8"
+      ],
+      "number": "4",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "25.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "25.7",
+        "6.8"
+      ],
+      "number": "5",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "29.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "29.7",
+        "6.8"
+      ],
+      "number": "6",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "33.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "33.7",
+        "6.8"
+      ],
+      "number": "7",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "37.7",
+        "6.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "37.7",
+        "6.8"
+      ],
+      "number": "8",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "11.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "11.7",
+        "10.8"
+      ],
+      "number": "9",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "15.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "15.7",
+        "10.8"
+      ],
+      "number": "10",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "19.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "19.7",
+        "10.8"
+      ],
+      "number": "11",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "23.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "23.7",
+        "10.8"
+      ],
+      "number": "12",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "27.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "27.7",
+        "10.8"
+      ],
+      "number": "13",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "31.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "31.7",
+        "10.8"
+      ],
+      "number": "14",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "35.7",
+        "10.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "35.7",
+        "10.8"
+      ],
+      "number": "15",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "9.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "9.7",
+        "14.8"
+      ],
+      "number": "16",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "13.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "13.7",
+        "14.8"
+      ],
+      "number": "17",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "17.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "17.7",
+        "14.8"
+      ],
+      "number": "18",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "21.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "21.7",
+        "14.8"
+      ],
+      "number": "19",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "25.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "25.7",
+        "14.8"
+      ],
+      "number": "20",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "29.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "29.7",
+        "14.8"
+      ],
+      "number": "21",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "33.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "33.7",
+        "14.8"
+      ],
+      "number": "22",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "1.75",
+      "drawing_mm": [
+        "37.7",
+        "14.8"
+      ],
+      "drill_mm": "1.75",
+      "footprint_mm": [
+        "37.7",
+        "14.8"
+      ],
+      "number": "23",
+      "within": true
+    }
+  ],
+  "drawing": {
+    "number": "776228",
+    "revision": "C14",
+    "sha256": "14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8"
+  },
+  "drawing_facts_sha256": "254a3910945dfeacb0e3f1f9652e5a67b2269cdc62d5879a10e524db74f6138d",
+  "footprint": "ampseal:ampseal-23",
+  "footprint_source": {
+    "path": "ampseal.pretty/ampseal-23.kicad_mod",
+    "sha256": "09eeab39c4b2c21c8cca8b38da3c996540768856771830b1f57094843852e950"
+  },
+  "named_contacts": {
+    "1": true,
+    "16": true,
+    "23": true,
+    "8": true
+  },
+  "pegs": [
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "2",
+      "drawing_mm": [
+        "0",
+        "0"
+      ],
+      "drill_mm": "2",
+      "footprint_mm": [
+        "0",
+        "0"
+      ],
+      "number": "peg 1",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "2",
+      "drawing_mm": [
+        "47.4",
+        "0"
+      ],
+      "drill_mm": "2",
+      "footprint_mm": [
+        "47.4",
+        "0"
+      ],
+      "number": "peg 2",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "2",
+      "drawing_mm": [
+        "-1.5",
+        "18.1"
+      ],
+      "drill_mm": "2",
+      "footprint_mm": [
+        "-1.5",
+        "18.1"
+      ],
+      "number": "peg 3",
+      "within": true
+    },
+    {
+      "delta_mm": "0",
+      "drawing_drill_mm": "2",
+      "drawing_mm": [
+        "48.9",
+        "18.1"
+      ],
+      "drill_mm": "2",
+      "footprint_mm": [
+        "48.9",
+        "18.1"
+      ],
+      "number": "peg 4",
+      "within": true
+    }
+  ],
+  "problems": [],
+  "schema": "agent-ee.pod-land-comparison/1",
+  "status": "match",
+  "tolerance_mm": "0.05"
+}

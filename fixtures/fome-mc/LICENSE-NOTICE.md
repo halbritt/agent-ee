@@ -21,8 +21,8 @@ upstream origin id (`T3`, `T4`, `T6`, `T8`, `T9`) and `upstream_license` named.
 
 ## Scope
 
-This notice covers every file under `fixtures/fome-mc/` that is a byte copy of a
-committed fome-mc file, and the records derived from those copies:
+This notice covers every file under `fixtures/fome-mc/` that is a byte copy or a
+`kicad-cli` format conversion of a committed fome-mc file, and the records derived from those copies:
 
 | Path | What it is |
 | --- | --- |
@@ -34,6 +34,8 @@ committed fome-mc file, and the records derived from those copies:
 | `rules/severities.json`, `rules/pod.kicad_pro` | The ERC and DRC `rule_severities` maps of `fome-mc.kicad_pro` (blob `8f749a35326790337ca3fb7ef1b2e3126bf9a8c7`) at commit `df304f3321296f7e517e0d2e2aa52e1380d52993`, recorded by `agent_ee.rule_severities` with the pinned identity (AGENTEE-189). The template is the owned native project with those two maps added. No other fome-mc project setting is copied. |
 | `psu/board/`, `psu/requirements.md`, `psu/review.scope.json` | Fixtures written for agent-ee around the PSU block: a generated host board with an MCU stub, the requirements and the review scope. They cite fome-mc planning documents by pinned identity and copy none of them. |
 | `wbo1/blocks/{wbo1,wbo2}/`, `wbo1/*.json`, `wbo1/reference.kicad_*` | Captured wideband channel sheets and block records (AGENTEE-107, with `source.upstream_origin` and `source.upstream_license`), adaptation parameters, native reference wrapper and upstream parity report. |
+| `ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod` | `kicad-cli 10.0.7 fp upgrade` conversion of the fome-mc blob `libs/footprints/ampseal.pretty/ampseal-23.kicad_mod` at commit `df304f3321296f7e517e0d2e2aa52e1380d52993`, read through the offline Git object store (AGENTEE-169). The blob is identical to FOME-Tech Polygonus `ampseal.pretty/ampseal-23.kicad_mod` at `b3176cb`. |
+| `ampseal/request.json`, `ampseal/capture/*.json` | The capture request, and the manifest and `capture.json` that `agent_ee.footprint_capture` generated. They record the commit, path, Git blob id, SHA-256 and conversion records. |
 
 The block fixtures of AGENTEE-105, AGENTEE-106 and AGENTEE-107 under
 `fixtures/fome-mc/` share this notice. They do not carry their own.
@@ -84,7 +86,7 @@ upstream origins (`T16.embedded_origins` in [`docs/file-origins.json`](../../doc
 | `T3` | FOME-Tech `Polygonus-Universal-112` at `ddcf0f7` | No licence file found in the local checkout | `keep-alive`, `can`, `ign-igbt` |
 | `T4` | FOME-Tech `kicad-libraries` at `ab9c5f8a1517a04b9cada6880d67d190bfd48c05` | No licence file found in the local checkout; SamacSys terms not reviewed (symbols embedded in sheets; library files hashed, not copied) | `psu`, `keep-alive`, `mcu`, `lowside-quad`, `triggers`, `stepper`, `etb2-hbridge`, `lowside-clamps`, `dfu-entry`, `hbridge` |
 | `T6` | KiCad 10.0.7 stock libraries | CC-BY-SA-4.0 with the KiCad library exception (symbols embedded in sheets; stock library files hashed, not copied) | Every captured block |
-| `T8` | FOME-Tech `Polygonus` brain module at `b3176cb` | No licence file found in the local checkout | `psu`, `mcu`, `can`, `ign-igbt`, `ign-logic`, `lowside-quad`, `highside-quad`, `quad-analog`, `quad-analog-pullup`, `triggers`, `knock`, `stepper`, `etb2-hbridge`, `lowside-clamps`, `dfu-entry`, `hbridge` |
+| `T8` | FOME-Tech `Polygonus` brain module at `b3176cb` (also the source of the `ampseal-23` footprint) | No licence file found in the local checkout | `psu`, `mcu`, `can`, `ign-igbt`, `ign-logic`, `lowside-quad`, `highside-quad`, `quad-analog`, `quad-analog-pullup`, `triggers`, `knock`, `stepper`, `etb2-hbridge`, `lowside-clamps`, `dfu-entry`, `hbridge` |
 | `T9` | `mck1117/wideband` Rev C at `ca2adce` (`0a26d3b` in `docs/file-origins.json`) | MIT, Copyright (c) 2023 Matthew Kennedy (notice reproduced below) | `wbo1`, `wbo2` |
 
 The local FOME-Tech Polygonus (`T8`), Polygonus-Universal-112 (`T3`) and

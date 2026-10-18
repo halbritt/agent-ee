@@ -103,3 +103,59 @@ new. Pure `resolve_package` accepts a captured table with schema
 `Resistor_SMD:R_0805_2012Metric`. It returns both table and footprint hashes.
 Zero or multiple rows are unknown; an unavailable target fails, without fallback.
 No stock library, alias data or third-party assets are distributed with this check.
+
+## Converting pinned legacy footprints
+
+`agent_ee.footprint_capture` turns footprints committed in KiCad 5 `(module`
+syntax in another repository into a captured `.pretty` that this check can index.
+It reads source bytes only from a local repository's object store, at one full
+commit id, through the offline Git path of the
+[reference-block capture](reference-block-interface.md#external-source-citations). `HEAD`, branch names, short or unknown
+ids, trees, and untracked, staged or linked files are refused. Working-tree
+edits never enter a capture.
+
+The request has schema `agent-ee.footprint-capture-request/1`:
+
+```json
+{
+  "schema": "agent-ee.footprint-capture-request/1",
+  "library": "ampseal",
+  "repository": "fome-mc",
+  "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+  "kicad_version": "10.0.7",
+  "members": ["libs/footprints/ampseal.pretty/ampseal-23.kicad_mod"]
+}
+```
+
+`repository` is the label recorded in place of the local path. The converter
+is `kicad-cli fp upgrade`, run as a process in the networkless executor sandbox.
+The module writes no footprint text itself. Capture is refused if:
+
+- `kicad-cli version` differs from `kicad_version`;
+- the output holds anything other than the requested members;
+- a second, forced `fp upgrade` of the converted library is not byte-identical;
+- the shared index does not qualify the converted footprint.
+
+The new destination holds the converted `<library>.pretty/`, a complete
+`footprint-libraries.json` manifest, and `capture.json`
+(`agent-ee.footprint-capture/1`). For each member, `capture.json` records its
+SHA-256 and its source as a pinned-external citation: repository, commit, path,
+Git blob id and SHA-256. It also records the two conversion argument lists and
+console hashes.
+
+Each first conversion gives legacy items new random UUIDs. A recapture
+therefore matches a committed capture only after UUIDs are normalized; the
+second conversion of a captured file is byte-identical. 3D model references are
+kept as written, unresolved. `verify` re-checks bytes, the manifest and the
+index; with `--repository`, it also verifies each source blob offline. Without
+it the report is `unverified`.
+
+```sh
+python3 -m agent_ee.footprint_capture capture request.json --repo ~/git/fome-mc --out captured-footprints
+python3 -m agent_ee.footprint_capture verify captured-footprints --repository ~/git/fome-mc
+```
+
+Exit 0 means verified, 1 unverified, 2 refused and 3 an internal error. The
+telemetry pod's AMPSEAL-23 header is the first use
+([fixture](../fixtures/pod/ampseal/README.md)). That fixture shows the
+`Conn_01x23` assignment and a land comparison against TE drawing 776228.
