@@ -303,27 +303,33 @@ captured checks of the captured candidate.
 
 ## Qualification and open obligations
 
-The AGENTEE-91 campaign fixture now declares its consumed envelope under the
-AGENTEE-85 contract and maps the connector check to the envelope's derived
-fixed-footprint obligation. Capture still refuses its unmapped outline, exact
-layer-count and stackup obligations. The stackup also requires qualified
-`copper_weight_oz` authority, and the fixture has no selected fabricator profile.
-The candidate is not published, so later campaign assertions remain failing
-until those requirements have executable coverage. The envelope authority guard
-is neither bypassed nor replaced by test bindings.
+The AGENTEE-91 orchestration scopes consume no board envelope. A scope that
+does must declare it under the AGENTEE-85 contract and bind every derived
+obligation. The envelope-binding scope maps `connector-edge/1` to the
+fixed-footprint obligation and native `board_envelope` `outline/1` and
+`layers/1` checks to the outline and layer-count obligations; those bind. Its
+`stackup/1` check cannot bind until the AGENTEE-94 fab-profile seam supplies a
+qualified captured `copper_weight_oz` authority, so capture refuses with
+`R-envelope-rc-filter-stackup` as the only unbound obligation and no candidate is
+published. The envelope-fixed connector, the envelope reference missing from the
+board and the envelope declared mutable assert exactly that refusal; their
+binding behavior is unreachable through a campaign until AGENTEE-94. The envelope
+authority guard is neither bypassed nor replaced by test bindings.
+
+A campaign whose run captured no candidate records that run's own `result.json`
+error (`run N captured no candidate: ...`), not a missing-manifest error.
 
 The adapter tests use owned boards and actual tools: KiCad 10.0.7 pcbnew edits
 and flips, `kicad-cli` netlist export, the production networkless executor and
 the AGENTEE-95 receipt module.
 
-`tests/test_placement_campaign.py` is configured to run the campaign with real capture,
+`tests/test_placement_campaign.py` runs the campaign with real capture,
 sandboxed checks, stage gates, receipts and the pinned placer. Only the agent
 transport is scripted, so these tests do not show live-model repair quality. The
 starting boards are owned variants of the RC control fixture. Tracks and zones are
 removed and every pad is made rectangular. Project-local footprint libraries are
 rebuilt from the stock KiCad footprints at test time and are not committed. The
-tests retain assertions for the following scenarios; while capture is blocked,
-those assertions do not establish campaign qualification:
+tests show the following:
 
 - the pinned placer repairs an R1/C1 courtyard overlap. The next run's fresh
   placement-stage DRC and placement checks pass on the adopted board, and the
@@ -331,13 +337,18 @@ those assertions do not establish campaign qualification:
 - two writer-only repairs, each graded by fresh native checks, with the second
   writer turn receiving the second run's findings;
 - a writer side flip that is captured and graded;
-- refusal of an outline move, added copper, a field change, an envelope-fixed
-  connector move with an incomplete declared list, a lock removed before a move,
+- refusal of an outline move, added copper, a field change, a lock removed before a move,
   a schematic change, a tiny angle and a flip with a non-quarter turn. None of
   them creates a next candidate;
 - a helper typed failure, a crash, a timeout, a real coordinator interrupt,
   a writer failure and a failed record write. Each one
   leaves the campaign incomplete and publicly verifiable;
+- the pinned placer packing the unchanged stock RC roundrect and circle pads
+  (AGENTEE-109). The fresh courtyard check passes on the adopted board, whose
+  native pad shapes and sizes equal the stock board's. Its only placement-stage
+  DRC violations are the three `lib_footprint_mismatch` reports against the
+  fixture's rectangular-pad library copies, so the campaign escalates on a
+  repeated design rather than substituting pads;
 - public verification refusing tampered records, requests, outputs, receipts,
   configuration, bindings, anchors and relabelled history.
 
@@ -347,10 +358,9 @@ These obligations remain open:
   scaffolds. The qualified AGENTEE-52 commit is still under repair by its owner.
   The campaign-level acceptance with a genuine forward-annotated RC board is
   therefore unmet.
-- **AGENTEE-54/109 campaign expectations.** Stock-pad support is merged and has
-  separate native placer qualification. The campaign's stock-pad refusal
-  assertion predates that support and must be reconciled after the envelope
-  allows capture; it is not evidence of a current placer limitation.
+- **AGENTEE-85/94 envelope binding.** The envelope-fixed connector protection
+  and envelope binding refusals are not exercised through a campaign until
+  `stackup/1` can bind.
 - **AGENTEE-93 routing feedback.** The writer context reports it as unavailable;
   no stale result or model prose substitutes for a captured routed-attempt
   receipt.
