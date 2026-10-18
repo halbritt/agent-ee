@@ -140,6 +140,7 @@ context may be included in the stored exception.
 | Bundle captured and event registered | Old run's current outcome is incomplete | Keep the bundle and source event even if later review fails |
 | New review directory exists | Useful new checks/review records may be partial | There is no general in-place campaign resume; a second feedback call can collide with the reserved next run path |
 | New epoch retained | Original historical result snapshot remains unchanged | Verify the campaign and diagnose the new epoch's actual state |
+| Campaign `run N captured no candidate: ...` | Capture of that run refused before a candidate existed, for example on envelope obligations without executable coverage; the quoted cause is the run's own `result.json` error and cannot be verified without a candidate | Read `runs/N/result.json` and `error.log`, fix the scope, then start a fresh campaign |
 
 Do not assume a failed command had no side effects. The [bench guide](bench-feedback.md)
 defines registration order, budget validation timing and the absence of a

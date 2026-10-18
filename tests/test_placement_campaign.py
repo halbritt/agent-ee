@@ -18,6 +18,21 @@ removed, every pad made rectangular, with project-local footprint libraries rebu
 from the stock KiCad footprints at test time so that native DRC compares against the
 same rectangular pads. They are not AGENTEE-52 forward-annotated scaffolds. One
 scenario keeps the stock RC pads, which the AGENTEE-109 placer packs unchanged.
+The orchestration scopes consume no board envelope: J1 is protected by its declared
+UUID. A scope whose placement check consumes the RC envelope must declare it under
+AGENTEE-85, and capture then refuses it while the outline, layer-count and stackup
+obligations lack executable coverage. That refusal is asserted here as it stands;
+these tests never bypass the authority gate. Envelope-fixed protection itself is
+exercised on the adapter in test_placement_adapter.
+
+Two kinds of starting board are used. ScaffoldCampaignTest starts from an actual
+AGENTEE-52 forward annotation of the RC schematic's native netlist onto the RC
+outline with every footprint, track and zone removed: R1, C1 and J1 arrive with
+stock pads on the staging column outside the board. The other classes use owned
+variants of the RC control fixture: tracks and zones removed and every pad made
+rectangular. Project-local footprint libraries are rebuilt from the stock KiCad
+footprints at test time, so native DRC compares against the same pads; they are not
+committed.
 """
 import contextlib
 import io
@@ -29,6 +44,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agent_ee import forward_annotation as fa
 from agent_ee import placement_adapter as pa
 from agent_ee.board_envelope import derive_requirements, validate
 from agent_ee.campaign import run_campaign, verify_campaign
@@ -47,13 +63,18 @@ STOCK = [{'path': '/usr/share/kicad/symbols', 'at': 'stock/symbols',
 LIBRARIES = [('Resistor_SMD', 'R_0805_2012Metric'), ('Capacitor_SMD', 'C_0805_2012Metric'),
              ('Connector_PinHeader_2.54mm', 'PinHeader_1x03_P2.54mm_Vertical')]
 # Separate interpreter passes: pcbnew 10.0.7 crashes walking a board after Remove().
+# argv[2] == 'footprints' also removes every footprint, leaving the outline and setup.
 STRIP = """import sys
 import pcbnew as k
 board = k.LoadBoard(sys.argv[1])
-for item in list(board.GetTracks()) + list(board.Zones()):
+items = list(board.GetTracks()) + list(board.Zones())
+if sys.argv[2:] == ['footprints']:
+    items += list(board.GetFootprints())
+for item in items:
     board.Remove(item)
 k.SaveBoard(sys.argv[1], board, True)
 """
+# argv[3] == 'rect' makes every pad rectangular; 'stock' keeps the stock KiCad pads.
 LIBRARY = """import json, sys
 from pathlib import Path
 import pcbnew as k
@@ -61,7 +82,7 @@ project, items = Path(sys.argv[1]), json.loads(sys.argv[2])
 table = ['(fp_lib_table', '  (version 7)']
 for lib, name in items:
     fp = k.FootprintLoad(f'/usr/share/kicad/footprints/{lib}.pretty', name)
-    for pad in fp.Pads():
+    for pad in fp.Pads() if sys.argv[3] == 'rect' else ():
         pad.SetShape(k.PAD_SHAPE_RECT)
     out = project / 'lib' / f'{lib}.pretty'
     out.mkdir(parents=True, exist_ok=True)
@@ -133,6 +154,17 @@ def references(board):
     return {pa._reference(node): key for key, node in pa.footprints(pa._board(Path(board).read_bytes())).items()}
 
 
+def rectangle_nm(x, y, w, h):
+    return [[int(round(a * 1000000)), int(round(b * 1000000))] for a, b in ((x, y), (x + w, y), (x + w, y + h), (x, y + h))]
+
+
+# Owner policy for the 20 x 12 mm RC outline: a 1.5 mm keep-off band inside every edge. The
+# pinned placer packs courtyards against the outline only; it does not apply the board's copper
+# edge clearance or silkscreen edge rules (an open AGENTEE-54 gap), so the band is captured intent.
+EDGE_BAND = [{'side': 'F', 'polygons': [rectangle_nm(*r)]}
+             for r in ((96, 96, 20, 1.5), (96, 106.5, 20, 1.5), (96, 97.5, 1.5, 9), (114.5, 97.5, 1.5, 9))]
+
+
 def placement_check(cid, criterion, **params):
     return {'id': cid, 'kind': 'placement', 'stage': 'placement',
             'params': {'criterion': criterion, 'drc_check': 'drc-placement', **params}}
@@ -167,19 +199,24 @@ class PlacementCampaignFixture(unittest.TestCase):
         project.mkdir(parents=True)
         for name in ('rc_filter.kicad_pcb', 'rc_filter.kicad_sch', 'rc_filter.kicad_pro', 'sym-lib-table'):
             shutil.copy(REPO / 'fixtures/rc/control' / name, project / name)
-        pcbnew(STRIP, project / 'rc_filter.kicad_pcb')
-        pcbnew(LIBRARY, project, json.dumps(LIBRARIES))
+        cls.build_board(project)
         shutil.copy(REPO / 'fixtures/board-envelope/rc.envelope.json', cls.base / ENVELOPE)
         write_json(cls.base / POLICY, {'schema': 'agent-ee.packing-policy/1', 'step_budget': 100000,
                                        'gap_nm': 500000, 'fixed_refs': [], 'priority_refs': [],
                                        'ground_nets': ['GND'], 'obstacles': []})
         (cls.base / 'requirements').mkdir()
         (cls.base / 'requirements/placement.md').write_text('Owned AGENTEE-91 placement campaign requirements.\n')
+        for generated in project.glob('*.kicad_prl'):
+            generated.unlink()
+
+    @classmethod
+    def build_board(cls, project):
+        """The placed RC control board, unrouted, with rectangular pads matching its project library."""
+        pcbnew(STRIP, project / 'rc_filter.kicad_pcb')
+        pcbnew(LIBRARY, project, json.dumps(LIBRARIES), 'rect')
         cls.original_pads = cls.base.parent / 'original-pads.kicad_pcb'
         shutil.copy(project / 'rc_filter.kicad_pcb', cls.original_pads)
         edit_board(project / 'rc_filter.kicad_pcb', rect_pads=True)
-        for generated in project.glob('*.kicad_prl'):
-            generated.unlink()
 
     @classmethod
     def tearDownClass(cls):
@@ -401,6 +438,99 @@ class SideFlipCampaignTest(PlacementCampaignFixture):
         self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
 
 
+class ScaffoldCampaignTest(PlacementCampaignFixture):
+    """The campaign on an actual AGENTEE-52 forward-annotated RC scaffold with stock pads."""
+
+    @classmethod
+    def build_board(cls, project):
+        board = project / 'rc_filter.kicad_pcb'
+        pcbnew(STRIP, board, 'footprints')
+        pcbnew(LIBRARY, project, json.dumps(LIBRARIES), 'stock')
+        manifest = {'schema': 'agent-ee.footprint-libraries/1', 'complete': True, 'libraries': [
+            {'name': lib, 'members': [{'path': f'lib/{lib}.pretty/{name}.kicad_mod',
+                                       'sha256': digest(project / f'lib/{lib}.pretty/{name}.kicad_mod')}]}
+            for lib, name in LIBRARIES]}
+        work = cls.base.parent / 'annotation'
+        work.mkdir()
+        netlist = work / 'rc_filter.xml'
+        exported = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                   '-o', str(netlist), str(project / 'rc_filter.kicad_sch')],
+                                  capture_output=True, text=True, timeout=120)
+        if exported.returncode:
+            raise AssertionError(exported.stderr)
+        cls.blank = board.read_bytes()
+        cls.annotation_plan = fa.plan(board, netlist, manifest, project, work / 'plan')
+        if cls.annotation_plan['execution'] != 'ok':
+            raise AssertionError(cls.annotation_plan['findings'])
+        cls.annotation = fa.apply(cls.annotation_plan, board, netlist, manifest, project, board, work / 'apply',
+                                  backup_dir=work / 'backup')
+        if cls.annotation['execution'] != 'ok':
+            raise AssertionError(cls.annotation['findings'])
+
+    def staged_scaffold(self, board_bytes):
+        """Every footprint of the scaffold sits on the staging column right of the 96..116 mm outline."""
+        placed = {pa._reference(n): pa._at(n) for n in pa.footprints(pa._board(board_bytes)).values()}
+        self.assertEqual(sorted(placed), ['C1', 'J1', 'R1'])
+        self.assertTrue(all(at[0] > 116 for at in placed.values()), placed)
+
+    def test_forward_annotation_staged_every_part_off_the_blank_outline(self):
+        self.assertEqual(pa.footprints(pa._board(self.blank)), {})
+        self.assertEqual((self.annotation_plan['counts']['add'], self.annotation_plan['counts']['remove']), (3, 0))
+        self.staged_scaffold((self.source / BOARD).read_bytes())
+
+    def test_pinned_helper_places_the_scaffold_and_fresh_checks_grade_it(self):
+        write_json(self.source / POLICY, {**read_json(self.source / POLICY), 'obstacles': EDGE_BAND})
+        status, state = self.campaign(self.declaration(fixed=[]))
+        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
+        self.staged_scaffold((self.out / 'runs/1/inputs' / BOARD).read_bytes())
+        self.assertEqual([h['earliest_failing_stage'] for h in state['history']], ['placement', 'routing', 'routing'])
+        self.assertEqual(state['history'][0]['stage_failures']['placement'], ['outline'])
+        judgment = read_json(self.out / 'runs/1/work/outline/placement-judgment.json')
+        self.assertEqual(sorted((d['kind'], d['ref']) for d in judgment['defects']),
+                         [('outside_outline', 'C1'), ('outside_outline', 'J1'), ('outside_outline', 'R1')])
+        # The writer turn received the first run's sealed outline finding and its retained probe.
+        context = json.loads(self.prompts[1].rsplit('\n', 1)[1])
+        self.assertEqual([f['local_id'] for f in context['placement']['findings']], ['outline'])
+        outline, = [c for c in context['placement']['checks'] if c['id'] == 'outline']
+        first = read_json(self.out / 'runs/1/candidate.json')
+        self.assertEqual(outline['probe']['board_sha256'], first['files'][BOARD])
+        record = read_json(self.out / 'implementations/1/placement-adapter.json')
+        self.assertEqual((record['status'], record['helper']['status'], record['protected']), ('proposed', 'completed', []))
+        self.assertEqual(sorted(t['reference'] for t in record['proposal_scope']['transforms']), ['C1', 'J1', 'R1'])
+        # The captured proposal is the adopted helper output, and fresh native checks grade it.
+        receipt = read_json(self.out / 'implementations/1/receipts/1-agent-ee-placer/receipt.json')
+        self.assertEqual(read_json(self.out / 'runs/2/candidate.json')['files'][BOARD], receipt['outputs'][BOARD])
+        self.assertEqual(self.outcomes(2), {'drc-placement': 'pass', 'courtyard': 'pass', 'outline': 'pass',
+                                            'drc-final': 'defect'})
+        drc = read_json(self.out / 'runs/2/work/drc-placement/drc.json')
+        self.assertEqual((drc['violations'], drc['schematic_parity']), ([], []))
+        self.assertNotIn('placement iteration', self.prompts[2])
+        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+
+    def test_helper_edge_clearance_gap_is_graded_as_a_defect_and_never_accepted(self):
+        # Without the band the placer packs pads closer to the edge than the board's copper clearance.
+        status, state = self.campaign(self.declaration(fixed=[]))
+        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'regression'), state)
+        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['outline'], ['drc-placement']])
+        self.assertEqual(read_json(self.out / 'implementations/1/placement-adapter.json')['status'], 'proposed')
+        self.assertEqual(self.outcomes(2)['drc-placement'], 'defect')
+        drc = read_json(self.out / 'runs/2/work/drc-placement/drc.json')
+        self.assertEqual({v['type'] for v in drc['violations']}, {'copper_edge_clearance'})
+        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+
+    def test_writer_only_scaffold_placement_is_captured_and_graded(self):
+        self.writes = {1: {'move': {'J1': (100, 100), 'R1': (105, 100), 'C1': (110, 100)}}}
+        status, state = self.campaign(self.declaration(helper=False, fixed=[]), iterations=2)
+        self.assertEqual(status, 1, state)
+        self.assertEqual([h['earliest_failing_stage'] for h in state['history']], ['placement', 'routing'])
+        self.assertEqual(self.outcomes(2), {'drc-placement': 'pass', 'courtyard': 'pass', 'outline': 'pass',
+                                            'drc-final': 'defect'})
+        record = read_json(self.out / 'implementations/1/placement-adapter.json')
+        self.assertEqual((record['status'], record['helper']), ('proposed', None))
+        self.assertEqual(sorted(t['reference'] for t in record['writer_scope']['transforms']), ['C1', 'J1', 'R1'])
+        self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
+
+
 class RefusalCampaignTest(PlacementCampaignFixture):
     """Out-of-scope writer proposals refuse the iteration before any helper runs."""
 
@@ -445,6 +575,9 @@ class RefusalCampaignTest(PlacementCampaignFixture):
         self.writes = {1: {'move': {'J1': (101, 100)}}}
         status, state = self.campaign(self.declaration(fixed=[]), scope=self.scope(ENVELOPE_CHECKS))
         self.assertEnvelopeCaptureRefused(status, state)
+    def test_declared_fixed_connector_move(self):
+        record = self.refused({'move': {'J1': (101, 100)}}, 'protected footprint transform changed')
+        self.assertEqual((record['protected'], record['protected_refs']), ([self.fixed['J1']], ['J1']))
 
     def test_lock_removed_before_move(self):
         self.refused({'unlock': ['C1'], 'move': {'C1': (112, 103)}}, 'protected footprint transform changed',
@@ -544,6 +677,14 @@ class BindingAdmissionTest(PlacementCampaignFixture):
         self.assertEqual(status, 1)
         self.assertIn('placement policy must be a captured immutable input', state['error'])
         self.assertNotIn('implementation', self.calls)
+
+    def test_declared_uuid_missing_from_the_board_refuses_binding_before_any_writer(self):
+        status, state = self.campaign(self.declaration(fixed=['33333333-3333-4333-8333-333333333333']))
+        self.assertEqual(status, 1)
+        self.assertIn("declared fixed footprints absent from source board: ['33333333-3333-4333-8333-333333333333']",
+                      state['error'])
+        self.assertNotIn('implementation', self.calls)
+        self.assertFalse((self.out / 'implementations').exists())
 
 
 class FailureCampaignTest(PlacementCampaignFixture):
@@ -729,6 +870,9 @@ class TamperCampaignTest(PlacementCampaignFixture):
             'binding claims an envelope': (lambda: write_json(state_path, {**saved_state, 'placement_binding': {
                 **saved_state['placement_binding'], 'envelopes': [{'path': ENVELOPE, 'references': ['J1'],
                 'sha256': digest(self.out / 'runs/1/inputs' / ENVELOPE)}]}}), 'placement binding differs'),
+            'binding claims other policy bytes': (lambda: write_json(state_path, {**saved_state, 'placement_binding': {
+                **saved_state['placement_binding'], 'policy': {'path': POLICY, 'sha256': '0' * 64}}}),
+                'placement binding differs'),
             'record on the routing turn': (lambda: shutil.copy(record_path, self.out / 'implementations/2/placement-adapter.json'),
                                            'placement record on an implementation without a placement step'),
             'anchor on the routing turn': (lambda: write_json(state_path, {**saved_state, 'placement_records': {
