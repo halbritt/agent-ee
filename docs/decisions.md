@@ -431,3 +431,17 @@ notice; the origin check reports them as derived, not owner-confirmed.
 The scaffold producer sets the Default class clearance to the fab profile's minimum,
 since KiCad DRC enforces class clearance as a hard floor; preferred values remain
 router targets.
+
+
+### Native violation waivers
+
+Owner decision, third pod batch, 2026-10-18 (AGENTEE-189):
+
+> Owner-recorded dispositions bound to the exact violation
+
+A waiver carries the rule, exact item UUIDs, reason and location hash. The owner
+approves the list before done; agents may never waive.
+[The implementation](violation-waivers.md) captures the owner record as an
+immutable input, verifies list approval against its digest, and matches ERC/DRC
+items exactly. Every unmatched error or warning still fails. This decision
+admits the mechanism; each actual list still requires its own owner approval.

@@ -170,7 +170,8 @@ remains unavailable: stackup lacks qualified copper-weight authority, and holes,
 keepouts and multiple fixed connectors lack individual bindings. Capture refuses
 those gaps.
 
-Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export
+Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
+[captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
 with captured symbol-instance coverage in both directions,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
 [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),

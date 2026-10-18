@@ -167,9 +167,10 @@ raises `footprint_type_mismatch` from ignored to error. KiCad already ignores
 fome-mc leaves unset keep KiCad's defaults, as they do in fome-mc itself.
 
 A severity map waives no violation. Every item kicad-cli still reports, warning
-or error, is a [check](check-reference.md#drc-and-schematic-parity) defect. The
-optional `agent-ee.violation-waivers/1` record is not implemented, because
-admitting waivers awaits an owner decision.
+or error, is a [check](check-reference.md#drc-and-schematic-parity) defect unless
+matched by a separate captured [owner-approved exact disposition](violation-waivers.md).
+The owner admitted this mechanism on 2026-10-18; agents may never grant waivers.
+The producer does not add dispositions or native project exclusions.
 
 ## Output and evidence
 
