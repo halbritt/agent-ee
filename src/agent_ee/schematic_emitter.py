@@ -245,19 +245,43 @@ def _validate_layout(layout, components):
     return namespace, layout['project'], transforms
 
 
-def _library_symbol(tree, symbol, lib_id, location):
-    nodes = [n for n in children(tree, 'symbol') if len(n) > 1 and n[1] == symbol]
-    if len(nodes) != 1:
-        raise EmissionError('unknown_symbol', 'captured symbol absent or ambiguous', location)
-    node = nodes[0]
-    if children(node, 'extends'):
-        # KiCad flattens derived symbols into lib_symbols; that flattening is not
-        # yet natively qualified here, so it is refused rather than approximated.
-        raise EmissionError('derived_symbol_unsupported', 'derived (extends) symbol embedding not qualified',
-                            location)
-    for child in node[2:]:
-        if not isinstance(child, list) or not child or child[0] not in SYMBOL_KEYS:
-            raise EmissionError('unsupported_symbol_node', 'unsupported top-level symbol node', location)
+def _library_symbol(tree, symbol, lib_id, location, sources):
+    # The fresh connectivity resolution owns inheritance traversal, cycle/depth
+    # bounds and replacement-pin refusal. Consume its ordered source chain.
+    body, positions = [], {}
+    for source in sources:
+        nodes = [n for n in children(tree, 'symbol') if len(n) > 1 and n[1] == source['symbol']]
+        if len(nodes) != 1:
+            raise EmissionError('unknown_symbol', 'captured symbol absent or ambiguous', location)
+        seen = set()
+        for child in nodes[0][2:]:
+            if isinstance(child, list) and child[:1] == ['extends']:
+                continue
+            if not isinstance(child, list) or not child or child[0] not in SYMBOL_KEYS:
+                raise EmissionError('unsupported_symbol_node', 'unsupported top-level symbol node', location)
+            if child[0] == 'property':
+                if len(child) < 3 or not all(isinstance(x, str) for x in child[1:3]):
+                    raise EmissionError('unsupported_symbol_node', 'malformed library property', location)
+                key = ('property', child[1])
+            elif child[0] == 'symbol':
+                # KiCad embeds inherited units under the selected symbol's name.
+                if source['symbol'] != symbol:
+                    _, unit, style = child[1].rsplit('_', 2)
+                    child = [child[0], Q(f'{symbol}_{unit}_{style}'), *child[2:]]
+                key = ('symbol', child[1])
+            else:
+                key = (child[0],)
+                if child[0] in dict(INSTANCE_FLAGS) and (len(child) != 2 or child[1] not in ('yes', 'no')):
+                    raise EmissionError('unsupported_symbol_node', 'invalid symbol flag ' + child[0], location)
+            if key in seen:
+                raise EmissionError('unsupported_symbol_node', 'ambiguous symbol node ' + str(key), location)
+            seen.add(key)
+            if key in positions:
+                body[positions[key]] = child
+            else:
+                positions[key] = len(body)
+                body.append(child)
+    node = ['symbol', Q(symbol), *body]
     embedded = [node[0], Q(lib_id), *node[2:]]
     flags = {}
     for key, default in INSTANCE_FLAGS:
@@ -332,7 +356,7 @@ def _plan(resolved, captured, intent_libraries, transforms):
         lib = libraries[library]
         if lib['path'] not in trees:
             trees[lib['path']] = _scan(captured[lib['path']])
-        symbols[comp['id']] = _library_symbol(trees[lib['path']], symbol, comp['lib_id'], location)
+        symbols[comp['id']] = _library_symbol(trees[lib['path']], symbol, comp['lib_id'], location, comp['sources'])
         if not REFERENCE.fullmatch(comp['reference']) or comp['reference'].startswith('#') != comp['power']:
             raise EmissionError('malformed_reference',
                                 'reference must be annotated; # prefix exactly for power symbols', location)

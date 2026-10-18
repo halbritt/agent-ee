@@ -148,3 +148,10 @@ to a no-connect refuses with `impossible_pin_endpoint`.
 
 Generated FOME consumption remains with the generator and block-library
 owners.
+
+AGENTEE-135 also qualifies the derived `STM32H742ZITx` and its captured
+`STM32H742Z_G-I_Tx` parent: exact 144-pin inventory, inherited supply/ground
+stacks, native ERC with zero violations and exact native netlist terminals.
+The emitter embeds a flattened definition using the shared resolver's source
+chain; removing the captured parent refuses emission. Stock library bytes remain
+runtime-only and are never committed. See [schematic emitter](schematic-emitter.md).
