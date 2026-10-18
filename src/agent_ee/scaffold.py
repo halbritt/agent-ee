@@ -36,10 +36,21 @@ RULE_KEYS = ('min_clearance_mm', 'min_trace_mm', 'min_via_pad_mm', 'min_via_dril
              'min_edge_clearance_mm', 'min_hole_to_hole_mm')
 NETCLASS_FIELDS = {'min_clearance_mm': 'clearance', 'min_trace_mm': 'track_width',
                    'min_via_pad_mm': 'via_diameter', 'min_via_drill_mm': 'via_drill'}
+# Default class fields KiCad DRC enforces as a hard floor. The class track width and
+# via size are routing defaults; DRC grades them against the board minimum rules.
+DRC_ENFORCED = frozenset({'min_clearance_mm'})
+DECISION = 'owner decision 2026-10-18: Default clearance = fab minimum; router targets preferred where it can'
+ENFORCED_BASIS = 'KiCad DRC enforces the Default class value as a hard floor; ' + DECISION
+ROUTING_BASIS = ('routing default only: KiCad DRC enforces the board minimum rule, not the Default class value; '
+                 + DECISION)
+# The pinned kicad-route adapter fixes default_clearance_mm and clearance_margin_mm to null.
+UNCONSUMED_TARGET = ('not applied: a preferred Default clearance would become a DRC floor above the fab minimum, '
+                     'and the pinned kicad-route adapter passes no clearance target')
 PARTS_REQUIREMENT = 'parts-membership'
 PRODUCER_LIMITATIONS = [
-    'Producer-derived rules: the Default net class and six minimum project rules come from the '
-    'captured fab profile; other KiCad rule settings keep the captured template values.',
+    'Producer-derived rules: six project rules and the DRC-enforced Default class clearance come from '
+    'the captured fab profile minimum tier; the Default track width and via size take the preferred tier as '
+    'routing defaults; other KiCad rule settings keep the captured template values.',
     'Stage subjects are the parts manifest required root-sheet selectors; no fab_package done gate, '
     'scope/3 envelope acceptance or per-net classes are derived.']
 # Stage of each derived check. The fab check's native loading witness needs a saved track.
@@ -242,27 +253,36 @@ def produced_rules(plan, files, inputs):
         raise ValueError('fab profile limits must name exactly one requirement, got ' + ', '.join(requirements))
     locators = {limit['id']: f'/limits/{index}' for index, limit in enumerate(profile['limits'])}
 
-    def cite(constraint, setting, value):
+    def cite(constraint, setting, value, **extra):
         return dict(setting=setting, value=value, key=constraint['expected']['key'],
                     tier=constraint['expected']['tier'], limit_id=constraint['id'],
-                    locator=locators[constraint['id']])
+                    locator=locators[constraint['id']], **extra)
 
-    rules, netclass = [], []
+    rules, netclass, targets = [], [], []
     for key in RULE_KEYS:
         minimum = ready[key, 'minimum']
         (setting, value), = minimum['project_rules'].items()
         rules.append(cite(minimum, 'board.design_settings.rules.' + setting, value))
-        if key in NETCLASS_FIELDS:
-            # A preferred limit avoids a surcharge; the floor still applies.
-            chosen = ready.get((key, 'preferred'), minimum)
-            if chosen['expected']['value'] < value:
-                raise ValueError(f'fab profile {key} preferred value is below its minimum')
-            netclass.append(cite(chosen, 'net_settings.classes.Default.' + NETCLASS_FIELDS[key],
-                                 chosen['expected']['value']))
+        if key not in NETCLASS_FIELDS:
+            continue
+        field = 'net_settings.classes.Default.' + NETCLASS_FIELDS[key]
+        preferred = ready.get((key, 'preferred'))
+        if preferred is not None and preferred['expected']['value'] < value:
+            raise ValueError(f'fab profile {key} preferred value is below its minimum')
+        if key in DRC_ENFORCED or preferred is None:
+            basis = ENFORCED_BASIS if key in DRC_ENFORCED else 'no preferred limit; ' + ROUTING_BASIS
+            netclass.append(cite(minimum, field, value, basis=basis))
+        else:
+            # A preferred limit avoids a surcharge; DRC still grades the board minimum.
+            netclass.append(cite(preferred, field, preferred['expected']['value'], basis=ROUTING_BASIS))
+        if preferred is not None:
+            applied = key not in DRC_ENFORCED
+            targets.append(cite(preferred, field if applied else None, preferred['expected']['value'],
+                                consumer='Default class routing default' if applied else UNCONSUMED_TARGET))
     values = {item['setting'].rsplit('.', 1)[1]: item['value'] for item in netclass}
     if values['via_diameter'] <= values['via_drill']:
         raise ValueError('fab profile via pad must exceed via drill for the Default class')
-    return compiled, requirements[0], rules, netclass
+    return compiled, requirements[0], rules, netclass, targets
 
 
 def produced_project(inputs, template_rel, rules, netclass):
@@ -307,7 +327,7 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
     stray = sorted(item['reference'] for item in record['fixed_footprints'] if item['reference'] not in references)
     if stray:
         raise ValueError('envelope fixed footprints are not declared parts instances: ' + ', '.join(stray))
-    compiled, fab_requirement, rules, netclass = produced_rules(plan, files, inputs)
+    compiled, fab_requirement, rules, netclass, targets = produced_rules(plan, files, inputs)
     project = produced_project(inputs, plan['template'], rules, netclass)
     native = plan['native_requirement']
     ids = [native['id'], PARTS_REQUIREMENT, fab_requirement]
@@ -361,7 +381,7 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
                          as_of=compiled['as_of'], requirement=fab_requirement),
         template=dict(path=plan['template'], sha256=files[plan['template']]),
         parts=dict(path=parts_rel, sha256=files[parts_rel], declaration_source=declaration),
-        rules=rules, netclasses=netclass, stages=staging,
+        rules=rules, netclasses=netclass, router_targets=targets, stages=staging,
         checks=[dict(id='erc', kind='erc', source='plan native_requirement'),
                 dict(id='netlist', kind='netlist', source=parts_rel),
                 dict(id='parts', kind='parts_subset', source=parts_rel + ' declaration_source'),

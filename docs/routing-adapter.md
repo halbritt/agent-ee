@@ -114,6 +114,20 @@ environment is rebuilt from constants: `PATH`, `HOME`/`TMPDIR`/XDG under
 inherited. `--backend-arg`, `--backend-env`, `--force`, `--canary`, `--rev`,
 `KICAD_ROUTE_LEDGER` and `KICAD_ROUTE_OUT` are never passed.
 
+## Router targets from the scaffold producer
+
+The [scaffold producer](scaffold.md#default-class-clearance) writes only fab
+minimums as DRC floors (owner decision 2026-10-18). It records preferred limits as
+router targets in its receipt's `derivation.router_targets`. The preferred Default
+track width and via size are applied as the Default class routing defaults in the
+project file the router receives. agent-ee has not established how the pinned
+router uses class widths; its result is graded only by agent-ee's own checks. The preferred
+clearance is not applied, because a class clearance is a DRC floor. The pinned
+adapter does not pass it on either: `default_clearance_mm` and
+`clearance_margin_mm` are fixed to `null` in the expected settings. A router that
+consumes the clearance target needs a new adapter protocol and its own pinned
+validation.
+
 ## Before the router runs
 
 The attempt is `not_run` (exit 64), and the router does not start, when:
