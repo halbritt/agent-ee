@@ -573,6 +573,7 @@
         "fixtures/dc-path/",
         "fixtures/hardware-interface/",
         "fixtures/kicad-happy/",
+        "fixtures/net-constraints/",
         "fixtures/netclass-completeness/",
         "fixtures/passive-corners/"
       ],

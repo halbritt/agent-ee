@@ -28,6 +28,7 @@ product's hardware qualification.
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Capture a design's block plan as draft block entries; check a block adaptation | [Block inventory](block-inventory.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
+| Emit intent net constraints as KiCad netclasses and width rules | [Net constraints](net-constraints.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Run DFM geometry rules (annular ring, aspect ratio, acid traps, bridge gap, spacing, skew, copper balance) | [DFM geometry](dfm-geometry.md) |

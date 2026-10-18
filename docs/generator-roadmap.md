@@ -79,6 +79,10 @@ CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
 [consistency gate](fab-consistency.md) (AGENTEE-73), including native CPL
 coordinate and export-log checks, and seals the artifact hashes. A scope with a
 `generation` marker is refused at capture without it.
+
+[Net constraints](net-constraints.md) (AGENTEE-47) emit intent netclasses, width
+rules and the record that `copper-width/1` binds. Rung 2's routing row still
+needs those outputs carried into a scaffold template and a native routing attempt.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 

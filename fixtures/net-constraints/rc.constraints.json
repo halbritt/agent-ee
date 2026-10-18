@@ -1,0 +1,8 @@
+{
+  "schema": "agent-ee.net-constraints/1",
+  "temperature_rise_c": 10,
+  "classes": [
+    {"name": "POWER_IN", "requirement": "R-width", "nets": ["/IN"], "current_ma": 2000},
+    {"name": "SIGNAL", "requirement": "R-width", "nets": ["/OUT"], "track_width_mm": 0.25, "clearance_mm": 0.2}
+  ]
+}

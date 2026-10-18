@@ -60,7 +60,7 @@ import shutil
 import time
 import xml.etree.ElementTree as ET
 from array import array
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from . import executor
 from .storage import read_json, write_json
@@ -424,8 +424,13 @@ def check_netlist(ctx):
                              f"{len(parsed['nets'])} net(s), {len(dnp_refs)} DNP")
 
 
-def copper_width_coverage(geo, params):
-    """Evaluate only explicit track/arc widths; unknown track items block coverage."""
+def copper_width_coverage(geo, params, net_limits=None):
+    """Evaluate only explicit track/arc widths; unknown track items block coverage.
+
+    net_limits maps exact net names to recorded netclass minimums (AGENTEE-47);
+    each primitive is held to the larger of that and the global minimum.
+    """
+    net_limits = net_limits or {}
     if (params.get("criterion") != "copper-width/1" or
             not isinstance(params.get("covered_primitives"), list) or
             any(not isinstance(c, str) for c in params["covered_primitives"]) or
@@ -451,7 +456,8 @@ def copper_width_coverage(geo, params):
         width = primitive.get("width_nm")
         valid_width = isinstance(width, int) and not isinstance(width, bool) and width > 0
         record.update(type=cls, width_mm=width / 1_000_000 if valid_width else None,
-                      limit_mm=limit)
+                      limit_mm=max(limit, net_limits.get(record["net"], 0)
+                                    if isinstance(record["net"], str) else limit))
         records.append(record)
         identity_ok = all(isinstance(record[k], str) and record[k]
                           for k in ("uuid", "layer")) and isinstance(record["net"], str)
@@ -466,13 +472,27 @@ def copper_width_coverage(geo, params):
             continue
         record["status"] = "checked"
         counts["checked"] += 1
-        if record["width_mm"] < limit:
+        if record["width_mm"] < record["limit_mm"]:
             offenders.append(record)
     return {"criterion": "copper-width/1", "covered_primitives": ["PCB_TRACK", "PCB_ARC"],
-            "exclude_nets": sorted(set(excluded)), "counts": counts, "primitives": records,
+            "exclude_nets": sorted(set(excluded)), "net_limits_mm": dict(sorted(net_limits.items())),
+            "counts": counts, "primitives": records,
             "offending_primitives": offenders,
             "out_of_scope": {"PCB_VIA": sum(isinstance(t, dict) and t.get("native_class") == "PCB_VIA"
                                             for t in tracks), "zones": len(geo["zones"])}}
+
+
+def net_constraint_inputs(params, scope, files):
+    """Captured constraint record and the board-sibling project it binds (AGENTEE-47)."""
+    record = params.get("net_constraints")
+    board = scope.get("board")
+    if not isinstance(record, str) or not isinstance(board, str):
+        raise CheckError("unsupported", "net_constraints must name a captured constraint record")
+    project = str(PurePosixPath(board).with_suffix(".kicad_pro"))
+    for path in (record, project):
+        if path not in files:
+            raise CheckError("unsupported", f"copper-width/1 net constraints input not captured: {path}")
+    return record, project
 
 
 def check_geometry(ctx):
@@ -492,7 +512,18 @@ def check_geometry(ctx):
             "connectivity unconnected count unavailable from pcbnew: "
             + str(geo.get("unconnected_items_error")))
     if "criterion" in ctx.params or "covered_primitives" in ctx.params:
-        coverage = copper_width_coverage(geo, ctx.params)
+        net_limits, source = None, None
+        if "net_constraints" in ctx.params:
+            from .net_constraints import net_minimums
+            record, project = net_constraint_inputs(ctx.params, ctx.scope, ctx.manifest["files"])
+            try:
+                net_limits = net_minimums(ctx.inputs / record, ctx.inputs / project)
+            except (ValueError, TypeError, KeyError, OSError) as exc:
+                raise CheckError("unsupported", f"copper-width/1 net constraints: {exc}") from exc
+            source = {"record": record, "record_sha256": ctx.manifest["files"][record],
+                      "project": project, "project_sha256": ctx.manifest["files"][project]}
+        coverage = copper_width_coverage(geo, ctx.params, net_limits)
+        coverage.update(net_constraints=source)
         coverage.update(candidate_id=ctx.manifest["candidate_id"],
                         board_sha256=ctx.manifest["files"].get(ctx.scope["board"]),
                         pcbnew_version=geo["pcbnew_version"])
@@ -505,7 +536,9 @@ def check_geometry(ctx):
         ctx.result["execution"] = "ok"
         ctx.result["outcome"] = "defect" if coverage["offending_primitives"] else "pass"
         ctx.result["summary"] = (f"copper-width/1: {counts['checked']} track/arc primitive(s) checked, "
-                                 f"{len(coverage['offending_primitives'])} below {ctx.params['min_track_width_mm']} mm")
+                                 f"{len(coverage['offending_primitives'])} below {ctx.params['min_track_width_mm']} mm"
+                                 + (f" or their recorded netclass minimum ({len(net_limits)} net(s))"
+                                    if net_limits is not None else ""))
         return
     ctx.result["details"].update({
         "pcbnew_version": geo["pcbnew_version"],
