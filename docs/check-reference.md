@@ -684,6 +684,9 @@ probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
 authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
 for the acceptance tests and remaining campaign and fabrication-limit gaps.
+The [placement adapter's property resave rule](placement-adapter.md#property-font-resave-default-agentee-147)
+admits KiCad's omitted 0.15 mm property-font thickness default during transform
+comparison; it does not grade placement or relax field value, layer or visibility checks.
 A `defect` carries `details.gate_findings`, one identity per proved defect: the
 reference (or `+`-joined overlapping references, or ratsnest metric) and the
 defect kind; connector-edge violations use `connector_<kind>`. Only connector-edge

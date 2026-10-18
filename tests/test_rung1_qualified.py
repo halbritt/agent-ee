@@ -331,6 +331,59 @@ class SchematicTurnTest(unittest.TestCase):
         self.assertEqual(native_references(self.design / 'project' / f'{q.NAME}.kicad_sch', 'symbols'),
                          ['C1', 'J1', 'R1'])
 
+    def test_forward_annotated_rc_property_resave_qualifies_native_placement(self):
+        import pcbnew as k
+        import shutil
+        from agent_ee import placement_adapter as pa
+        from agent_ee.storage import digest
+
+        base = Path(self.tmp.name) / 'placement-turn'
+        design = base / 'design'
+        shutil.copytree(self.design, design)
+        board = design / 'project' / f'{q.NAME}.kicad_pcb'
+        before = board.read_bytes()
+
+        def properties(data):
+            return {(pa._reference(fp), field[1]): field
+                    for fp in pa.footprints(pa._board(data)).values()
+                    for field in pa.children(fp, 'property')}
+
+        def native_thicknesses():
+            native = k.LoadBoard(str(board))
+            return {(fp.GetReference(), field.GetName()): field.GetTextThickness()
+                    for fp in native.GetFootprints() for field in fp.GetFields()}
+
+        old = properties(before)
+        native_before = native_thicknesses()
+        normalized = set()
+        for key, field in old.items():
+            font = pa.children(pa.children(field, 'effects')[0], 'font')[0]
+            if not pa.children(font, 'thickness'):
+                if key[1] in ('Datasheet', 'Description'):
+                    self.assertEqual(native_before[key], 0)
+                else:
+                    self.assertEqual(native_before[key], 150000)
+                    self.assertEqual(pa.children(field, 'hide'), [['hide', 'yes']])
+                    normalized.add(key)
+        self.assertEqual(normalized, {('J1', 'JLCPCB_Assembly'), ('R1', 'LCSC'), ('C1', 'LCSC'),
+                                      *((r, 'datasheet_obligation') for r in ('C1', 'J1', 'R1'))})
+
+        summary, ok = q.rehearse_placement(base, design, self.review, self.scope)
+        self.assertTrue(ok, summary)
+        self.assertEqual((summary['status'], summary['exit_code']), ('completed', 0))
+        scope = pa.write_scope(before, board.read_bytes())
+        self.assertEqual(scope['status'], 'allowed', scope['violations'])
+        self.assertEqual({t['reference'] for t in scope['transforms']}, {'C1', 'J1', 'R1'})
+        new = properties(board.read_bytes())
+        for key in normalized:
+            font = pa.children(pa.children(new[key], 'effects')[0], 'font')[0]
+            self.assertEqual(pa.children(font, 'thickness'), [['thickness', '0.15']])
+        self.assertEqual(native_thicknesses(), native_before)
+        # Adoption binds the real helper output, and never rewrites the source candidate.
+        receipt = Path(summary['receipt']).parent
+        self.assertEqual(digest(board), digest(receipt / 'run' / pa.OUTPUT))
+        self.assertEqual((self.design / 'project' / board.name).read_bytes(), before)
+
     def test_erc_passes_and_intent_parity_passes(self):
         checks = self.checks()
         self.assertEqual((checks['erc']['execution'], checks['erc']['outcome']), ('ok', 'pass'))

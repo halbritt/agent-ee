@@ -182,7 +182,8 @@ allowed:
 - a footprint rotation delta of 0, 90, 180 or 270 degrees, modulo 360;
 - the same delta, modulo 360, added to the `at` angle of that footprint's `pad`,
   `property` and `fp_text` children. Their local x/y and every other token must
-  stay equal. KiCad 10.0.7 stores those angles as footprint plus local angle, and
+  stay equal, except for the property font default below. KiCad 10.0.7 stores
+  those angles as footprint plus local angle, and
   the native tests check actual pcbnew output;
 - a reordering of a footprint's UUID-keyed children, which KiCad re-sorts
   graphics into on save;
@@ -214,6 +215,37 @@ restore or exclude generated siblings in the sandboxed step, or save to a
 staging copy and copy back only the board. The adapter's records and receipts
 remain provenance only; they cannot authorize sibling changes or make a check
 pass.
+
+### Property font resave default (AGENTEE-147)
+
+For translations and quarter turns, an omitted property-font thickness compares
+equal to exactly `(thickness 0.15)`, the default added by KiCad 10.0.7 on resave,
+except on the built-in `Datasheet` and `Description` fields. Those load an omitted
+thickness as zero and retain exact comparison.
+The reserved `Footprint` property is not retained as a PCB text field by the
+native loader and also retains exact comparison.
+Forward annotation creates hidden fields such as `JLCPCB_Assembly` and
+`datasheet_obligation` without that token. Their first placement save can therefore
+change the representation of the same field without changing its meaning.
+
+The comparison uses the shared parsed tree and strips only that explicit default
+on both sides, along one unambiguous property `effects`/`font` path. It does not
+round-trip either board through pcbnew: that would introduce native save side
+effects and normalize unrelated board content. The source bytes, board digests,
+scope schemas and transform identities remain unchanged. Side-flip comparison
+keeps its existing exact effects contract.
+
+Property name, value, layer, visibility, UUID, local position, font size and all
+other children must still match. Changing a nondefault thickness or adding a
+duplicate font/effects or thickness node, new property or other child is refused. Defaults on
+`fp_text`, pads and graphics are outside this tolerance.
+
+`PropertyDefaultsTest` exercises the default in both directions at every quarter
+turn and refuses edits to the protected fields above. The native
+`SchematicTurnTest.test_forward_annotated_rc_property_resave_qualifies_native_placement`
+in `tests/test_rung1_qualified.py` generates and forward-annotates R1, C1 and J1,
+runs the real receipted placer, checks the native thickness insertion and proves
+qualification and adoption of the exact output while preserving the source.
 
 ### Side flips
 

@@ -105,6 +105,66 @@ def flipped(angle='0', ref_text='180', value_text='180', user_text='90', pad='0'
     return mutate(*pairs, text=text)
 
 
+class PropertyDefaultsTest(unittest.TestCase):
+    FIELD = ('  (property "JLCPCB_Assembly" "not_assembled" (at 0 0 0) (layer "F.SilkS") '
+             '(hide yes) (uuid "c1") (effects (font (size 1.27 1.27))))\n')
+
+    def board(self, field, turn=0):
+        return rotated(turn).replace(b'  (path "/r1")', field.encode() + b'  (path "/r1")')
+
+    def test_only_the_property_font_thickness_default_is_normalized(self):
+        explicit = self.FIELD.replace('(size 1.27 1.27)', '(size 1.27 1.27) (thickness 0.15)')
+        before = self.board(self.FIELD)
+        for turn in (0, 90, 180, 270):
+            after = self.board(explicit.replace('(at 0 0 0)', f'(at 0 0 {turn})'), turn)
+            with self.subTest(turn=turn):
+                report = pa.write_scope(before, after)
+                self.assertEqual(report['status'], 'allowed', report['violations'])
+                self.assertEqual(pa.write_scope(after, before)['status'], 'allowed')
+
+    def test_resave_tolerance_preserves_every_other_property_token(self):
+        explicit = self.FIELD.replace('(size 1.27 1.27)', '(size 1.27 1.27) (thickness 0.15)')
+        changes = {
+            'name': ('"JLCPCB_Assembly"', '"different"'),
+            'value': ('"not_assembled"', '"assembled"'),
+            'layer': ('"F.SilkS"', '"F.Fab"'),
+            'visibility': ('(hide yes)', '(hide no)'),
+            'visibility removed': ('(hide yes)', ''),
+            'position': ('(at 0 0 0)', '(at 0.1 0 0)'),
+            'new child': ('(hide yes)', '(hide yes) (unqualified yes)'),
+            'font child': ('(size 1.27 1.27)', '(size 1.27 1.27) bold'),
+            'font size': ('(size 1.27 1.27)', '(size 1.28 1.27)'),
+            'nondefault thickness': ('(thickness 0.15)', '(thickness 0.16)'),
+            'zero thickness': ('(thickness 0.15)', '(thickness 0)'),
+            'malformed thickness': ('(thickness 0.15)', '(thickness 0.15 extra)'),
+            'duplicate thickness': ('(thickness 0.15)', '(thickness 0.15) (thickness 0.15)'),
+            'duplicate font': ('(font (size 1.27 1.27)', '(font (size 1.27 1.27)) (font (size 1.27 1.27)'),
+            'duplicate effects': ('(effects (font', '(effects (font (size 1.27 1.27))) (effects (font'),
+            'identity': ('(uuid "c1")', '(uuid "c2")'),
+        }
+        for name, (old, new) in changes.items():
+            with self.subTest(name=name):
+                report = pa.write_scope(self.board(self.FIELD), self.board(explicit.replace(old, new)))
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(report['violations'])
+        added = self.board(explicit + explicit.replace('(uuid "c1")', '(uuid "c2")'))
+        self.assertEqual(pa.write_scope(self.board(self.FIELD), added)['status'], 'refused')
+
+    def test_explicit_nondefault_and_nonproperty_fonts_stay_exact(self):
+        explicit = self.FIELD.replace('(size 1.27 1.27)', '(size 1.27 1.27) (thickness 0.2)')
+        self.assertEqual(pa.write_scope(self.board(explicit), self.board(explicit))['status'], 'allowed')
+        self.assertEqual(pa.write_scope(self.board(explicit), self.board(self.FIELD))['status'], 'refused')
+        text = TEXT.replace('(size 0.5 0.5)', '(size 0.5 0.5) (thickness 0.15)')
+        self.assertEqual(pa.write_scope(TEXT.encode(), text.encode())['status'], 'refused')
+
+    def test_builtin_properties_without_the_custom_field_default_stay_exact(self):
+        for name in ('Datasheet', 'Description', 'Footprint'):
+            with self.subTest(name=name):
+                field = self.FIELD.replace('JLCPCB_Assembly', name)
+                explicit = field.replace('(size 1.27 1.27)', '(size 1.27 1.27) (thickness 0.15)')
+                self.assertEqual(pa.write_scope(self.board(field), self.board(explicit))['status'], 'refused')
+
+
 class WriteScopeTest(unittest.TestCase):
     def assertRefused(self, after, fragment, protected=()):
         report = pa.write_scope(TEXT.encode(), after, protected)
