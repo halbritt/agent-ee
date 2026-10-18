@@ -63,6 +63,23 @@ class Prepared(unittest.TestCase):
 
 
 class ScaffoldTest(Prepared):
+    def test_symbol_subsets_are_pinned_in_scaffold_and_scope(self):
+        from agent_ee.symbol_capture import verify_capture
+        from agent_ee.symbol_library import parse_library
+        receipts = json.loads((self.scaffold / 'generation/symbol-captures.json').read_text())
+        self.assertEqual({r['source']['library'] for r in receipts}, set(g.SYMBOL_LIBRARIES))
+        for receipt in receipts:
+            path = receipt['output']['path']
+            subset = (self.scaffold / 'generation/symbols' / path).read_bytes()
+            source = (g.STOCK / 'symbols' / path).read_bytes()
+            verify_capture(receipt, subset, source)
+            self.assertLess(len(subset), len(source))
+            self.assertEqual(set(parse_library(subset)), set(receipt['selected']))
+            self.assertEqual(self.prep['symbol_libraries'][path], subset)
+        scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
+        entry = next(i for i in scope['inputs'] if i['at'] == 'stock/symbols')
+        self.assertEqual((self.rundir / entry['path']).resolve(), (self.scaffold / 'generation/symbols').resolve())
+
     def test_empty_native_files_have_qualified_versions_and_no_content(self):
         project = self.scaffold / 'project'
         sch, pcb = project / 'rung1_rc.kicad_sch', project / 'rung1_rc.kicad_pcb'
@@ -86,7 +103,7 @@ class ScaffoldTest(Prepared):
 
     def test_project_and_tables_equal_the_emitter_output(self):
         from agent_ee.schematic_emit import emit
-        captures = {p.name: p.read_bytes() for p in STOCK_SYMBOLS}
+        captures = self.prep['symbol_libraries']
         outputs = emit(self.prep['resolved_bytes'], captures, self.prep['parts_path'].read_bytes(),
                        (rc.FIXTURE_PROJECT / 'rc_filter.kicad_pro').read_bytes(), rc.NAME)
         project = self.scaffold / 'project'

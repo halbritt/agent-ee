@@ -10,6 +10,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -166,6 +167,84 @@ class TransformTests(unittest.TestCase):
 
 
 class DeterminismTests(unittest.TestCase):
+    def twenty_parts(self):
+        intent = load('regulator.intent.json')
+        intent['components'] = [dict(id=f'c{i}', reference=f'C{i}', lib_id='OwnedGen:CAP',
+                                     value='100n', footprint='', units=[1]) for i in range(1, 21)]
+        intent['nets'] = [dict(id=f'n{p}', name=f'N{p}',
+                               terminals=[dict(component=c['id'], pin=dict(number=p))
+                                          for c in intent['components']]) for p in ('1', '2')]
+        intent['no_connects'] = []
+        intent['libraries'] = intent['libraries'][:1]
+        return intent, captures(intent)
+
+    def test_subset_equivalence(self):
+        from agent_ee.symbol_capture import capture_symbols
+        intent, whole = self.twenty_parts()
+        layout = load('regulator.layout.json')
+        before, whole_files = emit_schematic(intent, whole, layout)
+        self.assertEqual(before['execution'], 'ok', before['findings'])
+        subset, receipt = capture_symbols(whole['lib/Owned_Gen.kicad_sym'], ['CAP'], library='OwnedGen')
+        intent['libraries'][0]['sha256'] = hashlib.sha256(subset).hexdigest()
+        after, subset_files = emit_schematic(intent, {'lib/Owned_Gen.kicad_sym': subset}, layout)
+        self.assertEqual(after['execution'], 'ok', after['findings'])
+        self.assertEqual(len(intent['components']), 20)
+        self.assertEqual(whole_files, subset_files)
+        self.assertEqual(after['libraries'][0]['sha256'], receipt['output']['sha256'])
+
+    def test_subset_missing_symbol_refused(self):
+        from agent_ee.symbol_capture import capture_symbols
+        intent, whole = self.twenty_parts()
+        subset, _ = capture_symbols(whole['lib/Owned_Gen.kicad_sym'], ['CONN3'], library='OwnedGen')
+        intent['libraries'][0]['sha256'] = hashlib.sha256(subset).hexdigest()
+        result, files = emit_schematic(intent, {'lib/Owned_Gen.kicad_sym': subset}, load('regulator.layout.json'))
+        self.assertIsNone(files)
+        self.assertEqual(result['outcome'], 'unknown')
+        findings = [f for f in result['findings'] if f['code'] == 'resolution_unknown_symbol']
+        self.assertEqual(len(findings), 20)
+        self.assertTrue(all(f['message'] == 'unknown symbol: CAP' for f in findings))
+
+    def test_each_library_parsed_once_per_emission_including_hierarchy(self):
+        from agent_ee import symbol_library
+        for name in ('regulator', 'two_level'):
+            intent = load(name + '.intent.json')
+            captured = captures(intent)
+            for _ in range(2):
+                with mock.patch.object(symbol_library, 'parse_sexpr', wraps=symbol_library.parse_sexpr) as parse:
+                    result, _ = emit_schematic(intent, captured, load(name + '.layout.json'))
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                self.assertCountEqual([call.args[0] for call in parse.call_args_list], list(captured.values()))
+
+    def test_subsequent_emission_revalidates_changed_and_unused_libraries(self):
+        intent = load('regulator.intent.json')
+        captured = captures(intent)
+        result, _ = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok')
+        # Identical bytes may share a parse, but not a declaration's hash check.
+        intent['libraries'].append(dict(name='Unused', path='lib/Unused.kicad_sym', sha256='0' * 64))
+        captured['lib/Unused.kicad_sym'] = captured['lib/Owned_Gen.kicad_sym']
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertIsNone(files)
+        self.assertTrue(any(f['code'] == 'resolution_library_coverage' for f in result['findings']))
+        intent['libraries'][-1]['sha256'] = hashlib.sha256(captured['lib/Unused.kicad_sym']).hexdigest()
+        result, _ = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        captured['lib/Unused.kicad_sym'] += b' '
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertIsNone(files)
+        self.assertTrue(any(f['code'] == 'resolution_library_coverage' for f in result['findings']))
+
+    def test_identical_library_bytes_at_distinct_paths_share_one_parse(self):
+        from agent_ee import symbol_library
+        intent, captured = self.twenty_parts()
+        lib = intent['libraries'][0]
+        intent['libraries'].append(dict(lib, name='Unused', path='lib/Alias.kicad_sym'))
+        captured['lib/Alias.kicad_sym'] = captured[lib['path']]
+        with mock.patch.object(symbol_library, 'parse_sexpr', wraps=symbol_library.parse_sexpr) as parse:
+            result, _ = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        self.assertEqual(parse.call_count, 1)
+
     def test_part_binding_fields_are_hidden_and_override_library_defaults(self):
         intent = load('regulator.intent.json')
         binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',

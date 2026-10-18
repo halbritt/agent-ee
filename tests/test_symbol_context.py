@@ -20,6 +20,14 @@ def libraries(data=LIBRARY):
 
 
 class ContextTests(unittest.TestCase):
+    def test_inherited_context_parses_library_once(self):
+        from unittest import mock
+        from agent_ee import symbol_library
+        with mock.patch.object(symbol_library, 'parse_sexpr', wraps=symbol_library.parse_sexpr) as parse:
+            result = self.context()
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertEqual(parse.call_count, 1)
+
     def context(self, selection='Owned:Child', data=LIBRARY):
         return build_context(libraries(data), {'owned.kicad_sym': data}, selection)
 

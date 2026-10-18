@@ -1,5 +1,6 @@
 """Bounded, independent reader for captured KiCad symbol libraries."""
 from decimal import Decimal, DecimalException
+import hashlib
 import re
 
 
@@ -89,6 +90,10 @@ def parse_sexpr(data):
 
 def parse_library(data):
     root = parse_sexpr(data)
+    return _library_symbols(root)
+
+
+def _library_symbols(root):
     if root[0] != 'kicad_symbol_lib':
         raise LibraryError('expected one complete kicad_symbol_lib')
     symbols = {}
@@ -99,6 +104,31 @@ def parse_library(data):
     if not symbols:
         raise LibraryError('empty library')
     return symbols
+
+
+class ParsedLibraries:
+    """Content-addressed trees owned by one resolution/emission, never global.
+
+    Callers still verify each declared path/hash before using a tree. Cached
+    trees are read-only; emission copies selected definitions before editing.
+    """
+    def __init__(self):
+        self._trees = {}
+        self._symbols = {}
+
+    def root(self, data):
+        if not isinstance(data, bytes):
+            raise LibraryError('library must be bytes, at most 32 MiB')
+        sha = hashlib.sha256(data).hexdigest()
+        if sha not in self._trees:
+            root = parse_sexpr(data)
+            symbols = _library_symbols(root)
+            self._trees[sha], self._symbols[sha] = root, symbols
+        return self._trees[sha]
+
+    def symbols(self, data):
+        self.root(data)
+        return self._symbols[hashlib.sha256(data).hexdigest()]
 
 
 def children(node, key):

@@ -50,6 +50,42 @@ written the way KiCad writes them (for example mirror `x` at 180 becomes mirror
 The Python API can also write project `sym-lib-table` and `fp-lib-table` rows
 that point at `${KIPRJMOD}` paths. The emitter does not write board files.
 
+### Library subsets and emission cost
+
+AGENTEE-172 shares one content-addressed library parse across fresh intent
+resolution, symbol contexts and all sheet plans in an emission. The cache is
+local to that call and keyed by the SHA-256 of the actual bytes. Every declared
+path and hash is still checked, including unused libraries. The existing
+quote-preserving scan compares against that shared tree before serialization;
+selected definitions are copied before editing. No tree survives into the next
+emission. `build_context` also parses each library only once in a standalone call,
+including inherited properties.
+
+Use [symbol capture](symbol-capture.md) to keep captured inputs small. The
+generator and both rung-1 scaffold builders now capture subsets by default.
+Intent and emission receipts name the subset SHA-256; `symbol-captures.json`
+retains each existing capture receipt, including the full source SHA-256 and
+selected symbol/ancestor hashes. Whole and subset libraries produce identical
+project bytes for the same selection and layout; their provenance receipts
+differ because they identify different inputs.
+
+The original 130-component benchmark uses seven ICs, 40-pin headers and
+capacitors. Stock library bytes stay in the local run directory. Each run
+records library hashes, three complete emission timings without warmup, output
+hashes, host/tool identities and a sandboxed native export comparison of every
+connected and no-connect terminal. Capture and workload construction are timed
+separately. The 60-second target is recorded, never asserted in CI:
+
+```sh
+PYTHONPATH=src python3 scripts/benchmark_emitter.py --out build/emitter-benchmark
+```
+
+This synthetic workload measures emission; it is not a telemetry-pod design or
+an electrical qualification. `tests/test_schematic_emitter.py` separately checks
+byte-identical whole/subset emission for 20 parts, refusal of a missing symbol
+by name, one parse per content hash across hierarchical sheets, and hash drift
+on a subsequent emission.
+
 ## Output
 
 `<project>.kicad_pro` and `<project>.kicad_sch` (format version 20260306,

@@ -360,6 +360,15 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   checks, even for an unchanged block.
 - Nothing here confers hardware release authority or bench qualification.
 
+## Captured symbol subsets
+
+AGENTEE-172 reduces schematic input size through the existing symbol-capture
+boundary. Generator and rung-1 scaffold inputs retain selected symbols and
+ancestors with both source and subset hashes; emission shares parsed libraries
+within one invocation. The [emitter benchmark](schematic-emitter.md#library-subsets-and-emission-cost)
+records pod-scale timing and native connectivity evidence without changing
+generation acceptance or claiming a completed pod design.
+
 ## Captured CPL correction in fab stages
 
 AGENTEE-126 wires `cpl_rotation` after `fab_export` in the generator and, when

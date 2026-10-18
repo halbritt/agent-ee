@@ -94,6 +94,29 @@ electrical contract and it grants no part selection. Captured stock bytes keep
 their KiCad library licence. They stay private until their publication is
 authorized.
 
+## Default driver capture
+
+`capture_libraries(selections, sources)` groups an exact set of `lib_id` values
+by library nickname and calls `capture_symbols` once for each library. Sources
+are explicit bytes supplied by the host caller; the helper performs no library
+search or network access. It returns intent library declarations, subset bytes
+and the existing per-library receipts. Missing libraries, symbols and ancestors
+refuse through the same capture boundary.
+
+The generator and both rung-1 drivers use it before resolution and emission.
+They retain the physical component selections plus the ground and flag symbols
+the legacy rung-1 emitter requires. Their scaffold inventories and scope inputs
+point to these subsets instead of the installed whole libraries. The retained
+`generation/symbol-captures.json` and immutable subset input hashes travel with
+the stage receipts. Native-check copies capture the symbols actually placed in
+the project, including power markers.
+
+The general `scaffold --plan` producer consumes an already pinned `parts/1`
+CAD closure and has no connectivity-intent input or installed-library lookup.
+It preserves that closure's hashes; callers can supply captured subsets in the
+parts bundle. Rewriting an existing immutable parts declaration is outside
+scaffolding. See [empty generation candidates](scaffold.md).
+
 ## Qualification
 
 The tests use owned synthetic libraries:

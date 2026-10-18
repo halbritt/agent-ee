@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path, PurePosixPath
 
 from .connectivity_ir import RESOLVED_SCHEMA, validate_resolved
-from .symbol_library import LibraryError, children, nanometres, parse_library, parse_sexpr, resolve_symbol
+from .symbol_library import LibraryError, ParsedLibraries, children, nanometres, parse_sexpr, resolve_symbol
 
 RECEIPT_SCHEMA = 'agent-ee.rung1-schematic-emit-receipt/0-experimental'
 QUALIFICATION = 'experimental-unqualified'
@@ -47,13 +47,13 @@ class Quoted(str):
 
 # --- S-expression reading and KiCad-canonical writing --------------------------------------
 
-def parse_quoted(data):
+def parse_quoted(data, *, authority=None):
     """Parse like ``symbol_library.parse_sexpr`` but remember which atoms were quoted.
 
     The shared parser is run first and stays the authority: its limits apply and the
     two trees must be equal, so the quote marks are the only added information.
     """
-    authority = parse_sexpr(data)
+    authority = parse_sexpr(data) if authority is None else authority
     text, stack, roots, pos = data.decode('utf-8'), [], [], 0
     while pos < len(text):
         char = text[pos]
@@ -175,19 +175,11 @@ def _json(data, label):
         raise EmitError(f'{label} is not valid JSON: {exc}') from exc
 
 
-_LIBRARY_CACHE = {}
-
-
-def _library(data):
-    """Return (plain symbols, quoted symbols) for captured bytes, cached by content hash."""
-    digest = _sha(data)
-    if digest not in _LIBRARY_CACHE:
-        plain = parse_library(data)
-        root = parse_quoted(data)
-        quoted = {node[1]: node for node in children(root, 'symbol')}
-        _LIBRARY_CACHE.clear()  # One emission's libraries at a time; bounds memory.
-        _LIBRARY_CACHE[digest] = (plain, quoted)
-    return _LIBRARY_CACHE[digest]
+def _library(data, cache):
+    """Plain and quoted symbols from one emission's shared structural parse."""
+    plain = cache.symbols(data)
+    root = parse_quoted(data, authority=cache.root(data))
+    return plain, {node[1]: node for node in children(root, 'symbol')}
 
 
 def _parts(manifest, references):
@@ -359,6 +351,7 @@ class _Emitter:
         self.seed = self.record['canonical_sha256']
         self.root = self.uuid('sheet')
         self.libraries = {}
+        cache = ParsedLibraries()
         for library in self.record['libraries']:
             if not LIB_NAME.fullmatch(library['name']):
                 raise EmitError('library name is not a KiCad nickname: ' + library['name'])
@@ -369,7 +362,7 @@ class _Emitter:
                 raise EmitError(f"captured library sha256 mismatch for {library['path']}: record "
                                 f"{library['sha256']}, file {_sha(data)}")
             try:
-                plain, quoted = _library(data)
+                plain, quoted = _library(data, cache)
             except LibraryError as exc:
                 raise EmitError(f"captured library {library['path']} unreadable: {exc}") from exc
             self.libraries[library['name']] = (library, plain, quoted)

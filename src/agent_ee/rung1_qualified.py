@@ -146,7 +146,12 @@ def qualified_intent(prep):
 
 def intent_captures(intent):
     """The captured library bytes the intent names, keyed by its own library paths."""
-    return {lib['path']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes() for lib in intent['libraries']}
+    from .symbol_capture import capture_libraries
+    selections = {c['lib_id'] for c in intent['components']}
+    sources = {lib['name']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes()
+               for lib in intent['libraries']}
+    _, captured, _ = capture_libraries(selections, sources)
+    return {lib['path']: captured[Path(lib['path']).name] for lib in intent['libraries']}
 
 
 def ground_net(params):
@@ -395,16 +400,21 @@ def write_scaffold(rundir, prep):
         QUALIFIED_REQUIREMENTS + (CPL_REQUIREMENT_TEXT if prep.get('cpl_inputs') else ''))
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
+    captured = {lib['path']: prep['symbol_libraries'][Path(lib['path']).name] for lib in intent['libraries']}
+    for path, data in captured.items():
+        target = scaffold / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    write_json(generation / 'symbol-captures.json', prep['symbol_captures'])
     footprints = footprint_manifest(prep['parts']['parts'])
     if 'approved_bundle' in prep['parts']:
         from .parts_manifest import load_manifest, qualify_manifest
         from .rung1_parts import MANIFEST, check_cad_inputs
-        stock = {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
-                 for lib in g.SYMBOL_LIBRARIES}
+        stock = prep['symbol_libraries']
         bundle = prep['parts_path'].parent / 'approved'
         declared = load_manifest(bundle, MANIFEST)
         check_cad_inputs(qualify_manifest(declared, bundle), bundle, stock, footprints)
-    resolved = resolve_intent(intent, intent_captures(intent))
+    resolved = resolve_intent(intent, captured)
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
         raise PrepareFailure('qualified intent did not resolve: ' + json.dumps(resolved['findings'])[:2000])
     if prep.get('cpl_inputs'):
@@ -460,6 +470,8 @@ def compile_staged_scope(params, scope_dir, scaffold):
             item = {'path': os.path.relpath(scaffold / 'project', base), 'at': 'project'}
         elif item['at'] == 'requirements':
             item = {'path': os.path.relpath(scaffold / 'requirements', base), 'at': 'requirements'}
+        elif item['at'] == 'stock/symbols':
+            item = {'path': os.path.relpath(scaffold / 'stock/symbols', base), 'at': 'stock/symbols'}
         inputs.append(item)
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs
