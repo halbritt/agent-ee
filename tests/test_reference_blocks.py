@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from agent_ee.reference_blocks import block_contract, validate_block
+from tests.block_parts_fixture import parts_manifest
 from agent_ee.storage import digest, write_json
 
 
@@ -21,7 +22,7 @@ def git(repo, *args):
 
 def block(root):
     (root / 'sheet.kicad_sch').write_bytes(SHEET)
-    write_json(root / 'parts.json', {'schema': 'agent-ee.parts/1', 'parts': []})
+    write_json(root / 'parts.json', parts_manifest())
     record = dict(schema='agent-ee.block/1', id='owned', version='1', role='power',
         source=dict(repository='local-owned', commit='a' * 40,
                     paths={'sheet.kicad_sch': 'sheet.kicad_sch'}, license='Owned test fixture'),
@@ -37,6 +38,58 @@ def block(root):
 
 
 class ReferenceBlockTests(unittest.TestCase):
+    def test_cli_unexpected_failure_has_distinct_exit_and_diagnostic(self):
+        import contextlib
+        import io
+        import json
+        from unittest.mock import patch
+        from agent_ee.reference_blocks import main
+        output, errors = io.StringIO(), io.StringIO()
+        with patch('agent_ee.reference_blocks.validate_block', side_effect=RuntimeError('control crash')), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(main(['validate', 'unused']), 3)
+        self.assertEqual(json.loads(output.getvalue())['status'], 'error')
+        self.assertIn('RuntimeError: control crash', errors.getvalue())
+
+    def test_parts_manifest_uses_shared_validator(self):
+        import copy
+        from agent_ee.parts_manifest import validate_manifest
+        validate_manifest(parts_manifest())
+        mutations = [lambda d: d.pop('cad'),
+                     lambda d: d.update(parts=[]),
+                     lambda d: d['parts'][0].update(lcsc='NOT-AN-LCSC'),
+                     lambda d: d['parts'][0].pop('instances'),
+                     lambda d: d['parts'][0].update(required='yes'),
+                     lambda d: d['parts'].append(copy.deepcopy(d['parts'][0]))]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                record = block(root)
+                document = parts_manifest()
+                mutate(document)
+                with self.assertRaises(ValueError):
+                    validate_manifest(document)
+                write_json(root / 'parts.json', document)
+                record['files']['parts.json'] = digest(root / 'parts.json')
+                write_json(root / 'block.json', record)
+                with self.assertRaises(ValueError):
+                    validate_block(root)
+
+    def test_port_refusal_names_missing_extra_and_wrong_direction(self):
+        for name, direction, message in [('ABSENT', 'input', 'ABSENT'),
+                                          ('VIN', 'output', 'VIN'),
+                                          (None, None, 'VIN')]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                record = block(root)
+                record['boundary_ports'] = ([dict(record['boundary_ports'][0], name=name, direction=direction)]
+                                            if name else [])
+                write_json(root / 'block-contract.json', block_contract(record))
+                record['files']['block-contract.json'] = digest(root / 'block-contract.json')
+                write_json(root / 'block.json', record)
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_block(root)
+
     def test_capture_without_run_is_unverified(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -170,30 +223,31 @@ class NativeReferenceBlockTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
 
     def prepare_run(self, *, checks_only=False, undeclared=False, shadow=False, hierarchy=False, layout=False,
-                    pending=False):
+                    pending=False, membership=True, foreign_parts=False):
         import contextlib
-        import importlib.util
         import io
         from unittest.mock import patch
         from agent_ee.cli import run_review, runtime_files, verify
         from agent_ee.storage import read_json
         fixture = Path(__file__).resolve().parents[1] / 'fixtures/hardware-interface'
-        spec = importlib.util.spec_from_file_location('owned_block_fixture', fixture / 'generate.py')
-        generator = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(generator)
+        from tests.test_parts_subset import captured_fixture, subset_generator
+        generator = subset_generator()
         payload = self.root / 'block'
         payload.mkdir()
         record = block(payload)
-        # Owned fixture's declared resistor invariant is 100k; no response
-        # criterion is used by this structural native qualification.
-        sheet = generator.schematic(resistor='100k').rstrip()
+        dependencies = self.root / 'dependencies'
+        dependencies.mkdir()
+        document = captured_fixture(self, dependencies)
+        write_json(payload / 'parts.json', document)
+        record['files']['parts.json'] = digest(payload / 'parts.json')
+        sheet = generator.schematic().replace('(property "Value" "R"', '(property "Value" "10k"').rstrip()
         label = '''(hierarchical_label "IN" (shape input) (at 40 50 0)
           (effects (font (size 1 1))) (uuid "cb914ae0-18b3-43de-8045-9d41a1731b16"))'''
         if hierarchy:
             root_id = '5ba845cb-e953-48b0-998e-05c05ee05ecf'
             sheet_id = '230f756d-a550-43ca-8130-2eff9ea6c83e'
-            sheet = sheet.replace('(project "interface"', '(project "root"').replace(
-                '/' + generator.uid('root') + '"', '/' + root_id + '/' + sheet_id + '"')
+            sheet = sheet.replace('(project "binding"', '(project "root"').replace(
+                '/' + generator.BASE.uid('root') + '"', '/' + root_id + '/' + sheet_id + '"')
         (payload / 'sheet.kicad_sch').write_text(sheet[:-1] + label + ')\n')
         record['boundary_ports'][0].update(name='IN', net_name='IN')
         if undeclared:
@@ -201,8 +255,8 @@ class NativeReferenceBlockTests(unittest.TestCase):
         if shadow:
             (self.root / 'shadow.kicad_sch').write_bytes((payload / 'sheet.kicad_sch').read_bytes())
             data = (payload / 'sheet.kicad_sch').read_bytes()
-            self.assertIn(b'100k', data)
-            (payload / 'sheet.kicad_sch').write_bytes(data.replace(b'100k', b'200k'))
+            self.assertIn(b'10k', data)
+            (payload / 'sheet.kicad_sch').write_bytes(data.replace(b'10k', b'200k'))
         record['files']['sheet.kicad_sch'] = digest(payload / 'sheet.kicad_sch')
         if layout:
             (payload / 'layout.kicad_pcb').write_bytes((fixture / 'interface.kicad_pcb').read_bytes())
@@ -219,6 +273,8 @@ class NativeReferenceBlockTests(unittest.TestCase):
         write_json(payload / 'block.json', record)
         scope = read_json(fixture / 'control.scope.json')
         scope['schema'] = 'agent-ee.scope/2'
+        scope['name'] = 'Owned reference-block qualification'
+        scope['scope'] = 'Native resistor identity and value in an original synthetic fixture.'
         scope['checks'] = scope['checks'][:2]
         scope['baseline']['requirements'] = scope['baseline']['requirements'][:1]
         del scope['baseline']['requirements'][0]['intent']
@@ -228,7 +284,18 @@ class NativeReferenceBlockTests(unittest.TestCase):
         for name in ('requirements.md', 'contract.json', 'interface.kicad_pcb'):
             (self.root / name).write_bytes((fixture / name).read_bytes())
             scope['inputs'].append(dict(path=name, at=name))
+        (self.root / 'requirements.md').write_text(
+            '# Owned reference-block fixture\n\n## Structural interface\n\n'
+            'The native resistor R1 must have value 10k. This is original synthetic test data.\n')
+        contract = dict(schema='agent-ee.interface/1',
+            components=dict(series=dict(locations=[dict(sheet='/', reference='R1')], symbols=['Owned:R'])),
+            terminals={}, allowed_edits=[],
+            invariants=[dict(id='series-value', requirement='interface',
+                source=dict(path='requirements.md', locator='Structural interface'),
+                kind='value', component='series', equals='10k')])
+        write_json(self.root / 'contract.json', contract)
         if hierarchy:
+            document['parts'][0]['instances'][0]['sheet'] = '/' + sheet_id + '/'
             (self.root / 'root.kicad_sch').write_text(f'''(kicad_sch (version 20250114)
               (generator "eeschema") (uuid "{root_id}") (paper "A4") (lib_symbols)
               (sheet (at 20 20) (size 20 20) (stroke (width 0) (type default))
@@ -245,6 +312,26 @@ class NativeReferenceBlockTests(unittest.TestCase):
                 if invariant['kind'] == 'named_net':
                     invariant['names'] = ['/OwnedChild' + n for n in invariant['names']]
             write_json(self.root / 'contract.json', contract)
+        document['declaration_source']['path'] = 'parts-requirements.md'
+        for path in sorted(dependencies.rglob('*')):
+            if path.is_file():
+                relative = path.relative_to(dependencies).as_posix()
+                if relative == 'parts.json':
+                    continue
+                scope['inputs'].append(dict(path='dependencies/' + relative,
+                    at='parts-requirements.md' if relative == 'requirements.md' else relative))
+        write_json(payload / 'parts.json', document)
+        record['files']['parts.json'] = digest(payload / 'parts.json')
+        write_json(payload / 'block.json', record)
+        if foreign_parts:
+            write_json(self.root / 'foreign-parts.json', document)
+            scope['inputs'].append(dict(path='foreign-parts.json', at='foreign-parts.json'))
+        if membership:
+            scope['checks'].append(dict(id='parts', kind='parts_subset', params=dict(
+                manifest='foreign-parts.json' if foreign_parts else 'parts.json',
+                netlist_check='netlist', requirement_id='membership')))
+            scope['baseline']['requirements'].append(dict(id='membership', statement='Declared parts membership',
+                source={k: document['declaration_source'][k] for k in ('path', 'locator')}, checks=['parts']))
         if shadow:
             scope['inputs'].append(dict(path='shadow.kicad_sch', at='shadow.kicad_sch'))
             scope['schematic'] = 'shadow.kicad_sch'
@@ -295,6 +382,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         report = validate_block(payload, {result['run_id']: run})
         self.assertEqual(report['status'], 'unverified')
         self.assertEqual(report['covered_requirements'], [])
+        self.assertEqual(report['parts_membership']['status'], 'unverified')
         # Independent fresh native execution proves the captured block is defective.
         scope = read_json(self.root / 'scope.json')
         scope['schematic'] = 'interface.kicad_sch'
@@ -322,7 +410,10 @@ class NativeReferenceBlockTests(unittest.TestCase):
         from agent_ee.storage import read_json
         payload, record, run, result = self.prepare_run()
         locations = {result['run_id']: run}
-        self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        report = validate_block(payload, locations)
+        self.assertEqual(report['status'], 'verified')
+        self.assertEqual(report['parts_membership'], dict(status='verified', evidence=[dict(
+            run_id=result['run_id'], check_id='parts', manifest_sha256=record['files']['parts.json'])]))
         seal = run / 'work/verification/evidence.json'
         original = seal.read_bytes()
         value = read_json(seal)
@@ -332,22 +423,79 @@ class NativeReferenceBlockTests(unittest.TestCase):
             validate_block(payload, locations)
         seal.write_bytes(original)
         self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        membership_path = run / 'work/parts/parts-subset.json'
+        original_membership = membership_path.read_bytes()
+        value = read_json(membership_path)
+        value['manifest_sha256'] = '0' * 64
+        write_json(membership_path, value)
+        with self.assertRaises(ValueError):
+            validate_block(payload, locations)
+        membership_path.write_bytes(original_membership)
+        self.assertEqual(validate_block(payload, locations)['status'], 'verified')
         # Sealed coordinator component witnesses cannot be rewritten to donate coverage.
         check_path = run / 'checks/interface.json'
         original_check = check_path.read_bytes()
         check = read_json(check_path)
-        check['details']['invariants'][0]['actual']['components']['load']['sheet'] = '/foreign/'
+        check['details']['invariants'][0]['actual']['components']['series']['sheet'] = '/foreign/'
         write_json(check_path, check)
         with self.assertRaises(ValueError):
             validate_block(payload, locations)
         check_path.write_bytes(original_check)
         self.assertEqual(validate_block(payload, locations)['status'], 'verified')
+        # A valid but changed parts manifest cannot borrow the old membership.
+        original_parts = (payload / 'parts.json').read_bytes()
+        parts = read_json(payload / 'parts.json')
+        parts['parts'][0]['stock'] = None
+        write_json(payload / 'parts.json', parts)
+        record['files']['parts.json'] = digest(payload / 'parts.json')
+        write_json(payload / 'block.json', record)
+        with self.assertRaisesRegex(ValueError, 'exact block bytes: parts.json'):
+            validate_block(payload, locations)
+        (payload / 'parts.json').write_bytes(original_parts)
+        record['files']['parts.json'] = digest(payload / 'parts.json')
+        write_json(payload / 'block.json', record)
         # Updating the block's own hashes cannot launder a changed sheet.
         (payload / 'sheet.kicad_sch').write_bytes((payload / 'sheet.kicad_sch').read_bytes() + b'\n')
         record['files']['sheet.kicad_sch'] = digest(payload / 'sheet.kicad_sch')
         write_json(payload / 'block.json', record)
         with self.assertRaisesRegex(ValueError, 'exact block bytes'):
             validate_block(payload, locations)
+
+    def test_passing_interface_without_membership_remains_unverified(self):
+        payload, record, run, result = self.prepare_run(membership=False)
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['covered_requirements'], ['interface'])
+        self.assertEqual(report['status'], 'unverified')
+        self.assertEqual(report['parts_membership'], dict(status='unverified', evidence=[]))
+
+    def test_membership_for_other_manifest_path_cannot_qualify_block(self):
+        payload, record, run, result = self.prepare_run(foreign_parts=True)
+        self.assertEqual(result['checks'][2]['outcome'], 'pass')
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['status'], 'unverified')
+        self.assertEqual(report['parts_membership']['evidence'], [])
+
+    def test_cli_missing_run_state_is_refused_not_unverified(self):
+        import contextlib
+        import io
+        import json
+        from agent_ee.reference_blocks import main
+        from agent_ee.storage import read_json
+        payload, record, run, result = self.prepare_run()
+        args = ['validate', str(payload), '--run', result['run_id'] + '=' + str(run)]
+        for state, expected in [('complete', 0), ('missing', 2)]:
+            if state == 'missing':
+                stored = read_json(run / 'result.json')
+                del stored['state']
+                write_json(run / 'result.json', stored)
+            output = io.StringIO()
+            with self.subTest(state=state), contextlib.redirect_stdout(output):
+                self.assertEqual(main(args), expected)
+            self.assertEqual(json.loads(output.getvalue())['status'], 'verified' if expected == 0 else 'refused')
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(['validate', str(payload)]), 1)
+        self.assertEqual(json.loads(output.getvalue())['status'], 'unverified')
 
     def test_checks_only_is_unverified_and_missing_run_is_unverified(self):
         payload, record, run, result = self.prepare_run(checks_only=True)
