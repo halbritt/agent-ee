@@ -2133,6 +2133,16 @@
         "AE"
       ],
       "reviewed": "Original block adapter, native passive boundary probes and synthetic fixture tests authored for AGENTEE-90. KiCad format literals and probe symbols are original; no third-party designs or symbol libraries are copied into these files."
+    },
+    {
+      "paths": [
+        "scripts/check_conflict_markers.sh"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original one-line shell guard that refuses committed merge-conflict markers anywhere in the tree; integrator tooling added 2026-10-18 after markers reached main in a docs port."
     }
   ]
 }
