@@ -273,7 +273,9 @@ has a bounded host downloader and a native stocked-parts adapter; raw data stays
 in private scratch. [Part selection](docs/part-selection.md)
 compares declared intervals and stock within that snapshot. Both now have checks
 that use the captured baseline, sandbox and coordinator seal; selection binds one
-explicit requirement. They do not authenticate upstream claims or establish
+explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#full-feed-runtime-qualification)
+uses a declared 600-second helper ceiling and retains sealed evidence in private
+scratch. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
 An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.

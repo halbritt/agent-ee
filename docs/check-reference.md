@@ -77,9 +77,9 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `erc` | `kicad-cli version` (sealed under `kicad-version/`), then `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 60 s, 900 s |
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
-| `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json`; [snapshot integrity](catalog.md) only | 120 s |
+| `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json`; [snapshot integrity](catalog.md) only | 600 s |
 | `parts_subset` | `/usr/bin/python3 -m agent_ee.parts_subset /candidate MANIFEST /evidence/netlist/design.xml --schematic SHEETS --out /work/parts-subset.json`; [captured membership](approved-parts.md) | 120 s |
-| `part_selection` | Same runner with `part_selection` and `--requirements /candidate/REQUIREMENTS`; [declared catalog constraints](part-selection.md) | 120 s |
+| `part_selection` | Same runner with `part_selection` and `--requirements /candidate/REQUIREMENTS`; [declared catalog constraints](part-selection.md) | 600 s |
 | `netlist_parity` | Coordinator compares full native XML with captured intent/libraries or a golden netlist; qualified virtual power markers omitted by XML are listed in the report ([details](netlist-parity.md)) | Enclosing run deadline |
 
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
@@ -135,8 +135,9 @@ The [pinned native feed](catalog.md#pinned-jlcparts-acquisition) is acquired on 
 host before capture; its explicit stocked-parts profile excludes zero-stock and
 unsupported-category rows. A missing row cannot establish upstream unavailability.
 The [full-feed runtime qualification](catalog.md#full-feed-runtime-qualification)
-exceeded the 120-second helper ceiling on the busy host; that measurement is not
-qualification of a full-feed sealed check within its default budget.
+records the private full-feed measurements and reproduction command. Both helpers
+now declare a 600-second ceiling because complete rederivation exceeded 120 seconds;
+the enclosing run deadline can shorten it. A timeout or absent report remains unknown.
 
 ## Approved parts membership
 
