@@ -109,7 +109,7 @@ def evaluate(root, manifest_path, native_xml, schematic_paths):
 
 
 def capability(params, files, inputs, scope, check_id):
-    """Root integration hook: predicate plus complete immutable source closure."""
+    """Describe the predicate and complete immutable source closure."""
     from .catalog import exact_fields
     exact_fields(params, ('manifest', 'netlist_check', 'requirement_id'))
     specs = scope.get('checks', [])
@@ -135,7 +135,7 @@ def capability(params, files, inputs, scope, check_id):
 
 
 def check_parts_subset(ctx):
-    """Existing coordinator/executor adapter; root registers this explicitly."""
+    """Evaluate captured membership through the coordinator executor."""
     from .checks import CheckError, verified_hierarchy
     from .datasheet_facts import prerequisite
     from .storage import read_json

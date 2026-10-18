@@ -1,4 +1,4 @@
-# Captured parts membership proposals
+# Approved-parts manifest and native membership
 
 `agent-ee.parts/1` declares allowed physical instances and their captured
 catalog/CAD identities. The `parts_subset` adapter evaluates exactly
@@ -125,13 +125,14 @@ retained report and XML; the report's own hash is not an approval mechanism.
 Only a complete execution exposes the single evaluated predicate. Unknown
 coverage cannot establish a defect witness.
 
-## Root integration and remaining acceptance
+## Scope and campaign integration
 
-Production registry, baseline, stage and reference-block changes are deliberately
-owned by root. Register `check_parts_subset` in `checks.CHECK_FUNCS`; use
-`capability` in `capabilities.describe_check` with an ordered `netlist`
-prerequisite and `can_evaluate_bound=True`. Freeze its returned closure for both
-scope/2 and scope/3. The params object is exactly:
+`parts_subset` is registered in the production check runner and capability
+registry. Its single predicate can cover a scope/3 acceptance requirement.
+Declare an earlier `netlist` check and capture the manifest and all its
+provenance dependencies. Both scope/2 and scope/3 freeze that closure in
+`baseline.json.files`, including the manifest SHA256. The params object is
+exactly:
 
 ```json
 {
@@ -142,14 +143,17 @@ scope/2 and scope/3. The params object is exactly:
 ```
 
 Map the check to one baseline requirement whose source path and locator equal
-`declaration_source`. The capability rejects mutable closure members. Root must
-also preserve the existing campaign baseline comparison so changed manifest
-bytes cannot be adopted mid-run. The focused tests install the pending registry
-and descriptor hooks only in their own process, then use actual native tools,
-sandboxing, coordinator seals and public `verify`. This demonstrates the seam;
-it does not claim production registration has landed.
+`declaration_source`. The capability rejects mutable closure members. Changing any manifest byte
+changes the baseline ID, even if its dependencies stay identical. The campaign
+rejects a writer changing a baseline source and refuses a fresh capture whose
+baseline differs from the campaign's baseline before verification starts.
 
-Coordinator 423 owns `generate.py` and migration from
+Focused tests use production registration, actual native tools, sandboxing,
+coordinator seals and public `verify`. They cover exact footprint diagnostics,
+missing required selectors, failed/missing native prerequisites, both baseline
+versions, rejected campaign replacements and retained-evidence tampering.
+
+The experimental `generate.py` entry point still needs migration from
 `agent-ee.rung1-parts-manifest/0-experimental`. This validator rejects that
 experimental schema. Rung 1's real J1 lacks qualified LCSC/MPN/provenance, so the
 actual R/C/header stage remains unknown. Synthetic owned fixtures establish

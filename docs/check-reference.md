@@ -27,6 +27,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json`; [snapshot integrity](catalog.md) only | 120 s |
+| `parts_subset` | `/usr/bin/python3 -m agent_ee.parts_subset /candidate MANIFEST /evidence/netlist/design.xml --schematic SHEETS --out /work/parts-subset.json`; [captured membership](approved-parts.md) | 120 s |
 | `part_selection` | Same runner with `part_selection` and `--requirements /candidate/REQUIREMENTS`; [declared catalog constraints](part-selection.md) | 120 s |
 | `netlist_parity` | Coordinator compares full native XML with captured intent/libraries or a golden netlist; qualified virtual power markers omitted by XML are listed in the report ([details](netlist-parity.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
@@ -69,6 +70,23 @@ and reason `no candidate`. Invalid requirements or snapshots return
 `execution: failed`, `outcome: unknown`. An unparseable attribute excludes its
 row as unknown. These results establish consistency with captured catalog
 claims; upstream authenticity and datasheet correctness require separate evidence.
+
+## Approved parts membership
+
+The [approved-parts manifest](approved-parts.md) uses `agent-ee.parts/1` and
+pins catalog, selection, CAD and datasheet provenance. The `parts_subset` check
+takes exactly `manifest`, `netlist_check` and `requirement_id`. Its requirement
+must point to the manifest's captured declaration source. The full dependency
+closure is immutable in scope/2 and scope/3.
+
+Every populated native instance must match its declared symbol, footprint and
+supplier identity, and every required sheet/reference selector must be present.
+A mismatch or absent required selector is a defect; footprint findings retain
+the reference and both footprint values. Missing or failed native evidence,
+missing identity data and required unavailable provenance leave coverage unknown.
+The per-reference table is retained in `work/CHECK_ID/parts-subset.json` and the
+coordinator seals the check and its prerequisite XML. The predicate establishes
+declared membership, not approval authenticity or component suitability.
 
 ## Hierarchy validation
 
