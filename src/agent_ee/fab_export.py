@@ -42,6 +42,7 @@ the partial staging is renamed `fab.incomplete/` and no manifest is written.
 """
 
 import csv
+import hashlib
 import io
 import json
 import math
@@ -56,8 +57,16 @@ from pathlib import Path
 from .storage import digest, read_json, write_json
 
 SCHEMA = 'agent-ee.fab-manifest/1'
-BOM_HEADER = 'Designator,Footprint,Quantity,Value,Manufacturer,Partnumber,"LCSC Part #"'
+TEMPLATE_SCHEMA = 'agent-ee.jlc-templates/1'
+JLC_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / 'fixtures/fab-export'
+BOM_HEADER = 'Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,"LCSC Part #"'
+BOM_COLUMNS = ['Designator', 'Footprint', 'Quantity', 'Comment', 'Manufacturer', 'Partnumber', 'LCSC Part #']
+BOM_HEADER_SHA256 = '6d7edfe25e808edf40eedc3230e306b58e6e04cc91840c54f191c547f489b850'
+BOM_TEMPLATE_SHA256 = '52543dd3f30213f999e06bae752e3156f1a9d28ae9bed7a1ff80045dedc6a424'
 CPL_HEADER = 'Designator,Mid X,Mid Y,Layer,Rotation'
+CPL_COLUMNS = ['Designator', 'Mid X', 'Mid Y', 'Layer', 'Rotation']
+CPL_HEADER_SHA256 = 'a0c9c7a05b6e7da703ac94f05571e80788acd7f407de2447a2d3de5603988d0f'
+CPL_TEMPLATE_SHA256 = 'b0a48546b45eb5d72bb22499b5ba3e50311d45cb66a0ca94674027754b8af9a1'
 POS_HEADER = ['Ref', 'Val', 'Package', 'PosX', 'PosY', 'Rot', 'Side']
 SANDBOX_PATH = '/usr/local/bin:/usr/bin:/bin'
 LCSC_RE = re.compile(r'^C[1-9][0-9]*$')
@@ -567,6 +576,85 @@ def write_zip(path, members):
             archive.writestr(info, Path(source).read_bytes(), compresslevel=9)
 
 
+def jlc_template_header(source):
+    """Extract and hash the header and raw bytes of a captured JLCPCB CSV template."""
+    data = source if isinstance(source, bytes) else Path(source).read_bytes()
+    if not data:
+        raise ValueError('JLC template is empty')
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError as exc:
+        raise ValueError('JLC template is not UTF-8') from exc
+    lines = text.splitlines()
+    if len(lines) < 2:
+        raise ValueError('JLC template must contain a header line and at least one sample row')
+    header = lines[0]
+    rows = list(csv.reader(io.StringIO(text)))
+    if len(rows) < 2 or not rows[0] or any(not col for col in rows[0]):
+        raise ValueError('JLC template header has empty column names')
+    columns = rows[0]
+    if any(len(row) != len(columns) for row in rows[1:]):
+        raise ValueError('JLC template sample row column count does not match header')
+    return {
+        'header': header,
+        'columns': columns,
+        'sha256': hashlib.sha256(header.encode('utf-8')).hexdigest(),
+        'template_sha256': hashlib.sha256(data).hexdigest(),
+    }
+
+
+def verify_jlc_templates(template_dir=JLC_TEMPLATE_DIR):
+    """Verify captured JLCPCB BOM and CPL template files against their recorded hashes."""
+    root = Path(template_dir)
+    meta_path = root / 'jlc-templates.json'
+    if not meta_path.is_file() or meta_path.is_symlink():
+        raise ValueError(f'missing JLC template metadata: {meta_path}')
+    meta = read_json(meta_path)
+    if not isinstance(meta, dict) or meta.get('schema') != TEMPLATE_SCHEMA:
+        raise ValueError(f'JLC template metadata must have schema {TEMPLATE_SCHEMA!r}')
+    templates = meta.get('templates')
+    if not isinstance(templates, dict) or set(templates) != {'bom', 'cpl'}:
+        raise ValueError('JLC template metadata must declare exactly bom and cpl templates')
+    verified = {}
+    for kind in ('bom', 'cpl'):
+        entry = templates[kind]
+        if not isinstance(entry, dict) or set(entry) != {'path', 'header', 'columns', 'sha256', 'template_sha256'}:
+            raise ValueError(f'JLC {kind} template metadata has missing or extra keys')
+        rel = entry['path']
+        if not isinstance(rel, str) or '/' in rel or '\\' in rel or rel in ('.', '..'):
+            raise ValueError(f'JLC {kind} template path {rel!r} must be a plain filename')
+        path = root / rel
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f'JLC {kind} template file is missing: {path}')
+        parsed = jlc_template_header(path.read_bytes())
+        if parsed['template_sha256'] != entry['template_sha256']:
+            raise ValueError(f"JLC {kind} template sha256 {parsed['template_sha256']} != "
+                             f"expected {entry['template_sha256']}")
+        if parsed['sha256'] != entry['sha256']:
+            raise ValueError(f"JLC {kind} header sha256 {parsed['sha256']} != expected {entry['sha256']}")
+        if parsed['header'] != entry['header'] or parsed['columns'] != entry['columns']:
+            raise ValueError(f'JLC {kind} template header {parsed["header"]!r} disagrees with metadata')
+        verified[kind] = {'path': rel, **parsed}
+    return verified
+
+
+def header_records(template_dir=JLC_TEMPLATE_DIR):
+    """Return the verified BOM and CPL header records written into the fab manifest."""
+    templates = verify_jlc_templates(template_dir)
+    expected = {
+        'bom': (BOM_HEADER, BOM_COLUMNS, BOM_HEADER_SHA256, BOM_TEMPLATE_SHA256),
+        'cpl': (CPL_HEADER, CPL_COLUMNS, CPL_HEADER_SHA256, CPL_TEMPLATE_SHA256),
+    }
+    records = {}
+    for kind, (header, columns, header_sha, template_sha) in expected.items():
+        actual = templates[kind]
+        if (actual['header'] != header or actual['columns'] != columns
+                or actual['sha256'] != header_sha or actual['template_sha256'] != template_sha):
+            raise ValueError(f'exported {kind.upper()} header disagrees with captured JLC template')
+        records[kind] = {k: actual[k] for k in ('header', 'columns', 'sha256', 'template_sha256')}
+    return records
+
+
 def inventory(fab):
     """sha256 of every regular file under fab/ except manifest.json."""
     files = {}
@@ -585,6 +673,8 @@ def verify_manifest(fab, manifest):
     """Recompute the staging inventory; raise ValueError on any disagreement."""
     if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
         raise ValueError('not an agent-ee.fab-manifest/1')
+    if 'headers' in manifest and manifest['headers'] != header_records():
+        raise ValueError('manifest headers do not match captured JLC templates')
     actual = inventory(fab)
     if actual != manifest.get('files'):
         listed = manifest.get('files') or {}
@@ -934,12 +1024,15 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
         raise _error('malformed', f'BOM designators {bom_refs} or CPL designators {cpl_refs} differ from the '
                                   f'board assembled footprints {assembled} (non-DNP less excluded {excluded_refs})')
     try:
+        headers = header_records()
         files = inventory(fab)
     except ValueError as exc:
         raise _error('malformed', str(exc)) from exc
+    details['headers'] = headers
     manifest = {
         'schema': SCHEMA, 'candidate_id': ctx.manifest['candidate_id'],
         'board_path': board_rel, 'board_sha256': board_sha, 'tool': tool, 'files': files,
+        'headers': headers,
         'copper_layers': facts['copper_layers'], 'enabled_fab_layers': layers,
         'drill': roles, 'designators': {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded,
                                         'exclusion_rule': rule},

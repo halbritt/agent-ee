@@ -403,9 +403,11 @@ class StagingReaderTests(unittest.TestCase):
                      'Designator,Mid X,Mid Y,Layer,Rotation\nU1,1,0,Inner,0\n'):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 read_native_cpl(text)
-        bom = ('Designator,Footprint,Quantity,Value,Manufacturer,Partnumber,LCSC Part #\n'
+        bom = ('Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,LCSC Part #\n'
                '"R1,R2",lib:R,2,10k,M,P,C1\nU1,lib:U,1,x,M,P,\n')
         self.assertEqual(read_bom_bindings(bom), {'R1': 'C1', 'R2': 'C1', 'U1': ''})
+        with self.assertRaises(ValueError):
+            read_bom_bindings(bom.replace('Comment', 'Value'))
         with self.assertRaises(ValueError):
             read_bom_bindings(bom + 'R1,lib:R,1,10k,M,P,C1\n')
 

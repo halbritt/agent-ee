@@ -72,7 +72,7 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | Board parse differs from the sealed geometry; geometry checks disagree; a non-board-only footprint is not in the netlist; a netlist component has no footprint and is not excluded from the board; duplicate netlist references; netlist XML and its connectivity record disagree | `malformed`, `unknown` |
 | A board-only footprint that would be assembled (no DNP or BOM/position exclusion) | `unsupported`, `unknown` (a gap) |
 | Staging directory absent or empty although the export reported ok | `malformed`, `unknown` |
-| Manifest fields not exactly the fab-manifest/1 set; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry; `exclusion_rule` is unknown or not the captured export rule; `excluded` is not the set re-derived from the sealed netlist and board, or the sources do not support it | `malformed`, `unknown` |
+| Manifest fields not exactly the fab-manifest/1 set; `headers` differing from the captured JLCPCB templates; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry; `exclusion_rule` is unknown or not the captured export rule; `excluded` is not the set re-derived from the sealed netlist and board, or the sources do not support it | `malformed`, `unknown` |
 | A staged file not in the manifest, a manifest file not staged, a hash mismatch, an empty file, a symlink or other non-regular file; `bom.csv`, `cpl.csv`, `gerbers.zip` or `pcb_summary.json` absent | `malformed`, `unknown` |
 | Manifest copper count or enabled layers differ from the board. The enabled layers must be every board copper layer, `F.Mask`, `B.Mask` and `Edge.Cuts`, plus optional paste and silkscreen layers. | `malformed`, `unknown` |
 | Fewer Gerber plots than enabled fab layers; an enabled layer with no plot whose `FileFunction` names it; two plots for one layer | `malformed`, `unknown` |
@@ -80,7 +80,7 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | Excellon files other than exactly the manifest PTH and NPTH files; a `MixedPlating` file; a plating attribute that contradicts its role; an unrecognized file in `drill/` | `malformed`, `unknown` |
 | An Excellon file has no plating attribute | `unsupported`, `unknown` |
 | `gerbers.zip` unreadable, or its members are not exactly the staged `gerbers/` and `drill/` bytes | `malformed`, `unknown` |
-| CSV not UTF-8, wrong header, wrong cell count, no rows, broken quoting, or a non-finite CPL number | `malformed`, `unknown` |
+| CSV not UTF-8, header not equal to the captured JLCPCB BOM/CPL template (`Comment` column in BOM), wrong cell count, no rows, broken quoting, or a non-finite CPL number | `malformed`, `unknown` |
 | Compressed range (`R1-R4`), duplicate, empty or invalid designator; BOM quantity differs from its designator count; empty or invalid LCSC number; non-ASCII BOM cell | `ok`, `defect` |
 | A designator missing from the BOM, the CPL or the assembled board set. The defect names the designator and each missing side. | `ok`, `defect` |
 | A designator whose sealed netlist DNP state differs from its board footprint DNP state, in either direction (`designator_parity`) | `ok`, `defect` |

@@ -16,11 +16,13 @@ from agent_ee.baseline import compile_baseline, freeze_evidence, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import CheckError, Ctx, run_checks
-from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, assembled_parts,
-                                 assembly_exclusions, board_facts, bom_rows,
-                                 check_fab_export, cpl_rows, inventory, normalise, render_bom,
-                                 scan_sexpr, validate_params, variant_parts, verify_manifest, write_zip,
-                                 GERBER_TIMES, VARIANT_BOM_FIELDS)
+from agent_ee.fab_export import (BOM_COLUMNS, BOM_HEADER, BOM_HEADER_SHA256, BOM_TEMPLATE_SHA256,
+                                 CPL_COLUMNS, CPL_HEADER, CPL_HEADER_SHA256, CPL_TEMPLATE_SHA256,
+                                 GERBER_TIMES, SCHEMA, VARIANT_BOM_FIELDS, ascii_text, assembled_parts,
+                                 assembly_exclusions, board_facts, bom_rows, check_fab_export, cpl_rows,
+                                 header_records, inventory, jlc_template_header, normalise, render_bom,
+                                 render_cpl, scan_sexpr, validate_params, variant_parts,
+                                 verify_jlc_templates, verify_manifest, write_zip)
 from agent_ee.storage import digest, read_json, write_json
 try:
     from toolchain import require_toolchain
@@ -62,6 +64,63 @@ def part(lcsc='C900001', value='1µF', footprint='lib:C', maker='Maker', number=
 
 
 class BomTests(unittest.TestCase):
+    def test_bom_header_matches_jlc_template(self):
+        template = jlc_template_header(FIXTURE / 'jlc-bom-template.csv')
+        self.assertEqual(template['header'], BOM_HEADER)
+        self.assertEqual(template['header'],
+                         'Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,"LCSC Part #"')
+        self.assertEqual(template['columns'], BOM_COLUMNS)
+        self.assertIn('Comment', template['columns'])
+        self.assertNotIn('Value', template['columns'])
+        self.assertEqual(template['sha256'], BOM_HEADER_SHA256)
+        self.assertEqual(template['template_sha256'], BOM_TEMPLATE_SHA256)
+        rows, flagged = bom_rows({'C1': part()})
+        self.assertEqual(flagged, [])
+        rendered = render_bom(rows)
+        self.assertEqual(rendered.splitlines()[0], template['header'])
+        self.assertEqual(next(csv.reader([rendered.splitlines()[0]])), template['columns'])
+        self.assertEqual(header_records()['bom'],
+                         {k: template[k] for k in ('header', 'columns', 'sha256', 'template_sha256')})
+
+    def test_changed_template_byte_changes_expected_header_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('jlc-bom-template.csv', 'jlc-cpl-template.csv', 'jlc-templates.json'):
+                shutil.copyfile(FIXTURE / name, root / name)
+            self.assertEqual(header_records(root), header_records())
+            bom_path = root / 'jlc-bom-template.csv'
+            original_bom = bom_path.read_bytes()
+            mutated_header = original_bom.replace(b'Comment', b'Value  ', 1)
+            self.assertNotEqual(mutated_header, original_bom)
+            bom_path.write_bytes(mutated_header)
+            changed = jlc_template_header(bom_path)
+            self.assertNotEqual(changed['sha256'], BOM_HEADER_SHA256)
+            self.assertNotEqual(changed['template_sha256'], BOM_TEMPLATE_SHA256)
+            with self.assertRaisesRegex(ValueError, 'template sha256'):
+                verify_jlc_templates(root)
+            meta = read_json(root / 'jlc-templates.json')
+            meta['templates']['bom']['template_sha256'] = changed['template_sha256']
+            write_json(root / 'jlc-templates.json', meta)
+            with self.assertRaisesRegex(ValueError, 'header sha256'):
+                verify_jlc_templates(root)
+            # Restoring the metadata and changing a byte in the CPL header also changes its header hash.
+            shutil.copyfile(FIXTURE / 'jlc-templates.json', root / 'jlc-templates.json')
+            bom_path.write_bytes(original_bom)
+            cpl_path = root / 'jlc-cpl-template.csv'
+            original_cpl = cpl_path.read_bytes()
+            cpl_path.write_bytes(original_cpl.replace(b'Rotation', b'Angle   ', 1))
+            changed_cpl = jlc_template_header(cpl_path)
+            self.assertNotEqual(changed_cpl['sha256'], CPL_HEADER_SHA256)
+            self.assertNotEqual(changed_cpl['template_sha256'], CPL_TEMPLATE_SHA256)
+            with self.assertRaisesRegex(ValueError, 'template sha256'):
+                verify_jlc_templates(root)
+            # Changing a sample-row byte changes the template hash and fails template verification.
+            cpl_path.write_bytes(original_cpl)
+            bom_path.write_bytes(original_bom.replace(b'C900001', b'C900002', 1))
+            self.assertNotEqual(jlc_template_header(bom_path)['template_sha256'], BOM_TEMPLATE_SHA256)
+            with self.assertRaisesRegex(ValueError, 'template sha256'):
+                verify_jlc_templates(root)
+
     def test_grouped_by_lcsc_natural_sorted_counted_and_sanitised(self):
         rows, flagged = bom_rows({'C10': part(), 'C2': part(), 'C1': part(),
                                   'R2': part('C900047', '4.7kΩ', 'lib:R', number='PN-R'),
@@ -70,7 +129,7 @@ class BomTests(unittest.TestCase):
         text = render_bom(rows)
         self.assertEqual(text.splitlines()[0], BOM_HEADER)
         parsed = list(csv.reader(io.StringIO(text)))
-        self.assertEqual(parsed[0], ['Designator', 'Footprint', 'Quantity', 'Value', 'Manufacturer',
+        self.assertEqual(parsed[0], ['Designator', 'Footprint', 'Quantity', 'Comment', 'Manufacturer',
                                      'Partnumber', 'LCSC Part #'])
         self.assertEqual(parsed[1], ['C1,C2,C10', 'lib:C', '3', '1uF', 'Maker', 'PN-1', 'C900001'])
         self.assertEqual(parsed[2], ['R2,R10', 'lib:R', '2', '4.7kohm', 'Maker', 'PN-R', 'C900047'])
@@ -103,6 +162,20 @@ class CplTests(unittest.TestCase):
            '"R2","4.7kΩ","R",116.000000,-114.000000,90.000000,bottom\n'
            '"C10","1µF","C",1.5,-2.25,0.000000,top\n"C2","x, y","C",3.0,-4.0,180.0,top\n')
 
+    def test_cpl_header_matches_jlc_template(self):
+        template = jlc_template_header(FIXTURE / 'jlc-cpl-template.csv')
+        self.assertEqual(template['header'], CPL_HEADER)
+        self.assertEqual(template['header'], 'Designator,Mid X,Mid Y,Layer,Rotation')
+        self.assertEqual(template['columns'], CPL_COLUMNS)
+        self.assertEqual(template['sha256'], CPL_HEADER_SHA256)
+        self.assertEqual(template['template_sha256'], CPL_TEMPLATE_SHA256)
+        rows = cpl_rows(self.POS)
+        rendered = render_cpl(rows)
+        self.assertEqual(rendered.splitlines()[0], template['header'])
+        self.assertEqual(next(csv.reader([rendered.splitlines()[0]])), template['columns'])
+        self.assertEqual(header_records()['cpl'],
+                         {k: template[k] for k in ('header', 'columns', 'sha256', 'template_sha256')})
+
     def test_native_position_rows_rewritten_to_jlc_header_without_rotation_policy(self):
         rows = cpl_rows(self.POS)
         self.assertEqual(rows, [['C2', '3.0', '-4.0', 'Top', '180.0'],
@@ -119,6 +192,18 @@ class CplTests(unittest.TestCase):
                      'Ref,Val,Package,PosX,PosY,Rot,Side\n"R 1",v,p,0,0,0,top\n'):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 cpl_rows(text)
+
+
+def test_bom_header_matches_jlc_template():
+    BomTests('test_bom_header_matches_jlc_template').test_bom_header_matches_jlc_template()
+
+
+def test_cpl_header_matches_jlc_template():
+    CplTests('test_cpl_header_matches_jlc_template').test_cpl_header_matches_jlc_template()
+
+
+def test_changed_template_byte_changes_expected_header_hash():
+    BomTests('test_changed_template_byte_changes_expected_header_hash').test_changed_template_byte_changes_expected_header_hash()
 
 
 class BoardFactTests(unittest.TestCase):
@@ -399,8 +484,10 @@ class NativeFabExportTests(unittest.TestCase):
         candidate = read_json(run / 'candidate.json')
         self.assertEqual(manifest['schema'], 'agent-ee.fab-manifest/1')
         self.assertEqual(set(manifest), {'schema', 'candidate_id', 'board_path', 'board_sha256', 'tool',
-                                         'files', 'copper_layers', 'enabled_fab_layers', 'drill',
+                                         'files', 'headers', 'copper_layers', 'enabled_fab_layers', 'drill',
                                          'designators', 'generated_utc'})
+        self.assertEqual(manifest['headers'], header_records())
+        self.assertEqual(result['details']['headers'], header_records())
         self.assertEqual(manifest['candidate_id'], candidate['candidate_id'])
         self.assertEqual(manifest['board_sha256'], candidate['files']['design/fab.kicad_pcb'])
         self.assertEqual(manifest['board_sha256'], digest(FIXTURE / 'fab.kicad_pcb'))

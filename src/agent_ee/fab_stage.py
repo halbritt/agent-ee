@@ -9,7 +9,7 @@ from . import cpl_rotation
 from .baseline import freeze_evidence, verify_evidence
 from .candidate import capture, source_manifest
 from .checks import run_checks
-from .fab_export import inventory, verify_manifest
+from .fab_export import JLC_TEMPLATE_DIR, inventory, verify_manifest
 from .fab_package import ROTATION_STATUSES, preview_obligations
 from .storage import digest, read_json, write_json
 
@@ -236,7 +236,8 @@ def step(source_root, board, schematic, bom_variant=None):
                      '-m', 'agent_ee.fab_stage',
                      '--board', board, '--schematic', schematic]
                     + (['--bom-variant', bom_variant] if bom_variant is not None else []),
-            'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'}],
+            'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'},
+                       {'source': str(JLC_TEMPLATE_DIR.absolute()), 'at': '/tool/fixtures/fab-export'}],
             'source': '/tool/agent-ee', 'version_argv': ['/usr/bin/kicad-cli', 'version'],
             # Existing receipt contract requires a write; the input board remains identical.
             'writes': {board: f'design/{board}'},

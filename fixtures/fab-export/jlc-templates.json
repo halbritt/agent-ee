@@ -1,0 +1,35 @@
+{
+  "captured_on": "2026-10-18",
+  "provenance": "Captured JLCPCB PCBA BOM and CPL header format templates (AGENTEE-196); synthetic sample rows owned by agent-ee.",
+  "schema": "agent-ee.jlc-templates/1",
+  "templates": {
+    "bom": {
+      "columns": [
+        "Designator",
+        "Footprint",
+        "Quantity",
+        "Comment",
+        "Manufacturer",
+        "Partnumber",
+        "LCSC Part #"
+      ],
+      "header": "Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,\"LCSC Part #\"",
+      "path": "jlc-bom-template.csv",
+      "sha256": "6d7edfe25e808edf40eedc3230e306b58e6e04cc91840c54f191c547f489b850",
+      "template_sha256": "52543dd3f30213f999e06bae752e3156f1a9d28ae9bed7a1ff80045dedc6a424"
+    },
+    "cpl": {
+      "columns": [
+        "Designator",
+        "Mid X",
+        "Mid Y",
+        "Layer",
+        "Rotation"
+      ],
+      "header": "Designator,Mid X,Mid Y,Layer,Rotation",
+      "path": "jlc-cpl-template.csv",
+      "sha256": "a0c9c7a05b6e7da703ac94f05571e80788acd7f407de2447a2d3de5603988d0f",
+      "template_sha256": "b0a48546b45eb5d72bb22499b5ba3e50311d45cb66a0ca94674027754b8af9a1"
+    }
+  }
+}

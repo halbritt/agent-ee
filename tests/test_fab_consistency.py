@@ -31,12 +31,16 @@ from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import parse_xml_netlist, run_checks
 from agent_ee.executor import SANDBOX_PATH, execute
+from agent_ee.fab_export import header_records
 from agent_ee.findings import adjudicate, collect_findings
 from agent_ee.kicad_embedded import decompress, kicad_checksum, records, verify
 from agent_ee.models3d import STOCK_REPOSITORY, STOCK_REVISIONS
 from agent_ee.storage import digest, read_json, write_json
 from agent_ee.symbol_library import parse_sexpr
-from toolchain import require_toolchain
+try:
+    from toolchain import require_toolchain
+except ImportError:
+    from tests.toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 RC_CONTROL = REPO / 'fixtures/rc/control'
@@ -48,7 +52,7 @@ FUNCTIONS = {'F.Cu': 'Copper,L1,Top', 'B.Cu': 'Copper,L2,Bot', 'F.Mask': 'Solder
              'F.SilkS': 'Legend,Top', 'B.SilkS': 'Legend,Bot', 'Edge.Cuts': 'Profile,NP'}
 EXTENSIONS = {'F.Cu': 'gtl', 'B.Cu': 'gbl', 'F.Mask': 'gts', 'B.Mask': 'gbs', 'F.Paste': 'gtp',
               'B.Paste': 'gbp', 'F.SilkS': 'gto', 'B.SilkS': 'gbo', 'Edge.Cuts': 'gm1'}
-BOM_HEAD = 'Designator,Footprint,Quantity,Value,Manufacturer,Partnumber,"LCSC Part #"\n'
+BOM_HEAD = 'Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,"LCSC Part #"\n'
 BOM = BOM_HEAD + ('"R1,R2",R_0603,2,10k,SynthCo,SR-10K,C100001\n'
                   'C1,C_0603,1,100n,SynthCo,SC-100N,C100002\n'
                   'U1,SOT5,1,REG,SynthCo,SU-REG,C100003\n')
@@ -312,6 +316,7 @@ class FabCase(unittest.TestCase):
             value = {'schema': 'agent-ee.fab-manifest/1', 'candidate_id': ctx.manifest['candidate_id'],
                      'board_path': board_rel, 'board_sha256': ctx.manifest['files'][board_rel], 'tool': tool,
                      'files': {rel: hashlib.sha256(data).hexdigest() for rel, data in content.items()},
+                     'headers': header_records(),
                      'copper_layers': 2, 'enabled_fab_layers': list(LAYERS),
                      'drill': {'pth': 'board-PTH.drl', 'npth': 'board-NPTH.drl'},
                      'designators': {'board_non_dnp': list(claimed), 'excluded': [], 'exclusion_rule': None},
@@ -663,6 +668,7 @@ class FabConsistencyTests(FabCase):
     def test_unparseable_csv_is_malformed(self):
         variants = {
             'header': ('bom.csv', BOM.replace('"LCSC Part #"', 'LCSC'), 'header must be exactly'),
+            'value_header': ('bom.csv', BOM.replace('Comment', 'Value'), 'header must be exactly'),
             'cells': ('cpl.csv', CPL + 'U9,1,2,Top\n', 'has 4 cells'),
             'number': ('cpl.csv', CPL.replace('22,-10,Top', 'twenty,10,Top'), 'not a finite number'),
             'infinite': ('cpl.csv', CPL.replace('22,-10,Top', '1e999,10,Top'), 'not a finite number'),
@@ -677,6 +683,8 @@ class FabConsistencyTests(FabCase):
         files = package()
         files['bom.csv'] = BOM.encode().replace(b'SynthCo,SR-10K', b'SynthCo\xff,SR-10K')
         self.assertStatus(self.run_case(files=files), 'malformed', 'unknown', 'does not parse')
+        self.assertStatus(self.run_case(manifest_edit=lambda m: m['headers']['bom'].update(sha256='0' * 64)),
+                          'malformed', 'unknown', 'manifest headers do not match captured JLC templates')
 
     def test_non_ascii_bom_cell_is_defect(self):
         files = package()
