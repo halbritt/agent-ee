@@ -1,0 +1,141 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Original RC seeded-placement stage fixture",
+  "scope": "Checks-only stage boundary qualification: seeded-placement; expected initial outcomes are declared in requirements/seeded-placement.md.",
+  "limitations": [
+    "Original alternative, not a derivative of the unresolved FOME-MC control.",
+    "No simulation, manufacturing qualification or complete campaign is claimed. Zone fill is graded as saved.",
+    "Expected seeded defects remain defects; fixture expectations never invert a production grade."
+  ],
+  "inputs": [
+    {
+      "path": "seeded-placement",
+      "at": "project"
+    },
+    {
+      "path": "requirements",
+      "at": "requirements"
+    }
+  ],
+  "schematic": "project/rc_stage.kicad_sch",
+  "board": "project/rc_stage.kicad_pcb",
+  "mutable_inputs": [
+    "project/rc_stage.kicad_pcb"
+  ],
+  "requirements": [
+    "requirements/seeded-placement.md"
+  ],
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "drc-placement",
+      "kind": "drc",
+      "params": {
+        "projection": "placement-stage/1"
+      }
+    },
+    {
+      "id": "courtyard",
+      "kind": "placement",
+      "params": {
+        "criterion": "courtyard-overlap/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "containment",
+      "kind": "placement",
+      "params": {
+        "criterion": "outline-containment/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "drc-final",
+      "kind": "drc"
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-erc",
+        "statement": "Native ERC has no issues.",
+        "source": {
+          "path": "requirements/seeded-placement.md",
+          "locator": "R-erc"
+        },
+        "checks": [
+          "erc"
+        ]
+      },
+      {
+        "id": "R-netlist",
+        "statement": "Native XML exports the three-component RC network.",
+        "source": {
+          "path": "requirements/seeded-placement.md",
+          "locator": "R-netlist"
+        },
+        "checks": [
+          "netlist"
+        ]
+      },
+      {
+        "id": "R-drc-placement",
+        "statement": "Native placement violations and schematic parity have no issues; unrouted connectivity is ungraded.",
+        "source": {
+          "path": "requirements/seeded-placement.md",
+          "locator": "R-drc-placement"
+        },
+        "checks": [
+          "drc-placement"
+        ]
+      },
+      {
+        "id": "R-courtyard",
+        "statement": "Mounting-side courtyards do not overlap.",
+        "source": {
+          "path": "requirements/seeded-placement.md",
+          "locator": "R-courtyard"
+        },
+        "checks": [
+          "courtyard"
+        ]
+      },
+      {
+        "id": "R-containment",
+        "statement": "Every courtyard is wholly inside the board outline.",
+        "source": {
+          "path": "requirements/seeded-placement.md",
+          "locator": "R-containment"
+        },
+        "checks": [
+          "containment"
+        ]
+      },
+      {
+        "id": "R-drc-final",
+        "statement": "Native DRC including connectivity and schematic parity has no issues.",
+        "source": {
+          "path": "requirements/seeded-placement.md",
+          "locator": "R-drc-final"
+        },
+        "checks": [
+          "drc-final"
+        ]
+      }
+    ],
+    "targets": [
+      "requirements/seeded-placement.md"
+    ],
+    "reference_architectures": [
+      "requirements/seeded-placement.md"
+    ]
+  }
+}

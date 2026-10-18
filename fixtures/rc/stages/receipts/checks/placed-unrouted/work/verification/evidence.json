@@ -1,0 +1,60 @@
+{
+  "baseline_id": "aa364d5ac09e969c3149714bba0af57d02a8db7b9c9d065317aab6bd68fff141",
+  "candidate_id": "ba2a6d691277a395e1bea76f6cc8a1d18739f789f62f479cca83399ff8c60028",
+  "checks": {
+    "containment": {
+      "artifacts": {
+        "work/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+        "work/containment/execution.json": "d49d1bd54cfc72a8319ba932d3a939d0d63495931a32c72a91f308086a6d75b9",
+        "work/containment/placement-judgment.json": "4d94150405478bfedc7299c3a7d22885f4bd4d2c9fe54359b41fc1ed0a0851b9",
+        "work/containment/placement-probe.json": "f2216dca9aa3432c34a46af1dfe95c69e9f8b84ceebcfaf1dc3839d51789adfe",
+        "work/drc-placement/drc.json": "ad206bac56ec994a19c3ab58f02896589ec5ed21365335939f0f01e115ea290c"
+      },
+      "result": "95763a601e507329b58f3a2ebde5d9b8f6f08ff655d87c0de8dd75cc283f0929"
+    },
+    "courtyard": {
+      "artifacts": {
+        "work/courtyard/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+        "work/courtyard/execution.json": "36e4bdb4c38424c3100befa3f35b186333d07f5f545a88dc14f218ebd58212c1",
+        "work/courtyard/placement-judgment.json": "7a95491f5c717b5759daec27ff5be2480001a8f947fda50f4a469d1ce516098c",
+        "work/courtyard/placement-probe.json": "f2216dca9aa3432c34a46af1dfe95c69e9f8b84ceebcfaf1dc3839d51789adfe",
+        "work/drc-placement/drc.json": "ad206bac56ec994a19c3ab58f02896589ec5ed21365335939f0f01e115ea290c"
+      },
+      "result": "ed6f0f6535d671232e236590051637416fe34f9c6e9f09c1071919c0583fd408"
+    },
+    "drc-final": {
+      "artifacts": {
+        "work/drc-final/console.log": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
+        "work/drc-final/drc.json": "c57ce8e21d42b855b2b06565eb7d4717cf9048f42d2922d5836be1b00a7f604f",
+        "work/drc-final/execution.json": "d716eb191d4e0192238b0fe9b07d7a1e77da3c2566b0a912621efe895c5db3b2"
+      },
+      "result": "114ba27ea5f046175a53d9fe6dbeec6d412ee94b521181008174655a424e2d10"
+    },
+    "drc-placement": {
+      "artifacts": {
+        "work/drc-placement/console.log": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
+        "work/drc-placement/drc.json": "ad206bac56ec994a19c3ab58f02896589ec5ed21365335939f0f01e115ea290c",
+        "work/drc-placement/execution.json": "e177c28c33d6b443d65b245a35bfffd4a24836889ab7f65de9dc5e19a36f27a7"
+      },
+      "result": "2103b6263a238311e526b7f882ae2b8f0c2338d10c9a1fd2737f80de4c24f3a1"
+    },
+    "erc": {
+      "artifacts": {
+        "work/erc/console.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+        "work/erc/erc.json": "6c3aaf2316ee019c9b25e7b6680a87fc9cf4a831e6b698028196e1f03471fd16",
+        "work/erc/execution.json": "bb8d8c5a0e915ebedb47062c068323089a8f5afc9ad9a674a64cf471540acd27"
+      },
+      "result": "04df55b34914a9e53676292ada808d1d811803f90ebc9266a008faa8c69789f4"
+    },
+    "netlist": {
+      "artifacts": {
+        "work/netlist/connectivity.json": "f1976992fdc6d8e309f8a031bb62b94207b6f388bc1c3c5779615975f3a9bc20",
+        "work/netlist/console.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "work/netlist/design.xml": "096c6f94a783fbf12825079a0a9768197b58f77d68d05c6fcc8857b30f9ae761",
+        "work/netlist/execution.json": "5563ac8947c19a42d51101259b2b88c07722d3aed33fa5b4f22695930fc7be1a"
+      },
+      "result": "ea7c90b026e07e78ca2ca69bb0b2fbd2c37a7c176274fd47ccc5a7d1102c3723"
+    }
+  },
+  "schema": "agent-ee.evidence/1"
+}

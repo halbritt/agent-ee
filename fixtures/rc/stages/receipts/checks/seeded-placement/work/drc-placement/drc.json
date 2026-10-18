@@ -1,0 +1,292 @@
+{
+    "$schema": "https://schemas.kicad.org/drc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-10-17T20:51:41",
+    "ignored_checks": [
+        {
+            "description": "Footprint has no courtyard defined",
+            "key": "missing_courtyard"
+        },
+        {
+            "description": "Track endpoint not centered on via",
+            "key": "track_not_centered_on_via"
+        },
+        {
+            "description": "Tuning profile track geometries",
+            "key": "tuning_profile_track_geometries"
+        },
+        {
+            "description": "Footprint doesn't match symbol's footprint filters",
+            "key": "footprint_filters_mismatch"
+        },
+        {
+            "description": "Footprint component type doesn't match footprint pads",
+            "key": "footprint_type_mismatch"
+        }
+    ],
+    "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+    ],
+    "kicad_version": "10.0.7",
+    "schematic_parity": [],
+    "source": "rc_stage.kicad_pcb",
+    "unconnected_items": [
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "PTH pad 1 [/IN] of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 10.0
+                    },
+                    "uuid": "02c3921a-f203-4b54-a495-916d5ef3eb88"
+                },
+                {
+                    "description": "Pad 1 [/IN] of R1 on F.Cu",
+                    "pos": {
+                        "x": 19.05,
+                        "y": 15.0
+                    },
+                    "uuid": "792f1dca-497f-4ad3-8c3f-240a57d6e6a1"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "PTH pad 2 [/OUT] of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 12.54
+                    },
+                    "uuid": "fac7f27e-b1f4-4cf9-9a80-9f8647b5d52d"
+                },
+                {
+                    "description": "Pad 1 [/OUT] of C1 on F.Cu",
+                    "pos": {
+                        "x": 19.05,
+                        "y": 16.5
+                    },
+                    "uuid": "eadefbc3-04f8-4a90-86c6-8458e9db9e11"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "Pad 1 [/OUT] of C1 on F.Cu",
+                    "pos": {
+                        "x": 19.05,
+                        "y": 16.5
+                    },
+                    "uuid": "eadefbc3-04f8-4a90-86c6-8458e9db9e11"
+                },
+                {
+                    "description": "Pad 2 [/OUT] of R1 on F.Cu",
+                    "pos": {
+                        "x": 20.95,
+                        "y": 15.0
+                    },
+                    "uuid": "632acda5-31e2-4302-87ca-b2022775c5bc"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        },
+        {
+            "description": "Missing connection between items",
+            "items": [
+                {
+                    "description": "PTH pad 3 [/GND] of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 15.08
+                    },
+                    "uuid": "ed81a85f-9bb3-4440-b659-2844d3b7b738"
+                },
+                {
+                    "description": "Pad 2 [/GND] of C1 on F.Cu",
+                    "pos": {
+                        "x": 20.95,
+                        "y": 16.5
+                    },
+                    "uuid": "b8054c9a-4f8e-4257-9241-0d368faba0f0"
+                }
+            ],
+            "severity": "error",
+            "type": "unconnected_items"
+        }
+    ],
+    "violations": [
+        {
+            "description": "Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.0000 mm)",
+            "items": [
+                {
+                    "description": "Segment on Edge.Cuts",
+                    "pos": {
+                        "x": 0.0,
+                        "y": 30.0
+                    },
+                    "uuid": "5fe4416b-4515-45f9-8850-17a1ff6c25c8"
+                },
+                {
+                    "description": "PTH pad 1 [/IN] of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 10.0
+                    },
+                    "uuid": "02c3921a-f203-4b54-a495-916d5ef3eb88"
+                }
+            ],
+            "severity": "error",
+            "type": "copper_edge_clearance"
+        },
+        {
+            "description": "Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.0000 mm)",
+            "items": [
+                {
+                    "description": "Segment on Edge.Cuts",
+                    "pos": {
+                        "x": 0.0,
+                        "y": 30.0
+                    },
+                    "uuid": "5fe4416b-4515-45f9-8850-17a1ff6c25c8"
+                },
+                {
+                    "description": "PTH pad 2 [/OUT] of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 12.54
+                    },
+                    "uuid": "fac7f27e-b1f4-4cf9-9a80-9f8647b5d52d"
+                }
+            ],
+            "severity": "error",
+            "type": "copper_edge_clearance"
+        },
+        {
+            "description": "Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.0000 mm)",
+            "items": [
+                {
+                    "description": "Segment on Edge.Cuts",
+                    "pos": {
+                        "x": 0.0,
+                        "y": 30.0
+                    },
+                    "uuid": "5fe4416b-4515-45f9-8850-17a1ff6c25c8"
+                },
+                {
+                    "description": "PTH pad 3 [/GND] of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 15.08
+                    },
+                    "uuid": "ed81a85f-9bb3-4440-b659-2844d3b7b738"
+                }
+            ],
+            "severity": "error",
+            "type": "copper_edge_clearance"
+        },
+        {
+            "description": "Courtyards overlap",
+            "items": [
+                {
+                    "description": "Footprint R1",
+                    "pos": {
+                        "x": 20.0,
+                        "y": 15.0
+                    },
+                    "uuid": "98df07b6-9f7f-4cc5-bb29-9cf181b4daa0"
+                },
+                {
+                    "description": "Footprint C1",
+                    "pos": {
+                        "x": 20.0,
+                        "y": 16.5
+                    },
+                    "uuid": "e7acaf41-5a52-4e41-9b7f-cd68111d3ceb"
+                }
+            ],
+            "severity": "error",
+            "type": "courtyards_overlap"
+        },
+        {
+            "description": "Silkscreen clipped by solder mask",
+            "items": [
+                {
+                    "description": "Reference field of C1",
+                    "pos": {
+                        "x": 20.0,
+                        "y": 14.1
+                    },
+                    "uuid": "1fa6a608-781a-4a57-b2b5-7b7948daac54"
+                },
+                {
+                    "description": "Pad 1 [/IN] of R1 on F.Cu",
+                    "pos": {
+                        "x": 19.05,
+                        "y": 15.0
+                    },
+                    "uuid": "792f1dca-497f-4ad3-8c3f-240a57d6e6a1"
+                }
+            ],
+            "severity": "warning",
+            "type": "silk_over_copper"
+        },
+        {
+            "description": "Silkscreen clipped by solder mask",
+            "items": [
+                {
+                    "description": "Reference field of C1",
+                    "pos": {
+                        "x": 20.0,
+                        "y": 14.1
+                    },
+                    "uuid": "1fa6a608-781a-4a57-b2b5-7b7948daac54"
+                },
+                {
+                    "description": "Pad 2 [/OUT] of R1 on F.Cu",
+                    "pos": {
+                        "x": 20.95,
+                        "y": 15.0
+                    },
+                    "uuid": "632acda5-31e2-4302-87ca-b2022775c5bc"
+                }
+            ],
+            "severity": "warning",
+            "type": "silk_over_copper"
+        },
+        {
+            "description": "Silkscreen clipped by board edge",
+            "items": [
+                {
+                    "description": "Segment on Edge.Cuts",
+                    "pos": {
+                        "x": 0.0,
+                        "y": 30.0
+                    },
+                    "uuid": "5fe4416b-4515-45f9-8850-17a1ff6c25c8"
+                },
+                {
+                    "description": "Reference field of J1",
+                    "pos": {
+                        "x": -0.5,
+                        "y": 7.25
+                    },
+                    "uuid": "1d39fd61-d99f-4705-a1b7-25c4dad0403b"
+                }
+            ],
+            "severity": "warning",
+            "type": "silk_edge_clearance"
+        }
+    ]
+}

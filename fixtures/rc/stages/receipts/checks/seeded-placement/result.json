@@ -1,0 +1,1105 @@
+{
+  "adjudicated": false,
+  "artifact_hashes": {
+    "checks/containment.json": "77ab09bd8efc31250063eab7fda6ef5d13a1f368abab58e2af27faf9b23d49c8",
+    "checks/courtyard.json": "5556d7c878d24b7dce2164d5bb5bde1b5e53acdcc43474081f4bfe26517b0ff8",
+    "checks/drc-final.json": "d87c7b6158323e1a13dee48c3ea14fc21dfd94076935b7eb76c456db32569c23",
+    "checks/drc-placement.json": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810",
+    "checks/erc.json": "758efc3d34292feb5e52654d237e6f7275aa2d81b0fdf26f836164596c371c8b",
+    "checks/netlist.json": "554cd8d6030094a37ed00bc147757185d1f813e31b96a4ac41a081c8b264654f",
+    "inputs/project/fp-lib-table": "e4212417f18fd0b58d1e0b4ac046b296fa1a9b6625be667f455e5cbba77c77a3",
+    "inputs/project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "ea709653381ed3f2774ed177900b9d999b34aa8e4bc8e12992ddebfa9554b7a3",
+    "inputs/project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "e85f3a6a4f7a19cfd5e8a1646aa6b60acc3d9e87bda9d914de6c91835779bc11",
+    "inputs/project/lib/Owned_Gen.kicad_sym": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1",
+    "inputs/project/lib/StageRC.kicad_sym": "89f88dee4eaa462e730f645d29a4f14d73507dd8bf56fe266bc8bd39c02399c0",
+    "inputs/project/rc_stage.kicad_pcb": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+    "inputs/project/rc_stage.kicad_prl": "02ce83ca5884239a85a0d1bb157257b512cdc8cd8f5e037bb071993ba2392e53",
+    "inputs/project/rc_stage.kicad_pro": "c745669befeac97f6e966bdd384ceae7868d0246f6544a59859fc28788a2b83b",
+    "inputs/project/rc_stage.kicad_sch": "91bf9666349cc634ed94c16a8d10cf96aa4e1f1770f01e152442e7c8454e5651",
+    "inputs/project/sym-lib-table": "bb13ab4fe47da9f272904fa00505f27fac37ced434541d6f5971addf617f5be4",
+    "inputs/requirements/placed-unrouted.md": "b9dfbde31b2c9836fa49faa9851b30ca32ef1a2d3fe55fa4d224fb1304fa5a7a",
+    "inputs/requirements/seeded-placement.md": "badd75445c85a0f30f39ea94dc3c3f78b22df29b1716e6bd5a833241af90b29d",
+    "inputs/requirements/unplaced.md": "8ac972d41d08fd45fc1e594271f5aefe01a061d85966e3b474a704b64f99d945",
+    "work/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/containment/execution.json": "0cd16f33566fcedf8f2a17cb2c8a5a848b41d4e8ba2604162892d392eb051288",
+    "work/containment/placement-judgment.json": "c84b8a3a3a4bbcf11a748688e3aaa66e200839cad024e1e21520cfec10d5c866",
+    "work/containment/placement-probe.json": "3c6b61735929c462b738ac3e38b3c3b8363205ed4abbcfe53c4a66b4fcaaf45d",
+    "work/containment/stderr.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/containment/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/courtyard/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/courtyard/execution.json": "dae33d543ff4c4ccc1b51e333f3902a57b75cc9129dd0a6b175cd0c91de2228e",
+    "work/courtyard/placement-judgment.json": "464267a2f639441fc75d3db4d1290e86efe6782dd13ba3df59defc92cb13d4e0",
+    "work/courtyard/placement-probe.json": "3c6b61735929c462b738ac3e38b3c3b8363205ed4abbcfe53c4a66b4fcaaf45d",
+    "work/courtyard/stderr.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/courtyard/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/drc-final/console.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+    "work/drc-final/drc.json": "3b0d5491fe19abcfa35793d6ad12caf4c923ac5eef348d86e294949a8ade57ea",
+    "work/drc-final/execution.json": "c831b3103e58fc045ca84466b0788ae2bd79e1010d185e2d92f42a29b4af2e45",
+    "work/drc-final/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
+    "work/drc-final/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
+    "work/drc-final/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
+    "work/drc-final/home/.cache/fontconfig/16326683038b281783a0ef8c680e3a10-le64.cache-9": "0563d0fa156a760813b5cc25ea8df81cd7cc27e5fbf7bebe20babcd2b975ae9b",
+    "work/drc-final/home/.cache/fontconfig/188ac73a183f12857f63bb60a4a6d603-le64.cache-9": "e26f2fedb964ac614c7a6e555f2d1ff6c567eb8084820fa8a86ed6a7e79cc29c",
+    "work/drc-final/home/.cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9": "868c372e3d34d51d9f4708e3f00c597a015e60d7ea579a1aafdaceae162f7adb",
+    "work/drc-final/home/.cache/fontconfig/32b6488e5b8292a2e95c79d947e009e8-le64.cache-9": "dd1dfb14281478435cf4f5818bbd9e486e7b37cfff94ed966454b21d717037c4",
+    "work/drc-final/home/.cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9": "1be6bb8210900af8c0fe1cf0a5379b889e0902d7ec3c3ad93b94d381a7861a1d",
+    "work/drc-final/home/.cache/fontconfig/3f7329c5293ffd510edef78f73874cfd-le64.cache-9": "b8c1ea6ce9249f498732b1688f75447c5beb452a24c9d5969778818bb0e0e760",
+    "work/drc-final/home/.cache/fontconfig/467c019e582ee353435ea5c21d137ef6-le64.cache-9": "8e4dfa1d306da9f5d763d0c1206d2f04e51374798b5a30da454808bf8a90d206",
+    "work/drc-final/home/.cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9": "918406b9c772e387606f92986fdbc4f9dc814da4d2bfb6721ecdb5e0b4947780",
+    "work/drc-final/home/.cache/fontconfig/4d6aee6d44eccb37054d3216e945f618-le64.cache-9": "706675b3e6abd23275c0e7119a294d9dfe73160bb6286738de72f2a672e928ce",
+    "work/drc-final/home/.cache/fontconfig/573ec803664ed168555e0e8b6d0f0c7f-le64.cache-9": "1ab7cbfeba052c940fcf5c06ffb25964047d12318f0463f0a09b946a0ed524a9",
+    "work/drc-final/home/.cache/fontconfig/57e423e26b20ab21d0f2f29c145174c3-le64.cache-9": "fc2f48bf5da9d1e2edbc19361a6d4bbecc15ffd2d692d76ba37d7940dc0f56a5",
+    "work/drc-final/home/.cache/fontconfig/6333f38776742d18e214673cd2c24e34-le64.cache-9": "7d6339aaeff84a46690e1d149d199893b027b6f40de87d062ac286ffc5fa15de",
+    "work/drc-final/home/.cache/fontconfig/6aa41aa22e18b8fa06a12da28ea9c28b-le64.cache-9": "7b7e3c7b26a4d8fe5743f9d282cdaefb01ac6bced883666ce2740bd3b4124a62",
+    "work/drc-final/home/.cache/fontconfig/6cc790b63b123a6a96ee260fcdad32a9-le64.cache-9": "885e8da686f2ce25047f045ac4e7a3046a516bfae8decc7117e9642172315b5f",
+    "work/drc-final/home/.cache/fontconfig/707971e003b4ae6c8121c3a920e507f5-le64.cache-9": "ea03c07b3de82819b8c190c254efd912cd6459e77c29be71658a0398edd9095b",
+    "work/drc-final/home/.cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9": "8d0bebc9536f314ca084487ed75bc56e015376eca7caa374f2ee392717e4ad15",
+    "work/drc-final/home/.cache/fontconfig/8a687c406b77f27d99abfeeba937fcce-le64.cache-9": "fb87588416da30d5cd466552f5d240272f0cbf99ecd04250aa5ed88f56b749b8",
+    "work/drc-final/home/.cache/fontconfig/8f02d4cb045bd6ce15663e43f347c9f8-le64.cache-9": "e3ce6d863af245dfeb14c5f3e51b8518751704637c8e07f84325eb665107ec70",
+    "work/drc-final/home/.cache/fontconfig/95530828ff6c81d309f8258d8d02a23e-le64.cache-9": "875b748fd3b0ed88679c9b876dd52f09644c569b0a6e5e14d8644e1e6d613ca8",
+    "work/drc-final/home/.cache/fontconfig/99e8ed0e538f840c565b6ed5dad60d56-le64.cache-9": "34bd856f91e1870ab723d8507342961d49c76634157e69693c913fdc3f250320",
+    "work/drc-final/home/.cache/fontconfig/CACHEDIR.TAG": "05e7633fb31bf1f6f8d89020c16b9f24587fdf7638e951c9745b192f5fc3b682",
+    "work/drc-final/home/.cache/fontconfig/a4e60e8d1e10d2fdff3fe3037a1845fb-le64.cache-9": "34d83fbd0edc79d5301021c75e855e1d8562faba0b73cc0cb9a0565502060960",
+    "work/drc-final/home/.cache/fontconfig/bb9ef35e7661cc55c3d6e0d2d8cc2051-le64.cache-9": "a70b1c6e43fc409a6c35e82f6183e3713e706b0680e952b8ddf1392badd5e404",
+    "work/drc-final/home/.cache/fontconfig/bf3b770c553c462765856025a94f1ce6-le64.cache-9": "c6816c28f507347e005206c21dea57659e4f804edd7add7982f96c144bdceeb7",
+    "work/drc-final/home/.cache/fontconfig/c277e94e32b20404286a1ddafa5a80f0-le64.cache-9": "fc00c94c58e6f35b8c91be48d79eedbbaa7c4dc8ec5d1d24e869f581c04f9cc3",
+    "work/drc-final/home/.cache/fontconfig/c57959a16110560c8d0fcea73374aeeb-le64.cache-9": "f71c1645cf5131b8b44312013a98254870ff33338d45b83dfda9fd59e83d0b23",
+    "work/drc-final/home/.cache/fontconfig/c855463f699352c367813e37f3f70ea7-le64.cache-9": "629fd5a7257d778d1eab8cffdb518d469732f773c0920f809b1b93d3edb43ec2",
+    "work/drc-final/home/.cache/fontconfig/cabbd14511b9e8a55e92af97fb3a0461-le64.cache-9": "da21d7e633da02823512fa2f67eed41d2a0d704b01011fc7e9835bacc5340525",
+    "work/drc-final/home/.cache/fontconfig/d3e5c4ee2ceb1fc347f91d4cefc53bc0-le64.cache-9": "6992bb61ebf116e7b7024d299d06f61acebea6bca58e8c30a15beee46a8e7484",
+    "work/drc-final/home/.cache/fontconfig/d52a8644073d54c13679302ca1180695-le64.cache-9": "68ba8fbf0c3783e8312962fe85ebdf58e6dcab32c02e5b4faf8f3c12ea898f68",
+    "work/drc-final/home/.cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9": "efd2971e07bb53c4ed1ef07289d58a4cdd9eb44deff4bcaf71e1aba7aa80660b",
+    "work/drc-final/home/.cache/fontconfig/d82eb4fd963d448e2fcb7d7b793b5df3-le64.cache-9": "7e4c44566d18183565d91ce74cdd446c28f8c61955c0d03f87c65a9660c5b0cd",
+    "work/drc-final/home/.cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9": "8344c56226aeba058aa4f7ae965b6ec9e7e29f8ba85757ee7e66494fd15ea520",
+    "work/drc-final/home/.cache/fontconfig/da82082e1ef13c4097208324d67c180c-le64.cache-9": "c154e52209ffc926973f2eff83bf4deb903c50d885ebb31f859428dcc6fa013c",
+    "work/drc-final/home/.cache/fontconfig/e0aa53bcfa504e64f87823c16bc01eb6-le64.cache-9": "8c5661d02c1c4eae89e67695885065a18a0dd672fe6b946e38c6914f4be1ec21",
+    "work/drc-final/home/.cache/fontconfig/e13b20fdb08344e0e664864cc2ede53d-le64.cache-9": "cd33da978bfc9da3e43184d4d97f4d568fc72bce6d352b6765818f5d9f26099e",
+    "work/drc-final/home/.cache/fontconfig/e52a45a1c8c8fe895fc0fc8c4e6999b8-le64.cache-9": "ed83d8aaa9ed316f276fd4ff27a9177630359dc88f7eda1ad3453a84ac7d85b0",
+    "work/drc-final/home/.cache/fontconfig/f1f2465696798768e9653f19e17ccdc8-le64.cache-9": "623c8046ef4b21d68ae8bb021772afe9e51aea495bc038e73382c6916cc707d6",
+    "work/drc-final/home/.cache/fontconfig/fe547fea3a41b43a38975d292a2b19c7-le64.cache-9": "4b1a5363ab5cbc0cfdcfeaf18f8f498e41f3597f28b6602bdd994ff2f7f8d5f2",
+    "work/drc-final/kicad-config/10.0/3d_viewer.json": "7c95b3fdd72f837a3cc49248249c40bc24c07b75bafe02d0d091a0864746b6a9",
+    "work/drc-final/kicad-config/10.0/cvpcb.json": "3a24bbacab369da74efdaff851be8869d8ca2e5e4ca28304f9eb57041bdad759",
+    "work/drc-final/kicad-config/10.0/eeschema.json": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb",
+    "work/drc-final/kicad-config/10.0/fpedit.json": "4d824ab97688dcfc144494386c6991dc0a31f324228d6a85cea279a474f51bb0",
+    "work/drc-final/kicad-config/10.0/kicad.json": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650",
+    "work/drc-final/kicad-config/10.0/kicad_common.json": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e",
+    "work/drc-final/kicad-config/10.0/pcbnew.json": "412c1fe43f0db375147a9d25f5c7da6768ae054d94300cef57c9349bd3374e7a",
+    "work/drc-final/kicad-config/10.0/symbol_editor.json": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa",
+    "work/drc-final/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/drc-final/stdout.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+    "work/drc-placement/console.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+    "work/drc-placement/drc.json": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
+    "work/drc-placement/execution.json": "44a76a15a7b851fa6858175865a0ead48c0769ec0ac98cdb742ca0c015ced482",
+    "work/drc-placement/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
+    "work/drc-placement/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
+    "work/drc-placement/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
+    "work/drc-placement/home/.cache/fontconfig/16326683038b281783a0ef8c680e3a10-le64.cache-9": "0563d0fa156a760813b5cc25ea8df81cd7cc27e5fbf7bebe20babcd2b975ae9b",
+    "work/drc-placement/home/.cache/fontconfig/188ac73a183f12857f63bb60a4a6d603-le64.cache-9": "e26f2fedb964ac614c7a6e555f2d1ff6c567eb8084820fa8a86ed6a7e79cc29c",
+    "work/drc-placement/home/.cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9": "868c372e3d34d51d9f4708e3f00c597a015e60d7ea579a1aafdaceae162f7adb",
+    "work/drc-placement/home/.cache/fontconfig/32b6488e5b8292a2e95c79d947e009e8-le64.cache-9": "dd1dfb14281478435cf4f5818bbd9e486e7b37cfff94ed966454b21d717037c4",
+    "work/drc-placement/home/.cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9": "1be6bb8210900af8c0fe1cf0a5379b889e0902d7ec3c3ad93b94d381a7861a1d",
+    "work/drc-placement/home/.cache/fontconfig/3f7329c5293ffd510edef78f73874cfd-le64.cache-9": "b8c1ea6ce9249f498732b1688f75447c5beb452a24c9d5969778818bb0e0e760",
+    "work/drc-placement/home/.cache/fontconfig/467c019e582ee353435ea5c21d137ef6-le64.cache-9": "8e4dfa1d306da9f5d763d0c1206d2f04e51374798b5a30da454808bf8a90d206",
+    "work/drc-placement/home/.cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9": "918406b9c772e387606f92986fdbc4f9dc814da4d2bfb6721ecdb5e0b4947780",
+    "work/drc-placement/home/.cache/fontconfig/4d6aee6d44eccb37054d3216e945f618-le64.cache-9": "706675b3e6abd23275c0e7119a294d9dfe73160bb6286738de72f2a672e928ce",
+    "work/drc-placement/home/.cache/fontconfig/573ec803664ed168555e0e8b6d0f0c7f-le64.cache-9": "1ab7cbfeba052c940fcf5c06ffb25964047d12318f0463f0a09b946a0ed524a9",
+    "work/drc-placement/home/.cache/fontconfig/57e423e26b20ab21d0f2f29c145174c3-le64.cache-9": "fc2f48bf5da9d1e2edbc19361a6d4bbecc15ffd2d692d76ba37d7940dc0f56a5",
+    "work/drc-placement/home/.cache/fontconfig/6333f38776742d18e214673cd2c24e34-le64.cache-9": "7d6339aaeff84a46690e1d149d199893b027b6f40de87d062ac286ffc5fa15de",
+    "work/drc-placement/home/.cache/fontconfig/6aa41aa22e18b8fa06a12da28ea9c28b-le64.cache-9": "7b7e3c7b26a4d8fe5743f9d282cdaefb01ac6bced883666ce2740bd3b4124a62",
+    "work/drc-placement/home/.cache/fontconfig/6cc790b63b123a6a96ee260fcdad32a9-le64.cache-9": "885e8da686f2ce25047f045ac4e7a3046a516bfae8decc7117e9642172315b5f",
+    "work/drc-placement/home/.cache/fontconfig/707971e003b4ae6c8121c3a920e507f5-le64.cache-9": "ea03c07b3de82819b8c190c254efd912cd6459e77c29be71658a0398edd9095b",
+    "work/drc-placement/home/.cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9": "8d0bebc9536f314ca084487ed75bc56e015376eca7caa374f2ee392717e4ad15",
+    "work/drc-placement/home/.cache/fontconfig/8a687c406b77f27d99abfeeba937fcce-le64.cache-9": "fb87588416da30d5cd466552f5d240272f0cbf99ecd04250aa5ed88f56b749b8",
+    "work/drc-placement/home/.cache/fontconfig/8f02d4cb045bd6ce15663e43f347c9f8-le64.cache-9": "e3ce6d863af245dfeb14c5f3e51b8518751704637c8e07f84325eb665107ec70",
+    "work/drc-placement/home/.cache/fontconfig/95530828ff6c81d309f8258d8d02a23e-le64.cache-9": "875b748fd3b0ed88679c9b876dd52f09644c569b0a6e5e14d8644e1e6d613ca8",
+    "work/drc-placement/home/.cache/fontconfig/99e8ed0e538f840c565b6ed5dad60d56-le64.cache-9": "34bd856f91e1870ab723d8507342961d49c76634157e69693c913fdc3f250320",
+    "work/drc-placement/home/.cache/fontconfig/CACHEDIR.TAG": "05e7633fb31bf1f6f8d89020c16b9f24587fdf7638e951c9745b192f5fc3b682",
+    "work/drc-placement/home/.cache/fontconfig/a4e60e8d1e10d2fdff3fe3037a1845fb-le64.cache-9": "34d83fbd0edc79d5301021c75e855e1d8562faba0b73cc0cb9a0565502060960",
+    "work/drc-placement/home/.cache/fontconfig/bb9ef35e7661cc55c3d6e0d2d8cc2051-le64.cache-9": "a70b1c6e43fc409a6c35e82f6183e3713e706b0680e952b8ddf1392badd5e404",
+    "work/drc-placement/home/.cache/fontconfig/bf3b770c553c462765856025a94f1ce6-le64.cache-9": "c6816c28f507347e005206c21dea57659e4f804edd7add7982f96c144bdceeb7",
+    "work/drc-placement/home/.cache/fontconfig/c277e94e32b20404286a1ddafa5a80f0-le64.cache-9": "fc00c94c58e6f35b8c91be48d79eedbbaa7c4dc8ec5d1d24e869f581c04f9cc3",
+    "work/drc-placement/home/.cache/fontconfig/c57959a16110560c8d0fcea73374aeeb-le64.cache-9": "f71c1645cf5131b8b44312013a98254870ff33338d45b83dfda9fd59e83d0b23",
+    "work/drc-placement/home/.cache/fontconfig/c855463f699352c367813e37f3f70ea7-le64.cache-9": "629fd5a7257d778d1eab8cffdb518d469732f773c0920f809b1b93d3edb43ec2",
+    "work/drc-placement/home/.cache/fontconfig/cabbd14511b9e8a55e92af97fb3a0461-le64.cache-9": "da21d7e633da02823512fa2f67eed41d2a0d704b01011fc7e9835bacc5340525",
+    "work/drc-placement/home/.cache/fontconfig/d3e5c4ee2ceb1fc347f91d4cefc53bc0-le64.cache-9": "6992bb61ebf116e7b7024d299d06f61acebea6bca58e8c30a15beee46a8e7484",
+    "work/drc-placement/home/.cache/fontconfig/d52a8644073d54c13679302ca1180695-le64.cache-9": "68ba8fbf0c3783e8312962fe85ebdf58e6dcab32c02e5b4faf8f3c12ea898f68",
+    "work/drc-placement/home/.cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9": "efd2971e07bb53c4ed1ef07289d58a4cdd9eb44deff4bcaf71e1aba7aa80660b",
+    "work/drc-placement/home/.cache/fontconfig/d82eb4fd963d448e2fcb7d7b793b5df3-le64.cache-9": "7e4c44566d18183565d91ce74cdd446c28f8c61955c0d03f87c65a9660c5b0cd",
+    "work/drc-placement/home/.cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9": "8344c56226aeba058aa4f7ae965b6ec9e7e29f8ba85757ee7e66494fd15ea520",
+    "work/drc-placement/home/.cache/fontconfig/da82082e1ef13c4097208324d67c180c-le64.cache-9": "c154e52209ffc926973f2eff83bf4deb903c50d885ebb31f859428dcc6fa013c",
+    "work/drc-placement/home/.cache/fontconfig/e0aa53bcfa504e64f87823c16bc01eb6-le64.cache-9": "8c5661d02c1c4eae89e67695885065a18a0dd672fe6b946e38c6914f4be1ec21",
+    "work/drc-placement/home/.cache/fontconfig/e13b20fdb08344e0e664864cc2ede53d-le64.cache-9": "cd33da978bfc9da3e43184d4d97f4d568fc72bce6d352b6765818f5d9f26099e",
+    "work/drc-placement/home/.cache/fontconfig/e52a45a1c8c8fe895fc0fc8c4e6999b8-le64.cache-9": "ed83d8aaa9ed316f276fd4ff27a9177630359dc88f7eda1ad3453a84ac7d85b0",
+    "work/drc-placement/home/.cache/fontconfig/f1f2465696798768e9653f19e17ccdc8-le64.cache-9": "623c8046ef4b21d68ae8bb021772afe9e51aea495bc038e73382c6916cc707d6",
+    "work/drc-placement/home/.cache/fontconfig/fe547fea3a41b43a38975d292a2b19c7-le64.cache-9": "4b1a5363ab5cbc0cfdcfeaf18f8f498e41f3597f28b6602bdd994ff2f7f8d5f2",
+    "work/drc-placement/kicad-config/10.0/3d_viewer.json": "7c95b3fdd72f837a3cc49248249c40bc24c07b75bafe02d0d091a0864746b6a9",
+    "work/drc-placement/kicad-config/10.0/cvpcb.json": "3a24bbacab369da74efdaff851be8869d8ca2e5e4ca28304f9eb57041bdad759",
+    "work/drc-placement/kicad-config/10.0/eeschema.json": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb",
+    "work/drc-placement/kicad-config/10.0/fpedit.json": "4d824ab97688dcfc144494386c6991dc0a31f324228d6a85cea279a474f51bb0",
+    "work/drc-placement/kicad-config/10.0/kicad.json": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650",
+    "work/drc-placement/kicad-config/10.0/kicad_common.json": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e",
+    "work/drc-placement/kicad-config/10.0/pcbnew.json": "412c1fe43f0db375147a9d25f5c7da6768ae054d94300cef57c9349bd3374e7a",
+    "work/drc-placement/kicad-config/10.0/symbol_editor.json": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa",
+    "work/drc-placement/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/drc-placement/stdout.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+    "work/erc/console.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+    "work/erc/erc.json": "a794aeba6caa6a29892c277dcf997fbd122ad5a16d0aae003db5cee2b1dd2827",
+    "work/erc/execution.json": "c2c9efbfe306ba5cdfb3d52e800334f97efd34c6a6d88f25977317e39ca5d950",
+    "work/erc/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
+    "work/erc/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
+    "work/erc/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
+    "work/erc/home/.cache/fontconfig/16326683038b281783a0ef8c680e3a10-le64.cache-9": "0563d0fa156a760813b5cc25ea8df81cd7cc27e5fbf7bebe20babcd2b975ae9b",
+    "work/erc/home/.cache/fontconfig/188ac73a183f12857f63bb60a4a6d603-le64.cache-9": "e26f2fedb964ac614c7a6e555f2d1ff6c567eb8084820fa8a86ed6a7e79cc29c",
+    "work/erc/home/.cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9": "868c372e3d34d51d9f4708e3f00c597a015e60d7ea579a1aafdaceae162f7adb",
+    "work/erc/home/.cache/fontconfig/32b6488e5b8292a2e95c79d947e009e8-le64.cache-9": "dd1dfb14281478435cf4f5818bbd9e486e7b37cfff94ed966454b21d717037c4",
+    "work/erc/home/.cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9": "1be6bb8210900af8c0fe1cf0a5379b889e0902d7ec3c3ad93b94d381a7861a1d",
+    "work/erc/home/.cache/fontconfig/3f7329c5293ffd510edef78f73874cfd-le64.cache-9": "b8c1ea6ce9249f498732b1688f75447c5beb452a24c9d5969778818bb0e0e760",
+    "work/erc/home/.cache/fontconfig/467c019e582ee353435ea5c21d137ef6-le64.cache-9": "8e4dfa1d306da9f5d763d0c1206d2f04e51374798b5a30da454808bf8a90d206",
+    "work/erc/home/.cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9": "918406b9c772e387606f92986fdbc4f9dc814da4d2bfb6721ecdb5e0b4947780",
+    "work/erc/home/.cache/fontconfig/4d6aee6d44eccb37054d3216e945f618-le64.cache-9": "706675b3e6abd23275c0e7119a294d9dfe73160bb6286738de72f2a672e928ce",
+    "work/erc/home/.cache/fontconfig/573ec803664ed168555e0e8b6d0f0c7f-le64.cache-9": "1ab7cbfeba052c940fcf5c06ffb25964047d12318f0463f0a09b946a0ed524a9",
+    "work/erc/home/.cache/fontconfig/57e423e26b20ab21d0f2f29c145174c3-le64.cache-9": "fc2f48bf5da9d1e2edbc19361a6d4bbecc15ffd2d692d76ba37d7940dc0f56a5",
+    "work/erc/home/.cache/fontconfig/6333f38776742d18e214673cd2c24e34-le64.cache-9": "7d6339aaeff84a46690e1d149d199893b027b6f40de87d062ac286ffc5fa15de",
+    "work/erc/home/.cache/fontconfig/6aa41aa22e18b8fa06a12da28ea9c28b-le64.cache-9": "7b7e3c7b26a4d8fe5743f9d282cdaefb01ac6bced883666ce2740bd3b4124a62",
+    "work/erc/home/.cache/fontconfig/6cc790b63b123a6a96ee260fcdad32a9-le64.cache-9": "885e8da686f2ce25047f045ac4e7a3046a516bfae8decc7117e9642172315b5f",
+    "work/erc/home/.cache/fontconfig/707971e003b4ae6c8121c3a920e507f5-le64.cache-9": "ea03c07b3de82819b8c190c254efd912cd6459e77c29be71658a0398edd9095b",
+    "work/erc/home/.cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9": "8d0bebc9536f314ca084487ed75bc56e015376eca7caa374f2ee392717e4ad15",
+    "work/erc/home/.cache/fontconfig/8a687c406b77f27d99abfeeba937fcce-le64.cache-9": "fb87588416da30d5cd466552f5d240272f0cbf99ecd04250aa5ed88f56b749b8",
+    "work/erc/home/.cache/fontconfig/8f02d4cb045bd6ce15663e43f347c9f8-le64.cache-9": "e3ce6d863af245dfeb14c5f3e51b8518751704637c8e07f84325eb665107ec70",
+    "work/erc/home/.cache/fontconfig/95530828ff6c81d309f8258d8d02a23e-le64.cache-9": "875b748fd3b0ed88679c9b876dd52f09644c569b0a6e5e14d8644e1e6d613ca8",
+    "work/erc/home/.cache/fontconfig/99e8ed0e538f840c565b6ed5dad60d56-le64.cache-9": "34bd856f91e1870ab723d8507342961d49c76634157e69693c913fdc3f250320",
+    "work/erc/home/.cache/fontconfig/CACHEDIR.TAG": "05e7633fb31bf1f6f8d89020c16b9f24587fdf7638e951c9745b192f5fc3b682",
+    "work/erc/home/.cache/fontconfig/a4e60e8d1e10d2fdff3fe3037a1845fb-le64.cache-9": "34d83fbd0edc79d5301021c75e855e1d8562faba0b73cc0cb9a0565502060960",
+    "work/erc/home/.cache/fontconfig/bb9ef35e7661cc55c3d6e0d2d8cc2051-le64.cache-9": "a70b1c6e43fc409a6c35e82f6183e3713e706b0680e952b8ddf1392badd5e404",
+    "work/erc/home/.cache/fontconfig/bf3b770c553c462765856025a94f1ce6-le64.cache-9": "c6816c28f507347e005206c21dea57659e4f804edd7add7982f96c144bdceeb7",
+    "work/erc/home/.cache/fontconfig/c277e94e32b20404286a1ddafa5a80f0-le64.cache-9": "fc00c94c58e6f35b8c91be48d79eedbbaa7c4dc8ec5d1d24e869f581c04f9cc3",
+    "work/erc/home/.cache/fontconfig/c57959a16110560c8d0fcea73374aeeb-le64.cache-9": "f71c1645cf5131b8b44312013a98254870ff33338d45b83dfda9fd59e83d0b23",
+    "work/erc/home/.cache/fontconfig/c855463f699352c367813e37f3f70ea7-le64.cache-9": "629fd5a7257d778d1eab8cffdb518d469732f773c0920f809b1b93d3edb43ec2",
+    "work/erc/home/.cache/fontconfig/cabbd14511b9e8a55e92af97fb3a0461-le64.cache-9": "da21d7e633da02823512fa2f67eed41d2a0d704b01011fc7e9835bacc5340525",
+    "work/erc/home/.cache/fontconfig/d3e5c4ee2ceb1fc347f91d4cefc53bc0-le64.cache-9": "6992bb61ebf116e7b7024d299d06f61acebea6bca58e8c30a15beee46a8e7484",
+    "work/erc/home/.cache/fontconfig/d52a8644073d54c13679302ca1180695-le64.cache-9": "68ba8fbf0c3783e8312962fe85ebdf58e6dcab32c02e5b4faf8f3c12ea898f68",
+    "work/erc/home/.cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9": "efd2971e07bb53c4ed1ef07289d58a4cdd9eb44deff4bcaf71e1aba7aa80660b",
+    "work/erc/home/.cache/fontconfig/d82eb4fd963d448e2fcb7d7b793b5df3-le64.cache-9": "7e4c44566d18183565d91ce74cdd446c28f8c61955c0d03f87c65a9660c5b0cd",
+    "work/erc/home/.cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9": "8344c56226aeba058aa4f7ae965b6ec9e7e29f8ba85757ee7e66494fd15ea520",
+    "work/erc/home/.cache/fontconfig/da82082e1ef13c4097208324d67c180c-le64.cache-9": "c154e52209ffc926973f2eff83bf4deb903c50d885ebb31f859428dcc6fa013c",
+    "work/erc/home/.cache/fontconfig/e0aa53bcfa504e64f87823c16bc01eb6-le64.cache-9": "8c5661d02c1c4eae89e67695885065a18a0dd672fe6b946e38c6914f4be1ec21",
+    "work/erc/home/.cache/fontconfig/e13b20fdb08344e0e664864cc2ede53d-le64.cache-9": "cd33da978bfc9da3e43184d4d97f4d568fc72bce6d352b6765818f5d9f26099e",
+    "work/erc/home/.cache/fontconfig/e52a45a1c8c8fe895fc0fc8c4e6999b8-le64.cache-9": "ed83d8aaa9ed316f276fd4ff27a9177630359dc88f7eda1ad3453a84ac7d85b0",
+    "work/erc/home/.cache/fontconfig/f1f2465696798768e9653f19e17ccdc8-le64.cache-9": "623c8046ef4b21d68ae8bb021772afe9e51aea495bc038e73382c6916cc707d6",
+    "work/erc/home/.cache/fontconfig/fe547fea3a41b43a38975d292a2b19c7-le64.cache-9": "4b1a5363ab5cbc0cfdcfeaf18f8f498e41f3597f28b6602bdd994ff2f7f8d5f2",
+    "work/erc/kicad-config/10.0/cvpcb.json": "3a24bbacab369da74efdaff851be8869d8ca2e5e4ca28304f9eb57041bdad759",
+    "work/erc/kicad-config/10.0/eeschema.json": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb",
+    "work/erc/kicad-config/10.0/kicad.json": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650",
+    "work/erc/kicad-config/10.0/kicad_common.json": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e",
+    "work/erc/kicad-config/10.0/symbol_editor.json": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa",
+    "work/erc/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/erc/stdout.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+    "work/netlist/connectivity.json": "f1976992fdc6d8e309f8a031bb62b94207b6f388bc1c3c5779615975f3a9bc20",
+    "work/netlist/console.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/netlist/design.xml": "66519d32b0e6560158e716a39d64636934725ce471ea30d88ad8d27a061469b4",
+    "work/netlist/execution.json": "db2485eb721d36223219670725db4db6dbe4aa9f280026c400207fd350a946ba",
+    "work/netlist/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
+    "work/netlist/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
+    "work/netlist/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
+    "work/netlist/home/.cache/fontconfig/16326683038b281783a0ef8c680e3a10-le64.cache-9": "0563d0fa156a760813b5cc25ea8df81cd7cc27e5fbf7bebe20babcd2b975ae9b",
+    "work/netlist/home/.cache/fontconfig/188ac73a183f12857f63bb60a4a6d603-le64.cache-9": "e26f2fedb964ac614c7a6e555f2d1ff6c567eb8084820fa8a86ed6a7e79cc29c",
+    "work/netlist/home/.cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9": "868c372e3d34d51d9f4708e3f00c597a015e60d7ea579a1aafdaceae162f7adb",
+    "work/netlist/home/.cache/fontconfig/32b6488e5b8292a2e95c79d947e009e8-le64.cache-9": "dd1dfb14281478435cf4f5818bbd9e486e7b37cfff94ed966454b21d717037c4",
+    "work/netlist/home/.cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9": "1be6bb8210900af8c0fe1cf0a5379b889e0902d7ec3c3ad93b94d381a7861a1d",
+    "work/netlist/home/.cache/fontconfig/3f7329c5293ffd510edef78f73874cfd-le64.cache-9": "b8c1ea6ce9249f498732b1688f75447c5beb452a24c9d5969778818bb0e0e760",
+    "work/netlist/home/.cache/fontconfig/467c019e582ee353435ea5c21d137ef6-le64.cache-9": "8e4dfa1d306da9f5d763d0c1206d2f04e51374798b5a30da454808bf8a90d206",
+    "work/netlist/home/.cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9": "918406b9c772e387606f92986fdbc4f9dc814da4d2bfb6721ecdb5e0b4947780",
+    "work/netlist/home/.cache/fontconfig/4d6aee6d44eccb37054d3216e945f618-le64.cache-9": "706675b3e6abd23275c0e7119a294d9dfe73160bb6286738de72f2a672e928ce",
+    "work/netlist/home/.cache/fontconfig/573ec803664ed168555e0e8b6d0f0c7f-le64.cache-9": "1ab7cbfeba052c940fcf5c06ffb25964047d12318f0463f0a09b946a0ed524a9",
+    "work/netlist/home/.cache/fontconfig/57e423e26b20ab21d0f2f29c145174c3-le64.cache-9": "fc2f48bf5da9d1e2edbc19361a6d4bbecc15ffd2d692d76ba37d7940dc0f56a5",
+    "work/netlist/home/.cache/fontconfig/6333f38776742d18e214673cd2c24e34-le64.cache-9": "7d6339aaeff84a46690e1d149d199893b027b6f40de87d062ac286ffc5fa15de",
+    "work/netlist/home/.cache/fontconfig/6aa41aa22e18b8fa06a12da28ea9c28b-le64.cache-9": "7b7e3c7b26a4d8fe5743f9d282cdaefb01ac6bced883666ce2740bd3b4124a62",
+    "work/netlist/home/.cache/fontconfig/6cc790b63b123a6a96ee260fcdad32a9-le64.cache-9": "885e8da686f2ce25047f045ac4e7a3046a516bfae8decc7117e9642172315b5f",
+    "work/netlist/home/.cache/fontconfig/707971e003b4ae6c8121c3a920e507f5-le64.cache-9": "ea03c07b3de82819b8c190c254efd912cd6459e77c29be71658a0398edd9095b",
+    "work/netlist/home/.cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9": "8d0bebc9536f314ca084487ed75bc56e015376eca7caa374f2ee392717e4ad15",
+    "work/netlist/home/.cache/fontconfig/8a687c406b77f27d99abfeeba937fcce-le64.cache-9": "fb87588416da30d5cd466552f5d240272f0cbf99ecd04250aa5ed88f56b749b8",
+    "work/netlist/home/.cache/fontconfig/8f02d4cb045bd6ce15663e43f347c9f8-le64.cache-9": "e3ce6d863af245dfeb14c5f3e51b8518751704637c8e07f84325eb665107ec70",
+    "work/netlist/home/.cache/fontconfig/95530828ff6c81d309f8258d8d02a23e-le64.cache-9": "875b748fd3b0ed88679c9b876dd52f09644c569b0a6e5e14d8644e1e6d613ca8",
+    "work/netlist/home/.cache/fontconfig/99e8ed0e538f840c565b6ed5dad60d56-le64.cache-9": "34bd856f91e1870ab723d8507342961d49c76634157e69693c913fdc3f250320",
+    "work/netlist/home/.cache/fontconfig/CACHEDIR.TAG": "05e7633fb31bf1f6f8d89020c16b9f24587fdf7638e951c9745b192f5fc3b682",
+    "work/netlist/home/.cache/fontconfig/a4e60e8d1e10d2fdff3fe3037a1845fb-le64.cache-9": "34d83fbd0edc79d5301021c75e855e1d8562faba0b73cc0cb9a0565502060960",
+    "work/netlist/home/.cache/fontconfig/bb9ef35e7661cc55c3d6e0d2d8cc2051-le64.cache-9": "a70b1c6e43fc409a6c35e82f6183e3713e706b0680e952b8ddf1392badd5e404",
+    "work/netlist/home/.cache/fontconfig/bf3b770c553c462765856025a94f1ce6-le64.cache-9": "c6816c28f507347e005206c21dea57659e4f804edd7add7982f96c144bdceeb7",
+    "work/netlist/home/.cache/fontconfig/c277e94e32b20404286a1ddafa5a80f0-le64.cache-9": "fc00c94c58e6f35b8c91be48d79eedbbaa7c4dc8ec5d1d24e869f581c04f9cc3",
+    "work/netlist/home/.cache/fontconfig/c57959a16110560c8d0fcea73374aeeb-le64.cache-9": "f71c1645cf5131b8b44312013a98254870ff33338d45b83dfda9fd59e83d0b23",
+    "work/netlist/home/.cache/fontconfig/c855463f699352c367813e37f3f70ea7-le64.cache-9": "629fd5a7257d778d1eab8cffdb518d469732f773c0920f809b1b93d3edb43ec2",
+    "work/netlist/home/.cache/fontconfig/cabbd14511b9e8a55e92af97fb3a0461-le64.cache-9": "da21d7e633da02823512fa2f67eed41d2a0d704b01011fc7e9835bacc5340525",
+    "work/netlist/home/.cache/fontconfig/d3e5c4ee2ceb1fc347f91d4cefc53bc0-le64.cache-9": "6992bb61ebf116e7b7024d299d06f61acebea6bca58e8c30a15beee46a8e7484",
+    "work/netlist/home/.cache/fontconfig/d52a8644073d54c13679302ca1180695-le64.cache-9": "68ba8fbf0c3783e8312962fe85ebdf58e6dcab32c02e5b4faf8f3c12ea898f68",
+    "work/netlist/home/.cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9": "efd2971e07bb53c4ed1ef07289d58a4cdd9eb44deff4bcaf71e1aba7aa80660b",
+    "work/netlist/home/.cache/fontconfig/d82eb4fd963d448e2fcb7d7b793b5df3-le64.cache-9": "7e4c44566d18183565d91ce74cdd446c28f8c61955c0d03f87c65a9660c5b0cd",
+    "work/netlist/home/.cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9": "8344c56226aeba058aa4f7ae965b6ec9e7e29f8ba85757ee7e66494fd15ea520",
+    "work/netlist/home/.cache/fontconfig/da82082e1ef13c4097208324d67c180c-le64.cache-9": "c154e52209ffc926973f2eff83bf4deb903c50d885ebb31f859428dcc6fa013c",
+    "work/netlist/home/.cache/fontconfig/e0aa53bcfa504e64f87823c16bc01eb6-le64.cache-9": "8c5661d02c1c4eae89e67695885065a18a0dd672fe6b946e38c6914f4be1ec21",
+    "work/netlist/home/.cache/fontconfig/e13b20fdb08344e0e664864cc2ede53d-le64.cache-9": "cd33da978bfc9da3e43184d4d97f4d568fc72bce6d352b6765818f5d9f26099e",
+    "work/netlist/home/.cache/fontconfig/e52a45a1c8c8fe895fc0fc8c4e6999b8-le64.cache-9": "ed83d8aaa9ed316f276fd4ff27a9177630359dc88f7eda1ad3453a84ac7d85b0",
+    "work/netlist/home/.cache/fontconfig/f1f2465696798768e9653f19e17ccdc8-le64.cache-9": "623c8046ef4b21d68ae8bb021772afe9e51aea495bc038e73382c6916cc707d6",
+    "work/netlist/home/.cache/fontconfig/fe547fea3a41b43a38975d292a2b19c7-le64.cache-9": "4b1a5363ab5cbc0cfdcfeaf18f8f498e41f3597f28b6602bdd994ff2f7f8d5f2",
+    "work/netlist/kicad-config/10.0/eeschema.json": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb",
+    "work/netlist/kicad-config/10.0/kicad.json": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650",
+    "work/netlist/kicad-config/10.0/kicad_common.json": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e",
+    "work/netlist/kicad-config/10.0/symbol_editor.json": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa",
+    "work/netlist/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/netlist/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/verification/evidence.json": "fb6ca3c3e436349db0b27cdbb3983172e149a467fb61a88563d4d5972cdc467d"
+  },
+  "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+  "checks": [
+    {
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "details": {
+        "by_severity": {},
+        "by_type": {},
+        "ignored_checks": [
+          "single_global_label",
+          "four_way_junction",
+          "simulation_model_issue",
+          "footprint_filter"
+        ],
+        "kicad_version": "10.0.7",
+        "schematic_files": [
+          "project/rc_stage.kicad_sch"
+        ],
+        "sheets_checked": 1,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "sch",
+            "erc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--units",
+            "mm",
+            "-o",
+            "/work/erc.json",
+            "/candidate/project/rc_stage.kicad_sch"
+          ],
+          "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+          "duration_s": 6.408,
+          "exit_code": 0
+        },
+        "violations": 0
+      },
+      "evidence": [
+        "work/erc/execution.json",
+        "work/erc/console.log",
+        "work/erc/erc.json"
+      ],
+      "execution": "ok",
+      "id": "erc",
+      "kind": "erc",
+      "limitations": [
+        "stock template tables not captured: sym-lib-table, fp-lib-table"
+      ],
+      "outcome": "pass",
+      "summary": "ERC ran on 1 sheet instance(s) with zero violations"
+    },
+    {
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "details": {
+        "components": 3,
+        "dnp_refs": [],
+        "nets": 3,
+        "refs": [
+          "C1",
+          "J1",
+          "R1"
+        ],
+        "schematic_files": [
+          "project/rc_stage.kicad_sch"
+        ],
+        "sheet_instances": 1
+      },
+      "evidence": [
+        "work/netlist/execution.json",
+        "work/netlist/console.log",
+        "work/netlist/design.xml",
+        "work/netlist/connectivity.json"
+      ],
+      "execution": "ok",
+      "id": "netlist",
+      "kind": "netlist",
+      "limitations": [
+        "stock template tables not captured: sym-lib-table, fp-lib-table"
+      ],
+      "outcome": "info",
+      "summary": "native XML netlist exported from a complete 1-instance hierarchy: 3 component(s), 3 net(s), 0 DNP"
+    },
+    {
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "details": {
+        "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+        "by_severity": {
+          "error": 8,
+          "warning": 3
+        },
+        "by_type": {
+          "copper_edge_clearance": 3,
+          "courtyards_overlap": 1,
+          "silk_edge_clearance": 1,
+          "silk_over_copper": 2,
+          "unconnected_items": 4
+        },
+        "graded": [
+          "violations",
+          "schematic_parity"
+        ],
+        "ignored_checks": [
+          "missing_courtyard",
+          "track_not_centered_on_via",
+          "tuning_profile_track_geometries",
+          "footprint_filters_mismatch",
+          "footprint_type_mismatch"
+        ],
+        "kicad_version": "10.0.7",
+        "projection": "placement-stage/1",
+        "schematic_parity": 0,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--schematic-parity",
+            "--units",
+            "mm",
+            "-o",
+            "/work/drc.json",
+            "/candidate/project/rc_stage.kicad_pcb"
+          ],
+          "console_sha256": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+          "duration_s": 5.92,
+          "exit_code": 0
+        },
+        "unconnected_items": 4,
+        "ungraded": {
+          "unconnected_items": 4
+        },
+        "violations": 7
+      },
+      "evidence": [
+        "work/drc-placement/execution.json",
+        "work/drc-placement/console.log",
+        "work/drc-placement/drc.json"
+      ],
+      "execution": "ok",
+      "id": "drc-placement",
+      "kind": "drc",
+      "limitations": [
+        "stock template tables not captured: sym-lib-table, fp-lib-table",
+        "zone fill evaluated as saved; the read-only candidate forbids a refill pass",
+        "placement-stage/1: unconnected items are retained in drc.json but not graded; a later full DRC with connectivity remains required"
+      ],
+      "outcome": "defect",
+      "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only"
+    },
+    {
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "details": {
+        "advisory": null,
+        "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+        "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+        "criterion": "courtyard-overlap/1",
+        "defects": [
+          {
+            "kind": "courtyards_overlap",
+            "native": {
+              "description": "Courtyards overlap",
+              "items": [
+                {
+                  "description": "Footprint R1",
+                  "pos": {
+                    "x": 20.0,
+                    "y": 15.0
+                  },
+                  "uuid": "98df07b6-9f7f-4cc5-bb29-9cf181b4daa0"
+                },
+                {
+                  "description": "Footprint C1",
+                  "pos": {
+                    "x": 20.0,
+                    "y": 16.5
+                  },
+                  "uuid": "e7acaf41-5a52-4e41-9b7f-cd68111d3ceb"
+                }
+              ],
+              "severity": "error",
+              "type": "courtyards_overlap"
+            },
+            "refs": [
+              "R1",
+              "C1"
+            ]
+          }
+        ],
+        "drc": {
+          "check_id": "drc-placement",
+          "drc_json": "work/drc-placement/drc.json",
+          "drc_sha256": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
+          "kicad_version": "10.0.7",
+          "outcome": "defect",
+          "projection": "placement-stage/1",
+          "result_sha256": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810"
+        },
+        "notes": [],
+        "pcbnew_version": "10.0.7",
+        "routing_feedback": null,
+        "status": "defect",
+        "tool": {
+          "argv": [
+            "/usr/bin/python3",
+            "-B",
+            "-m",
+            "agent_ee.placement_probe",
+            "/candidate/project/rc_stage.kicad_pcb",
+            "--out",
+            "/work/placement-probe.json"
+          ],
+          "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+          "duration_s": 2.843,
+          "exit_code": 0
+        },
+        "unknown": []
+      },
+      "evidence": [
+        "work/drc-placement/drc.json",
+        "work/courtyard/execution.json",
+        "work/courtyard/console.log",
+        "work/courtyard/placement-probe.json",
+        "work/courtyard/placement-judgment.json"
+      ],
+      "execution": "ok",
+      "id": "courtyard",
+      "kind": "placement",
+      "limitations": [
+        "placement predicate over saved geometry and the prerequisite native DRC; no copper, thermal, EMC or routed-length analysis; advisory score and routing feedback never pass or fail"
+      ],
+      "outcome": "defect",
+      "summary": "courtyard-overlap/1: 1 proved violation(s)"
+    },
+    {
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "details": {
+        "advisory": null,
+        "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+        "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+        "criterion": "outline-containment/1",
+        "defects": [
+          {
+            "kind": "outside_outline",
+            "outside_area_mm2": 13.265,
+            "ref": "J1",
+            "side": "F"
+          }
+        ],
+        "drc": {
+          "check_id": "drc-placement",
+          "drc_json": "work/drc-placement/drc.json",
+          "drc_sha256": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
+          "kicad_version": "10.0.7",
+          "outcome": "defect",
+          "projection": "placement-stage/1",
+          "result_sha256": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810"
+        },
+        "pcbnew_version": "10.0.7",
+        "routing_feedback": null,
+        "status": "defect",
+        "tool": {
+          "argv": [
+            "/usr/bin/python3",
+            "-B",
+            "-m",
+            "agent_ee.placement_probe",
+            "/candidate/project/rc_stage.kicad_pcb",
+            "--out",
+            "/work/placement-probe.json"
+          ],
+          "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+          "duration_s": 0.697,
+          "exit_code": 0
+        },
+        "unknown": []
+      },
+      "evidence": [
+        "work/drc-placement/drc.json",
+        "work/containment/execution.json",
+        "work/containment/console.log",
+        "work/containment/placement-probe.json",
+        "work/containment/placement-judgment.json"
+      ],
+      "execution": "ok",
+      "id": "containment",
+      "kind": "placement",
+      "limitations": [
+        "placement predicate over saved geometry and the prerequisite native DRC; no copper, thermal, EMC or routed-length analysis; advisory score and routing feedback never pass or fail"
+      ],
+      "outcome": "defect",
+      "summary": "outline-containment/1: 1 proved violation(s)"
+    },
+    {
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "details": {
+        "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+        "by_severity": {
+          "error": 8,
+          "warning": 3
+        },
+        "by_type": {
+          "copper_edge_clearance": 3,
+          "courtyards_overlap": 1,
+          "silk_edge_clearance": 1,
+          "silk_over_copper": 2,
+          "unconnected_items": 4
+        },
+        "ignored_checks": [
+          "missing_courtyard",
+          "track_not_centered_on_via",
+          "tuning_profile_track_geometries",
+          "footprint_filters_mismatch",
+          "footprint_type_mismatch"
+        ],
+        "kicad_version": "10.0.7",
+        "schematic_parity": 0,
+        "tool": {
+          "argv": [
+            "kicad-cli",
+            "pcb",
+            "drc",
+            "--format",
+            "json",
+            "--severity-all",
+            "--schematic-parity",
+            "--units",
+            "mm",
+            "-o",
+            "/work/drc.json",
+            "/candidate/project/rc_stage.kicad_pcb"
+          ],
+          "console_sha256": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
+          "duration_s": 4.088,
+          "exit_code": 0
+        },
+        "unconnected_items": 4,
+        "violations": 7
+      },
+      "evidence": [
+        "work/drc-final/execution.json",
+        "work/drc-final/console.log",
+        "work/drc-final/drc.json"
+      ],
+      "execution": "ok",
+      "id": "drc-final",
+      "kind": "drc",
+      "limitations": [
+        "stock template tables not captured: sym-lib-table, fp-lib-table",
+        "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+      ],
+      "outcome": "defect",
+      "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)"
+    }
+  ],
+  "expected_check_ids": [
+    "erc",
+    "netlist",
+    "drc-placement",
+    "courtyard",
+    "containment",
+    "drc-final"
+  ],
+  "expected_review_roles": [
+    "circuit",
+    "physical"
+  ],
+  "findings": [
+    {
+      "assessment": "defect",
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "check_kind": "drc",
+      "condition": "check drc-placement (drc)",
+      "disposition": "unresolved",
+      "events": [],
+      "evidence": [
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/execution.json"
+        },
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/console.log"
+        },
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/drc.json"
+        }
+      ],
+      "id": "check/drc-placement",
+      "local_id": "drc-placement",
+      "location": "drc-placement",
+      "mechanism": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only",
+      "reasoning": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only",
+      "role": "check",
+      "severity": "blocking",
+      "source": "check",
+      "status": "unresolved",
+      "title": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only"
+    },
+    {
+      "assessment": "defect",
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "check_kind": "placement",
+      "condition": "check courtyard (placement)",
+      "disposition": "unresolved",
+      "events": [],
+      "evidence": [
+        {
+          "locator": "check:courtyard",
+          "path": "work/drc-placement/drc.json"
+        },
+        {
+          "locator": "check:courtyard",
+          "path": "work/courtyard/execution.json"
+        },
+        {
+          "locator": "check:courtyard",
+          "path": "work/courtyard/console.log"
+        },
+        {
+          "locator": "check:courtyard",
+          "path": "work/courtyard/placement-probe.json"
+        },
+        {
+          "locator": "check:courtyard",
+          "path": "work/courtyard/placement-judgment.json"
+        }
+      ],
+      "id": "check/courtyard",
+      "local_id": "courtyard",
+      "location": "courtyard",
+      "mechanism": "courtyard-overlap/1: 1 proved violation(s)",
+      "reasoning": "courtyard-overlap/1: 1 proved violation(s)",
+      "role": "check",
+      "severity": "blocking",
+      "source": "check",
+      "status": "unresolved",
+      "title": "courtyard-overlap/1: 1 proved violation(s)"
+    },
+    {
+      "assessment": "defect",
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "check_kind": "placement",
+      "condition": "check containment (placement)",
+      "disposition": "unresolved",
+      "events": [],
+      "evidence": [
+        {
+          "locator": "check:containment",
+          "path": "work/drc-placement/drc.json"
+        },
+        {
+          "locator": "check:containment",
+          "path": "work/containment/execution.json"
+        },
+        {
+          "locator": "check:containment",
+          "path": "work/containment/console.log"
+        },
+        {
+          "locator": "check:containment",
+          "path": "work/containment/placement-probe.json"
+        },
+        {
+          "locator": "check:containment",
+          "path": "work/containment/placement-judgment.json"
+        }
+      ],
+      "id": "check/containment",
+      "local_id": "containment",
+      "location": "containment",
+      "mechanism": "outline-containment/1: 1 proved violation(s)",
+      "reasoning": "outline-containment/1: 1 proved violation(s)",
+      "role": "check",
+      "severity": "blocking",
+      "source": "check",
+      "status": "unresolved",
+      "title": "outline-containment/1: 1 proved violation(s)"
+    },
+    {
+      "assessment": "defect",
+      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "check_kind": "drc",
+      "condition": "check drc-final (drc)",
+      "disposition": "unresolved",
+      "events": [],
+      "evidence": [
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/execution.json"
+        },
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/console.log"
+        },
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/drc.json"
+        }
+      ],
+      "id": "check/drc-final",
+      "local_id": "drc-final",
+      "location": "drc-final",
+      "mechanism": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)",
+      "reasoning": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)",
+      "role": "check",
+      "severity": "blocking",
+      "source": "check",
+      "status": "unresolved",
+      "title": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)"
+    }
+  ],
+  "finished_utc": "2026-10-18T03:51:56.078598+00:00",
+  "launch_expectation": {
+    "baseline_id": "c4733b35a4a67c8a044d775923548e3ee6a53bf411d69824a4b3766e66711e61",
+    "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+    "declared_installations": {},
+    "declared_tools": {},
+    "definitions": [],
+    "identity": "f0a0287620b717e0296bd2091fab4b6bd2151d71f8108351556780c356a1ce60",
+    "policy_files": {
+      "__init__.py": "6074e79a961e45e90e80625879b107104b1c2a514c918eba445b2608b1ce4b65",
+      "_connectivity_hierarchy.py": "711484785d4132ccae19fff5317367a7101c9dadc1c4cbc9719de9139897a25b",
+      "active_spice.py": "a3fa310380c1884eeb51ed848d74f8cccedcb6ea68762d339a4ede30117b5a24",
+      "applicability.py": "09c4b813012add3910dd212aafbaa92056236b6f5e251a76d16adb59a3b0c99d",
+      "assembly_readiness.py": "0c3d2ec4c280a2fd8402fa4f80a2130e30fe986f4f7885b83bdd38f69945682c",
+      "baseline.py": "cf023ab5a1c1c3bac9b4a59743285ff9f3583119c27212c775fd1ac21f4a9050",
+      "bench_transactions.py": "eca2fe9e7d28da8818bce5b4f2253cd976d9558f9beb09e2bae03ca213331ae8",
+      "benchmark.py": "1fbd88855294ad473c6efc88a7d1d083e712f6bcbdc841471381bab76a9ad935",
+      "benchmark_run.py": "555375ed59b5e15e51bd9670437be58945fcd8981be684e416bd8a853d594ca5",
+      "board_build.py": "2b4b7682e8a1752f171cabc1cafcd7fed497bf68e8077dcd2a999b04aa254a55",
+      "board_envelope.py": "fa6aa4cfb30896d0ce0e369ebf2a9d7b8b5b229228c85c16f6af1d5ea7fb04df",
+      "campaign.py": "9260f7448668b3542ff1edb8a84d340611c54a855b7960ce9958e44e12606d4a",
+      "candidate.py": "c2f9cb21852bd644f833f900cbc2adc3d9518cb2c78a774637fa31639585821b",
+      "capabilities.py": "59f849a4e34299d04b85e61ca89b5d4788cb076726637c3c76d589fc9457a55c",
+      "catalog.py": "ae3966e3b4198b7caa02e5c3480dae8a203aeba736a361bb65adec15163e1d2d",
+      "catalog_checks.py": "3a6e887274b2e4499adb9b6bc1dd1701ef6bee4eb6360487ebc48651a6d4e202",
+      "catalog_feed.py": "ae59bc49b565685ddf915647f62b78b734ac6894b7d3cda12429f841367c7283",
+      "catalog_jlcparts.py": "e56cac3bd6a6af06cb12b84b082f46d53c7dd5d6c1473ef90cdbf416ece934ed",
+      "checks.py": "9c6cdcac83ffddc4cf702c202f6152b994161da6261a9c76b1eb76d5b05d223d",
+      "cli.py": "ef4a2dd6aa5f78dceac9998258b5bb9488d70fd974753db049ba735f8cf708b8",
+      "connectivity_ir.py": "a0fa5f121ffb2b5d52fa0089afb5544f5b157f214a80742cb916df3fd021a36b",
+      "convergence.py": "08a8b310f641692b0a5be12a119b85fce4f0b7a14bd8b9c6f6f736ce9a3997de",
+      "datasheet_capture.py": "b61e7e8faec5e110ac53a42a5a4227b525cffc892605fb638646ee8f3edb4be2",
+      "datasheet_facts.py": "499b37b7224652685a1da32707114d83e9b6520eb100bc4aa0ad8a6005aade51",
+      "datasheet_parts.py": "b881268854db466ce701f8ba518ee78f4e6f7d7bd1329bbe583b4cb54d129a9c",
+      "dc_geometry_probe.py": "6b0d572cec51872a2e3afea6bd9b0d5c5f74510b65147c54c252bb5e93185bf6",
+      "dc_path.py": "ccf5ef7538c77922385a6375e03dc7a9e7a0b7fe0afaf3eca7d293345b15fe81",
+      "design_dialog.py": "cc050cf2e7d4d33455831726928e58accf102066bfccd0bfaaf795b3a6f6aa19",
+      "design_intent.py": "9862f97af3d99f7127e5e9903b51735a8174f3012a6c136aeeb9fb66f112572f",
+      "dfa_dft.py": "1a5a50b6a9e6a4c561496ce8489214cfa87f58d67256c32453a4d6e086938373",
+      "diagnostics.py": "a2326349cdcfa314ddc762ea58a21ce553fd0bb3a5a66a044dd18cc862248889",
+      "easyeda_footprint.py": "149dc74d40e0ca719ea4cc063768cd56f923246af2e43fe3cd75384ed8b69ab0",
+      "empirical.py": "269b9c05ee5e8b6ebab0d7e4e21d39ae56617330ff34fc0f1c0f913a10e840b5",
+      "envelope_check.py": "76ec64ce5dc2030e4a0fa0797c527c10add50c0b294823b5a0fad2644e5be313",
+      "envelope_probe.py": "e7631d71268bed86685e9955ecfbdcfabd5c72eddef79dfc1364c06f9403cbfc",
+      "evidence_requests.py": "829a5c65664908aefe2ebfa8ccd299d26b5bbe49ac3cf317b100c28922a26983",
+      "executor.py": "56cd1aecd2bc6dff2a6fb589e2c78408a6ab067274c657ab60f7e318d21c5abf",
+      "fab_consistency.py": "7ee52be916c5e82c90ff61b08845bbb17ec20775a894440a16996103847cd688",
+      "fab_export.py": "ee9a05fbe7740914e8dbf2c9e824b518b6e64fcc697540da4e55e751f52557e6",
+      "fab_profile.py": "cbae381830b1f1bd3d894637a0fb2d6c01d79563a276f323f9563610a6b1d3b7",
+      "fab_roundtrip.py": "0d7ce9df6577364a5e2911912c93a277c319e6411fb63e063443db418c672512",
+      "findings.py": "1050ee8f0ebe66b5ef84b6f9ed2c6e5b2bedd9661c38516ccd60b7831fcba7cf",
+      "footprint_library.py": "3fe0fcfb2801567a1a68bee6d077ac7bee34be0aedf50d99ffbf7c926cdf4220",
+      "forward_annotation.py": "19db17f925ff260d72da65b57ab8f85299b96db5f281d65abad03a3ba4681f5d",
+      "forward_annotation_probe.py": "f90e171e782ddeb2f857f1cff558073189724d58b598f2e52b0a7b9b785c7d20",
+      "generate.py": "05c121606d6bc45a8f9f5c4dfa34f99e233546e0d8fe0c5cd0a208ba679f51cc",
+      "geometry_probe.py": "06ee6fd416d267735f88cf2726b9284b53d19dd05dde9411647453230a32ae4a",
+      "happy_adapters.py": "d11f8fe14615e4cfb4067d76e99295a19e434dea0d163462c3de14ea05b25c9e",
+      "hardware_interface.py": "2a7a3ee6dff801cc24e0e074c42dc66190beaaaf2efd4d41ac6189c758cdd49a",
+      "harnesses.py": "e5a2e0bafc86ddaf8294fa0941b4c78ba24582d0ab8c560261e7800d44b695a9",
+      "kicad_embedded.py": "6eeb13582bf9ce31fb2802974818e13d0929dd3262572d82ba87ee0c80ece1db",
+      "kicad_happy.py": "cce69c6560b14fe2d966e74e304939101ab859cf8cd16251e9e1361912009117",
+      "kicad_happy_runner.py": "8a95efdf6aadb0bbb9ae07ebb4459db67f99981980a3bb5453c7d8f8c1fd1ea3",
+      "kicad_route_attempt.py": "f424b0c106ba5e7ab3cd1c6a3e9bff7cbbac203ed1fbfe16c9b01a0a52fba72f",
+      "land_geometry.py": "dd094ef5a6a0872e0c9541d9ed8928725487c43de734c21d4e33a2d393dd5935",
+      "land_pattern.py": "2a23a788d2c767b173302bca24a476d91a3b6d14bfd690a5fea36b4ae5c8d53b",
+      "library_checks.py": "e120daf1a14feb05f5f2d7038a7f522aa412b138e1bef7e2bd22eae4b97d1a5b",
+      "library_tools.py": "b03c6a8dc5a29a2d41fb29b54075dcb530d9a7f1f198eeea2f044178f859144a",
+      "locking.py": "c67d9c1434614495b78545ef6c18c65a321ca2ae380020a64d335bbc744c7954",
+      "measurements.py": "4ef5c12b427f60f6c0d52a214360132eab42d382c9b6cc92e7e4af4410bbb37c",
+      "models3d.py": "b48de18b2221bca41b832fdc332f6c6f688e42f628c68a758dafe585ce9cd25a",
+      "native_binding.py": "ca68c4fc6de0f7ba525ea49ccd2648e7453b051091febb0010e6fe6e6b3bdd2a",
+      "native_netlist.py": "2b6ae1916113cb6fb399e70a45538a84528fa238fbec99367e70ce8c4f437614",
+      "netclass_completeness.py": "cfcb3738d5644d5e9a80f9c34661daa80a967aa9ffb45a4077b11ce97271aa01",
+      "netlist_extra.py": "6c930e971e4343372d35dcc554abd527ce7e73cbeaee3ce615a80dba7152bdd9",
+      "netlist_parity.py": "84a819b56f1d7a40e4d83ead7eee14481961e49752cdef1c815814f498ba9a61",
+      "package_consistency.py": "c1bf0c529094ade0d26f5d315b055becf27d938bc320fff789a670fb0dd05123",
+      "packet_index.py": "2ac06f508dd1b15dd84db222bc72783196dec2b4db4c86a9eeae4b752939c216",
+      "part_binding.py": "87eac7f9b294153ceffa0fd8d943104bd54992fd76a17f9a8c423cd09c50c392",
+      "part_selection.py": "7fffae6bb2962e9f055892ca7b38803aea70bd53393553a00622bd21a6d2c121",
+      "parts_manifest.py": "9e797ac37b8f24ee365490e090814f8a74ef480a55b077ff901afab9a07570cc",
+      "parts_subset.py": "2f8f04d810ad122f9e3f63385b5b78b5b3427c72c3b78976c00fa6f1142a4d8a",
+      "passive_corners.py": "9dcecbb83cf888cfc019f2c6445f53aa690f698ebbdabc1636ada09da9a44037",
+      "placement.py": "d4c75f18c799cd4382f8c50a507fcc0783d0b44b94b9dd8f8b7eaf2dbd8909eb",
+      "placement_adapter.py": "89da096e2d8a47a3c8555160ac43e31b9b4954712ed915cd0b484d96ac0ac247",
+      "placement_check.py": "c26f03afbe579dc850823e984645bdecdbbf2e8d9799c0d915bba5f6061bf467",
+      "placement_predicates.py": "f5b4401a4d0662597a4a4ab69d0c216fbb8634eb85fc546d38155a1963146f4a",
+      "placement_probe.py": "2994d0979ce5cf74906ef7987078eee1ac37e740fcb6febffea02fb12f2dd0b5",
+      "placer.py": "5ab4344334300b4677b07535aea17072da765c2ee5cddf3fc99702f3e9ff2267",
+      "placer_runner.py": "e38826ab5f8a39634bd93162ae6990298f9ebf8bfdcc6a862bce37c74b4c34e6",
+      "preflight.py": "6a80bf5f4aa3c0c96bdc182916e6c5b5aa0943f4a4d7235589c8c736e1821865",
+      "profiles.py": "cda0184262298815d89fe82da6bd673b61bc06af820caae6819555949d5bf1b1",
+      "reference_blocks.py": "42554881f8f15f8bc2ae4bd97747b45a7d8f11d4b4b2a6d6b534028f7c543361",
+      "render3d.py": "4b2b81ec5325e25c0b86b70aaaf357198074ef15c96d09fc456bbbbcfa9b2fae",
+      "replay.py": "0a8e3e1820293660f36ba478032b8050d2a232d0accb4b4387d06efd83c3db52",
+      "replay_child.py": "bdffb73d197fe36d5219dccf456d30237e48741d9cf7d6b1a32a04626934ba74",
+      "reviewers.py": "99a104245bfd649c7436f6c918173f0178a2f0ec42a5cd5ddcf136afff7881dc",
+      "routing_adapter.py": "27f56dfac6e8384f4eab4f281c477af194f50d7dd4d98bc3add81e9ad5c916a5",
+      "routing_native.py": "8776c3352e52d343313d8bce49cb584a06c6e3a34654759d378760c572a0b0e9",
+      "routing_rules.py": "24d984591f2aba0415fefe50f86c8045fbca86f6164ebe0696a637b05523cecc",
+      "rung1_campaign.py": "031f485c7deb62e05e681b1b8ec998b8bfbdcf35575d2c43178d09b41dd6c09c",
+      "rung1_qualified.py": "0d034ad4234079c86c371a28c82670a4f140bd7ab667a4742fbcfbc7230d4c52",
+      "scaffold.py": "0894b927d3affa7412646a029cc73e7e79923bad6e341acc52054355f039aa48",
+      "schematic_decompile.py": "8e6bc33fae93d1c27b1061d165ae51f8a0008dc33d5cb8d79a3355c57469b4a9",
+      "schematic_emit.py": "7d586d19f30ba5cb0d585afe855b840442780469880001b6cc24df95e1d604bc",
+      "schematic_emitter.py": "e7dcd18ed251f4b1d065da0a419040a24d36551d6aca80d6a93fa9281ae217c0",
+      "schematic_lint.py": "1a99a42d6d353458de9b13a2893a1e92e423bf88f6f037724f0573e8c615d315",
+      "schematic_roundtrip.py": "18908191c58c649c07092163c2d9edcef8e77f27317306120d7a30b1fbd370a0",
+      "stage_receipts.py": "e33bffe0075d48c30d9316f60d1549c75e49fef076f4ca8c483948dbedc666ca",
+      "stages.py": "c94b2fb8713263547cf0d2b70d464d76203b1df921eeca0608c982cd1fa05a17",
+      "storage.py": "469f20d6f44415b8b8978c15485e4c0038340df908d6213babc919ee443c2525",
+      "sublayout.py": "2e950873258128aabcaf3db6aa915dff3d48e1e395156b360b12e3b43842cb41",
+      "sublayout_probe.py": "252088701499043c5c2b9fe9c44bb2d0097ef83c16261238a42413623522b922",
+      "symbol_capture.py": "7090cc3b2c1bfb130f0fee9afbc8a99041052157956bd4d3b0c993fd42531db3",
+      "symbol_checks.py": "e6c2fc5790392ba1b7001f08bbee5df55e3f2235978e66d9fd5a9db87569adc4",
+      "symbol_context.py": "9a8205f6ea92156cb23a9a340458a3d4e1c0f3f0b496db4c146119b36c8f8dac",
+      "symbol_library.py": "2f4adc30193fdc252df562bacaa9854e14ba648eeb051af4aa5d09ba7905ad85",
+      "viewer.py": "fe6a2133d4eb0a0a7f2b9c5c0977558b6ede7b5509031aa3cb7a5b22d1ba2384"
+    },
+    "profile": null,
+    "required_runtime": [
+      "/usr/bin/python3",
+      "bwrap",
+      "kicad-cli"
+    ],
+    "run_id": "607a5eb0-2060-457b-8750-c5cb2edc439a",
+    "runtime_files": {
+      "/usr/bin/ngspice": {
+        "path": "/usr/bin/ngspice",
+        "sha256": "820658317b0b54035208da41936fd6871ce924036e5ea4113a4168b821b7fc45"
+      },
+      "/usr/bin/python3": {
+        "path": "/usr/bin/python3",
+        "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+      },
+      "agy": {
+        "path": "/home/halbritt/.local/bin/agy",
+        "sha256": "085f43e0d0628a8a8dabe1e547067818fa2c0adc86cfac98a3c4492918f455ef"
+      },
+      "bwrap": {
+        "path": "/usr/bin/bwrap",
+        "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+      },
+      "claude": {
+        "path": "/home/halbritt/.local/bin/claude",
+        "sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5"
+      },
+      "codex": {
+        "path": "/home/halbritt/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+        "sha256": "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215"
+      },
+      "codex_tool_host": {
+        "path": "/home/halbritt/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex-code-mode-host",
+        "sha256": "8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916"
+      },
+      "kicad-cli": {
+        "path": "/usr/bin/kicad-cli",
+        "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+      },
+      "ngspice": {
+        "path": "/usr/bin/ngspice",
+        "sha256": "820658317b0b54035208da41936fd6871ce924036e5ea4113a4168b821b7fc45"
+      },
+      "pcbnew": {
+        "path": "/usr/lib/python3/dist-packages/_pcbnew.so",
+        "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8"
+      }
+    },
+    "schema": "agent-ee.launch-expectation/1"
+  },
+  "limitations": [
+    "Original alternative, not a derivative of the unresolved FOME-MC control.",
+    "No simulation, manufacturing qualification or complete campaign is claimed. Zone fill is graded as saved.",
+    "Expected seeded defects remain defects; fixture expectations never invert a production grade.",
+    "Checks-only run: independent agent reviews and adjudication not performed."
+  ],
+  "manifest_sha256": "3619118a1c3ee15d5c34d96563615f3640a2015911d5a308c6a7a5f2abaf1fc9",
+  "name": "Original RC seeded-placement stage fixture",
+  "outcome": "incomplete",
+  "policy_files": {
+    "__init__.py": "6074e79a961e45e90e80625879b107104b1c2a514c918eba445b2608b1ce4b65",
+    "_connectivity_hierarchy.py": "711484785d4132ccae19fff5317367a7101c9dadc1c4cbc9719de9139897a25b",
+    "active_spice.py": "a3fa310380c1884eeb51ed848d74f8cccedcb6ea68762d339a4ede30117b5a24",
+    "applicability.py": "09c4b813012add3910dd212aafbaa92056236b6f5e251a76d16adb59a3b0c99d",
+    "assembly_readiness.py": "0c3d2ec4c280a2fd8402fa4f80a2130e30fe986f4f7885b83bdd38f69945682c",
+    "baseline.py": "cf023ab5a1c1c3bac9b4a59743285ff9f3583119c27212c775fd1ac21f4a9050",
+    "bench_transactions.py": "eca2fe9e7d28da8818bce5b4f2253cd976d9558f9beb09e2bae03ca213331ae8",
+    "benchmark.py": "1fbd88855294ad473c6efc88a7d1d083e712f6bcbdc841471381bab76a9ad935",
+    "benchmark_run.py": "555375ed59b5e15e51bd9670437be58945fcd8981be684e416bd8a853d594ca5",
+    "board_build.py": "2b4b7682e8a1752f171cabc1cafcd7fed497bf68e8077dcd2a999b04aa254a55",
+    "board_envelope.py": "fa6aa4cfb30896d0ce0e369ebf2a9d7b8b5b229228c85c16f6af1d5ea7fb04df",
+    "campaign.py": "9260f7448668b3542ff1edb8a84d340611c54a855b7960ce9958e44e12606d4a",
+    "candidate.py": "c2f9cb21852bd644f833f900cbc2adc3d9518cb2c78a774637fa31639585821b",
+    "capabilities.py": "59f849a4e34299d04b85e61ca89b5d4788cb076726637c3c76d589fc9457a55c",
+    "catalog.py": "ae3966e3b4198b7caa02e5c3480dae8a203aeba736a361bb65adec15163e1d2d",
+    "catalog_checks.py": "3a6e887274b2e4499adb9b6bc1dd1701ef6bee4eb6360487ebc48651a6d4e202",
+    "catalog_feed.py": "ae59bc49b565685ddf915647f62b78b734ac6894b7d3cda12429f841367c7283",
+    "catalog_jlcparts.py": "e56cac3bd6a6af06cb12b84b082f46d53c7dd5d6c1473ef90cdbf416ece934ed",
+    "checks.py": "9c6cdcac83ffddc4cf702c202f6152b994161da6261a9c76b1eb76d5b05d223d",
+    "cli.py": "ef4a2dd6aa5f78dceac9998258b5bb9488d70fd974753db049ba735f8cf708b8",
+    "connectivity_ir.py": "a0fa5f121ffb2b5d52fa0089afb5544f5b157f214a80742cb916df3fd021a36b",
+    "convergence.py": "08a8b310f641692b0a5be12a119b85fce4f0b7a14bd8b9c6f6f736ce9a3997de",
+    "datasheet_capture.py": "b61e7e8faec5e110ac53a42a5a4227b525cffc892605fb638646ee8f3edb4be2",
+    "datasheet_facts.py": "499b37b7224652685a1da32707114d83e9b6520eb100bc4aa0ad8a6005aade51",
+    "datasheet_parts.py": "b881268854db466ce701f8ba518ee78f4e6f7d7bd1329bbe583b4cb54d129a9c",
+    "dc_geometry_probe.py": "6b0d572cec51872a2e3afea6bd9b0d5c5f74510b65147c54c252bb5e93185bf6",
+    "dc_path.py": "ccf5ef7538c77922385a6375e03dc7a9e7a0b7fe0afaf3eca7d293345b15fe81",
+    "design_dialog.py": "cc050cf2e7d4d33455831726928e58accf102066bfccd0bfaaf795b3a6f6aa19",
+    "design_intent.py": "9862f97af3d99f7127e5e9903b51735a8174f3012a6c136aeeb9fb66f112572f",
+    "dfa_dft.py": "1a5a50b6a9e6a4c561496ce8489214cfa87f58d67256c32453a4d6e086938373",
+    "diagnostics.py": "a2326349cdcfa314ddc762ea58a21ce553fd0bb3a5a66a044dd18cc862248889",
+    "easyeda_footprint.py": "149dc74d40e0ca719ea4cc063768cd56f923246af2e43fe3cd75384ed8b69ab0",
+    "empirical.py": "269b9c05ee5e8b6ebab0d7e4e21d39ae56617330ff34fc0f1c0f913a10e840b5",
+    "envelope_check.py": "76ec64ce5dc2030e4a0fa0797c527c10add50c0b294823b5a0fad2644e5be313",
+    "envelope_probe.py": "e7631d71268bed86685e9955ecfbdcfabd5c72eddef79dfc1364c06f9403cbfc",
+    "evidence_requests.py": "829a5c65664908aefe2ebfa8ccd299d26b5bbe49ac3cf317b100c28922a26983",
+    "executor.py": "56cd1aecd2bc6dff2a6fb589e2c78408a6ab067274c657ab60f7e318d21c5abf",
+    "fab_consistency.py": "7ee52be916c5e82c90ff61b08845bbb17ec20775a894440a16996103847cd688",
+    "fab_export.py": "ee9a05fbe7740914e8dbf2c9e824b518b6e64fcc697540da4e55e751f52557e6",
+    "fab_profile.py": "cbae381830b1f1bd3d894637a0fb2d6c01d79563a276f323f9563610a6b1d3b7",
+    "fab_roundtrip.py": "0d7ce9df6577364a5e2911912c93a277c319e6411fb63e063443db418c672512",
+    "findings.py": "1050ee8f0ebe66b5ef84b6f9ed2c6e5b2bedd9661c38516ccd60b7831fcba7cf",
+    "footprint_library.py": "3fe0fcfb2801567a1a68bee6d077ac7bee34be0aedf50d99ffbf7c926cdf4220",
+    "forward_annotation.py": "19db17f925ff260d72da65b57ab8f85299b96db5f281d65abad03a3ba4681f5d",
+    "forward_annotation_probe.py": "f90e171e782ddeb2f857f1cff558073189724d58b598f2e52b0a7b9b785c7d20",
+    "generate.py": "05c121606d6bc45a8f9f5c4dfa34f99e233546e0d8fe0c5cd0a208ba679f51cc",
+    "geometry_probe.py": "06ee6fd416d267735f88cf2726b9284b53d19dd05dde9411647453230a32ae4a",
+    "happy_adapters.py": "d11f8fe14615e4cfb4067d76e99295a19e434dea0d163462c3de14ea05b25c9e",
+    "hardware_interface.py": "2a7a3ee6dff801cc24e0e074c42dc66190beaaaf2efd4d41ac6189c758cdd49a",
+    "harnesses.py": "e5a2e0bafc86ddaf8294fa0941b4c78ba24582d0ab8c560261e7800d44b695a9",
+    "kicad_embedded.py": "6eeb13582bf9ce31fb2802974818e13d0929dd3262572d82ba87ee0c80ece1db",
+    "kicad_happy.py": "cce69c6560b14fe2d966e74e304939101ab859cf8cd16251e9e1361912009117",
+    "kicad_happy_runner.py": "8a95efdf6aadb0bbb9ae07ebb4459db67f99981980a3bb5453c7d8f8c1fd1ea3",
+    "kicad_route_attempt.py": "f424b0c106ba5e7ab3cd1c6a3e9bff7cbbac203ed1fbfe16c9b01a0a52fba72f",
+    "land_geometry.py": "dd094ef5a6a0872e0c9541d9ed8928725487c43de734c21d4e33a2d393dd5935",
+    "land_pattern.py": "2a23a788d2c767b173302bca24a476d91a3b6d14bfd690a5fea36b4ae5c8d53b",
+    "library_checks.py": "e120daf1a14feb05f5f2d7038a7f522aa412b138e1bef7e2bd22eae4b97d1a5b",
+    "library_tools.py": "b03c6a8dc5a29a2d41fb29b54075dcb530d9a7f1f198eeea2f044178f859144a",
+    "locking.py": "c67d9c1434614495b78545ef6c18c65a321ca2ae380020a64d335bbc744c7954",
+    "measurements.py": "4ef5c12b427f60f6c0d52a214360132eab42d382c9b6cc92e7e4af4410bbb37c",
+    "models3d.py": "b48de18b2221bca41b832fdc332f6c6f688e42f628c68a758dafe585ce9cd25a",
+    "native_binding.py": "ca68c4fc6de0f7ba525ea49ccd2648e7453b051091febb0010e6fe6e6b3bdd2a",
+    "native_netlist.py": "2b6ae1916113cb6fb399e70a45538a84528fa238fbec99367e70ce8c4f437614",
+    "netclass_completeness.py": "cfcb3738d5644d5e9a80f9c34661daa80a967aa9ffb45a4077b11ce97271aa01",
+    "netlist_extra.py": "6c930e971e4343372d35dcc554abd527ce7e73cbeaee3ce615a80dba7152bdd9",
+    "netlist_parity.py": "84a819b56f1d7a40e4d83ead7eee14481961e49752cdef1c815814f498ba9a61",
+    "package_consistency.py": "c1bf0c529094ade0d26f5d315b055becf27d938bc320fff789a670fb0dd05123",
+    "packet_index.py": "2ac06f508dd1b15dd84db222bc72783196dec2b4db4c86a9eeae4b752939c216",
+    "part_binding.py": "87eac7f9b294153ceffa0fd8d943104bd54992fd76a17f9a8c423cd09c50c392",
+    "part_selection.py": "7fffae6bb2962e9f055892ca7b38803aea70bd53393553a00622bd21a6d2c121",
+    "parts_manifest.py": "9e797ac37b8f24ee365490e090814f8a74ef480a55b077ff901afab9a07570cc",
+    "parts_subset.py": "2f8f04d810ad122f9e3f63385b5b78b5b3427c72c3b78976c00fa6f1142a4d8a",
+    "passive_corners.py": "9dcecbb83cf888cfc019f2c6445f53aa690f698ebbdabc1636ada09da9a44037",
+    "placement.py": "d4c75f18c799cd4382f8c50a507fcc0783d0b44b94b9dd8f8b7eaf2dbd8909eb",
+    "placement_adapter.py": "89da096e2d8a47a3c8555160ac43e31b9b4954712ed915cd0b484d96ac0ac247",
+    "placement_check.py": "c26f03afbe579dc850823e984645bdecdbbf2e8d9799c0d915bba5f6061bf467",
+    "placement_predicates.py": "f5b4401a4d0662597a4a4ab69d0c216fbb8634eb85fc546d38155a1963146f4a",
+    "placement_probe.py": "2994d0979ce5cf74906ef7987078eee1ac37e740fcb6febffea02fb12f2dd0b5",
+    "placer.py": "5ab4344334300b4677b07535aea17072da765c2ee5cddf3fc99702f3e9ff2267",
+    "placer_runner.py": "e38826ab5f8a39634bd93162ae6990298f9ebf8bfdcc6a862bce37c74b4c34e6",
+    "preflight.py": "6a80bf5f4aa3c0c96bdc182916e6c5b5aa0943f4a4d7235589c8c736e1821865",
+    "profiles.py": "cda0184262298815d89fe82da6bd673b61bc06af820caae6819555949d5bf1b1",
+    "reference_blocks.py": "42554881f8f15f8bc2ae4bd97747b45a7d8f11d4b4b2a6d6b534028f7c543361",
+    "render3d.py": "4b2b81ec5325e25c0b86b70aaaf357198074ef15c96d09fc456bbbbcfa9b2fae",
+    "replay.py": "0a8e3e1820293660f36ba478032b8050d2a232d0accb4b4387d06efd83c3db52",
+    "replay_child.py": "bdffb73d197fe36d5219dccf456d30237e48741d9cf7d6b1a32a04626934ba74",
+    "reviewers.py": "99a104245bfd649c7436f6c918173f0178a2f0ec42a5cd5ddcf136afff7881dc",
+    "routing_adapter.py": "27f56dfac6e8384f4eab4f281c477af194f50d7dd4d98bc3add81e9ad5c916a5",
+    "routing_native.py": "8776c3352e52d343313d8bce49cb584a06c6e3a34654759d378760c572a0b0e9",
+    "routing_rules.py": "24d984591f2aba0415fefe50f86c8045fbca86f6164ebe0696a637b05523cecc",
+    "rung1_campaign.py": "031f485c7deb62e05e681b1b8ec998b8bfbdcf35575d2c43178d09b41dd6c09c",
+    "rung1_qualified.py": "0d034ad4234079c86c371a28c82670a4f140bd7ab667a4742fbcfbc7230d4c52",
+    "scaffold.py": "0894b927d3affa7412646a029cc73e7e79923bad6e341acc52054355f039aa48",
+    "schematic_decompile.py": "8e6bc33fae93d1c27b1061d165ae51f8a0008dc33d5cb8d79a3355c57469b4a9",
+    "schematic_emit.py": "7d586d19f30ba5cb0d585afe855b840442780469880001b6cc24df95e1d604bc",
+    "schematic_emitter.py": "e7dcd18ed251f4b1d065da0a419040a24d36551d6aca80d6a93fa9281ae217c0",
+    "schematic_lint.py": "1a99a42d6d353458de9b13a2893a1e92e423bf88f6f037724f0573e8c615d315",
+    "schematic_roundtrip.py": "18908191c58c649c07092163c2d9edcef8e77f27317306120d7a30b1fbd370a0",
+    "stage_receipts.py": "e33bffe0075d48c30d9316f60d1549c75e49fef076f4ca8c483948dbedc666ca",
+    "stages.py": "c94b2fb8713263547cf0d2b70d464d76203b1df921eeca0608c982cd1fa05a17",
+    "storage.py": "469f20d6f44415b8b8978c15485e4c0038340df908d6213babc919ee443c2525",
+    "sublayout.py": "2e950873258128aabcaf3db6aa915dff3d48e1e395156b360b12e3b43842cb41",
+    "sublayout_probe.py": "252088701499043c5c2b9fe9c44bb2d0097ef83c16261238a42413623522b922",
+    "symbol_capture.py": "7090cc3b2c1bfb130f0fee9afbc8a99041052157956bd4d3b0c993fd42531db3",
+    "symbol_checks.py": "e6c2fc5790392ba1b7001f08bbee5df55e3f2235978e66d9fd5a9db87569adc4",
+    "symbol_context.py": "9a8205f6ea92156cb23a9a340458a3d4e1c0f3f0b496db4c146119b36c8f8dac",
+    "symbol_library.py": "2f4adc30193fdc252df562bacaa9854e14ba648eeb051af4aa5d09ba7905ad85",
+    "viewer.py": "fe6a2133d4eb0a0a7f2b9c5c0977558b6ede7b5509031aa3cb7a5b22d1ba2384"
+  },
+  "previous_run": null,
+  "review_executions": [],
+  "reviews": [],
+  "run_id": "607a5eb0-2060-457b-8750-c5cb2edc439a",
+  "runtime_files": {
+    "/usr/bin/ngspice": {
+      "path": "/usr/bin/ngspice",
+      "sha256": "820658317b0b54035208da41936fd6871ce924036e5ea4113a4168b821b7fc45"
+    },
+    "/usr/bin/python3": {
+      "path": "/usr/bin/python3",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+    },
+    "agy": {
+      "path": "/home/halbritt/.local/bin/agy",
+      "sha256": "085f43e0d0628a8a8dabe1e547067818fa2c0adc86cfac98a3c4492918f455ef"
+    },
+    "bwrap": {
+      "path": "/usr/bin/bwrap",
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+    },
+    "claude": {
+      "path": "/home/halbritt/.local/bin/claude",
+      "sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5"
+    },
+    "codex": {
+      "path": "/home/halbritt/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+      "sha256": "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215"
+    },
+    "codex_tool_host": {
+      "path": "/home/halbritt/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex-code-mode-host",
+      "sha256": "8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916"
+    },
+    "kicad-cli": {
+      "path": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61"
+    },
+    "ngspice": {
+      "path": "/usr/bin/ngspice",
+      "sha256": "820658317b0b54035208da41936fd6871ce924036e5ea4113a4168b821b7fc45"
+    },
+    "pcbnew": {
+      "path": "/usr/lib/python3/dist-packages/_pcbnew.so",
+      "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8"
+    }
+  },
+  "schema": "agent-ee.result/1",
+  "scope": "Checks-only stage boundary qualification: seeded-placement; expected initial outcomes are declared in requirements/seeded-placement.md.",
+  "started_utc": "2026-10-18T03:51:17.345421+00:00",
+  "state": "incomplete"
+}

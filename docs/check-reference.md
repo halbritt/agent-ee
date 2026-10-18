@@ -163,6 +163,12 @@ later full `drc` check exists, so connectivity is still graded before
 acceptance. Any other projection value is unsupported. The
 [placement checks](placement.md#placement-check-kind) consume either DRC result.
 
+The [original RC stage fixtures](rc-stage-fixtures.md) exercise this boundary:
+placed-unrouted retains native unconnected items and passes the placement
+projection; seeded-placement has a native R1/C1 courtyard overlap. Both remain
+defects under full DRC. The control-derived variants requested by AGENTEE-103
+remain blocked by unresolved third-party rights.
+
 Zone fill is evaluated as saved. The implementation does not refill, save or
 repair the board. Reported exclusions stay visible and are not dropped by this
 all-severity audit. The [donor baseline](../evidence/BASELINE.md) distinguishes

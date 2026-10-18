@@ -1,0 +1,46 @@
+{
+  "board": {
+    "design_settings": {
+      "defaults": {},
+      "diff_pair_dimensions": [],
+      "drc_exclusions": [],
+      "rules": {},
+      "track_widths": [],
+      "via_dimensions": []
+    }
+  },
+  "boards": [],
+  "libraries": {
+    "pinned_footprint_libs": [],
+    "pinned_symbol_libs": []
+  },
+  "meta": {
+    "filename": "rc_stage.kicad_pro",
+    "version": 1
+  },
+  "net_settings": {
+    "classes": [],
+    "meta": {
+      "version": 0
+    }
+  },
+  "pcbnew": {
+    "page_layout_descr_file": ""
+  },
+  "schematic": {
+    "top_level_sheets": [
+      {
+        "filename": "rc_stage.kicad_sch",
+        "name": "rc_stage",
+        "uuid": "f1895c43-d488-5bef-9c2a-96f13f85fa06"
+      }
+    ]
+  },
+  "sheets": [
+    [
+      "f1895c43-d488-5bef-9c2a-96f13f85fa06",
+      "Root"
+    ]
+  ],
+  "text_variables": {}
+}

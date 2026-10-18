@@ -1,0 +1,47 @@
+{
+  "backend": "krt",
+  "project": "rc_stage",
+  "board": "rc_stage.kicad_pcb",
+  "schematic": "rc_stage.kicad_sch",
+  "input_fingerprint": "44d73353a4c471eaf1935e9a5abdf23361dabfebb9f98ebfedef7849e9878a69",
+  "source": {
+    "source_dir": "/candidate/project",
+    "source": "working tree",
+    "source_git_head": null,
+    "source_dirty_files": []
+  },
+  "reference_dir": "reference/project",
+  "candidate_dir": "candidate/project",
+  "reference_facts": "facts/reference-facts.json",
+  "baseline": {
+    "report": "../../../../.cache/baseline/44d73353a4c471eaf1935e9a5abdf23361dabfebb9f98ebfedef7849e9878a69/baseline-drc.json",
+    "cached": false,
+    "reasons": []
+  },
+  "scope": {
+    "nets": [
+      "/GND",
+      "/IN",
+      "/OUT"
+    ],
+    "mode": "all"
+  },
+  "settings": {
+    "backend": "krt",
+    "budget_s": 60,
+    "protect": "existing",
+    "max_iterations": null,
+    "passes": null,
+    "default_clearance_mm": null,
+    "clearance_margin_mm": null,
+    "pour_area_loss_pct": null,
+    "pour_min_spokes": null,
+    "backend_args": [],
+    "backend_env": {},
+    "reserve_spokes": null,
+    "stall_s": null,
+    "mode": "all",
+    "rule_floor_sha256": null
+  },
+  "floor": null
+}

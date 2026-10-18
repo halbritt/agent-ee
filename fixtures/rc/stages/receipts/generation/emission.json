@@ -1,0 +1,46 @@
+{
+  "canonical_sha256": "dab3ea5e64f7acc0e784239bf715621ed5f65b54a40311ffe4a02b0f939f0ac9",
+  "execution": "ok",
+  "files": [
+    {
+      "path": "fp-lib-table",
+      "sha256": "e4212417f18fd0b58d1e0b4ac046b296fa1a9b6625be667f455e5cbba77c77a3"
+    },
+    {
+      "path": "rc_stage.kicad_pro",
+      "sha256": "c745669befeac97f6e966bdd384ceae7868d0246f6544a59859fc28788a2b83b"
+    },
+    {
+      "path": "rc_stage.kicad_sch",
+      "sha256": "91bf9666349cc634ed94c16a8d10cf96aa4e1f1770f01e152442e7c8454e5651"
+    },
+    {
+      "path": "sym-lib-table",
+      "sha256": "bb13ab4fe47da9f272904fa00505f27fac37ced434541d6f5971addf617f5be4"
+    }
+  ],
+  "findings": [],
+  "implementation": {
+    "module": "agent_ee.schematic_emitter",
+    "sha256": "e7dcd18ed251f4b1d065da0a419040a24d36551d6aca80d6a93fa9281ae217c0"
+  },
+  "intent_sha256": "2d35e139311d2407c8a839e953b1336765678598d5b285559a3b29b13bdae079",
+  "layout_sha256": "de188a4c72358fd37404a5802684cfefebd2bad1fcb24187576deff592d41d07",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    },
+    {
+      "name": "StageRC",
+      "path": "lib/StageRC.kicad_sym",
+      "sha256": "89f88dee4eaa462e730f645d29a4f14d73507dd8bf56fe266bc8bd39c02399c0"
+    }
+  ],
+  "outcome": "info",
+  "paper": "A4",
+  "resolved_sha256": "12d009dbb3c5c2d5039098f39b4a057ebce65e4ad76d2196d616f58692f97e58",
+  "root_uuid": "f1895c43-d488-5bef-9c2a-96f13f85fa06",
+  "schema": "agent-ee.schematic-emission/1"
+}
