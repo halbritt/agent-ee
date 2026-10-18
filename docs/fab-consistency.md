@@ -114,8 +114,8 @@ so the evidence seal accepts the result.
   run kicad-cli itself.
 - No policy yet covers assembled board-only parts, so they stay unknown.
 
-AGENTEE-23 is still pending, so the tests stage synthetic package bytes through
-a stub `fab_export` handler. That stub records a real sandboxed
+The focused consistency tests stage synthetic package bytes through
+a stub `fab_export` handler to inject faults. That stub records a real sandboxed
 `kicad-cli version` run, and its manifest names the actual pinned binary. Every
 case runs the real `geometry` check (pcbnew in the sandbox) on the captured
 board, so no case stubs the board inventory. Synthetic boards have no
@@ -129,3 +129,8 @@ KiCad 10.0.7 drill and Gerber files from a synthetic board. It confirms that
 the plating and `FileFunction` classifiers accept native output. These tests
 need KiCad, pcbnew and bubblewrap; `AGENT_EE_REQUIRE_TOOLCHAIN=1` turns a
 missing toolchain into a failure instead of a skip.
+
+The fab-export tests also run the real netlist, geometry, export and consistency
+checks together on the owned fabrication fixture, then seal and verify their
+evidence. This covers the producer-to-consumer manifest and tool-identity
+contract without substituting either handler.

@@ -15,10 +15,10 @@ fab lane interface contract v1 under `work/<check-id>/fab/`:
 
 No rotation, offset or pin-1 policy is applied to the CPL (AGENTEE-72 owns
 that); rotations are the native position-file values. Outcome `pass` means
-only that every export succeeded, validated and was hashed into a complete
-manifest. It does not establish DFM, BOM/CPL/board designator consistency
-(AGENTEE-73) or orderability. Missing, empty or unparseable output, an
-unsupported board feature or a part without a binding is unknown coverage;
+only that every export succeeded, validated, agrees on assembled designators
+and was hashed into a complete manifest. It does not establish DFM, part or
+placement consistency (AGENTEE-73) or orderability. Missing, empty or unparseable
+output, an unsupported board feature or a part without a binding is unknown coverage;
 a native nonzero exit is execution `failed`. Neither leaves a `fab/` package:
 the partial staging is renamed `fab.incomplete/` and no manifest is written.
 """
@@ -708,6 +708,9 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
     if cpl_refs != facts['board_non_dnp']:
         raise _error('malformed', f'native position file designators {cpl_refs} differ from the board '
                                   f'non-DNP footprints {facts["board_non_dnp"]}')
+    if bom_refs != facts['board_non_dnp']:
+        raise _error('malformed', f'BOM designators {bom_refs} differ from the board '
+                                  f'non-DNP footprints {facts["board_non_dnp"]}')
     try:
         files = inventory(fab)
     except ValueError as exc:
@@ -729,8 +732,8 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
     ctx.result['limitations'] += [
         'CPL rotations are the native KiCad position-file values; no JLC rotation, offset or '
         'pin-1 policy was applied (AGENTEE-72)',
-        'pass means the exports exist, parsed and are hashed; BOM/CPL/board designator '
-        'consistency is gated by fab_consistency (AGENTEE-73), not by this check',
+        'pass means the exports exist, parsed, agree on designators and are hashed; '
+        'part, side and model consistency require fab_consistency (AGENTEE-73)',
         'no DFM, panelisation, stock, price or orderability evaluation',
     ]
     ctx.result['execution'] = 'ok'

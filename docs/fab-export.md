@@ -90,8 +90,9 @@ The native position file is rewritten: `Ref`→`Designator`, `PosX`→`Mid X`,
 absolute board coordinates, the same frame as the Gerbers. Rows are in natural
 designator order. The check applies **no rotation, offset or pin-1 policy**:
 `Rotation` is the native KiCad angle. JLC rotation correction belongs to
-AGENTEE-72. The position-file designators must equal the board's non-DNP
-footprints, or the output is malformed.
+AGENTEE-72. The BOM and position-file designators must both equal the board's
+non-DNP footprints before a manifest is written. A mismatch makes the output
+malformed and retains the files only in `fab.incomplete/`.
 
 ### Manifest
 
@@ -122,7 +123,7 @@ consumers.
 | Condition | Execution | Outcome |
 | --- | --- | --- |
 | Every step succeeded, every output validated, no flagged part, manifest verified | `ok` | `pass` |
-| Missing, empty or unparseable native output; a position file that disagrees with the board; unnormalisable timestamps; board bytes that differ from the captured digest | `malformed` | `unknown` |
+| Missing, empty or unparseable native output; BOM or position designators that disagree with the board; unnormalisable timestamps; board bytes that differ from the captured digest | `malformed` | `unknown` |
 | Unsupported board feature, missing part binding, non-ASCII text that cannot be mapped | `unsupported` | `unknown` |
 | `kicad-cli` nonzero exit | `failed` | `unknown` |
 | Netlist prerequisite absent, later, failed or from another candidate | `not_run` | `unknown` |
@@ -140,12 +141,11 @@ or non-plain references; and populated footprints or symbols marked `board_only`
 with no populated footprints is also refused, because the package would be
 empty.
 
-`pass` means only that the exports exist, parsed and were hashed and bound to
-the board. The check records whether the board, CPL and BOM designator sets
-agree in `details.designators`, but it does not gate on that. That cross-file
-consistency, LCSC-to-footprint uniqueness, CPL side and 3D-model checks belong
-to `fab_consistency` (AGENTEE-73), which reads this staging and manifest and
-never regenerates the exports.
+`pass` means that the exports exist, parsed, agree on designators and were
+hashed and bound to the board. `details.designators` records the board, CPL
+and BOM sets even on a mismatch. LCSC-to-footprint uniqueness, CPL side and
+3D-model checks belong to `fab_consistency` (AGENTEE-73), which reads this
+staging and manifest and never regenerates the exports.
 
 ## Fixture and tests
 
@@ -158,7 +158,9 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 [tests/test_fab_export.py](../tests/test_fab_export.py) covers the following:
 
 - the 2-layer and 4-layer packages, sealed;
-- byte-identical repeat runs;
+- byte-identical repeat runs whose raw native Gerber timestamps differ;
+- mismatched BOM/board references refused before completion;
+- real netlist → geometry → fab export → consistency checks with sealed evidence;
 - DNP exclusion, a missing part binding, and empty, removed or truncated native
   outputs;
 - a real `kicad-cli` nonzero exit;

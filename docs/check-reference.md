@@ -338,5 +338,6 @@ retained per-corner evidence and empirical-transfer refusal.
 
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
-v1 refusals and outcome mapping. It requires an earlier `netlist_check` and
-applies no CPL rotation policy.
+v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
+completion unless BOM/CPL/board designators agree, and applies no CPL rotation
+policy. Launch preflight requires the native `kicad-cli` binary.
