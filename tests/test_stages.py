@@ -35,6 +35,15 @@ class StagedConvergenceTests(unittest.TestCase):
         _, diagnostic = advance([first], *candidate(1, ['drc'], ['erc', 'pins', 'place']), 8)
         self.assertEqual(diagnostic['reason'], 'repeated_design')
 
+    def test_completed_stage_info_check_is_protected(self):
+        result, manifest = candidate(1, ['place', 'drc'], ['erc', 'pins'])
+        next(c for c in result['checks'] if c['id'] == 'erc')['outcome'] = 'info'
+        first, diagnostic = advance([], result, manifest, 8)
+        self.assertEqual(diagnostic['state'], 'repair')
+        _, diagnostic = advance([first], *candidate(2, ['erc', 'drc'], ['pins', 'place']), 8)
+        self.assertEqual(diagnostic['reason'], 'regression')
+        self.assertIn('erc', diagnostic['protected_criteria'])
+
     def test_later_stage_improvement_cannot_mask_stall(self):
         first, _ = advance([], *candidate(1, ['pins', 'place', 'drc'], ['erc']), 8)
         _, diagnostic = advance([first], *candidate(2, ['pins', 'drc'], ['erc', 'place']), 8)
@@ -60,6 +69,18 @@ class StagedConvergenceTests(unittest.TestCase):
             record, diagnostic = advance(history, result, manifest, 8)
             history.append(record)
             if number < 3:
+                self.assertEqual(diagnostic['state'], 'repair')
+        self.assertEqual(diagnostic['reason'], 'finding_retry_limit')
+
+    def test_minimum_retry_limit_allows_one_repair_and_counts_first_appearance(self):
+        history = []
+        for number, margin in [(1, -10), (2, -5)]:
+            result, manifest = candidate(number, ['erc', 'place', 'drc'], ['pins'])
+            manifest['scope']['stages']['finding_retry_limit'] = 2
+            result['checks'][0]['details'] = {'margins': {'physical': {'min': margin}}}
+            record, diagnostic = advance(history, result, manifest, 8)
+            history.append(record)
+            if number == 1:
                 self.assertEqual(diagnostic['state'], 'repair')
         self.assertEqual(diagnostic['reason'], 'finding_retry_limit')
 
@@ -113,6 +134,22 @@ class StagedConvergenceTests(unittest.TestCase):
         self.assertEqual(diagnostic['reason'], 'finding_retry_limit')
 
 class StageDeclarationTests(unittest.TestCase):
+    def test_finding_retry_limit_bounds_and_types(self):
+        from agent_ee.stages import declaration
+        _, manifest = candidate(1, [])
+        scope = manifest['scope']
+        for schema in ('agent-ee.scope/2', 'agent-ee.scope/3'):
+            scope['schema'] = schema
+            for limit in (-1, 0, 1, 101, True, False, 2.0, '2', None):
+                with self.subTest(schema=schema, limit=limit):
+                    scope['stages']['finding_retry_limit'] = limit
+                    with self.assertRaisesRegex(ValueError, 'finding_retry_limit must be between 2 and 100'):
+                        declaration(scope)
+            for limit in (2, 100):
+                with self.subTest(schema=schema, limit=limit):
+                    scope['stages']['finding_retry_limit'] = limit
+                    self.assertEqual(declaration(scope)['finding_retry_limit'], limit)
+
     def test_stage_configuration_is_part_of_baseline_identity(self):
         from agent_ee.baseline import compile_baseline
         _, manifest = candidate(1, [])
@@ -574,7 +611,7 @@ class ExistingCampaignStageTests(unittest.TestCase):
         fixture.scope['baseline']['requirements'][0]['checks'].append('route')
         fixture.scope['stages'] = {'schema': 'agent-ee.stages/1', 'order': ['schematic', 'routing'],
             'subjects': {'schematic': {'path': 'design/design.kicad_sch', 'kind': 'symbols', 'references': ['R1']}},
-            'finding_retry_limit': 3}
+            'finding_retry_limit': 2}
         from pathlib import Path
         (fixture.root / 'source/design.kicad_sch').write_bytes(
             (Path(__file__).resolve().parents[1] / 'fixtures/stages/schematic.kicad_sch').read_bytes())

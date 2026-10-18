@@ -2,12 +2,15 @@
 
 AGENTEE-48/88 extends the existing repair campaign. Independent initial reviews,
 central adjudication, sealed check evidence, the immutable baseline and the one
-implementation writer remain the acceptance path. This convergence change needs
-independent review and owner acceptance; tests do not supply either approval.
+implementation writer remain the acceptance path. The owner signed off the
+convergence contract with [two guards](decisions.md#convergence-contract-signed-off-with-two-guards):
+a minimum retry limit of 2 and regression protection for successful `info` checks.
+Tests supply executable evidence, not independent review or physical qualification.
 No new generator, router or acceptance state is introduced.
 
-Scopes without stage declarations keep their previous convergence projection
-and rules. A staged scope/2 or scope/3 adds this field:
+Scopes without stage declarations keep their unstaged convergence projection
+and progress rules. Both staged and unstaged campaigns protect successful `pass`
+and `info` checks against later defects. A staged scope/2 or scope/3 adds this field:
 
 ```json
 {
@@ -40,7 +43,9 @@ This is a field fragment, not a complete scope. Every check must also declare
 `stage`, for example `"stage": "schematic"`. Checks must follow stage order;
 every declared stage needs at least one check. `order` is a unique subsequence
 of `schematic`, `placement`, `routing`, `verification`, `fab`. The retry limit is
-an integer in 1..100. At least one subject must be declared; stages without a
+an integer in 2..100. Campaign configuration loading refuses a lower limit with
+`finding_retry_limit must be between 2 and 100`, before creating the campaign or
+running checks or agents. At least one subject must be declared; stages without a
 subject use their ordinary checks after preceding gates open. All other scope
 requirements and executable-coverage rules still apply.
 
@@ -113,11 +118,15 @@ rule applied within that active stage: comparable bounds, at least one negative
 margin improves, no other negative margin worsens, and no new failed check.
 Improving a later stage cannot mask an earlier stall.
 
-All previously evaluated passing checks and nonnegative metric bounds remain
-protected, including checks in completed stages. Repeated captured designs,
+All previously evaluated `ok/pass` and `ok/info` checks and nonnegative metric
+bounds remain protected, including checks in completed stages. A protected check
+becoming defective yields `regression`; missing coverage still terminates as
+`incomplete`. Repeated captured designs,
 regression, stalled progress, unresolved review claims and iteration/wall-clock
 budgets retain their existing stop behavior. The configured retry limit also
-stops recurring finding identities, even when their metrics improve. Deferred
+stops recurring finding identities, even when their metrics improve. The first
+appearance counts toward the limit, so a limit of 2 permits one repair attempt
+before the same finding exhausts its budget. Deferred
 `stage_blocked` verdicts and later-stage content absence do not consume the retry
 count; only findings in the currently earliest failing stage consume attempts. Campaign public
 verification recomputes the same projection from each retained run.
@@ -160,14 +169,14 @@ handler does not run. A real process aborting inside the check sandbox gives
 incomplete. A campaign test shows an accepted finding's hint reaching the sole
 writer and the writer's proposal receiving fresh checks; that hint is scripted
 over a real sandboxed measurement. Existing unstaged
-convergence tests remain unchanged.
+convergence tests also cover informational-check regression and missing coverage.
 
-Run the stage and unchanged convergence tests from the repository root with:
+Run the stage and convergence tests from the repository root with:
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest discover -s tests -p test_stages.py -v
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_convergence -v
-AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_rung1_campaign -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_campaign tests.test_rung1_campaign -v
 ```
 
 The scaffold test runs a checks-only native review: `erc`, `netlist`, `drc`
@@ -186,7 +195,8 @@ and the [placement adapter](placement-adapter.md) runs only on placement turns. 
 the retained writer prompt lists all steps and their write paths, identifies the scheduled steps, and
 reserves their stages for coordinator execution. A writer change to a scheduled step's output is
 refused as `writer_step_output_edit` before any step runs. The writer can prepare other mutable inputs
-or return a no-op summary. Owner convergence-contract acceptance remains outstanding.
+or return a no-op summary. The owner sign-off above does not establish a complete
+native generation rung.
 
 The ordered scheduler changes the identity of `checks.py`, which the existing
 passive-corner contract pins as its parser module. Requalification compared the
