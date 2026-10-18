@@ -613,6 +613,28 @@ native prerequisites or the installation a test failure. The demonstrated host
 uses KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12.3; qualification
 inside the common completion image remains separate.
 
+## Installed kicad-happy severity gate
+
+`kind: "kicad_happy_severity_gate"` runs the installed v2.3.1 schematic, full
+PCB, cross-analysis and EMC analyzers offline in the sandbox. It requires a
+scope/2 or scope/3 baseline and exactly `installation`, `installation_sha256`
+and `dispositions` parameters. The installation pin follows the existing
+`kicad_happy` inventory. `dispositions` is a captured immutable requirement file
+using `agent-ee.happy-dispositions/1`; every warning finding ID requires its own
+record with `disposition: accepted_risk|false_positive`, `rationale` and
+`recorded_by`. No disposition can waive an error.
+
+Any error or warning without an exact-ID disposition is `ok/defect`. Valid
+reports with no errors and every warning dispositioned are `ok/pass`; unknown,
+missing or malformed analyzer output stays unknown. The exact disposition bytes,
+raw reports and normalized native/disposition pointers are cited and sealed;
+preflight and public `verify` recheck the installed pin. Scope/3 predicates are
+`happy-severity:no-errors/1` and `happy-severity:warnings-dispositioned/1`.
+See the [schema, failure boundaries and original fixtures](happy-severity-gate.md).
+Thermal and SPICE are excluded from this kind. Existing `kicad_happy` stages and
+policy are unchanged. This is a severity policy over emitted findings, not
+complete analyzer rule coverage or electrical/EMC certification.
+
 ## Hardware interface invariants
 
 `hardware_interface` requires `contract` and an earlier `netlist_check`. The

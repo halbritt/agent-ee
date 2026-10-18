@@ -5,13 +5,15 @@ import runpy
 import sys
 from pathlib import Path
 
-from .kicad_happy import ANALYZERS, normalize
+from .kicad_happy import ANALYZERS, SEVERITY_ANALYZERS, normalize
 from .checks import CheckError
+from .netclass_completeness import load_json
 from .storage import read_json, write_json
 
 
 def main():
     request = read_json('/work/request.json')
+    analyzers = SEVERITY_ANALYZERS if request.get('profile') == 'severity_gate' else ANALYZERS
     root = Path('/analyzer')
     executed = {}
     seen = set()
@@ -30,7 +32,7 @@ def main():
     sys.dont_write_bytecode = True
     sys.setprofile(trace)
     try:
-        for name, script in ANALYZERS.items():
+        for name, script in analyzers.items():
             path = root / script
             sys.path.insert(0, str(path.parent))
             args = [str(path)]
@@ -42,7 +44,9 @@ def main():
                 args += ['--schematic', '/work/schematic.json', '--pcb', '/work/pcb.json']
             if name == 'thermal':
                 args += ['--ambient', str(request['ambient_c'])]
-            args += ['--output', f'/work/{name}.json', '--config', '/work/config.json']
+            args += ['--output', f'/work/{name}.json']
+            if name != 'cross_analysis':
+                args += ['--config', '/work/config.json']
             sys.argv = args
             write_json(f'/work/{name}-argv.json', args)
             with open(f'/work/{name}-stdout.log', 'w') as out, open(f'/work/{name}-stderr.log', 'w') as err:
@@ -53,7 +57,8 @@ def main():
                         if exc.code not in (None, 0):
                             raise
             try:
-                report = read_json(f'/work/{name}.json')
+                report = (load_json(f'/work/{name}.json') if request.get('profile') == 'severity_gate'
+                          else read_json(f'/work/{name}.json'))
             except (ValueError, OSError) as exc:
                 write_json('/work/stage-status.json', {'execution': 'malformed', 'summary': str(exc)})
                 return

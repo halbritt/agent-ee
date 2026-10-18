@@ -386,7 +386,10 @@ An installed kicad-happy check retains schematic/PCB/thermal/EMC
 outputs, with [qualified narrow adapters](docs/kicad-happy.md) for low-pass RC,
 ideal regulator feedback, complete typed power-pin inventory, USB protection
 presence, capacitor voltage utilization, generic LDO temperature estimates and
-ESD placement distance. Other analyzer rules remain informational. Generic
+ESD placement distance. Other analyzer rules remain informational for that kind.
+The separate [severity gate](docs/happy-severity-gate.md) runs schematic, PCB,
+cross-analysis and EMC; any error or warning without an immutable recorded
+disposition fails it. Generic
 producer/parser interfaces support additional measurements and coupled margins. Reviewer profiles explicitly select Claude, Codex or Agy through
 their subscription CLIs; authentication or quota failures stop the affected call
 without a provider fallback.

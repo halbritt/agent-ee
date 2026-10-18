@@ -1,0 +1,17 @@
+{
+  "schema": "agent-ee.happy-dispositions/1",
+  "dispositions": [
+    {
+      "finding_id": "schematic:DS-002:j1",
+      "disposition": "accepted_risk",
+      "rationale": "Original two-pad ground-link fixture, not a manufacturer device. No datasheets exist; this run establishes analyzer policy behavior only and makes no pin-level or electrical qualification claim.",
+      "recorded_by": "agent-ee owned fixture author"
+    },
+    {
+      "finding_id": "emc:VS-001:85855106fcd4",
+      "disposition": "accepted_risk",
+      "rationale": "Original 20 mm square ground-link fixture has no signal nets or via stitching. This fixture is not intended for fabrication or EMC certification.",
+      "recorded_by": "agent-ee owned fixture author"
+    }
+  ]
+}

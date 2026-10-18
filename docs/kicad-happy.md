@@ -1,5 +1,9 @@
 # Installed kicad-happy adapters
 
+The separate [severity gate](happy-severity-gate.md) runs schematic, PCB,
+cross-analysis and EMC with an error/warning policy. This page describes the
+existing `kicad_happy` declared-rule check.
+
 The `kicad_happy` check runs the installed checkout, never a vendored analyzer.
 The exercised installation is `/home/halbritt/git/kicad-happy` commit
 `06840467ad0f5d76af45f64449b1f5ecb10f052f`, plugin metadata **2.3.1**, with
