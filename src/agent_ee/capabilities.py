@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('fab_package', 'cpl_rotation', 'jlc_cost_estimate', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'regeneration_determinism'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'regeneration_determinism', 'design_rules'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -349,6 +349,17 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                 captured(path, immutable=True)
             for cid in descriptor['producers']:
                 prerequisite(cid, KINDS)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'design_rules':
+            from .design_rules import capability as rule_capability
+            descriptor = rule_capability(params, scope, files, inputs, spec['id'])
+            prerequisite(params.get('netlist_check'), ('netlist',))
+            if 'facts_check' in params:
+                prerequisite(params['facts_check'], ('datasheet_facts',))
+            for delegation in params.get('delegated', {}).values():
+                prerequisite(delegation['check'], KINDS)
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
         elif kind == 'schematic_lint':
             from .schematic_lint import capability

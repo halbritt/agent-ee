@@ -1,0 +1,100 @@
+{
+  "schema": "agent-ee.design-rule-pack/1",
+  "id": "mcu-peripheral-basics",
+  "version": "1",
+  "provenance": {
+    "authored_by": "agent-ee (AGENTEE-62)",
+    "date": "2026-10-18",
+    "license": "MIT (proposed, pending owner approval, as for all AE material)",
+    "derived_from": [
+      "Card field set (rule_id, description, applies_to, rationale, examples, violations_cause, priority) follows the MIT circuit-synth DesignRule dataclass; every card text here is original.",
+      "I2C pull-up window 1 kOhm -10 % to 10 kOhm +10 % follows the idea in atopile faebryk/library/I2C.py; no code or text is copied."
+    ]
+  },
+  "cards": [
+    {
+      "id": "I2C_PULLUP_WINDOW",
+      "version": 1,
+      "description": "Pull each I2C line (SDA and SCL) up to the bus supply rail. The parallel equivalent of every pull-up on a line must lie between 900 ohm and 11 kohm.",
+      "applies_to": ["i2c bus"],
+      "rationale": "Open-drain lines idle high only through the pull-up. Too strong a pull-up exceeds the sink current of the drivers; too weak a pull-up slows the rising edge.",
+      "examples": ["One 4.7 kohm resistor from SDA to 3V3 and one from SCL to 3V3", "Two 4.7 kohm pull-ups fitted on two boards sharing one bus give 2.35 kohm"],
+      "violations_cause": "Bus stuck low or floating, corrupted transfers, devices failing to acknowledge",
+      "priority": "critical",
+      "enforcement": {"adapter": "i2c-pullup-window/1"},
+      "parameters": {"min_ohm": 900, "max_ohm": 11000}
+    },
+    {
+      "id": "I2C_ADDRESS_UNIQUE",
+      "version": 1,
+      "description": "Give every device on one I2C bus a distinct 7-bit address. Set address strap pins so that no two devices resolve to the same address.",
+      "applies_to": ["i2c bus"],
+      "rationale": "Two devices answering one address drive the bus at the same time and neither can be addressed alone.",
+      "examples": ["Two identical sensors: tie one address pin to ground and the other to the supply"],
+      "violations_cause": "Bus contention and unreadable devices",
+      "priority": "critical",
+      "enforcement": {"adapter": "i2c-address-unique/1"},
+      "parameters": {}
+    },
+    {
+      "id": "CRYSTAL_LOAD_CAPS",
+      "version": 1,
+      "description": "Fit a load capacitor from each crystal signal pin to ground.",
+      "applies_to": ["crystal", "oscillator"],
+      "rationale": "A Pierce oscillator needs the load capacitance specified for the crystal to start reliably on the specified frequency.",
+      "examples": ["20 MHz crystal with CL = 20 pF: two 22 pF C0G capacitors, one per signal pin, to ground (the value is chosen from the crystal load capacitance and board stray capacitance and is not graded by this card)"],
+      "violations_cause": "Oscillator fails to start or runs off frequency",
+      "priority": "critical",
+      "enforcement": {"adapter": "crystal-load-caps/1"},
+      "parameters": {}
+    },
+    {
+      "id": "RESET_EN_RC",
+      "version": 1,
+      "description": "Where the device datasheet requires it, give the reset or enable pin an external pull-up to its supply and a capacitor to ground.",
+      "applies_to": ["microcontroller", "radio module"],
+      "rationale": "The RC delay holds the device in reset until its supply is stable.",
+      "examples": ["Enable pin: 10 kohm to 3V3 and 1 uF to ground"],
+      "violations_cause": "Brown-out lockups or random resets at power-up",
+      "priority": "important",
+      "enforcement": {"adapter": "reset-rc/1"},
+      "parameters": {}
+    },
+    {
+      "id": "POWER_DECOUPLING",
+      "version": 1,
+      "description": "Connect at least one capacitor between the net of each IC supply pin and ground.",
+      "applies_to": ["microcontroller", "digital", "analog"],
+      "rationale": "Local charge supplies switching current and filters supply noise.",
+      "examples": ["100 nF ceramic capacitor next to each VDD pin (placement is not graded by this card)"],
+      "violations_cause": "Supply noise, EMI, unstable operation",
+      "priority": "critical",
+      "enforcement": {"adapter": "decoupling-to-ground/1"},
+      "parameters": {}
+    },
+    {
+      "id": "USB_SERIES_RESISTORS",
+      "version": 1,
+      "description": "Where the transceiver datasheet requires external termination, place a series resistor in each USB data line between the connector and the transceiver.",
+      "applies_to": ["usb device"],
+      "rationale": "Some full-speed transceivers need external series termination; many integrated PHYs terminate internally, so this rule applies only when a datasheet fact says so.",
+      "examples": ["22 ohm in D+ and in D- for a transceiver without internal termination"],
+      "violations_cause": "Signal reflections and enumeration failures",
+      "priority": "important",
+      "enforcement": {"adapter": "usb-series-resistor/1"},
+      "parameters": {}
+    },
+    {
+      "id": "I2C_BUS_CAPACITANCE",
+      "version": 1,
+      "description": "Keep the total I2C bus capacitance within the limit for the chosen bus speed.",
+      "applies_to": ["i2c bus"],
+      "rationale": "Bus capacitance and the pull-up value set the rise time.",
+      "examples": ["Standard and fast mode allow 400 pF"],
+      "violations_cause": "Slow edges and timing violations",
+      "priority": "recommended",
+      "enforcement": null,
+      "parameters": {}
+    }
+  ]
+}

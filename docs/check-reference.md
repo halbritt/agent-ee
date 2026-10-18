@@ -94,6 +94,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
 | `regeneration_determinism` | Coordinator compares two captured boards, schematics, netlists or JSON probe outputs after removing IDs; no additional tool launched ([details](design-diff.md)) | Enclosing run deadline |
+| `design_rules` | Coordinator grades the enforced cards of a captured rule pack against the earlier native netlist, owner role bindings and verified datasheet facts; no additional tool launched ([details](design-rules.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_equivalence` | `/usr/bin/python3 -m agent_ee.routing_equivalence`; native saved copper comparison | 300 s |
@@ -379,6 +380,18 @@ structural, placement and identity hashes. A side that does not parse is
 `malformed`; a missing or unverified producer output is `not_run/unknown`,
 never "no change". A path `reference` is an immutable baseline input and cannot
 be the scope's writer-mutable board or schematic.
+
+`design_rules` requires `pack`, `bindings`, `netlist_check` and `cards`. It
+also accepts `facts_check` (an earlier `datasheet_facts` check) and `delegated`.
+The immutable [rule pack](design-rules.md) holds versioned cards, and the
+immutable owner bindings anchor roles to exported `{reference, pin}`
+terminals. Each enforced card publishes one predicate. An advisory card has no
+qualified adapter or delegated check. Naming one in `cards` makes the check
+unsupported, so scope/3 refuses it. Fact-gated cards (`RESET_EN_RC`,
+`USB_SERIES_RESISTORS`, I2C addresses) are unknown without a verified
+applicable fact. A missing role group is unknown. Any violated card is a
+defect that cites the native net. With no defect, any unknown card keeps
+the check `unsupported/unknown`.
 
 ## Intent and golden netlist parity
 

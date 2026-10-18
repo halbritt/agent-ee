@@ -622,6 +622,7 @@
       "paths": [
         "fixtures/active-spice/",
         "fixtures/closed-loop/",
+        "fixtures/design-rules/",
         "fixtures/datasheet-pins/",
         "fixtures/dc-path/",
         "fixtures/hardware-interface/",
@@ -1531,6 +1532,7 @@
     },
     {
       "paths": [
+        "fixtures/design-rules/generate.py",
         "fixtures/netlist-extra/generate.py",
         "fixtures/package-consistency/generate.py"
       ],
