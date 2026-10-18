@@ -303,7 +303,6 @@ captured checks of the captured candidate.
 
 ## Qualification and open obligations
 
-<<<<<<< 0a354d0
 The AGENTEE-91 orchestration scopes consume no board envelope. A scope that
 does must declare it under the AGENTEE-85 contract and bind every derived
 obligation. The envelope-binding scope maps `connector-edge/1` to the
@@ -320,41 +319,12 @@ authority guard is neither bypassed nor replaced by test bindings.
 A campaign whose run captured no candidate records that run's own `result.json`
 error (`run N captured no candidate: ...`), not a missing-manifest error.
 
-=======
->>>>>>> 5c2d066
 The adapter tests use owned boards and actual tools: KiCad 10.0.7 pcbnew edits
 and flips, `kicad-cli` netlist export, the production networkless executor and
 the AGENTEE-95 receipt module.
 
 `tests/test_placement_campaign.py` runs the campaign with real capture,
 sandboxed checks, stage gates, receipts and the pinned placer. Only the agent
-<<<<<<< 0a354d0
-transport is scripted, so these tests do not show live-model repair quality. The
-starting boards are owned variants of the RC control fixture. Tracks and zones are
-removed and every pad is made rectangular. Project-local footprint libraries are
-rebuilt from the stock KiCad footprints at test time and are not committed. The
-tests show the following:
-
-- the pinned placer repairs an R1/C1 courtyard overlap. The next run's fresh
-  placement-stage DRC and placement checks pass on the adopted board, and the
-  routing turn that follows runs no helper and gets no placement context;
-- two writer-only repairs, each graded by fresh native checks, with the second
-  writer turn receiving the second run's findings;
-- a writer side flip that is captured and graded;
-- refusal of an outline move, added copper, a field change, a lock removed before a move,
-  a schematic change, a tiny angle and a flip with a non-quarter turn. None of
-  them creates a next candidate;
-- a helper typed failure, a crash, a timeout, a real coordinator interrupt,
-  a writer failure and a failed record write. Each one
-  leaves the campaign incomplete and publicly verifiable;
-- the pinned placer packing the unchanged stock RC roundrect and circle pads
-  (AGENTEE-109). The fresh courtyard check passes on the adopted board, whose
-  native pad shapes and sizes equal the stock board's. Its only placement-stage
-  DRC violations are the three `lib_footprint_mismatch` reports against the
-  fixture's rectangular-pad library copies, so the campaign escalates on a
-  repeated design rather than substituting pads;
-- public verification refusing tampered records, requests, outputs, receipts,
-=======
 transport is scripted, so these tests do not show live-model repair quality.
 Project-local footprint libraries are rebuilt from the stock KiCad footprints at
 test time and are not committed. The graded checks are the placement-stage DRC
@@ -397,17 +367,24 @@ tests show the following:
 - A helper typed failure, a crash, a timeout, a real coordinator interrupt, a
   writer failure and a failed record write each leave the campaign incomplete
   and publicly verifiable. No default placement is substituted.
+- The pinned placer packs the unchanged stock RC roundrect and circle pads
+  (AGENTEE-109). The fresh courtyard check passes on the adopted board, whose
+  native pad shapes and sizes equal the stock board's. Its only placement-stage
+  DRC violations are the three `lib_footprint_mismatch` reports against the
+  fixture's rectangular-pad library copies, so the campaign escalates on a
+  repeated design rather than substituting pads.
 - Public verification refuses tampered records, requests, outputs, receipts,
->>>>>>> 5c2d066
   configuration, bindings, anchors and relabelled history.
 
 **Envelope-fixed connectors.** A placement check that consumes a board envelope
 requires the scope to declare that envelope (AGENTEE-85). Capture then requires
 every envelope obligation to be bound to an executable check. The RC envelope's
-outline, layer-count and stackup obligations have no binding yet: the stackup
-also needs captured copper-weight authority, and the envelope selects no
-fabricator profile. Capture therefore refuses such a campaign before any writer
-or helper runs. The campaign reports the run's retained refusal, labelled
+outline and layer-count obligations bind to the native `board_envelope`
+`outline/1` and `layers/1` checks; its stackup obligation cannot bind until a
+qualified captured `copper_weight_oz` authority exists (AGENTEE-94), and the
+envelope selects no fabricator profile. Capture therefore refuses such a
+campaign before any writer or helper runs, naming `R-envelope-rc-filter-stackup`
+as the only unbound obligation. The campaign reports the run's retained refusal, labelled
 unverified, because no candidate exists to verify it against. The campaign test
 asserts this refusal; it does not bypass the authority gate with test bindings.
 The adapter tests exercise envelope-fixed protection directly on the real RC
@@ -420,24 +397,12 @@ envelope:
 
 These obligations remain open:
 
-<<<<<<< 0a354d0
-- **AGENTEE-52 forward annotation.** The starting boards are not forward-annotated
-  scaffolds. The qualified AGENTEE-52 commit is still under repair by its owner.
-  The campaign-level acceptance with a genuine forward-annotated RC board is
-  therefore unmet.
-- **AGENTEE-85/94 envelope binding.** The envelope-fixed connector protection
-  and envelope binding refusals are not exercised through a campaign until
-  `stackup/1` can bind.
-- **AGENTEE-93 routing feedback.** The writer context reports it as unavailable;
-  no stale result or model prose substitutes for a captured routed-attempt
-=======
 - **Envelope-consuming campaigns (AGENTEE-85, AGENTEE-94/75).** The
   campaign-level refusal of an envelope-fixed connector move needs the outline
   and layer-count bindings, the copper-weight authority for the stackup and a
   selected fabricator profile. Until then, such a campaign stops at capture.
 - **AGENTEE-93 routing feedback.** The writer context reports it as unavailable.
   No stale result or model prose substitutes for a captured routed-attempt
->>>>>>> 5c2d066
   receipt.
 - **Convergence.** A second writer-only placement turn on the scaffold that
   leaves some part off the board is escalated as `no_monotonic_progress`. The
