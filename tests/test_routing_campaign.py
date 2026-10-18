@@ -14,10 +14,10 @@ from unittest.mock import patch
 from agent_ee import campaign, kicad_route_attempt as attempt, routing_adapter as routing, stage_receipts
 from agent_ee.cli import policy_files, runtime_files
 from agent_ee.storage import digest, identity, read_json, write_json
-from kicad_route_fixture import FAKE_PIN, make_checkout
-import test_kicad_route_native as native_fixture
-import test_stage_receipts as campaign_fixture
-from toolchain import require_kicad_route, require_toolchain
+from tests.kicad_route_fixture import FAKE_PIN, make_checkout
+from tests import test_kicad_route_native as native_fixture
+from tests import test_stage_receipts as campaign_fixture
+from tests.toolchain import require_kicad_route, require_toolchain
 
 
 class RoutingCampaignTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class RoutingCampaignTests(unittest.TestCase):
         # The same stdlib adapter with test-only pin constants, mounted at the production path.
         source = Path(attempt.__file__).read_text()
         source = source.replace('PIN = ' + repr(attempt.PIN), 'PIN = ' + repr(FAKE_PIN), 1)
-        start, end = source.index('PINNED_CODE = '), source.index('REPORT_SCHEMA = ')
+        start, end = source.index('PINNED_CODE = '), source.index('RESULT_SCHEMA = ')
         driver = self.root / 'fixture-attempt.py'
         driver.write_text(source[:start] + f'PINNED_CODE = {code!r}\n' + source[end:])
         self.enterContext(patch.object(attempt, 'PIN', FAKE_PIN))

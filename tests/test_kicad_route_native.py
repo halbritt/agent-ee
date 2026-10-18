@@ -1,4 +1,4 @@
-"""Actual kicad-route (pinned 08179cd) and KRT on the original placed RC, read-only.
+"""Actual kicad-route (pinned e497916) and KRT on the original placed RC, read-only.
 
 AGENT_EE_KICAD_ROUTE_CHECKOUT names a clean kicad-route checkout at the pin with
 its installed KRT state; the standard image sets it to /opt/kicad-route. Unset,
@@ -81,7 +81,12 @@ class NativeKicadRouteTest(unittest.TestCase):
         result = json.loads((work / 'routing/attempt/result.json').read_text())
         self.assertEqual(summary['backend']['value'], result['backend'])
         self.assertEqual(result['validation']['status'], 'PASS')
-        self.assertEqual(result['validation']['validated_board_sha256'], summary['candidate_sha256'])
+        self.assertEqual(result['schema'], attempt.RESULT_SCHEMA)
+        self.assertEqual(set(result), attempt.RESULT_KEYS)
+        record = json.loads((work / 'routing/attempt/attempt.json').read_text())
+        self.assertEqual(set(record), attempt.ATTEMPT_KEYS)
+        self.assertTrue(attempt.validated_candidate(result['validation'], summary['candidate_sha256']))
+        self.assertFalse(result['sandbox']['state']['writable'])
         self.assertEqual(result['routing']['stats']['removed_existing_tracks'], 0)
         snapshot = json.loads((work / 'routing/attempt/snapshot.json').read_text())
         self.assertLessEqual({'rc_filter.kicad_pcb', 'rc_filter.kicad_sch'}, set(snapshot['files']))
@@ -170,6 +175,22 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.assertEqual(len(report['only_reference']), 1)
         self.assertEqual(report['only_reference'][0]['kind'], 'PCB_TRACK')
         self.assertIn('endpoints_nm', report['only_reference'][0])
+
+    def test_invalid_board_is_a_versioned_refusal_without_a_proposal(self):
+        placed = self.placed_rc()
+        (placed / 'project/rc_filter.kicad_pcb').write_text('(invalid_board)\n')
+        spec = self.spec()
+        work = self.root / 'refused'
+        record = execute(placed, work, spec['argv'], timeout=spec['timeout_s'],
+                         extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
+        self.assertEqual(record['exit_code'], 4, (work / 'console.log').read_text()[-2000:])
+        refusal = json.loads((work / 'routing/kicad-route.stdout').read_text())
+        self.assertEqual(refusal['schema'], 'kicad-route/refusal/1')
+        self.assertEqual(refusal['reason_class'], 'input')
+        summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+        self.assertEqual((summary['classification'], summary['proposal'], summary['coverage']),
+                         ('refused', 'none', 'missing_routing'))
+        self.assertFalse((work / 'routing/candidate').exists())
 
     def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
         """Pinned code and present state files are not enough: KRT must import."""

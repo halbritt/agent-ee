@@ -111,7 +111,7 @@ RUN set -eu; \
     rm -rf /var/lib/apt/lists/*; \
     zstd --version | grep -q 'v1\.5\.5'
 
-# kicad-route 08179cd with KRT v0.23.1 for the routing stage. The checkout is
+# kicad-route e497916 with KRT v0.23.1 for the routing stage. The checkout is
 # its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
 # routing steps mount it read-only in the tool sandbox. The verification runs
 # without network, so KRT's startup checks cannot fetch or rebuild anything.

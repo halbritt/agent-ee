@@ -25,9 +25,12 @@ adoption, and repeats those checks in `verify-campaign`.
 ## Pinned compatibility
 
 The adapter supports kicad-route commit
-`08179cdc97d08864da127f14d53ac46cf5a27851` only. That commit has no versioned
-result schema, no `--version` flag and no machine run locator, so the adapter
-checks the tool instead of trusting it:
+`e4979160a19b89837f9a9e9e25db620f3449f40a` only (AGENTEE-187).
+It requires `result.json` schema `kicad-route/route/1` and the exact top-level
+result and attempt keys written by this pin. Unknown or absent result schema
+versions are contradictions, even when the statuses and exit look successful.
+Upstream `attempt.json` has no schema ID; its pinned shape includes `rules_files`.
+The adapter checks the tool as well as its reports:
 
 - HEAD is read from the checkout's git files. agent-ee does not run `git`
   there, because `git status` can rewrite the index.
@@ -101,11 +104,12 @@ exit 2 would read as a partial route. It then runs:
 
 ```text
 /usr/bin/python3 -B -X pycache_prefix=/work/routing/pycache /opt/kicad-route/bin/kicad-route
-  --out /work/routing/out run --backend krt --dir /candidate/P --board B --schematic S
+  run --out /work/routing/out --json --backend krt --dir /candidate/P --board B --schematic S
   --name N --label L --protect existing --budget T
 ```
 
-`--out` is a global option and comes before `run`. The router reads the
+`--out` names the sandbox's writable output directory; the pin accepts it
+before or after `run`. `--json` produces a versioned record on stdout. The router reads the
 read-only `/candidate` copy, so it cannot edit the design it routes. Its
 environment is rebuilt from constants: `PATH`, `HOME`/`TMPDIR`/XDG under
 `/work/routing`, `LANG`, `PYTHONDONTWRITEBYTECODE`, `PYTHONPYCACHEPREFIX`,
@@ -154,7 +158,7 @@ nets).
 | 2 | process PASS, validation PASS, routing INCOMPLETE, contained candidate | `incomplete` | `eligible_partial`; coverage `routing_incomplete` | 2 |
 | 1 | process FAIL with no candidate, or no `result.json` (early failure) | `backend_failure` | none; coverage `missing_routing` | 1 |
 | 3 | process PASS, validation FAIL or NOT_RUN | `validation_failed` | none; the board is hashed as `rejected_candidate_sha256` and never copied | 3 |
-| 4 | no attempt directory, a `[route] refused:` line, no `result.json` | `refused` | none; coverage `missing_routing` | 4 |
+| 4 | no attempt directory, a `kicad-route/refusal/1` machine record, no `result.json` | `refused` | none; coverage `missing_routing` | 4 |
 | anything else | for example exit 2 without a result (usage error), exit 0 with INCOMPLETE, unknown fields or statuses, an escaping or linked candidate | `contradiction` | none; coverage `unknown` | 65 |
 | — | the adapter's timeout or a cancellation (SIGTERM) | `timeout`, `cancelled` | none; the router's process group is killed | 75, 143 |
 | — | an unexpected fault in the adapter itself | no report | none; `verify()` refuses the attempt | 70 |
@@ -174,8 +178,10 @@ For 0 and 2 the candidate must also bind to the attempt and its inputs:
   `snapshot.json` and the input fingerprint agree with them;
 - the candidate changes no project file other than the board, and the router
   restored none;
-- the board hash equals both `delivered_board_sha256` and
-  `validated_board_sha256`, the board kicad-route graded after its refill.
+- the board hash equals both `candidate_board_sha256` and
+  `validated_board_sha256`, the board kicad-route graded after its refill;
+- `delivered_board_sha256` is a SHA-256 digest of the pre-refill board, and
+  `refill_modified_board` agrees with whether that digest differs.
 
 `kicad-cli pcb drc --save-board` writes `<board>.kicad_prl` beside the board.
 It is the one extra candidate file allowed. It is hashed as editor state and is
@@ -229,7 +235,7 @@ A report paired with another attempt's receipt is refused.
 
 `layout` overrides the production sandbox paths and pin. Only the fixture
 router's tests pass it. Without it, a report that claims any pin other than
-`08179cd` is refused, so a fixture attempt never verifies as a kicad-route
+`e497916` is refused, so a fixture attempt never verifies as a kicad-route
 attempt.
 
 For every outcome, `verify` refuses a report when:
@@ -369,6 +375,40 @@ runs fresh DRC and `copper-width/1` checks on the captured proposal. Reviewers a
 scripted in these orchestration tests; native tool evidence is produced by the
 installed KiCad and pinned KRT processes.
 
+## Pin qualification record (AGENTEE-187, 2026-10-18)
+
+The previous pin was `08179cdc97d08864da127f14d53ac46cf5a27851`.
+The new pin is the local upstream HEAD captured at implementation start,
+`e4979160a19b89837f9a9e9e25db620f3449f40a`, rather than the older `a471b36`
+mentioned when the ticket was filed. `PINNED_CODE` was regenerated from this
+commit's Git blobs under `bin/` and `src/`. The image installer fetches the same
+commit; KRT remains `v0.23.1` at `295f9ee197517e8323726853361eb137cc08ba9e`
+with its existing binary and wheel hashes.
+
+Review of the new `cli.run_attempt`, `contract`, and `validate` code identified
+these changes: the versioned route record, additional provenance and sandbox
+fields, `attempt.rules_files`, `settings.barrier`, machine refusal records,
+and separate hashes before and after refill. The adapter adopts these without
+relaxing the fixed routing settings, input binding or project preservation.
+The full code pin still rejects added, removed or changed source files.
+
+Reproduce qualification with a detached clone at the new pin and the existing
+KRT state installed, setting `AGENT_EE_KICAD_ROUTE_CHECKOUT` to that clone:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_kicad_route_native -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_kicad_route_adapter -v
+```
+
+The native suite qualifies the original placed RC directly and through a stage
+receipt, refuses a forged validated-board hash, and compares two fresh runs
+with `routing_equivalence.compare_boards`. Equality is normalized copper geometry;
+UUID and file-order differences are recorded separately. It also demonstrates
+that a duplicate or moved segment is unequal. Policy tests include
+`test_unknown_result_version_refused`, missing schemas and changed attempt
+shapes, and acceptance of a refilled candidate only when its graded hashes bind.
+Independent integration review remains the coordinator's responsibility.
+
 ## Limits
 
 - One pin. A new kicad-route commit needs a reviewed new pin and fixture
@@ -377,9 +417,9 @@ installed KiCad and pinned KRT processes.
   checkout's `.git` and `build/` directories. Host-side kicad-route runs by
   others still change directory metadata there, for example a transient git
   lock. AGENTEE-95 mount identity hashes contents and links, not times.
-- A real exit 4 cannot occur in a fresh private OUT without `--canary`, which
-  the adapter never passes. Exit 4 and the contradiction cases are covered by
-  the fixture only.
+- Pre-routing refusals include usage, input, ledger, canary and state failures.
+  The policy fixture covers known machine refusals, unknown refusal versions
+  and obsolete human output; the last two cannot establish a refusal verdict.
 - KRT byte-level repeatability is not established. Two identical attempts on
   the placed RC gave the same segment geometry but different new-segment UUIDs
   and file order. The [routing equivalence check](routing-equivalence.md)

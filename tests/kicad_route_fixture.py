@@ -22,9 +22,9 @@ if name == 'argparse':
     print('usage: kicad-route [-h] [--out OUT] ...', file=sys.stderr)
     sys.exit(2)
 args = sys.argv[1:]
-assert args[0] == '--out' and args[2] == 'run', args
-out = Path(args[1])
-opts = dict(zip(args[3::2], args[4::2]))
+assert args[:2] == ['run', '--out'] and args[3] == '--json', args
+out = Path(args[2])
+opts = dict(zip(args[4::2], args[5::2]))
 
 
 def sha(p):
@@ -44,7 +44,7 @@ stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ
 run = out / 'runs' / project / label / stamp
 run.mkdir(parents=True)
 (run.parent / 'latest').symlink_to(run.name)
-print(f'[route] {opts["--backend"]} on {project} -> {os.path.relpath(run)}', flush=True)
+print(f'[route] {opts["--backend"]} on {project} -> {os.path.relpath(run)}', file=sys.stderr, flush=True)
 ref = run / 'reference' / src.name
 ref.mkdir(parents=True)
 for f in sorted(src.iterdir()):
@@ -58,22 +58,30 @@ fingerprint = hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.item
 write(run / 'facts/reference-facts.json', {'nets': {}})
 if name == 'early_exit':
     sys.exit('could not read the input board: see facts/reference-facts.log')
-if name == 'refused':
+if name in ('refused', 'unknown_refusal_version', 'human_refusal'):
     shutil.rmtree(run)
     (run.parent / 'latest').unlink()
     run.parent.rmdir()
-    print('[route] refused: identical attempt already finished incomplete', flush=True)
+    refusal = {'schema': 'kicad-route/refusal/1', 'kind': 'refusal', 'exit_code': 4,
+               'command': 'run', 'reason_class': 'ledger', 'message': 'identical attempt already finished incomplete'}
+    if name == 'unknown_refusal_version':
+        refusal['schema'] = 'kicad-route/refusal/999'
+    print('[route] refused: old human output' if name == 'human_refusal' else json.dumps(refusal), flush=True)
     sys.exit(4)
 settings = {'backend': opts['--backend'], 'budget_s': int(opts['--budget']), 'protect': opts['--protect'],
             'max_iterations': None, 'passes': None, 'default_clearance_mm': None, 'clearance_margin_mm': None,
             'pour_area_loss_pct': None, 'pour_min_spokes': None, 'backend_args': [],
             'backend_env': {'KICAD_X': '1'} if name == 'backend_env' else {}, 'reserve_spokes': None,
-            'stall_s': None, 'mode': 'all', 'rule_floor_sha256': None}
+            'stall_s': None, 'barrier': None, 'mode': 'all', 'rule_floor_sha256': None}
 attempt = {'backend': opts['--backend'], 'project': project, 'board': board, 'schematic': sch,
            'input_fingerprint': fingerprint, 'source': {'source_dir': str(src)},
            'reference_dir': f'reference/{src.name}', 'candidate_dir': f'candidate/{src.name}',
            'reference_facts': 'facts/reference-facts.json', 'baseline': {'report': None},
-           'scope': {'nets': [], 'mode': 'all'}, 'settings': settings, 'floor': None}
+           'scope': {'nets': [], 'mode': 'all'}, 'settings': settings, 'floor': None, 'rules_files': {}}
+if name == 'missing_attempt_rules':
+    del attempt['rules_files']
+if name == 'unknown_attempt_version':
+    attempt['schema'] = 'kicad-route/attempt/999'
 write(run / 'attempt.json', attempt)
 if name == 'sleep':
     child = subprocess.Popen(['/bin/sleep', '600'])
@@ -109,7 +117,10 @@ routing_status = {'incomplete': 'INCOMPLETE', 'exit0_incomplete': 'INCOMPLETE', 
                   'backend_failure': 'NOT_RUN'}.get(name, 'COMPLETE')
 board_sha = sha(cand / board) if process_ok else None
 validation = {'status': 'PASS', 'reasons': [], 'delivered_board_sha256': board_sha,
-              'validated_board_sha256': board_sha, 'restored_project_files': []}
+              'validated_board_sha256': board_sha, 'candidate_board_sha256': board_sha,
+              'refill_modified_board': False, 'restored_project_files': []}
+if name == 'refill_modified':
+    validation.update(delivered_board_sha256='1' * 64, refill_modified_board=True)
 if name == 'validation_failed':
     validation.update(status='FAIL', reasons=['1 new DRC violations: clearance 1'])
 if name == 'backend_failure':
@@ -124,7 +135,8 @@ rel_cand = os.path.relpath(cand)
 candidate = {'dir': rel_cand, 'board': os.path.join(rel_cand, board)} if process_ok else None
 if name == 'escaping_candidate':
     candidate = {'dir': '/etc', 'board': '/etc/passwd'}
-result = {'kind': 'route', 'backend': {'name': opts['--backend'], 'version': '0.0-fixture', 'build': None,
+result = {'schema': 'kicad-route/route/1', 'measurement': False, 'evidence': {},
+          'tool_identity': {}, 'sandbox': {}, 'kind': 'route', 'backend': {'name': opts['--backend'], 'version': '0.0-fixture', 'build': None,
           'commit': None}, 'input': {'project': project, 'board': board, 'fingerprint': fingerprint},
           'settings': settings, 'scope': {'mode': 'all', 'nets': 0}, 'unsupported': [], 'floor': None,
           'process': {'status': 'PASS' if process_ok else 'FAIL', 'reasons': [] if process_ok else ['KRT exited 1']},
@@ -133,6 +145,10 @@ result = {'kind': 'route', 'backend': {'name': opts['--backend'], 'version': '0.
           'finished_utc': '2026-10-17T00:00:00+00:00', 'exit_code': code, 'ledger': {}}
 if name == 'result_exit_mismatch':
     result['exit_code'] = 2
+if name == 'unknown_result_version':
+    result['schema'] = 'kicad-route/route/999'
+if name == 'missing_result_version':
+    del result['schema']
 if name == 'unknown_key':
     result['schema_version'] = 1
 if name == 'env':
@@ -141,6 +157,7 @@ if name == 'env':
                                       'pycache_prefix': sys.pycache_prefix})
 text = 'not json {' if name == 'malformed_json' else json.dumps(result, indent=2) + '\n'
 (run / 'result.json').write_text(text)
+print(text, flush=True)
 (run / 'RESULT.md').write_text('# Routing attempt (fixture)\n')
 with open(out / 'ledger.jsonl', 'a') as f:
     f.write(json.dumps({'run_dir': str(run), 'exit_code': code}) + '\n')
