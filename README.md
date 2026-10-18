@@ -266,6 +266,9 @@ Before each reviewer, adjudicator or implementation call, a
 [preflight guard](docs/result-reference.md#pre-inference-environment-receipts)
 checks captured tool and policy identities and tests sandbox execution. Drift or
 an unavailable prerequisite stops the call with a retained diagnostic.
+Campaigns allow one [bounded output resubmission](docs/campaign-guide.md#bounded-output-resubmission)
+per role per iteration by default. Both calls and the original validation error
+are retained; checks, execution failures and environment drift remain terminal.
 
 [Packet navigation](docs/result-reference.md#factual-packet-navigation) links
 native components, pins, nets and board primitives to declared checks and

@@ -118,14 +118,29 @@ def implement(root, previous, definition, state, deadline):
     expected = capture_expectation({**original, **campaign_environment}, manifest,
                                    [state['implementation_definition']], inputs=previous / 'inputs')
     write_json(work / 'launch-expectation.json', expected)
-    record, response = reviewer_call(work, "implementation", {**definition, "tool_mode": "investigate"},
-        prompt, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
-        launch_context={'expected': expected, 'boundary': 'implementation', 'deadline': deadline})
+    from .review_run import structured_call
+    def validate(response):
+        if (not isinstance(response, dict) or set(response) != {'summary'} or
+                not isinstance(response['summary'], str)):
+            raise ValueError('implementation response must contain only a string summary')
+        return response
+    try:
+        record, response = structured_call(work, "implementation", prompt, IMPLEMENTATION_SCHEMA,
+            lambda supplied: reviewer_call(work, "implementation", {**definition, "tool_mode": "investigate"},
+                supplied, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
+                launch_context={'expected': expected, 'boundary': 'implementation', 'deadline': deadline}),
+            validate, limit=config.get('max_schema_resubmissions', 1),
+            invariant=lambda: check_proposal(design, manifest, state))
+    finally:
+        execution_path = work / 'implementation-execution.json'
+        if execution_path.is_file():
+            state.setdefault('implementation_records', {})[work.name] = digest(execution_path)
     write_json(work / "implementation-execution.json", record)
-    from .preflight import verify_receipt
-    verify_receipt(work, record, expected, "implementation", "implementation")
+    from .review_run import verify_role_call
+    verify_role_call(work, record, expected, "implementation", "implementation",
+                     limit=config.get('max_schema_resubmissions', 1))
     if record["execution"] != "ok" or response is None:
-        raise ValueError("implementation execution failed; no retry or provider fallback")
+        raise ValueError("implementation execution failed; no provider fallback: " + record.get('error', record['execution']))
     check_proposal(design, manifest, state)
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
@@ -206,6 +221,8 @@ def run_campaign(config_path, out):
     config = read_json(config_path)
     if config.get("schema") != "agent-ee.campaign/1":
         raise ValueError("expected agent-ee.campaign/1")
+    from .review_run import resubmission_limit
+    config["max_schema_resubmissions"] = resubmission_limit(config.get("max_schema_resubmissions", 1))
     iterations = config["max_iterations"]
     if isinstance(iterations, bool) or not isinstance(iterations, int) or not 1 <= iterations <= 100:
         raise ValueError("max_iterations must be between 1 and 100")
@@ -242,6 +259,8 @@ def run_campaign(config_path, out):
         write_json(root / "profile.json", profile)
         state = {"schema": "agent-ee.campaign-state/1", "state": "running", "history": [],
                  "config_sha256": digest(root / "config.json"), "stage_receipts": {}, "step_plan": STEP_PLAN,
+                 "max_schema_resubmissions": config['max_schema_resubmissions'],
+                 "implementation_records": {},
                  "launch_environment": {"policy_files": policy_files(), "runtime_files": runtime_files()},
                  "implementation_definition": {**config["implementation"], "tool_mode": "investigate"}}
         write_json(root / "state.json", state)
@@ -252,6 +271,9 @@ def record_iteration(root, state, run, config):
     from .cli import verify
 
     result = verify(run)
+    if ('max_schema_resubmissions' in state and
+            result.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
+        raise ValueError('review resubmission bound differs from campaign configuration')
     manifest = read_json(run / "candidate.json")
     baseline = load_baseline(run)
     if "baseline" not in state:
@@ -302,7 +324,8 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
                 if len(state["history"]) >= config["max_iterations"] or time.monotonic() >= deadline:
                     raise ValueError("campaign iteration or wall-clock budget exhausted")
                 run_review(scope_path, run, deadline - time.monotonic(), profile=root / "profile.json",
-                           expected_baseline=state.get("baseline"))
+                           expected_baseline=state.get("baseline"),
+                           max_schema_resubmissions=config.get("max_schema_resubmissions", 1))
             initial_run = None
             record_iteration(root, state, run, config)
             verify_campaign(root)
@@ -334,10 +357,24 @@ def verify_campaign_records(root):
         raise ValueError("campaign configuration changed")
     if read_json(root / "profile.json") != config["review_profile"]:
         raise ValueError("campaign profile changed")
-    from .preflight import capture_expectation, verify_receipt
+    from .preflight import capture_expectation
+    if ('max_schema_resubmissions' in state and
+            state['max_schema_resubmissions'] != config.get('max_schema_resubmissions')):
+        raise ValueError('campaign resubmission declaration changed')
     if 'launch_environment' in state and state.get('implementation_definition') != {**config['implementation'], 'tool_mode': 'investigate'}:
         raise ValueError('campaign implementation definition changed')
+    for name, sha in state.get('implementation_records', {}).items():
+        if not name.isdigit() or str(int(name)) != name or not 1 <= int(name) <= len(state['history']):
+            raise ValueError('implementation record names no campaign history entry')
+        path = root / 'implementations' / name / 'implementation-execution.json'
+        if not path.is_file() or path.is_symlink() or digest(path) != sha:
+            raise ValueError('implementation execution record changed')
     for work in (root / 'implementations').glob('*'):
+        if 'implementation_records' in state:
+            path = work / 'implementation-execution.json'
+            actual = digest(path) if path.is_file() else None
+            if actual != state['implementation_records'].get(work.name):
+                raise ValueError('implementation execution record changed')
         if (work / 'implementation-execution.json').is_file() and 'launch_environment' in state:
             expected = read_json(work / 'launch-expectation.json')
             source = Path(state['history'][int(work.name) - 1]['run'])
@@ -346,7 +383,9 @@ def verify_campaign_records(root):
                 read_json(source / 'candidate.json'), [{**config['implementation'], 'tool_mode': 'investigate'}], inputs=source / 'inputs')
             if expected != wanted:
                 raise ValueError('implementation launch expectation changed')
-            verify_receipt(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation')
+            from .review_run import verify_role_call
+            verify_role_call(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation',
+                             limit=state.get('max_schema_resubmissions'))
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
@@ -363,6 +402,9 @@ def verify_campaign_records(root):
                 digest(snapshot) != stored["result_sha256"]):
             raise ValueError("campaign history result link changed")
         current = verify(run, current_source=False)
+        if ('max_schema_resubmissions' in state and
+                current.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
+            raise ValueError('review resubmission bound differs from campaign configuration')
         result = read_json(snapshot)
         if current != result:
             # Bench registration appends facts without rewriting the original

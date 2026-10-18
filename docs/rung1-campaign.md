@@ -79,7 +79,10 @@ as in the closed-loop control: a 1 V step at `/IN`, a 5 ms stop, and `/OUT` at
 1 ms in [0.62, 0.65] V. R-native, R-width and R-response map to these checks
 as in `fixtures/closed-loop/control.scope.json`. The stage subjects are the
 symbols R1, C1 and J1, the footprints R1, C1 and J1, and at least one track.
-The retry limit is 3.
+The retry limit is 3. The generated campaign also declares
+`max_schema_resubmissions: 1` for separately recorded model output resubmissions;
+this is independent of the stage retry limit. See the
+[campaign output rule](campaign-guide.md#bounded-output-resubmission).
 
 `mutable_inputs` is exactly the schematic and the board. Everything under
 `generation/` and `requirements/` is immutable. The driver validates the

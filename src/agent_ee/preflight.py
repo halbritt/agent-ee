@@ -238,12 +238,16 @@ def verify_calls(run, result, manifest):
     for record in result.get('review_executions', []):
         if record.get('admission') == 'not_attempted' and not record.get('preflight'):
             continue
-        invocation = verify_receipt(run, record, expected, record['role'], 'initial')
-        if invocation in invocation_ids:
+        from .review_run import verify_role_call
+        calls = verify_role_call(run, record, expected, record['role'], 'initial',
+                                 limit=result.get('max_schema_resubmissions'))
+        if calls & invocation_ids:
             raise ValueError('duplicate preflight invocation identity')
-        invocation_ids.add(invocation)
+        invocation_ids.update(calls)
     if (Path(run) / 'adjudicator-execution.json').is_file():
-        invocation = verify_receipt(run, read_json(Path(run) / 'adjudicator-execution.json'),
-                                    expected, 'adjudicator', 'adjudicator')
-        if invocation in invocation_ids:
+        from .review_run import verify_role_call
+        calls = verify_role_call(run, read_json(Path(run) / 'adjudicator-execution.json'),
+                                 expected, 'adjudicator', 'adjudicator',
+                                 limit=result.get('max_schema_resubmissions'))
+        if calls & invocation_ids:
             raise ValueError('duplicate preflight invocation identity')

@@ -332,7 +332,8 @@ def launch(out, request, records):
         raise TransactionError('ambiguous', 'review target already exists', out=out)
     receipt(out, 'review_started', {'attempt': {'id': request['operation_id'] + '-1', 'out': str(target)}})
     run_review(out / 'prepared/scope.json', target, request['max_seconds'],
-               previous=request['run'], output_stream=sys.stderr)
+               previous=request['run'], output_stream=sys.stderr,
+               max_schema_resubmissions=read_json(out / 'prepared/source-result.json').get('max_schema_resubmissions', 0))
     return settle(out, request, load(out)[1])
 
 
@@ -459,7 +460,8 @@ def new_attempt(out, attempt_id, target):
                 'attempt': {'id': attempt_id, 'out': str(target)}})
             from .cli import run_review
             run_review(out / 'prepared/scope.json', target, request['max_seconds'],
-                       previous=request['run'], output_stream=sys.stderr)
+                       previous=request['run'], output_stream=sys.stderr,
+                       max_schema_resubmissions=read_json(out / 'prepared/source-result.json').get('max_schema_resubmissions', 0))
             return settle(out, request, load(out)[1])
 
 

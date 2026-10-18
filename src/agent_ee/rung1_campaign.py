@@ -440,7 +440,8 @@ def campaign_config(scope_path, profile, steps, max_seconds=3600, max_iterations
     return {'schema': 'agent-ee.campaign/1', 'scope': Path(scope_path).name, 'review_profile': profile,
             'implementation': {'harness': adjudicator['harness'], 'model': adjudicator['model'],
                                'effort': adjudicator['effort'], 'timeout_s': 900},
-            'max_iterations': max_iterations, 'max_seconds': max_seconds, 'implementation_steps': steps}
+            'max_iterations': max_iterations, 'max_seconds': max_seconds, 'max_schema_resubmissions': 1,
+            'implementation_steps': steps}
 
 
 # ------------------------------------------------------------------ records
