@@ -102,6 +102,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 | `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
+| `jlc_cost_estimate` | Coordinator reads the earlier export's verified BOM/CPL/`pcb_summary.json`, the captured board pads, catalog snapshot and pricing table; informational only, no tool launched ([details](jlc-cost-estimate.md)) | Enclosing run deadline |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -785,6 +786,19 @@ reflections and diode polarity. Each row appears in exactly one of
 `applied_corrections` or `unmatched_footprints`. Missing geometry or a
 duplicate designator never falls back to the anchor. The status stays
 `PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
+
+## JLCPCB cost estimate
+
+`jlc_cost_estimate` takes `export_check`, a captured `catalog`, a captured
+versioned `pricing_table` (`agent-ee.jlc-pricing/1`), `assembly_tier` and
+`boards`. It reports PCB, assembly and component cost line items, each citing
+its table entry or catalog row, plus unique Basic, Preferred, Extended and
+unknown-class part counts. A part without snapshot class flags, or absent from
+the snapshot, is counted `unknown`, never Basic. Its outcome is always `info`,
+or `unknown` when `pcb_summary.json` is missing or unusable. Scope/3 declares
+no predicate, so it can be mapped only to an informational requirement. The
+report records the table version, capture date and staleness, and the input
+hashes. See [JLCPCB cost estimate](jlc-cost-estimate.md).
 
 ## Scaffold preparation
 

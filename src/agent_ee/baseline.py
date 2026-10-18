@@ -85,6 +85,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "cpl_rotation":
             from .cpl_rotation import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
+        if spec.get("kind") == "jlc_cost_estimate":
+            from .jlc_cost import capability
+            paths.update(capability(params, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "symbol_pins":
             from .symbol_checks import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])

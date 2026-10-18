@@ -1,0 +1,97 @@
+{
+  "schema": "agent-ee.scope/3",
+  "name": "Owned JLC cost estimate control",
+  "scope": "Synthetic 2-layer fab-export board priced from an owned test pricing table and catalog snapshot; exercises the informational cost estimate only.",
+  "schematic": "design/fab.kicad_sch",
+  "board": "design/fab.kicad_pcb",
+  "inputs": [
+    {
+      "path": "../fab-export",
+      "at": "design",
+      "include": [
+        "fab.kicad_sch",
+        "fab.kicad_pcb"
+      ]
+    },
+    {
+      "path": ".",
+      "at": "cost",
+      "include": [
+        "jlc-pricing-owned.json",
+        "catalog.json",
+        "requirements.md"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "fab",
+      "kind": "fab_export",
+      "params": {
+        "netlist_check": "netlist"
+      }
+    },
+    {
+      "id": "cost",
+      "kind": "jlc_cost_estimate",
+      "params": {
+        "export_check": "fab",
+        "catalog": "cost/catalog.json",
+        "pricing_table": "cost/jlc-pricing-owned.json",
+        "assembly_tier": "standard",
+        "boards": 5
+      }
+    },
+    {
+      "id": "cost_economic",
+      "kind": "jlc_cost_estimate",
+      "params": {
+        "export_check": "fab",
+        "catalog": "cost/catalog.json",
+        "pricing_table": "cost/jlc-pricing-owned.json",
+        "assembly_tier": "economic",
+        "boards": 5
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-fab",
+        "statement": "The captured board yields a complete JLCPCB fab package",
+        "source": {
+          "path": "cost/requirements.md",
+          "locator": "R-fab"
+        },
+        "checks": [
+          "fab"
+        ],
+        "intent": "acceptance"
+      },
+      {
+        "id": "R-cost",
+        "statement": "The package carries an informational, cited JLCPCB cost estimate",
+        "source": {
+          "path": "cost/requirements.md",
+          "locator": "R-cost"
+        },
+        "checks": [
+          "netlist",
+          "cost",
+          "cost_economic"
+        ],
+        "intent": "informational"
+      }
+    ],
+    "targets": [
+      "cost/requirements.md"
+    ],
+    "reference_architectures": [
+      "cost/requirements.md"
+    ]
+  }
+}

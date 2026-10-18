@@ -1,0 +1,15 @@
+{
+  "schema": "agent-ee.catalog-snapshot/1",
+  "snapshot_date": "2026-10-17",
+  "stale_before": null,
+  "parts": [
+    {"lcsc": "C900001", "mfr": "Owned Fixture Works", "mpn": "OFW-C-1U", "package": "0603", "category": "capacitor",
+     "stock": 50000, "price1": 0.0021, "is_basic": 1, "is_preferred": 0, "last_seen": "2026-10-17"},
+    {"lcsc": "C900010", "mfr": "Owned Fixture Works", "mpn": "OFW-R-10K", "package": "0603", "category": "resistor",
+     "stock": 50000, "price1": 0.0008, "is_basic": 0, "is_preferred": 1, "last_seen": "2026-10-17"},
+    {"lcsc": "C900047", "mfr": "Owned Fixture Works", "mpn": "OFW-R-4K7", "package": "0603", "category": "resistor",
+     "stock": 900, "price1": 0.0035, "is_basic": 0, "is_preferred": 0, "last_seen": "2026-10-17"},
+    {"lcsc": "C900030", "mfr": "Owned Fixture Works", "mpn": "OFW-HDR3", "package": "HDR-1x3-2.54", "category": "connector",
+     "stock": 120, "price1": 0.12, "is_basic": 0, "is_preferred": 0, "last_seen": "2026-10-17"}
+  ]
+}

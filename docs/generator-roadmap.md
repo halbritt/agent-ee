@@ -77,6 +77,8 @@ CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
 The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
 
 CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
+The rung-4 cost estimate is [`jlc_cost_estimate`](jlc-cost-estimate.md)
+(AGENTEE-77). It is informational only and maps to no acceptance requirement.
 
 [`fab_package`](fab-package.md)
 (AGENTEE-94) is the done gate: declared last, it runs the
