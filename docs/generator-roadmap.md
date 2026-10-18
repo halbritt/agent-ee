@@ -123,9 +123,14 @@ A proposed layout for the scaffold's scope fragment:
 }
 ```
 
-No tool writes this candidate today; AGENTEE-87 adds a deterministic scaffold
-command. Two properties of the current reducer also stop a generation campaign
-early, and AGENTEE-88 addresses them:
+The [scaffold command](scaffold.md) now creates deterministic native files from
+production envelope and parts records plus an explicit stage-one scope and
+project-rule template. It copies selected dependencies, pre-creates child sheets
+and preserves checks and baseline mappings. Automatic scope/rule compilation,
+hierarchical staged presence and complete production envelope acceptance remain
+unavailable. The experimental rung-1 driver still uses its earlier scaffold.
+
+AGENTEE-88 added opt-in staged convergence to address these earlier blockers:
 
 1. On an empty design ERC and DRC pass vacuously. The first proposal that adds
    footprints fails DRC with unconnected items, and convergence step 2
@@ -133,11 +138,11 @@ early, and AGENTEE-88 addresses them:
 2. A simulation whose nets do not exist yet is unknown coverage, so the campaign
    stops as `execution_incomplete`.
 
-AGENTEE-88 proposes that a check over an empty subject fails with
-`stage_not_reached` when the baseline declares expected content, and that
-scopes declaring check stages count progress by the earliest failing stage.
-Scopes without stage fields keep their current behavior. This changes the
-convergence contract and needs owner review before it ships.
+AGENTEE-88 implements opt-in policy where a check over an empty subject fails with
+`stage_not_reached` when the baseline declares expected content. Scopes declaring
+check stages count progress by the earliest failing stage.
+Scopes without stage fields keep their current behavior. Hierarchical presence
+is still unsupported; an empty flat subject needs a successful native probe.
 
 ## Stages, epics and work
 

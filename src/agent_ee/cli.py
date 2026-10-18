@@ -600,6 +600,11 @@ def render3d(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    scaffold_parser = sub.add_parser('scaffold', help='create an empty native candidate from captured planning inputs')
+    scaffold_parser.add_argument('envelope')
+    scaffold_parser.add_argument('parts')
+    scaffold_parser.add_argument('--scope', required=True, help='stage-one scope/2 or scope/3 with captured project rules')
+    scaffold_parser.add_argument('--out', required=True)
     catalog = sub.add_parser('capture-catalog', help='prepare a pinned local catalog; no upstream authentication')
     catalog.add_argument('manifest')
     catalog.add_argument('--source-root', required=True)
@@ -693,6 +698,11 @@ def main(argv=None):
     closure.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'scaffold':
+            from .scaffold import scaffold
+            receipt = scaffold(args.envelope, args.parts, args.out, scope_path=args.scope)
+            print(receipt['candidate_id'])
+            return 0
         if args.command == 'capture-catalog':
             from .catalog import capture_catalog, strict_json
             capture_catalog(strict_json(Path(args.manifest).read_text(encoding='utf-8')), args.source_root, args.out)
