@@ -119,7 +119,9 @@ cannot pass merely because an empty design produces no rule violations. Progress
 is measured in the earliest failing stage, with regression and retry limits.
 Existing unstaged campaigns keep their convergence rules. Coordinator steps
 follow the earliest failing stage; arbitrary writer commands have no stage-specific
-OS allowlist. A complete generation rung with live model review and fabrication
+OS allowlist. [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
+such as fab export, with an empty write scope and retained artifact hashes.
+A complete generation rung with live model review and fabrication
 acceptance remains pending.
 
 An [offline intent importer](docs/design-intent.md) preserves source requirements

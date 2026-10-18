@@ -123,8 +123,8 @@ def validate_step(spec, *, host=True):
         if not any(_under(source, m['at']) for m in normalized_mounts):
             raise ValueError('Python source tree must be under a declared mount')
     writes = spec['writes']
-    if not isinstance(writes, dict) or not writes:
-        raise ValueError('stage step must declare at least one write')
+    if not isinstance(writes, dict):
+        raise ValueError('stage step writes must be a map')
     for target, produced in writes.items():
         _relative(target, 'write target')
         _relative(produced, 'write source')
@@ -139,6 +139,8 @@ def validate_step(spec, *, host=True):
         _relative(artifact, 'artifact')
         if PurePosixPath(artifact).parts[0] in (*EXECUTOR_FILES, 'design'):
             raise ValueError('artifact collides with executor records or the design copy')
+    if not writes and not artifacts:
+        raise ValueError('stage step must declare at least one write or artifact')
     report = spec.get('backend_report')
     if report is not None:
         if (not isinstance(report, dict) or set(report) != {'artifact', 'key'} or

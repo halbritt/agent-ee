@@ -10,6 +10,10 @@ arguments, exit status and console output remain in `work/CHECK_ID/`.
 criteria; [geometry_probe.py](../src/agent_ee/geometry_probe.py) extracts saved
 board facts through pcbnew.
 
+[Coordinator stage receipts](stage-receipts.md) can record artifact-only steps
+with `writes: {}` and nonempty `artifacts`. They retain artifact hashes without
+design outputs; they remain provenance and cannot satisfy an acceptance check.
+
 [Stage-one intent import](design-intent.md) prepares source-bound requirements
 and incomplete interface stubs for later capture. Its lint outcome covers only
 the declared lexical checks; executable checks must supply acceptance evidence.

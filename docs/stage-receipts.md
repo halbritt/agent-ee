@@ -40,9 +40,16 @@ even when the forger also recomputes the receipt identity.
 | `source` | Optional mount path whose file tree identifies a Python tool |
 | `version_argv` | Optional version probe, run in the same sandbox |
 | `backend_report` | Optional `{artifact, key}`: copy that key of a declared JSON artifact verbatim. For kicad-route, `result.json` key `backend` |
-| `writes` | Candidate path → work path that becomes it. In-place writes use `design/<same path>`. Out-of-place writes name a produced file such as `out/candidate/...` |
+| `writes` | Required map of candidate path → work path that becomes it. In-place writes use `design/<same path>`. Out-of-place writes name a produced file such as `out/candidate/...`. May be `{}` when `artifacts` is nonempty |
 | `artifacts` | Work paths retained and hashed, for example `out/result.json`, `out/validate` |
 | `adoptable_exits` | Must include 0. kicad-route's partial-but-valid exit 2 would be listed here. A failed validation (3) never is |
+
+A step must declare at least one write or artifact. An artifact-only step, such as
+a fab export, declares `"writes": {}` and lists its retained work paths in
+`artifacts`. Its receipt records the input tree and artifact hashes with
+`"outputs": {}` and `"changed": []`. Adoption still validates the receipt and
+requires the design to match its inputs, then leaves the design untouched.
+Any added, deleted or changed design file is refused under the empty write scope.
 
 ## Receipt fields and status
 
