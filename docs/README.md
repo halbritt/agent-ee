@@ -30,6 +30,7 @@ product's hardware qualification.
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Emit intent net constraints as KiCad netclasses and width rules | [Net constraints](net-constraints.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
+| Check worst-case algebraic requirements (dividers, ratings) across part tolerances | [Interval assertions](interval-assertions.md) |
 | Keep owner-declared net names stable through generation | [Net-name provenance](net-names.md) |
 | Check that regenerated boards, schematics or netlists match without UUID churn, or diff two repair candidates | [Canonical design diff](design-diff.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |

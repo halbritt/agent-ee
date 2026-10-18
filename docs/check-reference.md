@@ -85,6 +85,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
 | `regeneration_determinism` | Coordinator compares two captured boards, schematics, netlists or JSON probe outputs after removing IDs; no additional tool launched ([details](design-diff.md)) | Enclosing run deadline |
+| `interval_assertions` | `/usr/bin/python3 -m agent_ee.interval_assertions /candidate DOCUMENT --snapshot SNAPSHOT --manifest-sha256 MANIFEST_SHA256 [--parts-manifest PARTS] --out /work/intervals.json`; exact rational worst-case evaluation of declared relations over pinned catalog and requirement intervals ([details](interval-assertions.md)) | 300 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_equivalence` | `/usr/bin/python3 -m agent_ee.routing_equivalence`; native saved copper comparison | 300 s |
@@ -140,6 +141,19 @@ The [full-feed runtime qualification](catalog.md#full-feed-runtime-qualification
 records the private full-feed measurements and reproduction command. Both helpers
 now declare a 600-second ceiling because complete rederivation exceeded 120 seconds;
 the enclosing run deadline can shorten it. A timeout or absent report remains unknown.
+
+## Interval assertions
+
+The [interval assertion check](interval-assertions.md) takes `assertions` and,
+when any parameter cites the catalog, `snapshot` and `manifest_sha256`, plus an
+optional `parts_manifest` pinning the same snapshot. Every requirement ID the
+document cites must be a baseline requirement sourced from that document and
+bound to the check. Each assertion is one predicate. An unknown operand, an
+unbounded division or an unattained enclosure excess is unknown, never pass; a
+defect needs an attained parameter corner outside the target. A malformed
+expression or unit mismatch refuses the audit and is `execution: malformed` in
+a run. `intervals.json` records the input hashes, every parameter interval, and
+each assertion's computed interval, witness and operand origins.
 
 ## Approved parts membership
 
