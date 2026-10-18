@@ -488,11 +488,16 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets)
     labels, markers = [], []
     for pin, net, x, y, away in item['labels']:
         point = (anchor[0] + x, anchor[1] + y)
-        owner = (comp['id'], pin['number'])
-        # Distinct physical pins may never share a connection point.
-        if point in endpoints and endpoints[point] != owner:
-            raise EmissionError('impossible_pin_endpoint', 'two pins share one connection point',
-                                '/components/' + comp['id'] + '/pins/' + pin['number'])
+        owner = (comp['id'], unit, None if net is None else net['id'])
+        # Distinct physical pins share a connection point only as stacked pins
+        # of one placed unit on one net: KiCad joins them, so one label serves
+        # all. Any other sharing, or a no-connect at a stack, would change
+        # connectivity and refuses.
+        if point in endpoints:
+            if endpoints[point] != owner or net is None:
+                raise EmissionError('impossible_pin_endpoint', 'two pins share one connection point',
+                                    '/components/' + comp['id'] + '/pins/' + pin['number'])
+            continue
         endpoints[point] = owner
         ident = (*key, unit, pin['number'])
         if net is None:
