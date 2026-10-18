@@ -383,7 +383,9 @@ review remain pending, and both source blocks remain unverified.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
-captured library pin references. The [native-bound mode](docs/native-binding.md)
+captured library pin references and optional exact name/type expectations, as
+used by the [owned pod symbols](fixtures/telemetry-pod/symbols/README.md).
+The [native-bound mode](docs/native-binding.md)
 requires the declaration to match every native board component, its exact
 selection and its captured library pins; declared-only reports remain distinct.
 [Pinned legacy footprints](docs/footprint-libraries.md#converting-pinned-legacy-footprints)

@@ -1,0 +1,46 @@
+{
+  "library": {
+    "path": "libs/Pod.kicad_sym",
+    "sha256": "3484c0974dd499caf48b1c53083087648675256979e9474d66e44ac5ad89afa0"
+  },
+  "capture": {
+    "path": "symbols/capture.json",
+    "sha256": "7ed7e7cfeae605c7a2a338eea4b631b616afc8d022d86c98f3517c234dc8c285"
+  },
+  "subset": {
+    "name": "Pod",
+    "path": "libs/Pod.kicad_sym",
+    "sha256": "3484c0974dd499caf48b1c53083087648675256979e9474d66e44ac5ad89afa0"
+  },
+  "datasheets": [
+    {
+      "part_number": "PESD1CAN-UX",
+      "url": "https://assets.nexperia.com/documents/data-sheet/PESD1CAN-U.pdf",
+      "retrieved_from": "https://www.datasheets.com/Nexperia/PESD1CAN-UX/datasheet.pdf",
+      "path": "datasheets/pesd1can-u.pdf",
+      "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+      "version": "Rev. 1 \u2014 27 March 2013",
+      "page": 1,
+      "locator": "Section 2, Table 2",
+      "facts": {
+        "path": "pesd1can-ux/datasheet-facts.json",
+        "sha256": "0b7f310efa939c17ed4b43590581ccec5f1ad8f7f56823e51d98e53b5a76c221"
+      }
+    },
+    {
+      "part_number": "LSM6DSO32",
+      "url": "https://www.st.com/resource/en/datasheet/lsm6dso32.pdf",
+      "retrieved_from": "https://www.datasheets.com/STMicroelectronics/LSM6DSO32/datasheet.pdf",
+      "path": "datasheets/lsm6dso32.pdf",
+      "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+      "version": "DocID032891 Rev 1",
+      "page": 24,
+      "locator": "Section 3, Table 2",
+      "facts": {
+        "path": "lsm6dso32/datasheet-facts.json",
+        "sha256": "5b58eac2a19c21a338bde184d2879be485f9bdd2017557ccf07c9878c036d123"
+      }
+    }
+  ],
+  "kicad_version": "10.0.7"
+}

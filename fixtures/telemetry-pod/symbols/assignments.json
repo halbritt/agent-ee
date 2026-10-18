@@ -1,0 +1,26 @@
+{
+  "schema": "agent-ee.footprint-assignments-input/1",
+  "libraries": [
+    {
+      "name": "Pod",
+      "path": "libs/Pod.kicad_sym",
+      "sha256": "3484c0974dd499caf48b1c53083087648675256979e9474d66e44ac5ad89afa0"
+    }
+  ],
+  "components": [
+    {
+      "reference": "D1",
+      "lib_id": "Pod:PESD1CAN-UX",
+      "footprint": "Package_TO_SOT_SMD:SOT-323_SC-70",
+      "assembly": "smd",
+      "connector": null
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "footprint": "Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y",
+      "assembly": "smd",
+      "connector": null
+    }
+  ]
+}

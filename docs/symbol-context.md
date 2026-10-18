@@ -36,6 +36,14 @@ identify more than one selected symbol. This is an explicit selection authority,
 not automatic native schematic binding. Selecting all device pins does not
 prove that an embedded schematic instance uses the same symbol or unit.
 
+A number selector can also declare `expected: {"name": "SDO",
+"electrical_type": "bidirectional"}`. Both fields are required, the type must
+be a supported KiCad electrical type, and name selectors cannot carry this
+contract. Every matching pin must have exactly those attributes; a renamed pin,
+changed type or swapped number is a defect. Reports retain `expected` and
+`actual` attributes beside the source-bound context. Malformed expectations give
+malformed/unknown coverage.
+
 ```sh
 python3 -m agent_ee.symbol_context query.json --captures captured --out context.json
 ```
@@ -55,10 +63,17 @@ model nor invoke a shell. Output files must be new.
 
 The `symbol_pins` coordinator check takes a single `declaration` parameter naming
 a captured pin-validation query. Its captured symbol dependencies are immutable
-in scope/2 and scope/3; the query remains candidate data. A missing pin on a
+in scope/2 and scope/3. An existence-only query remains candidate data; a query
+containing any `expected` attributes is also immutable, so a writer cannot edit
+the expectations to bless a changed symbol. A missing pin on a
 fully resolved selection gives a defect naming the reference, selected symbol,
 selector and actual available pins. A missing selected symbol/library gives
 failed/unknown coverage, independently of AGENTEE-39's intent-rejection mapping.
-Scope/3 covers pin existence only. Native schematic binding, function-to-datasheet
+Scope/3 records `symbol:pin-existence/1` and, when requested,
+`symbol:pin-attributes/1`. Native schematic binding, function-to-datasheet
 conformance (the separate `pin_map` check), package choice and physical correctness
 remain separate obligations.
+
+The [owned telemetry-pod symbols](../fixtures/telemetry-pod/symbols/README.md)
+exercise all 17 pins of PESD1CAN-UX and LSM6DSO32 against captured datasheet
+declarations, including pin-swap controls and native emission.
