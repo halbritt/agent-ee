@@ -21,6 +21,14 @@ and report a design violation: `execution=ok`, `outcome=defect`. A crash, missin
 output, unsupported component or absent measurement means unknown coverage,
 not a confirmed electrical defect and not a passing check.
 
+Opt-in [staged scopes](staged-campaign.md) first check declared native content.
+A successful native probe that confirms missing expected symbols, footprints or
+tracks produces `ok/defect` with reason `stage_not_reached`. Earlier defects
+block later handlers with `ok/defect`, reason `stage_blocked`; an earlier unknown
+leaves later checks `not_run/unknown`. Once the stage opens, missing simulation
+nets remain unknown coverage. Scopes without stage declarations keep their
+ordinary handler results and convergence rules.
+
 The native commands below show sandbox paths; `/candidate` is the captured
 `inputs/`, `/work` is this check's scratch. They document the emitted arguments,
 not commands to paste into a host shell with nonexistent sandbox paths.
