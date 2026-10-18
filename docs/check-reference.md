@@ -649,8 +649,12 @@ occurrence and the board for `LCSC`, `Manufacturer`, `Partnumber`, `Datasheet`
 and typed `PARAM_*` interval or set properties. It launches no tool. A
 disagreement between two non-empty schematic and board values, or a malformed
 `LCSC` value, is a defect. A missing or one-sided property is `unknown` for that
-reference. Unparseable `PARAM_*` JSON and an uncaptured child sheet are
-`malformed`. See [part binding](part-binding.md) for the schema, markers and
+reference. Copper-layer pads keep a footprint bindable even with `virtual`,
+`board_only` or `REF**` markers; the report retains the marker and records
+`has_copper_pads`. Marked footprints without copper pads stay exempt, including
+bare NPTH holes qualified by the existing native geometry reader.
+Unparseable `PARAM_*` JSON, ambiguous pad layers and an uncaptured child sheet
+are `malformed`. See [part binding](part-binding.md) for the schema, markers and
 per-reference outcomes.
 
 ## JLCPCB fab package

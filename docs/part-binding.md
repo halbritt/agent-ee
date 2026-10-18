@@ -93,10 +93,26 @@ Any property whose name matches `^PARAM_[A-Za-z0-9_]+$` (for example `PARAM_resi
   - Reference or Value is `PWR_FLAG`.
   - Symbol's library definition in `(lib_symbols ...)` carries `(power)` (including via `(extends ...)`), or `lib_id` starts with `power:`.
   - Symbol has `(on_board no)`.
-- **Board (`.kicad_pcb`)**:
+- **Board (`.kicad_pcb`)**: these markers exclude a footprint only when it has
+  no copper pads:
   - Footprint `(attr ...)` contains `virtual` or `board_only`.
   - Reference starts with `#` or equals `REF**`.
   - Footprint has `(on_board no)`.
+
+A pad declaring a layer ending in `.Cu` (including `*.Cu` and inner layers)
+makes the footprint bindable regardless of those markers, except for qualified
+bare NPTH holes described below. Binding validation and schematic/board parity
+still apply. Marked padless mechanical footprints
+and those with only non-copper pads retain their virtual exemption.
+The board component record retains `attrs`, `board_only`, `reference` and
+`on_board`, and adds `has_copper_pads`; its `virtual` field records the effective
+exemption. A bare, unnumbered NPTH hole is also non-copper when the existing
+`land_pattern` native qualifier proves that its pad and drill shapes and sizes
+coincide with no offset, even if it declares `*.Cu`. An NPTH with an annulus or
+unqualified geometry keeps its copper classification and requires bindings.
+Malformed NPTH geometry encountered during that qualification is `malformed`.
+Missing, empty, repeated or non-atom pad layer lists are also `malformed`, so
+ambiguous coverage cannot qualify a footprint as virtual.
 
 ### DNP and Explicit `no-LCSC` Markers
 
@@ -123,7 +139,7 @@ disagreements.
 When both `sch_bytes` and `pcb_bytes` are supplied to `validate_part_bindings`:
 1. **Presence Parity**:
    - Every non-virtual schematic symbol with `on_board=True` and `dnp=False` must have a corresponding footprint on the board.
-   - Every non-virtual, non-`board_only` footprint on the board must have a corresponding non-virtual `on_board` symbol in the schematic.
+   - Every non-virtual footprint on the board must have a corresponding non-virtual `on_board` symbol in the schematic.
 2. **Property & Parameter Parity**:
    - For every reference present in both schematic and board, `LCSC`, `Manufacturer`, `Partnumber`, `Datasheet` (with `"~"` and `""` normalized as empty), `Footprint` (schematic `Footprint` property vs board footprint `lib_id`), `Value`, effective `dnp`, native DNP (`(dnp yes)` or footprint `dnp` attribute; an authored `DNP` property is not native), `in_bom`, and normalized `PARAM_*` dictionaries must match.
    - Two different non-empty values are a disagreement (`defect`). A binding property (`LCSC`, `Manufacturer`, `Partnumber`, `Datasheet` or a `PARAM_*`) present on one side only is a missing binding on the other side (`unknown`), never a pass. A footprint that lacks the properties is therefore `unknown` for that reference.
