@@ -132,7 +132,9 @@ clearance, thermal, EMC and decoupling-loop physics remain separate checks.
 
 ## Native qualification
 
-The AGENTEE-92 acceptance criteria have executable coverage:
+The following tests qualify the AGENTEE-92 predicates. The connector criterion
+has standalone native coverage; its normal coordinator path remains blocked by
+the envelope capture gate described below.
 
 | Criterion | Test and observation |
 | --- | --- |
@@ -158,3 +160,10 @@ stackup manufacturing authority; that gate must remain closed. Likewise,
 `min_courtyard_edge_mm` is a captured scope declaration, not a fabricator-sourced
 courtyard limit. The optional routing test uses an owned result record to
 qualify parsing and advisory behavior, not to claim a routing attempt.
+
+An unpatched scope/3 declaration mapping outline, layer count and stackup to
+their `board_envelope` criteria, the fixed header to `connector-edge/1`, and the
+profile to `fab_profile` is refused before candidate creation:
+`R-envelope-rc-filter-stackup` lacks executable coverage because
+`copper_weight_oz` needs qualified captured manufacturing authority. A passing
+standalone connector judgment cannot close this coordinator-path acceptance gap.
