@@ -178,14 +178,18 @@ class EmitterParityTests(unittest.TestCase):
         freeze_evidence(run, checks)
         verify_evidence(run, checks, required=True)
 
-    def test_staged_presence_probe_refuses_power_symbols_counted_as_physical(self):
-        # The pre-AGENTEE-123 emission: power instances kept the library's in_bom/on_board yes.
-        def physical(data):
+    def test_staged_presence_probe_refuses_an_ordinary_part_marked_virtual(self):
+        # The emitter writes only power symbols and flags in_bom/on_board no. An ordinary
+        # C1 rewritten that way drops out of the bounded inventory, but KiCad's netlist
+        # export still lists it, so the probe refuses the disagreement (fail closed).
+        def hidden(data):
             text = data.decode()
-            virtual = '(in_bom no)\n\t\t(on_board no)'
-            self.assertEqual(text.count(virtual), 3)
-            return text.replace(virtual, '(in_bom yes)\n\t\t(on_board yes)').encode()
-        run, checks = self.staged_run('staged-physical', physical)
+            physical, virtual = '(in_bom yes)\n\t\t(on_board yes)', '(in_bom no)\n\t\t(on_board no)'
+            reference = text.index('(property "Reference" "C1"')
+            flags = text.index(physical, text.rindex('\n\t(symbol\n', 0, reference))
+            self.assertLess(flags, reference)
+            return (text[:flags] + virtual + text[flags + len(physical):]).encode()
+        run, checks = self.staged_run('staged-hidden', hidden)
         self.assertEqual([c['outcome'] for c in checks], ['unknown'] * 3, checks)
         self.assertTrue(all(c['execution'] != 'ok' for c in checks), checks)
         self.assertIn('bounded inventory disagrees with native reader',

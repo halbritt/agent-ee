@@ -177,7 +177,10 @@ replace the actual file diff.
 `verify-campaign` verifies configuration/profile consistency, each run's snapshot,
 policy/runtime and evidence, baseline equality, the original result snapshot
 hashes, the initial mutable-file allowlist, calibration transitions and the
-recomputed convergence projection. In campaigns that anchor stage receipts, it
+recomputed convergence projection. For a generation scope in state
+`criteria_satisfied` it recomputes the final run's
+[fab artifact hashes](fab-package.md#campaign-state) and requires them to equal
+`state.json` `fab_artifacts`. In campaigns that anchor stage receipts, it
 also validates every receipt index and receipt. It refuses the campaign when a
 receipt claiming to apply has outputs that differ from the next run's captured proposal. It requires the same implementation/runtime
 as the recorded runs, even though it skips their original live-source comparison.

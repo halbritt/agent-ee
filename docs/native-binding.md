@@ -28,7 +28,15 @@ unchanged, and its reports cannot be relabeled as native coverage.
 footprint member and every declared symbol library are immutable scope/2 and
 scope/3 inputs. The declaration and the schematic remain candidate data. The
 native XML is producer evidence, never a baseline dependency. Assembly intent
-stays immutable; the declaration must repeat it exactly.
+stays immutable; the declaration must repeat it exactly. An optional captured
+`declarations` path is also an immutable input. It feeds the
+[owner declarations](footprint-libraries.md#owner-declarations) to the shared
+parity pass unchanged. The binding reads the XML with the shared reader's
+`pinless` mode. KiCad 10.0.7 omits `<pins>` for a pinless library part and
+writes an empty `<pins/>` for each of its units. Those parts are admitted with
+an empty inventory, and parity then requires a matching `pinless_symbols`
+declaration. An empty `<pins/>` on a library part, or a unit with pins on a
+pinless part, is still malformed. Other consumers of the reader stay strict.
 
 ## Runtime sequence
 

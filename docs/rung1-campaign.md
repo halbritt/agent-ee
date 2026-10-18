@@ -74,10 +74,14 @@ both files in the sandbox.
 
 The checks and their stages are `erc` and `netlist` (schematic), `drc` with
 schematic parity (placement), `geometry` with a 0.2 mm minimum width
-(routing), and `rc-step` (verification). The `rc-step` parameters are the same
+(routing), `rc-step` (verification) and, last, the done gate `fab`
+([`fab_package`](fab-package.md), verification). The `rc-step` parameters are the same
 as in the closed-loop control: a 1 V step at `/IN`, a 5 ms stop, and `/OUT` at
 1 ms in [0.62, 0.65] V. R-native, R-width and R-response map to these checks
-as in `fixtures/closed-loop/control.scope.json`. The stage subjects are the
+as in `fixtures/closed-loop/control.scope.json`; R-fab maps to `fab` and is
+sourced from the scaffold's `requirements/fab-package.md`. The scope carries the
+`generation` marker `{schema: agent-ee.generation/1, done_check: fab}`, so capture
+refuses it if the done gate or R-fab is removed. The stage subjects are the
 symbols R1, C1 and J1, the footprints R1, C1 and J1, and at least one track.
 The retry limit is 3.
 
@@ -127,17 +131,26 @@ iteration, it lists the check outcomes with their stage reasons, the findings,
 and the convergence projection. For each implementation, it lists the writer
 execution, every step receipt (status, exit code, violations, tool identity,
 reported version, backend, and input and output hashes), and the receipt index
-applicability. It also records the `verify-campaign` exit code and the fab
-manifest.
+applicability. It also records the `verify-campaign` exit code, the
+`export-fab` step manifest (provenance only), `fab_artifacts` from the campaign
+state, and `fab_artifacts_recomputed_by_verify_campaign`, the hashes that
+verify-campaign printed after recomputing them from the final run.
 
 `done` is true only when all of these are true:
 
 - The campaign verdict is `criteria_satisfied`, and `verify-campaign` exits 0.
-- The fab exports exist, are not empty, and match their manifest.
-- The fab step consumed the board and the schematic of the candidate that the
-  final run accepted.
+- The final state lists the fab artifact hashes of the passing `fab` done check
+  (`fab_artifacts`).
+- verify-campaign recomputed the same `artifacts_id`, candidate and file hashes
+  (`fab_artifacts_verified`).
+
+The `export-fab` step's stage `fab` is not a declared scope stage, so a staged
+campaign's step plan never selects it; the done gate is the `fab` check. The
+step remains in the configuration for `--dry-run` rehearsals.
 
 ## Recorded run (2026-10-17)
+
+This run predates the `fab` done gate.
 
 One real run used commit 02d74cf from a clean clone, and a kicad-route
 snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
@@ -165,7 +178,10 @@ snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 ## Limits
 
 - Placement uses the unqualified row stand-in of `board_build` (AGENTEE-109).
-- The fab export is the driver's export. The qualified check kind is AGENTEE-23.
+- The `export-fab` step is the driver's export and is provenance only; acceptance
+  uses the `fab_package` done gate (AGENTEE-94), which runs the AGENTEE-23
+  export and AGENTEE-73 gate.
+- The recorded run below predates the done gate; its scope had no `fab` check.
 - Mount identities are observed when the step runs. Tool trees are not copied
   into the campaign.
 - The writer runs before the steps. Its edits to the schematic or board are

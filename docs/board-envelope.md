@@ -151,8 +151,8 @@ check evaluates that exact field:
 | Fixed footprint | `placement` (AGENTEE-92) | Bound to a `connector-edge/1` check whose `envelope` parameter names these exact captured envelope bytes, when no other requirement maps that check. The criterion grades side, anchor within tolerance, exact rotation, insertion side and the declared edge on the saved outline |
 | Outline | `board_envelope`, `placement` | Bound to `board_envelope` with `criterion: "outline/1"` over these exact captured envelope bytes. Placement's `outline-containment/1` does not bind this field |
 | Keepouts, mounting holes | `placement` | None: `footprint-keepout/1` grades rule areas already saved, and no predicate checks declared holes |
-| Layer count | `board_envelope`, proposed `fab_package` | Bound to `board_envelope` with `criterion: "layers/1"` over these exact captured envelope bytes |
-| Stackup | `board_envelope`, proposed `fab_package` | Unknown: `stackup/1` lacks qualified captured manufacturing authority for `copper_weight_oz`, and is refused as executable acceptance coverage |
+| Layer count | `board_envelope`, `fab_package` (AGENTEE-94; registered as the [done gate](fab-package.md), no envelope binding yet) | Bound to `board_envelope` with `criterion: "layers/1"` over these exact captured envelope bytes |
+| Stackup | `board_envelope`, `fab_package` (AGENTEE-94; registered as the done gate, no envelope binding yet) | Unknown: `stackup/1` lacks qualified captured manufacturing authority for `copper_weight_oz`, and is refused as executable acceptance coverage |
 
 `connector-edge/1` returns one verdict for every fixed footprint in its
 envelope. With two or more fixed footprints, a defect cannot be attributed to

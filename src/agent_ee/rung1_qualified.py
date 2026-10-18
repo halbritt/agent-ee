@@ -58,7 +58,8 @@ OWNED = {
     'board_population': ('forward_annotation', 'AGENTEE-52'),
     'placement': ('placement_adapter + placer_runner (agent-ee.placer/1)', 'AGENTEE-91, AGENTEE-54'),
     'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route 08179cd)', 'AGENTEE-93'),
-    'parity': ('netlist_parity check (golden_xml, topology, exactly)', 'AGENTEE-41'),
+    'parity': ('netlist_parity check (intent, topology, exactly); fixtures/rc/control as recorded reference',
+               'AGENTEE-41, AGENTEE-102'),
     'placement_checks': ('placement check kind (courtyard-overlap/1, outline-containment/1)', 'AGENTEE-92'),
     'part_binding': ('part_binding check', 'AGENTEE-32'),
     'fab': ('fab_export + fab_consistency checks', 'AGENTEE-23, AGENTEE-73'),
@@ -73,7 +74,7 @@ QUALIFIED_REQUIREMENTS = """# Rung-1 requirements graded by the owned checks
 Derived from `spec.md` by `agent_ee.rung1_qualified`. Each line is one requirement that one
 coordinator check grades. They add no limit that the spec does not state.
 
-R-parity: The generated schematic must have the connectivity of the reference RC low-pass (R1 between /IN and /OUT, C1 between /OUT and GND, J1 pins 1, 2 and 3 on /IN, /OUT and GND): native netlist topology equal to the captured reference export, component multiset exactly.
+R-parity: The generated schematic must have the connectivity of the rung-1 intent built from the stage-1 record and the stage-2 selections (R1 between /IN and /OUT, C1 between /OUT and GND, J1 pins 1, 2 and 3 on /IN, /OUT and GND, a power:GND symbol and a PWR_FLAG on GND): native netlist topology equal to the captured intent resolved against the captured libraries, component multiset exactly.
 
 R-courtyard: Footprint courtyards on the 2-layer board must not overlap (native DRC courtyard evaluation).
 
@@ -101,28 +102,43 @@ def sha(raw):
 
 # ------------------------------------------------------------------ owned generation inputs
 
+SYMBOL_CAPTURES = 'stock/symbols'  # the scope's captured stock symbol libraries
+POWER_GND = {'id': 'pwr_gnd', 'reference': '#PWR01', 'lib_id': 'power:GND', 'value': 'GND', 'units': [1],
+             'footprint': ''}
+FLAG = {'id': 'FLG1', 'reference': '#FLG01', 'lib_id': 'power:PWR_FLAG', 'value': 'PWR_FLAG', 'units': [1],
+        'footprint': ''}
+
+
 def qualified_intent(prep):
-    """The generate intent with emitter-safe local net names and a native ground symbol.
+    """The rung-1 IR: the generate intent (stage-1 record, stage-2 selections) for the emitter.
 
     The emitter's label names exclude '/': KiCad prefixes a root-sheet local label with the
     sheet path, so labels IN and OUT export as /IN and /OUT. The ground net is driven by a
     declared power:GND symbol with a power:PWR_FLAG (every other pin is passive, so the flag
     drives the GND power input for ERC). It is a global power net and exports as GND. The
     emitter writes both symbols in_bom/on_board no, KiCad's native convention, so the staged
-    presence probe and the native netlist agree on C1, J1 and R1 (AGENTEE-123)."""
+    presence probe and the native netlist agree on C1, J1 and R1 (AGENTEE-123). Library paths
+    name the scope's captured libraries under ``stock/symbols``, so the emitter step and the
+    intent-sourced parity check resolve the same bytes."""
     intent = copy.deepcopy(prep['intent'])
     ground = ground_net(prep['params'])
+    for library in intent['libraries']:
+        library['path'] = f"{SYMBOL_CAPTURES}/{library['path']}"
     for net in intent['nets']:
         net['name'] = net['name'].lstrip('/')
     nets = [n for n in intent['nets'] if n['name'] == ground]
     if ground != 'GND' or len(nets) != 1:
         # The stock power:GND symbol names exactly one net GND; no other ground is approximated.
         raise PrepareFailure(f'ground net {ground!r} has no stock power symbol in the intent')
-    for cid, ref, symbol in (('pwr_gnd', '#PWR01', 'GND'), ('flg_gnd', '#FLG01', 'PWR_FLAG')):
-        intent['components'].append({'id': cid, 'reference': ref, 'lib_id': 'power:' + symbol,
-                                     'value': symbol, 'footprint': '', 'units': [1]})
-        nets[0]['terminals'].append({'component': cid, 'pin': {'number': '1'}})
+    for comp in (copy.deepcopy(POWER_GND), copy.deepcopy(FLAG)):
+        intent['components'].append(comp)
+        nets[0]['terminals'].append({'component': comp['id'], 'pin': {'number': '1'}})
     return intent
+
+
+def intent_captures(intent):
+    """The captured library bytes the intent names, keyed by its own library paths."""
+    return {lib['path']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes() for lib in intent['libraries']}
 
 
 def ground_net(params):
@@ -237,6 +253,38 @@ def golden_netlist(work):
                               'sha256': digest(out)}
 
 
+REFERENCE_SCHEMA = 'agent-ee.rung1-reference-parity/0-experimental'
+GOLDEN = 'generation/golden/rc_control.xml'
+
+
+def reference_parity(native_xml, golden_xml):
+    """Descriptive comparison of one sealed native netlist with the fixtures/rc/control export.
+
+    The control is a reference, not an oracle: R-parity is graded by the scope's intent-sourced
+    netlist_parity check. This reuses the owned inventory reader and exact comparison and only
+    reports what they found; a read failure is recorded, never treated as agreement."""
+    from .native_netlist import read_native_inventory
+    from .netlist_parity import compare, validate_policy
+    record = {'schema': REFERENCE_SCHEMA, 'qualification': QUALIFICATION, 'role': 'reference_not_oracle',
+              'reference': GOLDEN, 'predicate': 'topology', 'multiset': 'exactly'}
+    try:
+        record.update(reference_sha256=digest(golden_xml), native_xml_sha256=digest(native_xml))
+        reference, native = read_native_inventory(golden_xml), read_native_inventory(native_xml)
+        report = compare(reference, native, validate_policy({
+            'source': {'kind': 'golden_xml', 'path': GOLDEN}, 'netlist_check': 'netlist',
+            'predicate': 'topology', 'multiset': 'exactly'}))
+    except Exception as exc:  # noqa: BLE001 - recorded as observed; never agreement
+        return {**record, 'execution': 'failed', 'outcome': 'unknown', 'error': f'{type(exc).__name__}: {exc}'}
+    def inventory(graph):
+        return {'components': sorted(c['reference'] for c in graph['components'].values()),
+                'nets': sorted(n['name'] for n in graph['nets'].values())}
+    return {**record, 'execution': report['execution'], 'outcome': report['outcome'],
+            'reference_inventory': inventory(reference), 'native_inventory': inventory(native),
+            'missing_components': report['missing_components'], 'extra_components': report['extra_components'],
+            'matched_nets': report.get('matched_nets'), 'missing_nets': report.get('missing_nets'),
+            'extra_nets': report.get('extra_nets'), 'reason': report.get('reason')}
+
+
 def catalog_attempt(prep, work):
     """Try the owned offline catalog capture (AGENTEE-27) on the fome-mc BOM; never invent fields.
 
@@ -338,9 +386,7 @@ def write_scaffold(rundir, prep):
     (scaffold / 'requirements' / 'qualified.md').write_text(QUALIFIED_REQUIREMENTS)
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
-    captured = {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
-                for lib in g.SYMBOL_LIBRARIES}
-    resolved = resolve_intent(intent, captured)
+    resolved = resolve_intent(intent, intent_captures(intent))
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
         raise PrepareFailure('qualified intent did not resolve: ' + json.dumps(resolved['findings'])[:2000])
     write_json(generation / 'intent.json', intent)
@@ -407,7 +453,7 @@ def compile_staged_scope(params, scope_dir, scaffold):
         {'id': 'erc', 'kind': 'erc', 'stage': 'schematic'},
         {'id': 'netlist', 'kind': 'netlist', 'stage': 'schematic'},
         {'id': 'parity', 'kind': 'netlist_parity', 'stage': 'schematic',
-         'params': {'source': {'kind': 'golden_xml', 'path': 'generation/golden/rc_control.xml'},
+         'params': {'source': {'kind': 'intent', 'path': 'generation/intent.json'},
                     'netlist_check': 'netlist', 'predicate': 'topology', 'multiset': 'exactly'}},
         {'id': 'drc-placement', 'kind': 'drc', 'stage': 'placement', 'params': {'projection': 'placement-stage/1'}},
         {'id': 'courtyard', 'kind': 'placement', 'stage': 'placement',
@@ -422,7 +468,7 @@ def compile_staged_scope(params, scope_dir, scaffold):
         {'id': 'fab-consistency', 'kind': 'fab_consistency', 'stage': 'fab', 'params': {'export_check': 'fab'}},
     ]
     source = {'path': 'requirements/qualified.md'}
-    extra = [('R-parity', ['parity'], 'Schematic connectivity equals the reference RC low-pass'),
+    extra = [('R-parity', ['parity'], 'Schematic connectivity equals the captured rung-1 intent'),
              ('R-courtyard', ['courtyard'], 'Footprint courtyards do not overlap'),
              ('R-outline', ['outline'], 'Footprint courtyards lie inside the board outline'),
              ('R-binding', ['binding'], 'R1 and C1 carry a valid, consistent LCSC binding'),
@@ -450,22 +496,28 @@ def compile_staged_scope(params, scope_dir, scaffold):
     return scope
 
 
+def materialize_inputs(scope_path, inputs_dir):
+    """Copy a scope's declared inputs into a new directory, as capture lays them out."""
+    from .candidate import source_manifest
+    scope = read_json(scope_path)
+    files, sources, _ = source_manifest(scope, Path(scope_path).parent)
+    Path(inputs_dir).mkdir(parents=True)
+    for target, source in sources.items():
+        destination = Path(inputs_dir) / target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    return scope, files
+
+
 def validate_scope_file(scope_path, inputs_dir):
     """The real loaders, as capture runs them: inputs copied, then scope fields, stage declaration
     and baseline compilation with those inputs (parity and envelope capabilities read them)."""
     from .baseline import compile_baseline
-    from .candidate import source_manifest
     from .cli import validate_scope
     from .stages import declaration
     from .storage import identity
     scope_path, inputs_dir = Path(scope_path), Path(inputs_dir)
-    scope = read_json(scope_path)
-    files, sources, _ = source_manifest(scope, scope_path.parent)
-    inputs_dir.mkdir(parents=True)
-    for target, source in sources.items():
-        destination = inputs_dir / target
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
+    scope, files = materialize_inputs(scope_path, inputs_dir)
     validate_scope(scope)
     stages = declaration(scope, files)
     baseline = compile_baseline(scope, files, inputs_dir)
@@ -483,9 +535,8 @@ def validate_scope_file(scope_path, inputs_dir):
 
 # ------------------------------------------------------------------ campaign configuration
 
-def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
-    """Coordinator steps: the owned emitter and forward annotation (schematic) and the routing adapter."""
-    from .routing_adapter import step as routing_step
+def schematic_step_specs(*, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
+    """The schematic turn: the owned emitter on the captured IR, then forward annotation."""
     source = {'source': str(Path(source_root)), 'at': MOUNT_SOURCE}
     steps = {'source': str(Path(steps_dir)), 'at': MOUNT_STEPS}
     board, sch = f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'
@@ -504,6 +555,13 @@ def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
          'writes': {board: f'out/board/{NAME}.kicad_pcb'},
          'artifacts': ['out/netlist.xml', 'out/plan.json', 'out/apply.json'],
          'adoptable_exits': [0], 'timeout_s': 1800},
+    ]
+
+
+def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
+    """Coordinator steps: the schematic turn and the routing adapter."""
+    from .routing_adapter import step as routing_step
+    return schematic_step_specs(source_root=source_root, steps_dir=steps_dir) + [
         routing_step(project='project', board=f'{NAME}.kicad_pcb', schematic=f'{NAME}.kicad_sch', name=NAME,
                      label='krt', checkout=kicad_route, budget=300),
     ]
@@ -747,6 +805,23 @@ def rehearse_placement(base, design, review_run, scope):
     return summary, True
 
 
+def rehearse_schematic(rundir, scope_path, design, steps):
+    """One schematic turn outside any campaign: the declared schematic steps on ``design`` as the
+    coordinator runs them, a checks-only review of the result and the reference comparison."""
+    design = Path(design)
+    base = design.parent
+    receipts, ok = run_steps(base, design, steps, 1)
+    stages = {'schematic_steps': receipts}
+    if not ok:
+        return None, stages
+    run, stages['after_schematic'] = review_checks_only(
+        rundir, rehearsal_scope(scope_path, design, base / 'after-schematic.scope.json'), 'after-schematic')
+    if stages['after_schematic']['result'] is None:
+        return None, stages
+    stages['reference_after_schematic'] = reference_parity(run / 'work' / 'netlist' / 'design.xml', design / GOLDEN)
+    return run, stages
+
+
 def dry_run(rundir, scope_path, config_path):
     rundir = Path(rundir)
     scope = read_json(scope_path)
@@ -761,13 +836,9 @@ def dry_run(rundir, scope_path, config_path):
     steps = config['implementation_steps']
     schematic_steps = [s for s in steps if s['stage'] == 'schematic']
     routing_steps = [s for s in steps if s['stage'] == 'routing']
-    receipts, ok = run_steps(base, design, schematic_steps, 1)
-    stages['schematic_steps'] = receipts
-    if not ok:
-        return stages
-    run1, stages['after_schematic'] = review_checks_only(
-        rundir, rehearsal_scope(scope_path, design, base / 'after-schematic.scope.json'), 'after-schematic')
-    if stages['after_schematic']['result'] is None:
+    run1, turn = rehearse_schematic(rundir, scope_path, design, schematic_steps)
+    stages.update(turn)
+    if run1 is None:
         return stages
     summary, ok = rehearse_placement(base, design, run1, scope)
     stages['placement_step'] = summary
@@ -818,6 +889,9 @@ def campaign_record(rundir, base, command):
     state, iterations, implementations = rc.campaign_summary(root)
     for entry in iterations:
         entry['fab'] = fab_outcome(entry['run']) if entry.get('checks') is not None else None
+        netlist = Path(entry['run']) / 'work' / 'netlist' / 'design.xml'
+        entry['reference_parity'] = (reference_parity(netlist, rundir / 'scaffold' / GOLDEN)
+                                     if netlist.is_file() else None)
     for implementation in implementations:
         record = root / 'implementations' / implementation['implementation'] / 'placement-adapter.json'
         implementation['placement_adapter'] = read_json(record) if record.is_file() else None

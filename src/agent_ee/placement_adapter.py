@@ -517,14 +517,14 @@ def write_scope(before, after, protected=()):
 
 
 def protected_footprints(board, fixed_footprints, fixed_refs=()):
-    """Envelope-fixed UUIDs, policy-fixed references and locked parts on the source board."""
+    """Declared fixed UUIDs, policy- and envelope-fixed references and locked parts on the source board."""
     prints = footprints(_board(board))
     by_ref = {}
     for key, node in prints.items():
         by_ref.setdefault(_reference(node), []).append(key)
     missing = sorted(set(fixed_footprints) - prints.keys())
     if missing:
-        raise ValueError(f'envelope-fixed footprints absent from source board: {missing}')
+        raise ValueError(f'declared fixed footprints absent from source board: {missing}')
     uuids = set(fixed_footprints) | {k for k, node in prints.items() if _locked(node)}
     for ref in fixed_refs:
         if len(by_ref.get(ref, [])) != 1:

@@ -35,7 +35,7 @@ MAX_PLACES = 32
 # Check kinds that may evaluate each field. A kind name alone never covers an
 # obligation: only a (field, kind) entry in BINDINGS, whose validator proves the
 # mapped check evaluates that exact field, does. fab_package (AGENTEE-94) is
-# proposed and unregistered; fab_profile max_layers bounds only a maximum, so it
+# registered but has no envelope binding yet; fab_profile max_layers bounds only a maximum, so it
 # cannot establish an exact layer count.
 CHECK_KINDS = {'outline': ['placement', 'board_envelope'],
                'layer_count': ['fab_package', 'board_envelope'],

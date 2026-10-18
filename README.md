@@ -126,7 +126,9 @@ An [offline intent importer](docs/design-intent.md) preserves source requirement
 and exact voltage values. [Decision capture](docs/design-dialog.md) records
 answers and their dependencies; missing answers remain unresolved. These tools
 prepare inputs, but do not choose executable acceptance checks or generate a
-verified circuit.
+verified circuit. The [requirement-record compiler](docs/requirement-scope.md)
+turns an owner-authored record of spec quotes and check mappings into a scope/2;
+it refuses unmapped requirements and uncited spec sentences.
 
 [Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
 and derived requirements into the captured baseline. A reference document becomes
@@ -200,6 +202,18 @@ The [fab round-trip check](docs/fab-roundtrip.md) re-parses native Gerber and
 Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill
 histograms, copper pad/via flash counts and outline bounds within 1 µm. Its
 narrow parser fails closed on unsupported constructs; artwork is not compared.
+The [CPL rotation check](docs/cpl-rotation.md) rewrites the exported CPL to
+native pad-box midpoints. It applies a captured, versioned rotation policy and
+requires every rotation to agree with the pin-1 frame of the captured supplier
+footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
+diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
+JLCPCB placement preview validates rotation physically.
+
+The [fab package done gate](docs/fab-package.md) (`fab_package`, declared last)
+runs that export and gate in one check and seals the package's file hashes. A
+scope with a `generation` marker is refused at capture without it, and a
+satisfied generation campaign's `state.json` lists the hashes, which
+`verify-campaign` recomputes.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact

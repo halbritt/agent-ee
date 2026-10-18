@@ -13,6 +13,8 @@ board facts through pcbnew.
 [Stage-one intent import](design-intent.md) prepares source-bound requirements
 and incomplete interface stubs for later capture. Its lint outcome covers only
 the declared lexical checks; executable checks must supply acceptance evidence.
+The [requirement-record compiler](requirement-scope.md) maps quoted spec
+requirements to the check specifications on this page; it adds no check kind.
 
 ## Execution and engineering result
 
@@ -59,7 +61,9 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
+| `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -501,7 +505,13 @@ hash-valid. Empty selections, absent exact footprint names, missing or extra
 electrical pad numbers, connector count mismatches and assembly mismatches are
 defects. Duplicate thermal pad numbers count once; qualified paste-only and
 unnumbered mechanical pads do not participate in electrical parity. Library
-read or parse failures leave unknown coverage.
+read or parse failures leave unknown coverage. An optional captured
+`declarations` file (`agent-ee.footprint-declarations/1`, an immutable input)
+can declare mechanical copper pads (MP), thermal-via pads, custom pad numbering,
+assembly for attr-less footprints, and pinless symbols. Declared pads are
+reported as mechanical. Undeclared cases keep their extra-pad defect or unknown
+result, and a declaration that applies to nothing is unknown
+([owner declarations](footprint-libraries.md#owner-declarations)).
 
 Adding `netlist_check` binds each declaration to every native board component
 and its captured whole-device pin inventory. Missing declarations or ambiguous
@@ -641,6 +651,18 @@ are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
 through a sealed requirement/check witness. Rotation correction and DFM are
 outside this check.
 
+## JLCPCB CPL rotation
+
+`cpl_rotation` takes `export_check`, `geometry_check`, a captured `policy`,
+captured `supplier_footprints` provenance records and `source_tolerance_nm`.
+It writes a JLC CPL whose rows are native pad-box midpoints, and it applies the
+versioned policy. Every rotation is cross-checked against the pin-1 frame of
+the captured supplier footprint, which detects quarter-turn offsets,
+reflections and diode polarity. Each row appears in exactly one of
+`applied_corrections` or `unmatched_footprints`. Missing geometry or a
+duplicate designator never falls back to the anchor. The status stays
+`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
+
 ## Scaffold preparation
 
 [Empty-candidate scaffolding](scaffold.md) prepares inputs for these checks; its
@@ -667,3 +689,14 @@ missing or rebound boundary ports produce defects. Source run results never
 qualify the board. See [block adaptation](block-adaptation.md) for scaffold
 inputs, requirement mapping, boundary probes, retained evidence and coverage
 limits.
+
+[`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
+are exactly `{netlist_check}` and it must be the last declared check; an earlier
+`geometry` check is required. It runs the same export and consistency code on its
+own staging tree and, on `pass`, records `details.artifacts`
+(`agent-ee.fab-artifacts/1`: gerbers.zip, every drill file, bom.csv, cpl.csv and
+manifest.json by sha256, bound to the candidate id and board digest). A missing,
+empty or unparseable export file is `failed`, `malformed` or `unsupported` with
+outcome `unknown`, or a gate `defect`; never `pass`. A scope with a `generation`
+marker is refused at capture unless this check is last and an acceptance
+requirement maps to it.

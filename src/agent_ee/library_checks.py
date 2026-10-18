@@ -2,14 +2,17 @@
 from pathlib import Path
 
 from .candidate import safe_relative
-from .footprint_library import _members, _object, canonical, validate_declaration, load_document
+from .footprint_library import (_members, _object, canonical, load_document, validate_declaration,
+                                validate_declarations)
 from .native_binding import PREDICATE as NATIVE_PREDICATE
 
 
 def capability(params, files, inputs, scope=None, check_id=None):
     """Declared-only by default; an ordered ``netlist_check`` binds the native design."""
     native = isinstance(params, dict) and 'netlist_check' in params
-    _object(params, ('manifest', 'declaration', 'assembly_intent') + (('netlist_check',) if native else ()))
+    declared = isinstance(params, dict) and 'declarations' in params
+    _object(params, ('manifest', 'declaration', 'assembly_intent') + (('netlist_check',) if native else ())
+            + (('declarations',) if declared else ()))
     if native:
         specs = (scope or {}).get('checks', [])
         ids = [s.get('id') for s in specs]
@@ -43,6 +46,13 @@ def capability(params, files, inputs, scope=None, check_id=None):
     if sorted(actual, key=canonical) != sorted(policy, key=canonical):
         raise ValueError('candidate assembly declarations differ from immutable intent')
     paths = [manifest_path] + [m['path'] for _, m in members]
+    if declared:
+        # Owner pad/assembly/pinless declarations are frozen scope inputs, never candidate data.
+        declarations_path = str(safe_relative(params['declarations']))
+        if declarations_path not in files:
+            raise ValueError('footprint declarations must be captured')
+        validate_declarations(load_document(Path(inputs) / declarations_path))
+        paths.append(declarations_path)
     for lib in declaration['libraries']:
         _object(lib, ('name', 'path', 'sha256'))
         paths.append(str(safe_relative(lib['path'])))
@@ -63,7 +73,7 @@ def check_footprint_assignment(ctx):
     try:
         ctx.execute(['/usr/bin/python3', '-m', 'agent_ee.footprint_library',
                  '/candidate/' + ctx.params['manifest'], '--captures', '/candidate',
-                 '--assignments', '/candidate/' + ctx.params['declaration'],
+                 '--assignments', '/candidate/' + ctx.params['declaration'], *_declarations(ctx),
                      '--out', '/work/assignments.json'], 60)
     finally:
         ctx.evidence('assignments.json')
@@ -75,6 +85,10 @@ def check_footprint_assignment(ctx):
         for a in report['assignments'] if a['status'] == 'defect')
     ctx.result['limitations'].append('Declared component list only; no schematic binding, package selection, '
         'land-pattern geometry qualification, datasheet conformance or manufacturing approval.')
+
+
+def _declarations(ctx):
+    return ['--declarations', '/candidate/' + ctx.params['declarations']] if 'declarations' in ctx.params else []
 
 
 def _check_native(ctx):
@@ -95,7 +109,7 @@ def _check_native(ctx):
     try:
         ctx.execute(['/usr/bin/python3', '-m', 'agent_ee.native_binding',
                      '/candidate/' + ctx.params['manifest'], '--captures', '/candidate',
-                     '--assignments', '/candidate/' + ctx.params['declaration'],
+                     '--assignments', '/candidate/' + ctx.params['declaration'], *_declarations(ctx),
                      '--native-xml', '/evidence/netlist/design.xml', '--schematic', *sheets,
                      '--out', '/work/native-assignments.json'], 60,
                     extra_ro=[(xml, '/evidence/netlist/design.xml')])

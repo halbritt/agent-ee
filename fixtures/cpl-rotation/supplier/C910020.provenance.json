@@ -1,0 +1,11 @@
+{
+ "format": "easyeda-std-component/1",
+ "lcsc": "C910020",
+ "path": "design/supplier/C910020.raweasy.json",
+ "retrieval": "owned synthetic fixture; never fetched",
+ "retrieved_at": "2026-10-17T00:00:00Z",
+ "schema": "agent-ee.supplier-footprint/1",
+ "sha256": "14680687fc55556af178822532768f51a93487cbaeafa4e36b8a2839602b9bcb",
+ "size_bytes": 1304,
+ "source_url": "https://example.invalid/agent-ee-owned-fixture"
+}

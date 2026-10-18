@@ -205,9 +205,10 @@ executor with networking unshared:
 - The same regulator, as the schematic subject of a staged scope/3
   (AGENTEE-48/88), passes the native presence probe: the bounded reader and
   KiCad's XML both give `C1, J1, U1`, and ERC, netlist and parity pass with
-  sealed evidence. With the power instances rewritten to `in_bom yes`/
-  `on_board yes`, every staged check is `unknown` because the probe refuses
-  (`bounded inventory disagrees with native reader`).
+  sealed evidence. With the ordinary C1 instance rewritten to `in_bom no`/
+  `on_board no`, the bounded reader leaves C1 out while KiCad's XML still lists
+  it, so every staged check is `unknown` because the probe refuses (`bounded
+  inventory disagrees with native reader`).
 - `tests/test_schematic_hierarchy.py` emits an original two-level design
   (`two_level.*`): a root connector and capacitor, and a `filter` child with
   three capacitors. It has two shared nets, an internal `LOCAL_SAME` net on each

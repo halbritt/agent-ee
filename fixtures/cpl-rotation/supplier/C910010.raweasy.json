@@ -1,0 +1,45 @@
+{
+ "dataStr": {
+  "head": {
+   "c_para": {
+    "Manufacturer Part": "OWNED",
+    "Supplier Part": "C910010",
+    "package": "OWNED-R0805"
+   },
+   "docType": "2",
+   "puuid": "64f6a1c6e3be52c884e8b4c5e08cc3b3",
+   "uuid": "4318adfae26d5797bb0a03047e3ff765",
+   "x": 0,
+   "y": 0
+  },
+  "shape": []
+ },
+ "docType": 2,
+ "lcsc": {
+  "id": 1,
+  "number": "C910010"
+ },
+ "packageDetail": {
+  "dataStr": {
+   "head": {
+    "docType": "4",
+    "uuid": "64f6a1c6e3be52c884e8b4c5e08cc3b3",
+    "x": 4000,
+    "y": 3000
+   },
+   "shape": [
+    "PAD~RECT~3996~3000~4~5.7~1~~1~0~3994 2997.15 3998 2997.15 3998 3002.85 3994 3002.85~0~r1~0~~Y~0~0~0.2~3996,3000",
+    "PAD~RECT~4004~3000~4~5.7~1~~2~0~4002 2997.15 4006 2997.15 4006 3002.85 4002 3002.85~0~r2~0~~Y~0~0~0.2~4004,3000"
+   ]
+  },
+  "docType": 4,
+  "title": "OWNED-R0805",
+  "uuid": "64f6a1c6e3be52c884e8b4c5e08cc3b3"
+ },
+ "szlcsc": {
+  "id": 1,
+  "number": "C910010"
+ },
+ "title": "OWNED C910010",
+ "uuid": "fb921d8782605cf6a9ca04c93da47c28"
+}

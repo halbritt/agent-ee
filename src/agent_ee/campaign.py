@@ -289,6 +289,10 @@ def run_campaign(config_path, out):
 def record_iteration(root, state, run, config):
     from .cli import verify
 
+    if not (run / "candidate.json").exists():
+        # A refused capture leaves no candidate; report the run's own typed refusal.
+        error = read_json(run / "result.json").get("error") or "no recorded error"
+        raise ValueError(f"run {run.name} captured no candidate: {error}")
     result = verify(run)
     manifest = read_json(run / "candidate.json")
     baseline = load_baseline(run)
@@ -317,9 +321,27 @@ def record_iteration(root, state, run, config):
     state["history"].append(record)
     state.update({k: v for k, v in diagnostic.items() if k not in ("schema", "history")})
     state["diagnostic"] = diagnostic
+    state.pop("fab_artifacts", None)
+    if state["state"] == "criteria_satisfied":
+        artifacts = fab_artifacts(run)
+        if artifacts is not None:
+            state["fab_artifacts"] = artifacts
     if state["state"] == "escalated":
         write_json(root / "tradeoff.json", diagnostic)
     write_json(root / "state.json", state)
+
+
+def fab_artifacts(run):
+    """A generation run's sealed fab artifact hashes, recomputed from its retained done check.
+
+    None for a scope without a generation marker; ValueError when the done check
+    did not pass or a sealed artifact is absent, empty or changed.
+    """
+    marker = read_json(Path(run) / "candidate.json")["scope"].get("generation")
+    if marker is None:
+        return None
+    from .fab_package import artifact_record
+    return artifact_record(run, read_json(Path(run) / "checks" / f"{marker['done_check']}.json"))
 
 
 def mutable_inputs(manifest, baseline):
@@ -446,6 +468,10 @@ def verify_campaign_records(root):
         history.append(stored)
     if state["state"] != diagnostic["state"] and not (state["state"] == "incomplete" and state.get("error")):
         raise ValueError("campaign terminal state contradicts convergence history")
+    # Done for a generation scope includes its fab artifacts: recomputed here, never trusted from state.
+    expected = fab_artifacts(history[-1]["run"]) if history and state["state"] == "criteria_satisfied" else None
+    if state.get("fab_artifacts") != expected:
+        raise ValueError("campaign fab artifact hashes differ from the final run's sealed fab package")
     # Dispatch is re-derived from the history just verified against evidence, never from state alone.
     plans = verify_campaign_plans(root, state, config)
     from .stage_receipts import verify_campaign_receipts
