@@ -20,15 +20,16 @@ from unittest.mock import patch
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee.executor import execute
-from kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
-from toolchain import require_toolchain
+from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.toolchain import require_toolchain
 
 REQUEST = ['--project', 'project', '--board', 'rc.kicad_pcb', '--schematic', 'rc.kicad_sch',
            '--name', 'rc', '--label', 'step-1', '--budget', '5', '--timeout', '30']
 CONTRADICTIONS = ('exit0_incomplete', 'exit2_not_run', 'result_exit_mismatch', 'escaping_candidate',
                   'candidate_symlink', 'two_attempts', 'latest_elsewhere', 'unknown_key', 'malformed_json',
                   'missing_candidate', 'board_hash_mismatch', 'backend_env', 'extra_candidate_file',
-                  'reference_differs', 'touch_input', 'exit_signal')
+                  'reference_differs', 'touch_input', 'exit_signal', 'missing_result_version',
+                  'unknown_attempt_version', 'missing_attempt_rules', 'unknown_refusal_version', 'human_refusal')
 
 
 def files_under(root, skip=()):
@@ -150,7 +151,21 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assert_no_proposal(case, 'refused', 4)
         self.assertIsNone(case.report['discovery']['attempt_dir'])
         self.assertEqual(case.report['missing_artifacts'], ['result.json', 'attempt.json', 'RESULT.md', 'validate'])
-        self.assertIn(b'[route] refused:', (case.work / 'routing/kicad-route.stdout').read_bytes())
+        self.assertTrue(attempt.refused_output((case.work / 'routing/kicad-route.stdout').read_text()))
+
+    def test_unknown_result_version_refused(self):
+        case = self.case('unknown_result_version').run()
+        self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
+        self.assertIn('unknown result schema version', case.report['semantics']['reasons'])
+
+    def test_refill_modified_candidate_binds_to_the_board_drc_graded(self):
+        case = self.case('refill_modified').run()
+        self.assertEqual(case.exit, 0, case.report['semantics'])
+        summary = case.verify()
+        self.assertEqual(summary['proposal'], 'eligible')
+        result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+        self.assertNotEqual(result['validation']['delivered_board_sha256'], summary['candidate_sha256'])
+        self.assertEqual(result['validation']['candidate_board_sha256'], summary['candidate_sha256'])
 
     def test_usage_exit_two_without_a_result_is_never_partial(self):
         case = self.case('argparse').run()
@@ -245,7 +260,8 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual((seen['cwd'], seen['dont_write_bytecode'], seen['pycache_prefix']),
                          (str(routing), 1, str(routing / 'pycache')))
         argv = case.report['process']['argv']
-        self.assertLess(argv.index('--out'), argv.index('run'))
+        self.assertGreater(argv.index('--out'), argv.index('run'))
+        self.assertIn('--json', argv)
         self.assertEqual(argv[argv.index('--out') + 1], str(routing / 'out'))
         self.assertEqual(argv[argv.index('--protect') + 1], 'existing')
         for flag in ('--backend-arg', '--backend-env', '--force', '--canary', '--rev', '--version'):
@@ -456,6 +472,12 @@ class RetainedVerificationTest(unittest.TestCase):
                               'differs from the observed process exit'),
             'tool pin and commit': (dict(report=lambda r: r['tool'].update(pin='0' * 40, commit='0' * 40)),
                                     'different kicad-route pin'),
+            'unknown result version': (dict(files={'result.json': lambda v: v.update(
+                schema='kicad-route/route/999')}), 'classify as contradiction'),
+            'candidate board hash': (dict(files=set_validation(candidate_board_sha256=other)),
+                                     'not the board the router validated'),
+            'refill flag': (dict(files=set_validation(refill_modified_board=True)),
+                            'not the board the router validated'),
             'delivered board hash': (dict(files=set_validation(delivered_board_sha256=other)),
                                      'not the board the router validated'),
             'restored files absent': (dict(files={'result.json': lambda v: v['validation'].pop(

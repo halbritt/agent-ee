@@ -269,21 +269,21 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `08179cd`. At that commit agent-ee relies on the following from
+kicad-route `e497916`. At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
   1 backend or process failure, or an early failure with no `result.json`;
-  2 valid but incomplete, and also argparse's usage exit; 3 fails validation,
-  regardless of completion; 4 refused before routing (ledger or canary), with
+  2 valid but incomplete; 3 fails validation,
+  regardless of completion; 4 refused before routing (usage, input, ledger, canary or state), with
   the run directory removed. agent-ee uses the board from 0 and 2 as a
   proposal only when the exact status combination and a contained candidate
   agree with the exit. It records 1 and 4 as missing routing coverage, never
   uses the board from 3, and treats any other combination as a contradiction.
-- **Outputs**: `--out` is a global option before `run`. Each attempt writes
+- **Outputs**: `--out` is accepted before or after `run`; the adapter uses `run --out /work/routing/out --json`. Each attempt writes
   `OUT/runs/<name>/<label>/<stamp>/` with a mutable `latest` link and no
-  top-level result. `result.json` has no schema version, and the pin has no
-  `--version` flag, so the tool version is recorded as unknown. Backend
+  top-level result. `result.json` requires schema `kicad-route/route/1`; unknown versions are
+  refused. The pin has no `--version` flag, so the tool version is recorded as unknown. Backend
   identity comes verbatim from `result.json`. agent-ee retains and hashes
   `result.json`, `attempt.json`, `RESULT.md`, `validate/` and the logs.
 - **Preservation**: project files, outline, layers, stackup, footprints, zones

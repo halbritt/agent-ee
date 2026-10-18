@@ -279,6 +279,7 @@ The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
 The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
+`e497916` (versioned `kicad-route/route/1` results)
 with read-only state, retains hashed attempt diagnostics, and verifies routing
 semantics before adopting a proposal. Fresh checks determine acceptance.
 The [fab profile check](docs/fab-profile.md) runs captured, source-cited
