@@ -95,6 +95,9 @@ class RequestTests(unittest.TestCase):
         receipt = replay(self.root / 'missing-request', self.root / 'missing')
         self.assertEqual(receipt['execution'], 'unsupported')
         self.assertEqual(receipt['acceptance_authority'], 'none')
+        self.assertEqual(receipt['concern_status'], 'unresolved')
+        self.assertIsNone(receipt['enforced_limits'])
+        verify_operation(self.root / 'missing')
 
     def test_tampered_candidate_and_script_fail_with_receipts(self):
         from agent_ee.replay import replay
@@ -405,6 +408,33 @@ class NativeWitnessTests(unittest.TestCase):
                         'unsupported_scope', 'requirement_mapping', 'numerical_criteria',
                         'expected_control', 'expected_seed', 'limitations')}
                     export_graduation(base / 'request', proposal, base / 'graduation', replay_dir=base / 'replay')
+                    # Script-free modes stay actionable for humans but have no
+                    # replay adapter; a new check proposal installs nothing.
+                    sources = [repo / 'fixtures/closed-loop/control.scope.json',
+                               repo / 'fixtures/closed-loop/campaign.json',
+                               *sorted((repo / 'fixtures/closed-loop/requirements').iterdir())]
+                    source_bytes = {str(p): p.read_bytes() for p in sources}
+                    baseline_bytes = (run / 'baseline.json').read_bytes()
+                    for mode, check_id in (('new_check_proposal', None), ('declared_check', 'rc-step')):
+                        actionable = {**spec, 'mode': mode, 'check_id': check_id,
+                                      'interpreter': None, 'resources': {}}
+                        request = export_request(run, 'circuit/response', actionable, base / mode)
+                        self.assertEqual(request['baseline_id'], read_json(run / 'baseline.json')['baseline_id'])
+                        self.assertIsNone(request['script_sha256'])
+                        self.assertFalse((base / mode / 'script.py').exists())
+                        text = (base / mode / 'REQUEST.md').read_text()
+                        for fragment in ('Concern: circuit/response', f'Mode: {mode}',
+                                         'Measure: response (V)', 'Acceptance authority: none'):
+                            self.assertIn(fragment, text)
+                        receipt = replay(base / mode, base / (mode + '-replay'))
+                        self.assertEqual((receipt['execution'], receipt['status']), ('unsupported', 'unsupported'))
+                        self.assertEqual(receipt['concern_status'], 'unresolved')
+                        verify_operation(base / (mode + '-replay'))
+                        exported = export_graduation(base / mode, proposal, base / (mode + '-graduation'))
+                        self.assertEqual(exported['status'], 'proposed_unaccepted')
+                        self.assertFalse((base / (mode + '-graduation') / 'script.py').exists())
+                    self.assertEqual(baseline_bytes, (run / 'baseline.json').read_bytes())
+                    self.assertEqual(source_bytes, {str(p): p.read_bytes() for p in sources})
                     self.assertEqual(before, {str(p): digest(p) for p in run.rglob('*') if p.is_file()})
                     for role in mounts:
                         self.assertEqual(mounts[role], evidence_mounts(run, role))

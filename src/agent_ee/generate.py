@@ -4,7 +4,7 @@ Run ``python3 -m agent_ee.generate SPEC.md --out RUNDIR`` (see docs/generate.md)
 Every stage writes ``RUNDIR/stages/N-NAME/receipt.json``; a stage never starts
 after an earlier failure. ``rung1-record.json`` says ``done: true`` only when the
 review verdict is ``criteria_satisfied``, the fab exports exist and are nonempty,
-and no physical placement preview remains pending.
+and the CPL rotation status is in ``fab_package.DONE_ROTATION_STATUSES``.
 """
 import argparse
 import csv
@@ -21,7 +21,6 @@ import subprocess
 import sys
 import time
 import traceback
-import zipfile
 
 from . import executor
 from .storage import canonical, digest, write_json
@@ -33,7 +32,6 @@ RECEIPT_SCHEMA = 'agent-ee.rung1-stage-receipt/0-experimental'
 RECORD_SCHEMA = 'agent-ee.rung1-record/0-experimental'
 PARTS_SCHEMA = 'agent-ee.rung1-parts-manifest/0-experimental'
 PARAMETERS_SCHEMA = 'agent-ee.rung1-parameters/0-experimental'
-FAB_SCHEMA = 'agent-ee.rung1-fab-manifest/0-experimental'
 ENVELOPE_SCHEMA = 'agent-ee.rung1-envelope/0-experimental'
 STAGES = ((1, 'requirements'), (2, 'parts'), (3, 'schematic'), (4, 'placement'),
           (5, 'routing'), (6, 'review'), (7, 'fab'))
@@ -57,7 +55,6 @@ FAMILIES = {
     'Device:R': {'pattern': r'Resistor_SMD:R_(\d{4,5})_\d{4,5}Metric', 'default': 'Resistor_SMD:R_0805_2012Metric'},
     'Device:C': {'pattern': r'Capacitor_SMD:C_(\d{4,5})_\d{4,5}Metric', 'default': 'Capacitor_SMD:C_0805_2012Metric'},
 }
-FAB_LAYERS = ('F.Mask', 'B.Mask', 'F.Paste', 'B.Paste', 'F.SilkS', 'B.SilkS', 'Edge.Cuts')
 NUMBER = r'(\d+(?:\.\d+)?)'
 NET = r'(/?[A-Za-z][A-Za-z0-9_]*)'
 # Each pattern must match exactly once in the spec; nothing is defaulted.
@@ -71,7 +68,7 @@ SPEC_PATTERNS = {
     'response': NET + r' at ' + NUMBER + r' ms must be between ' + NUMBER + r' V and ' + NUMBER + r' V inclusive',
     'track_width': r'at least ' + NUMBER + r' mm wide',
     'board': r'(\d+)-layer ' + NUMBER + r' mm x ' + NUMBER + r' mm rectangle with (J\d+) on the left edge',
-    'hand_soldered': r'through-hole header (J\d+) is hand-soldered',
+    'hand_soldered': r'through-hole header (J\d+) is (hand-soldered|JLCPCB-assembled)',
 }
 SI = {'': 1, 'k': 1e3, 'M': 1e6, 'p': 1e-12, 'n': 1e-9, 'u': 1e-6}
 
@@ -296,7 +293,8 @@ def parse_spec(text):
         raise StageFailure('response bounds must be increasing')
     params = {
         'header': {'ref': header[2], 'pins': count, 'nets': {p: header_nets[p] for p in sorted(header_nets)},
-                   'assembly': 'not_assembled', 'assembly_reason': 'through-hole header, hand-soldered'},
+                   'assembly': 'not_assembled' if found['hand_soldered'][2] == 'hand-soldered' else 'assembled',
+                   'assembly_reason': 'through-hole header, ' + found['hand_soldered'][2]},
         'resistor': {'ref': res[3], 'value': res[1] + res[2], 'ohms': float(res[1]) * SI[res[2]],
                      'nets': [net_in, net_out]},
         'capacitor': {'ref': cap[3], 'value': cap[1] + cap[2], 'farads': float(cap[1]) * SI[cap[2]],
@@ -550,7 +548,12 @@ def footprint_file(footprint):
 
 
 def stage_parts(stage, state, options):
+    if options.get('parts_manifest'):
+        from .rung1_parts import stage_parts as captured_parts
+        return captured_parts(stage, state, options['parts_manifest'])
     params = state['params']
+    if params['header']['assembly'] == 'assembled':
+        raise StageFailure('assembled header requires a captured parts/1 manifest')
     path, raw, source = capture_catalog(options.get('catalog_checkout'))
     rows = read_catalog(raw)
     (stage.dir / 'catalog').mkdir()
@@ -1036,62 +1039,6 @@ def stage_review(stage, state, options):
 
 # ------------------------------------------------------------------ stage 7: fab package
 
-def copper_layers(board_text):
-    block = re.search(r'\n\t\(layers\n(.*?)\n\t\)', board_text, re.S)
-    if not block:
-        raise StageFailure('board has no layers block')
-    return re.findall(r'\(\d+ "([^"]+\.Cu)" (?:signal|power|mixed|jumper)', block[1])
-
-
-def jlcpcb_cpl(kicad_csv, excluded):
-    rows = list(csv.DictReader(io.StringIO(kicad_csv)))
-    if not rows or not {'Ref', 'PosX', 'PosY', 'Rot', 'Side'} <= set(rows[0]):
-        raise StageFailure('kicad-cli position file lacks Ref/PosX/PosY/Rot/Side columns')
-    out = io.StringIO()
-    writer = csv.writer(out, lineterminator='\n')
-    writer.writerow(['Designator', 'Mid X', 'Mid Y', 'Layer', 'Rotation'])
-    kept, dropped = [], []
-    for row in rows:
-        if row['Ref'] in excluded:
-            dropped.append(row['Ref'])
-            continue
-        side = {'top': 'Top', 'bottom': 'Bottom'}.get(row['Side'].strip().lower())
-        if side is None:
-            raise StageFailure('unknown side in position file: ' + row['Side'])
-        writer.writerow([row['Ref'], row['PosX'] + 'mm', row['PosY'] + 'mm', side, row['Rot']])
-        kept.append(row['Ref'])
-    return out.getvalue(), kept, dropped
-
-
-def jlcpcb_bom(kicad_csv, excluded):
-    rows = list(csv.reader(io.StringIO(kicad_csv)))
-    header = rows[0] if rows else []
-    if header != ['Comment', 'Designator', 'Footprint', 'LCSC Part #']:
-        raise StageFailure('kicad-cli BOM header differs: ' + repr(header))
-    out = io.StringIO()
-    writer = csv.writer(out, lineterminator='\n')
-    writer.writerow(header)
-    kept, dropped = [], []
-    for row in rows[1:]:
-        refs = [r.strip() for r in row[1].split(',') if r.strip()]
-        dropped += [r for r in refs if r in excluded]
-        refs = [r for r in refs if r not in excluded]
-        if refs:
-            if not re.fullmatch(r'C\d+', row[3]):
-                raise StageFailure(f'assembled BOM line {refs} has no LCSC part number')
-            writer.writerow([row[0], ','.join(refs), row[2], row[3]])
-            kept += refs
-    return out.getvalue(), kept, dropped
-
-
-def deterministic_zip(target, files):
-    with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for arcname, path in sorted(files.items()):
-            info = zipfile.ZipInfo(arcname, date_time=(2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, Path(path).read_bytes())
-
-
 def stage_fab(stage, state, options):
     from .fab_stage import step
     from .stage_receipts import run_step, validate_receipt as validate_stage_receipt
@@ -1108,6 +1055,11 @@ def stage_fab(stage, state, options):
                            + stage.rel(receipt_dir / 'run/console.log'))
     out = receipt_dir / 'run/out'
     manifest = json.loads((out / 'fab-manifest.json').read_text())
+    if state.get('cpl_inputs'):
+        # The fab stage must consume exactly the policy stage 1 captured.
+        captured = digest(Path(state['cpl_inputs']) / 'jlc-cpl-policy.json')
+        if manifest['rotation']['policy']['sha256'] != captured:
+            raise StageFailure('fab stage consumed a CPL policy other than the one stage 1 captured')
     copy_tree(out / 'fab', stage.dir / 'package')
     shutil.copyfile(out / 'fab-manifest.json', stage.dir / 'fab-manifest.json')
     stage.output(stage.dir / 'package', 'corrected fab package')
@@ -1177,8 +1129,11 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
                        'receipt_sha256': digest(rundir / 'stages' / f'{number}-{name}' / 'receipt.json')})
     verdict = state.get('verdict')
     fab_ok = fab_exists(state.get('fab_manifest'))
-    # The gate is exactly the contract's: never relaxed, overridden or reinterpreted here.
-    done = verdict == 'criteria_satisfied' and fab_ok and state.get('fab_status') != 'PREVIEW_REQUIRED'
+    # The gate is exactly the contract's: never relaxed, overridden or reinterpreted here. The
+    # rotation status is an allow-list (fab_package.DONE_ROTATION_STATUSES); unknown fails closed.
+    from .fab_package import rotation_blocker
+    blocker = rotation_blocker(state.get('fab_status')) if fab_ok else None
+    done = verdict == 'criteria_satisfied' and fab_ok and blocker is None
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, 'spec': {'path': options['spec'], 'sha256': digest(spec)},
               'options': {'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
                           'profile': options['profile'],
@@ -1186,12 +1141,14 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
               'generator': tool_identity('agent_ee'), 'stages': stages, 'verdict': verdict,
               'fab_manifest': ({'path': 'stages/7-fab/fab-manifest.json', 'sha256': digest(state['fab_manifest'])}
                                if state.get('fab_manifest') else None),
-              'fab_exports_exist': fab_ok, 'fab_status': state.get('fab_status'), 'done': done,
+              'fab_exports_exist': fab_ok, 'fab_status': state.get('fab_status'),
+              'fab_rotation_blocker': blocker, 'done': done,
               # Every stage is an experimental driver step; placement in particular may be the
               # row stand-in rather than the landed placer (AGENTEE-109).
               'stage_qualification': {name: QUALIFICATION for _, name in STAGES},
               'placement': {'qualification': QUALIFICATION, 'placer': state.get('placer')},
-              'done_rule': 'campaign verdict criteria_satisfied AND fab exports exist and are nonempty AND no physical preview is pending'}
+              'done_rule': ('campaign verdict criteria_satisfied AND fab exports exist and are nonempty AND the '
+                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES')}
     write_json(rundir / 'rung1-record.json', record)
     return record
 

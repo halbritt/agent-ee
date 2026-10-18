@@ -92,7 +92,7 @@ ignores the via-count check must still produce a defect after staging enables it
 Run these controls and the shared fabricator runner tests with:
 
 ```sh
-AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_routing_rules tests.test_fab_profile -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_routing_rules tests.test_fab_profile tests.test_fab_profile_conjunctive -v
 ```
 
 Public scope/3 review/verify tests exercise real native measurements with

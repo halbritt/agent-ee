@@ -105,3 +105,48 @@ pre-created child sheet and maps its requirements to fresh board checks. The
 instance and source remain immutable; the ordinary repair writer edits the child.
 `block_provenance` reports semantic changes and checks native boundary bindings.
 Source qualification never supplies board check results.
+
+## Reference sets, contracts and pending requirements (AGENTEE-105)
+
+Optional fields carry what a block cut from a larger design needs. Without them a
+record keeps its earlier meaning. [Block inventory capture](block-inventory.md)
+generates all of them.
+
+- `instances`: a nonempty list of `{path, uuid_path, sheet, references}`. `path`
+  is the sheet-name path (`/CH1/`). `uuid_path` is the native tstamps path.
+  `sheet` is a captured `.kicad_sch` with a pinned source path. `references` is a
+  sorted, nonempty designator list, disjoint across instances. The first instance
+  is the primary `sheet`. Each reference must resolve to a placed symbol in that
+  sheet occurrence. Units of one part agree on lib_id and footprint. `#` power and
+  flag symbols are not components. Pre-instance sheets use their single
+  `Reference`. A block may span several sheet files (for example a driver sheet plus
+  the output stage instance it feeds) or be a subset of one sheet (a transceiver
+  inside a power sheet).
+- `interface` names a generated captured `agent-ee.interface/1` contract. A
+  `check_set` entry of kind `hardware_interface` must name it. The contract must
+  pass the existing `hardware_interface` capability rules against the block's
+  requirements: exactly one requirement per check, with sources equal to that
+  requirement's source. Its component locations must lie inside the reference set.
+- `connectivity` names a generated `agent-ee.block-connectivity/1` projection
+  covering exactly the reference set.
+- `check_set`: `{id, kind, params}` with registered kinds and unique ids. Every
+  check must trace to a requirement and every requirement check must exist.
+- Requirements may carry `source` (`{path, locator}`, a captured block file) and
+  `conditions` (text list). When a run is verified, a sourced requirement must
+  match the baseline requirement's source through the run's file mapping.
+- `pending_requirements`: `{id, statement, source, conditions, blocked_by}` for
+  requirements with no applicable check yet. Any pending requirement keeps the
+  block unverified, even when every bound requirement is covered.
+- `libraries`: one `{kind, lib_id, origin, path, sha256, detail}` per symbol
+  lib_id and footprint used by the reference set. The set must equal what the
+  captured sheets use. `source` entries must be captured files with matching
+  hashes. `kicad-stock` and `external` entries are hashed references, not
+  payload. `unresolved` entries, or any null hash, keep the block unverified.
+
+`parts_manifest` may also be an `agent-ee.block-parts/1` draft listing. It must
+cover the reference set exactly once, with matching instance and lib_id. A draft
+listing keeps the block unverified. The validator report adds
+`pending_requirements`, `unresolved_libraries` and `draft_parts`.
+
+KiCad joins repeated hierarchical labels with one name into one sheet pin. Such
+labels are one port when their shapes agree and are refused when they conflict.

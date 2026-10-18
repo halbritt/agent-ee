@@ -4,7 +4,6 @@ The integration test runs stages 1-5 and 7 with --skip-review on the real toolch
 stage 6 (subscription inference) is never run here.
 """
 import csv
-import io
 import json
 import os
 from pathlib import Path
@@ -16,6 +15,7 @@ import unittest
 from unittest import mock
 
 from agent_ee import generate as g
+from agent_ee.storage import digest
 try:
     from toolchain import require_kicad_route, require_toolchain
 except ImportError:  # run as tests.test_generate from the repository root
@@ -141,9 +141,19 @@ class OrderingTest(unittest.TestCase):
             manifest = {'files': [{'path': 'bom.csv', 'sha256': g.sha256_bytes(b'x\n'), 'bytes': 2}]}
             (stage.dir / 'fab-manifest.json').write_text(json.dumps(manifest))
             state['fab_manifest'] = stage.dir / 'fab-manifest.json'
+            # stage_fab always records the sealed CPL rotation status; only an allowed one is done.
+            state['fab_status'] = status
+        status = 'ok'
         functions = {name: (lambda *a: None) for _, name in g.STAGES} | {'review': review, 'fab': fab}
         self.assertTrue(self.run_with(functions)['done'])
         shutil.rmtree(self.root / 'run')
+        for status in ('PREVIEW_REQUIRED', None, 'pass'):
+            record = self.run_with(functions)
+            self.assertFalse(record['done'], status)
+            self.assertTrue(record['fab_exports_exist'])
+            self.assertIsNotNone(record['fab_rotation_blocker'])
+            shutil.rmtree(self.root / 'run')
+        status = 'ok'
         empty = {'fab': lambda stage, state, options: fab(stage, state, options) or
                  (stage.dir / 'package' / 'bom.csv').write_text('')}
         self.assertFalse(self.run_with(functions | empty)['done'])
@@ -365,28 +375,75 @@ class CampaignStageTest(unittest.TestCase):
         self.assertEqual(state['verdict'], 'escalated')
 
 
-class FabRewriteTest(unittest.TestCase):
-    def test_cpl_uses_jlcpcb_columns_and_drops_not_assembled(self):
-        kicad = ('Ref,Val,Package,PosX,PosY,Rot,Side\n"C1","100n","C_0603",110.0,100.0,90.0,top\n'
-                 '"J1","Conn","PinHeader",102.5,112.5,0.0,top\n"R1","10k","R_0402",105.0,100.0,180.0,bottom\n')
-        text, kept, dropped = g.jlcpcb_cpl(kicad, {'J1'})
-        self.assertEqual(list(csv.reader(io.StringIO(text))), [
-            ['Designator', 'Mid X', 'Mid Y', 'Layer', 'Rotation'],
-            ['C1', '110.0mm', '100.0mm', 'Top', '90.0'], ['R1', '105.0mm', '100.0mm', 'Bottom', '180.0']])
-        self.assertEqual((kept, dropped), (['C1', 'R1'], ['J1']))
+class FabStageEndToEndTest(unittest.TestCase):
+    """Stage 7 through generate() on the owned CPL fixture (fixtures/cpl-rotation): the real
+    receipted export, fab_export and cpl_rotation checks and the corrected package. The real
+    RC parts have no owned supplier captures, so the RC run above stops at the CPL policy."""
 
-    def test_bom_drops_excluded_refs_and_requires_lcsc_for_the_rest(self):
-        kicad = ('"Comment","Designator","Footprint","LCSC Part #"\n"10k","R1","R_0402","C25744"\n'
-                 '"Conn_01x03","J1","PinHeader",""\n')
-        text, kept, dropped = g.jlcpcb_bom(kicad, {'J1'})
-        self.assertEqual((kept, dropped), (['R1'], ['J1']))
-        self.assertNotIn('J1', text)
-        with self.assertRaises(g.StageFailure):
-            g.jlcpcb_bom(kicad, set())
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain(native=True)
+        try:
+            from test_fab_stage import candidate
+        except ImportError:  # run as tests.test_generate from the repository root
+            from tests.test_fab_stage import candidate
+        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-fab-')
+        cls.root = Path(cls.tmp.name)
+        cls.inputs = candidate(cls.root / 'inputs')
 
-    def test_copper_layers_from_board_layer_block(self):
-        board = '(kicad_pcb\n\t(layers\n\t\t(0 "F.Cu" signal)\n\t\t(2 "B.Cu" signal)\n\t\t(25 "Edge.Cuts" user)\n\t)\n)'
-        self.assertEqual(g.copper_layers(board), ['F.Cu', 'B.Cu'])
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def generate(self, name, policy_dir):
+        def prepare(stage, state, options):
+            state.update(name='cpl', reviewed_inputs=self.inputs, verdict='criteria_satisfied',
+                         cpl_inputs=policy_dir)
+        functions = {stage: (lambda *args: None) for _, stage in g.STAGES}
+        functions.update(requirements=prepare, fab=g.stage_fab)
+        return g.generate(SPEC, self.root / name, skip_review=True, functions=functions)
+
+    def test_fab_stage_exports_a_complete_corrected_package(self):
+        record = self.generate('run', self.inputs / 'generation/cpl')
+        fab = record['stages'][-1]
+        self.assertEqual((fab['name'], fab['status']), ('fab', 'PREVIEW_REQUIRED'), fab['error'])
+        self.assertTrue(record['fab_exports_exist'])
+        self.assertEqual(record['fab_status'], 'PREVIEW_REQUIRED')
+        self.assertFalse(record['done'])
+        self.assertEqual(record['fab_rotation_blocker'],
+                         'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)')
+        run = self.root / 'run'
+        for item in record['stages']:
+            g.validate_receipt(json.loads((run / item['receipt']).read_text()))
+        stage = run / 'stages/7-fab'
+        manifest = json.loads((stage / 'fab-manifest.json').read_text())
+        listed = {f['path'] for f in manifest['files']}
+        self.assertLessEqual({'gerbers.zip', 'bom.csv', 'cpl.csv', 'cpl-rotation.json'}, listed)
+        self.assertTrue(any(p.startswith('drill/') and p.endswith('-PTH.drl') for p in listed), listed)
+        self.assertTrue(any(p.startswith('drill/') and p.endswith('-NPTH.drl') for p in listed), listed)
+        for entry in manifest['files']:
+            self.assertGreater((stage / 'package' / entry['path']).stat().st_size, 0, entry)
+        with (stage / 'package/cpl.csv').open() as stream:
+            rows = {r['Designator']: r for r in csv.DictReader(stream)}
+        self.assertEqual(sorted(rows), sorted(manifest['cpl_designators']))
+        self.assertLessEqual(set(manifest['bom_designators']), set(rows))
+        self.assertEqual(rows['U1']['Rotation'], '0.000000')
+        self.assertEqual(manifest['rotation']['policy']['sha256'],
+                         digest(self.inputs / 'generation/cpl/jlc-cpl-policy.json'))
+        receipt = json.loads((stage / 'receipt.json').read_text())
+        self.assertEqual(receipt['details']['rotation'], manifest['rotation'])
+
+    def test_fab_stage_refuses_a_policy_other_than_the_stage_one_capture(self):
+        other = self.root / 'other-capture'
+        shutil.copytree(self.inputs / 'generation/cpl', other)
+        policy = json.loads((other / 'jlc-cpl-policy.json').read_text())
+        policy['policy_id'] = 'another-policy'
+        (other / 'jlc-cpl-policy.json').write_text(json.dumps(policy))
+        record = self.generate('mismatch', other)
+        fab = record['stages'][-1]
+        self.assertEqual(fab['status'], 'failed')
+        self.assertIn('policy other than the one stage 1 captured', fab['error'])
+        self.assertFalse(record['done'])
 
 
 class IntegrationTest(unittest.TestCase):

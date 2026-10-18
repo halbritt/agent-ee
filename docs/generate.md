@@ -99,11 +99,15 @@ so that exporter refuses it. It is not silently omitted or changed to DNP.
 stage with its status, error and receipt hash, the campaign verdict, the fab
 manifest hash and the placer used. `done` is true only when the campaign
 verdict is `criteria_satisfied` **and** the fab exports exist, are nonempty and
-match their manifest hashes **and** no physical placement preview is pending.
-The corrected package retains `PREVIEW_REQUIRED`, so it cannot make the record
-done. Supply `--cpl-inputs DIRECTORY` with the
+match their manifest hashes **and** the fab status is in the allow-list
+`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`). The corrected
+package retains `PREVIEW_REQUIRED`, so it cannot make the record done; the
+record's `fab_rotation_blocker` names the reason,
+`fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`.
+Supply `--cpl-inputs DIRECTORY` with the
 [captured policy and supplier tree](cpl-rotation.md#generator-fab-integration).
-The driver never relaxes, overrides or
+Stage 7 refuses a package whose consumed policy digest differs from the one
+stage 1 captured. The driver never relaxes, overrides or
 reinterprets a check, reviewer, adjudicator or convergence result.
 
 ## Limitations

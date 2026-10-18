@@ -1,0 +1,28 @@
+{
+  "project": "rc_stage",
+  "source_dir": "/candidate/project",
+  "source": "working tree",
+  "source_git_head": null,
+  "source_dirty_files": [],
+  "schematic": "rc_stage.kicad_sch",
+  "pcb": "rc_stage.kicad_pcb",
+  "schematic_files": [
+    "rc_stage.kicad_sch"
+  ],
+  "sheet_instances": 1,
+  "sheet_case_aliases": [],
+  "missing_sheets": [],
+  "library_links": [],
+  "library_issues": [],
+  "files": {
+    "fp-lib-table": "e4212417f18fd0b58d1e0b4ac046b296fa1a9b6625be667f455e5cbba77c77a3",
+    "lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "ea709653381ed3f2774ed177900b9d999b34aa8e4bc8e12992ddebfa9554b7a3",
+    "lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "e85f3a6a4f7a19cfd5e8a1646aa6b60acc3d9e87bda9d914de6c91835779bc11",
+    "lib/Owned_Gen.kicad_sym": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1",
+    "lib/StageRC.kicad_sym": "89f88dee4eaa462e730f645d29a4f14d73507dd8bf56fe266bc8bd39c02399c0",
+    "rc_stage.kicad_pcb": "c373729f51f9efbe5e56dfe9bb6df691394e0f9623305ee000c50e5cebb5a795",
+    "rc_stage.kicad_pro": "c745669befeac97f6e966bdd384ceae7868d0246f6544a59859fc28788a2b83b",
+    "rc_stage.kicad_sch": "91bf9666349cc634ed94c16a8d10cf96aa4e1f1770f01e152442e7c8454e5651",
+    "sym-lib-table": "bb13ab4fe47da9f272904fa00505f27fac37ced434541d6f5971addf617f5be4"
+  }
+}

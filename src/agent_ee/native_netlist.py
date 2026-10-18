@@ -45,11 +45,17 @@ def _parse(path):
     return root
 
 
-def _parts(root):
+def _parts(root, pinless=False):
     parts = {}
     for part in root.findall('./libparts/libpart'):
         symbol = (text(part.get('lib')), text(part.get('part')))
         pins = {}
+        # KiCad 10.0.7 omits <pins> for a pinless libpart; an empty <pins/> is unqualified.
+        if pinless and not part.findall('pins'):
+            if symbol in parts:
+                raise ValueError('duplicate native library part')
+            parts[symbol] = pins
+            continue
         for pin in _one(part, 'pins').findall('pin'):
             number = text(pin.get('num'))
             if number in pins:
@@ -76,7 +82,7 @@ def _instances(root, sheets):
         yield ref, comp, sheet, uuid
 
 
-def _components(root, parts, sheets):
+def _components(root, parts, sheets, pinless=False):
     components = {}
     for ref, comp, sheet, uuid in _instances(root, sheets):
         lib = _one(comp, 'libsource')
@@ -87,14 +93,14 @@ def _components(root, parts, sheets):
         for unit in _one(comp, 'units').findall('unit'):
             name = text(unit.get('name'))
             pins = [text(p.get('num')) for p in _one(unit, 'pins').findall('pin')]
-            if name in units or not pins or len(pins) != len(set(pins)):
+            if name in units or (not pins and parts[symbol]) or len(pins) != len(set(pins)):
                 raise ValueError('ambiguous native selected unit inventory')
             units.append(name)
             selected.extend(pins)
         # Common physical pins can occur in more than one graphical unit; only
         # libpart supplies their unique metadata, never a last-writer override.
         selected = sorted(set(selected))
-        if not selected or not set(selected) <= parts[symbol].keys():
+        if not (selected or (pinless and units and not parts[symbol])) or not set(selected) <= parts[symbol].keys():
             raise ValueError('missing native selected physical pin inventory')
         properties = {}
         for prop in comp.findall('property'):
@@ -155,6 +161,13 @@ def _footprint(comp):
     return value
 
 
+def read_components(path):
+    """Component identities and properties only, without the parity graph bounds."""
+    root = _parse(path)
+    sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
+    return _components(root, _parts(root), sheets)
+
+
 def _sheets(root):
     sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
     if ('/' not in sheets or len(sheets) != len(set(sheets)) or
@@ -175,12 +188,16 @@ def read_native_instances(path):
         ref: {'sheet': sheet, 'uuid': uuid} for ref, _, sheet, uuid in _instances(root, sheets)}}
 
 
-def read_native_inventory(path):
-    """Read bounded captured bytes; reject ambiguous identities and memberships."""
+def read_native_inventory(path, pinless=False):
+    """Read bounded captured bytes; reject ambiguous identities and memberships.
+
+    ``pinless`` admits library parts with no pins and their empty units, as
+    KiCad 10.0.7 exports them; callers that opt in must qualify such parts.
+    """
     root = _parse(path)
     sheets = _sheets(root)
-    parts = _parts(root)
-    components = _components(root, parts, sheets)
+    parts = _parts(root, pinless)
+    components = _components(root, parts, sheets, pinless)
     nets, names = {}, set()
     for net in root.findall('./nets/net'):
         nid, name = text(net.get('code')), text(net.get('name'))

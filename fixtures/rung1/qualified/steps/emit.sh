@@ -6,5 +6,5 @@ set -euo pipefail
 export PYTHONPATH=/tool/agent-ee PYTHONDONTWRITEBYTECODE=1
 mkdir -p /work/out
 exec /usr/bin/python3 -B -m agent_ee.schematic_emitter /candidate/generation/intent.json \
-  --layout /candidate/generation/layout.json --captures /candidate/stock/symbols \
+  --layout /candidate/generation/layout.json --captures /candidate \
   --out /work/out/sch --receipt /work/out/emit-receipt.json

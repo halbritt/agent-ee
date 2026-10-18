@@ -37,7 +37,7 @@ What must exist at each stage before a rung can run:
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
-| 1 Requirements | Requirement IDs (the fixture's `R-native`, `R-width`, `R-response`); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
+| 1 Requirements | Requirement IDs `R-native`, `R-width`, `R-response`, `R-fab`, `R-parts`, compiled from the spec by the [requirement-record compiler](requirement-scope.md) (AGENTEE-100); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
 | 2 Parts | Approved-parts manifest: R, C and header with LCSC bindings; stock footprints | Block manifest with snapshot stock state | Merged block manifests; assembly readiness | About 492 footprints against one catalogue snapshot |
 | 3 Schematic | One sheet; netlist parity with the fixture | One captured block, adapted, plus a root sheet | Several blocks integrated block-first | 15 sheets from power, MCU core, CAN, wideband and driver blocks |
 | 4 Placement | Three footprints placed and graded | Decoupling distance, connector on edge | Sub-layout reuse, congestion report | Budget measurements before any limit change |
@@ -55,8 +55,11 @@ The checks that constitute "done" for each rung:
 | 4 | Rung 3 set at FOME-MC scale, plus FOME-MC's own rules (for example HV clearance) | `fab_package` passes |
 
 The [`parts_subset`](approved-parts.md) check and immutable manifest are
-registered for scope/2 and scope/3 (AGENTEE-86); real rung inputs and migration
-from the experimental generator's parts record remain pending.
+registered for scope/2 and scope/3 (AGENTEE-86). The optional
+[Rung-1 captured-parts route](rung1-parts.md) consumes that bundle and binds its
+RC/header fields and records a real reference-board parts run. Complete
+empty-candidate campaign qualification remains pending; the default generator
+still uses its experimental parts record.
 `placement` is also registered ([details](placement.md#placement-check-kind));
 its native qualification does not establish a complete generation campaign
 (AGENTEE-92). `block_provenance` and `fab_package` remain pending (AGENTEE-90,
@@ -72,8 +75,25 @@ CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
 The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
 
 CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
+
+[`fab_package`](fab-package.md)
+(AGENTEE-94) is the done gate: declared last, it runs the
+[`fab_export`](fab-export.md) producer (AGENTEE-23) and the
+[consistency gate](fab-consistency.md) (AGENTEE-73), including native CPL
+coordinate and export-log checks, and seals the artifact hashes. A scope with a
+`generation` marker is refused at capture without it.
+
+[Net constraints](net-constraints.md) (AGENTEE-47) emit intent netclasses, width
+rules and the record that `copper-width/1` binds. Rung 2's routing row still
+needs those outputs carried into a scaffold template and a native routing attempt.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
+
+The [original RC stage fixtures](rc-stage-fixtures.md) provide unplaced,
+placed-unrouted and seeded placement inputs with native checks and a recorded
+KRT attempt. They are independent alternatives to the FOME-MC reference;
+AGENTEE-103's exact control-derived variants remain blocked by unresolved
+third-party rights. These fixtures do not qualify the complete rung.
 
 ## Starting a campaign from an empty candidate
 
@@ -282,7 +302,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   (scaffold, placers, kicad-route) get [stage receipts](stage-receipts.md)
   (AGENTEE-95). The campaign runs declared kicad-route steps through the routing
   adapter and verifies their receipts and semantics before adoption and on replay.
-  The placement adapter also uses this receipt pipeline.
+  The placement adapter also uses this receipt pipeline. The [rung 1 campaign
+  driver](rung1-campaign.md) also records a receipt for its scaffold step, which its
+  record's `done` binds to the first capture; verify-campaign does not check it.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings
@@ -325,11 +347,15 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 ## Captured CPL correction in fab stages
 
-AGENTEE-126 wires `cpl_rotation` after `fab_export` in both rung-1 scopes and
-uses the shared receipted fab step in the generator and rung implementations.
-Explicit `--cpl-inputs` captures freeze the policy, supplier provenance and raw
-geometry. The corrected package records all applied corrections and retains
-`PREVIEW_REQUIRED`; generation records cannot become done while that preview
-is pending. Missing inputs and incomplete rotation coverage fail closed.
+AGENTEE-126 wires `cpl_rotation` after `fab_export` in the generator and, when
+`--cpl-inputs` is given, in both rung-1 scopes, and uses the shared receipted fab
+step in the generator and rung implementations. Explicit `--cpl-inputs`
+captures freeze the policy, supplier provenance and raw geometry. In the rung-1
+campaign the `fab_package` done gate seals the corrected CPL and records the
+rotation status and policy digest. The corrected package records all applied
+corrections and retains `PREVIEW_REQUIRED`; done predicates are allow-lists over
+`fab_package.DONE_ROTATION_STATUSES`, so generation records cannot become done
+while that preview is pending. Missing inputs and incomplete rotation coverage
+fail closed.
 See [CPL integration](cpl-rotation.md#generator-fab-integration) for the input
 tree, evidence layout and the separate non-DNP header export limitation.

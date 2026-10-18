@@ -1,0 +1,15 @@
+(kicad_symbol_lib (version 20251024) (generator "agent_ee_owned_rc_stage")
+ (symbol "R" (pin_names (offset 0)) (in_bom yes) (on_board yes)
+  (property "Reference" "R" (at 0 2.54 0) (effects (font (size 1.27 1.27))))
+  (property "Value" "R" (at 0 -2.54 0) (effects (font (size 1.27 1.27))))
+  (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+  (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+  (property "Description" "Original RC stage resistor" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+  (symbol "R_0_1"
+   (rectangle (start -2.54 1.27) (end 2.54 -1.27)
+    (stroke (width 0.254) (type default)) (fill (type none))))
+  (symbol "R_1_1"
+   (pin passive line (at -5.08 0 0) (length 2.54)
+    (name "1" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+   (pin passive line (at 5.08 0 180) (length 2.54)
+    (name "2" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27))))))))

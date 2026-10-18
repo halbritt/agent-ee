@@ -155,8 +155,13 @@ versions, rejected campaign replacements and retained-evidence tampering.
 
 The experimental `generate.py` entry point still needs migration from
 `agent-ee.rung1-parts-manifest/0-experimental`. This validator rejects that
-experimental schema. Rung 1's real J1 lacks qualified LCSC/MPN/provenance, so the
-actual R/C/header stage remains unknown. Synthetic owned fixtures establish
+experimental schema. The default BOM-based rung path still lacks complete
+supplier identities. The [optional qualified-driver path](rung1-parts.md)
+now consumes an existing `parts/1` bundle, replays selection and binds its
+R/C/header fields; it requires an explicitly assembled-header spec and retains
+the experimental manifest only as a property projection. A real catalog-bound
+reference run is recorded on that page; complete empty-candidate campaign and
+header package/geometry qualification remain outstanding. Synthetic owned fixtures establish
 software behavior only. Canonical parts membership does not establish assembly
 readiness, live stock, owner review, or hardware release.
 

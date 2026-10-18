@@ -41,3 +41,34 @@ byte for byte.
 
 These copies are disposable review fixtures, not part of any ECU design; the
 fome-mc source tree was not modified.
+
+## Original stage-boundary alternative (AGENTEE-103)
+
+`stages/` is original agent-ee material, not a derivative of the FOME-MC control.
+The requested control-derived variants remain blocked by the assignment's
+non-MIT/copying gate; see `docs/file-origins.json`. The alternative has an
+authored resistor symbol and reuses the original AGENTEE-40 capacitor/connector
+symbols and two land patterns in `fixtures/generation/project/lib/`. It uses
+the same RC topology and values as facts, with independently authored board
+dimensions and anchors. No stock library or third-party design bytes are added.
+
+Run `PYTHONPATH=src python3 fixtures/rc/stages/generate.py --out build/rc-stages`
+to reproduce it. The existing networkless executor runs pcbnew, the schematic
+emitter and board constructor with read-only sources. The committed receipt in
+`stages/receipts/generation/` records the actual argv, sandbox, exit, tool/source
+identities and hashes of every generated file in `fixture-hashes.json`.
+Native tests regenerate all files byte for byte. Stage scopes, requirements
+and expected outcomes are authored independently of output. See
+[stage fixture qualification](../../docs/rc-stage-fixtures.md) for commands,
+checks-only evidence, routing evidence and the remaining owner gate.
+
+Committed original stage board hashes (SHA-256):
+
+| Variant | `rc_stage.kicad_pcb` |
+| --- | --- |
+| `unplaced` | `d7eb1474c3001c20d9fc2748be8809dd41b17f8da746ea79b75240cd202fabcc` |
+| `placed-unrouted` | `c373729f51f9efbe5e56dfe9bb6df691394e0f9623305ee000c50e5cebb5a795` |
+| `seeded-placement` | `9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4` |
+
+Generation script SHA-256: `7cc8203dae999cabf950688078bdef261b2ca9dc890c6c4286e71ec9bad8db71`.
+The complete per-file hashes are in `stages/receipts/generation/fixture-hashes.json`.

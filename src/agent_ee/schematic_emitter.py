@@ -28,6 +28,8 @@ HIERARCHY_SCHEMA = 'agent-ee.resolved-connectivity/2'  # AGENTEE-39 hierarchical
 # KiCad 10.0 native schematic format, as written by eeschema/kicad-cli 10.0.7.
 SCH_VERSION = '20260306'
 GENERATOR = 'agent-ee-schematic-emitter'
+# The importable module name, also under ``python -m`` (where __name__ is __main__).
+MODULE = __spec__.name if __name__ == '__main__' and __spec__ else __name__
 GENERATOR_VERSION = '10.0'
 GRID = 2540000          # Symbol anchors (nm).
 CONNECTION_GRID = 100  # Exact native schematic coordinate lattice (nm).
@@ -335,6 +337,13 @@ def _plan(resolved, captured, intent_libraries, transforms):
             raise EmissionError('malformed_reference',
                                 'reference must be annotated; # prefix exactly for power symbols', location)
         _field_text(comp['value'], 'malformed_value', location)
+        for name, value in comp.get('part_binding', {}).items():
+            if (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_ ]{0,127}', name)
+                    or name in {'Reference', 'Value', 'Footprint', 'dnp', 'in_bom', 'on_board',
+                                'exclude_from_board', 'exclude_from_bom', 'exclude_from_sim', 'in_pos_files'}
+                    or name.startswith('ki_')):
+                raise EmissionError('malformed_part_binding', 'binding cannot override native identity or flags', location)
+            _field_text(value, 'malformed_part_binding', location + '/part_binding/' + name)
         if comp['footprint'] and not FOOTPRINT.fullmatch(comp['footprint']):
             raise EmissionError('malformed_footprint', 'footprint must be empty or exact library:name', location)
         if comp['power']:
@@ -358,6 +367,11 @@ def _plan(resolved, captured, intent_libraries, transforms):
     for comp in resolved['components']:
         location = '/components/' + comp['id']
         embedded, flags, properties = symbols[comp['id']]
+        if comp['power']:
+            # Eeschema places power symbols and flags as virtual markers: the
+            # instance is excluded from BOM and board whatever the library says,
+            # while the embedded library copy keeps its own flags.
+            flags = dict(flags, in_bom='no', on_board='no')
         context = build_context(intent_libraries, captured, comp['lib_id'])
         if context['execution'] != 'ok':
             raise EmissionError('symbol_context', context.get('message', 'symbol context unavailable'), location)
@@ -477,11 +491,18 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets)
     instance += [['unit', str(unit)], ['body_style', '1']]
     instance += [[k, item['flags'][k]] for k, _ in INSTANCE_FLAGS]
     instance += [['dnp', 'no'], ['uuid', Q(_uuid(namespace, 'symbol', *key, unit))]]
-    values = {'Reference': comp['reference'], 'Value': comp['value'], 'Footprint': comp['footprint']}
+    values = {**comp.get('part_binding', {}), 'Reference': comp['reference'],
+              'Value': comp['value'], 'Footprint': comp['footprint']}
+    written = set()
     for prop in item['properties']:
         if prop[1].startswith('ki_'):
             continue
         instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation']))
+        written.add(prop[1])
+    for name, value in sorted(comp.get('part_binding', {}).items()):
+        if name not in written:
+            instance.append(_property(['property', Q(name), Q(value), ['hide', 'yes']],
+                                      value, anchor, item['matrix'], item['rotation']))
     instance += [['pin', Q(n), ['uuid', Q(_uuid(namespace, 'pin', *key, unit, n))]] for n in item['pin_numbers']]
     instance.append(['instances', ['project', Q(project), ['path', Q(path), ['reference', Q(comp['reference'])],
                                                            ['unit', str(unit)]]]])
@@ -716,7 +737,7 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
     is never a source of geometry. Any refusal returns no files at all.
     """
     result = dict(schema=RESULT_SCHEMA, execution='failed', outcome='unknown', findings=[],
-                  implementation=dict(module=__name__, sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),
+                  implementation=dict(module=MODULE, sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),
                   intent_sha256=None, resolved_sha256=None, layout_sha256=None, libraries=[],
                   root_uuid=None, paper=None, files=[])
     def refuse(code, message, location='/', execution='failed'):

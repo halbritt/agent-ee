@@ -2,6 +2,7 @@
 import decimal
 import hashlib
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -19,6 +20,7 @@ REPO = Path(__file__).resolve().parents[1]
 BOARD = 'project/rc_filter.kicad_pcb'
 SCHEMATIC = 'project/rc_filter.kicad_sch'
 POLICY = 'project/placement-policy.json'
+ENVELOPE = 'project/rc.envelope.json'
 FP_R = '11111111-1111-4111-8111-111111111111'
 FP_J = '22222222-2222-4222-8222-222222222222'
 
@@ -979,6 +981,56 @@ class ReceiptIterationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'outside placement scope.*protected footprint transform changed'):
             pa.qualify_receipt(receipt_dir, receipt, BOARD, [self.fixed])
         self.assertUnadopted()
+
+    def consume_envelope(self, envelope=None):
+        """A placement check consuming the captured RC envelope, which fixes J1 on the left edge."""
+        data = envelope or (REPO / 'fixtures/board-envelope/rc.envelope.json').read_bytes()
+        for tree in (self.source, self.design):
+            (tree / ENVELOPE).write_bytes(data)
+        self.manifest['files'][ENVELOPE] = digest(self.source / ENVELOPE)
+        self.manifest['scope']['checks'] = [{'id': 'connector', 'kind': 'placement', 'stage': 'placement', 'params': {
+            'criterion': 'connector-edge/1', 'drc_check': 'drc-placement', 'envelope': ENVELOPE}}]
+
+    def move_design(self, ref, dx_nm):
+        import pcbnew as k
+        board = k.LoadBoard(str(self.design / BOARD))
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == ref)
+        fp.SetPosition(k.VECTOR2I(fp.GetPosition().x + dx_nm, fp.GetPosition().y))
+        k.SaveBoard(str(self.design / BOARD), board, True)
+
+    def test_envelope_fixed_connector_is_protected_without_a_declared_uuid(self):
+        self.consume_envelope()
+        writer_only = {**self.declaration, 'helper': None, 'policy': None, 'fixed_footprints': []}
+        self.move_design('J1', 1_000_000)
+        with self.assertRaisesRegex(ValueError, 'changed more than footprint transforms.*protected footprint transform'):
+            self.iterate(writer_only)
+        record = read_json(self.work / 'placement-adapter.json')
+        self.assertEqual((record['status'], record['protected'], record['protected_refs']),
+                         ('refused', [self.fixed], ['J1']))
+        self.assertEqual(self.state['stage_receipts'], {})
+
+    def test_envelope_fixed_connector_is_added_to_the_helper_request(self):
+        self.consume_envelope()
+        record = self.iterate({**self.declaration, 'fixed_footprints': []})
+        self.assertEqual((record['status'], record['protected'], record['protected_refs']),
+                         ('proposed', [self.fixed], ['J1']))
+        request = read_json(self.work / 'placement/1/request/request.json')
+        self.assertIn('J1', request['policy']['fixed_refs'])
+        self.assertNotIn(self.fixed, {t['uuid'] for t in record['proposal_scope']['transforms']})
+
+    def test_envelope_binding_refuses_unresolved_mutable_or_changed_envelopes(self):
+        envelope = read_json(REPO / 'fixtures/board-envelope/rc.envelope.json')
+        envelope['fixed_footprints'][0]['reference'] = 'J9'
+        self.consume_envelope(json.dumps(envelope).encode())
+        with self.assertRaisesRegex(ValueError, "fixed reference 'J9' does not name exactly one source footprint"):
+            pa.binding(self.declaration, self.manifest, self.source, self.state['mutable_inputs'])
+        self.consume_envelope()
+        with self.assertRaisesRegex(ValueError, 'must be a captured immutable input'):
+            pa.binding(self.declaration, self.manifest, self.source, [*self.state['mutable_inputs'], ENVELOPE])
+        (self.source / ENVELOPE).write_bytes((self.source / ENVELOPE).read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'captured placement envelope .* changed'):
+            pa.binding(self.declaration, self.manifest, self.source, self.state['mutable_inputs'])
+        self.assertFalse((self.work / 'placement-adapter.json').exists())
 
     def test_writer_only_iteration_refuses_out_of_scope_writer_edit(self):
         declaration = {**self.declaration, 'helper': None, 'policy': None}

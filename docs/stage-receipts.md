@@ -44,6 +44,14 @@ even when the forger also recomputes the receipt identity.
 | `artifacts` | Work paths retained and hashed, for example `out/result.json`, `out/validate` |
 | `adoptable_exits` | Must include 0. kicad-route's partial-but-valid exit 2 would be listed here. A failed validation (3) never is |
 
+Native `pcbnew.SaveBoard` can also rewrite sibling `.kicad_pro`/`.kicad_prl`
+files. The runner refuses undeclared changes in `run/design`; it does not
+restore project siblings automatically. A board-saving wrapper must restore
+their captured bytes and inventory before exiting, or write to a staging copy
+outside `run/design` and declare only the staged board in `writes`. Follow the
+[campaign writer rule](campaign-guide.md#saving-boards-without-changing-project-siblings)
+without broadening the campaign's mutable inputs. Receipts remain provenance.
+
 ## Receipt fields and status
 
 Schema `agent-ee.stage-receipt/1`, `receipts/<k>-<step>/receipt.json`, retained with
@@ -135,11 +143,30 @@ In a staged campaign the plan holds only the steps of the earliest failing stage
 [placement adapter](placement-adapter.md) on placement turns. Unstaged campaigns, and campaigns
 created before the plan existed, run every declared step as before. Receipt indexes follow the
 plan's order. After the writer session, the coordinator first applies the existing
-proposal checks to the writer's design. It then runs each planned step on that design, and checks that every write target
+proposal checks to the writer's design. In staged campaigns it also refuses writer changes to any
+candidate path in a planned step's `writes`, with `writer_step_output_edit` naming the step and paths.
+The comparison is against the source candidate's exact bytes, including out-of-place step outputs.
+Refusal stops the implementation as `incomplete` before any step executes or a proposal is captured;
+there is no step receipt for a step that never ran. The immutable-input guard is unchanged.
+It then runs each planned step on that design, and checks that every write target
 is in `mutable_inputs` before launch. An adoptable step's exact outputs are copied back only
 while the design still equals the receipt's inputs. An unadoptable step stops the repair as
 `incomplete`. No default output is substituted and no proposal is captured. Afterwards the
 existing inventory, immutable-input, baseline and adapter checks run again.
+
+The exact writer prompt is retained at `implementations/N/implementation-prompt.txt`, outside the
+writer's writable directory. When a staged campaign declares `implementation_steps`, the prompt lists
+every declaration's `stage`, `step` and `writes`, marks the steps scheduled for this implementation,
+and names their candidate-relative output paths. Declared steps own their stages: the writer prepares
+other mutable inputs and must not perform a stage a declared step will run. It may return a no-op
+summary when the planned steps cover the repair. Deferred steps remain gated; their outputs may
+still be inputs prepared in an earlier stage. Unstaged prompts retain their exact previous bytes,
+even when steps are declared, and unstaged steps retain their previous overwrite behavior.
+
+`CampaignStageReceiptTests` in `tests/test_stage_receipts.py` exercises retained prompts, a no-op writer
+followed by exact coordinator outputs, named refusal before execution, input preparation for deferred
+steps, staged repairs without steps, and byte-for-byte unstaged prompt compatibility. These tests use
+scripted writers and original synthetic measurement tools in the real executor sandbox.
 
 Every implementation in a new campaign writes `implementations/N/stage-receipts.json`
 (`agent-ee.stage-receipt-index/1`), even when it holds no receipts. The index lists every receipt with its
@@ -167,6 +194,18 @@ Campaigns created before this change have no anchors and no index, and they veri
   Exit 2 is a partial proposal requiring fresh checks; exits 1, 3 and 4 stop the
   implementation without a proposal. The AGENTEE-54 placer runs through the
   [placement adapter](placement-adapter.md). Generic step tests use an original test program.
+- The [rung 1 driver](rung1-campaign.md) runs its `write-scaffold` step (stage `scaffold`)
+  through `run_step` before the campaign exists, so its receipt is kept beside the campaign in
+  `RUNDIR/scaffold-receipt/`, not in an implementation. The driver-written generation inputs and
+  requirements (including `requirements/fab-package.md`) are receipt inputs; the empty project and
+  builder template are its outputs. The rung 1 record's `done` requires the receipt's after-tree to
+  equal the first captured candidate on `project/`, `generation/` and `requirements/`, both ways.
+- `verify-campaign` does not cover the scaffold receipt. It verifies only receipts under
+  `<campaign>/implementations/`; a scaffold edited before the first capture still verifies. Only the
+  rung 1 record's `done` checks the scaffold receipt. Its tool identity is anchored only by the
+  record in the same run directory, and the record stores the receipt as an absolute path, so a moved
+  run directory rebuilds as unbound. A campaign/1 `pre_receipts` follow-up item would move this check
+  into verify-campaign.
 - A completed receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.

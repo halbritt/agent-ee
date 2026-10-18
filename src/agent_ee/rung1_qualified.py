@@ -10,8 +10,9 @@ experimental stand-in with the owned module now on main:
 - placement: the campaign ``placement_adapter`` (AGENTEE-91) with the pinned placer helper
   ``placer_runner`` (AGENTEE-54); no row fallback;
 - routing: ``routing_adapter.step`` (AGENTEE-93) on the pinned kicad-route checkout;
-- fab: ``fab_export``, ``fab_consistency`` and ``cpl_rotation`` checks, with a
-  receipted export step; a pending physical preview keeps "done" false.
+- fab: the ``fab_export`` (AGENTEE-23) and ``fab_consistency`` (AGENTEE-73) checks and, with a
+  ``--cpl-inputs`` capture, ``cpl_rotation`` with a receipted export step (AGENTEE-126); a
+  rotation status outside ``fab_package.DONE_ROTATION_STATUSES`` keeps "done" false.
 
 The driver's own records are ``qualification: experimental-unqualified``; checks and receipts
 are the owned ones. Where an owned module cannot do its job headlessly, the exact refusal is
@@ -58,7 +59,8 @@ OWNED = {
     'board_population': ('forward_annotation', 'AGENTEE-52'),
     'placement': ('placement_adapter + placer_runner (agent-ee.placer/1)', 'AGENTEE-91, AGENTEE-54'),
     'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route 08179cd)', 'AGENTEE-93'),
-    'parity': ('netlist_parity check (golden_xml, topology, exactly)', 'AGENTEE-41'),
+    'parity': ('netlist_parity check (intent, topology, exactly); fixtures/rc/control as recorded reference',
+               'AGENTEE-41, AGENTEE-102'),
     'placement_checks': ('placement check kind (courtyard-overlap/1, outline-containment/1)', 'AGENTEE-92'),
     'part_binding': ('part_binding check', 'AGENTEE-32'),
     'fab': ('fab_export + fab_consistency + cpl_rotation checks', 'AGENTEE-23, AGENTEE-73, AGENTEE-126'),
@@ -73,7 +75,7 @@ QUALIFIED_REQUIREMENTS = """# Rung-1 requirements graded by the owned checks
 Derived from `spec.md` by `agent_ee.rung1_qualified`. Each line is one requirement that one
 coordinator check grades. They add no limit that the spec does not state.
 
-R-parity: The generated schematic must have the connectivity of the reference RC low-pass (R1 between /IN and /OUT, C1 between /OUT and GND, J1 pins 1, 2 and 3 on /IN, /OUT and GND): native netlist topology equal to the captured reference export, component multiset exactly.
+R-parity: The generated schematic must have the connectivity of the rung-1 intent built from the stage-1 record and the stage-2 selections (R1 between /IN and /OUT, C1 between /OUT and GND, J1 pins 1, 2 and 3 on /IN, /OUT and GND, a power:GND symbol and a PWR_FLAG on GND): native netlist topology equal to the captured intent resolved against the captured libraries, component multiset exactly.
 
 R-courtyard: Footprint courtyards on the 2-layer board must not overlap (native DRC courtyard evaluation).
 
@@ -83,10 +85,15 @@ R-binding: R1 and C1 are JLCPCB-assembled SMD parts, so each must carry a valid 
 
 R-fab: A JLCPCB fab package (Gerbers, drill, BOM, CPL, manifest) must be exported from the captured board.
 
-R-cpl: The exported CPL must carry rotations and midpoints checked against captured policy and supplier footprints. Physical JLCPCB preview remains required.
-
 R-fab-consistency: The fab package must describe the captured board: inventory, designator parity, LCSC-footprint uniqueness, CPL side and 3D model resolution.
+
+R-assembly: Populated parts must resolve to the captured catalog with complete BOM properties, passive ratings and stock coverage. The assembled-header spec explicitly includes J1.
+
+R-packages: Assigned footprints must agree with catalog packages through the captured package map. Unmapped names remain missing coverage.
 """
+# Appended to qualified.md, and the cpl_rotation check declared, only for a --cpl-inputs capture (AGENTEE-126).
+CPL_REQUIREMENT_TEXT = ('\nR-cpl: The exported CPL must carry rotations and midpoints checked against captured '
+                        'policy and supplier footprints. Physical JLCPCB preview remains required.\n')
 
 
 class PrepareFailure(Exception):
@@ -103,24 +110,48 @@ def sha(raw):
 
 # ------------------------------------------------------------------ owned generation inputs
 
+SYMBOL_CAPTURES = 'stock/symbols'  # the scope's captured stock symbol libraries
+POWER_GND = {'id': 'pwr_gnd', 'reference': '#PWR01', 'lib_id': 'power:GND', 'value': 'GND', 'units': [1],
+             'footprint': ''}
+FLAG = {'id': 'FLG1', 'reference': '#FLG01', 'lib_id': 'power:PWR_FLAG', 'value': 'PWR_FLAG', 'units': [1],
+        'footprint': ''}
+
+
 def qualified_intent(prep):
-    """The generate intent with emitter-safe local net names.
+    """The rung-1 IR: the generate intent (stage-1 record, stage-2 selections) for the emitter.
 
     The emitter's label names exclude '/': KiCad prefixes a root-sheet local label with the
-    sheet path, so labels IN, OUT and GND export as /IN, /OUT and /GND. No power symbol is
-    declared: the emitter writes power symbols with in_bom/on_board yes (from the library
-    definition), and the staged presence probe then refuses the schematic subject because its
-    bounded reader counts #PWR/#FLG references that the native netlist omits (recorded in the
-    doc). Every pin is passive, so ERC needs no power flag."""
+    sheet path, so labels IN and OUT export as /IN and /OUT. The ground net is driven by a
+    declared power:GND symbol with a power:PWR_FLAG (every other pin is passive, so the flag
+    drives the GND power input for ERC). It is a global power net and exports as GND. The
+    emitter writes both symbols in_bom/on_board no, KiCad's native convention, so the staged
+    presence probe and the native netlist agree on C1, J1 and R1 (AGENTEE-123). Library paths
+    name the scope's captured libraries under ``stock/symbols``, so the emitter step and the
+    intent-sourced parity check resolve the same bytes."""
     intent = copy.deepcopy(prep['intent'])
+    ground = ground_net(prep['params'])
+    for library in intent['libraries']:
+        library['path'] = f"{SYMBOL_CAPTURES}/{library['path']}"
     for net in intent['nets']:
         net['name'] = net['name'].lstrip('/')
+    nets = [n for n in intent['nets'] if n['name'] == ground]
+    if ground != 'GND' or len(nets) != 1:
+        # The stock power:GND symbol names exactly one net GND; no other ground is approximated.
+        raise PrepareFailure(f'ground net {ground!r} has no stock power symbol in the intent')
+    for comp in (copy.deepcopy(POWER_GND), copy.deepcopy(FLAG)):
+        intent['components'].append(comp)
+        nets[0]['terminals'].append({'component': comp['id'], 'pin': {'number': '1'}})
     return intent
 
 
-def native_net(name):
-    """The native netlist name of a root-sheet local label."""
-    return '/' + name.lstrip('/')
+def intent_captures(intent):
+    """The captured library bytes the intent names, keyed by its own library paths."""
+    return {lib['path']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes() for lib in intent['libraries']}
+
+
+def ground_net(params):
+    """The native netlist name of the ground net: a global power net, without a sheet prefix."""
+    return params['nets']['ground'].lstrip('/')
 
 
 def layout():
@@ -208,7 +239,7 @@ def packing_policy(params, outline):
     """agent-ee.packing-policy/1 for the placer helper. J1 is not fixed here: forward annotation
     stages it off-board, and the envelope fixed-footprint binding cannot be captured (see gaps)."""
     return {'schema': 'agent-ee.packing-policy/1', 'step_budget': 200000, 'gap_nm': 1_000_000,
-            'fixed_refs': [], 'priority_refs': [], 'ground_nets': [native_net(params['nets']['ground'])],
+            'fixed_refs': [], 'priority_refs': [], 'ground_nets': [ground_net(params)],
             'obstacles': edge_bands(outline)}
 
 
@@ -228,6 +259,38 @@ def golden_netlist(work):
                               'source': str(g.FIXTURE_PROJECT / 'rc_filter.kicad_sch'),
                               'source_sha256': digest(g.FIXTURE_PROJECT / 'rc_filter.kicad_sch'),
                               'sha256': digest(out)}
+
+
+REFERENCE_SCHEMA = 'agent-ee.rung1-reference-parity/0-experimental'
+GOLDEN = 'generation/golden/rc_control.xml'
+
+
+def reference_parity(native_xml, golden_xml):
+    """Descriptive comparison of one sealed native netlist with the fixtures/rc/control export.
+
+    The control is a reference, not an oracle: R-parity is graded by the scope's intent-sourced
+    netlist_parity check. This reuses the owned inventory reader and exact comparison and only
+    reports what they found; a read failure is recorded, never treated as agreement."""
+    from .native_netlist import read_native_inventory
+    from .netlist_parity import compare, validate_policy
+    record = {'schema': REFERENCE_SCHEMA, 'qualification': QUALIFICATION, 'role': 'reference_not_oracle',
+              'reference': GOLDEN, 'predicate': 'topology', 'multiset': 'exactly'}
+    try:
+        record.update(reference_sha256=digest(golden_xml), native_xml_sha256=digest(native_xml))
+        reference, native = read_native_inventory(golden_xml), read_native_inventory(native_xml)
+        report = compare(reference, native, validate_policy({
+            'source': {'kind': 'golden_xml', 'path': GOLDEN}, 'netlist_check': 'netlist',
+            'predicate': 'topology', 'multiset': 'exactly'}))
+    except Exception as exc:  # noqa: BLE001 - recorded as observed; never agreement
+        return {**record, 'execution': 'failed', 'outcome': 'unknown', 'error': f'{type(exc).__name__}: {exc}'}
+    def inventory(graph):
+        return {'components': sorted(c['reference'] for c in graph['components'].values()),
+                'nets': sorted(n['name'] for n in graph['nets'].values())}
+    return {**record, 'execution': report['execution'], 'outcome': report['outcome'],
+            'reference_inventory': inventory(reference), 'native_inventory': inventory(native),
+            'missing_components': report['missing_components'], 'extra_components': report['extra_components'],
+            'matched_nets': report.get('matched_nets'), 'missing_nets': report.get('missing_nets'),
+            'extra_nets': report.get('extra_nets'), 'reason': report.get('reason')}
 
 
 def catalog_attempt(prep, work):
@@ -328,12 +391,20 @@ def write_scaffold(rundir, prep):
     # Requirements.
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(rc.REVIEW_CONVENTIONS)
-    (scaffold / 'requirements' / 'qualified.md').write_text(QUALIFIED_REQUIREMENTS)
+    (scaffold / 'requirements' / 'qualified.md').write_text(
+        QUALIFIED_REQUIREMENTS + (CPL_REQUIREMENT_TEXT if prep.get('cpl_inputs') else ''))
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
-    captured = {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
-                for lib in g.SYMBOL_LIBRARIES}
-    resolved = resolve_intent(intent, captured)
+    footprints = footprint_manifest(prep['parts']['parts'])
+    if 'approved_bundle' in prep['parts']:
+        from .parts_manifest import load_manifest, qualify_manifest
+        from .rung1_parts import MANIFEST, check_cad_inputs
+        stock = {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
+                 for lib in g.SYMBOL_LIBRARIES}
+        bundle = prep['parts_path'].parent / 'approved'
+        declared = load_manifest(bundle, MANIFEST)
+        check_cad_inputs(qualify_manifest(declared, bundle), bundle, stock, footprints)
+    resolved = resolve_intent(intent, intent_captures(intent))
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
         raise PrepareFailure('qualified intent did not resolve: ' + json.dumps(resolved['findings'])[:2000])
     if prep.get('cpl_inputs'):
@@ -341,7 +412,16 @@ def write_scaffold(rundir, prep):
     write_json(generation / 'intent.json', intent)
     write_json(generation / 'layout.json', layout())
     shutil.copyfile(prep['parts_path'], generation / 'parts-manifest.json')
-    write_json(generation / 'footprints.json', footprint_manifest(prep['parts']['parts']))
+    if 'approved_bundle' in prep['parts']:
+        bundle = prep['parts_path'].parent / 'approved'
+        for path in sorted(p for p in bundle.rglob('*') if p.is_file()):
+            relative = path.relative_to(bundle)
+            target = scaffold / relative
+            if relative.parts[0] in {'project', 'requirements', 'generation', 'stock'} or target.exists():
+                raise PrepareFailure('parts bundle collides with scaffold input: ' + str(relative))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target)
+    write_json(generation / 'footprints.json', footprints)
     write_json(generation / 'placement-policy.json', packing_policy(prep['params'], outline))
     golden, golden_record = golden_netlist(rundir / 'golden-export')
     (generation / 'golden').mkdir()
@@ -370,7 +450,7 @@ def write_scaffold(rundir, prep):
 
 def compile_staged_scope(params, scope_dir, scaffold):
     """scope/2 from the closed-loop control template plus the owned check kinds and stages/1."""
-    from .fab_stage import rotation_check
+    from .fab_stage import CPL_ROOT, rotation_check
     template = json.loads(g.SCOPE_TEMPLATE.read_text())
     scope = g.compile_scope(template, params, NAME)
     base = Path(scope_dir)
@@ -392,18 +472,18 @@ def compile_staged_scope(params, scope_dir, scaffold):
                       'declared steps of the earliest failing stage on the delivered design: the owned '
                       'schematic emitter and forward annotation (schematic), the placement adapter with the '
                       'pinned placer (placement) and the kicad-route adapter (routing). Fab readiness is graded '
-                      'by fab_export, fab_consistency and cpl_rotation. Only fresh checks and reviews of the '
+                      'by the fab_export and fab_consistency checks. Only fresh checks and reviews of the '
                       'captured result decide acceptance. Immutable generation inputs are under generation/. '
                       'This is a disposable benchmark board.')
     by_id = {c['id']: c for c in scope['checks']}
     rc_step = copy.deepcopy(by_id['rc-step'])
-    # The same ground node as the spec's GND, under its native local-label name.
-    rc_step['params']['ground_net'] = native_net(params['nets']['ground'])
+    # The spec's GND, the global power net of the declared power:GND symbol.
+    rc_step['params']['ground_net'] = ground_net(params)
     scope['checks'] = [
         {'id': 'erc', 'kind': 'erc', 'stage': 'schematic'},
         {'id': 'netlist', 'kind': 'netlist', 'stage': 'schematic'},
         {'id': 'parity', 'kind': 'netlist_parity', 'stage': 'schematic',
-         'params': {'source': {'kind': 'golden_xml', 'path': 'generation/golden/rc_control.xml'},
+         'params': {'source': {'kind': 'intent', 'path': 'generation/intent.json'},
                     'netlist_check': 'netlist', 'predicate': 'topology', 'multiset': 'exactly'}},
         {'id': 'drc-placement', 'kind': 'drc', 'stage': 'placement', 'params': {'projection': 'placement-stage/1'}},
         {'id': 'courtyard', 'kind': 'placement', 'stage': 'placement',
@@ -416,16 +496,21 @@ def compile_staged_scope(params, scope_dir, scaffold):
         {'id': 'binding', 'kind': 'part_binding', 'stage': 'fab'},
         {'id': 'fab', 'kind': 'fab_export', 'stage': 'fab', 'params': {'netlist_check': 'netlist'}},
         {'id': 'fab-consistency', 'kind': 'fab_consistency', 'stage': 'fab', 'params': {'export_check': 'fab'}},
-        {**rotation_check(scaffold), 'stage': 'fab'},
     ]
     source = {'path': 'requirements/qualified.md'}
-    extra = [('R-parity', ['parity'], 'Schematic connectivity equals the reference RC low-pass'),
+    extra = [('R-parity', ['parity'], 'Schematic connectivity equals the captured rung-1 intent'),
              ('R-courtyard', ['courtyard'], 'Footprint courtyards do not overlap'),
              ('R-outline', ['outline'], 'Footprint courtyards lie inside the board outline'),
              ('R-binding', ['binding'], 'R1 and C1 carry a valid, consistent LCSC binding'),
              ('R-fab', ['fab'], 'A JLCPCB fab package is exported from the captured board'),
-             ('R-fab-consistency', ['fab-consistency'], 'The fab package describes the captured board'),
-             ('R-cpl', ['cpl'], 'The CPL carries policy- and supplier-frame-checked rotations; preview required')]
+             ('R-fab-consistency', ['fab-consistency'], 'The fab package describes the captured board')]
+    if (scaffold / CPL_ROOT).is_dir():
+        # Decision C: the correction, and its captured inputs, are required only when declared.
+        scope['checks'].append({**rotation_check(scaffold), 'stage': 'fab'})
+        scope['scope'] += (' The CPL is corrected by cpl_rotation from the captured policy and supplier '
+                           'footprints; physical preview remains required.')
+        extra.append(('R-cpl', ['cpl'], 'The CPL carries policy- and supplier-frame-checked rotations; '
+                                        'preview required'))
     requirements = scope['baseline']['requirements']
     for requirement in requirements:
         if requirement['id'] == 'R-native':
@@ -445,25 +530,76 @@ def compile_staged_scope(params, scope_dir, scaffold):
         'The board envelope (outline, layer count, stackup, fixed J1 on the left edge) is captured under '
         'generation/envelope but not consumed by any check: capture refuses an envelope scope until every '
         'obligation has an executable binding.']
+    if (scaffold / 'approved-parts.json').is_file():
+        add_parts_checks(scope, scaffold, base)
+    else:
+        scope['limitations'].append('Missing assembly_readiness and package_consistency coverage: '
+                                   'no captured supplier parts/1 bundle was supplied.')
     return scope
+
+
+def add_parts_checks(scope, scaffold, base):
+    """Bind canonical parts, assembly and package coverage to the captured bundle."""
+    from .parts_manifest import load_manifest, qualify_manifest
+    manifest = load_manifest(scaffold, 'approved-parts.json')
+    qualified = qualify_manifest(manifest, scaffold)
+    for path in ['approved-parts.json', *qualified['dependencies']]:
+        scope['inputs'].append({'path': os.path.relpath(scaffold / path, base), 'at': path})
+    mapping = scaffold / 'rung1-package-map.json'
+    if mapping.exists():
+        raise PrepareFailure('parts bundle uses reserved package-map path')
+    shutil.copyfile(REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json', mapping)
+    scope['inputs'].append({'path': os.path.relpath(mapping, base), 'at': mapping.name})
+    catalog = manifest['catalog']
+    additions = [
+        {'id': 'parts-membership', 'kind': 'parts_subset', 'stage': 'fab',
+         'params': {'manifest': 'approved-parts.json', 'netlist_check': 'netlist',
+                    'requirement_id': 'R-parts-membership'}},
+        {'id': 'assembly', 'kind': 'assembly_readiness', 'stage': 'fab',
+         'params': {'catalog': catalog['snapshot'] + '/manifest.json',
+                    'catalog_sha256': catalog['manifest_sha256'],
+                    'boards': qualified['selection']['build_quantity'],
+                    'stock_floor': qualified['selection']['stock_floor']}},
+        {'id': 'packages', 'kind': 'package_consistency', 'stage': 'fab',
+         'params': {'netlist_check': 'netlist', 'catalog': catalog['snapshot'],
+                    'catalog_manifest_sha256': catalog['manifest_sha256'], 'mapping': mapping.name,
+                    'lcsc_field': 'LCSC', 'class_mismatch': 'defect'}},
+    ]
+    scope['checks'].extend(additions)
+    declaration = manifest['declaration_source']
+    for check in additions:
+        rid = 'R-parts-membership' if check['id'] == 'parts-membership' else 'R-' + check['id']
+        source = ({'path': declaration['path'], 'locator': declaration['locator']}
+                  if check['id'] == 'parts-membership' else {'path': 'requirements/qualified.md', 'locator': rid})
+        scope['baseline']['requirements'].append({'id': rid, 'statement': {
+            'parts-membership': 'Physical parts match the captured catalog selection and CAD declaration',
+            'assembly': 'Populated parts satisfy the assembly-readiness policy',
+            'packages': 'Footprints agree with the catalog package under the captured package map',
+        }[check['id']], 'checks': [check['id']], 'source': source})
+
+
+def materialize_inputs(scope_path, inputs_dir):
+    """Copy a scope's declared inputs into a new directory, as capture lays them out."""
+    from .candidate import source_manifest
+    scope = read_json(scope_path)
+    files, sources, _ = source_manifest(scope, Path(scope_path).parent)
+    Path(inputs_dir).mkdir(parents=True)
+    for target, source in sources.items():
+        destination = Path(inputs_dir) / target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    return scope, files
 
 
 def validate_scope_file(scope_path, inputs_dir):
     """The real loaders, as capture runs them: inputs copied, then scope fields, stage declaration
     and baseline compilation with those inputs (parity and envelope capabilities read them)."""
     from .baseline import compile_baseline
-    from .candidate import source_manifest
     from .cli import validate_scope
     from .stages import declaration
     from .storage import identity
     scope_path, inputs_dir = Path(scope_path), Path(inputs_dir)
-    scope = read_json(scope_path)
-    files, sources, _ = source_manifest(scope, scope_path.parent)
-    inputs_dir.mkdir(parents=True)
-    for target, source in sources.items():
-        destination = inputs_dir / target
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
+    scope, files = materialize_inputs(scope_path, inputs_dir)
     validate_scope(scope)
     stages = declaration(scope, files)
     baseline = compile_baseline(scope, files, inputs_dir)
@@ -481,10 +617,8 @@ def validate_scope_file(scope_path, inputs_dir):
 
 # ------------------------------------------------------------------ campaign configuration
 
-def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
-    """Coordinator steps: the owned emitter and forward annotation (schematic) and the routing adapter."""
-    from .routing_adapter import step as routing_step
-    from .fab_stage import step as fab_step
+def schematic_step_specs(*, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
+    """The schematic turn: the owned emitter on the captured IR, then forward annotation."""
     source = {'source': str(Path(source_root)), 'at': MOUNT_SOURCE}
     steps = {'source': str(Path(steps_dir)), 'at': MOUNT_STEPS}
     board, sch = f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'
@@ -503,10 +637,20 @@ def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
          'writes': {board: f'out/board/{NAME}.kicad_pcb'},
          'artifacts': ['out/netlist.xml', 'out/plan.json', 'out/apply.json'],
          'adoptable_exits': [0], 'timeout_s': 1800},
-        routing_step(project='project', board=f'{NAME}.kicad_pcb', schematic=f'{NAME}.kicad_sch', name=NAME,
-                     label='krt', checkout=kicad_route, budget=300),
-        fab_step(source_root, board, sch),
     ]
+
+
+def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR, fab=False):
+    """Coordinator steps: the schematic turn, the routing adapter and, with a declared cpl_rotation
+    check (`fab`), the receipted fab export and CPL correction."""
+    from .routing_adapter import step as routing_step
+    from .fab_stage import step as fab_step
+    steps = schematic_step_specs(source_root=source_root, steps_dir=steps_dir) + [
+        routing_step(project='project', board=f'{NAME}.kicad_pcb', schematic=f'{NAME}.kicad_sch', name=NAME,
+                     label='krt', checkout=kicad_route, budget=300)]
+    if fab:
+        steps.append(fab_step(source_root, f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'))
+    return steps
 
 
 def placement_declaration():
@@ -601,8 +745,8 @@ def registration_probes(rundir, scope):
 
 # ------------------------------------------------------------------ preparation
 
-def prepare(spec, rundir, catalog_checkout=None, cpl_inputs=None):
-    prep = rc.prepare(spec, rundir, catalog_checkout, cpl_inputs)
+def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs=None):
+    prep = rc.prepare(spec, rundir, catalog_checkout, parts_manifest, cpl_inputs)
     dialog = Path(rundir) / 'prep' / 'stages' / '1-requirements' / 'dialog' / 'requirements.json'
     if not dialog.is_file():
         found = sorted((Path(rundir) / 'prep').rglob('dialog/requirements.json'))
@@ -613,10 +757,12 @@ def prepare(spec, rundir, catalog_checkout=None, cpl_inputs=None):
     return prep
 
 
-def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, cpl_inputs=None):
+def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, parts_manifest=None,
+          cpl_inputs=None):
     rundir = Path(rundir).absolute()
-    prep = prepare(spec, rundir, cpl_inputs=cpl_inputs)
-    catalog = catalog_attempt(prep, rundir / 'parts-catalog')
+    prep = prepare(spec, rundir, parts_manifest=parts_manifest, cpl_inputs=cpl_inputs)
+    catalog = ({'status': 'captured', 'catalog': prep['parts']['catalog']}
+               if 'approved_bundle' in prep['parts'] else catalog_attempt(prep, rundir / 'parts-catalog'))
     scaffold, scaffold_record = write_scaffold(rundir, prep)
     loads = rc.scaffold_load_checks(rundir, scaffold)
     if not all(entry['loaded'] for entry in loads.values()):
@@ -628,7 +774,8 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
     probes = registration_probes(rundir, scope)
     write_json(rundir / 'probes.json', probes)
     profile = read_json(profile_path)
-    steps = check_steps(step_specs(kicad_route), scope['mutable_inputs'])
+    steps = check_steps(step_specs(kicad_route, fab=any(c['kind'] == 'cpl_rotation' for c in scope['checks'])),
+                        scope['mutable_inputs'])
     config = campaign_config(scope_path, profile, steps, max_seconds=max_seconds, max_iterations=max_iterations)
     from .profiles import validate_profile
     validate_profile(config['review_profile'])
@@ -646,8 +793,11 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
                                      '/opt/kicad-route as checkout and state by routing_adapter.step')},
             'prep_receipts': prep['prep_receipts'],
             'parts': {'manifest': 'scaffold/generation/parts-manifest.json',
-                      'selection': 'agent_ee.generate stage 2 (experimental; owned catalog capture refused)',
-                      'catalog_capture': catalog},
+                      'selection': ('canonical parts/1 replay' if 'approved_bundle' in prep['parts']
+                                    else 'agent_ee.generate stage 2 (experimental; owned catalog capture refused)'),
+                      'catalog_capture': catalog,
+                      'missing_coverage': ([] if 'approved_bundle' in prep['parts'] else
+                                           ['assembly_readiness', 'package_consistency', 'parts_subset'])},
             'scaffold': {'path': 'scaffold.json', 'sha256': digest(rundir / 'scaffold.json'),
                          'root_sheet_uuid': scaffold_record['root_sheet_uuid'], 'load_checks': loads,
                          'envelope': scaffold_record['envelope']},
@@ -747,6 +897,23 @@ def rehearse_placement(base, design, review_run, scope):
     return summary, True
 
 
+def rehearse_schematic(rundir, scope_path, design, steps):
+    """One schematic turn outside any campaign: the declared schematic steps on ``design`` as the
+    coordinator runs them, a checks-only review of the result and the reference comparison."""
+    design = Path(design)
+    base = design.parent
+    receipts, ok = run_steps(base, design, steps, 1)
+    stages = {'schematic_steps': receipts}
+    if not ok:
+        return None, stages
+    run, stages['after_schematic'] = review_checks_only(
+        rundir, rehearsal_scope(scope_path, design, base / 'after-schematic.scope.json'), 'after-schematic')
+    if stages['after_schematic']['result'] is None:
+        return None, stages
+    stages['reference_after_schematic'] = reference_parity(run / 'work' / 'netlist' / 'design.xml', design / GOLDEN)
+    return run, stages
+
+
 def dry_run(rundir, scope_path, config_path):
     rundir = Path(rundir)
     scope = read_json(scope_path)
@@ -761,13 +928,9 @@ def dry_run(rundir, scope_path, config_path):
     steps = config['implementation_steps']
     schematic_steps = [s for s in steps if s['stage'] == 'schematic']
     routing_steps = [s for s in steps if s['stage'] == 'routing']
-    receipts, ok = run_steps(base, design, schematic_steps, 1)
-    stages['schematic_steps'] = receipts
-    if not ok:
-        return stages
-    run1, stages['after_schematic'] = review_checks_only(
-        rundir, rehearsal_scope(scope_path, design, base / 'after-schematic.scope.json'), 'after-schematic')
-    if stages['after_schematic']['result'] is None:
+    run1, turn = rehearse_schematic(rundir, scope_path, design, schematic_steps)
+    stages.update(turn)
+    if run1 is None:
         return stages
     summary, ok = rehearse_placement(base, design, run1, scope)
     stages['placement_step'] = summary
@@ -792,14 +955,23 @@ def dry_run(rundir, scope_path, config_path):
 # ------------------------------------------------------------------ records
 
 def fab_outcome(run):
-    """Expose the sealed CPL report; derive a corrected package only with complete coverage."""
-    from .fab_stage import package
+    """The fab outcome of one review run.
+
+    Without a declared cpl_rotation check: the fab_export check's manifest, verified with the owned
+    verify_manifest, and rotation status `not_declared`. With one: the sealed CPL report, and a
+    corrected package derived only from complete passing coverage.
+    """
     run = Path(run)
+    scope = read_json(run / 'candidate.json')['scope']
+    if not any(c.get('kind') == 'cpl_rotation' for c in scope['checks']):
+        return native_fab_outcome(run)
+    from .fab_stage import package
     report_path = run / 'work/cpl/cpl-rotation.json'
     if not report_path.is_file():
-        return {'manifest': None, 'status': 'unknown', 'error': 'CPL rotation evidence is missing'}
+        return {'manifest': None, 'rotation_status': 'unknown', 'error': 'CPL rotation evidence is missing'}
     report = read_json(report_path)
-    entry = {'manifest': None, 'status': report['status'], 'physical_validation': report['physical_validation'],
+    entry = {'manifest': None, 'rotation_status': report['status'],
+             'physical_validation': report['physical_validation'],
              'execution': report['execution'], 'outcome': report['outcome']}
     if (report['execution'], report['outcome'], report['coverage']) != ('ok', 'pass', 'complete'):
         return entry
@@ -812,10 +984,32 @@ def fab_outcome(run):
     files = [{'path': p.relative_to(out / 'fab').as_posix(), 'bytes': p.stat().st_size, 'sha256': digest(p)}
              for p in sorted((out / 'fab').rglob('*')) if p.is_file()]
     if (data['files'] != files or data['rotation']['report_sha256'] != digest(report_path)
-            or data['status'] != report['status'] or data['physical_validation'] is not False):
+            or data['status'] != report['status']
+            or data['physical_validation'] is not report['physical_validation']):
         raise ValueError('derived fab package differs from its checked rotation evidence')
     entry.update(manifest=str(manifest_path), sha256=digest(manifest_path), files=len(data['files']),
                  board_sha256=data['board']['sha256'], rotation=data['rotation'])
+    return entry
+
+
+def native_fab_outcome(run):
+    """The fab_export check's manifest in one review run, verified with the owned verify_manifest."""
+    manifest = run / 'work' / 'fab' / 'fab' / 'manifest.json'
+    if not manifest.is_file():
+        incomplete = run / 'work' / 'fab' / 'fab.incomplete'
+        return {'manifest': None, 'rotation_status': 'not_declared',
+                'incomplete_staging': incomplete.is_dir() and sorted(
+                    p.relative_to(incomplete).as_posix() for p in incomplete.rglob('*') if p.is_file())}
+    data = read_json(manifest)
+    entry = {'manifest': str(manifest), 'sha256': digest(manifest), 'files': len(data.get('files', {})),
+             'board_sha256': data.get('board_sha256'), 'designators': data.get('designators'),
+             'rotation_status': 'not_declared'}
+    try:
+        from .fab_export import verify_manifest
+        verify_manifest(manifest.parent)
+        entry['verify_manifest'] = 'ok'
+    except Exception as exc:  # noqa: BLE001 - recorded as observed
+        entry['verify_manifest'] = f'{type(exc).__name__}: {exc}'
     return entry
 
 
@@ -826,6 +1020,9 @@ def campaign_record(rundir, base, command):
     state, iterations, implementations = rc.campaign_summary(root)
     for entry in iterations:
         entry['fab'] = fab_outcome(entry['run']) if entry.get('checks') is not None else None
+        netlist = Path(entry['run']) / 'work' / 'netlist' / 'design.xml'
+        entry['reference_parity'] = (reference_parity(netlist, rundir / 'scaffold' / GOLDEN)
+                                     if netlist.is_file() else None)
     for implementation in implementations:
         record = root / 'implementations' / implementation['implementation'] / 'placement-adapter.json'
         implementation['placement_adapter'] = read_json(record) if record.is_file() else None
@@ -843,24 +1040,33 @@ def campaign_record(rundir, base, command):
 
 
 def write_record(rundir, base, *, verdict=None, verify_exit=None, fab=None):
-    done = (verdict == 'criteria_satisfied' and verify_exit == 0 and fab is not None
-            and fab.get('status') != 'PREVIEW_REQUIRED' and fab.get('manifest') is not None)
+    from .fab_package import rotation_blocker
+    blocker = None
+    if verdict == 'criteria_satisfied' and verify_exit == 0:
+        status = (fab or {}).get('rotation_status')
+        blocker = rotation_blocker(status)
+        if blocker is None and status != 'not_declared' and fab.get('manifest') is None:
+            blocker = 'fab: the corrected fab package was not derived'
+    done = verdict == 'criteria_satisfied' and verify_exit == 0 and blocker is None
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
-              'fab_manifest': fab, 'done': done,
+              'fab_manifest': fab, 'fab_rotation_blocker': blocker, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied and verify-campaign exit 0; the fab package is '
-                            'graded by fab_export, fab_consistency and cpl_rotation; physical preview must not be pending')}
+                            'graded inside the check set by fab_export and fab_consistency, and by cpl_rotation '
+                            'when declared; the rotation status must be in fab_package.DONE_ROTATION_STATUSES')}
     write_json(Path(rundir) / 'rung1-qualified-record.json', record)
     return record
 
 
-def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, max_iterations, cpl_inputs=None):
+def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, max_iterations, parts_manifest=None,
+        cpl_inputs=None):
     rundir = Path(rundir).absolute()
     if rundir.exists():
         raise FileExistsError(f'{rundir} exists; choose a fresh run directory')
     rundir.mkdir(parents=True)
     try:
         base, scope_path, config_path = build(spec, rundir, profile_path=profile_path, kicad_route=kicad_route,
-                                              max_seconds=max_seconds, max_iterations=max_iterations, cpl_inputs=cpl_inputs)
+                                              max_seconds=max_seconds, max_iterations=max_iterations,
+                                              parts_manifest=parts_manifest, cpl_inputs=cpl_inputs)
     except (PrepareFailure, rc.PrepareFailure, ValueError, OSError) as exc:
         return write_record(rundir, {'mode': 'dry_run' if dry_run_only else 'campaign',
                                      'error': f'{type(exc).__name__}: {exc}'})
@@ -887,11 +1093,13 @@ def main(argv=None):
                              'rehearsal; no inference')
     parser.add_argument('--max-seconds', type=float, default=3600)
     parser.add_argument('--max-iterations', type=int, default=4)
+    parser.add_argument('--parts-manifest', type=Path,
+                        help='captured parts/1 manifest at the root of its dependency bundle; requires assembled J1')
     args = parser.parse_args(argv)
     try:
         record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
                      dry_run_only=args.dry_run, max_seconds=args.max_seconds, max_iterations=args.max_iterations,
-                     cpl_inputs=args.cpl_inputs)
+                     parts_manifest=args.parts_manifest, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_qualified refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'done')}))

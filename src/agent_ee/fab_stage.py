@@ -10,6 +10,7 @@ from .baseline import freeze_evidence, verify_evidence
 from .candidate import capture, source_manifest
 from .checks import run_checks
 from .fab_export import verify_manifest
+from .fab_package import ROTATION_STATUSES
 from .storage import digest, read_json, write_json
 
 CPL_ROOT = Path('generation/cpl')
@@ -113,7 +114,8 @@ def package(run, target, manifest_path):
     report = read_json(report_path)
     if (report['execution'], report['outcome'], report['coverage']) != ('ok', 'pass', 'complete'):
         raise ValueError('CPL correction lacks complete passing coverage')
-    if report['status'] != 'PREVIEW_REQUIRED' or report['physical_validation'] is not False:
+    if (report['status'] not in ROTATION_STATUSES
+            or report['physical_validation'] is not (report['status'] == 'ok')):
         raise ValueError('CPL physical preview status is invalid')
     if (report['candidate_id'] != manifest['candidate_id']
             or report['export']['manifest_sha256'] != digest(native / 'manifest.json')
@@ -140,8 +142,9 @@ def package(run, target, manifest_path):
                          'unmatched_footprints': report['unmatched_footprints']},
             'files': [{'path': p.relative_to(target).as_posix(), 'bytes': p.stat().st_size, 'sha256': digest(p)}
                       for p in sorted(target.rglob('*')) if p.is_file()],
-            'limitations': ['PREVIEW_REQUIRED: inspect every part in the JLCPCB placement preview',
-                            'Bottom-side transform remains unvalidated against a real JLCPCB preview']}
+            'limitations': (['PREVIEW_REQUIRED: inspect every part in the JLCPCB placement preview',
+                             'Bottom-side transform remains unvalidated against a real JLCPCB preview']
+                            if report['status'] == 'PREVIEW_REQUIRED' else [])}
     write_json(manifest_path, data)
     return data
 

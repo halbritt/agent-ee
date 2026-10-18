@@ -1,0 +1,141 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Original RC placed-unrouted stage fixture",
+  "scope": "Checks-only stage boundary qualification: placed-unrouted; expected initial outcomes are declared in requirements/placed-unrouted.md.",
+  "limitations": [
+    "Original alternative, not a derivative of the unresolved FOME-MC control.",
+    "No simulation, manufacturing qualification or complete campaign is claimed. Zone fill is graded as saved.",
+    "Expected seeded defects remain defects; fixture expectations never invert a production grade."
+  ],
+  "inputs": [
+    {
+      "path": "placed-unrouted",
+      "at": "project"
+    },
+    {
+      "path": "requirements",
+      "at": "requirements"
+    }
+  ],
+  "schematic": "project/rc_stage.kicad_sch",
+  "board": "project/rc_stage.kicad_pcb",
+  "mutable_inputs": [
+    "project/rc_stage.kicad_pcb"
+  ],
+  "requirements": [
+    "requirements/placed-unrouted.md"
+  ],
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "drc-placement",
+      "kind": "drc",
+      "params": {
+        "projection": "placement-stage/1"
+      }
+    },
+    {
+      "id": "courtyard",
+      "kind": "placement",
+      "params": {
+        "criterion": "courtyard-overlap/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "containment",
+      "kind": "placement",
+      "params": {
+        "criterion": "outline-containment/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "drc-final",
+      "kind": "drc"
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-erc",
+        "statement": "Native ERC has no issues.",
+        "source": {
+          "path": "requirements/placed-unrouted.md",
+          "locator": "R-erc"
+        },
+        "checks": [
+          "erc"
+        ]
+      },
+      {
+        "id": "R-netlist",
+        "statement": "Native XML exports the three-component RC network.",
+        "source": {
+          "path": "requirements/placed-unrouted.md",
+          "locator": "R-netlist"
+        },
+        "checks": [
+          "netlist"
+        ]
+      },
+      {
+        "id": "R-drc-placement",
+        "statement": "Native placement violations and schematic parity have no issues; unrouted connectivity is ungraded.",
+        "source": {
+          "path": "requirements/placed-unrouted.md",
+          "locator": "R-drc-placement"
+        },
+        "checks": [
+          "drc-placement"
+        ]
+      },
+      {
+        "id": "R-courtyard",
+        "statement": "Mounting-side courtyards do not overlap.",
+        "source": {
+          "path": "requirements/placed-unrouted.md",
+          "locator": "R-courtyard"
+        },
+        "checks": [
+          "courtyard"
+        ]
+      },
+      {
+        "id": "R-containment",
+        "statement": "Every courtyard is wholly inside the board outline.",
+        "source": {
+          "path": "requirements/placed-unrouted.md",
+          "locator": "R-containment"
+        },
+        "checks": [
+          "containment"
+        ]
+      },
+      {
+        "id": "R-drc-final",
+        "statement": "Native DRC including connectivity and schematic parity has no issues.",
+        "source": {
+          "path": "requirements/placed-unrouted.md",
+          "locator": "R-drc-final"
+        },
+        "checks": [
+          "drc-final"
+        ]
+      }
+    ],
+    "targets": [
+      "requirements/placed-unrouted.md"
+    ],
+    "reference_architectures": [
+      "requirements/placed-unrouted.md"
+    ]
+  }
+}

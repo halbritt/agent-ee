@@ -27,7 +27,12 @@ Parameters are exactly:
 
 - `export_check` names an earlier `fab_export` check. Its result must be `ok`,
   and its sealed `fab/manifest.json` must still verify against the staging
-  tree. The manifest must be bound to the captured board digest.
+  tree. The manifest must be bound to the captured board digest. Designators in
+  the manifest's `designators.excluded` (parts excluded by the declared
+  [assembly rule](fab-export.md#assembly-exclusions), which `fab_consistency`
+  re-derives) are not counted as populated geometry missing from the CPL. If
+  one of them is still a CPL row, the staging is `malformed`. The report lists
+  them in `assembly_excluded`.
 - `geometry_check` names an earlier `geometry` check of the same board digest.
   Its probe now records each footprint's lib id, orientation and exact nm
   anchor. It also records each pad's native board-space bounding box in integer
@@ -62,8 +67,13 @@ Stage 7 and the rung-1 `export-fab` step use
 AGENTEE-95 receipt, captured candidate, baseline, native netlist, geometry,
 `fab_export` package and `cpl_rotation` report. The older fixture entry point
 [`fab.py`](../fixtures/rung1/staged/steps/fab.py) delegates to this same module.
-Both rung scopes also declare `fab_export` followed by `cpl_rotation` for fresh
-coordinator checks. The qualified rung retains its native consistency check.
+With a capture, both rung scopes also declare `fab_export` followed by
+`cpl_rotation` for fresh coordinator checks; without one they declare no
+`cpl_rotation` and keep their native behaviour (decision C of the AGENTEE-126
+integration). The qualified rung retains its native consistency check and adds the
+`export-fab` step only when the correction is declared. In the rung-1 campaign
+the `fab_package` done gate consumes the declared correction and seals the
+corrected CPL ([CPL rotation in the done gate](fab-package.md#cpl-rotation)).
 
 The exporter leaves the native package untouched. Only complete `ok/pass` CPL
 coverage can produce a derived package. It copies the corrected `cpl.csv` and
@@ -79,8 +89,14 @@ Missing policy, an empty supplier set, missing per-part supplier coverage,
 invalid provenance, native tool failure, geometry conflict or a policy/frame
 defect cannot publish a completed package. Receipts retain the failed exit and
 available check evidence. A successfully corrected package still needs the
-JLCPCB preview: the generator's stage status is `PREVIEW_REQUIRED`, and all
-three generation records keep `done: false` while that status is pending.
+JLCPCB preview: the generator's stage status is `PREVIEW_REQUIRED`. All three
+generation records decide `done` with the same allow-list,
+`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`), so they keep
+`done: false` and record `fab_rotation_blocker:
+"fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)"`; a
+missing or unknown status is never done. Admitting `PREVIEW_REQUIRED` is an
+owner decision made in that one constant. The generator also refuses a fab
+stage whose consumed policy digest differs from the stage-1 capture.
 No owner preview evidence store is created by this integration.
 
 The existing `fab_export` limitations still apply. In particular, the generated
@@ -288,6 +304,11 @@ A populated probe footprint that is missing from the CPL makes the result
 sandbox and receipt path, corrected SOIC rotation and header midpoint, immutable
 policy and raw supplier hashes, missing policy/supplier refusals, and preview
 status propagation through generation records.
+[tests/test_generate.py](../tests/test_generate.py) `FabStageEndToEndTest` runs
+stage 7 through `generate()` on the owned fixture (complete corrected package,
+named blocker, policy-capture mismatch refused).
+[tests/test_fab_package.py](../tests/test_fab_package.py) covers the done-gate
+composition and the campaign record.
 
 [tests/test_cpl_rotation.py](../tests/test_cpl_rotation.py) covers:
 
@@ -306,4 +327,7 @@ The native class runs the real `netlist` → `fab_export` → `geometry` →
 `cpl_rotation` pipeline on the owned fixture. It checks the oracle, the
 control, `U1` 90° → 0°, the partition, the evidence seal, NaN refusal at
 capture and at run time, a missing supplier footprint, and the capability
-descriptor.
+descriptor. A staged copy whose manifest excludes `R1` and whose CPL lacks it
+passes with `assembly_excluded: ["R1"]`. The same CPL without the claim leaves
+`R1` unlisted (`malformed`), and a claim for a designator still in the CPL is
+refused.

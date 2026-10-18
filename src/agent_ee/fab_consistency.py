@@ -8,7 +8,9 @@ board bytes (S-expression parse only). The manifest is a claim to verify, never
 authority: its kicad-cli identity must be the pinned binary and its sealed
 version run, and its designators must match the native board inventory, which
 comes from the sealed pcbnew geometry and is cross-checked against the board
-parse and the sealed netlist. Structural package faults and disagreeing sealed
+parse and the sealed netlist. Its declared assembly exclusions must re-derive
+from the captured export rule, the sealed netlist fields and the captured board
+properties. Structural package faults and disagreeing sealed
 sources are malformed; established cross-file disagreements are defects; inputs
 this gate cannot see (uncaptured 3D-model libraries, unattributed plots, an
 unrecorded tool version) are unknown coverage, never a pass.
@@ -29,6 +31,7 @@ from pathlib import PurePosixPath
 
 from . import kicad_embedded
 from .executor import SANDBOX_PATH
+from .fab_export import ASSEMBLY_RULES, RULE_FIELDS, assembly_exclusions
 from .storage import digest, read_json, write_json
 
 MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
@@ -73,6 +76,13 @@ def capability(params, scope, prerequisite, captured):
     export_params = export.get('params', {})
     prerequisite(export_params.get('netlist_check') if isinstance(export_params, dict) else None,
                  ('netlist',))
+    earlier_geometry(scope, prerequisite, 'fab_consistency')
+    captured(scope.get('board'))
+    return list(PREDICATES)
+
+
+def earlier_geometry(scope, prerequisite, kind):
+    """At least one geometry check declared before the gating check (scope/3 capability)."""
     earlier = []
     for spec in scope.get('checks', []):
         if spec.get('kind') == 'geometry':
@@ -81,9 +91,8 @@ def capability(params, scope, prerequisite, captured):
             except ValueError:
                 pass  # a later geometry check cannot supply this gate's evidence
     if not earlier:
-        raise ValueError('fab_consistency needs an earlier geometry check for native footprint evidence')
-    captured(scope.get('board'))
-    return list(PREDICATES)
+        raise ValueError(f'{kind} needs an earlier geometry check for native footprint evidence')
+    return earlier
 
 
 class Malformed(ValueError):
@@ -126,7 +135,8 @@ def netlist_components(ctx, export_spec):
     """Sealed native XML netlist flags named by the export's own prerequisite.
 
     The XML must agree with the netlist check's sealed strict reading
-    (`connectivity.json`), and every reference must be unique.
+    (`connectivity.json`), and every reference must be unique. Returns
+    (netlist id, flags by reference, assembly-rule fields by reference).
     """
     from .checks import CheckError, parse_xml_netlist
     from .datasheet_facts import prerequisite
@@ -140,7 +150,7 @@ def netlist_components(ctx, export_spec):
         raise CheckError('malformed', f'sealed netlist does not parse: {exc}') from exc
     if not agrees:
         raise CheckError('malformed', 'sealed native XML netlist and its connectivity record disagree')
-    components = {}
+    components, fields = {}, {}
     for comp in root.iter('comp'):
         ref = comp.get('ref')
         if not ref:
@@ -150,10 +160,12 @@ def netlist_components(ctx, export_spec):
         names = {p.get('name') for p in comp.findall('property')}
         components[ref] = {flag: flag in names for flag in
                            ('dnp', 'exclude_from_bom', 'exclude_from_pos_files', 'exclude_from_board')}
+        fields[ref] = {f.get('name'): (f.text or '').strip() for f in comp.findall('./fields/field')
+                       if f.get('name') in RULE_FIELDS}
     components = {ref: flags for ref, flags in components.items() if not ref.startswith('#')}
     if not components:
         raise CheckError('malformed', 'sealed netlist has no physical components')
-    return nid, components
+    return nid, components, {ref: fields[ref] for ref in components}
 
 
 def geometry_footprints(ctx):
@@ -343,10 +355,19 @@ def load_manifest(ctx, stage):
         fail('manifest', 'drill must name distinct pth and npth files')
     designators = data['designators']
     non_dnp = designators.get('board_non_dnp') if isinstance(designators, dict) else None
-    if (set(designators or {}) != {'board_non_dnp'} or not isinstance(non_dnp, list) or
+    if (set(designators or {}) != {'board_non_dnp', 'excluded', 'exclusion_rule'} or
+            not isinstance(non_dnp, list) or
             any(not isinstance(r, str) or not r for r in non_dnp) or
             len(set(non_dnp)) != len(non_dnp)):
-        fail('manifest', 'designators.board_non_dnp must be unique references')
+        fail('manifest', 'designators must hold unique board_non_dnp references, excluded and exclusion_rule')
+    rule, excluded = designators['exclusion_rule'], designators['excluded']
+    if rule is not None and rule not in ASSEMBLY_RULES:
+        fail('manifest', f'designators.exclusion_rule {rule!r} is not a known assembly rule')
+    if (not isinstance(excluded, list) or
+            any(not isinstance(e, dict) or set(e) != {'designator', 'rule'} or e['rule'] != rule or
+                e['designator'] not in non_dnp for e in excluded) or
+            len({e['designator'] for e in excluded}) != len(excluded)):
+        fail('manifest', 'designators.excluded must be unique board_non_dnp designators under exclusion_rule')
     return data
 
 
@@ -438,8 +459,12 @@ def board_facts(ctx):
             fail('board', f'footprint {lib_id!r} lacks one reference or a top/bottom side')
         attrs = {a for node in children(fp, 'attr') for a in atoms(node)}
         models = [atoms(m)[0] for m in children(fp, 'model') if atoms(m)]
+        rule_fields = [atoms(p)[:2] for p in children(fp, 'property')
+                       if len(atoms(p)) >= 2 and atoms(p)[0] in RULE_FIELDS]
+        if len({name for name, _ in rule_fields}) != len(rule_fields):
+            fail('board', f'footprint {refs[0]} repeats an assembly rule property')
         footprints.append({'ref': refs[0], 'lib_id': lib_id, 'side': side,
-                           **{flag: flag in attrs for flag in GEOMETRY_FLAGS},
+                           **{flag: flag in attrs for flag in GEOMETRY_FLAGS}, 'fields': dict(rule_fields),
                            'models': models, 'embedded': kicad_embedded.records(fp)})
     return {'copper': copper, 'layers': layer_names, 'footprints': footprints,
             'embedded': kicad_embedded.records(root)}
@@ -759,9 +784,13 @@ def resolve_model(ctx, path, footprint, board):
 # ------------------------------------------------------------------------- check
 
 def check_fab_consistency(ctx):
+    gate(ctx, *export_prerequisite(ctx))
+
+
+def gate(ctx, eid, export_spec, export_result, stage):
+    """Verify one sealed export staging tree; `fab_package` runs this on its own export (eid == ctx.cid)."""
     from .checks import CheckError
-    eid, export_spec, export_result, stage = export_prerequisite(ctx)
-    nid, netlist = netlist_components(ctx, export_spec)
+    nid, netlist, netlist_fields = netlist_components(ctx, export_spec)
     geometry_ids, geometry = geometry_footprints(ctx)
     details = ctx.result['details']
     details.update(export_check=eid, netlist_check=nid, geometry_checks=geometry_ids, staging=f'work/{eid}/fab')
@@ -806,7 +835,23 @@ def check_fab_consistency(ctx):
         raise CheckError('malformed', 'stale: manifest board_non_dnp '
                          f'{sorted(set(manifest["designators"]["board_non_dnp"]) ^ set(non_dnp))} '
                          'disagrees with the sealed geometry')
-    assembled_refs = {fp['ref'] for fp in footprints if assembled(fp)}
+    # The manifest's exclusions are a claim: re-derive them from the captured
+    # export params, the sealed netlist fields and the captured board properties.
+    rule = (export_spec.get('params') or {}).get('assembly_exclusion')
+    if manifest['designators']['exclusion_rule'] != rule:
+        raise CheckError('malformed', f'stale: manifest exclusion_rule {manifest["designators"]["exclusion_rule"]!r} '
+                                      f'is not the captured export rule {rule!r}')
+    excluded, problems = assembly_exclusions(
+        rule, {ref: {'dnp': flags['dnp'], 'fields': netlist_fields[ref]} for ref, flags in netlist.items()},
+        [{'ref': fp['ref'], 'dnp': fp['dnp'], 'fields': fp['fields']} for fp in footprints])
+    if problems:
+        raise CheckError('malformed', 'sealed netlist and board do not support the export exclusions: '
+                                      + '; '.join(problems[:5]))
+    if excluded != manifest['designators']['excluded']:
+        raise CheckError('malformed', f'stale: manifest excluded {manifest["designators"]["excluded"]} disagrees '
+                                      f'with the sealed netlist and board {excluded}')
+    excluded_refs = {e['designator'] for e in excluded}
+    assembled_refs = {fp['ref'] for fp in footprints if assembled(fp)} - excluded_refs
     for ref in sorted(assembled_refs):
         if len(by_ref[ref]) > 1 or designator_defect(ref):
             defects.append({'code': 'board_designator', 'locator': f'board footprint {ref!r} '
@@ -837,6 +882,7 @@ def check_fab_consistency(ctx):
                             f'designator {ref} is {"DNP" if netlist[ref]["dnp"] else "populated"} in the '
                             f'sealed netlist but {"DNP" if board_dnp else "populated"} on the board'})
     details['designators'] = {'bom': len(bom_refs), 'cpl': len(cpl), 'board_assembled': len(assembled_refs),
+                              'excluded': excluded, 'exclusion_rule': rule,
                               'parity_violations': parity, 'dnp_disagreements': dnp_disagreements,
                               'sources': {'geometry': geometry_ids, 'netlist': nid}}
 

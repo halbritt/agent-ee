@@ -149,6 +149,22 @@ class TransformTests(unittest.TestCase):
 
 
 class DeterminismTests(unittest.TestCase):
+    def test_part_binding_fields_are_hidden_and_override_library_defaults(self):
+        intent = load('regulator.intent.json')
+        binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',
+                   'Datasheet': 'captured/owned.pdf', 'PARAM_voltage': '{"min":"25","max":"25","unit":"V"}'}
+        intent['components'][0]['part_binding'] = binding
+        result, files = emit(intent=intent)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        symbols = children(parse_sexpr(files['regulator.kicad_sch']), 'symbol')
+        symbol = next(s for s in symbols if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+        props = {p[1]: p for p in children(symbol, 'property')}
+        for key, value in binding.items():
+            self.assertEqual(props[key][2], value)
+        self.assertEqual(len([p for p in children(symbol, 'property') if p[1] == 'Datasheet']), 1)
+        self.assertIn(['hide', 'yes'], props['LCSC'])
+        self.assertEqual(files, emit(intent=intent)[1])
+
     def test_repeat_and_input_order_give_identical_bytes(self):
         first = emit(**tables())[1]
         self.assertEqual(first, emit(**tables())[1])
@@ -190,8 +206,39 @@ class DeterminismTests(unittest.TestCase):
                 if name == lib['name']:
                     self.assertEqual(node[2:], library[symbol][2:], lib_id)
 
+    def test_power_symbols_and_flags_are_virtual_instances(self):
+        # Eeschema's own placement (fixtures/rc/control) writes power symbols and
+        # PWR_FLAG as in_bom no / on_board no although the library says yes.
+        from agent_ee.stages import native_references
+        files = emit()[1]
+        root = parse_sexpr(files['regulator.kicad_sch'])
+        flags = {}
+        for node in children(root, 'symbol'):
+            ref = next(p[2] for p in children(node, 'property') if p[1] == 'Reference')
+            flags[ref] = {k: children(node, k)[0][1] for k in ('exclude_from_sim', 'in_bom', 'on_board', 'in_pos_files')}
+        physical = {'exclude_from_sim': 'no', 'in_bom': 'yes', 'on_board': 'yes', 'in_pos_files': 'yes'}
+        virtual = dict(physical, in_bom='no', on_board='no')
+        self.assertEqual(flags, {'J1': physical, 'U1': physical, 'C1': physical,
+                                 '#PWR01': virtual, '#FLG01': virtual, '#FLG02': virtual})
+        embedded = {n[1]: n for n in children(children(root, 'lib_symbols')[0], 'symbol')}
+        for lib_id in ('OwnedPower:GND', 'OwnedPower:PWR_FLAG'):
+            self.assertEqual((children(embedded[lib_id], 'in_bom'), children(embedded[lib_id], 'on_board')),
+                             ([['in_bom', 'yes']], [['on_board', 'yes']]), lib_id)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'regulator.kicad_sch'
+            path.write_bytes(files['regulator.kicad_sch'])
+            self.assertEqual(native_references(path, 'symbols'), ['C1', 'J1', 'U1'])
+
 
 class RefusalTests(unittest.TestCase):
+    def test_opaque_binding_cannot_override_identity_flags_or_emit_nontext_values(self):
+        for binding in ({'Footprint': 'Other:Part'}, {'Reference': 'J9'}, {'dnp': 'yes'},
+                        {'in_bom': 'no'}, {'LCSC': None}, {'LCSC': 123}, {'ki_description': 'hidden'}):
+            intent = load('regulator.intent.json')
+            intent['components'][0]['part_binding'] = binding
+            with self.subTest(binding=binding):
+                self.assertRefused('malformed_part_binding', intent)
+
     def assertRefused(self, code, intent=None, layout=None, name='regulator', **kwargs):
         result, files = emit(name, intent=intent, layout=layout, **kwargs)
         self.assertIsNone(files and sorted(files))
@@ -390,6 +437,24 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_bindings_survive_real_native_export_and_forced_resave(self):
+        intent = load('regulator.intent.json')
+        binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',
+                   'Datasheet': 'captured/owned.pdf'}
+        intent['components'][0]['part_binding'] = binding
+        result, files = emit(intent=intent, **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project, work, erc, graph = self.native_run('regulator', files, 'binding')
+        native = ET.parse(work / 'netlist/design.xml').getroot()
+        comp = native.find('./components/comp[@ref="J1"]')
+        fields = {n.get('name'): n.text for n in comp.findall('./fields/field')}
+        for name, value in binding.items():
+            if name == 'Datasheet':
+                self.assertEqual(comp.findtext('datasheet'), value)
+            else:
+                self.assertEqual(fields[name], value)
+        self.assertNativeResave(project, work, 'regulator', files)
+
     def setUp(self):
         require_toolchain(native=True)
         self.tmp = tempfile.mkdtemp(prefix='agent-ee-emitter-native-')

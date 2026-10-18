@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "OwnedGen")(type "KiCad")(uri "${KIPRJMOD}/lib/Owned_Gen.kicad_sym")(options "")(descr ""))
+  (lib (name "StageRC")(type "KiCad")(uri "${KIPRJMOD}/lib/StageRC.kicad_sym")(options "")(descr ""))
+)

@@ -72,10 +72,27 @@ class InputTests(unittest.TestCase):
                 fab_stage.copy_rotation_inputs(source, root / 'tampered')
 
     def test_preview_required_cannot_mark_any_driver_done(self):
+        reason = 'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)'
         with tempfile.TemporaryDirectory() as tmp:
-            fab = {'exports_exist': True, 'status': 'PREVIEW_REQUIRED', 'manifest': 'x'}
-            self.assertFalse(rc.write_record(tmp, {}, verdict='criteria_satisfied', fab=fab, fab_bound=True)['done'])
-            self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0, fab=fab)['done'])
+            artifacts = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/cpl/cpl/cpl.csv': '1' * 64},
+                         'rotation': {'status': 'PREVIEW_REQUIRED'}}
+            record = rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=artifacts,
+                                     recomputed=dict(artifacts), scaffold={'bound': True})
+            self.assertEqual((record['done'], record['fab_rotation_blocker']), (False, reason))
+            fab = {'rotation_status': 'PREVIEW_REQUIRED', 'manifest': 'x'}
+            record = q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0, fab=fab)
+            self.assertEqual((record['done'], record['fab_rotation_blocker']), (False, reason))
+            # An allowed status still needs the derived package; an unknown or missing status never passes.
+            self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
+                                            fab={'rotation_status': 'ok', 'manifest': None})['done'])
+            self.assertTrue(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
+                                           fab={'rotation_status': 'ok', 'manifest': 'x'})['done'])
+            for fab in (None, {'manifest': 'x'}, {'rotation_status': 'unknown', 'manifest': 'x'}):
+                self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
+                                                fab=fab)['done'], fab)
+            # Decision C: a qualified scope without cpl_rotation keeps main's done rule.
+            self.assertTrue(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
+                                           fab={'rotation_status': 'not_declared', 'manifest': None})['done'])
 
 
 class NativeFabStageTests(unittest.TestCase):
@@ -127,7 +144,7 @@ class NativeFabStageTests(unittest.TestCase):
 
     def test_qualified_run_publishes_the_corrected_package_with_preview_status(self):
         result = q.fab_outcome(self.check_run)
-        self.assertEqual(result['status'], 'PREVIEW_REQUIRED')
+        self.assertEqual(result['rotation_status'], 'PREVIEW_REQUIRED')
         manifest = read_json(result['manifest'])
         self.assertEqual(manifest['rotation']['report_sha256'], digest(self.check_run / 'work/cpl/cpl-rotation.json'))
         target = Path(result['manifest']).parent / 'fab/cpl.csv'
@@ -144,6 +161,8 @@ class NativeFabStageTests(unittest.TestCase):
         self.assertTrue(record['fab_exports_exist'])
         self.assertEqual(record['verdict'], 'criteria_satisfied')
         self.assertFalse(record['done'])
+        self.assertEqual(record['fab_rotation_blocker'],
+                         'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)')
 
     def test_missing_policy_is_a_failed_stage_receipt(self):
         broken = self.root / 'missing-policy'

@@ -55,6 +55,7 @@ the package that ran the campaign, and spends no inference.
 | `scaffold/project/` | `rung1_rc.kicad_pro`, an empty `rung1_rc.kicad_sch`, an empty `rung1_rc.kicad_pcb`, and the stock library tables |
 | `scaffold/requirements/` | `spec.md`, `system.md`, `targets.md`, `reference.md` from stage 1 |
 | `scaffold/generation/` | Connectivity intent, resolved record, parts manifest and catalog copy, envelope, placement request, and an immutable template board |
+| `scaffold-receipt/` | The `write-scaffold` [stage receipt](stage-receipts.md) with its retained inputs, run and version records |
 | `scaffold-checks/` | kicad-cli ERC, XML netlist export and parity DRC of the empty files, on sandboxed copies |
 | `scope.json`, `campaign.json` | The staged scope/2 and the `agent-ee.campaign/1` configuration |
 | `campaign/` | The campaign root: runs, implementations, stage receipts, state |
@@ -72,18 +73,40 @@ outline (50 x 30 mm at 100,100 mm). Both versions are in
 `stages.PRESENCE_VERSIONS`. Before the scope is written, kicad-cli must load
 both files in the sandbox.
 
+The driver writes only `requirements/` and the generation inputs itself. The project
+files, the stock library tables and `generation/template/` are written by the
+`write-scaffold` step (stage `scaffold`, program `steps/scaffold.py`). The step runs through
+`stage_receipts.run_step` in the networkless sandbox on that directory. It mounts the step
+programs, the agent-ee source tree (recorded as the Python source tree) and the fixture
+project `fixtures/rc/control` read-only at `/tool/template`. It reads
+`/candidate/generation/resolved.json` and `envelope.json`. Only exit 0 is adopted, through
+`stage_receipts.adopt`. A table that uses `${KIPRJMOD}` exits 3. Any other status stops the
+preparation with `PrepareFailure`, keeps the receipt and leaves no project.
+
 ### Staged scope
 
 The checks and their stages are `erc` and `netlist` (schematic), `drc` with
 schematic parity (placement), `geometry` with a 0.2 mm minimum width
-(routing), `rc-step` (verification), then `fab_export` and `cpl_rotation`
-(fab). R-fab binds the two final checks to the captured policy and supplier
-footprints. The `rc-step` parameters are the same
+(routing), `rc-step` (verification) and, last, the done gate `fab`
+([`fab_package`](fab-package.md), verification). With `--cpl-inputs DIRECTORY`
+the scaffold captures the [policy and supplier tree](cpl-rotation.md#generator-fab-integration)
+under `generation/cpl/`, and the scope adds a final stage `fab` holding
+`fab-export` (`fab_export`), `cpl` (`cpl_rotation`, export check `fab-export`) and
+the done gate, which then seals the corrected CPL (R-cpl, sourced from
+`requirements/fab.md`). Without the capture no CPL check is declared, the stage
+order ends at verification, and the done gate seals the native CPL with rotation
+status `not_declared`. The `rc-step` parameters are the same
 as in the closed-loop control: a 1 V step at `/IN`, a 5 ms stop, and `/OUT` at
 1 ms in [0.62, 0.65] V. R-native, R-width and R-response map to these checks
-as in `fixtures/closed-loop/control.scope.json`. The stage subjects are the
+as in `fixtures/closed-loop/control.scope.json`; R-fab maps to `fab` and is
+sourced from the scaffold's `requirements/fab-package.md`. The scope carries the
+`generation` marker `{schema: agent-ee.generation/1, done_check: fab}`, so capture
+refuses it if the done gate or R-fab is removed. The stage subjects are the
 symbols R1, C1 and J1, the footprints R1, C1 and J1, and at least one track.
-The retry limit is 3.
+The retry limit is 3. The generated campaign also declares
+`max_schema_resubmissions: 1` for separately recorded model output resubmissions;
+this is independent of the stage retry limit. See the
+[campaign output rule](campaign-guide.md#bounded-output-resubmission).
 
 `mutable_inputs` is exactly the schematic and the board. Everything under
 `generation/` and `requirements/` is immutable. The driver validates the
@@ -126,29 +149,58 @@ stackup that the builder copies.
 
 ## Record and done gate
 
-The record lists the preparation receipts, the scaffold and its load checks,
+The record lists the preparation receipts, the scaffold with its stage receipt and load checks,
 the scope and configuration hashes, and the kicad-route identity. For each
 iteration, it lists the check outcomes with their stage reasons, the findings,
 and the convergence projection. For each implementation, it lists the writer
 execution, every step receipt (status, exit code, violations, tool identity,
 reported version, backend, and input and output hashes), and the receipt index
-applicability. It also records the `verify-campaign` exit code and the fab
-manifest.
+applicability. It also records the `verify-campaign` exit code, the
+`export-fab` step manifest (provenance only), `fab_artifacts` from the campaign
+state, and `fab_artifacts_recomputed_by_verify_campaign`, the hashes that
+verify-campaign printed after recomputing them from the final run.
 
 `done` is true only when all of these are true:
 
 - The campaign verdict is `criteria_satisfied`, and `verify-campaign` exits 0.
-- The fab exports exist, are not empty, and match their manifest.
-- The fab step consumed the board and the schematic of the candidate that the
-  final run accepted.
-- No physical placement preview is pending. `PREVIEW_REQUIRED` keeps `done`
-  false, including when all computational checks passed.
+- The final state lists the fab artifact hashes of the passing `fab` done check
+  (`fab_artifacts`).
+- verify-campaign recomputed the same `artifacts_id`, candidate and file hashes
+  (`fab_artifacts_verified`).
+- The sealed rotation status (`fab_artifacts.rotation.status`, recorded as
+  `fab_rotation`) is in `fab_package.DONE_ROTATION_STATUSES`, currently
+  `{not_declared, ok}`. A declared `cpl_rotation` always reports
+  `PREVIEW_REQUIRED`, so `done` stays false even when every computational check
+  passed; the record's `fab_rotation_blocker` and the verify-campaign output name
+  the reason: `fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`.
+  A missing or unknown status is never done.
+- `scaffold_receipt_binding.bound`: the scaffold receipt revalidates with its recorded
+  sha256, and its after-tree (inputs plus outputs) equals the first captured candidate
+  (`campaign/runs/1/candidate.json`, or the empty checks-only run on `--dry-run`) on
+  `project/`, `generation/` and `requirements/`, in both directions. A file that differs, is
+  missing from the capture, or is in the capture but not in the receipt (for example a
+  planted `project/rung1_rc.kicad_dru`) leaves it unbound, as do a missing receipt and a
+  missing capture. A record of a campaign from before the scaffold receipt existed is
+  therefore never `done` when it is rebuilt. `verify-campaign` does not check this binding;
+  only this record's `done` does.
+
+The `export-fab` step runs the shared receipted fab stage (`agent_ee.fab_stage`):
+`fab_export` then `cpl_rotation` in the networkless sandbox, with a derived
+corrected package. Without `--cpl-inputs` it refuses (exit 3, policy not
+captured) and its stage `fab` is not a declared scope stage, so a staged
+campaign's step plan never selects it; with the capture the `fab` stage is
+declared and the step may be selected for it. In both cases the done gate is the
+`fab` check, and the step remains in the configuration for `--dry-run` rehearsals.
 
 ## Recorded run (2026-10-17)
+
+This run predates the `fab` done gate.
 
 One real run used commit 02d74cf from a clean clone, and a kicad-route
 snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 `incomplete`, so `done` is false.
+That run predates the `write-scaffold` step: its scaffold was written by the driver
+itself and has no stage receipt, so a rebuilt record of it stays unbound and not `done`.
 
 - Iteration 1 reviewed the empty candidate. `erc`, `netlist`, `drc` and
   `geometry` were `stage_not_reached`, and `rc-step` was `stage_blocked`. Both
@@ -172,13 +224,12 @@ snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 ## Limits
 
 - Placement uses the unqualified row stand-in of `board_build` (AGENTEE-109).
-- The fab stage now uses `fab_export` and `cpl_rotation` with an AGENTEE-95
-  receipt. Both checks are also declared in the scope's final `fab` stage.
-  `--cpl-inputs DIRECTORY` supplies the immutable
-  [policy and supplier tree](cpl-rotation.md#generator-fab-integration). Missing
-  inputs refuse capture/export; successful correction remains `PREVIEW_REQUIRED`
-  and cannot mark the generation record done. The owned exporter still refuses
-  the generated hand-soldered non-DNP header without an LCSC binding.
+- The `export-fab` step is provenance only; acceptance uses the `fab_package`
+  done gate (AGENTEE-94), which runs the AGENTEE-23 export and AGENTEE-73 gate
+  and, with `--cpl-inputs`, seals the AGENTEE-126 corrected CPL. The owned
+  exporter still refuses the generated hand-soldered non-DNP header without an
+  LCSC binding unless it carries the declared assembly exclusion (AGENTEE-122).
+- The recorded run below predates the done gate; its scope had no `fab` check.
 - Mount identities are observed when the step runs. Tool trees are not copied
   into the campaign.
 - The writer runs before the steps. Its edits to the schematic or board are
@@ -193,7 +244,9 @@ snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_rung1_campaign -v
 ```
 
-The tests check that the scaffold is valid and deterministic, that its project
+The tests check that the scaffold is valid and deterministic, that its files are the adopted
+outputs of a valid `write-scaffold` receipt, that a failing scaffold step keeps its receipt and
+writes no project, and that the scaffold binding detects a changed, missing or planted extra file. They check that its project
 file and tables equal the emitter's, and that the scope validates with the
 real loaders. They check that widened write authority, an adoptable exit 3 and
 reserved mount points are refused. With the native toolchain, they check that

@@ -25,7 +25,10 @@ a JLC CPL and a per-designator evidence report:
   `LED*` designators pin-1 anode/cathode polarity is cross-checked.
 
 Every CPL row is listed in exactly one of `applied_corrections` or
-`unmatched_footprints`. Status stays `PREVIEW_REQUIRED`: nothing here
+`unmatched_footprints`. Designators the export manifest lists as excluded by
+its declared assembly rule (AGENTEE-122; verified by `fab_consistency`) are
+populated but deliberately absent from the CPL, so they are not counted as
+unlisted geometry; one that still appears as a CPL row refuses the staging. Status stays `PREVIEW_REQUIRED`: nothing here
 physically validates a JLCPCB placement model.
 """
 
@@ -616,6 +619,13 @@ def check_cpl_rotation(ctx):
             raise ValueError('export manifest is bound to another board digest')
         cpl_text = (stage / 'cpl.csv').read_text(encoding='utf-8')
         rows = read_native_cpl(cpl_text)
+        claimed = manifest.get('designators', {}).get('excluded')
+        if not isinstance(claimed, list) or any(not isinstance(e, dict) or not isinstance(e.get('designator'), str)
+                                                for e in claimed):
+            raise ValueError('manifest designators.excluded is not a list of designator records')
+        excluded = sorted({e['designator'] for e in claimed}, key=natural_key)
+        if any(r[0] in excluded for r in rows):
+            raise ValueError(f'CPL lists designators the manifest excludes from assembly: {excluded}')
         bindings = read_bom_bindings((stage / 'bom.csv').read_text(encoding='utf-8'))
     except (OSError, ValueError, UnicodeError) as exc:
         raise CheckError('malformed', f'fab_export {eid!r} staging is unusable: {exc}') from exc
@@ -637,7 +647,7 @@ def check_cpl_rotation(ctx):
         raise CheckError('malformed', 'internal partition error: a CPL row is not listed exactly once')
     populated = sorted({fp.get('ref') for fp in geometry
                         if not (fp.get('dnp') or fp.get('exclude_from_pos_files'))}, key=natural_key)
-    unlisted = [ref for ref in populated if ref not in {r[0] for r in rows}]
+    unlisted = [ref for ref in populated if ref not in {r[0] for r in rows} and ref not in excluded]
     execution, outcome, coverage = aggregate(records)
     if unlisted and outcome != 'defect':
         execution, outcome, coverage = 'malformed', 'unknown', 'incomplete'
@@ -658,7 +668,7 @@ def check_cpl_rotation(ctx):
                          'cpl_sha256': manifest['files'].get('cpl.csv')},
               'geometry': {'check': gid, 'sha256': digest(geometry_path)},
               'cpl': {'path': cpl_rel, 'sha256': digest(ctx.work / cpl_rel)} if cpl_rel else None,
-              'geometry_unlisted': unlisted, 'designators': records,
+              'geometry_unlisted': unlisted, 'assembly_excluded': excluded, 'designators': records,
               'applied_corrections': applied, 'unmatched_footprints': unmatched}
     write_json(ctx.work / 'cpl-rotation.json', report)
     ctx.evidence('cpl-rotation.json')

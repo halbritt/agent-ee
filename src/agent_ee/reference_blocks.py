@@ -71,15 +71,120 @@ def hierarchy_ports(data):
         name = label[1]
         _text(name)
         direction, = field(label, 'shape', 1)
-        if direction not in ('input', 'output', 'bidirectional', 'tri_state', 'passive') or name in result:
-            raise ValueError('unsupported or duplicate hierarchical port: ' + name)
+        # KiCad joins repeated same-name labels into one sheet pin; a repeated
+        # name with a different shape has no single native direction.
+        if direction not in ('input', 'output', 'bidirectional', 'tri_state', 'passive') or (
+                result.get(name, direction) != direction):
+            raise ValueError('unsupported or conflicting hierarchical port: ' + name)
         result[name] = direction
     return result
 
 
+PORT_FIELDS = ('name', 'net_name', 'direction', 'voltage_domain', 'current_a')
+DRAFT_PARTS = 'agent-ee.block-parts/1'
+LIBRARY_ORIGINS = ('source', 'kicad-stock', 'external', 'unresolved')
+
+
+def _source(value, files):
+    _object(value, ('path', 'locator'))
+    _path(value['path'])
+    _text(value['locator'])
+    if value['path'] not in files:
+        raise ValueError('requirement source is not a captured block file')
+
+
+def _texts(value):
+    _list(value)
+    for item in value:
+        _text(item)
+    if len(set(value)) != len(value):
+        raise ValueError('duplicate text entry')
+
+
+def _optional_structure(record):
+    """Fields a multi-instance reference set needs; absent fields keep version-1 meaning."""
+    files, paths = record['files'], record['source']['paths']
+    for key in ('interface', 'connectivity'):
+        if key in record:
+            _path(record[key])
+            if record[key] not in files or record[key] in paths or PurePosixPath(record[key]).suffix != '.json':
+                raise ValueError('missing/invalid generated ' + key)
+    if 'instances' in record:
+        _list(record['instances'])
+        if not record['instances']:
+            raise ValueError('instances must be nonempty')
+        seen, refs = set(), set()
+        for instance in record['instances']:
+            _object(instance, ('path', 'uuid_path', 'sheet', 'references'))
+            for key in ('path', 'uuid_path'):
+                _text(instance[key])
+                if not instance[key].startswith('/') or not instance[key].endswith('/'):
+                    raise ValueError('instance paths are native /.../ sheet paths')
+            if instance['sheet'] not in files or instance['sheet'] not in paths or not instance['sheet'].endswith('.kicad_sch'):
+                raise ValueError('instance sheet lacks pinned source path')
+            _texts(instance['references'])
+            if (not instance['references'] or instance['uuid_path'] in seen or
+                    refs & set(instance['references']) or instance['references'] != sorted(instance['references'])):
+                raise ValueError('instance reference sets must be nonempty, sorted and disjoint')
+            seen.add(instance['uuid_path'])
+            refs.update(instance['references'])
+        if record['instances'][0]['sheet'] != record['sheet']:
+            raise ValueError('first instance must be the primary block sheet')
+    if 'check_set' in record:
+        from .capabilities import KINDS
+        _list(record['check_set'])
+        ids = set()
+        for spec in record['check_set']:
+            _object(spec, ('id', 'kind', 'params'))
+            _text(spec['id'])
+            if spec['kind'] not in KINDS or not isinstance(spec['params'], dict) or spec['id'] in ids:
+                raise ValueError('check set needs unique ids, registered kinds and params')
+            ids.add(spec['id'])
+            if spec['kind'] == 'hardware_interface' and spec['params'].get('contract') != record.get('interface'):
+                raise ValueError('interface check must name the captured block interface')
+        bound = {c for req in record['requirements'] for c in req['checks']}
+        if bound != ids:
+            raise ValueError('every check-set check must trace to a block requirement')
+    ids = {r['id'] for r in record['requirements']}
+    if 'pending_requirements' in record:
+        _list(record['pending_requirements'])
+        for req in record['pending_requirements']:
+            _object(req, ('id', 'statement', 'source', 'conditions', 'blocked_by'))
+            for key in ('id', 'statement', 'blocked_by'):
+                _text(req[key])
+            _source(req['source'], files)
+            _texts(req['conditions'])
+            if req['id'] in ids:
+                raise ValueError('duplicate requirement')
+            ids.add(req['id'])
+    if 'libraries' in record:
+        _list(record['libraries'])
+        keys = set()
+        for lib in record['libraries']:
+            _object(lib, ('kind', 'lib_id', 'origin', 'path', 'sha256', 'detail'))
+            _text(lib['lib_id'])
+            _text(lib['detail'])
+            key = (lib['kind'], lib['lib_id'])
+            if (lib['kind'] not in ('symbol', 'footprint') or lib['origin'] not in LIBRARY_ORIGINS or
+                    lib['lib_id'].count(':') != 1 or not all(lib['lib_id'].split(':')) or key in keys):
+                raise ValueError('library entry needs unique kind, exact lib_id and known origin')
+            keys.add(key)
+            if lib['origin'] == 'unresolved':
+                if lib['path'] is not None or lib['sha256'] is not None:
+                    raise ValueError('unresolved library cannot claim a file')
+            else:
+                _path(lib['path'])
+                if lib['sha256'] is not None:
+                    _hash(lib['sha256'])
+                if lib['origin'] == 'source' and (lib['path'] not in paths or lib['sha256'] != files[lib['path']]):
+                    raise ValueError('source library file must be captured with its hash')
+
+
 def _structure(record):
     _object(record, ('schema', 'id', 'version', 'role', 'source', 'sheet', 'parts_manifest',
-                     'boundary_ports', 'requirements', 'files', 'runs'), ('layout',))
+                     'boundary_ports', 'requirements', 'files', 'runs'),
+            ('layout', 'instances', 'interface', 'connectivity', 'check_set', 'pending_requirements',
+             'libraries'))
     if record['schema'] != 'agent-ee.block/1':
         raise ValueError('unknown block schema')
     for key in ('id', 'version', 'role'):
@@ -131,9 +236,13 @@ def _structure(record):
         raise ValueError('missing block requirements')
     ids = set()
     for req in record['requirements']:
-        _object(req, ('id', 'statement', 'checks'))
+        _object(req, ('id', 'statement', 'checks'), ('source', 'conditions'))
         _text(req['id'])
         _text(req['statement'])
+        if 'source' in req:
+            _source(req['source'], files)
+        if 'conditions' in req:
+            _texts(req['conditions'])
         _list(req['checks'])
         for check in req['checks']:
             _text(check)
@@ -156,6 +265,7 @@ def _structure(record):
             _path(path)
         if len(set(ref['files'].values())) != len(files):
             raise ValueError('run file mappings must be one-to-one')
+    _optional_structure(record)
 
 
 def block_contract(record):
@@ -179,8 +289,97 @@ def _payload(root, record):
     if ports != {p['name']: p['direction'] for p in record['boundary_ports']}:
         raise ValueError('boundary ports differ from native hierarchical pins')
     parts = _read(root / record['parts_manifest'])
-    if not isinstance(parts, dict) or parts.get('schema') != 'agent-ee.parts/1':
-        raise ValueError('expected captured agent-ee.parts/1 subset')
+    if not isinstance(parts, dict) or parts.get('schema') not in ('agent-ee.parts/1', DRAFT_PARTS):
+        raise ValueError('expected captured agent-ee.parts/1 subset or draft parts listing')
+    _reference_set(root, record, parts)
+
+
+def sheet_symbols(data, uuid_path):
+    """Map references of one native sheet occurrence to their symbol identity.
+
+    Units of one multi-unit part are separate placed symbols sharing a reference;
+    they must agree on lib_id and on any nonempty footprint. Virtual ``#`` symbols
+    are skipped, as KiCad omits them from netlists.
+    """
+    target = [s for s in uuid_path.split('/') if s]
+    result = {}
+    for symbol in children(parse_sexpr(data), 'symbol'):
+        lib_id, = field(symbol, 'lib_id', 1)
+        uuid, = field(symbol, 'uuid', 1)
+        props = {p[1]: p[2] for p in children(symbol, 'property') if len(p) > 2}
+        refs = [field(path, 'reference', 1)[0]
+                for instances in children(symbol, 'instances')
+                for project in children(instances, 'project')
+                for path in children(project, 'path')
+                if [s for s in path[1].split('/') if s][1:] == target]
+        if not children(symbol, 'instances') and 'Reference' in props:
+            # Pre-instance (20211123) sheets keep one Reference per symbol.
+            refs = [props['Reference']]
+        if len(refs) > 1:
+            raise ValueError('ambiguous native symbol occurrence')
+        # '#'-prefixed power and flag symbols are not netlist components.
+        if not refs or refs[0].startswith('#'):
+            continue
+        entry = result.setdefault(refs[0], dict(lib_id=lib_id, footprint='', uuids=[]))
+        footprint = props.get('Footprint', '')
+        if entry['lib_id'] != lib_id or (footprint and entry['footprint'] not in ('', footprint)):
+            raise ValueError('conflicting native units for reference: ' + refs[0])
+        entry['footprint'] = entry['footprint'] or footprint
+        entry['uuids'].append(uuid)
+    return result
+
+
+def _reference_set(root, record, parts):
+    """Bind instance reference sets, libraries and generated documents to captured sheets."""
+    if 'instances' not in record:
+        for key in ('libraries', 'interface', 'connectivity'):
+            if key in record:
+                raise ValueError(key + ' requires explicit instance reference sets')
+        if parts['schema'] == DRAFT_PARTS:
+            raise ValueError('draft parts listing requires explicit instance reference sets')
+        return
+    members, used = {}, set()
+    for instance in record['instances']:
+        symbols = sheet_symbols((root / instance['sheet']).read_bytes(), instance['uuid_path'])
+        for ref in instance['references']:
+            if ref not in symbols:
+                raise ValueError('reference absent from captured sheet occurrence: ' + ref)
+            members[ref] = (instance['uuid_path'], symbols[ref])
+            used.add(('symbol', symbols[ref]['lib_id']))
+            if symbols[ref]['footprint']:
+                used.add(('footprint', symbols[ref]['footprint']))
+    if 'libraries' in record and {(l['kind'], l['lib_id']) for l in record['libraries']} != used:
+        raise ValueError('library inventory differs from the reference set symbols and footprints')
+    if parts['schema'] == DRAFT_PARTS:
+        _object(parts, ('schema', 'source', 'catalog', 'parts'))
+        _list(parts['parts'])
+        listed = {}
+        for part in parts['parts']:
+            _object(part, ('instance', 'reference', 'lib_id', 'value', 'footprint', 'lcsc', 'mpn',
+                           'manufacturer', 'populated', 'catalog'))
+            listed[part['reference']] = part
+            if (part['reference'] not in members or part['instance'] != members[part['reference']][0] or
+                    part['lib_id'] != members[part['reference']][1]['lib_id']):
+                raise ValueError('draft part is outside the reference set: ' + str(part['reference']))
+        if listed.keys() != members.keys() or len(listed) != len(parts['parts']):
+            raise ValueError('draft parts listing must cover the reference set once')
+    if 'connectivity' in record:
+        projection = _read(root / record['connectivity'])
+        if (not isinstance(projection, dict) or projection.get('schema') != 'agent-ee.block-connectivity/1' or
+                not isinstance(projection.get('components'), dict) or projection['components'].keys() != members.keys()):
+            raise ValueError('connectivity projection must cover the reference set')
+    if 'interface' in record:
+        from .hardware_interface import capability
+        specs = [c for c in record.get('check_set', []) if c['kind'] == 'hardware_interface']
+        if not specs or any('source' not in r for r in record['requirements']):
+            raise ValueError('interface needs a mapped hardware_interface check and requirement sources')
+        scope = {'baseline': {'requirements': record['requirements']}}
+        for spec in specs:
+            contract = capability(spec['params'], scope, record['files'], root, spec['id'])['contract']
+            for component in contract['components'].values():
+                for location in component['locations']:
+                    if members.get(location['reference'], ('',))[0] != location['sheet']:
+                        raise ValueError('interface component is outside the reference set')
 
 
 def _native_requirement_coverage(run, manifest, ref, record, req, checks):
@@ -292,6 +491,9 @@ def validate_block(directory, run_locations=None):
                         continue
                     if bound['statement'] != req['statement'] or not set(req['checks']) <= set(bound['checks']):
                         raise ValueError('block requirement differs from baseline')
+                    if 'source' in req and bound.get('source') != dict(
+                            path=ref['files'][req['source']['path']], locator=req['source']['locator']):
+                        raise ValueError('block requirement source differs from baseline')
                     if all(checks.get(c, {}).get('execution') == 'ok' and
                            checks[c]['outcome'] == 'pass' for c in req['checks']) and _native_requirement_coverage(
                                run, manifest, ref, record, req, checks):
@@ -304,8 +506,14 @@ def validate_block(directory, run_locations=None):
     _payload(root, record)
     declared = all(p['current_a'] is not None and p['voltage_domain'] is not None
                    for p in record['boundary_ports'])
+    pending = [r['id'] for r in record.get('pending_requirements', [])]
+    unresolved = [l['kind'] + ':' + l['lib_id'] for l in record.get('libraries', [])
+                  if l['origin'] == 'unresolved' or l['sha256'] is None]
+    draft_parts = _read(root / record['parts_manifest'])['schema'] == DRAFT_PARTS
+    complete = declared and not pending and not unresolved and not draft_parts
     return dict(schema='agent-ee.block-report/1', block_id=record['id'],
-                status='verified' if declared and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
+                status='verified' if complete and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
+                pending_requirements=pending, unresolved_libraries=unresolved, draft_parts=draft_parts,
                 covered_requirements=sorted(covered), runs=runs,
                 missing_requirements=sorted({r['id'] for r in record['requirements']} - covered),
                 undeclared_ports=[p['name'] for p in record['boundary_ports']
@@ -324,8 +532,12 @@ def _git(repo, *args):
     return proc.stdout
 
 
-def capture_block(request, repository, commit, destination, *, parts=None):
-    """Copy pinned local Git blobs only; never update source or fetch objects."""
+def capture_block(request, repository, commit, destination, *, parts=None, supplements=None):
+    """Copy pinned local Git blobs only; never update source or fetch objects.
+
+    ``supplements`` maps payload paths to caller-generated bytes (for example a
+    derived interface contract); they are hashed and run-covered like the parts file.
+    """
     record = copy.deepcopy(request)
     if not isinstance(record, dict) or not isinstance(record.get('source'), dict):
         raise ValueError('capture request needs source object')
@@ -357,6 +569,11 @@ def capture_block(request, repository, commit, destination, *, parts=None):
         if path in payload or Path(parts).is_symlink():
             raise ValueError('parts supplement overlaps source or is a link')
         payload[path] = Path(parts).read_bytes()
+    for path, data in (supplements or {}).items():
+        _path(path)
+        if path in payload or not isinstance(data, bytes):
+            raise ValueError('generated supplement overlaps captured payload')
+        payload[path] = data
     if 'block-contract.json' in payload:
         raise ValueError('reserved generated contract path')
     payload['block-contract.json'] = canonical(block_contract(record))
