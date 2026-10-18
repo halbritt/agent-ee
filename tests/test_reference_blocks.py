@@ -268,6 +268,8 @@ class NativeReferenceBlockTests(unittest.TestCase):
         write_json(payload / 'block.json', record)
         scope = read_json(fixture / 'control.scope.json')
         scope['schema'] = 'agent-ee.scope/2'
+        scope['name'] = 'Owned reference-block qualification'
+        scope['scope'] = 'Native resistor identity and value in an original synthetic fixture.'
         scope['checks'] = scope['checks'][:2]
         scope['baseline']['requirements'] = scope['baseline']['requirements'][:1]
         del scope['baseline']['requirements'][0]['intent']
@@ -277,6 +279,9 @@ class NativeReferenceBlockTests(unittest.TestCase):
         for name in ('requirements.md', 'contract.json', 'interface.kicad_pcb'):
             (self.root / name).write_bytes((fixture / name).read_bytes())
             scope['inputs'].append(dict(path=name, at=name))
+        (self.root / 'requirements.md').write_text(
+            '# Owned reference-block fixture\n\n## Structural interface\n\n'
+            'The native resistor R1 must have value 10k. This is original synthetic test data.\n')
         contract = dict(schema='agent-ee.interface/1',
             components=dict(series=dict(locations=[dict(sheet='/', reference='R1')], symbols=['Owned:R'])),
             terminals={}, allowed_edits=[],
