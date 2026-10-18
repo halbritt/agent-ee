@@ -2575,6 +2575,30 @@
         "AE"
       ],
       "reviewed": "Original regression tests for AGENTEE-106. The only KiCad text is an empty pre-created sheet literal; the tests read the committed fome-mc capture and copy nothing from it into the source."
+    },
+    {
+      "paths": [
+        "fixtures/interval-assertions/README.md",
+        "fixtures/interval-assertions/catalog-source.csv",
+        "fixtures/interval-assertions/requirements/divider.assertions.json",
+        "fixtures/interval-assertions/requirements/system.md"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-61 original synthetic catalog claims (invented LCSC numbers C900001-C900007, manufacturer 'Owned fixture'), requirement text and an assertion document hand-authored here; no donor design, datasheet or upstream catalog rows."
+    },
+    {
+      "paths": [
+        "src/agent_ee/interval_assertions.py",
+        "tests/test_interval_assertions.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-61 original interval evaluator, tests and documentation. The mechanism idea (superset assertions on picked parameters, contradictions traced to sources, same-symbol correlation) follows atopile's faebryk solver (MIT) as a reference only; no atopile code, examples or design files are copied."
     }
   ]
 }

@@ -210,6 +210,10 @@ are advisory. Neither check establishes electrical adequacy.
 survive generation: each names exactly one native net at its declared terminals.
 Suggested-name collisions are reported as information with deterministic
 proposals, and names without a level annotation are unknown.
+[Interval assertions](docs/interval-assertions.md) evaluate owner-declared
+relations such as divider outputs and rating margins over pinned catalog
+tolerances in exact worst-case interval arithmetic, tracing every bound to its
+requirement or catalog claim; unbounded operands stay unknown.
 The [regeneration determinism check](docs/design-diff.md) compares a regenerated
 board, schematic or netlist with a reference after removing UUIDs, timestamps
 and tool headers. It reports per-path differences and structural and placement
