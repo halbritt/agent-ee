@@ -269,8 +269,12 @@ pricing table and the catalog snapshot, and every number cites its table entry.
 It reports Basic/Preferred/Extended counts, with unknown-class parts counted as
 unknown.
 
-The [fab package done gate](docs/fab-package.md) (`fab_package`, declared last)
-runs that export and gate in one check and seals the package's file hashes. A
+The [saved JLCPCB DFM check](docs/jlc-dfm.md) binds an owner-uploaded Gerber zip
+and its retained report to a candidate offline. Error findings are defects;
+warnings remain advisory, and missing or mismatched reports remain unknown.
+
+The [fab package done gate](docs/fab-package.md) (`fab_package`, followed only by
+bound DFM checks) runs that export and gate in one check and seals the package's file hashes. A
 scope with a `generation` marker is refused at capture without it, and a
 satisfied generation campaign's `state.json` lists the hashes, which
 `verify-campaign` recomputes.

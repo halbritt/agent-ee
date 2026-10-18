@@ -82,6 +82,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "land_pattern":
             from .land_pattern import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "jlc_dfm":
+            from .jlc_dfm import immutable_inputs
+            paths.update(immutable_inputs(params, files, inputs))
         if spec.get("kind") == "cpl_rotation":
             from .cpl_rotation import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
@@ -196,16 +199,18 @@ def compile_baseline(scope, files, inputs=None):
 
 
 def generation_marker(scope):
-    """A generation scope's done gate: its last check is fab_package with an acceptance requirement."""
+    """A generation scope's package gate, optionally followed by bound DFM consumers."""
     marker = scope.get("generation")
     if marker is None:
         return None
     if not isinstance(marker, dict) or marker != {"schema": GENERATION_SCHEMA, "done_check": marker.get("done_check")}:
         raise ValueError(f"generation marker must be exactly {{schema: {GENERATION_SCHEMA}, done_check}}")
     done = marker["done_check"]
-    last = scope["checks"][-1]
-    if last.get("id") != done or last.get("kind") != "fab_package":
+    from .fab_package import require_last
+    gate = next((s for s in scope["checks"] if s.get("id") == done), {})
+    if gate.get("kind") != "fab_package":
         raise ValueError("generation scope must declare its fab_package done check last")
+    require_last(scope["checks"], gate)
     audited = scope["schema"] == "agent-ee.scope/3"
     if not any(done in req["checks"] and (not audited or req["intent"] == "acceptance")
                for req in scope["baseline"]["requirements"]):

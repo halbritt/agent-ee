@@ -2574,6 +2574,16 @@
         "AE"
       ],
       "reviewed": "Original regression tests for AGENTEE-106. The only KiCad text is an empty pre-created sheet literal; the tests read the committed fome-mc capture and copy nothing from it into the source."
+    },
+    {
+      "paths": [
+        "fixtures/jlc-dfm/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-156 original synthetic DFM normalization and source capture; no supplier text or design files. See fixtures/jlc-dfm/PROVENANCE.md."
     }
   ]
 }

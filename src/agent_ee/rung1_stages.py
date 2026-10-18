@@ -76,14 +76,22 @@ def requirements_step(source_root=PACKAGE_ROOT):
 
 
 def done_gate(scope):
-    """The scope with its fab stage graded by the fab_package done gate, declared last.
+    """The scope with its fab stage graded by the package gate and bound DFM consumers.
 
-    A scope that already ends with fab_package is returned unchanged. Otherwise fab_export and
+    A scope with a terminal fab_package producer is returned unchanged. Otherwise fab_export and
     fab_consistency are replaced by one fab_package check (which runs both) and the requirements
     that mapped to them map to it. Generation scopes also carry the generation marker."""
     scope = copy.deepcopy(scope)
     checks = scope['checks']
-    if checks and checks[-1]['kind'] == 'fab_package':
+    packages = [c for c in checks if c['kind'] == 'fab_package']
+    if packages:
+        from .fab_package import require_last
+        if len(packages) != 1:
+            raise StageRefusal('the fab stage needs exactly one fab_package check')
+        try:
+            require_last(checks, packages[0])
+        except ValueError as exc:
+            raise StageRefusal(str(exc)) from exc
         return scope
     netlist = [c['id'] for c in checks if c['kind'] == 'netlist']
     if len(netlist) != 1:
@@ -105,11 +113,10 @@ def done_gate(scope):
 
 
 def stage_checks(scope):
-    """Check IDs per driver stage: the check's declared stage, else verification (fab for the done check)."""
-    done = scope['checks'][-1]['id'] if scope['checks'][-1]['kind'] == 'fab_package' else None
+    """Check IDs per driver stage: the check's declared stage, else verification (fab for package/DFM)."""
     grouped = {name: [] for name in NAMES}
     for check in scope['checks']:
-        stage = check.get('stage') or ('fab' if check['id'] == done else 'verification')
+        stage = check.get('stage') or ('fab' if check['kind'] in ('fab_package', 'jlc_dfm') else 'verification')
         if stage not in grouped:
             raise StageRefusal(f"check {check['id']} declares stage {stage}, which is not a rung-1 stage")
         grouped[stage].append(check['id'])
