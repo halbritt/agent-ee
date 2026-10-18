@@ -530,6 +530,17 @@ findings at `info` or `warning`; a profile can raise a rule to `defect`. A
 symbol whose definition cannot be resolved is missing coverage, not a pass.
 See [schematic lint](schematic-lint.md) for rules, parameters and coverage.
 
+## Part-binding properties
+
+`part_binding` parses the captured root schematic, every captured child sheet
+occurrence and the board for `LCSC`, `Manufacturer`, `Partnumber`, `Datasheet`
+and typed `PARAM_*` interval or set properties. It launches no tool. A
+disagreement between two non-empty schematic and board values, or a malformed
+`LCSC` value, is a defect. A missing or one-sided property is `unknown` for that
+reference. Unparseable `PARAM_*` JSON and an uncaptured child sheet are
+`malformed`. See [part binding](part-binding.md) for the schema, markers and
+per-reference outcomes.
+
 ## JLCPCB fab package
 
 See [fab export](fab-export.md) for the `fab_export` staging layout, the

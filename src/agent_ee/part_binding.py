@@ -2,6 +2,7 @@
 
 from decimal import Decimal, DecimalException
 import json
+import posixpath
 import re
 from pathlib import Path
 
@@ -11,9 +12,11 @@ from .symbol_library import LibraryError, children, parse_sexpr
 
 
 LCSC_RE = re.compile(r"^C[1-9][0-9]*$")
+MAX_SHEET_OCCURRENCES = 4096
 PARAM_NAME_RE = re.compile(r"^PARAM_[A-Za-z0-9_]+$")
 TRUTHY_MARKERS = frozenset(("true", "yes", "1"))
 NO_LCSC_VALUES = frozenset(("DNP", "NO_LCSC", "NO-LCSC"))
+BINDING_FIELDS = frozenset(("LCSC", "Manufacturer", "Partnumber", "Datasheet"))
 ALLOWED_CHECK_PARAMS = frozenset((
     "schematic",
     "board",
@@ -270,26 +273,112 @@ def _identify_power_lib_symbols(root) -> set[str]:
     return power_libs
 
 
-def _extract_instance_references(symbol_node) -> list[tuple[str, int | None]]:
-    refs = []
+def _instance_entries(symbol_node) -> list[tuple[str, str, int | None]]:
+    """Return (instance path, reference, unit) for every (instances ...) entry."""
+    entries = []
     for inst in children(symbol_node, "instances"):
         for proj in children(inst, "project"):
             for path_node in children(proj, "path"):
+                if len(path_node) < 2 or not isinstance(path_node[1], str):
+                    raise PartBindingMalformedError("malformed instance (path ...)")
                 ref_nodes = children(path_node, "reference")
+                if not ref_nodes:
+                    continue
+                if len(ref_nodes[0]) < 2 or not isinstance(ref_nodes[0][1], str):
+                    raise PartBindingMalformedError("malformed instance (reference ...)")
+                unit_val = None
                 unit_nodes = children(path_node, "unit")
-                if ref_nodes:
-                    if len(ref_nodes[0]) < 2 or not isinstance(ref_nodes[0][1], str):
-                        raise PartBindingMalformedError("malformed instance (reference ...)")
-                    ref_val = ref_nodes[0][1].strip()
-                    unit_val = None
-                    if unit_nodes and len(unit_nodes[0]) >= 2 and isinstance(unit_nodes[0][1], str):
-                        try:
-                            unit_val = int(unit_nodes[0][1])
-                        except ValueError as exc:
-                            raise PartBindingMalformedError("malformed instance (unit ...)") from exc
-                    if ref_val:
-                        refs.append((ref_val, unit_val))
-    return refs
+                if unit_nodes and len(unit_nodes[0]) >= 2 and isinstance(unit_nodes[0][1], str):
+                    try:
+                        unit_val = int(unit_nodes[0][1])
+                    except ValueError as exc:
+                        raise PartBindingMalformedError("malformed instance (unit ...)") from exc
+                ref_val = ref_nodes[0][1].strip()
+                if ref_val:
+                    entries.append((path_node[1], ref_val, unit_val))
+    return entries
+
+
+def _sheet_children(root, sheet_rel: str) -> list[tuple[str, str]]:
+    """Return (sheet uuid, resolved child path) for each (sheet ...) of a schematic."""
+    found = []
+    for sheet in children(root, "sheet"):
+        files = [
+            prop[2] for prop in children(sheet, "property")
+            if len(prop) >= 3 and prop[1] in ("Sheetfile", "Sheet file")
+        ]
+        if len(files) != 1 or not isinstance(files[0], str) or not files[0].strip():
+            raise PartBindingMalformedError(f"sheet in {sheet_rel!r} needs exactly one Sheetfile")
+        sheet_uuid = _extract_single_str(sheet, "uuid", required=True)
+        child = posixpath.normpath(posixpath.join(posixpath.dirname(sheet_rel), files[0].strip()))
+        if child.startswith("../") or child == ".." or posixpath.isabs(child):
+            raise PartBindingMalformedError(
+                f"sheet {sheet_rel!r} references {files[0]!r} outside the captured inputs"
+            )
+        found.append((sheet_uuid, child))
+    return found
+
+
+def _parse_schematic_file(raw: bytes, rel: str):
+    try:
+        root = parse_sexpr(raw)
+    except LibraryError as exc:
+        raise PartBindingMalformedError(f"invalid schematic S-expression in {rel!r}: {exc}") from exc
+    if not isinstance(root, list) or not root or root[0] != "kicad_sch":
+        raise PartBindingMalformedError(f"expected S-expression with root 'kicad_sch' in {rel!r}")
+    return root
+
+
+def _sheet_occurrences(sch_bytes: bytes, root_rel: str, sheets: dict[str, bytes]):
+    """Walk the captured sheet hierarchy; yield (rel, parsed root, instance path, flat)."""
+    parsed = {root_rel: _parse_schematic_file(sch_bytes, root_rel)}
+    root_uuid = _extract_single_str(parsed[root_rel], "uuid", required=False, default="")
+    flat = not children(parsed[root_rel], "sheet")
+    occurrences = []
+    pending = [(root_rel, f"/{root_uuid}" if root_uuid else "/", ())]
+    while pending:
+        rel, instance, trail = pending.pop()
+        if rel in trail:
+            raise PartBindingMalformedError(f"schematic sheet hierarchy cycle at {rel!r}")
+        if len(occurrences) >= MAX_SHEET_OCCURRENCES:
+            raise PartBindingMalformedError("schematic sheet occurrence limit exceeded")
+        if rel not in parsed:
+            if rel not in sheets:
+                raise PartBindingMalformedError(
+                    f"sheet {rel!r} is not captured; schematic binding coverage is incomplete"
+                )
+            parsed[rel] = _parse_schematic_file(sheets[rel], rel)
+        occurrences.append((rel, parsed[rel], instance))
+        for sheet_uuid, child in reversed(_sheet_children(parsed[rel], rel)):
+            if not root_uuid:
+                raise PartBindingMalformedError("hierarchical root schematic is missing its (uuid ...)")
+            pending.append((child, f"{instance.rstrip('/')}/{sheet_uuid}", trail + (rel,)))
+    return occurrences, flat, sorted(parsed)
+
+
+def _occurrence_reference(symbol_node, props, instance: str, flat: bool, label: str):
+    """Reference and unit of one symbol occurrence; never guessed in a hierarchy."""
+    entries = _instance_entries(symbol_node)
+    own = [(ref, unit) for path, ref, unit in entries if path == instance]
+    if own:
+        refs = {ref for ref, _ in own}
+        if len(refs) > 1:
+            raise PartBindingMalformedError(
+                f"{label} has conflicting references {sorted(refs)} for instance {instance!r}"
+            )
+        return own[0]
+    if not flat:
+        raise PartBindingMalformedError(
+            f"{label} has no (instances ...) reference for sheet occurrence {instance!r}"
+        )
+    # Flat schematic without a matching path: first annotated entry, else the Reference field.
+    prop_ref = props.get("Reference", "").strip()
+    annotated = [(ref, unit) for _, ref, unit in entries if not ref.endswith("?")]
+    if annotated:
+        return annotated[0]
+    if entries:
+        return (prop_ref or entries[0][1]), entries[0][2]
+    return prop_ref, None
 
 
 def _resolve_partnumber(props: dict[str, str]) -> tuple[str, str | None]:
@@ -320,175 +409,191 @@ def _is_dnp(dnp_flag: bool, lcsc: str, props: dict[str, str]) -> bool:
     return False
 
 
-def parse_schematic_bindings(sch_bytes: bytes) -> dict[str, dict]:
-    """Parse placed symbol part bindings from captured .kicad_sch bytes."""
-    try:
-        root = parse_sexpr(sch_bytes)
-    except LibraryError as exc:
-        raise PartBindingMalformedError(f"invalid schematic S-expression: {exc}") from exc
+def schematic_hierarchy_bindings(
+    sch_bytes: bytes, *, path: str = "", sheets: dict[str, bytes] | None = None
+) -> tuple[dict[str, dict], list[str]]:
+    """Parse placed symbol bindings across the captured sheet hierarchy.
 
-    if not isinstance(root, list) or not root or root[0] != "kicad_sch":
-        raise PartBindingMalformedError("expected S-expression with root 'kicad_sch'")
-
-    power_libs = _identify_power_lib_symbols(root)
+    ``path`` is the root schematic's captured path; child ``Sheetfile`` paths
+    resolve against their parent sheet and must be keys of ``sheets``. Every
+    sheet occurrence contributes its own instance references, so a reused
+    sheet yields one binding per occurrence. Returns (bindings, sheet files).
+    """
+    occurrences, flat, files = _sheet_occurrences(sch_bytes, path, sheets or {})
+    power_by_file = {}
     bindings: dict[str, dict] = {}
 
-    for sym in children(root, "symbol"):
-        lib_id = _extract_single_str(sym, "lib_id", required=True)
-        uuid = _extract_single_str(sym, "uuid", required=False, default="")
-        unit_str = _extract_single_str(sym, "unit", required=False, default="1")
-        try:
-            unit = int(unit_str)
-        except ValueError as exc:
-            raise PartBindingMalformedError(f"invalid symbol unit {unit_str!r}") from exc
+    for rel, root, instance in occurrences:
+        if rel not in power_by_file:
+            power_by_file[rel] = _identify_power_lib_symbols(root)
+        power_libs = power_by_file[rel]
+        for sym in children(root, "symbol"):
+            lib_id = _extract_single_str(sym, "lib_id", required=True)
+            uuid = _extract_single_str(sym, "uuid", required=False, default="")
+            unit_str = _extract_single_str(sym, "unit", required=False, default="1")
+            try:
+                unit = int(unit_str)
+            except ValueError as exc:
+                raise PartBindingMalformedError(f"invalid symbol unit {unit_str!r}") from exc
 
-        dnp_node = _extract_yes_no(sym, "dnp", False)
-        in_bom = _extract_yes_no(sym, "in_bom", True)
-        on_board = _extract_yes_no(sym, "on_board", True)
+            dnp_node = _extract_yes_no(sym, "dnp", False)
+            in_bom = _extract_yes_no(sym, "in_bom", True)
+            on_board = _extract_yes_no(sym, "on_board", True)
 
-        props, params = _extract_properties(sym, f"symbol({lib_id})")
-        inst_refs = _extract_instance_references(sym)
-        prop_ref = props.get("Reference", "").strip()
+            label = f"symbol({lib_id}) uuid {uuid!r} in {rel!r}"
+            props, params = _extract_properties(sym, label)
+            ref, inst_unit = _occurrence_reference(sym, props, instance, flat, label)
+            if inst_unit is not None:
+                unit = inst_unit
 
-        if inst_refs:
-            non_template = [r for r, _ in inst_refs if not r.endswith("?")]
-            if non_template:
-                ref = non_template[0]
-                if inst_refs[0][1] is not None:
-                    unit = inst_refs[0][1]
-            else:
-                ref = prop_ref or inst_refs[0][0]
-        else:
-            ref = prop_ref
+            if not ref:
+                raise PartBindingMalformedError(f"{label} is missing Reference")
 
-        if not ref:
-            raise PartBindingMalformedError(f"symbol {lib_id!r} (uuid {uuid!r}) is missing Reference")
+            lcsc = props.get("LCSC", "").strip()
+            manufacturer = props.get("Manufacturer", "").strip()
+            partnumber, pn_conflict = _resolve_partnumber(props)
+            datasheet = _normalize_datasheet(props.get("Datasheet", ""))
+            footprint = props.get("Footprint", "").strip()
+            value = props.get("Value", "").strip()
 
-        lcsc = props.get("LCSC", "").strip()
-        manufacturer = props.get("Manufacturer", "").strip()
-        partnumber, pn_conflict = _resolve_partnumber(props)
-        datasheet = _normalize_datasheet(props.get("Datasheet", ""))
-        footprint = props.get("Footprint", "").strip()
-        value = props.get("Value", "").strip()
+            dnp = _is_dnp(dnp_node, lcsc, props)
+            no_lcsc = _is_no_lcsc(lcsc, props)
+            is_power = (
+                ref.startswith("#")
+                or ref == "PWR_FLAG"
+                or value == "PWR_FLAG"
+                or lib_id in power_libs
+                or lib_id.startswith("power:")
+            )
+            virtual = is_power or not on_board
 
-        dnp = _is_dnp(dnp_node, lcsc, props)
-        no_lcsc = _is_no_lcsc(lcsc, props)
-        is_power = (
-            ref.startswith("#")
-            or ref == "PWR_FLAG"
-            or value == "PWR_FLAG"
-            or lib_id in power_libs
-            or lib_id.startswith("power:")
-        )
-        virtual = is_power or not on_board
-
-        unit_entry = {
-            "reference": ref,
-            "lib_id": lib_id,
-            "uuid": uuid,
-            "unit": unit,
-            "units": [unit],
-            "uuids": [uuid] if uuid else [],
-            "LCSC": lcsc,
-            "lcsc": lcsc,
-            "Manufacturer": manufacturer,
-            "manufacturer": manufacturer,
-            "Partnumber": partnumber,
-            "partnumber": partnumber,
-            "PartNumber": props.get("PartNumber", "").strip(),
-            "Datasheet": datasheet,
-            "datasheet": datasheet,
-            "Footprint": footprint,
-            "footprint": footprint,
-            "Value": value,
-            "value": value,
-            "dnp": dnp,
-            "in_bom": in_bom,
-            "on_board": on_board,
-            "virtual": virtual,
-            "no_lcsc": no_lcsc,
-            "exempt": dnp or no_lcsc,
-            "params": params,
-            "properties": props,
-            "unit_disagreements": [],
-        }
-        if pn_conflict:
-            unit_entry["unit_disagreements"].append({
+            unit_entry = {
                 "reference": ref,
-                "field": "Partnumber",
-                "property": "Partnumber",
-                "schematic": props.get("Partnumber", ""),
-                "board": props.get("PartNumber", ""),
-                "reason": pn_conflict,
-            })
+                "lib_id": lib_id,
+                "uuid": uuid,
+                "sheet": rel,
+                "instance_path": instance,
+                "unit": unit,
+                "units": [unit],
+                "uuids": [uuid] if uuid else [],
+                "LCSC": lcsc,
+                "lcsc": lcsc,
+                "Manufacturer": manufacturer,
+                "manufacturer": manufacturer,
+                "Partnumber": partnumber,
+                "partnumber": partnumber,
+                "PartNumber": props.get("PartNumber", "").strip(),
+                "Datasheet": datasheet,
+                "datasheet": datasheet,
+                "Footprint": footprint,
+                "footprint": footprint,
+                "Value": value,
+                "value": value,
+                "dnp": dnp,
+                "native_dnp": dnp_node,
+                "in_bom": in_bom,
+                "on_board": on_board,
+                "virtual": virtual,
+                "unannotated": ref.endswith("?"),
+                "no_lcsc": no_lcsc,
+                "exempt": dnp or no_lcsc,
+                "params": params,
+                "properties": props,
+                "unit_disagreements": [],
+            }
+            if pn_conflict:
+                unit_entry["unit_disagreements"].append({
+                    "reference": ref,
+                    "field": "Partnumber",
+                    "property": "Partnumber",
+                    "schematic": props.get("Partnumber", ""),
+                    "board": props.get("PartNumber", ""),
+                    "reason": pn_conflict,
+                })
 
-        if ref not in bindings:
-            bindings[ref] = unit_entry
-        else:
-            existing = bindings[ref]
-            existing["units"].append(unit)
-            if uuid:
-                existing["uuids"].append(uuid)
-            existing["unit_disagreements"].extend(unit_entry["unit_disagreements"])
-
-            # Check boolean flags across units
-            for flag_key in ("dnp", "in_bom", "on_board", "virtual"):
-                if existing[flag_key] != unit_entry[flag_key]:
+            if ref not in bindings:
+                bindings[ref] = unit_entry
+            else:
+                existing = bindings[ref]
+                if unit in existing["units"] and not existing["unannotated"]:
                     existing["unit_disagreements"].append({
                         "reference": ref,
-                        "field": flag_key,
-                        "property": flag_key,
-                        "schematic": existing[flag_key],
-                        "board": unit_entry[flag_key],
-                        "reason": f"multi-unit schematic symbol {ref} disagrees on {flag_key} across units",
+                        "field": "reference",
+                        "property": "Reference",
+                        "schematic": f"{existing['sheet']} unit {unit}",
+                        "board": f"{rel} unit {unit}",
+                        "reason": f"duplicate schematic reference {ref!r} unit {unit}",
                     })
+                existing["units"].append(unit)
+                if uuid:
+                    existing["uuids"].append(uuid)
+                existing["unit_disagreements"].extend(unit_entry["unit_disagreements"])
 
-            # Merge or record disagreement on string binding properties
-            for prop_key, lower_key in (
-                ("LCSC", "lcsc"),
-                ("Manufacturer", "manufacturer"),
-                ("Partnumber", "partnumber"),
-                ("Datasheet", "datasheet"),
-                ("Footprint", "footprint"),
-                ("Value", "value"),
-            ):
-                old_val = existing[prop_key]
-                new_val = unit_entry[prop_key]
-                if old_val and new_val and old_val != new_val:
-                    existing["unit_disagreements"].append({
-                        "reference": ref,
-                        "field": prop_key,
-                        "property": prop_key,
-                        "schematic": old_val,
-                        "board": new_val,
-                        "reason": f"multi-unit schematic symbol {ref} disagrees on {prop_key}: {old_val!r} vs {new_val!r}",
-                    })
-                elif not old_val and new_val:
-                    existing[prop_key] = new_val
-                    existing[lower_key] = new_val
+                # Check boolean flags across units
+                for flag_key in ("dnp", "native_dnp", "in_bom", "on_board", "virtual"):
+                    if existing[flag_key] != unit_entry[flag_key]:
+                        existing["unit_disagreements"].append({
+                            "reference": ref,
+                            "field": flag_key,
+                            "property": flag_key,
+                            "schematic": existing[flag_key],
+                            "board": unit_entry[flag_key],
+                            "reason": f"multi-unit schematic symbol {ref} disagrees on {flag_key} across units",
+                        })
 
-            existing["no_lcsc"] = existing["no_lcsc"] or unit_entry["no_lcsc"]
-            existing["exempt"] = existing["dnp"] or existing["no_lcsc"]
+                # Merge or record disagreement on string binding properties
+                for prop_key, lower_key in (
+                    ("LCSC", "lcsc"),
+                    ("Manufacturer", "manufacturer"),
+                    ("Partnumber", "partnumber"),
+                    ("Datasheet", "datasheet"),
+                    ("Footprint", "footprint"),
+                    ("Value", "value"),
+                ):
+                    old_val = existing[prop_key]
+                    new_val = unit_entry[prop_key]
+                    if old_val and new_val and old_val != new_val:
+                        existing["unit_disagreements"].append({
+                            "reference": ref,
+                            "field": prop_key,
+                            "property": prop_key,
+                            "schematic": old_val,
+                            "board": new_val,
+                            "reason": f"multi-unit schematic symbol {ref} disagrees on {prop_key}: {old_val!r} vs {new_val!r}",
+                        })
+                    elif not old_val and new_val:
+                        existing[prop_key] = new_val
+                        existing[lower_key] = new_val
 
-            # Merge or record disagreement on PARAM_* properties
-            for p_name, p_val in params.items():
-                if p_name in existing["params"] and existing["params"][p_name] != p_val:
-                    existing["unit_disagreements"].append({
-                        "reference": ref,
-                        "field": p_name,
-                        "property": p_name,
-                        "schematic": existing["params"][p_name],
-                        "board": p_val,
-                        "reason": f"multi-unit schematic symbol {ref} disagrees on {p_name}",
-                    })
-                else:
-                    existing["params"][p_name] = p_val
+                existing["no_lcsc"] = existing["no_lcsc"] or unit_entry["no_lcsc"]
+                existing["exempt"] = existing["dnp"] or existing["no_lcsc"]
 
-            for k, v in props.items():
-                if k not in existing["properties"] or not existing["properties"][k]:
-                    existing["properties"][k] = v
+                # Merge or record disagreement on PARAM_* properties
+                for p_name, p_val in params.items():
+                    if p_name in existing["params"] and existing["params"][p_name] != p_val:
+                        existing["unit_disagreements"].append({
+                            "reference": ref,
+                            "field": p_name,
+                            "property": p_name,
+                            "schematic": existing["params"][p_name],
+                            "board": p_val,
+                            "reason": f"multi-unit schematic symbol {ref} disagrees on {p_name}",
+                        })
+                    else:
+                        existing["params"][p_name] = p_val
 
-    return bindings
+                for k, v in props.items():
+                    if k not in existing["properties"] or not existing["properties"][k]:
+                        existing["properties"][k] = v
+
+    return bindings, files
+
+
+def parse_schematic_bindings(
+    sch_bytes: bytes, *, path: str = "", sheets: dict[str, bytes] | None = None
+) -> dict[str, dict]:
+    """Parse placed symbol part bindings from captured .kicad_sch bytes."""
+    return schematic_hierarchy_bindings(sch_bytes, path=path, sheets=sheets)[0]
 
 
 def _extract_fp_text(fp_node) -> dict[str, str]:
@@ -583,10 +688,12 @@ def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
             "Value": value,
             "value": value,
             "dnp": dnp,
+            "native_dnp": ("dnp" in attrs) or dnp_node,
             "in_bom": in_bom,
             "on_board": on_board_node,
             "board_only": board_only,
             "virtual": virtual,
+            "unannotated": ref.endswith("?"),
             "no_lcsc": no_lcsc,
             "exempt": dnp or no_lcsc,
             "params": params,
@@ -659,20 +766,22 @@ def _check_component_bindings(
                 "reason": f"{source_name} {ref} has invalid LCSC code {lcsc!r} (expected ^C[1-9][0-9]*$)",
             })
 
-    if dnp or no_lcsc:
-        return
-
+    # A DNP or no-LCSC marker stands in for the LCSC code only; Manufacturer and
+    # Partnumber stay required on every non-virtual component.
     missing_props = []
-    if not lcsc:
+    if comp.get("unannotated"):
+        missing_props.append("Reference")
+    if not lcsc and not (dnp or no_lcsc):
         missing_props.append("LCSC")
     if not manufacturer:
         missing_props.append("Manufacturer")
     if not partnumber:
         missing_props.append("Partnumber")
-    if require_datasheet and not datasheet:
-        missing_props.append("Datasheet")
-    if require_params and not params:
-        missing_props.append("PARAM_*")
+    if not (dnp or no_lcsc):
+        if require_datasheet and not datasheet:
+            missing_props.append("Datasheet")
+        if require_params and not params:
+            missing_props.append("PARAM_*")
 
     for prop in missing_props:
         missing_bindings.append({
@@ -685,19 +794,53 @@ def _check_component_bindings(
         })
 
 
+def _reference_outcomes(evaluated, missing_bindings, invalid_bindings, disagreements) -> dict[str, str]:
+    """Per-reference outcome: defect dominates unknown; pass only with no record at all."""
+    outcomes = dict.fromkeys(evaluated, "pass")
+    for item in missing_bindings:
+        if outcomes.get(item["reference"]) != "defect":
+            outcomes[item["reference"]] = "unknown"
+    for item in [*invalid_bindings, *disagreements]:
+        outcomes[item["reference"]] = "defect"
+    return dict(sorted(outcomes.items()))
+
+
+def _one_sided_missing(missing_bindings: list[dict], ref: str, side: str, prop: str):
+    if any(m["reference"] == ref and m["source"] == side and m["property"] == prop for m in missing_bindings):
+        return
+    other = "schematic" if side == "board" else "board"
+    missing_bindings.append({
+        "reference": ref,
+        "source": side,
+        "property": prop,
+        "field": prop,
+        "missing": [prop],
+        "reason": f"{side} {ref} lacks {prop} that the {other} carries",
+    })
+
+
 def validate_part_bindings(
     sch_bytes: bytes | None = None,
     pcb_bytes: bytes | None = None,
     *,
     require_datasheet: bool = False,
     require_params: bool = False,
+    schematic_path: str = "",
+    sheets: dict[str, bytes] | None = None,
 ) -> dict:
-    """Validate schematic and/or board part bindings and cross-check parity."""
+    """Validate schematic and/or board part bindings and cross-check parity.
+
+    ``schematic_path`` and ``sheets`` supply the captured sheet hierarchy below
+    the root schematic; a child sheet that is not supplied is malformed.
+    """
     if sch_bytes is None and pcb_bytes is None:
         raise PartBindingError("at least one of sch_bytes or pcb_bytes is required")
 
     try:
-        sch_bindings = parse_schematic_bindings(sch_bytes) if sch_bytes is not None else {}
+        sch_bindings, sch_files = (
+            schematic_hierarchy_bindings(sch_bytes, path=schematic_path, sheets=sheets)
+            if sch_bytes is not None else ({}, [])
+        )
         pcb_bindings = parse_board_bindings(pcb_bytes) if pcb_bytes is not None else {}
     except PartBindingMalformedError as exc:
         return {
@@ -707,6 +850,8 @@ def validate_part_bindings(
             "summary": f"malformed part binding input: {exc}",
             "schematic_components": {},
             "board_components": {},
+            "schematic_files": [],
+            "reference_outcomes": {},
             "evaluated_references": [],
             "exempt_references": [],
             "virtual_references": [],
@@ -805,7 +950,9 @@ def validate_part_bindings(
                     })
                 continue
 
-            # Compare properties for non-virtual paired components
+            # Compare properties for non-virtual paired components. A binding
+            # property present on one side only is missing coverage there
+            # (unknown); two different non-empty values are a disagreement.
             for field_name in (
                 "LCSC",
                 "Manufacturer",
@@ -814,19 +961,25 @@ def validate_part_bindings(
                 "Footprint",
                 "Value",
                 "dnp",
+                "native_dnp",
                 "in_bom",
             ):
                 s_val = sch_comp[field_name]
                 b_val = pcb_comp[field_name]
-                if s_val != b_val:
-                    disagreements.append({
-                        "reference": ref,
-                        "field": field_name,
-                        "property": field_name,
-                        "schematic": s_val,
-                        "board": b_val,
-                        "reason": f"{ref} disagrees on {field_name}: schematic={s_val!r} vs board={b_val!r}",
-                    })
+                if s_val == b_val:
+                    continue
+                if field_name in BINDING_FIELDS and not (s_val and b_val):
+                    side = "board" if s_val else "schematic"
+                    _one_sided_missing(missing_bindings, ref, side, field_name)
+                    continue
+                disagreements.append({
+                    "reference": ref,
+                    "field": field_name,
+                    "property": field_name,
+                    "schematic": s_val,
+                    "board": b_val,
+                    "reason": f"{ref} disagrees on {field_name}: schematic={s_val!r} vs board={b_val!r}",
+                })
 
             # If both explicitly define PartNumber as well as Partnumber, verify exact match
             if (
@@ -849,7 +1002,9 @@ def validate_part_bindings(
             for p_name in all_params:
                 s_param = sch_comp["params"].get(p_name)
                 b_param = pcb_comp["params"].get(p_name)
-                if s_param != b_param:
+                if s_param is None or b_param is None:
+                    _one_sided_missing(missing_bindings, ref, "board" if b_param is None else "schematic", p_name)
+                elif s_param != b_param:
                     disagreements.append({
                         "reference": ref,
                         "field": p_name,
@@ -884,6 +1039,10 @@ def validate_part_bindings(
         "summary": summary,
         "schematic_components": sch_bindings,
         "board_components": pcb_bindings,
+        "schematic_files": sch_files,
+        "reference_outcomes": _reference_outcomes(
+            evaluated_refs, missing_bindings, invalid_bindings, disagreements
+        ),
         "evaluated_references": sorted(evaluated_refs),
         "exempt_references": sorted(exempt_refs),
         "virtual_references": sorted(virtual_refs),
@@ -954,6 +1113,7 @@ def check_part_binding(ctx):
 
     sch_bytes = None
     pcb_bytes = None
+    sheets = {}
     input_digests = {}
 
     try:
@@ -961,6 +1121,10 @@ def check_part_binding(ctx):
             sch_file = Path(ctx.inputs) / sch_rel
             sch_bytes = sch_file.read_bytes()
             input_digests["schematic"] = {"path": sch_rel, "sha256": digest(sch_file)}
+            # Child sheets resolve only among captured schematic files.
+            for rel in ctx.manifest["files"]:
+                if rel != sch_rel and rel.endswith(".kicad_sch"):
+                    sheets[rel] = (Path(ctx.inputs) / rel).read_bytes()
         if pcb_rel is not None:
             pcb_file = Path(ctx.inputs) / pcb_rel
             pcb_bytes = pcb_file.read_bytes()
@@ -973,7 +1137,14 @@ def check_part_binding(ctx):
         pcb_bytes,
         require_datasheet=require_datasheet,
         require_params=require_params,
+        schematic_path=sch_rel or "",
+        sheets=sheets,
     )
+    if len(report["schematic_files"]) > 1:
+        input_digests["sheets"] = [
+            {"path": rel, "sha256": digest(Path(ctx.inputs) / rel)}
+            for rel in report["schematic_files"] if rel != sch_rel
+        ]
     report["candidate_id"] = ctx.manifest["candidate_id"]
     report["inputs"] = input_digests
 
