@@ -247,7 +247,10 @@ engineering claims.
 pinned local commit without Git transports or replacement refs, and checks
 declared ports against the native sheet. Missing local blobs are refused. It credits
 sealed interface evidence only for the block's actual native components and
-hierarchy. Parts subsets, layouts and adapted designs still need qualification;
+hierarchy. [Block adaptation](docs/block-adaptation.md) copies a flat block into
+a pre-created child, freezes its provenance and maps its requirements to fresh board checks.
+Its native provenance check lists value/connectivity edits and grades boundary
+bindings. Parts subsets and layouts still need qualification;
 a passing run on a separate schematic cannot qualify the block.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins

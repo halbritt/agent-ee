@@ -2059,6 +2059,17 @@
         "AE"
       ],
       "reviewed": "Original source URL, commit, byte counts and SHA-256 facts recorded for AGENTEE-27. Contains no upstream catalog rows, library or design files."
+    },
+    {
+      "paths": [
+        "src/agent_ee/block_adaptation.py",
+        "tests/test_block_adaptation.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original block adapter, native passive boundary probes and synthetic fixture tests authored for AGENTEE-90. KiCad format literals and probe symbols are original; no third-party designs or symbol libraries are copied into these files."
     }
   ]
 }

@@ -99,3 +99,9 @@ No FOME-MC sheet is distributed with this library. The proposed `psu` and `wbo1`
 entries still need authorized source acquisition, explicit electrical
 declarations, parts qualification and complete passing sealed runs. Owned
 controls establish capture behavior, not qualification of those actual blocks.
+
+[Block adaptation](block-adaptation.md) instantiates a captured flat block into a
+pre-created child sheet and maps its requirements to fresh board checks. The
+instance and source remain immutable; the ordinary repair writer edits the child.
+`block_provenance` reports semantic changes and checks native boundary bindings.
+Source qualification never supplies board check results.

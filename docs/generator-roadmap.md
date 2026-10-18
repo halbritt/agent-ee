@@ -142,6 +142,12 @@ hierarchical staged presence and complete production envelope acceptance remain
 unavailable. The experimental rung-1 driver still uses its earlier
 [RC campaign scaffold](rung1-campaign.md).
 
+The [block adapter](block-adaptation.md) can now fill pre-created child sheets
+from captured flat blocks, freeze instance records and map block requirements
+to fresh board checks. It is a standalone scaffold seam; AGENTEE-87 still owns
+the command that creates the complete empty candidate. Two properties of the
+current reducer also stop a generation campaign early, and AGENTEE-88 addresses them:
+
 Opt-in [staged campaigns](staged-campaign.md) implement AGENTEE-48/88 in the
 existing check scheduler and convergence reducer:
 
