@@ -213,6 +213,10 @@ compares declared intervals and stock within that snapshot. Both now have checks
 that use the captured baseline, sandbox and coordinator seal; selection binds one
 explicit requirement. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
+and their catalog, CAD and datasheet provenance in the campaign baseline.
+The `parts_subset` check compares native symbol/footprint/supplier identities
+and required instances; absent native evidence leaves coverage unknown.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
 are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap

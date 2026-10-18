@@ -54,8 +54,11 @@ The checks that constitute "done" for each rung:
 | 3 | Rung 2 set for every block instance and the integrated board, plus DFM geometry and fab profile rules | `fab_package` passes, round trip conserved |
 | 4 | Rung 3 set at FOME-MC scale, plus FOME-MC's own rules (for example HV clearance) | `fab_package` passes |
 
-`parts_subset`, `placement`, `block_provenance` and `fab_package` do not exist
-yet (AGENTEE-86, AGENTEE-92, AGENTEE-90, AGENTEE-94). The export half of the
+The [`parts_subset`](approved-parts.md) check and immutable manifest are
+registered for scope/2 and scope/3 (AGENTEE-86); real rung inputs and migration
+from the experimental generator's parts record remain pending.
+`placement` is also registered ([details](placement.md)); `block_provenance`
+and `fab_package` remain pending (AGENTEE-90, AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
 [consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
 CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
