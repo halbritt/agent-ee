@@ -6,6 +6,12 @@ delivered design and into a fresh scratch destination. A strict comparison of th
 complete saved boards admits only footprint translations and quarter turns.
 Receipts, the helper's own judgment and its local DRC are provenance only; the
 campaign's fresh captured checks grade every proposal.
+
+A declaration may also name a captured AGENTEE-56 sub-layout request (AGENTEE-129).
+Its group-local copper is then admitted, and nothing else: each added board item
+must be a planned copy of a whole group that is new on the source board, with the
+UUID derived from the captured sub-board bytes, the exact transformed geometry and
+the voted net, inside the group's region, as a fresh sandboxed pcbnew read shows.
 """
 import argparse
 import copy
@@ -13,6 +19,7 @@ import hashlib
 import json
 import re
 import subprocess
+import tempfile
 import uuid
 from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
@@ -26,6 +33,15 @@ RECORD_SCHEMA = 'agent-ee.placement-adapter-record/2'
 BINDING_SCHEMA = 'agent-ee.placement-binding/1'
 CONTEXT_SCHEMA = 'agent-ee.placement-writer-context/1'
 DRIVER_SCHEMA = 'agent-ee.placement-driver/1'
+COPPER_SCHEMA = 'agent-ee.group-copper-scope/1'
+SUBLAYOUT_KEYS = {'request', 'sub_boards'}
+# Board-level nodes a reused group may add, with the pcbnew class its planned copy must have.
+GROUP_TAGS = {'segment': 'PCB_TRACK', 'arc': 'PCB_ARC', 'via': 'PCB_VIA', 'zone': 'ZONE', 'gr_text': 'PCB_TEXT',
+              **{tag: 'PCB_SHAPE' for tag in ('gr_line', 'gr_rect', 'gr_circle', 'gr_arc', 'gr_poly', 'gr_curve')}}
+# Children of a copied node that the transform or the net vote may change; the pcbnew read checks
+# them. Every other token must equal the captured sub-board's source node.
+COPY_GEOMETRY = ('start', 'end', 'mid', 'center', 'at', 'pts', 'polygon', 'filled_polygon', 'net', 'net_name',
+                 'uuid')
 RECORD_KEYS = {'schema', 'implementation', 'source_candidate_id', 'stage', 'declaration_sha256', 'binding_sha256',
                'board', 'protected', 'protected_refs', 'helper', 'writer_scope', 'proposal_scope', 'status',
                'error', 'authority'}
@@ -83,11 +99,22 @@ def _relative(value, label):
     return value
 
 
+def validate_sublayout(value):
+    """Captured sub-layout request and sub-board root whose group-local copper is admitted."""
+    if not isinstance(value, dict) or set(value) != SUBLAYOUT_KEYS:
+        raise ValueError(f'placement sublayout must have exactly {sorted(SUBLAYOUT_KEYS)}')
+    request = _relative(value['request'], 'sub-layout request')
+    if not request.endswith('.json'):
+        raise ValueError('sub-layout request must be a captured .json file')
+    return {'request': request, 'sub_boards': _relative(value['sub_boards'], 'sub-board root')}
+
+
 def validate_declaration(value):
     """Return the normalized campaign declaration; no placement default is implied."""
     keys = {'schema', 'helper', 'policy', 'fixed_footprints', 'timeout_s'}
-    if not isinstance(value, dict) or value.get('schema') != ADAPTER_SCHEMA or set(value) != keys:
-        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)}')
+    if (not isinstance(value, dict) or value.get('schema') != ADAPTER_SCHEMA or not keys <= set(value) or
+            set(value) - keys - {'sublayout'}):
+        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)} and optionally sublayout')
     helper, policy = value['helper'], value['policy']
     if helper is not None and helper not in HELPERS:
         raise ValueError(f'placement helper must be null or one of {HELPERS}')
@@ -107,8 +134,12 @@ def validate_declaration(value):
     timeout = value['timeout_s']
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
         raise ValueError('placement timeout_s must be an integer from 1 to 86400')
-    return {'schema': ADAPTER_SCHEMA, 'helper': helper, 'policy': policy,
-            'fixed_footprints': sorted(fixed), 'timeout_s': timeout}
+    normalized = {'schema': ADAPTER_SCHEMA, 'helper': helper, 'policy': policy,
+                  'fixed_footprints': sorted(fixed), 'timeout_s': timeout}
+    if 'sublayout' in value:
+        # Only present when declared, so the identity of a copper-free declaration is unchanged.
+        normalized['sublayout'] = validate_sublayout(value['sublayout'])
+    return normalized
 
 
 def is_placement_iteration(state, manifest):
@@ -129,6 +160,12 @@ def bind_declaration(declaration, manifest, mutable_inputs):
             raise ValueError('placement helper requires the captured schematic for native netlist export')
         if declaration['policy'] not in files or declaration['policy'] in mutable_inputs:
             raise ValueError('placement policy must be a captured immutable input')
+    sub = declaration.get('sublayout')
+    if sub is not None:
+        if sub['request'] not in files or sub['request'] in mutable_inputs:
+            raise ValueError('sub-layout request must be a captured immutable input')
+        if any(rel == sub['sub_boards'] or rel.startswith(sub['sub_boards'] + '/') for rel in mutable_inputs):
+            raise ValueError('sub-boards must be captured immutable inputs')
     return {**declaration, 'board': board, 'schematic': schematic}
 
 
@@ -188,7 +225,35 @@ def binding(declaration, manifest, inputs, mutable_inputs):
               'policy': None if bound['policy'] is None else {
                   'path': bound['policy'], 'sha256': manifest['files'][bound['policy']]},
               'envelopes': envelopes, 'policy_fixed_refs': sorted(set(policy['fixed_refs']))}
+    if bound.get('sublayout') is not None:
+        record['sublayout'] = sublayout_binding(bound['sublayout'], manifest, inputs, mutable_inputs)
     return record, bound, policy, protected, protected_refs
+
+
+def sublayout_binding(sub, manifest, inputs, mutable_inputs):
+    """The captured request and every sub-board it names, bound by their captured digests.
+
+    A declared sub-layout must be wholly captured: a missing, mutable, linked or changed
+    request or sub-board refuses the binding, never a single group."""
+    from .sublayout import read_request
+    files = manifest['files']
+    path = Path(inputs) / sub['request']
+    if path.is_symlink() or not path.is_file() or digest(path) != files[sub['request']]:
+        raise ValueError('captured sub-layout request changed')
+    try:
+        request = read_request(read_json(path))
+    except ValueError as exc:
+        raise ValueError(f'captured sub-layout request is invalid: {exc}') from None
+    groups = []
+    for group in request['groups']:
+        rel = f"{sub['sub_boards']}/{group['sub_board']}"
+        if rel not in files or rel in mutable_inputs:
+            raise ValueError(f"sub-board {rel} of group {group['id']} must be a captured immutable input")
+        if group.get('sub_board_sha256') not in (None, files[rel]):
+            raise ValueError(f"sub-board {rel} differs from the sha256 that group {group['id']} declares")
+        groups.append({'id': group['id'], 'sub_board': rel, 'sha256': files[rel]})
+    return {'request': {'path': sub['request'], 'sha256': files[sub['request']]},
+            'sub_boards': sub['sub_boards'], 'groups': groups}
 
 
 # Strict structural comparison of complete saved boards.
@@ -324,6 +389,17 @@ def _child_follows(before, after, rotation):
             _turn(a_at[2] - b_at[2] - rotation) == 0)
 
 
+def _field_follows(before, after):
+    """A reused group member's Reference or Value field may take the sub-board's position, angle,
+    layer and visibility; the fresh pcbnew read then requires exactly the planned values."""
+    if before[0] != 'property' or len(before) < 3 or before[1] not in ('Reference', 'Value') or \
+            before[:3] != after[:3]:
+        return False
+    free = ('at', 'layer', 'hide')
+    return ([c for c in before if not (isinstance(c, list) and c and c[0] in free)] ==
+            [c for c in after if not (isinstance(c, list) and c and c[0] in free)])
+
+
 def _flip_layer(name):
     return FLIP_LAYERS.get(name, name if name in SIDE_NEUTRAL_LAYERS else None)
 
@@ -425,7 +501,7 @@ def _flip_follows(before, after, theta, theta_after):
     return False
 
 
-def _footprint(key, before, after, protected, violations):
+def _footprint(key, before, after, protected, violations, fields=False):
     label = f'footprint {key} ({_reference(before) or "no reference"})'
     count = len(violations)
     if [t for t in before[1:] if isinstance(t, str)] != [t for t in after[1:] if isinstance(t, str)]:
@@ -469,6 +545,8 @@ def _footprint(key, before, after, protected, violations):
         violations.append(f'{label}: {"removed" if item in keyed[0] else "added"} {item[0]} {item[1]}')
     for item in sorted(keyed[0].keys() & keyed[1].keys()):
         b_child, a_child = keyed[0][item], keyed[1][item]
+        if fields and _field_follows(b_child, a_child):
+            continue
         try:
             if (_flip_follows(b_child, a_child, b_at[2], a_at[2]) if flipped else
                     _child_follows(b_child, a_child, rotation)):
@@ -488,9 +566,21 @@ def _footprint(key, before, after, protected, violations):
             'to': [str(a_at[0]), str(a_at[1]), _degrees(a_at[2])]}
 
 
-def write_scope(before, after, protected=()):
-    """Compare complete saved boards; only movable footprint transforms are allowed."""
+def write_scope(before, after, protected=(), groups=None):
+    """Compare complete saved boards; only movable footprint transforms are allowed.
+
+    `groups` are admissible sub-layout plans (AGENTEE-129). A board-level node is then also
+    allowed when it is new and carries the UUID and kind of one planned copy or group node;
+    the report names every group with such a node, and the caller must verify those groups
+    exactly. Their members' Reference and Value fields may follow the sub-board."""
     protected = sorted(set(protected))
+    admitted, tokens = {}, {}
+    for group in groups or ():
+        plan = group['plan']
+        admitted[plan['uuid']] = (group['id'], 'group')
+        admitted.update({c['uuid']: (group['id'], c['expected']['kind']) for c in plan['copy']})
+        tokens.update(group['tokens'])
+    present = set()
     report = {'schema': SCOPE_SCHEMA, 'family': TRANSFORM_FAMILY, 'before_sha256': hashlib.sha256(before).hexdigest(),
               'after_sha256': hashlib.sha256(after).hexdigest(), 'protected': protected,
               'transforms': [], 'violations': []}
@@ -503,17 +593,149 @@ def write_scope(before, after, protected=()):
     else:
         others = [[n for n in root[1:] if not (isinstance(n, list) and n and n[0] == 'footprint')]
                   for root in roots]
+        if admitted:
+            known = {_uuid(n) for n in others[0] if isinstance(n, list)}
+            kept = []
+            for node in others[1]:
+                key = _uuid(node) if isinstance(node, list) and node else None
+                hit = admitted.get(key) if key not in known else None
+                if hit and hit[1] == ('group' if node[0] == 'group' else GROUP_TAGS.get(node[0])):
+                    present.add(hit[0])
+                    if key in tokens and _copy_tokens(node) != tokens[key]:
+                        violations.append(f'group sublayout:{hit[0]}: {node[0]} {key} changed beyond the '
+                                          'sub-board copy (a token other than geometry or net differs)')
+                else:
+                    kept.append(node)
+            others[1] = kept
+        members = {fp['uuid'] for group in groups or () if group['id'] in present for fp in group['plan']['footprints']}
         violations += _sequence_violations(*others, 'board')
         violations += [f'protected footprint {key} absent from source board'
                        for key in protected if key not in prints[0]]
         violations += [f'footprint {key} removed' for key in sorted(prints[0].keys() - prints[1].keys())]
         violations += [f'footprint {key} added' for key in sorted(prints[1].keys() - prints[0].keys())]
         for key in sorted(prints[0].keys() & prints[1].keys()):
-            moved = _footprint(key, prints[0][key], prints[1][key], protected, violations)
+            moved = _footprint(key, prints[0][key], prints[1][key], protected, violations, key in members)
             if moved:
                 report['transforms'].append(moved)
+    if groups is not None:
+        report['reused_groups'] = sorted(present)
     report['status'] = 'refused' if violations else 'allowed'
     return report
+
+
+def _copy_tokens(node):
+    return [c for c in node if not (isinstance(c, list) and c and c[0] in COPY_GEOMETRY)]
+
+
+def _source_tokens(sources, key):
+    if key not in sources:
+        raise ValueError(f'sub-board item {key} that pcbnew reports is absent from the saved sub-board')
+    return _copy_tokens(sources[key])
+
+
+def group_admission(source_inputs, bound):
+    """Coordinator plan of the declared sub-layout over the captured source board, or None.
+
+    Planned by the unchanged AGENTEE-56 planner from fresh sandboxed pcbnew facts of the
+    source board and of each captured sub-board. A group whose members are not all new, or
+    that the planner refuses for any other reason, admits no copper."""
+    sub = bound.get('sublayout')
+    if sub is None:
+        return None
+    from . import sublayout
+    source_inputs = Path(source_inputs)
+    request = sublayout.read_request(read_json(source_inputs / sub['request']))
+    root = source_inputs / sub['sub_boards']
+    groups = []
+    with tempfile.TemporaryDirectory(prefix='agent-ee-group-copper-') as tmp:
+        top = sublayout.board_facts(source_inputs / bound['board'], Path(tmp) / 'top')
+        for index, group in enumerate(request['groups']):
+            record, error = sublayout._sub_board(root, group)
+            entry = {'id': group['id'], 'name': f"sublayout:{group['id']}", 'sub_board': record}
+            if error is not None:
+                entry['findings'] = [{'code': error.code, 'message': str(error)}]
+            else:
+                data = (root / group['sub_board']).read_bytes()
+                if hashlib.sha256(data).hexdigest() != record['sha256']:
+                    raise ValueError(f"sub-board {group['sub_board']} changed during admission")
+                facts = sublayout.board_facts(root / group['sub_board'], Path(tmp) / f'sub-{index}', record['sha256'])
+                plan = sublayout.plan_group(group, top, facts, record['sha256'])
+                if plan['status'] == 'apply':
+                    sources = {_uuid(n): n for n in _board(data)[1:] if isinstance(n, list) and n}
+                    entry.update(plan=plan, region_nm=sublayout.module_region(plan, facts),
+                                 tokens={c['uuid']: _source_tokens(sources, c['source_uuid']) for c in plan['copy']})
+                else:
+                    entry['findings'] = [{'code': f['code'], 'message': f['message']} for f in plan['findings']]
+            groups.append(entry)
+    return {'request_sha256': digest(source_inputs / sub['request']), 'top': top, 'groups': groups}
+
+
+def _inside(box, region):
+    return region[0] <= box[0] and region[1] <= box[1] and box[2] <= region[2] and box[3] <= region[3]
+
+
+def _group_errors(group, old, after):
+    """Why the saved board's copy of an admitted group is not exactly its plan; empty when exact."""
+    from .sublayout import footprint_error
+    plan, region = group['plan'], group['region_nm']
+    items = {i['uuid']: i for i in after['items']}
+    prints = {fp['uuid']: fp for fp in after['footprints']}
+    mapped = {e['top_net'] for e in plan['net_map'] if e['status'] == 'mapped'}
+    errors = []
+    for copy_ in plan['copy']:
+        kind, key = copy_['expected']['kind'], copy_['uuid']
+        got = items.get(key)
+        if got is None:
+            errors.append(f'{kind} {key} missing; a group is admitted whole or not at all')
+            continue
+        if {k: v for k, v in got.items() if k not in ('bbox_nm', 'filled')} != copy_['expected']:
+            errors.append(f'{kind} {key} differs from the captured sub-board transform or the voted net')
+        if got['net'] and got['net'] not in mapped:
+            errors.append(f"{kind} {key} net {got['net']} is not a voted net of the group")
+        if not _inside(got['bbox_nm'], region):
+            errors.append(f'{kind} {key} lies outside the group region {region}')
+    for want in plan['footprints']:
+        fp = prints.get(want['uuid'])
+        error = f"{want['top_ref']} absent" if fp is None else footprint_error(want, fp, old[want['uuid']])
+        if error:
+            errors.append(error)
+    members = {fp['uuid'] for fp in plan['footprints']} | {c['uuid'] for c in plan['copy']}
+    saved = {g['uuid']: g for g in after['groups']}.get(plan['uuid'])
+    if saved is None or saved['name'] != plan['name'] or set(saved['members']) != members:
+        errors.append('group membership differs from the plan')
+    return errors
+
+
+def copper_scope(copper, board, reused):
+    """The group-copper part of a scope report, from a fresh sandboxed pcbnew read of `board`."""
+    after = None
+    if reused:
+        from .sublayout import board_facts
+        with tempfile.TemporaryDirectory(prefix='agent-ee-group-copper-') as tmp:
+            after = board_facts(board, Path(tmp) / 'after')
+    old = {fp['uuid']: fp for fp in copper['top']['footprints']}
+    groups, violations = [], []
+    for group in copper['groups']:
+        entry = {'id': group['id'], 'name': group['name'], 'sub_board': group['sub_board']}
+        if 'plan' not in group:
+            entry.update(status='not_admissible', findings=group['findings'])
+        elif group['id'] not in reused:
+            entry['status'] = 'absent'
+        else:
+            plan = group['plan']
+            errors = _group_errors(group, old, after)
+            violations += [f"group {group['name']}: {e}" for e in errors]
+            kinds = {}
+            for copy_ in plan['copy']:
+                kinds[copy_['expected']['kind']] = kinds.get(copy_['expected']['kind'], 0) + 1
+            entry.update(status='refused' if errors else 'reused', uuid=plan['uuid'], region_nm=group['region_nm'],
+                         rotation_deg=plan['rotation_deg'], anchor_at_nm=plan['anchor_at_nm'],
+                         members=sorted(fp['top_ref'] for fp in plan['footprints']),
+                         nets={e['sub_net']: e['top_net'] for e in plan['net_map'] if e['status'] == 'mapped'},
+                         copied=dict(sorted(kinds.items())), items=sorted(c['uuid'] for c in plan['copy']),
+                         withheld=plan['withheld'])
+        groups.append(entry)
+    return {'schema': COPPER_SCHEMA, 'request_sha256': copper['request_sha256'], 'groups': groups}, violations
 
 
 def protected_footprints(board, fixed_footprints, fixed_refs=()):
@@ -546,8 +768,11 @@ def _files(root):
     return files
 
 
-def proposal_scope(source_inputs, design, board, protected):
-    """Placement-iteration write scope of a delivered design against its source candidate."""
+def proposal_scope(source_inputs, design, board, protected, copper=None):
+    """Placement-iteration write scope of a delivered design against its source candidate.
+
+    `copper` is the group_admission of a declared sub-layout; the report then carries its
+    group-copper section, and any inexact reused group is a violation."""
     source_inputs, design = Path(source_inputs), Path(design)
     before, after = _files(source_inputs), _files(design)
     violations = [f'non-board file {"removed" if rel in before else "added"}: {rel}'
@@ -559,7 +784,12 @@ def proposal_scope(source_inputs, design, board, protected):
         report = {'schema': SCOPE_SCHEMA, 'family': TRANSFORM_FAMILY, 'status': 'refused', 'protected': sorted(protected),
                   'transforms': [], 'violations': []}
     else:
-        report = write_scope((source_inputs / board).read_bytes(), (design / board).read_bytes(), protected)
+        report = write_scope((source_inputs / board).read_bytes(), (design / board).read_bytes(), protected,
+                             None if copper is None else [g for g in copper['groups'] if 'plan' in g])
+    if copper is not None:
+        reused = report.pop('reused_groups', [])
+        report['copper'], errors = copper_scope(copper, design / board, reused)
+        violations += errors
     report['violations'] = violations + report['violations']
     report.update(board=board, status='refused' if report['violations'] else 'allowed')
     return report
@@ -679,10 +909,12 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
     ran = False
     failure = None
     try:
-        record['writer_scope'] = proposal_scope(source_inputs, design, board, protected)
+        copper = group_admission(source_inputs, bound)
+        record['writer_scope'] = proposal_scope(source_inputs, design, board, protected, copper)
         if record['writer_scope']['status'] != 'allowed':
             record['status'] = 'refused'
-            raise ValueError('placement writer proposal changed more than footprint transforms: '
+            raise ValueError('placement writer proposal changed more than footprint transforms or admitted '
+                             'group copper: '
                              f"{record['writer_scope']['violations']}")
         if bound['helper'] is not None:
             if receipts is None:
@@ -704,7 +936,7 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
                                     receipt_sha256=digest(receipt_dir / 'receipt.json'))
             record['helper'].update(qualify_receipt(receipt_dir, receipt, board, protected))
             receipts.adopt(receipt_dir, receipt, design)
-        scope = proposal_scope(source_inputs, design, board, protected)
+        scope = proposal_scope(source_inputs, design, board, protected, copper)
         record['proposal_scope'] = scope
         if scope['status'] != 'allowed':
             record['status'] = 'refused'
@@ -791,7 +1023,8 @@ def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, m
     if stored['status'] != 'proposed' or stored['error'] is not None:
         raise ValueError('placement record is not a proposed placement iteration')
     binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs)
-    scope = proposal_scope(source_inputs, proposal_inputs, bound['board'], protected)
+    copper = group_admission(source_inputs, bound)
+    scope = proposal_scope(source_inputs, proposal_inputs, bound['board'], protected, copper)
     if scope['status'] != 'allowed' or scope['violations']:
         raise ValueError(f"captured proposal is outside the placement write scope: {scope['violations']}")
     expected = {**_record(work, manifest, declaration, binding_record, bound, protected, refs),
@@ -807,7 +1040,8 @@ def verify_record(work, source_inputs, proposal_inputs, manifest, declaration, m
         name, receipt_dir, receipt, step_dir = _helper_receipt(work, bound, manifest, receipts, receipt_index,
                                                                source_files)
         # The writer's delivered design is the receipt's retained input copy.
-        expected['writer_scope'] = proposal_scope(source_inputs, receipt_dir / 'inputs', bound['board'], protected)
+        expected['writer_scope'] = proposal_scope(source_inputs, receipt_dir / 'inputs', bound['board'], protected,
+                                                  copper)
         if expected['writer_scope']['status'] != 'allowed':
             raise ValueError('placement writer proposal before the helper is outside the placement write scope: '
                              f"{expected['writer_scope']['violations']}")
@@ -843,6 +1077,13 @@ def verify_attempt(work, source_inputs, design, manifest, declaration, mutable_i
     binding_record, bound, policy, protected, refs = binding(declaration, manifest, source_inputs, mutable_inputs)
     expected = {**_record(work, manifest, declaration, binding_record, bound, protected, refs),
                 'status': stored['status'], 'error': stored['error']}
+    admission = []
+
+    def scope_of(design_dir):
+        # The sub-layout plan is recomputed only when a scope proof has to be.
+        if not admission:
+            admission.append(group_admission(source_inputs, bound))
+        return proposal_scope(source_inputs, design_dir, bound['board'], protected, admission[0])
     helper = stored['helper']
     receipt = None
     if helper is not None:
@@ -873,11 +1114,11 @@ def verify_attempt(work, source_inputs, design, manifest, declaration, mutable_i
                 expected['helper'].update(qualify_receipt(receipt_dir, receipt, bound['board'], protected))
             except ValueError:
                 pass
-        expected['writer_scope'] = proposal_scope(source_inputs, delivered, bound['board'], protected)
+        expected['writer_scope'] = scope_of(delivered)
     elif stored['writer_scope'] is not None:
-        expected['writer_scope'] = proposal_scope(source_inputs, design, bound['board'], protected)
+        expected['writer_scope'] = scope_of(design)
     if stored['proposal_scope'] is not None:
-        expected['proposal_scope'] = proposal_scope(source_inputs, design, bound['board'], protected)
+        expected['proposal_scope'] = scope_of(design)
     if stored['status'] == 'refused' and not any(
             s is not None and s['status'] == 'refused' for s in (expected['writer_scope'], expected['proposal_scope'])):
         raise ValueError('refused placement attempt has no refused scope proof')

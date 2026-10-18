@@ -27,6 +27,12 @@ The campaign configuration key `placement_adapter` holds an
   `mutable_inputs`. It is required with a helper and refused without one.
 - `fixed_footprints` lists native footprint UUIDs that must not move. The list
   may be incomplete: envelope-fixed parts are protected anyway (see below).
+- `sublayout` is optional. It names a captured
+  [sub-layout request](sublayout-reuse.md#request) and the captured root of its
+  sub-boards, `{"request": "layout/reuse.json", "sub_boards": "layout/sub-boards"}`.
+  Only the group-local copper of that request is then admitted besides footprint
+  transforms (see [group-local copper](#group-local-copper-agentee-129)). A
+  declaration without the key normalizes, hashes and binds exactly as before.
 
 `run_campaign` validates the declaration before it creates the campaign
 directory, so before any provider call. It refuses these cases:
@@ -202,6 +208,8 @@ Every other change is refused with a specific violation:
 - a lock-state change;
 - a footprint-owned zone that would move with its footprint.
 
+The only exception is the copper of a declared sub-layout, described next.
+
 `proposal_scope` additionally requires every non-board file to keep its exact
 bytes and inventory. File-level `mutable_inputs` is therefore not enough: a
 schematic listed as mutable is still refused in a placement iteration.
@@ -214,6 +222,76 @@ restore or exclude generated siblings in the sandboxed step, or save to a
 staging copy and copy back only the board. The adapter's records and receipts
 remain provenance only; they cannot authorize sibling changes or make a check
 pass.
+
+### Group-local copper (AGENTEE-129)
+
+With a declared `sublayout`, a placement iteration may also hold the output of
+[sub-layout reuse](sublayout-reuse.md), for example the writer running
+`agent_ee.sublayout` on its disposable copy. Nothing else is widened.
+
+**Binding.** The request file and every sub-board it names
+(`<sub_boards>/<sub_board>`) must be captured inputs outside `mutable_inputs`,
+with the captured digests; a group's declared `sub_board_sha256` must equal the
+captured digest. Any missing, mutable, linked, changed or invalid file refuses the
+binding before any writer runs. The binding records
+`sublayout: {request: {path, sha256}, sub_boards, groups: [{id, sub_board, sha256}]}`,
+so a later iteration whose request or sub-boards differ is refused as drift.
+
+**Admission.** For each scope proof, `group_admission` plans the request with the
+unchanged AGENTEE-56 planner from fresh sandboxed pcbnew facts of the captured
+source board and sub-boards. A group admits copper only when the planner applies
+it: every member is new (unlocked and outside the source outline), land patterns
+and footprints match, and every UUID is fresh. A group the planner refuses, for
+example because its members were placed by an earlier iteration, admits nothing,
+and copper already on the source board stays immutable as before.
+
+**Proof.** `write_scope(before, after, protected, groups)` lifts a new board-level
+node out of the comparison only when it carries the UUID of a planned copy or of
+the planned group node, and its kind matches (`segment`, `arc`, `via`, `zone`,
+`gr_*` graphics, `group`). A copy UUID is
+`uuid5(namespace, [group id, sub-board sha256, source uuid])`, so the admitted
+copper is bound to the captured sub-board bytes. Each lifted copy must also keep
+every saved token other than its geometry and net (`start`, `end`, `mid`,
+`center`, `at`, `pts`, `polygon`, `filled_polygon`, `net`, `net_name`, `uuid`)
+equal to its source node in the captured sub-board, read through the shared
+S-expression parser: zone fill and clearance settings, stroke, layers and lock
+state included. Every other added, removed or changed copper node is refused as
+before, including copper inside the group's region. The members of a group with such a node may take the sub-board's
+Reference and Value position, angle, layer and visibility. Then, for every group
+with any admitted node, a fresh sandboxed pcbnew read of the delivered board must
+show, exactly:
+
+- every planned copy, so a group is admitted whole or not at all;
+- each copy's kind, net, layers, width, drill and points equal to the sub-board
+  transform onto the voted net (copper on a withheld net is never admitted);
+- each copy's net among the group's `mapped` nets, and its bounding box inside the
+  group region: the sub-board module's extent (footprints and copied items, not
+  its outline) moved and rotated like the copies;
+- each member's pose, pad positions, unchanged pad nets and planned fields;
+- the KiCad group `sublayout:<id>` with exactly the members and copies.
+
+Any difference is a violation with the group named, and the iteration is refused.
+Protected footprints keep their rule: a protected member refuses its group.
+
+**Record.** With a declared sub-layout, every scope proof (`writer_scope`,
+`proposal_scope`) carries a `copper` section, `agent-ee.group-copper-scope/1`:
+the request digest and, per group, `status` (`reused`, `refused`, `absent` or
+`not_admissible` with the planner's findings), the sub-board path and sha256, and
+for applied groups the group UUID, rotation, anchor, members, region, mapped nets,
+copied counts by kind, item UUIDs and withheld copper. It is part of the anchored
+`placement-adapter.json`, and `verify_record` and `verify_attempt` recompute it,
+with fresh pcbnew facts, from the source inputs and the captured proposal or
+scratch design.
+
+The copper is graded like any proposal: the next run's fresh native DRC with
+schematic parity, placement checks and the routing-stage DRC decide. Neither
+the reuse result nor the scope record is evidence of a pass.
+
+Limits: with a coordinator helper, admitted group members are not added to the
+helper's fixed references, so a placer that moves a reused member away from its
+copper refuses the iteration; fix those references in the captured policy.
+Moving members of a group reused in an earlier iteration is still an ordinary
+footprint transform, and fresh DRC grades the copper it leaves behind.
 
 ### Side flips
 
@@ -403,6 +481,22 @@ envelope:
 - The helper request adds J1 to `fixed_refs`, and the placer leaves J1 in place.
 - An envelope reference absent from the board, a mutable envelope and changed
   envelope bytes each refuse the binding.
+
+**Sub-layout reuse (AGENTEE-129).** `tests/test_group_copper_scope.py` starts
+from an actual AGENTEE-52 forward annotation of the emitted regulator schematic
+onto the owned module's outline, with the owned routed module captured as the
+sub-board and a captured request. The scripted writer runs the unchanged
+`sublayout.reuse`. The adapter records the group as `reused`, and the next run's
+fresh placement-stage DRC, courtyard, outline and full routing-stage DRC (no
+violations, unconnected items or parity issues) pass, so the campaign ends
+`criteria_satisfied` and verifies publicly. The same reuse plus one stray track
+beside the group, and the same reuse without a declared `sublayout`, each refuse
+the iteration with no next candidate. Scope tests on the rotated instance of
+`fixtures/sublayout/top.kicad_pcb` refuse, from real pcbnew saves, a moved
+copy, a copy locked after the reuse, a missing copy, a member moved off its copper, a member field off the
+plan, copper outside the group region, extra copper inside the region, edits of
+a group's copper in a later iteration and a protected member. They admit a
+sub-board whose Reference text was moved.
 
 These obligations remain open:
 

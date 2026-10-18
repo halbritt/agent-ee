@@ -224,9 +224,10 @@ run pinned helpers as processes: forward annotation onto a staging grid
 outline, zones, rules, copper and envelope-fixed connectors are refused, as
 inventory changes are today (AGENTEE-91). The writer's summary is not evidence.
 [Sub-layout reuse](sublayout-reuse.md) (AGENTEE-56) copies a captured module
-layout's placement and group-local copper into new instances. Because it
-writes copper, a placement iteration refuses its output until a write scope
-admits group-local copper.
+layout's placement and group-local copper into new instances. A placement
+iteration admits that copper only when the declaration names the captured
+request and sub-boards: whole groups of new members, copied exactly from the
+captured sub-board onto the voted nets inside the group region (AGENTEE-129).
 
 **Checks** (AGENTEE-92, extending AGENTEE-53):
 
