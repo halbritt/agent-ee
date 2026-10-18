@@ -304,7 +304,9 @@ Claude executable override mounting, and real SIGINT during a slow networkless
 probe. Retained receipt tampering is checked separately. Unused-harness tests
 replace an unused harness after checks and before reviewer and writer launch,
 and the review and campaign complete with recorded observations. Replacing the
-used harness or its tool host still refuses. These tests establish
+used harness or its tool host still refuses. A mixed-harness campaign (claude
+writer, codex reviewers) refuses `verify-campaign` when the writer's harness
+changes after completion and reports an unused harness once. These tests establish
 coordinator behavior, not provider quota, live-model quality or elimination of
 external upgrade races. See [preflight receipts](result-reference.md#pre-inference-environment-receipts).
 

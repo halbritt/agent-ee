@@ -407,7 +407,10 @@ The final environment check of a review writes the same changes to
 Limitations. They are observations, not findings: no harness that changed ran in
 the review. `verify` and `verify-campaign` print one `observation:` line for
 each unused harness that differs from a retained run's capture, and still exit
-0. A used harness or native tool change still refuses with `runtime_drift` at
+0. `verify-campaign` adds the campaign's implementation definition to every
+retained run's used set, because the writer ran in the campaign: a change to the
+writer's harness refuses the campaign even when no reviewer uses that harness,
+while `verify` of a single review run observes it. A used harness or native tool change still refuses with `runtime_drift` at
 launch, `implementation or tool runtime changed during review; rerun required`
 at completion, and `tool runtime changed` at verification.
 

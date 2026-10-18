@@ -309,7 +309,7 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
             if state["state"] != "repair":
                 return 0 if state["state"] == "criteria_satisfied" else 1
             with writer_lock(run):
-                verify(run)
+                verify(run, invoked=[config["implementation"]])
                 scope_path = implement(root, run, config["implementation"], state, deadline)
     except (ValueError, OSError, KeyError, TypeError, KeyboardInterrupt) as exc:
         state.update(state="incomplete", error=f"{type(exc).__name__}: {exc}")
@@ -347,6 +347,8 @@ def verify_campaign_records(root, *, observations=None):
             if expected != wanted:
                 raise ValueError('implementation launch expectation changed')
             verify_receipt(work, read_json(work / 'implementation-execution.json'), expected, 'implementation', 'implementation')
+    # The writer ran in this campaign, so its harness gates drift for every run.
+    writer = [config['implementation']] if config.get('implementation') else []
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
@@ -362,7 +364,11 @@ def verify_campaign_records(root, *, observations=None):
         if (str(run) != stored["run"] or str(snapshot) != stored["result_snapshot"] or
                 digest(snapshot) != stored["result_sha256"]):
             raise ValueError("campaign history result link changed")
-        current = verify(run, current_source=False, observations=observations)
+        changes = []
+        current = verify(run, current_source=False, observations=changes, invoked=writer)
+        if observations is not None:
+            # Every retained run reports the same unused-harness change; record it once.
+            observations.extend(change for change in changes if change not in observations)
         result = read_json(snapshot)
         if current != result:
             # Bench registration appends facts without rewriting the original

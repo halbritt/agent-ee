@@ -153,18 +153,22 @@ def artifacts(run):
     return found
 
 
-def verify(run, *, current_source=True, observations=None):
-    """Raise on integrity failure; unused-harness changes are appended to observations."""
+def verify(run, *, current_source=True, observations=None, invoked=()):
+    """Raise on integrity failure; unused-harness changes are appended to observations.
+
+    invoked names further definitions that ran against this run (a campaign
+    writer); their harnesses gate drift like the profile's."""
     run = Path(run).resolve()
     from .locking import reader_lock
     from .bench_transactions import verify_publications
     with reader_lock(run):
         result = read_json(run / "result.json")
         verify_publications(run, result)
-        return verify_records(run, result, current_source=current_source, observations=observations)
+        return verify_records(run, result, current_source=current_source, observations=observations,
+                              invoked=invoked)
 
 
-def verify_records(run, result, *, current_source=True, observations=None):
+def verify_records(run, result, *, current_source=True, observations=None, invoked=()):
     """Validate an explicit projection; callers separately bind publication intent."""
     manifest = verify_source(run) if current_source else verify_snapshot(run)
     if manifest["candidate_id"] != result.get("candidate_id"):
@@ -174,7 +178,8 @@ def verify_records(run, result, *, current_source=True, observations=None):
     from .preflight import profile_definitions, runtime_drift
     # Without a captured launch expectation every harness counts as used.
     drift = runtime_drift(result.get("runtime_files") or {}, runtime_files(),
-                          profile_definitions(manifest["scope"]) if "launch_expectation" in result else None)
+                          [*profile_definitions(manifest["scope"]), *invoked]
+                          if "launch_expectation" in result else None)
     if not isinstance(result.get("runtime_files"), dict) or drift["gated"]:
         raise ValueError("tool runtime changed; rerun under the current tools")
     if observations is not None:

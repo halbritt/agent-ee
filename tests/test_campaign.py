@@ -517,6 +517,44 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             self.assertEqual(main(['verify-campaign', str(root)]), 2)
 
     @toolchain_test
+    def test_retained_mixed_harness_campaign_gates_on_writer_harness(self):
+        from agent_ee.cli import main
+        config = read_json(self.root / 'campaign.json')
+        write_json(self.root / 'campaign.json', {**config, 'implementation': {**config['implementation'], 'harness': 'claude'}})
+        base, writer_updated = self.harness_runtime('claude')
+        current = {'runtime': base}
+        patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: current['runtime']).start()
+        root = self.root / 'campaign'
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', root), 0)
+        self.assertIn('implementation', self.calls)
+        receipt = read_json(root / 'implementations/1/review-work/implementation/preflight/receipt.json')
+        self.assertEqual(receipt['runtime_classification']['claude'], 'used')
+        state = read_json(root / 'state.json')
+        self.assertEqual(state['state'], 'criteria_satisfied')
+        self.assertGreater(len(state['history']), 1)
+        # The writer produced the candidate, so its binary changing is integrity drift.
+        current['runtime'] = writer_updated
+        with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
+            verify_campaign(root)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(['verify-campaign', str(root)]), 2)
+        # A single review run never invoked the writer; its own verify only observes it.
+        observations = []
+        verify(root / 'runs/1', current_source=False, observations=observations)
+        self.assertEqual([c['name'] for c in observations], ['claude'])
+        # A harness neither the profile nor the writer invoked is one observation for the campaign.
+        _, unused_updated = self.harness_runtime('agy')
+        current['runtime'] = unused_updated
+        observations = []
+        self.assertEqual(verify_campaign(root, observations=observations)['state'], 'criteria_satisfied')
+        self.assertEqual([c['name'] for c in observations], ['agy'])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(['verify-campaign', str(root)]), 0)
+        self.assertEqual(out.getvalue().count('observation: unused harness runtime agy changed'), 1)
+
+    @toolchain_test
     def test_campaign_verification_requires_separate_implementation_receipt(self):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)

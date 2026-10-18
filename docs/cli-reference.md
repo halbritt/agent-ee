@@ -163,7 +163,8 @@ scope/source comparison. It still checks the captured candidate, Python policy,
 runtime binaries and retained artifacts. It does not mean "ignore all stale
 evidence" and does not bypass changed tool versions. A changed harness that the
 run's profile never invokes is printed as an `observation:` line and does not
-fail verification ([used and unused harnesses](result-reference.md#used-and-unused-harnesses)). Historical restoration is
+fail verification; `verify-campaign` also counts the campaign writer's harness
+as used ([used and unused harnesses](result-reference.md#used-and-unused-harnesses)). Historical restoration is
 covered in [evidence reproduction](reproducing-evidence.md).
 
 ## `adjudicate`
