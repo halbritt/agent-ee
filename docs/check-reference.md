@@ -626,13 +626,18 @@ v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
 completion unless BOM/CPL/board designators agree, and applies no CPL rotation
 policy. Board footprint DNP flags decide assembly. A schematic/board DNP
 disagreement is recorded in `details.dnp_disagreements` and does not block the
-package. Launch preflight requires the native `kicad-cli` binary. Empty produced
+package. An optional declared `assembly_exclusion` rule
+(`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
+in both the netlist and the board out of the BOM and CPL. The manifest lists
+them in `designators.excluded`. A marked part without the rule, or with
+disagreeing sources, is `unsupported`. Launch preflight requires the native `kicad-cli` binary. Empty produced
 native files are `failed/unknown`; pre-existing staging or native output
 directories are refused before reuse.
 
 [`fab_consistency`](fab-consistency.md) consumes that sealed export, its netlist
 and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,
-BOM/CPL/assembled-board reference parity, schematic/board DNP disagreement
+BOM/CPL/assembled-board reference parity (re-deriving rule exclusions from the
+sealed netlist and the captured board), schematic/board DNP disagreement
 (`designator_parity`), LCSC/footprint conflicts, CPL side,
 captured/embedded 3D models and recorded export-log diagnostics. CPL anchors
 must agree with exact native `position_nm` within 0.01 mm per axis, using
