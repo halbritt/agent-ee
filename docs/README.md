@@ -126,7 +126,7 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
 - [Schematic readability lint](schematic-lint.md) — deterministic presentation findings over captured sheets and native nets; style only unless a profile raises a rule to defect.
 - [Native schematic emission](schematic-emitter.md) and [forward annotation](forward-annotation.md) — captured-intent generation and native-netlist board updates; full campaign integration remains pending.
-- [Sub-layout reuse](sublayout-reuse.md) — group-local copy of a captured module's placement and routing into new staged instances, with pad-vote nets, exact verification and a per-group DRC delta; not yet admitted by a campaign write scope.
+- [Sub-layout reuse](sublayout-reuse.md) — group-local copy of a captured module's placement and routing into new staged instances, with pad-vote nets, exact verification and a per-group DRC delta; a placement declaration's `sublayout` admits exactly that group-local copper in a staged campaign (AGENTEE-129).
 - [kicad-route routing adapter](routing-adapter.md) — pinned read-only routing attempts, exit semantics and retained reports; campaign integration with AGENTEE-95 remains pending.
 - [Placement campaign adapter](placement-adapter.md) — placement turns of a staged campaign: writer context, coordinator-run placer step, placement-only structural write scope with qualified side flips, and retained verification.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.

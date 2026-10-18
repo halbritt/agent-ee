@@ -56,7 +56,10 @@ Schema `agent-ee.sublayout-request/1`. The document has exactly two keys,
 pcbnew runs only in `agent_ee.sublayout_probe`, a child process started
 through the production Bubblewrap executor. Networking is unshared and every
 board is copied into a read-only input directory. The planner itself is
-standard-library Python over the child's facts.
+standard-library Python over the child's facts. The child's `fills` command
+reads the saved fill of named zones, refills them on its private copy and
+reports both, without saving. The placement write scope uses it
+([zone fills](placement-adapter.md#group-local-copper-agentee-129)).
 
 1. **Anchor.** The sub-board footprint with the most pads is the anchor (ties:
    natural reference order). Each member is placed at
@@ -129,7 +132,9 @@ applies, no board is written.
 ## Evidence-model fit
 
 Sub-boards are captured inputs, bound by sha256 in the plan, in the result
-and in the child. The child refuses bytes that differ from the plan. The
+and in the child. Inside a campaign, the placement binding records the request
+and sub-board digests, and the write scope admits only copies whose UUIDs derive
+from those bytes. The child refuses bytes that differ from the plan. The
 operation runs offline in the networkless sandbox. Reuse grants no
 acceptance: the coordinator's fresh `drc` and `placement` checks, and
 kicad-route for integration routing, decide whether the candidate is done.
@@ -143,10 +148,13 @@ kicad-route for integration routing, decide whether the candidate is done.
   Sub-board KiCad groups are ignored.
 - Binding is by explicit reference mapping. Hierarchical-sheet (path) binding
   is not implemented.
-- In a staged campaign, placement iterations admit only footprint transforms
-  ([placement adapter](placement-adapter.md)), so the copper that reuse writes
-  is refused there. The reuse is a writer helper in a disposable copy until a
-  write scope that admits group-local copper exists.
+- In a staged campaign, a placement iteration admits the copper that reuse
+  writes only when the placement declaration names the captured request and
+  sub-boards (`sublayout`, AGENTEE-129). The adapter then re-plans each group
+  from the captured bytes and admits exactly whole groups whose members were
+  new, as described under
+  [group-local copper](placement-adapter.md#group-local-copper-agentee-129). Without
+  that declaration the copper is refused as before.
 - DRC runs without a schematic, so schematic parity is not part of the delta.
   Unconnected items between groups are integration work. The DRC report
   retains them, but they are not graded here.

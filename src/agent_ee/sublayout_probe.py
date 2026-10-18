@@ -4,8 +4,10 @@
 board-level item with its geometry in integer nanometres. ``apply`` executes a
 plan already computed by ``agent_ee.sublayout``: it moves the planned
 footprints, copies the planned sub-board items with the planned UUIDs and nets,
-refills only the copied zones, groups each instance and saves a new file. It
-makes no binding decisions of its own; pcbnew is imported only in this process.
+refills only the copied zones, groups each instance and saves a new file.
+``fills`` reports the saved fill of named zones and then their refill on the
+private copy, which it never saves. It makes no binding decisions of its own;
+pcbnew is imported only in this process.
 """
 import argparse
 import hashlib
@@ -117,6 +119,38 @@ def facts(board):
     return report
 
 
+def _fill(zone):
+    """Every saved fill polygon of a zone, outline then holes, per canonical layer name."""
+    import pcbnew
+    fill = {}
+    for layer in range(pcbnew.PCB_LAYER_ID_COUNT):
+        # Any layer, so a fill saved on a layer outside the zone's own is seen too.
+        if not zone.HasFilledPolysForLayer(layer):
+            continue
+        polys = zone.GetFilledPolysList(layer)
+        if polys.OutlineCount():
+            fill[_name(layer)] = [[[_xy(chain.CPoint(i)) for i in range(chain.PointCount())]
+                                   for chain in [polys.Outline(o), *(polys.Hole(o, h) for h in range(polys.HoleCount(o)))]]
+                                  for o in range(polys.OutlineCount())]
+    return fill
+
+
+def fills(board, uuids):
+    """Saved fills of the named zones, then the same zones refilled as ``apply`` refills them."""
+    import pcbnew
+    zones = [z for z in board.Zones() if z.m_Uuid.AsString() in set(uuids)]
+    report = [dict(uuid=z.m_Uuid.AsString(), saved=_fill(z)) for z in zones]
+    for zone in zones:
+        zone.UnFill()
+    filled = [z for z in zones if not z.GetIsRuleArea()]
+    if filled:
+        board.BuildConnectivity()
+        pcbnew.ZONE_FILLER(board).Fill(filled)
+    for entry, zone in zip(report, zones):
+        entry['refilled'] = _fill(zone)
+    return sorted(report, key=lambda e: e['uuid'])
+
+
 def _layer(board, name):
     layer = board.GetLayerID(name)
     if layer < 0:
@@ -209,6 +243,10 @@ def main(argv=None):
     two.add_argument('--plan', required=True)
     two.add_argument('--sub-boards', required=True, help='directory holding the captured sub-boards')
     two.add_argument('-o', '--out', required=True)
+    three = sub.add_parser('fills')
+    three.add_argument('board')
+    three.add_argument('--zone', action='append', default=[], help='UUID of a zone to refill')
+    three.add_argument('-o', '--out', required=True)
     args = parser.parse_args(argv)
     try:
         import pcbnew
@@ -219,7 +257,8 @@ def main(argv=None):
         with open(args.plan, 'rb') as stream:
             apply(args.board, json.load(stream), args.sub_boards, args.out)
         return 0
-    report = facts(pcbnew.LoadBoard(args.board))
+    board = pcbnew.LoadBoard(args.board)
+    report = fills(board, args.zone) if args.command == 'fills' else facts(board)
     with open(args.out, 'x') as stream:
         json.dump(report, stream, indent=2, sort_keys=True)
         stream.write('\n')

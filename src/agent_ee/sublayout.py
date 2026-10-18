@@ -276,6 +276,21 @@ def board_facts(board, work, sha256=None):
     return json.loads((work / 'facts' / 'facts.json').read_text())
 
 
+def zone_fills(board, work, zones, sha256=None):
+    """Saved and refilled fill of each named zone, from a private copy of the board refilled in the
+    sandboxed child; the board itself is never filled or written. ``sha256`` binds the copy as in
+    ``board_facts``."""
+    work = Path(work)
+    inputs = work / 'fills-input'
+    inputs.mkdir(parents=True)
+    shutil.copyfile(board, inputs / 'board.kicad_pcb')
+    if digest(inputs / 'board.kicad_pcb') != (sha256 or digest(board)):
+        raise SublayoutError('stale_input', 'board changed while it was copied')
+    _child(inputs, work / 'fills', ['fills', '/candidate/board.kicad_pcb', *(a for z in zones for a in ('--zone', z)),
+                                    '-o', '/work/fills.json'])
+    return json.loads((work / 'fills' / 'fills.json').read_text())
+
+
 def _mm(value):
     return round(value * 1000000)
 
@@ -341,6 +356,38 @@ def _box(boxes):
     return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
+def footprint_error(want, fp, old):
+    """Why a saved group footprint differs from its planned transform, or None when it is exact."""
+    if (fp['position_nm'], fp['orientation_deg'], fp['layer']) != \
+            (want['position_nm'], want['orientation_deg'], want['layer']):
+        return f"{want['top_ref']} pose differs from the sub-board transform"
+    pads = {p['uuid']: p for p in fp['pads']}
+    if {p['uuid']: p['net'] for p in fp['pads']} != {p['uuid']: p['net'] for p in old['pads']}:
+        return f"{want['top_ref']} pad nets changed"
+    if any(pads[u]['position_nm'] != xy for u, xy in want['pads'].items() if u in pads) or set(pads) != set(want['pads']):
+        return f"{want['top_ref']} pad positions differ from the sub-board transform"
+    fields = {f['name']: f for f in fp['fields']}
+    for field in want['fields']:
+        got = fields.get(field['name'])
+        if got is None or (got['position_nm'], got['angle_deg'], got['layer'], got['visible']) != \
+                (field['position_nm'], field['angle_deg'], field['layer'], field['visible']):
+            return f"{want['top_ref']} {field['name']} differs from the sub-board"
+    return None
+
+
+def module_region(plan, sub):
+    """The planned group's region: the sub-board module's extent (footprints and every copied
+    item, not the sub-board outline) moved and rotated exactly like its copies."""
+    boxes = [fp['bbox_nm'] for fp in sub['footprints']]
+    boxes += [i['bbox_nm'] for i in sub['items'] if not set(i.get('layers', ())) & set(BOARD_LAYERS)]
+    corners = []
+    for box in boxes:
+        a, b = (_transform(p, plan['sub_anchor_nm'], plan['anchor_at_nm'], plan['rotation_deg'])
+                for p in ((box[0], box[1]), (box[2], box[3])))
+        corners.append([min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])])
+    return _box(corners)
+
+
 def verify(plan, before, after):
     """The saved board must show exactly the planned change; returns each group's owned items and box."""
     old = {fp['uuid']: fp for fp in before['footprints']}
@@ -353,21 +400,9 @@ def verify(plan, before, after):
             if fp != old[key]:
                 raise SublayoutError('verification', f"footprint {fp['reference']} outside every group changed")
             continue
-        want = planned[key]
-        if (fp['position_nm'], fp['orientation_deg'], fp['layer']) != \
-                (want['position_nm'], want['orientation_deg'], want['layer']):
-            raise SublayoutError('verification', f"{want['top_ref']} pose differs from the sub-board transform")
-        pads = {p['uuid']: p for p in fp['pads']}
-        if {p['uuid']: p['net'] for p in fp['pads']} != {p['uuid']: p['net'] for p in old[key]['pads']}:
-            raise SublayoutError('verification', f"{want['top_ref']} pad nets changed")
-        if any(pads[u]['position_nm'] != xy for u, xy in want['pads'].items()) or set(pads) != set(want['pads']):
-            raise SublayoutError('verification', f"{want['top_ref']} pad positions differ from the sub-board transform")
-        fields = {f['name']: f for f in fp['fields']}
-        for field in want['fields']:
-            got = fields[field['name']]
-            if (got['position_nm'], got['angle_deg'], got['layer'], got['visible']) != \
-                    (field['position_nm'], field['angle_deg'], field['layer'], field['visible']):
-                raise SublayoutError('verification', f"{want['top_ref']} {field['name']} differs from the sub-board")
+        error = footprint_error(planned[key], fp, old[key])
+        if error:
+            raise SublayoutError('verification', error)
     old_items = {i['uuid']: i for i in before['items']}
     new_items = {i['uuid']: i for i in after['items']}
     copies = {c['uuid']: c for g in plan['groups'] for c in g['copy']}

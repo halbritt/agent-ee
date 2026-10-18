@@ -127,7 +127,13 @@ def implement(root, previous, definition, state, deadline):
                    "Protected footprints must keep their exact position. Any other change, including outline, "
                    "zones, rules, copper, fields, pads, locks or another file, refuses the whole iteration. "
                    "A coordinator placement helper may run afterwards; its result, like yours, is only a "
-                   "proposal graded by fresh checks.\n" + json.dumps({
+                   "proposal graded by fresh checks.\n" +
+                   ("The declaration also admits the group-local copper of the captured sub-layout request "
+                    f"{bound['sublayout']['request']['path']}, for example applied with agent_ee.sublayout: only "
+                    "each whole group whose members are all new, copied exactly from its captured sub-board "
+                    "onto the voted nets, inside the group region, with each copied zone's saved fill exactly "
+                    "its refill (refill after any later change near it). Any other copper refuses the iteration.\n"
+                    if bound.get("sublayout") else "") + json.dumps({
                        "placement": writer_context(previous, manifest), "board": bound["board"],
                        "protected_references": refs}))
     if manifest['scope'].get('stages') is not None and config.get('implementation_steps'):
