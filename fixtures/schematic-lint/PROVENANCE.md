@@ -11,6 +11,7 @@ footprint, template or third-party design file is copied here.
   byte-identical.
 - `generate.py`: the test-only schematic builder, the control design and its
   named mutations, and hand-derived body boxes and pin positions for the
-  rotated and mirrored transform probe. Its `hole()` pinless mounting-hole
-  body is embedded only in the `pinless` variant (AGENTEE-145) and is not
-  part of `Lint.kicad_sym`.
+  rotated and mirrored transform probe. Its `hole()` mounting-hole helper is
+  embedded only in the `pinless`, `pinless-led-order`, `missing-native-pins`
+  and `unplaced-unit-pin` variants (AGENTEE-145, AGENTEE-148) and is not part
+  of `Lint.kicad_sym`.
