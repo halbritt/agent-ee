@@ -2275,6 +2275,16 @@
         "AE"
       ],
       "reviewed": "Original campaign regression tests; the KiCad text is an inline-authored minimal project (AGENTEE-121 SaveBoard sibling reproduction) and synthetic design literals, no third-party design or library bytes."
+    },
+    {
+      "paths": [
+        "tests/test_capabilities_structure.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original structural audit of capabilities.describe_check (every capability() branch publishes predicates); no fixtures, no KiCad text."
     }
   ]
 }
