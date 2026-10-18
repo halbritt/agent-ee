@@ -358,6 +358,14 @@ captures every selected part's Datasheet in stage 2 and the emitter carries the 
 onto the symbol; capturing a PDF does not verify its applicability or its
 engineering claims.
 
+[JLCPCB stock capture](docs/jlc-stock-capture.md) is an opt-in, owner-run
+producer. It sends one rate-limited request per LCSC id to the public JLCPCB
+search endpoint and keeps each raw response, hashed and time-stamped.
+`assembly_readiness` consumes the capture offline: it re-derives every part
+from those bytes and binds `as_of` to the run. It refuses a capture that is
+stale or lacks an observation for a populated id. Its response mapping is not
+yet qualified against a live JLCPCB response.
+
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit without Git transports or replacement refs, and checks
 declared ports against the native sheet. Missing captured blobs are refused;

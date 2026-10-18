@@ -17,6 +17,7 @@ from .candidate import safe_relative
 from .catalog import decimal_number
 from .fab_export import natural_key
 from .hardware_interface import unique_object
+from .jlc_stock_capture import is_capture, response_paths, validate_capture
 from .storage import digest, write_json
 from .symbol_library import LibraryError, parse_sexpr
 
@@ -261,8 +262,63 @@ def load_catalog_snapshot(inputs_root: Path, catalog_rel: str, *, expected_sha25
     if schema == "agent-ee.catalog/1":
         return _load_sqlite_catalog_manifest(inputs_root, catalog_path, norm_rel, actual_sha, doc)
     if schema in ("agent-ee.catalog-snapshot/1", "agent-ee.jlc-catalog/1"):
-        return _load_json_catalog_snapshot(norm_rel, actual_sha, doc)
+        catalog = _load_json_catalog_snapshot(norm_rel, actual_sha, doc)
+        catalog["capture"] = _verify_jlc_capture(inputs_root, norm_rel, doc) if is_capture(doc) else None
+        return catalog
     raise AssemblyReadinessExecutionError("failed", f"unsupported catalog schema: {schema!r}")
+
+
+def _verify_jlc_capture(inputs_root, catalog_rel, doc):
+    """A producer capture's parts must re-derive from its captured raw responses."""
+    parent = PurePosixPath(catalog_rel).parent
+
+    def read_response(rel):
+        try:
+            combined = (parent / safe_relative(rel)).as_posix()
+        except ValueError as exc:
+            raise ValueError(f"unsafe response path {rel!r}: {exc}") from exc
+        path, _ = _resolve_captured_file(inputs_root, combined, "captured JLC response")
+        return path.read_bytes()
+
+    try:
+        return validate_capture(doc, read_response)
+    except (OSError, ValueError) as exc:
+        raise AssemblyReadinessExecutionError("failed", f"invalid agent-ee.jlc-catalog/1 capture: {exc}") from exc
+
+
+def _capture_gate(capture, cfg, unknown_lcsc):
+    """Refuse a producer capture not bound to the run, older than the declared staleness, or lacking an id."""
+    if cfg["as_of"] is None:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", "a jlc-catalog/1 capture requires params.as_of bound to the run")
+    if cfg["max_age_hours"] is None and cfg["max_stock_age_days"] is None and cfg["stale_before"] is None:
+        raise AssemblyReadinessExecutionError(
+            "unsupported",
+            "a jlc-catalog/1 capture requires a declared staleness (max_age_hours, max_stock_age_days or stale_before)")
+    run_date, run_dt = _parse_iso_date_or_datetime(cfg["as_of"], "as_of")
+    captured_date, captured_dt = _parse_iso_date_or_datetime(capture["as_of"], "capture as_of")
+    age_hours = (run_dt - captured_dt).total_seconds() / 3600.0
+    stale = None
+    if captured_dt > run_dt:
+        stale = f"capture as_of {capture['as_of']} is after the run as_of {cfg['as_of']}"
+    elif cfg["max_age_hours"] is not None and age_hours > cfg["max_age_hours"]:
+        stale = f"capture is {age_hours:.1f} hour(s) old at the run (max_age_hours={cfg['max_age_hours']})"
+    elif cfg["max_stock_age_days"] is not None and (run_date - captured_date).days > cfg["max_stock_age_days"]:
+        stale = (f"capture is {(run_date - captured_date).days} day(s) old at the run "
+                 f"(max_stock_age_days={cfg['max_stock_age_days']})")
+    elif cfg["stale_before"] is not None and captured_date < _parse_iso_date_or_datetime(
+            cfg["stale_before"], "stale_before")[0]:
+        stale = f"capture as_of {capture['as_of']} is older than stale_before {cfg['stale_before']}"
+    if stale:
+        raise AssemblyReadinessExecutionError("failed", f"refusing stale jlc-catalog/1 capture: {stale}")
+    # Only an observed not-found is evidence of absence; unrequested or failed ids are not.
+    uncovered = sorted(set(unknown_lcsc) - set(capture["not_found"]), key=natural_key)
+    if uncovered:
+        failed = {lcsc: capture["failed"][lcsc] for lcsc in uncovered if lcsc in capture["failed"]}
+        raise AssemblyReadinessExecutionError(
+            "failed",
+            f"jlc-catalog/1 capture lacks an observation for requested LCSC id(s) {uncovered}"
+            + (f"; failed requests: {failed}" if failed else ""))
 
 
 def _load_sqlite_catalog_manifest(inputs_root, manifest_path, manifest_rel, manifest_sha, doc):
@@ -800,6 +856,13 @@ def capability(params, files, inputs=None):
                 raw_doc = json.loads(catalog_path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, ValueError):
                 raw_doc = None
+            if is_capture(raw_doc):
+                parent = PurePosixPath(catalog_rel).parent
+                for rel in response_paths(raw_doc):
+                    response_rel = (parent / safe_relative(rel)).as_posix()
+                    if response_rel not in files:
+                        raise ValueError(f"captured JLC response {response_rel!r} must be a captured input")
+                    immutable_inputs.append(response_rel)
             if isinstance(raw_doc, dict) and raw_doc.get("schema") == "agent-ee.catalog/1":
                 db_meta = raw_doc.get("database")
                 if isinstance(db_meta, dict) and isinstance(db_meta.get("path"), str):
@@ -998,6 +1061,10 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "passive_kind": passive_type,
             "has_rating_property": has_rating if passive_type else None,
         })
+
+    capture = catalog.get("capture")
+    if capture is not None:
+        _capture_gate(capture, cfg, unknown_lcsc_by_ref.values())
 
     # 3. Evaluate matched LCSC parts: 3-state stock, freshness, quantity * boards, and Basic/Preferred/Extended tiers.
     as_of_raw = cfg["as_of"] or catalog["as_of"] or catalog["snapshot_date"]
@@ -1225,6 +1292,13 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "snapshot_date": catalog["snapshot_date"],
             "as_of": as_of_raw,
             "stale_before": effective_stale_before_str,
+            "capture": None if capture is None else {
+                "as_of": capture["as_of"],
+                "completed_at": capture["completed_at"],
+                "requested": capture["requested"],
+                "not_found": capture["not_found"],
+                "failed": sorted(capture["failed"]),
+            },
         },
         "policy": {
             "boards": boards,

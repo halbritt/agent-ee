@@ -2016,6 +2016,16 @@
     },
     {
       "paths": [
+        "tests/test_jlc_stock_capture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code; the HTML literal is a synthetic non-JSON response body served by a loopback stub to prove the JLC search parser refuses it. No JLCPCB response is copied."
+    },
+    {
+      "paths": [
         "tests/test_datasheet_capture.py"
       ],
       "kind": "owned-source",

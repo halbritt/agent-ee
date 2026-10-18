@@ -25,6 +25,7 @@ product's hardware qualification.
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
+| Capture JLCPCB stock per LCSC id (owner-run) for assembly readiness | [JLCPCB stock capture](jlc-stock-capture.md) |
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Capture a design's block plan as draft block entries; check a block adaptation | [Block inventory](block-inventory.md) |
 | Review the captured fome-mc PSU block as the rung-2 power reference | [fome-mc PSU block](fome-psu-block.md) |
