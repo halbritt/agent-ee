@@ -189,11 +189,13 @@ and outline size with the saved board and lists legal surcharged features
 separately. No real fabricator preset is supplied or qualified.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
-that derived quantities match retained raw attributes. [Part selection](docs/part-selection.md)
+that derived quantities match retained raw attributes. A pinned jlcparts feed
+has a bounded host downloader and a native stocked-parts adapter; raw data stays
+in private scratch. [Part selection](docs/part-selection.md)
 compares declared intervals and stock within that snapshot. Both now have checks
 that use the captured baseline, sandbox and coordinator seal; selection binds one
 explicit requirement. They do not authenticate upstream claims or establish
-circuit acceptance. Real upstream catalog qualification remains pending.
+circuit acceptance. Snapshot stock and prices describe their recorded dates.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
 are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap

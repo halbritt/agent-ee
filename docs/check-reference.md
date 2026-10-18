@@ -85,6 +85,13 @@ and reason `no candidate`. Invalid requirements or snapshots return
 row as unknown. These results establish consistency with captured catalog
 claims; upstream authenticity and datasheet correctness require separate evidence.
 
+The [pinned native feed](catalog.md#pinned-jlcparts-acquisition) is acquired on the
+host before capture; its explicit stocked-parts profile excludes zero-stock and
+unsupported-category rows. A missing row cannot establish upstream unavailability.
+The [full-feed runtime qualification](catalog.md#full-feed-runtime-qualification)
+exceeded the 120-second helper ceiling on the busy host; that measurement is not
+qualification of a full-feed sealed check within its default budget.
+
 ## Hierarchy validation
 
 ERC and netlist walk root and child sheet file references before native execution.
