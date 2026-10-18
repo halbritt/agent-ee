@@ -63,8 +63,10 @@ with its declared stable ID, exact question and answer text, and transitive
 `source_question_ids` in dependency order. `requirements.md` renders the same set.
 The same bytes produce identical outputs; independent question ordering does not
 change derived requirement bytes. The original inputs remain frozen artifacts;
-outputs must be explicitly selected as scope inputs in a new baseline. Scope/3
-still requires executable coverage for acceptance requirements. Dialog completion
+outputs must be explicitly selected as scope inputs in a new baseline, for example
+with `requirements.json` as each baseline source path and the requirement ID as its
+locator; that file's hash then enters `baseline_id`. Scope/3 still refuses a
+derived acceptance requirement mapped only to checks without an executable bound. Dialog completion
 and an [intent importer](design-intent.md) lint pass confer no circuit acceptance.
 
 This protocol is an independent implementation. It embeds no upstream code,
