@@ -1,0 +1,166 @@
+{
+  "blocks": [
+    {
+      "block_sha256": "2cc9ec6bff9ecfe8e1a20241db14e4fdbc370d2a08b66a58791cffe399ffe8d2",
+      "contract_sha256": "c0131953f75b4bef044fbee0612a68442c7cd994257ce2a06ece02025b1cba28",
+      "directory": "psu",
+      "id": "fome-mc/psu",
+      "pending_requirements": [
+        "psu-tvs-clamp",
+        "psu-reverse-block",
+        "psu-c12-part",
+        "psu-c4-rating",
+        "psu-brownout-floor",
+        "psu-rails",
+        "psu-capacitor-ratings",
+        "psu-input-filter"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_PROT",
+        "12V_RAW",
+        "5V_SENSOR_1",
+        "5V_SENSOR_1_PG",
+        "5V_SENSOR_2",
+        "5V_SENSOR_2_PG",
+        "CANH",
+        "CANH2",
+        "CANL",
+        "CANL2",
+        "RXDCAN",
+        "RXDCAN2",
+        "TXDCAN",
+        "TXDCAN2",
+        "VBOOST"
+      ],
+      "unresolved_libraries": []
+    }
+  ],
+  "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+  "components": 510,
+  "design": "fome-mc",
+  "exporter": "kicad-cli 10.0.7",
+  "exporter_console": "Warning: schematic has annotation errors, please use the schematic editor to fix them",
+  "inventory_sha256": "75838a5eed231c76af4d69f20cfe63cbafcefe85927619242debba0f0e7be3ca",
+  "limitations": [
+    "Draft entries: derived contracts restate the pinned design and need owner approval; no block is verified without a complete run and review.",
+    "Captured third-party design files stay private until owner publication approval."
+  ],
+  "schema": "agent-ee.block-inventory-report/1",
+  "unassigned": [
+    {
+      "instance": "/psu/",
+      "reason": "CAN transceivers in psu.kicad_sch: the separate CAN block (docs/BLOCK_LIBRARY.md, CAN inside psu.kicad_sch), not part of the PSU block.",
+      "references": [
+        "D4",
+        "D5",
+        "R10",
+        "R7",
+        "R8",
+        "R9",
+        "U4",
+        "U5"
+      ]
+    },
+    {
+      "instance": "/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/ign1/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/lowside_quad1/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/ign2/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/mcu/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/lowside_quad2/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/lowside_quad4/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/quad_analog1/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/quad_analog2/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/quad_analog3/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/quad_analog_temp/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/highside_quad/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/triggers/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/knock/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/Keep_Alive/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/ign_igbt/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/etb1/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/stepper_etb/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/wbo1/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    },
+    {
+      "instance": "/wbo2/",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it.",
+      "references": "all"
+    }
+  ]
+}

@@ -73,7 +73,8 @@ def validate_inventory(document):
     for entry in document['unassigned']:
         _exact(entry, ('instance', 'references', 'reason'))
         _text(entry['instance'])
-        _texts(entry['references'])
+        if entry['references'] != 'all':
+            _texts(entry['references'])
         _text(entry['reason'])
     if not isinstance(document['blocks'], list) or not document['blocks']:
         raise ValueError('inventory needs blocks')
@@ -543,7 +544,13 @@ def capture_inventory(inventory, repository, destination, *, catalog=None, catal
         requests.append((block['id'], record, supplements))
     for entry in inventory['unassigned']:
         uuid_path = hierarchy.get(entry['instance'], (None,))[0]
-        for ref in entry['references']:
+        refs = entry['references']
+        if refs == 'all':
+            # A whole sheet occurrence outside every captured block, for a single-block inventory.
+            if uuid_path is None:
+                raise ValueError('unknown unassigned instance: ' + entry['instance'])
+            refs = sorted(r for r, c in components.items() if c['sheet'] == uuid_path)
+        for ref in refs:
             if ref in assigned or components.get(ref, {}).get('sheet') != uuid_path:
                 raise ValueError('unassigned reference is assigned or outside its instance: ' + ref)
             assigned[ref] = None

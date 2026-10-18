@@ -1,3 +1,6 @@
+# Captured fome-mc PSU blobs (AGENTEE-106) must keep their committed bytes; their SHA-256 values are recorded.
+fixtures/fome-mc/psu/capture/** -text -whitespace
+
 # Retained evidence must preserve tool-produced bytes, including whitespace.
 evidence/** -text
 evidence/**/*.log -whitespace

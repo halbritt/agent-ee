@@ -1,0 +1,562 @@
+{
+  "boundary_ports": [
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "12V_PROT",
+      "net_name": "/12V_PROT",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "12V_RAW",
+      "net_name": "/12V_RAW",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "5V_SENSOR_1",
+      "net_name": "/5V_SENSOR_1",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "5V_SENSOR_1_PG",
+      "net_name": "/mcu/5V_SENSOR_1_PG",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "5V_SENSOR_2",
+      "net_name": "/5V_SENSOR_2",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "5V_SENSOR_2_PG",
+      "net_name": "/mcu/5V_SENSOR_2_PG",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "CANH",
+      "net_name": "/CAN+",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "CANH2",
+      "net_name": "/CAN2+",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "CANL",
+      "net_name": "/CAN-",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "CANL2",
+      "net_name": "/CAN2-",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "RXDCAN",
+      "net_name": "/mcu/CAN_RX",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "RXDCAN2",
+      "net_name": "/mcu/CAN2_RX",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "TXDCAN",
+      "net_name": "/mcu/CAN_TX",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "TXDCAN2",
+      "net_name": "/mcu/CAN2_TX",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "VBOOST",
+      "net_name": "/VBOOST",
+      "voltage_domain": null
+    }
+  ],
+  "check_set": [
+    {
+      "id": "erc",
+      "kind": "erc",
+      "params": {}
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist",
+      "params": {}
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "connectivity": "connectivity.json",
+  "files": {
+    "block-contract.json": "c0131953f75b4bef044fbee0612a68442c7cd994257ce2a06ece02025b1cba28",
+    "connectivity.json": "049d90194a0593d171aafa7089c316be0cba7595c7035289359765c0b832d7e2",
+    "interface.json": "cd3a0f51e1fea70645112815144c1e3a182ec2913a37b2c7bce80f7dc01528e3",
+    "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73",
+    "libs/symbols/infineon_psu.lib": "a28de6754df60efe6f201f81de74ee43fed69b987cec45992541bfea590df6f4",
+    "libs/symbols/lmr14020.lib": "e38cf910613cec6f8c14146ef3765ade941e6c1df73713debdcdc6a0e6d960c0",
+    "parts.json": "4c0b7743b49dbfe7e95565af1a0b452e94acfbaf4f485454a1531c7d0cc32a31",
+    "sheets/psu.kicad_sch": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb",
+    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
+    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+  },
+  "id": "fome-mc/psu",
+  "instances": [
+    {
+      "path": "/psu/",
+      "references": [
+        "C10",
+        "C108",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "D1",
+        "D19",
+        "D3",
+        "L1",
+        "L2",
+        "Q1",
+        "R1",
+        "R124",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "U1",
+        "U2",
+        "U3",
+        "U6"
+      ],
+      "sheet": "sheets/psu.kicad_sch",
+      "uuid_path": "/00000000-0000-0000-0000-00005da72eff/"
+    }
+  ],
+  "interface": "interface.json",
+  "libraries": [
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:CP_Elec_8x10.5",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.5.kicad_mod",
+      "sha256": "6828330547e1f6e51815c059583f448942ac642910fe165fe9643ec05d9bb5f9"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_0402_1005Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
+      "sha256": "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod",
+      "sha256": "fe0dbfefbb181a0466f93a8de52d84ba7b00fcd9acdbb69575f4128a0af4e405"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_0805_2012Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_0805_2012Metric.kicad_mod",
+      "sha256": "62775a51fe74ba7f1b572de327bdbd3fc92582721b2abcaa47787865590d89cb"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_1206_3216Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_1206_3216Metric.kicad_mod",
+      "sha256": "b2e4a08e3aaf40bc587090190c0e3969e962d7ae962c172cce0581ae8327651c"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_1210_3225Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_1210_3225Metric.kicad_mod",
+      "sha256": "e1dae516e079b70c4736d001fb81bfb4ef5f9c2a37c8175223a44f83a04ff75f"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Diode_SMD:D_SMA",
+      "origin": "kicad-stock",
+      "path": "footprints/Diode_SMD.pretty/D_SMA.kicad_mod",
+      "sha256": "f7cba3b52ed8b34dce89170722de58324eac04e9e61a095e0eab37b9ca93cb7f"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Diode_SMD:D_SMC",
+      "origin": "kicad-stock",
+      "path": "footprints/Diode_SMD.pretty/D_SMC.kicad_mod",
+      "sha256": "f17a366cbe28020fc5f12a4a5cecd11590af4d96b61ad8d82c33dc2393a3b64b"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Diode_SMD:D_SOD-123",
+      "origin": "kicad-stock",
+      "path": "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod",
+      "sha256": "fd16785935b01254e1076f490e12f0f096da73cf087adefce51225585c62557a"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Inductor_SMD:L_1210_3225Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Inductor_SMD.pretty/L_1210_3225Metric.kicad_mod",
+      "sha256": "468a0e647af55e2fa9b023fe35857ee2d8d1e818fadafa8ef72a9ee6879b4621"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_SO:Infineon_PG-DSO-8-43",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_SO.pretty/Infineon_PG-DSO-8-43.kicad_mod",
+      "sha256": "2c3dc5464202e056a8c504640d5a9b2b33c0d1a6ff40c2386a8fdeffe2b33ee0"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm.kicad_mod",
+      "sha256": "a7971720bdda0353306df93e5fd71765420f318659baa75f0dc1e7a40c1d2eca"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod",
+      "sha256": "074ecb2092b24fa4b4b9cdd7c926fc587b0d7d6d21e7341e57935fd42d36894f"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_TO_SOT_SMD:SOT-23-5",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod",
+      "sha256": "455a3f7c3e5eb5b8847eaa5df23e18651e78ab9f75afd09a0883758a0d901761"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0402_1005Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+      "sha256": "e05c7605248c220836f642ed1f526133edf0374acdfd5bb2631e58b4e377acfb"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+      "sha256": "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23"
+    },
+    {
+      "detail": "Project library ${KIPRJMOD}/libs/footprints/sunlord-MWSA0503.pretty at the pinned commit",
+      "kind": "footprint",
+      "lib_id": "sunlord-MWSA0503:MWSA0503",
+      "origin": "source",
+      "path": "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod",
+      "sha256": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:C",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:CP",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:C_Small",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:D_Schottky",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:D_Zener",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:L",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:R",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Regulator_Linear:TLV75733PDBV",
+      "origin": "kicad-stock",
+      "path": "symbols/Regulator_Linear.kicad_sym",
+      "sha256": "09d0d95dbe5040452c683015077fcdff881b87112c1610008347f5be0df1eaea"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Transistor_FET:IRF7404",
+      "origin": "kicad-stock",
+      "path": "symbols/Transistor_FET.kicad_sym",
+      "sha256": "4fffc88e10091df229ea6ff032afa8ca8f1c2f3d72c8dabf25c6d31704ac6b50"
+    },
+    {
+      "detail": "Project library ${KIPRJMOD}/libs/symbols/infineon_psu.lib at the pinned commit",
+      "kind": "symbol",
+      "lib_id": "infineon_psu:TLS115",
+      "origin": "source",
+      "path": "libs/symbols/infineon_psu.lib",
+      "sha256": "a28de6754df60efe6f201f81de74ee43fed69b987cec45992541bfea590df6f4"
+    },
+    {
+      "detail": "Project library ${KIPRJMOD}/libs/symbols/lmr14020.lib at the pinned commit",
+      "kind": "symbol",
+      "lib_id": "lmr14020:LMR14020",
+      "origin": "source",
+      "path": "libs/symbols/lmr14020.lib",
+      "sha256": "e38cf910613cec6f8c14146ef3765ade941e6c1df73713debdcdc6a0e6d960c0"
+    }
+  ],
+  "parts_manifest": "parts.json",
+  "pending_requirements": [
+    {
+      "blocked_by": "AGENTEE-18 datasheet facts for the SMCJ24A clamp and the downstream absolute maxima (no datasheet is captured) and AGENTEE-61 interval checks",
+      "conditions": [
+        "Finding FOMEMC-7 (docs/BLOCK_LIBRARY.md, Block catalogue / Power supply, Evidence today)",
+        "Positive load dump on /12V_RAW"
+      ],
+      "id": "psu-tvs-clamp",
+      "source": {
+        "locator": "6.3 Power Supply, item 1, Sacrificial Crowbar TVS (D1 & D22 SMCJ24A, C224045)",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "D1 (SMCJ24A, LCSC C224045, unidirectional, cathode on /12V_RAW, anode on GND) clamps positive load dumps and inductive transients on /12V_RAW below 38.9 V, under every downstream absolute maximum: Q1 AO4485 40 V, TLE9201SG 40 V, B340A 40 V, VNLD5090 42 V, DRV8825 45 V."
+    },
+    {
+      "blocked_by": "AGENTEE-19 active models (AO4485, BZT52C12) for a reverse-polarity and forward-drop simulation",
+      "conditions": [
+        "Reverse-connected battery on /12V_RAW",
+        "Cranking input above the regulation floor"
+      ],
+      "id": "psu-reverse-block",
+      "source": {
+        "locator": "6.3 Power Supply, item 1, P-Channel MOSFET Reverse-Polarity Block (Q1 AO4485, C51499)",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "Q1 (AO4485 P-MOSFET, LCSC C51499; drain pins 5-8 on /12V_RAW, source pins 1-3 on /12V_PROT) with D19 (BZT52C12 gate-source Zener, C43491) and R124 (47k gate pull-down, C25819) blocks reverse battery without a series diode drop."
+    },
+    {
+      "blocked_by": "Catalog-backed part identity: AGENTEE-27 snapshot holding C3092605 and the captured C12 LCSC, with the AGENTEE-137 parts validator",
+      "conditions": [
+        "Finding FOMEMC-15 (docs/BLOCK_LIBRARY.md, C12 value/part mismatch); DESIGN.md attributes the C12 upgrade to FOMEMC-13"
+      ],
+      "id": "psu-c12-part",
+      "source": {
+        "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C12",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "C12, the +5V buck output capacitor, is the Murata GCM188R71C106KA64D 10 uF 16 V X7R 0603 (LCSC C3092605)."
+    },
+    {
+      "blocked_by": "AGENTEE-27 catalog voltage ratings with the AGENTEE-29 or AGENTEE-61 rating check",
+      "conditions": [
+        "Finding FOMEMC-17 (docs/BLOCK_LIBRARY.md, C4 16 V on the 12 V rail)"
+      ],
+      "id": "psu-c4-rating",
+      "source": {
+        "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C4",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "C4, the 4.7 uF input RC damper on /12V_PROT via R2, is a 50 V X7R 1210 (Murata GCJ32ER71H475KA12L, LCSC C417122), rated above the 38.9 V SMCJ24A clamp."
+    },
+    {
+      "blocked_by": "AGENTEE-19 active regulator models (LMR16020, TLV757P) and AGENTEE-18 datasheet facts for the LMR16020 minimum VIN and EN UVLO",
+      "conditions": [
+        "Finding FOMEMC-17 (docs/BLOCK_LIBRARY.md, brownout margin)",
+        "Cranking"
+      ],
+      "id": "psu-brownout-floor",
+      "source": {
+        "locator": "6.3 Power Supply, item 3, Reconciled U3 (LMR16020PDDAR) Cranking Brownout Margin (FOMEMC-17)",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "+3V3 stays regulated at 3.30 V until U3 (LMR16020PDDAR) reaches its 4.30 V minimum operating VIN, a guaranteed steady-state floor of about 4.80 V at the battery (4.30 V plus the ~0.50 V series path), with the LMR16020 EN UVLO falling at 4.50 V."
+    },
+    {
+      "blocked_by": "AGENTEE-19 active regulator models (LMR16020, TLS115D0E, TLV757P)",
+      "conditions": [
+        "Input above 5.5 V"
+      ],
+      "id": "psu-rails",
+      "source": {
+        "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN), Requirements",
+        "path": "sources/docs/BLOCK_LIBRARY.md"
+      },
+      "statement": "+5V is 5.00 V within 2 % above 5.5 V input; 5V_SENSOR_1 and 5V_SENSOR_2 are 5.00 V within 1 %; +3V3 is 3.30 V within 1 %."
+    },
+    {
+      "blocked_by": "AGENTEE-61 derating check with AGENTEE-27 catalog voltage ratings",
+      "conditions": [
+        "Finding FOMEMC-17 (50 V X7R capacitor upgrades)",
+        "Rail clamp: 38.9 V on /12V_RAW and /12V_PROT"
+      ],
+      "id": "psu-capacitor-ratings",
+      "source": {
+        "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "Every PSU capacitor is rated above the clamp voltage of its rail: C2, C5 (/12V_PROT), C7 (/VBOOST), C8 and C10 (U3 soft-start and bootstrap) are 50 V X7R, C6 is the 50 V hybrid polymer and C12 is 16 V on +5V."
+    },
+    {
+      "blocked_by": "rc_transient accepts passive-only networks; on the PSU sheet the active parts make it unsupported, and a filter claim with source and load needs AGENTEE-19 active models",
+      "conditions": [
+        "No numeric response bound is stated in the source"
+      ],
+      "id": "psu-input-filter",
+      "source": {
+        "locator": "6.3 Power Supply, item 2, No Boost Pre-Regulator",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "/12V_PROT passes through the L1 (2.2 uH) + C6 (47 uF) LC filter directly into /VBOOST (U3 VIN)."
+    }
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc",
+        "netlist"
+      ],
+      "conditions": [
+        "KiCad 10.0.7 native schematic reader"
+      ],
+      "id": "psu-native",
+      "source": {
+        "locator": "What \"verified block\" means, items 1 and 4",
+        "path": "sources/docs/BLOCK_LIBRARY.md"
+      },
+      "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
+    },
+    {
+      "checks": [
+        "interface"
+      ],
+      "conditions": [
+        "Pinned source commit df304f3321296f7e517e0d2e2aa52e1380d52993"
+      ],
+      "id": "psu-interface",
+      "source": {
+        "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)",
+        "path": "sources/docs/BLOCK_LIBRARY.md"
+      },
+      "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
+    }
+  ],
+  "role": "power",
+  "runs": [],
+  "schema": "agent-ee.block/1",
+  "sheet": "sheets/psu.kicad_sch",
+  "source": {
+    "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+    "license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee and on 2026-10-18 decided that captured fome-mc reference sheets are committed to agent-ee as fixtures (docs/decisions.md; fixtures/fome-mc/LICENSE-NOTICE.md). fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117 wideband Rev C ca2adce (MIT). Origin: FOME-Tech Polygonus psu at b3176cb, adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)",
+    "paths": {
+      "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod",
+      "libs/symbols/infineon_psu.lib": "libs/symbols/infineon_psu.lib",
+      "libs/symbols/lmr14020.lib": "libs/symbols/lmr14020.lib",
+      "sheets/psu.kicad_sch": "sheets/psu.kicad_sch",
+      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
+      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+    },
+    "repository": "/home/halbritt/git/fome-mc"
+  },
+  "version": "draft-df304f332129"
+}

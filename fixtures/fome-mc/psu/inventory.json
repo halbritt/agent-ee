@@ -1,0 +1,269 @@
+{
+  "schema": "agent-ee.block-inventory/1",
+  "design": {
+    "name": "fome-mc",
+    "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+    "root": "fome-mc.kicad_sch",
+    "plan": "plan",
+    "license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee and on 2026-10-18 decided that captured fome-mc reference sheets are committed to agent-ee as fixtures (docs/decisions.md; fixtures/fome-mc/LICENSE-NOTICE.md). fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117 wideband Rev C ca2adce (MIT).",
+    "external_libraries": {
+      "kicad-libraries": "ab9c5f8a1517a04b9cada6880d67d190bfd48c05"
+    }
+  },
+  "documents": {
+    "plan": "docs/BLOCK_LIBRARY.md",
+    "design": "docs/DESIGN.md"
+  },
+  "unassigned": [
+    {
+      "instance": "/psu/",
+      "references": [
+        "D4",
+        "D5",
+        "R10",
+        "R7",
+        "R8",
+        "R9",
+        "U4",
+        "U5"
+      ],
+      "reason": "CAN transceivers in psu.kicad_sch: the separate CAN block (docs/BLOCK_LIBRARY.md, CAN inside psu.kicad_sch), not part of the PSU block."
+    },
+    {
+      "instance": "/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/ign1/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/lowside_quad1/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/ign2/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/mcu/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/lowside_quad2/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/lowside_quad4/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/quad_analog1/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/quad_analog2/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/quad_analog3/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/quad_analog_temp/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/highside_quad/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/triggers/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/knock/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/Keep_Alive/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/ign_igbt/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/etb1/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/stepper_etb/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/wbo1/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    },
+    {
+      "instance": "/wbo2/",
+      "references": "all",
+      "reason": "Outside the rung-2 PSU capture (AGENTEE-106); the full fome-mc block inventory covers it."
+    }
+  ],
+  "blocks": [
+    {
+      "id": "psu",
+      "role": "power",
+      "title": "Power supply (psu.kicad_sch without CAN), rung-2 power reference",
+      "origin": "FOME-Tech Polygonus psu at b3176cb, adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)",
+      "instances": [
+        {
+          "path": "/psu/",
+          "references": [
+            "C10",
+            "C108",
+            "C11",
+            "C12",
+            "C13",
+            "C14",
+            "C2",
+            "C3",
+            "C4",
+            "C5",
+            "C6",
+            "C7",
+            "C8",
+            "C9",
+            "D1",
+            "D19",
+            "D3",
+            "L1",
+            "L2",
+            "Q1",
+            "R1",
+            "R124",
+            "R2",
+            "R3",
+            "R4",
+            "R5",
+            "R6",
+            "U1",
+            "U2",
+            "U3",
+            "U6"
+          ]
+        }
+      ],
+      "boundary": {
+        "document": "plan",
+        "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)"
+      },
+      "pending": [
+        {
+          "id": "psu-tvs-clamp",
+          "statement": "D1 (SMCJ24A, LCSC C224045, unidirectional, cathode on /12V_RAW, anode on GND) clamps positive load dumps and inductive transients on /12V_RAW below 38.9 V, under every downstream absolute maximum: Q1 AO4485 40 V, TLE9201SG 40 V, B340A 40 V, VNLD5090 42 V, DRV8825 45 V.",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 1, Sacrificial Crowbar TVS (D1 & D22 SMCJ24A, C224045)",
+          "conditions": [
+            "Finding FOMEMC-7 (docs/BLOCK_LIBRARY.md, Block catalogue / Power supply, Evidence today)",
+            "Positive load dump on /12V_RAW"
+          ],
+          "blocked_by": "AGENTEE-18 datasheet facts for the SMCJ24A clamp and the downstream absolute maxima (no datasheet is captured) and AGENTEE-61 interval checks"
+        },
+        {
+          "id": "psu-reverse-block",
+          "statement": "Q1 (AO4485 P-MOSFET, LCSC C51499; drain pins 5-8 on /12V_RAW, source pins 1-3 on /12V_PROT) with D19 (BZT52C12 gate-source Zener, C43491) and R124 (47k gate pull-down, C25819) blocks reverse battery without a series diode drop.",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 1, P-Channel MOSFET Reverse-Polarity Block (Q1 AO4485, C51499)",
+          "conditions": [
+            "Reverse-connected battery on /12V_RAW",
+            "Cranking input above the regulation floor"
+          ],
+          "blocked_by": "AGENTEE-19 active models (AO4485, BZT52C12) for a reverse-polarity and forward-drop simulation"
+        },
+        {
+          "id": "psu-c12-part",
+          "statement": "C12, the +5V buck output capacitor, is the Murata GCM188R71C106KA64D 10 uF 16 V X7R 0603 (LCSC C3092605).",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C12",
+          "conditions": [
+            "Finding FOMEMC-15 (docs/BLOCK_LIBRARY.md, C12 value/part mismatch); DESIGN.md attributes the C12 upgrade to FOMEMC-13"
+          ],
+          "blocked_by": "Catalog-backed part identity: AGENTEE-27 snapshot holding C3092605 and the captured C12 LCSC, with the AGENTEE-137 parts validator"
+        },
+        {
+          "id": "psu-c4-rating",
+          "statement": "C4, the 4.7 uF input RC damper on /12V_PROT via R2, is a 50 V X7R 1210 (Murata GCJ32ER71H475KA12L, LCSC C417122), rated above the 38.9 V SMCJ24A clamp.",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C4",
+          "conditions": [
+            "Finding FOMEMC-17 (docs/BLOCK_LIBRARY.md, C4 16 V on the 12 V rail)"
+          ],
+          "blocked_by": "AGENTEE-27 catalog voltage ratings with the AGENTEE-29 or AGENTEE-61 rating check"
+        },
+        {
+          "id": "psu-brownout-floor",
+          "statement": "+3V3 stays regulated at 3.30 V until U3 (LMR16020PDDAR) reaches its 4.30 V minimum operating VIN, a guaranteed steady-state floor of about 4.80 V at the battery (4.30 V plus the ~0.50 V series path), with the LMR16020 EN UVLO falling at 4.50 V.",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 3, Reconciled U3 (LMR16020PDDAR) Cranking Brownout Margin (FOMEMC-17)",
+          "conditions": [
+            "Finding FOMEMC-17 (docs/BLOCK_LIBRARY.md, brownout margin)",
+            "Cranking"
+          ],
+          "blocked_by": "AGENTEE-19 active regulator models (LMR16020, TLV757P) and AGENTEE-18 datasheet facts for the LMR16020 minimum VIN and EN UVLO"
+        },
+        {
+          "id": "psu-rails",
+          "statement": "+5V is 5.00 V within 2 % above 5.5 V input; 5V_SENSOR_1 and 5V_SENSOR_2 are 5.00 V within 1 %; +3V3 is 3.30 V within 1 %.",
+          "document": "plan",
+          "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN), Requirements",
+          "conditions": [
+            "Input above 5.5 V"
+          ],
+          "blocked_by": "AGENTEE-19 active regulator models (LMR16020, TLS115D0E, TLV757P)"
+        },
+        {
+          "id": "psu-capacitor-ratings",
+          "statement": "Every PSU capacitor is rated above the clamp voltage of its rail: C2, C5 (/12V_PROT), C7 (/VBOOST), C8 and C10 (U3 soft-start and bootstrap) are 50 V X7R, C6 is the 50 V hybrid polymer and C12 is 16 V on +5V.",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs",
+          "conditions": [
+            "Finding FOMEMC-17 (50 V X7R capacitor upgrades)",
+            "Rail clamp: 38.9 V on /12V_RAW and /12V_PROT"
+          ],
+          "blocked_by": "AGENTEE-61 derating check with AGENTEE-27 catalog voltage ratings"
+        },
+        {
+          "id": "psu-input-filter",
+          "statement": "/12V_PROT passes through the L1 (2.2 uH) + C6 (47 uF) LC filter directly into /VBOOST (U3 VIN).",
+          "document": "design",
+          "locator": "6.3 Power Supply, item 2, No Boost Pre-Regulator",
+          "conditions": [
+            "No numeric response bound is stated in the source"
+          ],
+          "blocked_by": "rc_transient accepts passive-only networks; on the PSU sheet the active parts make it unsupported, and a filter claim with source and load needs AGENTEE-19 active models"
+        }
+      ]
+    }
+  ]
+}
