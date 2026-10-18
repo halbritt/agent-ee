@@ -132,6 +132,19 @@ print(json.dumps(sorted([fp.GetReference(), pad.GetNumber(), pad.GetShape(k.F_Cu
 """
 
 
+def prompt_context(prompt):
+    """Return the writer context JSON line of a prompt.
+
+    The context is the last line that is a JSON object; AGENTEE-115 appends a
+    fixed resubmission instruction after it, so the final line is no longer
+    the context.
+    """
+    for line in reversed(prompt.splitlines()):
+        if line.startswith('{'):
+            return json.loads(line)
+    raise AssertionError('prompt carries no JSON context line')
+
+
 def pcbnew(script, *args):
     process = subprocess.run(['/usr/bin/python3', '-c', script, *map(str, args)],
                              capture_output=True, text=True, timeout=180)
@@ -408,7 +421,7 @@ class WriterOnlyCampaignTest(PlacementCampaignFixture):
         self.assertEqual(self.outcomes(2)['courtyard'], 'defect')
         self.assertEqual(self.outcomes(3)['courtyard'], 'pass')
         # The second writer turn received the fresh second-run findings, not the first run's.
-        context = json.loads(self.prompts[2].rsplit('\n', 1)[1])
+        context = prompt_context(self.prompts[2])
         self.assertEqual(sorted(f['local_id'] for f in context['placement']['findings']), ['courtyard', 'drc-placement'])
         candidate = read_json(self.out / 'runs/2/candidate.json')['candidate_id']
         self.assertTrue(all(c['details'].get('candidate_id', candidate) == candidate
@@ -489,7 +502,7 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertEqual(sorted((d['kind'], d['ref']) for d in judgment['defects']),
                          [('outside_outline', 'C1'), ('outside_outline', 'J1'), ('outside_outline', 'R1')])
         # The writer turn received the first run's sealed outline finding and its retained probe.
-        context = json.loads(self.prompts[1].rsplit('\n', 1)[1])
+        context = prompt_context(self.prompts[1])
         self.assertEqual([f['local_id'] for f in context['placement']['findings']], ['outline'])
         outline, = [c for c in context['placement']['checks'] if c['id'] == 'outline']
         first = read_json(self.out / 'runs/1/candidate.json')
