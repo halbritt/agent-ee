@@ -115,12 +115,10 @@ remain separate checks. The tests use original synthetic catalog rows, including
 a 33-row Basic/stock ranking case; they do not reproduce or qualify the named
 third-party Konnect fixture.
 
-The named-fixture acceptance criterion therefore remains unqualified. Its
-33-row synthetic counterpart demonstrates the ranking behavior only. Reusing a
-third-party fixture requires compatible provenance and licensing. The upstream
-[Konnect license](https://github.com/mixelpixx/Konnect/blob/main/LICENSE) is
-AGPL-3.0; importing its fixture requires owner authorization under this task's
-MIT-only boundary.
+The [owner decision of 2026-10-18](decisions.md#konnect-fixtures-are-replaced-by-owned-equivalents)
+amended the named-fixture acceptance criterion to the owned controls. The
+33-row synthetic case qualifies that ranking behavior without importing Konnect
+material. Its AGPL-3.0 fixture remains outside this repository's MIT-only boundary.
 
 ## Requirement-bound check
 
@@ -148,5 +146,9 @@ A pass covers only those declared constraints against the approved snapshot's
 claims. An empty candidate set remains unknown, so it cannot become a sealed
 defect witness. Invalid inputs return failed/unknown. The retained sandbox
 report enters the existing coordinator seal, public verify and witness gates;
-selection has no private acceptance or adjudication route. A checks-only run
+selection has no private acceptance or adjudication route. The helper has a
+600-second ceiling, shortened by the enclosing run deadline. The
+[full-feed runtime qualification](catalog.md#full-feed-runtime-qualification)
+records its workload and measured bound; larger requirement sets are not covered
+by that one-query measurement. A checks-only run
 still has incomplete independent review, even if its selection check passes.

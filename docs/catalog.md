@@ -240,10 +240,68 @@ stock=8,013,731 and snapshot date 2026-09-14. That private qualification used a
 900-second process limit and completed in 327 seconds on the busy host.
 These are captured facts, not current supplier availability.
 
-The shared reader revalidates the whole snapshot before selection. The sealed
-`catalog` and `part_selection` runners retain their 120-second ceilings and the
-enclosing run deadline; this full feed has **not** been qualified within that
-ceiling. A timeout remains interrupted/unknown coverage. The original fixture
-checks qualify the check/evidence boundaries, while the large private query
-qualifies native conversion and offline selection at its recorded runtime.
-Do not infer full-feed sealed-check throughput from the small controls.
+The shared reader still revalidates every row before selection. It sorts narrow
+row references after decoding, checks category base cells through a SQLite join,
+and streams canonical row hashing without building another full JSON catalog.
+Repeated SI ratings share a bounded cache of immutable endpoints; returned row
+intervals remain independent dictionaries. The cache key includes the caller's
+Decimal rounding, exponent limits and trap policy. Canonical row hashes, snapshot schema,
+raw claims, row counts, exact JSON types and unknown semantics are unchanged.
+No row is dropped and no validation receipt substitutes for rederivation.
+
+AGENTEE-128 takes the ticket's explicit option to declare a larger per-check
+ceiling. Both helpers now allow **600 seconds**, still shortened by the enclosing
+run deadline. The original 120-second bound timed out for both helpers on the
+loaded qualification host, including the first optimized integrity probe. The
+600-second bound allows full rederivation and the selection report's complete
+exclusion evidence; it matches the existing catalog-consuming package and
+assembly checks. It does not guarantee completion on every host or for every
+requirements list. Timeout remains interrupted/unknown coverage when the run
+deadline expires, or timeout/unknown when the helper reaches its own ceiling.
+
+Repeat the fixed 1 kΩ ±1%, 0603 probe against an existing captured snapshot:
+
+```sh
+PYTHONPATH=src python3 scripts/qualify_catalog_runtime.py \
+  /private/scratch/jlcparts-snapshot \
+  6f5a2767e6a7f54840e9bd17cccd1ebe54585d0c1b7d18049cb141013eda2d09 \
+  --out /private/scratch/new-runtime-qualification
+```
+
+Use the actual pin if re-capture changes the manifest. The script creates a
+scope/3 baseline, captures both full catalog files and owned requirements, runs
+the registered networkless helpers, and verifies their ordinary coordinator
+seal. `summary.json` binds the baseline, seal, helper reports and snapshot pins,
+and records each invocation's timeout and elapsed wall time. Exit zero requires
+both checks to pass within their full declared helper budgets. A shorter run
+budget, missing output or failed check cannot qualify. The run remains an
+incomplete checks-only review: runtime qualification grants no independent review
+or design acceptance. All output, including captured rows and selection evidence,
+belongs in private scratch. Only hashes, provenance and measured summaries may
+be committed.
+
+On 2026-10-18 the registered helpers completed a sealed private full-feed run
+on Linux x86-64, Python 3.12.3 and SQLite 3.45.1:
+
+| Helper | Elapsed wall time | Declared ceiling | Result |
+| --- | ---: | ---: | --- |
+| `catalog` | 104.996 s | 600 s | ok / pass |
+| `part_selection` | 128.744 s | 600 s | ok / pass |
+
+The selection retained all 334,455 rows in its evaluated universe, returned the
+same 179 eligible candidates and selected C21190. The manifest SHA-256 remains
+`6f5a2767e6a7f54840e9bd17cccd1ebe54585d0c1b7d18049cb141013eda2d09`, DB
+SHA-256 `a32e101342e43e2358d74a0a19d0e63231102de802461a97a0582f025f461a11`,
+and canonical rows SHA-256
+`73f49d9577451fa396a2b794cf9829d9477c0d49c69e401cbcc3da9560c6471f`.
+The coordinator evidence seal SHA-256 is
+`bbd78ba037d4b6f170da38139892a79d807fa7828a3af041c9e80cb09a000109`;
+the baseline file SHA-256 is
+`528a23248980270551420624303f2149ca410548fa84dfc7b9c27a2ee6fb4549`.
+These observations include process startup, complete semantic validation and
+report writing, but exclude host capture and public verification overhead.
+The selection exceeded 120 seconds. Earlier 120-second probes timed out too;
+this is qualification under the declared 600-second ceiling, not a universal
+120-second guarantee or a controlled speedup factor.
+The host had other fleet work running; no cache flush, CPU reservation, latency
+percentile or larger multi-part workload was qualified.

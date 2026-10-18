@@ -444,3 +444,98 @@ class CatalogTests(unittest.TestCase):
         from agent_ee.catalog import strict_json
         with self.assertRaisesRegex(ValueError, 'nest'):
             strict_json('[' * 200000 + ']' * 200000)
+
+    def test_canonical_rows_hash_and_numeric_order_survive_physical_reordering(self):
+        from agent_ee.catalog import rows_sha256
+        from agent_ee.storage import identity
+        from catalog_repin import repin
+        import sqlite3
+        self.source()
+        with (self.root / 'owned.csv').open() as stream:
+            raw = next(csv.DictReader(stream))
+        rows = [{**raw, 'lcsc': f'C{number}'} for number in (1, 20, 3, 10)]
+        snapshot, _ = self.captured('ordered', rows)
+        with sqlite3.connect(snapshot / 'catalog.sqlite3') as connection:
+            for table in ('component_base', 'resistor'):
+                cells = connection.execute(f"SELECT * FROM {table} WHERE lcsc='C3'").fetchone()
+                connection.execute(f"DELETE FROM {table} WHERE lcsc='C3'")
+                connection.execute(f'INSERT INTO {table} VALUES ({",".join("?" for _ in cells)})', cells)
+        pin = repin(snapshot)
+        loaded = load_catalog(snapshot, pin)
+        self.assertEqual([row['lcsc'] for row in loaded['rows']], ['C1', 'C3', 'C10', 'C20'])
+        self.assertEqual(rows_sha256(loaded['rows']), identity(loaded['rows']))
+        self.assertEqual(loaded['manifest']['rows_sha256'], identity(loaded['rows']))
+        for rows in ([], [{'unicode': 'Ωµ°', 'unknown': None, 'flag': False}], loaded['rows']):
+            self.assertEqual(rows_sha256(rows), identity(rows))
+
+    def test_repeated_intervals_never_share_mutable_results(self):
+        from agent_ee.catalog import attribute_interval, normalized_attributes
+        first = attribute_interval('12 kohm +/-2%', 'ohm')
+        first['min'] = '0'
+        self.assertEqual(attribute_interval('12 kohm +/-2%', 'ohm'),
+                         dict(min='11760', max='12240', unit='ohm'))
+        first = normalized_attributes({'resistance': '12 kohm +/-2%'})
+        second = normalized_attributes({'resistance': '12 kohm +/-2%'})
+        first['resistance']['max'] = '0'
+        self.assertEqual(second['resistance']['max'], '12240')
+
+    def test_category_join_checks_every_base_cell_and_complete_membership(self):
+        from agent_ee.catalog import catalog_check
+        from catalog_repin import repin
+        cases = (
+            "DELETE FROM resistor",
+            "UPDATE resistor SET lcsc='C999'",
+            "UPDATE resistor SET category='capacitor'",
+            "UPDATE resistor SET stock=NULL",
+            "UPDATE resistor SET mfr=NULL",
+            "UPDATE resistor SET attributes='{}'",
+            "UPDATE resistor SET normalized='{}'",
+            "UPDATE resistor SET provenance='{}'",
+            "UPDATE resistor SET resistance_min='989'",
+            "UPDATE resistor SET power_min='0'",
+        )
+        for index, edit in enumerate(cases):
+            with self.subTest(edit=edit):
+                snapshot, _ = self.captured(f'category-{index}')
+                pin = repin(snapshot, lambda connection: connection.execute(edit))
+                report = catalog_check(snapshot, pin)
+                self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+                self.assertIn('category table mismatch', report['details']['error'])
+
+    def test_rederivation_refuses_json_type_coercion_and_noncanonical_raw_text(self):
+        from agent_ee.catalog import catalog_check
+        from catalog_repin import repin
+        for index, (column, text) in enumerate((
+                ('attributes', '{"resistance": "1 kohm +/-1%"}'),
+                ('normalized', '{"resistance":{"max":1010,"min":990,"unit":"ohm"}}'),
+                ('normalized', '{"resistance":{"max":true,"min":false,"unit":"ohm"}}'),
+                ('normalized', '{"resistance":{"max":"1010","max":"1010","min":"990","unit":"ohm"}}'))):
+            with self.subTest(column=column, text=text):
+                snapshot, _ = self.captured(f'json-{index}')
+                def edit(connection):
+                    for table in ('component_base', 'resistor'):
+                        connection.execute(f'UPDATE {table} SET {column}=?', (text,))
+                report = catalog_check(snapshot, repin(snapshot, edit))
+                self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+
+    def test_interval_cache_preserves_decimal_rounding_and_trap_policy(self):
+        from decimal import Inexact, Overflow, ROUND_CEILING, ROUND_FLOOR, localcontext
+        from agent_ee.catalog import attribute_interval
+        text = ('1.234567890123456789012345678e50 ohm '
+                '+/-1.234567890123456789012345678e-50%')
+        with localcontext() as context:
+            context.rounding = ROUND_FLOOR
+            floor = attribute_interval(text, 'ohm')
+            context.rounding = ROUND_CEILING
+            ceiling = attribute_interval(text, 'ohm')
+            self.assertNotEqual(floor, ceiling)
+            context.rounding = ROUND_FLOOR
+            self.assertEqual(attribute_interval(text, 'ohm'), floor)
+            context.traps[Inexact] = True
+            with self.assertRaises(Inexact):
+                attribute_interval(text, 'ohm')
+            context.traps[Inexact] = False
+            self.assertEqual(attribute_interval(text, 'ohm'), floor)
+            context.Emax = 30
+            with self.assertRaises(Overflow):
+                attribute_interval(text, 'ohm')

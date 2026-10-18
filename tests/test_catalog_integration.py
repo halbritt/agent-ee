@@ -238,3 +238,53 @@ class CatalogIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'failed criterion'):
             validate_witnesses(run, [dict(requirement_id='parts', check_id='select')],
                 [dict(path='checks/select.json', locator='outcome')])
+
+    def test_runtime_qualification_retains_public_seal_and_helper_bounds(self):
+        import subprocess
+        import sys
+        from toolchain import require_toolchain
+        from agent_ee.cli import verify
+        from agent_ee.storage import read_json
+        require_toolchain()
+        # The probe's fixed workload is 1 kohm / 0603; this is original data.
+        fixture = test_part_selection.SelectionTests()
+        fixture.root = self.root
+        (self.root / 'snapshot').rename(self.root / 'unused-snapshot')
+        snapshot, pin = fixture.snapshot([fixture.row(package='0603',
+            attributes='{"resistance":"1 kohm +/-1%"}')])
+        output = self.root / 'qualification'
+        script = Path(__file__).resolve().parents[1] / 'scripts/qualify_catalog_runtime.py'
+        completed = subprocess.run([sys.executable, str(script), str(snapshot), pin,
+            '--out', str(output)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        summary = read_json(output / 'summary.json')
+        self.assertTrue(summary['qualified'])
+        self.assertEqual(summary['row_counts']['component_base'], 1)
+        self.assertEqual((summary['chosen_lcsc'], summary['eligible_candidates']), ('C1', 1))
+        self.assertEqual(summary['snapshot_manifest_sha256'], pin)
+        self.assertEqual(summary['evidence_seal_sha256'], digest(output / 'run/work/verification/evidence.json'))
+        self.assertEqual(summary['baseline_sha256'], digest(output / 'run/baseline.json'))
+        self.assertEqual(summary['review_state'], 'incomplete')
+        for check in summary['checks'].values():
+            self.assertEqual((check['execution'], check['outcome'], check['timeout_s']), ('ok', 'pass', 600))
+            self.assertLess(check['duration_s'], 600)
+        verify(output / 'run')
+        (output / 'run/work/catalog/catalog.json').write_text('{}')
+        with self.assertRaises(ValueError):
+            verify(output / 'run')
+        for label, bad_pin, budget in (('bad-pin', '0' * 64, '60'),
+                                       ('no-time', pin, '0')):
+            with self.subTest(label=label):
+                failed_output = self.root / label
+                completed = subprocess.run([sys.executable, str(script), str(snapshot), bad_pin,
+                    '--out', str(failed_output), '--max-seconds', budget],
+                    capture_output=True, text=True, timeout=120)
+                self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+                failed = read_json(failed_output / 'summary.json')
+                self.assertFalse(failed['qualified'])
+                self.assertIsNone(failed['snapshot_sha256'])
+                self.assertIsNone(failed['chosen_lcsc'])
+                self.assertTrue(all(c['outcome'] == 'unknown' for c in failed['checks'].values()))
+                if label == 'no-time':
+                    self.assertTrue(all(c['timeout_s'] is None and c['report_sha256'] is None
+                                        for c in failed['checks'].values()))

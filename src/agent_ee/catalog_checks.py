@@ -9,6 +9,7 @@ from .storage import write_json
 
 LIMIT = ('Snapshot claims only: no authenticated upstream data, live stock, datasheet, '
          'pin/footprint suitability, procurement or circuit acceptance.')
+CATALOG_TIMEOUT = 600
 
 
 def capability(kind, params, scope, files, inputs, cid):
@@ -52,7 +53,7 @@ def check_catalog(ctx):
     if ctx.spec['kind'] == 'part_selection':
         argv += ['--requirements', '/candidate/' + ctx.params['requirements']]
     try:
-        ctx.execute(argv, 120)
+        ctx.execute(argv, CATALOG_TIMEOUT)
     finally:
         ctx.evidence('catalog.json')
     report = ctx.load_json('catalog.json', 'catalog')

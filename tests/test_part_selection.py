@@ -314,3 +314,13 @@ class SelectionTests(unittest.TestCase):
             f"UPDATE {table} SET price1='abc' WHERE lcsc='C2'") for table in ('component_base', 'resistor')])
         failure = selection_check(snapshot, tampered, self.requirements())
         self.assertEqual((failure['execution'], failure['outcome'], failure['parts']), ('failed', 'unknown', []))
+
+    def test_nonmatching_row_is_still_rederived_before_selection(self):
+        from agent_ee.part_selection import selection_check
+        from catalog_repin import repin, set_derived
+        snapshot, _ = self.snapshot([self.row(), self.row('C2', package='0603')])
+        pin = repin(snapshot, lambda connection: set_derived(connection, 'C2', {}))
+        report = selection_check(snapshot, pin, self.requirements())
+        self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+        self.assertEqual(report['parts'], [])
+        self.assertIn('rederivation', report['details']['error'])

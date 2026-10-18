@@ -2,7 +2,8 @@
 import csv
 from contextlib import closing
 from datetime import date
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Decimal, InvalidOperation, getcontext, localcontext
+from functools import lru_cache
 import hashlib
 import io
 import json
@@ -96,8 +97,22 @@ def quantity(text, unit):
 
 def attribute_interval(text, unit):
     """Normalize explicit closed ranges, percentage tolerances, or exact ratings."""
+    context = getcontext()
+    policy = (context.rounding, context.Emin, context.Emax, context.clamp,
+              tuple(context.traps.items()))
+    low, high = _attribute_endpoints(text, unit, policy)
+    return {'min': low, 'max': high, 'unit': unit}
+
+
+@lru_cache(maxsize=8192)
+def _attribute_endpoints(text, unit, policy):
+    # Repeated ratings share arithmetic, never mutable row dictionaries. The
+    # cache key preserves the caller's rounding, exponent and trap policy as
+    # well as the existing fixed precision, including on warm cache hits.
     with localcontext() as context:
         context.prec = 80
+        context.rounding, context.Emin, context.Emax, context.clamp, traps = policy
+        context.traps = dict(traps)
         if '..' in text:
             ends = text.split('..')
             if len(ends) != 2:
@@ -117,7 +132,7 @@ def attribute_interval(text, unit):
             low = high = quantity(text, unit)
         if low > high or (unit != 'degC' and low < 0):
             raise ValueError('invalid attribute interval')
-        return {'min': decimal_text(low), 'max': decimal_text(high), 'unit': unit}
+        return decimal_text(low), decimal_text(high)
 
 
 def normalized_attributes(attributes):
@@ -308,6 +323,17 @@ def row_counts(rows):
     return {'component_base': len(rows), **{category: sum(row['category'] == category for row in rows) for category in CATEGORIES}}
 
 
+def rows_sha256(rows):
+    """Hash the canonical list without allocating a second full catalog in JSON."""
+    hashed = hashlib.sha256(b'[')
+    for index, row in enumerate(rows):
+        if index:
+            hashed.update(b',')
+        hashed.update(canonical(row))
+    hashed.update(b']')
+    return hashed.hexdigest()
+
+
 def table_sql(table):
     """Exact schema text; readers compare sqlite_master so constraints cannot be dropped."""
     declarations = ','.join(f'{key} ' + ('INTEGER' if key in ('stock', 'is_basic', 'is_preferred') else 'TEXT') for key in DERIVED_COLUMNS)
@@ -359,7 +385,7 @@ def capture_catalog(source_manifest, source_root, destination):
         manifest = {**source_manifest, 'schema': 'agent-ee.catalog/1',
                     'database': {'path': database.name, 'sha256': digest(database),
                                  'size_bytes': database.stat().st_size},
-                    'row_counts': row_counts(rows), 'rows_sha256': identity(rows),
+                    'row_counts': row_counts(rows), 'rows_sha256': rows_sha256(rows),
                     'pruned_rows': pruned, 'sqlite_version': sqlite3.sqlite_version}
         write_json(stage / 'manifest.json', manifest)
         publish_directory(stage, destination)
@@ -376,12 +402,8 @@ def rederived_row(cells, manifest):
     columns follow from the raw claims. Every stored field must equal the result.
     """
     stored = dict(zip(DERIVED_COLUMNS, cells))
-    decoded = {}
     for key in ('attributes', 'normalized', 'provenance'):
         if not isinstance(stored[key], str):
-            raise ValueError(f'snapshot {key} is not canonical JSON')
-        decoded[key] = strict_json(stored[key])
-        if canonical(decoded[key]).decode() != stored[key]:
             raise ValueError(f'snapshot {key} is not canonical JSON')
     for key in ('is_basic', 'is_preferred'):
         if type(stored[key]) is not int or stored[key] not in (0, 1):
@@ -394,7 +416,9 @@ def rederived_row(cells, manifest):
     raw.update(stock='' if stored['stock'] is None else str(stored['stock']),
                price1='' if stored['price1'] is None else stored['price1'],
                is_basic=str(stored['is_basic']), is_preferred=str(stored['is_preferred']))
-    provenance = decoded['provenance']
+    provenance = strict_json(stored['provenance'])
+    if canonical(provenance).decode() != stored['provenance']:
+        raise ValueError('snapshot provenance is not canonical JSON')
     exact_fields(provenance, ('volume', 'row', 'raw_sha256'))
     if (provenance['volume'] not in {volume['path'] for volume in manifest['volumes']}
             or type(provenance['row']) is not int or provenance['row'] < 1
@@ -402,10 +426,14 @@ def rederived_row(cells, manifest):
             or not re.fullmatch('[0-9a-f]{64}', provenance['raw_sha256'])):
         raise ValueError('snapshot row lacks valid raw source provenance')
     row = normalize_row(raw, provenance, manifest['snapshot_date'])
-    decoded = {**stored, **decoded, 'is_basic': bool(stored['is_basic']),
-               'is_preferred': bool(stored['is_preferred'])}
-    if canonical(decoded) != canonical(row):
-        raise ValueError(f'snapshot row {row["lcsc"]} does not match rederivation from its raw attributes')
+    # Comparing the canonical rederivation to the retained text validates exact
+    # JSON types as well as values, without decoding/encoding each full row twice.
+    for key in DERIVED_COLUMNS:
+        expected = canonical(row[key]).decode() if key in ('attributes', 'normalized', 'provenance') else row[key]
+        if expected != stored[key]:
+            if key in ('attributes', 'normalized') and canonical(strict_json(stored[key])).decode() != stored[key]:
+                raise ValueError(f'snapshot {key} is not canonical JSON')
+            raise ValueError(f'snapshot row {row["lcsc"]} does not match rederivation from its raw attributes')
     if manifest['stale_before'] is not None and row['last_seen'] < manifest['stale_before']:
         raise ValueError('snapshot retains a row older than its stale cutoff')
     return row
@@ -423,7 +451,9 @@ def read_database(payload, manifest):
         if set(tables) != {(name, 'table', table_sql(name)) for name in expected}:
             raise ValueError('unsupported snapshot tables or schema')
         rows, identities, sources = [], set(), set()
-        for cells in connection.execute('SELECT * FROM component_base ORDER BY CAST(substr(lcsc,2) AS INTEGER)'):
+        # Sorting row references after validation avoids a SQLite external sort
+        # of the entire wide table (including all retained upstream attributes).
+        for cells in connection.execute('SELECT * FROM component_base'):
             row = rederived_row(cells, manifest)
             source = (row['provenance']['volume'], row['provenance']['row'])
             if row['lcsc'] in identities or source in sources:
@@ -431,12 +461,27 @@ def read_database(payload, manifest):
             identities.add(row['lcsc'])
             sources.add(source)
             rows.append(row)
+        rows.sort(key=lambda row: int(row['lcsc'][1:]))
         by_lcsc = {row['lcsc']: row for row in rows}
+        counts = row_counts(rows)
         for category in CATEGORIES:
-            actual = connection.execute(f'SELECT * FROM {category} ORDER BY lcsc').fetchall()
-            base = connection.execute('SELECT * FROM component_base WHERE category=? ORDER BY lcsc', (category,)).fetchall()
-            expected_rows = [cells + interval_cells(by_lcsc[cells[0]], category) for cells in base]
-            if actual != expected_rows:
+            # SQLite compares the wide base cells in place. Only the narrow SI
+            # columns cross into Python; every typed row must join its category,
+            # and the primary key plus count establishes complete coverage.
+            differences = ' OR '.join(f'typed.{key} IS NOT base.{key}' for key in DERIVED_COLUMNS)
+            mismatch = connection.execute(
+                f'SELECT 1 FROM {category} AS typed LEFT JOIN component_base AS base '
+                f'ON typed.lcsc=base.lcsc WHERE base.category IS NOT ? OR {differences} LIMIT 1',
+                (category,)).fetchone()
+            if mismatch:
+                raise ValueError('derived category table mismatch')
+            count = 0
+            columns = ','.join(('lcsc', *category_columns(category)))
+            for lcsc, *intervals in connection.execute(f'SELECT {columns} FROM {category}'):
+                if tuple(intervals) != interval_cells(by_lcsc[lcsc], category):
+                    raise ValueError('derived category table mismatch')
+                count += 1
+            if count != counts[category]:
                 raise ValueError('derived category table mismatch')
         return rows
 
@@ -466,7 +511,7 @@ def load_catalog(snapshot_directory, expected_manifest_sha256):
         raise ValueError('invalid pruned row count')
     nonempty(manifest['sqlite_version'])
     rows = read_database(payload, manifest)
-    if not rows or row_counts(rows) != manifest['row_counts'] or identity(rows) != manifest['rows_sha256']:
+    if not rows or row_counts(rows) != manifest['row_counts'] or rows_sha256(rows) != manifest['rows_sha256']:
         raise ValueError('snapshot row identity/count mismatch')
     return {'manifest': manifest, 'rows': rows}
 
