@@ -149,9 +149,48 @@ copied from the snapshot. Nothing in either source tree was changed.
 `done` is the campaign verdict `criteria_satisfied` with `verify-campaign`
 exit 0. The fab package is graded by checks inside the scope.
 
+## Recorded run (2026-10-17)
+
+One real run used commit 512262a on `impl/rung1-qualified` (branched from main
+at f442ba0), from a clean worktree, with the kicad-route pin clone and
+`profiles/claude-baseline.json`, `max_iterations` 4 and `max_seconds` 3600.
+The run directory is copied to `build/rung1-qualified-2026-10-17/`, with the
+final dry run under `dry-run-rehearsal/`. The campaign stopped `incomplete`,
+so `done` is false. `verify-campaign` exits 0 and prints `incomplete`.
+
+- Run 1 reviewed the empty candidate. The schematic, placement and routing
+  checks were `stage_not_reached`, and the verification and fab checks were
+  `stage_blocked`. Both reviewers and the adjudicator ran. Implementation 1
+  (schematic turn): the writer ran for 254 s, then `emit-schematic` and
+  `forward-annotate` completed with exit 0.
+- Run 2: `erc` pass, `netlist` info, `parity` pass, `drc-placement` pass,
+  `courtyard` pass, `outline` defect (3 footprints on the staging column).
+  Implementation 2 (placement turn): the writer ran for 110 s, then the
+  `agent-ee-placer` helper completed, and the placement record is `proposed`.
+- Run 3: every schematic and placement check passed, and routing was
+  `stage_not_reached`. Implementation 3 (routing turn): the writer routed the
+  board itself with pcbnew. `SaveBoard` rewrote the immutable
+  `project/rung1_rc.kicad_pro`, and the campaign stopped with `ValueError:
+  implementation changed immutable verification input:
+  project/rung1_rc.kicad_pro` before the `kicad-route-krt` step ran. No
+  owned module refused anything. The driver did not retry.
+
+The final dry run, at the same code, shows the stages the campaign did not
+reach. After the rehearsed KRT route (exit 0, `complete`, verified by
+`routing_adapter.verify`), `drc`, `geometry` and `rc-step` pass. `binding` is
+`ok/unknown` (18 missing binding properties). `fab` is `unsupported/unknown`
+(`BOM has parts without a complete LCSC/manufacturer/part-number binding: C1,
+J1, R1`), so `fab-consistency` is `unsupported/unknown`.
+
 ## Gaps
 
 These are recorded in every run with the owned module's exact refusal:
+
+- **Writer on generation turns.** On the routing turn the writer routed the
+  board with pcbnew instead of leaving the board to the routing step. pcbnew's
+  save rewrote the immutable project file, and the existing proposal check
+  ended the campaign. The writer prompt does not say that a coordinator step
+  will route, and nothing stops the writer from saving through pcbnew.
 
 - **Envelope binding (AGENTEE-85).** The envelope is captured under
   `generation/envelope/` but no check consumes it. A scope/3 that declares it
