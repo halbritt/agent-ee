@@ -355,8 +355,36 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 - The ladder records are plans. No rung has run end to end.
 - Campaigns are capped at 100 iterations and 86400 seconds, and packets at
-  1000000 bytes. Rung 4 may exceed these; AGENTEE-99 measures before any
-  change is proposed.
+  1000000 bytes of embedded artifact text (100000 per text artifact). The
+  serialized reviewer packet also contains check receipts, baseline and navigation
+  metadata, so its total JSON bytes can exceed that configured text budget.
+  AGENTEE-198's no-inference packet probe measures both quantities before a
+  limit change is proposed; neither packet caps nor profile timeouts are changed.
+  Run it on explicit captured pod stage runs, using a fresh output directory:
+
+  ```sh
+  PYTHONPATH=src python3 -m agent_ee.packet_probe \
+    --candidate empty=/path/to/empty/dry-run \
+    --candidate schematic=/path/to/schematic/dry-run \
+    --candidate placement=/path/to/placement/dry-run \
+    --candidate routing=/path/to/routing/dry-run \
+    --out build/pod-packet-budget
+  ```
+
+  `packet-budget.json` records exact reviewer JSON bytes by stage and by section
+  (inputs, netlist, DRC, probe output, check receipts, and metadata), source hashes,
+  overflow contributions, artifact truncation and local assembly time. The copies
+  under the output directory retain assembled packets without changing source runs.
+  Process and network launches are refused during the probe; no model runs.
+  Missing or damaged captures are recorded as unavailable and exit status is 1
+  when any stage is unavailable. Failed native checks retain their failed status;
+  a measured packet is not a passed stage. Stage labels identify operator-supplied
+  captures and do not certify their maturity or project. Synthetic test evidence
+  covers oversize detection and no harness invocation, not pod-scale qualification.
+  Actual pod stage measurements remain pending until those captured candidates
+  exist. Per-call inference time, tokens and provider cost are unmeasured; the
+  probe neither estimates them nor changes the profile timeout. AGENTEE-99 still
+  requires measurements at rung 4.
 - Ratsnest length is a placement proxy. It is not routed length, signal
   integrity or thermal evidence.
 - Block evidence is provenance. A board's acceptance comes from the board's own
