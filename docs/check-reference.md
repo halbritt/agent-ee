@@ -1,5 +1,10 @@
 # Native and engineering checks
 
+The [pinned fome-mc wideband fixture](fome-wbo1.md) exercises native ERC,
+netlist export, `hardware_interface` and fresh `block_provenance`. Its coverage
+ledger keeps upstream parity, active behavior, parts and heater geometry unknown;
+its captured blocks remain unverified.
+
 For version-2 requirements, measurement/coupling interfaces, campaigns and bench
 feedback, see the [closed-loop contract and command reference](closed-loop.md).
 
@@ -850,6 +855,11 @@ missing or rebound boundary ports produce defects. Source run results never
 qualify the board. See [block adaptation](block-adaptation.md) for scaffold
 inputs, requirement mapping, boundary probes, retained evidence and coverage
 limits.
+
+Source blocks can retain [pinned external citations](reference-block-interface.md#external-source-citations)
+for requirement and contract context without copying planning documents. Block
+validation verifies their commit/path/blob and SHA-256 offline; unavailable Git
+objects keep the block unverified. These citations supply no board-check credit.
 
 [`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
 are exactly `{netlist_check}` and it must be the last declared check; an earlier

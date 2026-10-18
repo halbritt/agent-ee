@@ -1,5 +1,11 @@
 # Block adaptation (AGENTEE-90)
 
+The [fome-mc wideband fixture](fome-wbo1.md) supplies a captured 58-part source
+and golden second channel. Its fixture writer uses this instantiation seam,
+then applies references +100, net suffixes and the declared PB1/PA8 straps.
+Native regression tests compare every adapted physical terminal and exercise
+fresh provenance and interface checks.
+
 A captured [reference block](reference-block-interface.md) can be instantiated
 before candidate capture and adapted by the ordinary campaign writer. Its source
 files and instance record are immutable verification inputs. Its copied child

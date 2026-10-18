@@ -1,0 +1,746 @@
+{
+  "blocks": [
+    {
+      "block_sha256": "58f1ced33496e9d903f0bf83f2478a56c44909dd66b0f486918f92ef7fc0c7ed",
+      "contract_sha256": "7738e6de0e45b88326e9285be14f323a64aeec5dad04fa1f40855b59d009193c",
+      "directory": "psu",
+      "id": "fome-mc/psu",
+      "pending_requirements": [
+        "psu-load-dump",
+        "psu-rails",
+        "psu-brownout",
+        "psu-derating"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_PROT",
+        "12V_RAW",
+        "5V_SENSOR_1",
+        "5V_SENSOR_1_PG",
+        "5V_SENSOR_2",
+        "5V_SENSOR_2_PG",
+        "CANH",
+        "CANH2",
+        "CANL",
+        "CANL2",
+        "RXDCAN",
+        "RXDCAN2",
+        "TXDCAN",
+        "TXDCAN2",
+        "VBOOST"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "ae8325a82cc38ff4397c7fc2d1a8b9a101ca16645b912907e1860156f14ef895",
+      "contract_sha256": "4596491b4100cd2cce29a7abbe7abff77eadb1ea736070d55004eba0a82a0246",
+      "directory": "keep-alive",
+      "id": "fome-mc/keep-alive",
+      "pending_requirements": [
+        "keep-alive-behaviour"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_IGN_SW",
+        "12V_MR",
+        "12V_RAW",
+        "Keep_Alive",
+        "Perm_Live"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "54903aa4dd47bf7cc467af6cd5031b2fc42482e42aa78a8b6298f2afc43b02d2",
+      "contract_sha256": "3d4bfb387a66687d2bbc45214bbd470443e24a3dd58bb6b9185370ab389f7664",
+      "directory": "mcu",
+      "id": "fome-mc/mcu",
+      "pending_requirements": [
+        "mcu-vref",
+        "mcu-sdmmc-dfu"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_MR",
+        "12V_SENSE",
+        "5V_SENSOR_1",
+        "5V_SENSOR_1_PG",
+        "5V_SENSOR_2_PG",
+        "AT1",
+        "AT2",
+        "AT3",
+        "AT4",
+        "AV1",
+        "AV10",
+        "AV11",
+        "AV2",
+        "AV3",
+        "AV4",
+        "AV5",
+        "AV6",
+        "AV7",
+        "AV8",
+        "AV9",
+        "BOOT0",
+        "CAN2_RX",
+        "CAN2_TX",
+        "CAN_RX",
+        "CAN_TX",
+        "DIGITAL1",
+        "DIGITAL2",
+        "DIGITAL3",
+        "DIGITAL4",
+        "DIGITAL5",
+        "DIGITAL6",
+        "ETB1_DIR",
+        "ETB1_DIS",
+        "ETB1_PWM",
+        "ETB2_DIR",
+        "ETB2_DIS",
+        "ETB2_PWM",
+        "HS1",
+        "HS2",
+        "HS3",
+        "HS4",
+        "IGN1",
+        "IGN2",
+        "IGN3",
+        "IGN4",
+        "IGN5",
+        "IGN6",
+        "IGN7",
+        "IGN8",
+        "KNOCK_1",
+        "KNOCK_2",
+        "Keep_Alive",
+        "LS1",
+        "LS12",
+        "LS13",
+        "LS14",
+        "LS15",
+        "LS16",
+        "LS2",
+        "LS3",
+        "LS4",
+        "LS5",
+        "LS6",
+        "LS7",
+        "LS8",
+        "LS9",
+        "RC2",
+        "USB_D+",
+        "USB_D-",
+        "USB_SHIELD",
+        "VBOOST",
+        "VR_1",
+        "VR_2",
+        "WBO1_BOOT0",
+        "WBO1_NRST",
+        "WBO2_BOOT0",
+        "WBO2_NRST"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "e62edbc48edf9a04ffdebc7c8a67254db8d1018f29c0bb457714d03e9444a32a",
+      "contract_sha256": "48d2f1f3adf24c5b2301c46ed3fc41accd45204d2f147549b0cf915c0360b5b8",
+      "directory": "can",
+      "id": "fome-mc/can",
+      "pending_requirements": [
+        "can-bus"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_PROT",
+        "12V_RAW",
+        "5V_SENSOR_1",
+        "5V_SENSOR_1_PG",
+        "5V_SENSOR_2",
+        "5V_SENSOR_2_PG",
+        "CANH",
+        "CANH2",
+        "CANL",
+        "CANL2",
+        "RXDCAN",
+        "RXDCAN2",
+        "TXDCAN",
+        "TXDCAN2",
+        "VBOOST"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "924cdc907b5035bf7b2b234ea59989ab51a684ca9565e909c3ce0b035c82d0db",
+      "contract_sha256": "b52d2a0f0f6c60a8247bbd9cbbe077acf556bff550b9bd78a40fe42b73e5d8c6",
+      "directory": "wbo1",
+      "id": "fome-mc/wbo1",
+      "pending_requirements": [
+        "wbo1-function",
+        "wbo1-can-id"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_SENSE",
+        "CANH2",
+        "CANL2",
+        "LSU_H-",
+        "LSU_IP",
+        "LSU_RTRIM",
+        "LSU_UN",
+        "LSU_VM",
+        "WBO_BOOT0",
+        "WBO_NRST"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "4c5e831e9f87dd7e4d233f548525d561acde0039f40f404d495b14f7a31cdb8e",
+      "contract_sha256": "e2d4d919b4f1d68f3e2d12dc34f5da25e355f077eae91e8c782e90c3c2b390f3",
+      "directory": "wbo2",
+      "id": "fome-mc/wbo2",
+      "pending_requirements": [
+        "wbo2-function",
+        "wbo2-can-id"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_SENSE",
+        "CANH2",
+        "CANL2",
+        "LSU_H-",
+        "LSU_IP",
+        "LSU_RTRIM",
+        "LSU_UN",
+        "LSU_VM",
+        "WBO_BOOT0",
+        "WBO_NRST"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "7100e87ebb0a18687c81af83b7e3b6d3106f73028c6f321a2c82767f81104a86",
+      "contract_sha256": "4f5ead6db657006bc8c3546043f35de525c30b6cf1c85264f1d6050986a5537a",
+      "directory": "ign-igbt",
+      "id": "fome-mc/ign-igbt",
+      "pending_requirements": [
+        "ign-igbt-safety",
+        "ign-igbt-clearance"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "IGN1_COIL",
+        "IGN1_IN",
+        "IGN2_COIL",
+        "IGN2_IN",
+        "IGN3_COIL",
+        "IGN3_IN",
+        "IGN4_COIL",
+        "IGN4_IN"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "3aa6460afe7cfe5ab85d74a11f82785266894375562e24edd9e77b581c5f0565",
+      "contract_sha256": "72356f18644ea1afa0e9e553f9da344dc09c2e4527ddb6606e52502d215d9d7e",
+      "directory": "ign-logic",
+      "id": "fome-mc/ign-logic",
+      "pending_requirements": [
+        "ign-logic-drive"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "IN1",
+        "IN2",
+        "IN3",
+        "IN4",
+        "OUT1",
+        "OUT2",
+        "OUT3",
+        "OUT4"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "3e2a38f245c9af5f523c592e3505f024507e5f29b295f7cd0262f961fccc465b",
+      "contract_sha256": "b0f92da24cfbed92b403239cd93e2da1faa8cf405e0c06eedaa2797d1e52bdbc",
+      "directory": "lowside-quad",
+      "id": "fome-mc/lowside-quad",
+      "pending_requirements": [
+        "lowside-drive"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "IN1",
+        "IN2",
+        "IN3",
+        "IN4",
+        "OUT1",
+        "OUT2",
+        "OUT3",
+        "OUT4"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "73cf5ec3d9cfa305b0b7e45502c8f36af8296ff520c11c01f2ec310c4acb1339",
+      "contract_sha256": "0081f60e375db80b28e1d434518eb6e55bab4dc7fe92c8eb9056d52c57a90702",
+      "directory": "highside-quad",
+      "id": "fome-mc/highside-quad",
+      "pending_requirements": [
+        "highside-use"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V",
+        "IN1",
+        "IN2",
+        "IN3",
+        "IN4",
+        "OUT1",
+        "OUT2",
+        "OUT3",
+        "OUT4"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "0ef33688623b73f4330c5847625cc95801a48f041d752e2eedcf7f9fdf34fd2e",
+      "contract_sha256": "f52232fc0f74303a9d9b15e6fb606077936bb650d4cbfd34d7b004ffbf0a2046",
+      "directory": "quad-analog",
+      "id": "fome-mc/quad-analog",
+      "pending_requirements": [
+        "quad-analog-range"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "IN1",
+        "IN2",
+        "IN3",
+        "IN4",
+        "OUT1",
+        "OUT2",
+        "OUT3",
+        "OUT4"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "383a887793d2448ecfeddd45290e84b2c8625f1873ec1401756b2d24a7b3db15",
+      "contract_sha256": "0c17b7c711bfd3d87bff18447b01651edfaeed214d3404158cda3fb37ded35dd",
+      "directory": "quad-analog-pullup",
+      "id": "fome-mc/quad-analog-pullup",
+      "pending_requirements": [
+        "quad-analog-pullup-range"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "5V_PULLUP_SUPPLY",
+        "IN1",
+        "IN2",
+        "IN3",
+        "IN4",
+        "OUT1",
+        "OUT2",
+        "OUT3",
+        "OUT4"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "72043a4049a7abe08cc99af0324119249e971d2ccf3db187f1c678add205f743",
+      "contract_sha256": "3fab994d66ceff393c46b50060c09fc50ae6633a42f6cb302e8a3235436c4fd4",
+      "directory": "triggers",
+      "id": "fome-mc/triggers",
+      "pending_requirements": [
+        "triggers-vr"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "5V_SENSOR_SUPPLY",
+        "HALL_IN_1",
+        "HALL_IN_2",
+        "HALL_IN_3",
+        "HALL_IN_4",
+        "HALL_IN_5",
+        "HALL_IN_6",
+        "HALL_OUT_1",
+        "HALL_OUT_2",
+        "HALL_OUT_3",
+        "HALL_OUT_4",
+        "HALL_OUT_5",
+        "HALL_OUT_6",
+        "VR1",
+        "VR1-",
+        "VR1_OUT",
+        "VR2",
+        "VR2-",
+        "VR2_OUT"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "db54662d3cf902750e44f9b5494240a2a7efeb3a57734dadbdf8328dff435239",
+      "contract_sha256": "6bdf6ddddbaf63133f98e415a6880a97cee770a30b55461020218b11486b1c93",
+      "directory": "knock",
+      "id": "fome-mc/knock",
+      "pending_requirements": [
+        "knock-band"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "FILTERED_1",
+        "FILTERED_2",
+        "INPUT_1",
+        "INPUT_2"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "c33a11b38bcec14f189caaaeaa3fda5bae4fc9971ec98df1737589b1988adba0",
+      "contract_sha256": "13ce3fe0337cfca74e7fea5501b99c8b764f85bc12c161e228771c4801de6ac3",
+      "directory": "stepper",
+      "id": "fome-mc/stepper",
+      "pending_requirements": [
+        "stepper-current"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_MR",
+        "BOOT0_OUT",
+        "DASH_TECH_PULLUP",
+        "DIR_IN",
+        "ETB2_DIR",
+        "ETB2_DIS",
+        "ETB2_OUT+",
+        "ETB2_OUT-",
+        "ETB2_PWM",
+        "LS1_CLAMP",
+        "LS2_CLAMP",
+        "LS3_CLAMP",
+        "LS4_CLAMP",
+        "LS5_CLAMP",
+        "LS6_CLAMP",
+        "LS7_CLAMP",
+        "LS8_CLAMP",
+        "MAIN_RLY_CLAMP",
+        "STEP_1A",
+        "STEP_1B",
+        "STEP_2A",
+        "STEP_2B",
+        "STEP_IN",
+        "USB_VBUS_BOOT0",
+        "VBUS_SENSE_OUT",
+        "nENBL_IN"
+      ],
+      "unresolved_libraries": [
+        "symbol:fome_local:DRV8825PWPR"
+      ]
+    },
+    {
+      "block_sha256": "19bf313c28044dbee0ebc4e3f6033c40f6e3e320449d626368effad73e5af0c7",
+      "contract_sha256": "65bd553af1702d762fcd2fd5b153f24e38cf05ffbbaea84c643d65fc56fdb515",
+      "directory": "etb2-hbridge",
+      "id": "fome-mc/etb2-hbridge",
+      "pending_requirements": [
+        "etb2-equivalence"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_MR",
+        "BOOT0_OUT",
+        "DASH_TECH_PULLUP",
+        "DIR_IN",
+        "ETB2_DIR",
+        "ETB2_DIS",
+        "ETB2_OUT+",
+        "ETB2_OUT-",
+        "ETB2_PWM",
+        "LS1_CLAMP",
+        "LS2_CLAMP",
+        "LS3_CLAMP",
+        "LS4_CLAMP",
+        "LS5_CLAMP",
+        "LS6_CLAMP",
+        "LS7_CLAMP",
+        "LS8_CLAMP",
+        "MAIN_RLY_CLAMP",
+        "STEP_1A",
+        "STEP_1B",
+        "STEP_2A",
+        "STEP_2B",
+        "STEP_IN",
+        "USB_VBUS_BOOT0",
+        "VBUS_SENSE_OUT",
+        "nENBL_IN"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "50c8cd296e1d8f06adea778c63df763c4d7ddda90b3f2beefc98bece027b84e1",
+      "contract_sha256": "0add84727cab699917488d52a2704f0caec4423ae749a343bcd629134870d8d9",
+      "directory": "lowside-clamps",
+      "id": "fome-mc/lowside-clamps",
+      "pending_requirements": [
+        "lowside-clamps-scope"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_MR",
+        "BOOT0_OUT",
+        "DASH_TECH_PULLUP",
+        "DIR_IN",
+        "ETB2_DIR",
+        "ETB2_DIS",
+        "ETB2_OUT+",
+        "ETB2_OUT-",
+        "ETB2_PWM",
+        "LS1_CLAMP",
+        "LS2_CLAMP",
+        "LS3_CLAMP",
+        "LS4_CLAMP",
+        "LS5_CLAMP",
+        "LS6_CLAMP",
+        "LS7_CLAMP",
+        "LS8_CLAMP",
+        "MAIN_RLY_CLAMP",
+        "STEP_1A",
+        "STEP_1B",
+        "STEP_2A",
+        "STEP_2B",
+        "STEP_IN",
+        "USB_VBUS_BOOT0",
+        "VBUS_SENSE_OUT",
+        "nENBL_IN"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "6c9654ae85f1c76a7ee9e367a4c562ccbe173fc8bd111a002167532f0c59925d",
+      "contract_sha256": "cb2af271933d8d346a683aaa00a9f96bd0b859bbaa735d16a1af756e457f9c35",
+      "directory": "dfu-entry",
+      "id": "fome-mc/dfu-entry",
+      "pending_requirements": [
+        "dfu-entry-function"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_MR",
+        "BOOT0_OUT",
+        "DASH_TECH_PULLUP",
+        "DIR_IN",
+        "ETB2_DIR",
+        "ETB2_DIS",
+        "ETB2_OUT+",
+        "ETB2_OUT-",
+        "ETB2_PWM",
+        "LS1_CLAMP",
+        "LS2_CLAMP",
+        "LS3_CLAMP",
+        "LS4_CLAMP",
+        "LS5_CLAMP",
+        "LS6_CLAMP",
+        "LS7_CLAMP",
+        "LS8_CLAMP",
+        "MAIN_RLY_CLAMP",
+        "STEP_1A",
+        "STEP_1B",
+        "STEP_2A",
+        "STEP_2B",
+        "STEP_IN",
+        "USB_VBUS_BOOT0",
+        "VBUS_SENSE_OUT",
+        "nENBL_IN"
+      ],
+      "unresolved_libraries": []
+    },
+    {
+      "block_sha256": "d3ec77e6b62d2ea78cf3457cab904a1c511f0a18347fd93e3a63b7e95ba7dfae",
+      "contract_sha256": "e31ae70f6ba6f4fb3e7d1261a3991cdf18380b98c4181845db8750a1cbbedb51",
+      "directory": "hbridge",
+      "id": "fome-mc/hbridge",
+      "pending_requirements": [
+        "hbridge-drive"
+      ],
+      "status": "unverified",
+      "undeclared_ports": [
+        "12V_SUPPLY",
+        "DIR",
+        "DIS",
+        "OUT+",
+        "OUT-",
+        "PWM"
+      ],
+      "unresolved_libraries": []
+    }
+  ],
+  "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+  "components": 510,
+  "design": "fome-mc",
+  "exporter": "kicad-cli 10.0.7",
+  "exporter_console": "Warning: schematic has annotation errors, please use the schematic editor to fix them",
+  "inventory_sha256": "eaf26a94a9c05cc6c347728cc1e0f10d4094853627c9a91143e4a801e1c1ab08",
+  "limitations": [
+    "Draft entries: derived contracts restate the pinned design and need owner approval; no block is verified without a complete run and review.",
+    "Captured design files are the pinned source blobs; publishing them follows the source design licence statement and the owner decision that covers it.",
+    "Planning documents are cited by pinned commit, path, Git blob and SHA-256 (source_files captured: false) and are never copied into a block."
+  ],
+  "schema": "agent-ee.block-inventory-report/1",
+  "source_files": {
+    "docs/BLOCK_LIBRARY.md": {
+      "captured": false,
+      "git_blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+      "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    },
+    "docs/DESIGN.md": {
+      "captured": false,
+      "git_blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+      "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    },
+    "fome-mc.kicad_pro": {
+      "captured": false,
+      "git_blob": "8f749a35326790337ca3fb7ef1b2e3126bf9a8c7",
+      "sha256": "17a1d6b850f84ab2db63f079baa19660ecbed6c75abbef533b65d6c4cca7eda0"
+    },
+    "fome-mc.kicad_sch": {
+      "captured": false,
+      "git_blob": "b00fa0e05c630e6be551f9be937817346926c45c",
+      "sha256": "2158d8ace041cde3bd903496368d0c0b26082aab464b390a428caf71a7ca3f1b"
+    },
+    "libs/footprints/ampseal.pretty/ATWINC1500-MR210UB.kicad_mod": {
+      "captured": true,
+      "git_blob": "d0a6a7df5b40bddc96dacf07cb47d22a2dfc312f",
+      "sha256": "62d4270a3fed5122980b2d8c3373b0837d81d9163564ffd4fde88dd83353ee57"
+    },
+    "libs/footprints/ampseal.pretty/LGA-8_6x8mm_P1.25mm.kicad_mod": {
+      "captured": true,
+      "git_blob": "66784cfe9055520ab1b38ed0df13f377f88d4af2",
+      "sha256": "301fd58175fae4ddb92100f4b5ec84be12f24e136830aeeae0a5e1d536b3c2e4"
+    },
+    "libs/footprints/conn_5_2.5mm.pretty/conn_5_2.5mm.kicad_mod": {
+      "captured": true,
+      "git_blob": "20e58c7b9298a75bb332e692ac57726cc33a2a05",
+      "sha256": "1deeea10d6cdc6117fa8384a59aafbd463e739df35884d7bfeeaa7cc1f7e9f3c"
+    },
+    "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": {
+      "captured": true,
+      "git_blob": "b96252f9b9ade9a75290043f4ef6b92b12b6e594",
+      "sha256": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73"
+    },
+    "libs/symbols/infineon_psu.lib": {
+      "captured": true,
+      "git_blob": "b3a8d890599f67f781b8564235afad5d877e176e",
+      "sha256": "a28de6754df60efe6f201f81de74ee43fed69b987cec45992541bfea590df6f4"
+    },
+    "libs/symbols/lmr14020.lib": {
+      "captured": true,
+      "git_blob": "7ea7f21e104438cd564c0b3a6bec441e51c75015",
+      "sha256": "e38cf910613cec6f8c14146ef3765ade941e6c1df73713debdcdc6a0e6d960c0"
+    },
+    "libs/symbols/tle9201_2.lib": {
+      "captured": true,
+      "git_blob": "33e17398513db776d8295eabc9e9949616e1f355",
+      "sha256": "8c36dea1659c4c5e1bc7987f045a4e596c57309185d887aeef8ca8b40173b56d"
+    },
+    "libs/symbols/vnld5090.lib": {
+      "captured": true,
+      "git_blob": "761eb20be2ea5b4c1048cd06c3caf3e0c7275673",
+      "sha256": "306e22ecd1dcdf11f32a1ef5d3981f3a2c7c639545a0dd074efe5d621430cba7"
+    },
+    "sheets/Keep_Alive.kicad_sch": {
+      "captured": true,
+      "git_blob": "c322e2e3e79eab7c6657528fca6d03907727f7dc",
+      "sha256": "008f3b70dc25d6d109041a8c7691377820e319a1124f3371c3e61d42adf867c8"
+    },
+    "sheets/etb-9201.kicad_sch": {
+      "captured": true,
+      "git_blob": "41fc60b0fb802a1034fcd4fca0f7abbf7ecf959c",
+      "sha256": "b759aedcc581426c5b17d5e25f259e18b3722561dd28b4449df848147d4bbce2"
+    },
+    "sheets/highside_quad.kicad_sch": {
+      "captured": true,
+      "git_blob": "9560632b39018fe5ef717ec5adbfa49453fcbe17",
+      "sha256": "35ea55950b90cf7695f0bf3c175b2fbda368f08b56ef45677e38fc895fdf8298"
+    },
+    "sheets/ign4.kicad_sch": {
+      "captured": true,
+      "git_blob": "6e9c94f29f598e7da19e5ace6cd51d40fbc6ab16",
+      "sha256": "0e4dddd1ea5188bc911985c9be8edf30b7f77eaa675f2486a9c46186b719d6e9"
+    },
+    "sheets/ign_igbt.kicad_sch": {
+      "captured": true,
+      "git_blob": "a7d205b6e81ff13af856fea8bac34f853905ca12",
+      "sha256": "7982ed07b4b794a23a040292cead82549982a3ef5377ec46ab6514853ca6145d"
+    },
+    "sheets/knock.kicad_sch": {
+      "captured": true,
+      "git_blob": "a215b95f1ede1f764f06cae5d0a88ccb7b22a9eb",
+      "sha256": "274722ceadadc2298502d7ef952c34ef2ec2762093047bbd99959961752ddf04"
+    },
+    "sheets/lowside_quad.kicad_sch": {
+      "captured": true,
+      "git_blob": "932b3baafefbf8fec157ec8decf2dfe0d9bfcbd1",
+      "sha256": "249a0e7a0017770d27b6a69a4bddf91c88f5714f47224ee7166d1a1652645a2e"
+    },
+    "sheets/mcu.kicad_sch": {
+      "captured": true,
+      "git_blob": "e77eb4171465451f977258e95cba9057afecd47d",
+      "sha256": "1aad3f7e37ca440aed221ac51310705b4a48bbef25803d2e88084c46624cca6f"
+    },
+    "sheets/psu.kicad_sch": {
+      "captured": true,
+      "git_blob": "88a260461ade8a822325c33ccf29031d66948141",
+      "sha256": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb"
+    },
+    "sheets/quad_analog.kicad_sch": {
+      "captured": true,
+      "git_blob": "0d81dde7dbf3a88f08d408cbb0032bbbaf725a06",
+      "sha256": "616379cda3e9885568046fdaa09c7d8fc91fc2dbb7e18e96bfc1ce5ba4f5a8c1"
+    },
+    "sheets/quad_analog_pullup.kicad_sch": {
+      "captured": true,
+      "git_blob": "74e85a36c5cad13f2cdff6e9d75d35dc29a56312",
+      "sha256": "c5e624d711b8aa313e24db935e2ebb7656fd1cf95d86569250941296b6d7b97d"
+    },
+    "sheets/stepper_etb.kicad_sch": {
+      "captured": true,
+      "git_blob": "bb52fab441101472b0c7fa3d9c9df595d91583e8",
+      "sha256": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5"
+    },
+    "sheets/triggers.kicad_sch": {
+      "captured": true,
+      "git_blob": "cd20b9797e3474d4b4f5dbfda3ca51f88218027d",
+      "sha256": "e53c9841565acceee340490f8da5247357bbd4ec540c060b316b9e0085a95e1a"
+    },
+    "sheets/wbo1.kicad_sch": {
+      "captured": true,
+      "git_blob": "666108f98cc6eca4be8cd79b1421f8215f599e7f",
+      "sha256": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73"
+    },
+    "sheets/wbo2.kicad_sch": {
+      "captured": true,
+      "git_blob": "13a528dcc41f1bb336bc2c90557b93d2ec238a95",
+      "sha256": "053a946392cf7f4d2f2dc869a196adcd146125274cc608691281e34b3cdf7376"
+    },
+    "toolchain/fixtures/rc_filter/rc_filter.kicad_pro": {
+      "captured": false,
+      "git_blob": "758490cac1e75ecf92915670f9ebadf18c29f311",
+      "sha256": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1"
+    },
+    "toolchain/fixtures/rc_filter/rc_filter.kicad_sch": {
+      "captured": false,
+      "git_blob": "5f3feb9b73afccff23c10c30fc6d61c667a63fc2",
+      "sha256": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b"
+    }
+  },
+  "unassigned": [
+    {
+      "instance": "/",
+      "reason": "Root sheet: AMPSEAL connectors J1/J2, C1 bulk and R219 gear pull-up (FOMEMC-14); docs/BLOCK_LIBRARY.md lists them on the root, outside every block.",
+      "references": [
+        "C1",
+        "J1",
+        "J2",
+        "R219"
+      ]
+    }
+  ]
+}

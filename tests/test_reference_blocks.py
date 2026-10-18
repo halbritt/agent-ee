@@ -4,7 +4,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from agent_ee.reference_blocks import block_contract, validate_block
+from agent_ee.reference_blocks import block_contract, validate_block, verify_external_source
 from tests.block_parts_fixture import parts_manifest
 from agent_ee.storage import digest, write_json
 
@@ -35,6 +35,18 @@ def block(root):
     record['files']['block-contract.json'] = digest(root / 'block-contract.json')
     write_json(root / 'block.json', record)
     return record
+
+
+def external_source(repo):
+    repo.mkdir()
+    (repo / 'requirements.md').write_text('Owned requirement: VIN is an input.\n')
+    git(repo, 'init', '-q')
+    git(repo, 'add', '.')
+    git(repo, '-c', 'user.name=Owned', '-c', 'user.email=owned@example.invalid',
+        'commit', '-qm', 'Owned cited requirement')
+    return dict(kind='pinned-external', repository=str(repo), commit=git(repo, 'rev-parse', 'HEAD'),
+                path='requirements.md', blob=git(repo, 'rev-parse', 'HEAD:requirements.md'),
+                sha256=digest(repo / 'requirements.md'), locator='VIN declaration')
 
 
 class ReferenceBlockTests(unittest.TestCase):
@@ -89,6 +101,63 @@ class ReferenceBlockTests(unittest.TestCase):
                 write_json(root / 'block.json', record)
                 with self.assertRaisesRegex(ValueError, message):
                     validate_block(root)
+
+    def test_external_source_uses_pinned_objects_and_records_missing_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = external_source(root / 'repo')
+            payload = root / 'block'
+            payload.mkdir()
+            record = block(payload)
+            record['requirements'][0]['source'] = source
+            write_json(payload / 'block-contract.json', block_contract(record))
+            record['files']['block-contract.json'] = digest(payload / 'block-contract.json')
+            write_json(payload / 'block.json', record)
+            (root / 'repo/requirements.md').write_text('Dirty checkout is not evidence')
+            report = validate_block(payload)
+            self.assertEqual(report['external_sources'][0]['status'], 'verified')
+            self.assertEqual(report['status'], 'unverified')  # No sealed run.
+            self.assertEqual(set(record['files']), {'sheet.kicad_sch', 'parts.json', 'block-contract.json'})
+            # Symbolic repository identities resolve only through explicit local mappings.
+            named = dict(source, repository='owned-source')
+            self.assertEqual(verify_external_source(named)['status'], 'unverified')
+            self.assertEqual(verify_external_source(named, root / 'repo')['status'], 'verified')
+            without_anchor = {k: v for k, v in source.items() if k != 'locator'}
+            self.assertEqual(verify_external_source(without_anchor)['status'], 'verified')
+            (root / 'repo').rename(root / 'unavailable')
+            self.assertEqual(validate_block(payload)['external_sources'][0]['status'], 'unverified')
+            restored = validate_block(payload, repository_locations={source['repository']: root / 'unavailable'})
+            self.assertEqual(restored['external_sources'][0]['status'], 'verified')
+            missing = dict(source, repository=str(root / 'unavailable'), commit='f' * 40)
+            self.assertEqual(verify_external_source(missing)['status'], 'unverified')
+
+    def test_external_source_refuses_wrong_identity_and_unsafe_or_unpinned_citations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = external_source(Path(tmp) / 'repo')
+            for changes in ({'commit': 'HEAD'}, {'blob': 'wrong'}, {'sha256': '0' * 64},
+                            {'blob': '0' * 40}, {'path': '../requirements.md'},
+                            {'path': 'missing.md'}, {'locator': ''}, {'unexpected': 'field'}):
+                with self.subTest(changes=changes), self.assertRaises(ValueError):
+                    verify_external_source(dict(source, **changes))
+            repo = Path(source['repository'])
+            (repo / 'link.md').symlink_to('requirements.md')
+            git(repo, 'add', '.')
+            git(repo, '-c', 'user.name=Owned', '-c', 'user.email=owned@example.invalid',
+                'commit', '-qm', 'Owned link boundary')
+            linked = dict(source, commit=git(repo, 'rev-parse', 'HEAD'), path='link.md',
+                          blob=git(repo, 'rev-parse', 'HEAD:link.md'))
+            with self.assertRaisesRegex(ValueError, 'regular committed file'):
+                verify_external_source(linked)
+            # An existing blob outside the pinned tree cannot satisfy membership.
+            (repo / 'requirements.md').write_text('Different committed requirement')
+            git(repo, 'add', '.')
+            git(repo, '-c', 'user.name=Owned', '-c', 'user.email=owned@example.invalid',
+                'commit', '-qm', 'Changed requirement')
+            wrong = dict(source, blob=git(repo, 'rev-parse', 'HEAD:requirements.md'))
+            with self.assertRaisesRegex(ValueError, 'blob differs at pinned commit'):
+                verify_external_source(wrong)
+            git(repo, 'replace', source['commit'], git(repo, 'rev-parse', 'HEAD'))
+            self.assertEqual(verify_external_source(source)['status'], 'verified')
 
     def test_capture_without_run_is_unverified(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -210,20 +279,23 @@ class ReferenceBlockTests(unittest.TestCase):
             git(clone, 'config', 'remote.origin.uploadpack', str(upload))
             with self.assertRaises(subprocess.CalledProcessError):
                 capture_block(record, clone, commit, root / 'capture', parts=repo / 'parts.json')
+            citation = dict(kind='pinned-external', repository=str(clone), commit=commit,
+                            path='sheet.kicad_sch', blob=blob, sha256=digest(repo / 'sheet.kicad_sch'))
+            self.assertEqual(verify_external_source(citation)['status'], 'unverified')
             self.assertFalse(contacted.exists(), 'offline capture contacted its promisor remote')
             self.assertFalse((root / 'capture').exists())
 
 
 class NativeReferenceBlockTests(unittest.TestCase):
     def setUp(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-89-native-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
     def prepare_run(self, *, checks_only=False, undeclared=False, shadow=False, hierarchy=False, layout=False,
-                    pending=False, membership=True, foreign_parts=False):
+                    pending=False, membership=True, foreign_parts=False, external=False):
         import contextlib
         import io
         from unittest.mock import patch
@@ -264,6 +336,8 @@ class NativeReferenceBlockTests(unittest.TestCase):
             record['source']['paths']['layout.kicad_pcb'] = 'layout.kicad_pcb'
             record['files']['layout.kicad_pcb'] = digest(payload / 'layout.kicad_pcb')
         record['requirements'] = [dict(id='interface', statement='Preserve declared interface invariants.', checks=['interface'])]
+        if external:
+            record['requirements'][0]['source'] = external_source(self.root / 'source-repo')
         if pending:
             record['pending_requirements'] = [dict(id='bench', statement='Bench behaviour holds.',
                 source=dict(path='sheet.kicad_sch', locator='whole sheet'), conditions=[],
@@ -294,6 +368,13 @@ class NativeReferenceBlockTests(unittest.TestCase):
                 source=dict(path='requirements.md', locator='Structural interface'),
                 kind='value', component='series', equals='10k')])
         write_json(self.root / 'contract.json', contract)
+        if external:
+            source = dict(path='block-contract.json', locator='requirements/interface/source')
+            scope['baseline']['requirements'][0]['source'] = source
+            contract = read_json(self.root / 'contract.json')
+            for invariant in contract['invariants']:
+                invariant['source'] = source
+            write_json(self.root / 'contract.json', contract)
         if hierarchy:
             document['parts'][0]['instances'][0]['sheet'] = '/' + sheet_id + '/'
             (self.root / 'root.kicad_sch').write_text(f'''(kicad_sch (version 20250114)
@@ -399,6 +480,16 @@ class NativeReferenceBlockTests(unittest.TestCase):
         report = validate_block(payload, {result['run_id']: run})
         self.assertEqual(report['status'], 'verified', report)
         self.assertEqual(report['covered_requirements'], ['interface'])
+
+    def test_external_citation_needs_objects_even_with_passing_sealed_run(self):
+        payload, record, run, result = self.prepare_run(external=True)
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['status'], 'verified', report)
+        self.assertEqual(report['external_sources'][0]['status'], 'verified')
+        (self.root / 'source-repo').rename(self.root / 'missing-source')
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['status'], 'unverified', report)
+        self.assertEqual(report['external_sources'][0]['status'], 'unverified')
 
     def test_unchecked_optional_layout_remains_unverified(self):
         payload, record, run, result = self.prepare_run(layout=True)

@@ -315,7 +315,9 @@ engineering claims.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit without Git transports or replacement refs, and checks
-declared ports against the native sheet. Missing local blobs are refused. It credits
+declared ports against the native sheet. Missing captured blobs are refused;
+pinned external requirement citations with unavailable Git objects stay
+unverified without copying the cited documents. It credits
 sealed interface and parts membership evidence only for the block's exact
 manifest, native components and hierarchy; malformed parts manifests are refused.
 [Block adaptation](docs/block-adaptation.md) copies a flat block into
@@ -326,8 +328,15 @@ a passing run on a separate schematic cannot qualify the block.
 [Block inventory capture](docs/block-inventory.md) writes one draft entry per
 planned block from a pinned design commit, all unverified, each with its
 reference set, a derived interface contract, library hashes and sourced pending
-requirements. It also replays block adaptation fixtures. The owner's fome-mc
-inventory and captures stay private until the owner decides on publication.
+requirements. It also replays block adaptation fixtures. The fome-mc inventory
+and its capture at a pinned commit are committed under `fixtures/fome-mc/`
+(owner decision of 2026-10-18, [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md));
+planning documents are cited by pinned identity, not copied.
+
+The owner decision of 2026-10-18 permits the [pinned wideband reference](docs/fome-wbo1.md)
+under `fixtures/fome-mc/wbo1/`. Its native wbo1-to-wbo2 adaptation fixture uses
+fresh checks; upstream parity, functional behavior, heater geometry and independent
+review remain pending, and both source blocks remain unverified.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
@@ -533,3 +542,7 @@ origin, upstream license and publication status, and
 Publication rights for those files are unresolved, and each origin needs an
 owner decision. The public repository already contains many of them. That does
 not establish a right to publish them.
+The fome-mc block fixtures under `fixtures/fome-mc/` are the one exception
+with a recorded owner decision (2026-10-18). The owner holds the rights to
+fome-mc. Those files are still outside the MIT grant. See their
+[licence notice](fixtures/fome-mc/LICENSE-NOTICE.md).

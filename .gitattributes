@@ -2,3 +2,6 @@
 evidence/** -text
 evidence/**/*.log -whitespace
 evidence/**/*.patch -whitespace
+
+# Captured fome-mc blobs must keep their committed bytes; their SHA-256 values are recorded.
+fixtures/fome-mc/inventory/capture/** -text -whitespace

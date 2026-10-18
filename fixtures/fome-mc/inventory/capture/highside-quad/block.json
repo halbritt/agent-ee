@@ -1,0 +1,274 @@
+{
+  "boundary_ports": [
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "12V",
+      "net_name": "/12V_MR",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "IN1",
+      "net_name": "/highside_quad/IN1",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "IN2",
+      "net_name": "/highside_quad/IN2",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "IN3",
+      "net_name": "/highside_quad/IN3",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "IN4",
+      "net_name": "/highside_quad/IN4",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "OUT1",
+      "net_name": "/highside_quad/OUT1",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "OUT2",
+      "net_name": "/highside_quad/OUT2",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "OUT3",
+      "net_name": "/highside_quad/OUT3",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "OUT4",
+      "net_name": "/highside_quad/OUT4",
+      "voltage_domain": null
+    }
+  ],
+  "check_set": [
+    {
+      "id": "erc",
+      "kind": "erc",
+      "params": {}
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist",
+      "params": {}
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "connectivity": "connectivity.json",
+  "files": {
+    "block-contract.json": "0081f60e375db80b28e1d434518eb6e55bab4dc7fe92c8eb9056d52c57a90702",
+    "connectivity.json": "867e7ddbd2d23bc94f58669feb8ca1e707192004b65b580cd2ac512248cd12c2",
+    "interface.json": "250ab51de4909ec053a8660dbd83e821221be08955c71d97ddcb7fef4c2f8413",
+    "parts.json": "5e628943f1b16438154707b74db138d10903feb4a9314511a74cd5c284e66aaa",
+    "sheets/highside_quad.kicad_sch": "35ea55950b90cf7695f0bf3c175b2fbda368f08b56ef45677e38fc895fdf8298"
+  },
+  "id": "fome-mc/highside-quad",
+  "instances": [
+    {
+      "path": "/highside_quad/",
+      "references": [
+        "C85",
+        "C86",
+        "C87",
+        "C88",
+        "R100",
+        "R101",
+        "R102",
+        "R103",
+        "R104",
+        "R105",
+        "R106",
+        "R99",
+        "RN11",
+        "U40"
+      ],
+      "sheet": "sheets/highside_quad.kicad_sch",
+      "uuid_path": "/00000000-0000-0000-0000-00005dd5b2e0/"
+    }
+  ],
+  "interface": "interface.json",
+  "libraries": [
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod",
+      "sha256": "fe0dbfefbb181a0466f93a8de52d84ba7b00fcd9acdbb69575f4128a0af4e405"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_SO:Infineon_PG-DSO-20-32",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_SO.pretty/Infineon_PG-DSO-20-32.kicad_mod",
+      "sha256": "71a5520741b0e0317eea550649669842e125f87c6bcc68752d7a947ccf480c9b"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0402_1005Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+      "sha256": "e05c7605248c220836f642ed1f526133edf0374acdfd5bb2631e58b4e377acfb"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+      "sha256": "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0805_2012Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0805_2012Metric.kicad_mod",
+      "sha256": "f050b6a50cc7e6f86291fb7aa8f87b0d02255e21cfbddf291cdccc87e5889794"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_Array_Convex_4x0603",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_Array_Convex_4x0603.kicad_mod",
+      "sha256": "1ca2b4baeb71ccf9590ee2d2586a2e9568af22500398042fcb00642c958f13b6"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:C_Small",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:R",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:R_Pack04",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Power_Management:BTS716G",
+      "origin": "kicad-stock",
+      "path": "symbols/Power_Management.kicad_sym",
+      "sha256": "e46136098a763cd4a81565e4eaf84291910b606921001a88f14a781b62a5421f"
+    }
+  ],
+  "parts_manifest": "parts.json",
+  "pending_requirements": [
+    {
+      "blocked_by": "Owner requirement; no connector-facing output exists",
+      "conditions": [],
+      "id": "highside-use",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "Block catalogue / High-side quad (highside_quad.kicad_sch)",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "statement": "A requirement that uses the BTS716G outputs; they are not connected to J1/J2 (spare)."
+    }
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc",
+        "netlist"
+      ],
+      "conditions": [
+        "KiCad 10.0.7 native schematic reader"
+      ],
+      "id": "highside-quad-native",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "What \"verified block\" means, items 1 and 4",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
+    },
+    {
+      "checks": [
+        "interface"
+      ],
+      "conditions": [
+        "Pinned source commit df304f3321296f7e517e0d2e2aa52e1380d52993"
+      ],
+      "id": "highside-quad-interface",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "Block catalogue / High-side quad (highside_quad.kicad_sch)",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
+    }
+  ],
+  "role": "driver",
+  "runs": [],
+  "schema": "agent-ee.block/1",
+  "sheet": "sheets/highside_quad.kicad_sch",
+  "source": {
+    "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus highside_quad at b3176cb",
+    "paths": {
+      "sheets/highside_quad.kicad_sch": "sheets/highside_quad.kicad_sch"
+    },
+    "repository": "fome-mc"
+  },
+  "version": "draft-df304f332129"
+}

@@ -88,6 +88,16 @@ LIBRARY_ORIGINS = ('source', 'kicad-stock', 'external', 'unresolved')
 
 
 def _source(value, files):
+    if isinstance(value, dict) and value.get('kind') == 'pinned-external':
+        _object(value, ('kind', 'repository', 'commit', 'path', 'blob', 'sha256'), ('locator',))
+        _text(value['repository'])
+        _hash(value['commit'], 40)
+        _hash(value['blob'], 40)
+        _hash(value['sha256'])
+        _path(value['path'])
+        if 'locator' in value:
+            _text(value['locator'])
+        return
     _object(value, ('path', 'locator'))
     _path(value['path'])
     _text(value['locator'])
@@ -383,7 +393,8 @@ def _reference_set(root, record, parts):
             raise ValueError('interface needs a mapped hardware_interface check and requirement sources')
         scope = {'baseline': {'requirements': record['requirements']}}
         for spec in specs:
-            contract = capability(spec['params'], scope, record['files'], root, spec['id'])['contract']
+            contract = capability(spec['params'], scope, record['files'], root, spec['id'],
+                                  block_sources=True)['contract']
             for component in contract['components'].values():
                 for location in component['locations']:
                     if members.get(location['reference'], ('',))[0] != location['sheet']:
@@ -490,7 +501,7 @@ def _parts_coverage(run, manifest, ref, record, checks):
     return covered
 
 
-def validate_block(directory, run_locations=None):
+def validate_block(directory, run_locations=None, *, repository_locations=None):
     """Refuse inconsistent records; return unverified for missing passing coverage."""
     root = Path(directory)
     if root.is_symlink():
@@ -498,6 +509,13 @@ def validate_block(directory, run_locations=None):
     record = _read(root / 'block.json')
     _structure(record)
     _payload(root, record)
+    citations = []
+    for req in record['requirements'] + record.get('pending_requirements', []):
+        source = req.get('source', {})
+        if source.get('kind') == 'pinned-external':
+            location = (repository_locations or {}).get(source['repository'])
+            citations.append(dict(requirement=req['id'], source=source,
+                                  **verify_external_source(source, location)))
     covered, runs, parts_evidence = set(), [], []
     locations = run_locations or {}
     for ref in record['runs']:
@@ -536,9 +554,14 @@ def validate_block(directory, run_locations=None):
                         continue
                     if bound['statement'] != req['statement'] or not set(req['checks']) <= set(bound['checks']):
                         raise ValueError('block requirement differs from baseline')
-                    if 'source' in req and bound.get('source') != dict(
-                            path=ref['files'][req['source']['path']], locator=req['source']['locator']):
-                        raise ValueError('block requirement source differs from baseline')
+                    if 'source' in req:
+                        source = req['source']
+                        expected = (dict(path=ref['files']['block-contract.json'],
+                                         locator='requirements/' + req['id'] + '/source')
+                                    if source.get('kind') == 'pinned-external' else
+                                    dict(path=ref['files'][source['path']], locator=source['locator']))
+                        if bound.get('source') != expected:
+                            raise ValueError('block requirement source differs from baseline')
                     if all(checks.get(c, {}).get('execution') == 'ok' and
                            checks[c]['outcome'] == 'pass' for c in req['checks']) and _native_requirement_coverage(
                                run, manifest, ref, record, req, checks):
@@ -555,10 +578,12 @@ def validate_block(directory, run_locations=None):
     unresolved = [l['kind'] + ':' + l['lib_id'] for l in record.get('libraries', [])
                   if l['origin'] == 'unresolved' or l['sha256'] is None]
     draft_parts = _read(root / record['parts_manifest'])['schema'] == DRAFT_PARTS
-    complete = declared and not pending and not unresolved and not draft_parts
+    complete = (declared and not pending and not unresolved and not draft_parts and
+                all(c['status'] == 'verified' for c in citations))
     return dict(schema='agent-ee.block-report/1', block_id=record['id'],
                 status='verified' if complete and parts_evidence and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
                 pending_requirements=pending, unresolved_libraries=unresolved, draft_parts=draft_parts,
+                external_sources=citations,
                 covered_requirements=sorted(covered), runs=runs,
                 parts_membership=dict(status='verified' if parts_evidence else 'unverified', evidence=parts_evidence),
                 missing_requirements=sorted({r['id'] for r in record['requirements']} - covered),
@@ -579,11 +604,46 @@ def _git(repo, *args):
     return proc.stdout
 
 
-def capture_block(request, repository, commit, destination, *, parts=None, supplements=None):
+def verify_external_source(source, repository=None):
+    """Verify citation identity locally; unavailable objects never earn credit.
+
+    Repository identities may be absolute local paths or names resolved by the
+    caller. No remote lookup, checkout file or lazy fetch supplies missing bytes.
+    """
+    _source(source, ())
+    if source.get('kind') != 'pinned-external':
+        raise ValueError('expected pinned-external source')
+    repo = Path(repository if repository is not None else source['repository'])
+    if (repository is None and not repo.is_absolute()) or not repo.is_dir():
+        return dict(status='unverified', detail='Local repository unavailable')
+    commit, path = source['commit'], source['path']
+    try:
+        kind = _git(repo, 'cat-file', '-t', commit).strip()
+        if kind != b'commit':
+            raise ValueError('external source identity is not a commit')
+        entry = _git(repo, 'ls-tree', '-z', commit, '--', ':(literal)' + path).split(b'\x00')
+        if len(entry) != 2 or not entry[0].startswith((b'100644 blob ', b'100755 blob ')):
+            raise ValueError('external source is not one regular committed file: ' + path)
+        blob = entry[0].split(b'\t', 1)[0].split()[2].decode('ascii')
+        if blob != source['blob']:
+            raise ValueError('external source blob differs at pinned commit: ' + path)
+        raw = _git(repo, 'cat-file', 'blob', blob)
+    except subprocess.CalledProcessError as exc:
+        return dict(status='unverified', detail='Local Git object unavailable: ' +
+                    exc.stderr.decode('utf-8', errors='replace').strip())
+    if hashlib.sha256(raw).hexdigest() != source['sha256']:
+        raise ValueError('external source SHA-256 differs: ' + path)
+    return dict(status='verified', detail='Pinned commit/path/blob and SHA-256 verified offline')
+
+
+def capture_block(request, repository, commit, destination, *, parts=None, supplements=None,
+                  repository_label=None):
     """Copy pinned local Git blobs only; never update source or fetch objects.
 
     ``supplements`` maps payload paths to caller-generated bytes (for example a
     derived interface contract); they are hashed and run-covered like the parts file.
+    ``repository_label`` replaces the resolved local path in ``source.repository``
+    so a committed capture does not depend on where the source was cloned.
     """
     record = copy.deepcopy(request)
     if not isinstance(record, dict) or not isinstance(record.get('source'), dict):
@@ -598,7 +658,7 @@ def capture_block(request, repository, commit, destination, *, parts=None, suppl
     pinned = _git(repository, 'rev-parse', '--verify', commit + '^{commit}').decode().strip()
     if pinned != commit:
         raise ValueError('source commit must be full exact commit')
-    record['source']['repository'] = str(Path(repository).resolve())
+    record['source']['repository'] = str(Path(repository).resolve()) if repository_label is None else repository_label
     record['source']['commit'] = pinned
     payload = {}
     for local, source in record['source']['paths'].items():
@@ -651,6 +711,8 @@ def main(argv=None):
     validate = commands.add_parser('validate')
     validate.add_argument('directory')
     validate.add_argument('--run', action='append', default=[], metavar='ID=PATH')
+    validate.add_argument('--repository', action='append', default=[], metavar='ID=PATH',
+                          help='local Git object store for a pinned-external repository identity')
     args = parser.parse_args(argv)
     try:
         if args.command == 'capture':
@@ -662,7 +724,13 @@ def main(argv=None):
                 if not sep or not key or not path or key in locations:
                     raise ValueError('run location must be unique ID=PATH')
                 locations[key] = path
-            report = validate_block(args.directory, locations)
+            repositories = {}
+            for value in args.repository:
+                key, sep, path = value.partition('=')
+                if not sep or not key or not path or key in repositories:
+                    raise ValueError('repository location must be unique ID=PATH')
+                repositories[key] = path
+            report = validate_block(args.directory, locations, repository_locations=repositories)
     except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
         print(json.dumps(dict(schema='agent-ee.block-report/1', status='refused', error=str(exc))))
         return 2

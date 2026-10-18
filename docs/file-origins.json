@@ -16,7 +16,7 @@
   "permission_statuses": {
     "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
     "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
-    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given). No origin has this status."
+    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given)."
   },
   "kinds": {
     "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
@@ -32,7 +32,7 @@
     "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
     "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
-  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved.",
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved, otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
   "origins": {
     "AE": {
@@ -258,7 +258,8 @@
         "local_path": null,
         "revisions": {
           "0a26d3b5aea9ef1a965082fe92caac438aa7569e": "Codex reviewer fetch pin.",
-          "master": "Agy reviewers fetched the unpinned default branch."
+          "master": "Agy reviewers fetched the unpinned default branch.",
+          "ca2adce4aaea1deee66e459cc8949296763a0ad0": "Rev C, the upstream of the fome-mc wideband channel compared by fixtures/fome-mc/wbo1/upstream-parity.json (component and pin facts, no copied bytes)."
         },
         "license_file": "LICENSE at 0a26d3b: MIT, Copyright (c) 2023 Matthew Kennedy"
       },
@@ -369,6 +370,35 @@
       "evidence": [
         "docs/seeded-benchmark.md",
         "scripts/fome_mc_benchmark_store.py"
+      ]
+    },
+    "T16": {
+      "name": "fome-mc reference block captures",
+      "description": "Byte copies of fome-mc sheets and project libraries captured through the offline Git path at a pinned commit, and the block entries, contracts and reports agent-ee generates from them. Planning documents (docs/DESIGN.md, docs/BLOCK_LIBRARY.md) are cited by pinned commit, path, Git blob and SHA-256, never copied. fixtures/fome-mc/LICENSE-NOTICE.md states the rights, scope, rules and capture provenance.",
+      "upstream": {
+        "repository": "https://github.com/halbritt/fome-mc",
+        "local_path": "/home/halbritt/git/fome-mc (object store only; the working tree is never read)",
+        "revisions": {
+          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory (AGENTEE-105, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files."
+        },
+        "license_file": null
+      },
+      "upstream_license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee. fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117/wideband Rev C ca2adce (MIT; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md).",
+      "license_verified": true,
+      "embedded_origins": [
+        "T3",
+        "T4",
+        "T6",
+        "T8",
+        "T9"
+      ],
+      "permission_status": "owner-confirmed",
+      "owner_record": "2026-10-18, docs/decisions.md \"fome-mc reference sheets are committed as fixtures\": captured fome-mc PSU and wideband sheets go into agent-ee under fixtures/, each with the fome-mc commit and sha256 it was captured from, through the offline Git capture path; the owner holds the rights to both repositories.",
+      "owner_decision": "Recorded on 2026-10-18 (owner_record). The decision does not choose a licence for these files; the MIT proposal does not cover them.",
+      "evidence": [
+        "docs/decisions.md",
+        "fixtures/fome-mc/LICENSE-NOTICE.md",
+        "fixtures/fome-mc/inventory/capture/inventory-report.json"
       ]
     }
   },
@@ -2327,6 +2357,147 @@
         "AE"
       ],
       "reviewed": "Original regression-test code containing synthetic KiCad board and XML netlist literals (a legacy net-code board and a two-component netlist); referenced fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/LICENSE-NOTICE.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Notice written for agent-ee. It names the upstream projects and reproduces the upstream MIT notice recorded for T9."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/inventory/block-inventory.json",
+        "fixtures/fome-mc/inventory/wbo1-to-wbo2.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "note": "fome-mc block inventory and adaptation fixture written for agent-ee (AGENTEE-105). They name fome-mc sheet paths, references, nets and requirement paraphrases."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/inventory/capture/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "Block entries, interface contracts, connectivity, parts listings and the inventory report generated by agent_ee.block_inventory from fome-mc df304f3."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/inventory/capture/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T16"
+      ],
+      "suffixes": [
+        ".kicad_sch",
+        ".kicad_mod",
+        ".lib"
+      ],
+      "note": "Byte copies of fome-mc blobs at df304f3321296f7e517e0d2e2aa52e1380d52993 (sheets and project libraries); SHA-256 and Git blob ids in inventory-report.json source_files. Planning documents are cited there with captured false."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/blocks/wbo1/sheets/wbo1.kicad_sch",
+        "fixtures/fome-mc/wbo1/blocks/wbo2/sheets/wbo2.kicad_sch"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T16"
+      ],
+      "reviewed": "Exact fome-mc df304f3 sheet blobs; SHA-256 in each block.json. Only source blocks and adaptation target; no planning documents."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo1/block-contract.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo1/connectivity.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo1/interface.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo1/parts.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo2/block.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo2/block-contract.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo2/connectivity.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo2/interface.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo2/parts.json",
+        "fixtures/fome-mc/wbo1/expected-baseline.json",
+        "fixtures/fome-mc/wbo1/interface.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "reviewed": "Generated block records and baseline/interface records derived from the captured wideband sheets; external planning-document citations contain identities only."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/upstream-parity.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16",
+        "T9"
+      ],
+      "reviewed": "Native diagnostic comparison of fome-mc wideband with MIT mck1117/wideband Rev C ca2adce; upstream component/pin facts and offline Git identities, no downloaded upstream bytes."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/reference.kicad_sch",
+        "fixtures/fome-mc/wbo1/reference.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "reviewed": "Original agent-ee wrapper instantiating the two pinned child sheet UUIDs and original empty two-layer board; no other fome-mc project content."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/adapt.py",
+        "fixtures/fome-mc/wbo1/parity.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original offline adaptation/parity code using shared agent-ee modules. No upstream source implementation copied."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/adaptation.scope.json",
+        "fixtures/fome-mc/wbo1/reference.scope.json",
+        "fixtures/fome-mc/wbo1/wbo1-to-wbo2.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "reviewed": "Original scope/adaptation metadata naming captured fome-mc references, nets and declared straps."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/wbo1/COVERAGE.md",
+        "fixtures/fome-mc/wbo1/README.md",
+        "fixtures/fome-mc/wbo1/UPSTREAM-PARITY.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original agent-ee coverage and reproduction documentation. Mentions T9 MIT upstream identity and component/pin facts; no upstream document or planning-document text copied."
     }
   ]
 }

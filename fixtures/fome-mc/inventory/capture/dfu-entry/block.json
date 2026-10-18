@@ -1,0 +1,344 @@
+{
+  "boundary_ports": [
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "12V_MR",
+      "net_name": "/12V_MR",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "BOOT0_OUT",
+      "net_name": "/BOOT0_NET",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "DASH_TECH_PULLUP",
+      "net_name": "/LS8",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "DIR_IN",
+      "net_name": "/LS12",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "ETB2_DIR",
+      "net_name": "/ETB2_DIR",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "ETB2_DIS",
+      "net_name": "/ETB2_DIS",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "ETB2_OUT+",
+      "net_name": "/ETB2_OUT+",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "ETB2_OUT-",
+      "net_name": "/ETB2_OUT-",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "ETB2_PWM",
+      "net_name": "/ETB2_PWM",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS1_CLAMP",
+      "net_name": "/LS1",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS2_CLAMP",
+      "net_name": "/LS2",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS3_CLAMP",
+      "net_name": "/LS3",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS4_CLAMP",
+      "net_name": "/LS4",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS5_CLAMP",
+      "net_name": "/LS5",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS6_CLAMP",
+      "net_name": "/LS6",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS7_CLAMP",
+      "net_name": "/LS7",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "LS8_CLAMP",
+      "net_name": "/LS8",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "passive",
+      "name": "MAIN_RLY_CLAMP",
+      "net_name": "/MAIN_RLY",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "STEP_1A",
+      "net_name": "/STEP_1A",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "STEP_1B",
+      "net_name": "/STEP_1B",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "STEP_2A",
+      "net_name": "/STEP_2A",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "STEP_2B",
+      "net_name": "/STEP_2B",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "STEP_IN",
+      "net_name": "/LS9",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "USB_VBUS_BOOT0",
+      "net_name": "/USB_VBUS_BOOT0",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "VBUS_SENSE_OUT",
+      "net_name": "/RC2",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "nENBL_IN",
+      "net_name": "/PB8_STEP_EN",
+      "voltage_domain": null
+    }
+  ],
+  "check_set": [
+    {
+      "id": "erc",
+      "kind": "erc",
+      "params": {}
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist",
+      "params": {}
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "connectivity": "connectivity.json",
+  "files": {
+    "block-contract.json": "cb2af271933d8d346a683aaa00a9f96bd0b859bbaa735d16a1af756e457f9c35",
+    "connectivity.json": "eabe9c0fe8e80ab643eec52f37c24345ad95b6070f33e7f3c13e235eb794d7cd",
+    "interface.json": "fbb69024e618cb9429ea43c218513ea310dc6a64af8b60e10a60f2348062e31f",
+    "parts.json": "a5639fd7fdc13c357582159b4cb59d0e9f3f7b11f7a84e97f27a789af40f4ee0",
+    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5"
+  },
+  "id": "fome-mc/dfu-entry",
+  "instances": [
+    {
+      "path": "/stepper_etb/",
+      "references": [
+        "D210",
+        "D211",
+        "R209",
+        "R217",
+        "R218"
+      ],
+      "sheet": "sheets/stepper_etb.kicad_sch",
+      "uuid_path": "/a1000000-0000-4000-8000-000000000002/"
+    }
+  ],
+  "interface": "interface.json",
+  "libraries": [
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Diode_SMD:D_SOD-123",
+      "origin": "kicad-stock",
+      "path": "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod",
+      "sha256": "fd16785935b01254e1076f490e12f0f096da73cf087adefce51225585c62557a"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0402_1005Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+      "sha256": "e05c7605248c220836f642ed1f526133edf0374acdfd5bb2631e58b4e377acfb"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:D_Schottky",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:D_Zener",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:R",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    }
+  ],
+  "parts_manifest": "parts.json",
+  "pending_requirements": [
+    {
+      "blocked_by": "Owner threshold requirement and a dc_path or passive_corners check",
+      "conditions": [],
+      "id": "dfu-entry-function",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "7.5 Log Retrieval, Single-Owner Filesystem Handoff & Post-Potting Firmware Recovery",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "statement": "J1-35 USB VBUS raises BOOT0 for DFU entry through D210, R209, R217, R218 and D211."
+    }
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc",
+        "netlist"
+      ],
+      "conditions": [
+        "KiCad 10.0.7 native schematic reader"
+      ],
+      "id": "dfu-entry-native",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "What \"verified block\" means, items 1 and 4",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
+    },
+    {
+      "checks": [
+        "interface"
+      ],
+      "conditions": [
+        "Pinned source commit df304f3321296f7e517e0d2e2aa52e1380d52993"
+      ],
+      "id": "dfu-entry-interface",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
+    }
+  ],
+  "role": "controller-support",
+  "runs": [],
+  "schema": "agent-ee.block/1",
+  "sheet": "sheets/stepper_etb.kicad_sch",
+  "source": {
+    "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: fome-mc stepper_etb",
+    "paths": {
+      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch"
+    },
+    "repository": "fome-mc"
+  },
+  "version": "draft-df304f332129"
+}
