@@ -12,6 +12,7 @@ product's hardware qualification.
 | Understand the five closed-loop invariants and migration | [Closed-loop overview](closed-loop.md) |
 | Declare stage gates and interpret absent design content | [Staged campaigns](staged-campaign.md) |
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
+| Prepare captured pod inputs and inspect a checks-only scaffold | [Pod campaign driver](pod-driver.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
 | Request missing concern evidence or export a proposed check | [Evidence requests](evidence-requests.md) |
