@@ -154,7 +154,8 @@ intent and libraries or an explicit golden netlist. Resolved intent is rederived
 before comparison. Exact instance connectivity catches exchanges that collapsed
 part labels can miss; ambiguous correspondence and search exhaustion remain unknown.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
-and anchored rail pairs. Neither check establishes electrical adequacy.
+and anchored rail pairs, and warn about same-name net islands. Island warnings
+are advisory. Neither check establishes electrical adequacy.
 The [package consistency check](docs/package-consistency.md) compares each
 footprint with its LCSC part's package in a pinned catalog through a captured
 mapping table. Unmapped names are unknown; land-pattern geometry is not compared.

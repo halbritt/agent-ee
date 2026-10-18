@@ -165,7 +165,7 @@ def evaluate(policy, graph):
         base = net['name'].rsplit('/', 1)[-1]
         groups[base].append({'net_id':nid, 'name':net['name'], 'locator':net['locator'],
             'sheets':sorted({components[ref]['sheet'] for ref, _ in net['terminals']})})
-    advisories = [{'label':base, 'status':'informational', 'nets':entries}
+    advisories = [{'label':base, 'status':'informational', 'severity':'warning', 'nets':entries}
                   for base, entries in sorted(groups.items()) if len(entries) > 1]
     complete = all(r['status'] != 'unknown' for r in records)
     violations = [r for r in records if r['status'] == 'violation']
@@ -212,7 +212,7 @@ def check_netlist_extra(ctx):
     ctx.evidence('topology.json')
     ctx.result['details'].update(report)
     ctx.result.update(execution=report['execution'], outcome=report['outcome'],
-        summary=f"Direct-net topology: {report['outcome']}; {len(report['advisories'])} informational label group(s)")
+        summary=f"Direct-net topology: {report['outcome']}; {len(report['advisories'])} label-island warning(s)")
     ctx.result['limitations'].append('Only declared two-terminal classes and anchored direct-net equivalence. '
         'DNP requires explicit exemption. Native membership witnesses are not geometric wire/label paths. '
-        'Same-basename hierarchical islands are informational; no physical, copper or impedance analysis.')
+        'Same-basename hierarchical island warnings are advisory; no physical, copper or impedance analysis.')

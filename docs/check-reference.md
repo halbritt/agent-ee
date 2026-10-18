@@ -26,6 +26,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `erc` | `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 900 s |
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
+| `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
@@ -120,6 +121,22 @@ A successful export has outcome `info`; connectivity extraction is evidence,
 not a functional acceptance limit. The native XML and original schematic remain
 available to check the extraction. Simulation consumes this generated
 connectivity from the same run; it does not use fixture-specific wiring.
+
+## Additional netlist checks
+
+`netlist_extra` requires `policy` and an earlier `netlist_check`. The
+[captured topology policy](netlist-extra.md) declares exact symbol classes,
+two-terminal pin inventories, exemptions and anchored rail pairs. One defect
+record names each self-shorted passive or switch, or merged rail pair, with
+its native pins and net identity. Unknown classes or unresolved declarations
+keep the check `unsupported/unknown`; missing or malformed connectivity makes
+execution `failed`.
+
+Same-basename nets on distinct native net IDs emit one advisory per basename
+with `severity=warning`, including `/a/SDA` and `/b/SDA`. These warnings retain
+`status=informational` and cannot supply a defect witness. A shared global net
+has one native ID and produces no island warning. The check covers direct-net
+equivalence; it does not trace geometric wire paths, copper or impedance.
 
 ## Saved-board geometry
 
