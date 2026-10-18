@@ -162,10 +162,14 @@ Campaigns created before this change have no anchors and no index, and they veri
   own sandbox produces no receipt. Its effect counts only after capture, as before.
 - Mount and source tree identities are observations at execution time. A later host
   change is not rechecked against retained bytes, because tool trees are not copied.
-- No production scaffold (AGENTEE-87) or kicad-route attempt (AGENTEE-93) is wired yet. The
-  AGENTEE-54 placer runs through the [placement adapter](placement-adapter.md). The generic step tests
-  use an original test step program. The rung 1 record (AGENTEE-96) still needs real receipts for the
-  scaffold and routing steps.
+- The [rung 1 driver](rung1-campaign.md) is the first production user. Its `write-scaffold`
+  step (stage `scaffold`) runs before the campaign exists, so its receipt is kept beside the campaign in
+  `RUNDIR/scaffold-receipt/`, not in an implementation. The rung 1 record binds it exactly to the
+  campaign's first captured candidate. The campaign steps `emit-schematic`, `build-board` (placement),
+  `route-krt` (kicad-route KRT) and `export-fab` get ordinary implementation receipts. The generic
+  production scaffold (AGENTEE-87) and the kicad-route attempt adapter (AGENTEE-93) are separate.
+  The AGENTEE-54 placer runs through the [placement adapter](placement-adapter.md). The generic step
+  tests use an original test step program.
 - Whether kicad-route exits 1 and 4 should leave the writer's unrouted board as the proposal, rather than
   stopping the repair, is a decision for AGENTEE-93 and AGENTEE-88.
 - A completed receipt with all writes present but missing declared artifacts or an unknown backend is still

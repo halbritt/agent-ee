@@ -230,8 +230,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   checkout, catalogue or network source.
 - Tool versions and executable hashes are recorded per run. Writer-side tools
   (scaffold, placers, kicad-route) get [stage receipts](stage-receipts.md)
-  (AGENTEE-95). The receipt format and the campaign seam exist; no scaffold,
-  placer or kicad-route step is wired to them yet.
+  (AGENTEE-95). The [rung 1 campaign driver](rung1-campaign.md) records a receipt
+  for its scaffold step and for its schematic, board-build (placement), kicad-route
+  and fab steps. None of these tools is qualified yet.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings

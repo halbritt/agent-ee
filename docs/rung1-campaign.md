@@ -53,6 +53,7 @@ the package that ran the campaign, and spends no inference.
 | `scaffold/project/` | `rung1_rc.kicad_pro`, an empty `rung1_rc.kicad_sch`, an empty `rung1_rc.kicad_pcb`, and the stock library tables |
 | `scaffold/requirements/` | `spec.md`, `system.md`, `targets.md`, `reference.md` from stage 1 |
 | `scaffold/generation/` | Connectivity intent, resolved record, parts manifest and catalog copy, envelope, placement request, and an immutable template board |
+| `scaffold-receipt/` | The `write-scaffold` [stage receipt](stage-receipts.md) with its retained inputs, run and version records |
 | `scaffold-checks/` | kicad-cli ERC, XML netlist export and parity DRC of the empty files, on sandboxed copies |
 | `scope.json`, `campaign.json` | The staged scope/2 and the `agent-ee.campaign/1` configuration |
 | `campaign/` | The campaign root: runs, implementations, stage receipts, state |
@@ -69,6 +70,16 @@ footprints, copper, zones or nets. Its Edge.Cuts rectangle is the envelope
 outline (50 x 30 mm at 100,100 mm). Both versions are in
 `stages.PRESENCE_VERSIONS`. Before the scope is written, kicad-cli must load
 both files in the sandbox.
+
+The driver writes only `requirements/` and the generation inputs itself. The project
+files, the stock library tables and `generation/template/` are written by the
+`write-scaffold` step (stage `scaffold`, program `steps/scaffold.py`). The step runs through
+`stage_receipts.run_step` in the networkless sandbox on that directory. It mounts the step
+programs, the agent-ee source tree (recorded as the Python source tree) and the fixture
+project `fixtures/rc/control` read-only at `/tool/template`. It reads
+`/candidate/generation/resolved.json` and `envelope.json`. Only exit 0 is adopted, through
+`stage_receipts.adopt`. A table that uses `${KIPRJMOD}` exits 3. Any other status stops the
+preparation with `PrepareFailure`, keeps the receipt and leaves no project.
 
 ### Staged scope
 
@@ -121,7 +132,7 @@ stackup that the builder copies.
 
 ## Record and done gate
 
-The record lists the preparation receipts, the scaffold and its load checks,
+The record lists the preparation receipts, the scaffold with its stage receipt and load checks,
 the scope and configuration hashes, and the kicad-route identity. For each
 iteration, it lists the check outcomes with their stage reasons, the findings,
 and the convergence projection. For each implementation, it lists the writer
@@ -136,12 +147,20 @@ manifest.
 - The fab exports exist, are not empty, and match their manifest.
 - The fab step consumed the board and the schematic of the candidate that the
   final run accepted.
+- `scaffold_receipt_binding.bound`: the scaffold receipt revalidates with its recorded
+  sha256, and every file of its after-tree (inputs plus outputs) has the same hash in the
+  first captured candidate (`campaign/runs/1/candidate.json`, or the empty checks-only run on
+  `--dry-run`). A missing receipt, a missing capture or any difference leaves it unbound.
+  A record of a campaign from before the scaffold receipt existed is therefore never `done`
+  when it is rebuilt.
 
 ## Recorded run (2026-10-17)
 
 One real run used commit 02d74cf from a clean clone, and a kicad-route
 snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 `incomplete`, so `done` is false.
+That run predates the `write-scaffold` step: its scaffold was written by the driver
+itself and has no stage receipt, so a rebuilt record of it stays unbound and not `done`.
 
 - Iteration 1 reviewed the empty candidate. `erc`, `netlist`, `drc` and
   `geometry` were `stage_not_reached`, and `rc-step` was `stage_blocked`. Both
@@ -180,7 +199,9 @@ snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
 PYTHONPATH=src /usr/bin/python3 -m unittest tests.test_rung1_campaign -v
 ```
 
-The tests check that the scaffold is valid and deterministic, that its project
+The tests check that the scaffold is valid and deterministic, that its files are the adopted
+outputs of a valid `write-scaffold` receipt, that a failing scaffold step keeps its receipt and
+writes no project, and that the scaffold binding detects a changed or missing file. They check that its project
 file and tables equal the emitter's, and that the scope validates with the
 real loaders. They check that widened write authority, an adoptable exit 3 and
 reserved mount points are refused. With the native toolchain, they check that
