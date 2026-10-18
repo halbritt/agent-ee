@@ -441,7 +441,7 @@ class NativeCheckTests(unittest.TestCase):
                          {cid: ('ok', 'pass') for cid in passing})
 
     def test_board_without_probe_data_fails_execution(self):
-        _, results = self.run_scope(lambda p: p.write_text('(kicad_pcb (version 0'), DFT_CHECKS[:1])
+        _, results = self.run_scope(lambda p: p.write_text('unreadable board bytes\n'), DFT_CHECKS[:1])
         self.assertEqual((results['connector']['execution'], results['connector']['outcome']), ('failed', 'unknown'))
 
     def test_undeclared_values_leave_the_check_unknown(self):
