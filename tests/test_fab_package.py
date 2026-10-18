@@ -386,7 +386,7 @@ class RotationCompositionTests(NativeRun):
         self.assertIn({'check_id': 'cpl', 'kind': 'cpl_rotation'}, described['prerequisites'])
 
 
-class GenerationCampaignTests(unittest.TestCase):
+class GenerationCampaignFixture(unittest.TestCase):
     """A one-iteration generation campaign with scripted reviews; everything else is production code."""
 
     def setUp(self):
@@ -417,8 +417,8 @@ class GenerationCampaignTests(unittest.TestCase):
         packet = read_json(Path(run) / 'packet.json')
         identity = {k: packet[k] for k in ('candidate_id', 'run_id')}
         if label == 'adjudicator':
-            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/1', **identity, 'decisions': []}
-        return {'execution': 'ok'}, {'schema': 'agent-ee.review/1', **identity,
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2', **identity, 'decisions': []}
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/2', **identity,
                                      'packet_sha256': packet['packet_sha256'], 'role': label,
                                      'coverage': ['protocol'], 'limitations': ['scripted test response'],
                                      'findings': []}
@@ -429,6 +429,7 @@ class GenerationCampaignTests(unittest.TestCase):
             code = cli.main(['verify-campaign', str(root)])
         return code, out.getvalue()
 
+class GenerationCampaignTests(GenerationCampaignFixture):
     def test_final_state_lists_fab_hashes_that_verify_campaign_recomputes(self):
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
@@ -561,6 +562,61 @@ class GenerationCampaignTests(unittest.TestCase):
         write_json(root / 'state.json', forged)
         with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
             verify_campaign(root)
+
+
+
+class DeclaredFabCampaignTests(GenerationCampaignFixture):
+    """D/F1/G1: a routed candidate must request, run and grade its declared fab turn."""
+
+    def agent(self, run, label, definition, prompt, schema, timeout, **kwargs):
+        if label == 'implementation':
+            return {'execution': 'ok'}, {'summary': 'Coordinator owns fab; leave the design unchanged.'}
+        return super().agent(run, label, definition, prompt, schema, timeout, **kwargs)
+
+    def test_d_f1_g1_reach_done_through_a_fab_turn_on_unchanged_board_bytes(self):
+        from tests.test_fab_stage import declared_fab_inputs, declared_fab_scope
+        from tests.toolchain import require_kicad_route
+        from agent_ee import fab_stage, rung1_qualified as q
+        from agent_ee.stage_receipts import validate_receipt
+        checkout = require_kicad_route()
+        inputs = declared_fab_inputs(self.root / 'inputs')
+        scope = declared_fab_scope(inputs)
+        campaign_step = next(s for s in rc.step_specs(rc.PACKAGE_ROOT, rc.STEPS_DIR, checkout) if s['stage'] == 'fab')
+        qualified_step = next(s for s in q.step_specs(checkout, fab=True) if s['stage'] == 'fab')
+        for shape, step in [('D', fab_stage.step(rc.PACKAGE_ROOT, scope['board'], scope['schematic'])),
+                            ('F1', campaign_step), ('G1', qualified_step)]:
+            with self.subTest(shape=shape):
+                self.write_campaign(scope, [scope['board']])
+                config = read_json(self.root / 'campaign.json')
+                config['implementation_steps'] = [step]
+                write_json(self.root / 'campaign.json', config)
+                root = self.root / shape
+                with contextlib.redirect_stdout(io.StringIO()):
+                    status = run_campaign(self.root / 'campaign.json', root)
+                state = read_json(root / 'state.json')
+                self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
+                self.assertEqual(len(state['history']), 2)
+                first, final = [Path(h['run']) for h in state['history']]
+                self.assertEqual(state['history'][0]['earliest_failing_stage'], 'fab')
+                self.assertEqual(state['history'][0]['outcome'], 'incomplete')
+                self.assertEqual(state['history'][0]['design_id'], state['history'][1]['design_id'])
+                for check in read_json(first / 'result.json')['checks'][2:]:
+                    self.assertEqual((check['execution'], check['outcome']), ('not_run', 'unknown'))
+                checks = read_json(final / 'result.json')['checks']
+                self.assertTrue(all(c['execution'] == 'ok' and c['outcome'] in ('pass', 'info') for c in checks), checks)
+                producer = state['stage_done']['paths'][scope['board']]['producer']
+                self.assertEqual((producer['stage'], producer['step']), ('fab', 'export-fab'))
+                receipt_dir = root / 'implementations/1/receipts/1-export-fab'
+                self.assertEqual(validate_receipt(receipt_dir)['changed'], [])
+                self.assertEqual(state['fab_artifacts']['rotation']['status'], 'PREVIEW_REQUIRED')
+                self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+                retained = final / 'work/fab/fab-step.json'
+                original = retained.read_bytes()
+                retained.write_bytes(original + b'\n')
+                with self.assertRaises(ValueError):
+                    verify_campaign(root)
+                retained.write_bytes(original)
+                verify_campaign(root)
 
 
 if __name__ == '__main__':

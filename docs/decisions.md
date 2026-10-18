@@ -431,3 +431,20 @@ notice; the origin check reports them as derived, not owner-confirmed.
 The scaffold producer sets the Default class clearance to the fab profile's minimum,
 since KiCad DRC enforces class clearance as a hard floor; preferred values remain
 router targets.
+
+### Telemetry pod questions (third batch, 2026-10-18)
+
+**Harness connector.** > the pod is a green-field build. one presumes it would match the style of connector used on the FOME-MC. 776228-1, right-angle PCB header, black seems like the right choice.
+The pod's AMPSEAL 23-position header is TE 776228-1 (right-angle, black), the ECU J1 family. AGENTEE-169 captures its datasheet and verifies pad geometry and pin numbering against it.
+
+**Parts JLCPCB does not stock.** > Hand-fitted after delivery, recorded deviation
+Such parts (the header, NEO-M9N and SMA if unstocked) are excluded from JLCPCB assembly with a `not_assembled` marker and a recorded deviation naming the purchase source; every other BOM line must be in stock on the day of generation. Excludes silent substitution and failing criterion 5 on hand-fitted parts.
+
+**ERC/DRC waivers.** > Owner-recorded dispositions bound to the exact violation
+Each waiver names the rule, the items and a reason and is bound to the violation's location hash; a moved or new violation needs a new disposition; the owner approves the list before done. Excludes agent-issued waivers and blanket severity downgrades beyond fome-mc's project file.
+
+**Pod power and travel ranges.** > Harness splice on the relay circuit, own 2 A fuse; 130 and 70 mm
+The pod taps the switched 12 V relay output in the harness (the circuit that also feeds the ECU's J1-27 input) through its own 2 A fuse and grounds to chassis with the ECU; it never draws from the ECU. Fork travel 130 mm and shock travel 70 mm stand; fome-mc's telemetry document is corrected (FOMEMC-31).
+
+**Rung 3.** > Pod replaces the wideband controller as rung 3
+AGENTEE-98 is reworded to the telemetry pod and parents the pod epic AGENTEE-157; the standalone wideband controller becomes a later board if still wanted. The generator roadmap's ladder reads: RC filter, one fome-mc sheet, telemetry pod, fome-mc.

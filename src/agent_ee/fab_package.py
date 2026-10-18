@@ -1,8 +1,8 @@
 """Generation done gate: one check that exports, gates and seals the fab package (AGENTEE-94).
 
 Check kind `fab_package` (params exactly `{netlist_check}`) must be the last
-declared check. It runs the AGENTEE-23 `fab_export` producer with the pinned
-`kicad-cli` in the executor sandbox into its own `work/<id>/fab/`, then the
+declared check except for bound `jlc_dfm` consumers. It runs the AGENTEE-23
+`fab_export` producer with the pinned `kicad-cli` in the executor sandbox into its own `work/<id>/fab/`, then the
 AGENTEE-73 `fab_consistency` gate on that staging tree (the same code paths as
 the standalone kinds, with the export being this check itself), then
 recomputes the manifest inventory and records the sealed artifact set:
@@ -71,8 +71,11 @@ def validate_params(params):
 
 
 def require_last(specs, spec):
-    if not specs or (specs[-1] is not spec and specs[-1].get('id') != spec.get('id')):
-        raise ValueError('fab_package must be the last declared check')
+    position = next((i for i, s in enumerate(specs) if s.get('id') == spec.get('id')), None)
+    if position is None or any(s.get('kind') != 'jlc_dfm' or
+                               s.get('params', {}).get('fab_check') != spec.get('id')
+                               for s in specs[position + 1:]):
+        raise ValueError('fab_package done check last: only bound jlc_dfm checks may follow')
 
 
 def declared_rotation(scope):
@@ -84,7 +87,7 @@ def declared_rotation(scope):
 
 
 def capability(params, scope, spec, prerequisite, captured):
-    """Static scope/3 contract: exact params, declared last, earlier netlist and geometry."""
+    """Exact params, terminal package producer, earlier netlist and geometry."""
     validate_params(params)
     require_last(scope.get('checks', []), spec)
     prerequisite(params['netlist_check'], ('netlist',))

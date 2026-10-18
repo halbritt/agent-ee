@@ -46,10 +46,11 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
     tools, installations = {}, {}
     required_runtime = {'/usr/bin/python3', 'bwrap'}
     native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
+                           'kicad_happy_severity_gate': '/usr/bin/python3',
                            'fab_export': 'kicad-cli', 'fab_package': 'kicad-cli',
                            'routing_equivalence': 'pcbnew', 'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
                            'passive_corners': '/usr/bin/ngspice', 'dc_path': 'pcbnew',
-                           'assembly_readiness': 'kicad-cli',
+                           'assembly_readiness': 'kicad-cli', 'pin_contracts': 'kicad-cli',
                            'board_envelope': 'pcbnew', 'dfm_geometry': 'pcbnew'}
     for spec in manifest['scope'].get('checks', []):
         if spec.get('kind') in ('routing_rules', 'fab_profile'):
@@ -63,7 +64,7 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
         if spec.get('kind') == 'datasheet_facts':
             extractor = params['extractor']
             tools[extractor['path']] = extractor['sha256']
-        if spec.get('kind') == 'kicad_happy':
+        if spec.get('kind') in ('kicad_happy', 'kicad_happy_severity_gate'):
             installations[str(Path(params['installation']).expanduser().resolve())] = params['installation_sha256']
         tool = params.get('tool')
         if tool:

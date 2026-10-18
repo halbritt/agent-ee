@@ -16,7 +16,8 @@
   "permission_statuses": {
     "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
     "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
-    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given)."
+    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given).",
+    "derived": "Captured or generated under an owner-confirmed origin that embeds upstream origins whose permission_status is unresolved; check_origins names each embedded upstream origin id and upstream_license."
   },
   "kinds": {
     "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
@@ -32,7 +33,7 @@
     "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
     "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
-  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved, otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its declared origins is unresolved, derived if an owner-confirmed origin embeds an unresolved upstream origin (with each embedded origin id and upstream_license named), otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
   "origins": {
     "AE": {
@@ -374,16 +375,16 @@
     },
     "T16": {
       "name": "fome-mc reference block captures",
-      "description": "Byte copies of fome-mc sheets and project libraries captured through the offline Git path at a pinned commit, and the block entries, contracts and reports agent-ee generates from them. Planning documents (docs/DESIGN.md, docs/BLOCK_LIBRARY.md) are cited by pinned commit, path, Git blob and SHA-256, never copied. fixtures/fome-mc/LICENSE-NOTICE.md states the rights, scope, rules and capture provenance.",
+      "description": "Byte copies of fome-mc sheets and project libraries captured through the offline Git path at a pinned commit for the full block inventory (AGENTEE-105), the PSU reference block (AGENTEE-106) and the wideband reference channels (AGENTEE-107), and the block entries, contracts and reports agent-ee generates from them. Planning documents (docs/DESIGN.md, docs/BLOCK_LIBRARY.md) are cited by pinned commit, path, Git blob and SHA-256, never copied. Each block record carries its upstream origin and licence, and fixtures/fome-mc/LICENSE-NOTICE.md states the rights, scope, rules, upstream licences and capture provenance.",
       "upstream": {
         "repository": "https://github.com/halbritt/fome-mc",
         "local_path": "/home/halbritt/git/fome-mc (object store only; the working tree is never read)",
         "revisions": {
-          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory (AGENTEE-105, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files."
+          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory, fixtures/fome-mc/psu and fixtures/fome-mc/wbo1 (AGENTEE-105/106/107, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files. Capture commit of fixtures/fome-mc/rules (AGENTEE-189): ERC and DRC rule_severities of fome-mc.kicad_pro, blob 8f749a35326790337ca3fb7ef1b2e3126bf9a8c7, SHA-256 in rules/severities.json source."
         },
         "license_file": null
       },
-      "upstream_license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee. fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117/wideband Rev C ca2adce (MIT; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md).",
+      "upstream_license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee. fome-mc sheets derive from FOME-Tech Polygonus b3176cb (T8; no licence file found in the local checkout), FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3; no licence file found in the local checkout), FOME-Tech kicad-libraries ab9c5f8 (T4; no licence file found, SamacSys terms not reviewed), KiCad 10.0.7 stock libraries (T6; CC-BY-SA-4.0 with the KiCad library exception) and mck1117/wideband Rev C ca2adce (T9; MIT, Copyright (c) 2023 Matthew Kennedy, notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md).",
       "license_verified": true,
       "embedded_origins": [
         "T3",
@@ -393,12 +394,15 @@
         "T9"
       ],
       "permission_status": "owner-confirmed",
-      "owner_record": "2026-10-18, docs/decisions.md \"fome-mc reference sheets are committed as fixtures\": captured fome-mc PSU and wideband sheets go into agent-ee under fixtures/, each with the fome-mc commit and sha256 it was captured from, through the offline Git capture path; the owner holds the rights to both repositories.",
-      "owner_decision": "Recorded on 2026-10-18 (owner_record). The decision does not choose a licence for these files; the MIT proposal does not cover them.",
+      "owner_record": "2026-10-18, docs/decisions.md \"fome-mc reference sheets are committed as fixtures\" and \"Telemetry pod questions (second batch, 2026-10-18)\": captured fome-mc PSU and wideband sheets go into agent-ee under fixtures/, each with the fome-mc commit and sha256 it was captured from, through the offline Git capture path; the owner holds the rights to both repositories; derived-from-Polygonus sheets are admitted with their upstream origin and licence recorded in the block record and in fixtures/fome-mc/LICENSE-NOTICE.md, and check_origins reports them as derived rather than owner-confirmed.",
+      "owner_decision": "Recorded on 2026-10-18 (owner_record). Files under T16 fold to permission_status derived with their embedded upstream origins (T3, T4, T6, T8, T9) and licences named; the MIT proposal does not cover them.",
       "evidence": [
         "docs/decisions.md",
         "fixtures/fome-mc/LICENSE-NOTICE.md",
-        "fixtures/fome-mc/inventory/capture/inventory-report.json"
+        "fixtures/fome-mc/inventory/capture/inventory-report.json",
+        "fixtures/fome-mc/psu/capture/inventory-report.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
+        "fixtures/fome-mc/rules/severities.json"
       ]
     }
   },
@@ -521,12 +525,13 @@
     },
     {
       "paths": [
-        "docs/block-inventory.md",
         "docs/argon-assessment.md",
+        "docs/block-inventory.md",
+        "docs/decisions.md",
         "docs/fable-assessment.md",
         "docs/integration-review-argon.md",
-        "docs/via-probe-correction.md",
-        "docs/third-party-origins.md"
+        "docs/third-party-origins.md",
+        "docs/via-probe-correction.md"
       ],
       "kind": "owned-documentation",
       "origins": [
@@ -1522,6 +1527,16 @@
     },
     {
       "paths": [
+        "fixtures/telemetry-pod/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "The owner's telemetry pod requirements spec, revision 2 (2026-10-18, superseding the 2026-10-17 text), copied byte for byte as spec.md from fome-mc telemetry-pod/REQUIREMENTS.md at ca984da, the canonical copy (sha256 09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493; it names third-party parts and links vendor pages but copies no vendor text), and spec-record.json captured from it by agent_ee.spec_record (AGENTEE-158); see docs/spec-record.md."
+    },
+    {
+      "paths": [
         "fixtures/stages/"
       ],
       "kind": "owned-fixture",
@@ -2448,10 +2463,9 @@
       "kind": "retained-output",
       "origins": [
         "AE-RUN",
-        "T16",
-        "T9"
+        "T16"
       ],
-      "reviewed": "Native diagnostic comparison of fome-mc wideband with MIT mck1117/wideband Rev C ca2adce; upstream component/pin facts and offline Git identities, no downloaded upstream bytes."
+      "reviewed": "Native diagnostic comparison of fome-mc wideband with MIT mck1117/wideband Rev C ca2adce (embedded origin T9 of T16); upstream component/pin facts and offline Git identities, no downloaded upstream bytes."
     },
     {
       "paths": [
@@ -2540,6 +2554,18 @@
     },
     {
       "paths": [
+        "fixtures/fome-mc/rules/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "AE",
+        "T16"
+      ],
+      "note": "agent_ee.rule_severities output (AGENTEE-189): severities.json records the ERC and DRC rule_severities maps of fome-mc.kicad_pro at df304f3321296f7e517e0d2e2aa52e1380d52993 with its pinned identity; pod.kicad_pro is the owned fixtures/netclass-completeness/native.kicad_pro with exactly those two maps added. No other fome-mc project setting is copied."
+    },
+    {
+      "paths": [
         "fixtures/fome-mc/psu/board/interface.json"
       ],
       "kind": "owned-metadata",
@@ -2574,6 +2600,182 @@
         "AE"
       ],
       "reviewed": "Original regression tests for AGENTEE-106. The only KiCad text is an empty pre-created sheet literal; the tests read the committed fome-mc capture and copy nothing from it into the source."
+    },
+    {
+      "paths": [
+        "fixtures/interval-assertions/README.md",
+        "fixtures/interval-assertions/catalog-source.csv",
+        "fixtures/interval-assertions/requirements/divider.assertions.json",
+        "fixtures/interval-assertions/requirements/system.md"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-61 original synthetic catalog claims (invented LCSC numbers C900001-C900007, manufacturer 'Owned fixture'), requirement text and an assertion document hand-authored here; no donor design, datasheet or upstream catalog rows."
+    },
+    {
+      "paths": [
+        "src/agent_ee/interval_assertions.py",
+        "tests/test_interval_assertions.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-61 original interval evaluator, tests and documentation. The mechanism idea (superset assertions on picked parameters, contradictions traced to sources, same-symbol correlation) follows atopile's faebryk solver (MIT) as a reference only; no atopile code, examples or design files are copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/pin_contracts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original implementation and documentation for AGENTEE-59. tscircuit/circuit-json source_pin_attributes, parts-engine reconcile-datasheet-circuit-json and checks voltage/must-connect paths are mechanism references supplied by the ticket, linked in docs/pin-contracts.md. No upstream source, fixtures, pin database or vendor datasheet content was retrieved or copied."
+    },
+    {
+      "paths": [
+        "tests/test_pin_contracts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic electrical contracts, hand-authored connectivity oracle and owned KiCad/PDF format literals. Vendor part numbers name mechanism replays only; no vendor pin table, third-party design or fixture content copied. Reuses agent-ee owned test generators."
+    },
+    {
+      "paths": [
+        "docs/pin-contracts.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-59 feature documentation, including ticket-supplied tscircuit and parts-engine mechanism-reference links. No upstream content copied or retrieved; those links do not assert current licensing or behavior."
+    },
+    {
+      "paths": [
+        "fixtures/kicad-happy/severity-gate/error/gate.kicad_pcb",
+        "fixtures/kicad-happy/severity-gate/error/gate.kicad_pro",
+        "fixtures/kicad-happy/severity-gate/error/gate.kicad_sch",
+        "fixtures/kicad-happy/severity-gate/generate.py",
+        "fixtures/kicad-happy/severity-gate/warning/gate.kicad_pcb",
+        "fixtures/kicad-happy/severity-gate/warning/gate.kicad_pro",
+        "fixtures/kicad-happy/severity-gate/warning/gate.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original two-pad ground-link fixture and generator, reviewed 2026-10-18. All symbol, pad, trace, zone and outline geometry is authored here; no stock library or external design bytes. OwnedGroundLink2 identifies the fixture, not a manufacturer device."
+    },
+    {
+      "paths": [
+        "fixtures/jlc-dfm/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-156 original synthetic DFM normalization and source capture; no supplier text or design files. See fixtures/jlc-dfm/PROVENANCE.md."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T16",
+        "T8"
+      ],
+      "note": "kicad-cli 10.0.7 fp upgrade conversion of fome-mc df304f3321296f7e517e0d2e2aa52e1380d52993 libs/footprints/ampseal.pretty/ampseal-23.kicad_mod (Git blob 2f09e3a5c9bd66421dee3223cb12596307f8181a), captured through the offline Git path; identity in capture.json (AGENTEE-169). The source blob is the same blob as FOME-Tech Polygonus b3176cb ampseal.pretty/ampseal-23.kicad_mod (T8, no licence file), so the file is derived upstream content under the owner decision of 2026-10-18 (second batch)."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/ampseal/capture/capture.json",
+        "fixtures/fome-mc/ampseal/capture/footprint-libraries.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "Capture record and manifest generated by agent_ee.footprint_capture from fome-mc df304f3: source commit, path, Git blob id, SHA-256 and conversion records (AGENTEE-169)."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/ampseal/request.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "note": "Capture request written for agent-ee naming the fome-mc commit and footprint path (AGENTEE-169)."
+    },
+    {
+      "paths": [
+        "fixtures/pod/ampseal/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Fixture documentation written for AGENTEE-169. It names fome-mc, FOME-Tech Polygonus, KiCad stock footprints and TE drawing 776228 and states dimension facts; it copies none of their text."
+    },
+    {
+      "paths": [
+        "fixtures/pod/ampseal/assignment.json",
+        "fixtures/pod/ampseal/footprint-libraries.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "footprint_assignment inputs written for AGENTEE-169. They name the stock Connector_Generic library with its KiCad 10.0.7 SHA-256 and the captured footprint's SHA-256; no library content."
+    },
+    {
+      "paths": [
+        "fixtures/pod/ampseal/drawing-776228.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Dimension values and part-table facts read from TE Connectivity customer drawing 776228 rev C14, with the source URL and SHA-256 of the copy read. No drawing text, graphics or file is copied; the PDF is not tracked (AGENTEE-169)."
+    },
+    {
+      "paths": [
+        "fixtures/pod/ampseal/compare_land.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original land comparison code using the shared footprint index (AGENTEE-169)."
+    },
+    {
+      "paths": [
+        "fixtures/pod/ampseal/land-comparison.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "Output of fixtures/pod/ampseal/compare_land.py for the captured fome-mc ampseal-23 footprint: pad and peg positions against drawing 776228 (AGENTEE-169)."
+    },
+    {
+      "paths": [
+        "tests/test_pod_ampseal.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression tests with one owned KiCad 5 style footprint literal and short byte mutations of the captured fixture; no library or design text copied."
     }
   ]
 }

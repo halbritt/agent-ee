@@ -1,0 +1,2 @@
+Original agent-ee synthetic DFM capture. Not a supplier report.
+Page 1, synthetic-check-1: example manufacturing observation for tests.

@@ -128,7 +128,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "a7394cfbecf69e33047d4494b40ec3e6d959f09a9eb4afa08a3eb9fad509c730",
+    "block-contract.json": "4d7171833ded33c3adb335524d954d027f24910bf348c3e09c998befcf6152dd",
     "connectivity.json": "049d90194a0593d171aafa7089c316be0cba7595c7035289359765c0b832d7e2",
     "interface.json": "3b669a4dd35d10db8b469769d03c65ae815752dc202bab5218aac41179453351",
     "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73",
@@ -595,14 +595,16 @@
   "sheet": "sheets/psu.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee and on 2026-10-18 decided that captured fome-mc reference sheets are committed to agent-ee as fixtures (docs/decisions.md; fixtures/fome-mc/LICENSE-NOTICE.md). fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117 wideband Rev C ca2adce (MIT). Origin: FOME-Tech Polygonus psu at b3176cb, adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)",
+    "license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee and on 2026-10-18 decided that captured fome-mc reference sheets are committed to agent-ee as fixtures (docs/decisions.md; fixtures/fome-mc/LICENSE-NOTICE.md). fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117 wideband Rev C ca2adce (MIT). Origin: FOME-Tech Polygonus psu at b3176cb (T8, T4, T6), adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)",
     "paths": {
       "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod",
       "libs/symbols/infineon_psu.lib": "libs/symbols/infineon_psu.lib",
       "libs/symbols/lmr14020.lib": "libs/symbols/lmr14020.lib",
       "sheets/psu.kicad_sch": "sheets/psu.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus psu at b3176cb (T8, T4, T6), adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)"
   },
   "version": "draft-df304f332129"
 }

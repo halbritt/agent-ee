@@ -19,7 +19,9 @@ The request becomes `block.json` (`agent-ee.block/1`). Required fields are `sche
 `requirements`, `files`, and `runs`; optional `layout` names a captured PCB.
 Capture supplies `source.repository`, `source.commit` and `files` hashes. The
 request supplies `source.license` as a source statement, not permission to
-publish. Every file entry maps a safe directory-relative path to SHA-256. The `source.paths` mapping binds payload paths to pinned repository paths.
+publish, and may supply the paired `source.upstream_origin` and
+`source.upstream_license` fields (required when `instances` is present) to
+record the upstream origin and licence of a derived sheet. Every file entry maps a safe directory-relative path to SHA-256. The `source.paths` mapping binds payload paths to pinned repository paths.
 No files may be unlisted.
 `parts_manifest` identifies a captured JSON parts/1 subset; this lane preserves
 its bytes and validates the complete structure with

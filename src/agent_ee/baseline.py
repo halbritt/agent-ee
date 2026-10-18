@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from .candidate import safe_relative
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, identity, json_bytes, read_json, write_json
 
 GENERATION_SCHEMA = "agent-ee.generation/1"
 
@@ -79,9 +79,15 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") in ("catalog", "part_selection"):
             from .catalog_checks import capability
             paths.update(capability(spec["kind"], params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "kicad_happy_severity_gate":
+            from .happy_severity_gate import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "land_pattern":
             from .land_pattern import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "jlc_dfm":
+            from .jlc_dfm import immutable_inputs
+            paths.update(immutable_inputs(params, files, inputs))
         if spec.get("kind") == "cpl_rotation":
             from .cpl_rotation import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
@@ -97,6 +103,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "parts_subset":
             from .parts_subset import capability
             paths.update(capability(params, files, inputs, scope, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "pin_contracts":
+            from .pin_contracts import capability
+            paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "block_provenance":
             from .block_adaptation import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
@@ -111,6 +120,9 @@ def compile_baseline(scope, files, inputs=None):
             paths.update(capability(params, scope, files)["immutable_inputs"])
         if spec.get("kind") == "design_rules":
             from .design_rules import capability
+            paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "interval_assertions":
+            from .interval_assertions import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "netclass_completeness":
             from .netclass_completeness import capability
@@ -196,16 +208,18 @@ def compile_baseline(scope, files, inputs=None):
 
 
 def generation_marker(scope):
-    """A generation scope's done gate: its last check is fab_package with an acceptance requirement."""
+    """A generation scope's package gate, optionally followed by bound DFM consumers."""
     marker = scope.get("generation")
     if marker is None:
         return None
     if not isinstance(marker, dict) or marker != {"schema": GENERATION_SCHEMA, "done_check": marker.get("done_check")}:
         raise ValueError(f"generation marker must be exactly {{schema: {GENERATION_SCHEMA}, done_check}}")
     done = marker["done_check"]
-    last = scope["checks"][-1]
-    if last.get("id") != done or last.get("kind") != "fab_package":
+    from .fab_package import require_last
+    gate = next((s for s in scope["checks"] if s.get("id") == done), {})
+    if gate.get("kind") != "fab_package":
         raise ValueError("generation scope must declare its fab_package done check last")
+    require_last(scope["checks"], gate)
     audited = scope["schema"] == "agent-ee.scope/3"
     if not any(done in req["checks"] and (not audited or req["intent"] == "acceptance")
                for req in scope["baseline"]["requirements"]):
@@ -218,7 +232,8 @@ def load_baseline(run):
     expected = compile_baseline(manifest["scope"], manifest["files"], Path(run) / "inputs")
     if expected is None:
         return None
-    if read_json(Path(run) / "baseline.json") != expected:
+    path = Path(run) / "baseline.json"
+    if not path.is_file() or path.is_symlink() or path.read_bytes() != json_bytes(expected):
         raise ValueError("immutable baseline changed")
     return expected
 

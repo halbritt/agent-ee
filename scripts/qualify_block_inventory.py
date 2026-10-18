@@ -151,12 +151,20 @@ def qualify(inventory, repository, out, adaptations, library_repos, expect=None,
     return result
 
 
+def default_repository():
+    override = os.environ.get('AGENT_EE_FOME_MC_CHECKOUT')
+    if override:
+        return override
+    home = Path.home() / 'git/fome-mc'
+    sibling = ROOT.parents[1] / 'fome-mc'
+    return str(sibling if not home.is_dir() and sibling.is_dir() else home)
+
+
 def main(argv=None):
     directory = inventory_directory()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--inventory', default=str(directory / 'block-inventory.json'))
-    parser.add_argument('--repo', default=os.environ.get('AGENT_EE_FOME_MC_CHECKOUT',
-                                                         str(Path.home() / 'git/fome-mc')))
+    parser.add_argument('--repo', default=default_repository())
     parser.add_argument('--out', help='new private output directory (default build/fome-mc-inventory/captures/'
                                       'COMMIT-N, or OVERRIDE/captures/COMMIT-N)')
     parser.add_argument('--expect', help='capture the first capture must equal (default: the capture/ '

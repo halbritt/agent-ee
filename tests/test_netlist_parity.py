@@ -86,6 +86,175 @@ class NativeReaderTests(unittest.TestCase):
 
 
 class GraphTests(unittest.TestCase):
+    @staticmethod
+    def four_channels():
+        """Owned repeated RC ladders; native sort order scrambles each position."""
+        from agent_ee.netlist_parity import terminal_inventory
+        graphs = []
+        for native in (False, True):
+            components, nets = {}, {}
+            for channel in range(4):
+                ids = []
+                for stage in range(12):
+                    cid = (f'R{stage:02}-{(channel + stage) % 4}' if native
+                           else f'ch{channel}-r{stage:02}')
+                    ids.append(cid)
+                    components[cid] = {'lib_id': 'Owned:C' if stage == 11 else 'Owned:R',
+                        'value': '100n' if stage == 11 else '10k', 'populated': True,
+                        'pins': ('1', '2'), 'reference': cid if native else f'R{channel * 12 + stage + 1}', 'locator': cid}
+                for stage in range(11):
+                    nid = f'{channel}-{stage}'
+                    nets[nid] = {'name': f'/CH{channel}_IN' if stage == 0 else f'generated-{nid}',
+                        'locator': nid, 'terminals': ((ids[stage], '2'), (ids[stage + 1], '1'))}
+            graphs.append(terminal_inventory(components, nets))
+        names = {'schema': 'agent-ee.net-name-policy/1',
+            'requirement': {'id': 'names', 'source': {'path': 'requirements.md', 'locator': 'Names'}},
+            'required': [{'name': f'CH{channel}_IN',
+                          'anchors': [{'reference': f'R00-{channel}', 'pin': '2'}]}
+                         for channel in range(4)]}
+        return *graphs, names
+
+    def test_four_channel_symmetry_anchored(self):
+        from agent_ee.netlist_parity import compare
+        expected, actual, names = self.four_channels()
+        policy = {'predicate': 'topology', 'multiset': 'exactly', 'anchors': {}}
+        unanchored = compare(expected, actual, policy)
+        self.assertEqual((unanchored['execution'], unanchored['outcome'], unanchored['search_steps']),
+                         ('unsupported', 'unknown', 100000))
+        report = compare(expected, actual, policy, name_policy=names)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+        self.assertLessEqual(report['search_steps'], 100000)
+        self.assertEqual(len(report['anchors']['nets']), 4)
+        self.assertEqual(len(report['matched_nets']), 44)
+        self.assertEqual(report['scores']['jaccard'], 1.0)
+
+    def test_fixed_references_seed_refinement_and_instance_correspondence(self):
+        from agent_ee.netlist_parity import compare
+        expected, actual, _ = self.four_channels()
+        anchors = {f'ch{channel}-r00': {'reference': f'R00-{channel}'} for channel in range(4)}
+        report = compare(expected, actual, {'predicate': 'instance', 'multiset': 'exactly',
+            'anchors': anchors, 'instance_components': ['ch0-r11']})
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+        self.assertEqual(len(report['anchors']['components']), 4)
+        self.assertEqual(report['component_matches']['ch0-r11'], ['R11-3'])
+        self.assertLessEqual(report['search_steps'], 100000)
+
+    def test_declared_component_anchor_mismatches_are_defects(self):
+        for anchor in ({'reference': 'absent'}, {'reference': 'X9'}, {'reference': 'R90'}):
+            with self.subTest(anchor=anchor):
+                report = self.compare(anchors={'series': anchor})
+                self.assertEqual((report['execution'], report['outcome']), ('ok', 'defect'), report)
+                self.assertTrue(report['anchor_mismatches'])
+                self.assertEqual(report['search_steps'], 0)
+
+    def test_mixed_anchor_syntax_cannot_bind_two_parts_to_one_instance(self):
+        report = self.compare(anchors={'series': {'reference': 'R80'},
+            'shunt': {'sheet': '/', 'uuid': 'series-uuid'}})
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'defect'), report)
+        self.assertTrue(any(m['kind'] == 'component_anchor_conflict' for m in report['anchor_mismatches']))
+
+    def test_required_net_anchors_match_exhaustive_small_graph_oracle(self):
+        from itertools import permutations
+        from agent_ee.netlist_parity import compare, terminal_inventory
+        terminals = [(f'R{i}', pin) for i in range(3) for pin in ('1', '2')]
+        components = {f'R{i}': {'lib_id': 'Owned:R', 'value': '10k', 'populated': True,
+            'pins': ('1', '2'), 'reference': f'R{i}', 'locator': f'R{i}'} for i in range(3)}
+        def partitions(pins):
+            if not pins:
+                yield []
+            else:
+                for index in range(1, len(pins)):
+                    for rest in partitions(pins[1:index] + pins[index + 1:]):
+                        yield [(pins[0], pins[index])] + rest
+        def graph(pairs):
+            return terminal_inventory(components, {str(i): {
+                'name': 'IN' if ('R0', '1') in pair else f'generated{i}',
+                'locator': str(i), 'terminals': tuple(pair)} for i, pair in enumerate(pairs)})
+        expected = graph([(('R0', '1'), ('R1', '1')), (('R0', '2'), ('R2', '1')),
+                          (('R1', '2'), ('R2', '2'))])
+        names = {'schema': 'agent-ee.net-name-policy/1', 'requirement': {
+            'id': 'names', 'source': {'path': 'requirements.md', 'locator': 'Names'}},
+            'required': [{'name': 'IN', 'anchors': [{'reference': 'R0', 'pin': '1'}]}]}
+        for pairs in partitions(terminals):
+            actual = graph(pairs)
+            observed = {frozenset(pair) for pair in pairs}
+            anchored = next(frozenset(pair) for pair in pairs if ('R0', '1') in pair)
+            equivalent = False
+            for order in permutations(components):
+                mapping = dict(zip(components, order))
+                mapped = {nid: frozenset((mapping[cid], pin) for cid, pin in net['terminals'])
+                          for nid, net in expected['nets'].items()}
+                equivalent |= set(mapped.values()) == observed and mapped['0'] == anchored
+            with self.subTest(pairs=pairs):
+                report = compare(expected, actual, {'predicate': 'topology', 'multiset': 'exactly',
+                    'anchors': {}}, name_policy=names)
+                self.assertEqual((report['execution'], report['outcome']),
+                                 ('ok', 'pass' if equivalent else 'defect'), report)
+
+    def test_net_anchor_failure_boundaries(self):
+        import copy
+        from agent_ee.netlist_parity import compare
+        expected, actual, names = self.four_channels()
+        def run(graph, policy=names):
+            return compare(expected, graph, {'predicate': 'topology', 'multiset': 'exactly',
+                'anchors': {}}, name_policy=policy)
+        for case in ('absent', 'duplicate', 'off_pin', 'wrong_incidence', 'unresolved'):
+            with self.subTest(case=case):
+                graph = copy.deepcopy(actual)
+                if case == 'absent':
+                    graph['nets']['0-0']['name'] = 'suggested'
+                elif case == 'duplicate':
+                    graph['nets']['1-0']['name'] = '/child/CH0_IN'
+                elif case == 'off_pin':
+                    # Name exists, but its declared reference/pin is on another net.
+                    graph['nets']['0-0']['name'], graph['nets']['0-1']['name'] = (
+                        graph['nets']['0-1']['name'], graph['nets']['0-0']['name'])
+                elif case == 'wrong_incidence':
+                    from agent_ee.netlist_parity import terminal_inventory
+                    a, b = graph['nets']['0-0'], graph['nets']['0-1']
+                    a['terminals'], b['terminals'] = (
+                        (a['terminals'][0], b['terminals'][1]), (b['terminals'][0], a['terminals'][1]))
+                    graph.update(terminal_inventory(graph['components'], graph['nets']))
+                else:
+                    from agent_ee.netlist_parity import terminal_inventory
+                    graph['nets']['0-0']['terminals'] = (graph['nets']['0-0']['terminals'][1],)
+                    graph.update(terminal_inventory(graph['components'], graph['nets']))
+                report = run(graph)
+                self.assertEqual(report['outcome'], 'unknown' if case == 'unresolved' else 'defect', report)
+        source = copy.deepcopy(expected)
+        source['nets']['0-0']['name'] = 'absent'
+        report = compare(source, actual, {'predicate': 'topology', 'multiset': 'exactly',
+            'anchors': {}}, name_policy=names)
+        self.assertEqual((report['execution'], report['outcome']), ('unsupported', 'unknown'))
+        report = compare(expected, actual, {'predicate': 'topology', 'multiset': 'exactly',
+            'anchors': {}, 'max_search': 1}, name_policy=names)
+        self.assertEqual((report['execution'], report['outcome'], report['search_steps']),
+                         ('unsupported', 'unknown', 1))
+
+    def test_anchor_mismatch_defect(self):
+        # Exchanging only the names is topologically invisible until declared required.
+        from agent_ee.netlist_parity import compare
+        expected, actual, names = self.four_channels()
+        actual['nets']['0-0']['name'], actual['nets']['1-0']['name'] = (
+            actual['nets']['1-0']['name'], actual['nets']['0-0']['name'])
+        report = compare(expected, actual, {'predicate': 'topology', 'multiset': 'exactly',
+            'anchors': {}}, name_policy=names)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'defect'), report)
+        self.assertTrue(report['anchor_mismatches'])
+        self.assertEqual(report['search_steps'], 0)
+
+    def test_net_anchors_allow_exchange_of_indistinguishable_channel_tails(self):
+        from agent_ee.netlist_parity import compare, terminal_inventory
+        expected, actual, names = self.four_channels()
+        a, b = actual['nets']['0-0'], actual['nets']['1-0']
+        a['terminals'], b['terminals'] = (
+            (a['terminals'][0], b['terminals'][1]), (b['terminals'][0], a['terminals'][1]))
+        actual.update(terminal_inventory(actual['components'], actual['nets']))
+        report = compare(expected, actual, {'predicate': 'topology', 'multiset': 'exactly',
+            'anchors': {}}, name_policy=names)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+        self.assertEqual(report['scores']['jaccard'], 1.0)
+
     def setUp(self):
         from agent_ee.native_netlist import read_native_inventory
         self.expected = resolved_inventory(json.loads((FIXTURE / 'resolved.json').read_text()))
@@ -216,7 +385,7 @@ class NativeParityTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.counter = 0
 
-    def run_variant(self, variant='control', params=None, golden_fixture='native.xml'):
+    def run_variant(self, variant='control', params=None, golden_fixture='native.xml', name_policy=None):
         import importlib.util
         import time
         from agent_ee.candidate import capture
@@ -252,6 +421,10 @@ class NativeParityTests(unittest.TestCase):
             scope['inputs'] += [{'path': n, 'at': n} for n in [policy['source']['path'], 'Owned.kicad_sym']]
         if 'intent' in policy['source']:
             scope['inputs'].append({'path': policy['source']['intent'], 'at': policy['source']['intent']})
+        if name_policy is not None:
+            write_json(case / 'names.json', name_policy)
+            policy['net_name_policy'] = 'names.json'
+            scope['inputs'].append({'path': 'names.json', 'at': 'names.json'})
         write_json(case / 'scope.json', scope)
         run = case / 'run'
         run.mkdir()
@@ -259,6 +432,44 @@ class NativeParityTests(unittest.TestCase):
         checks = run_checks(run, time.monotonic() + 90)
         self.assertEqual(checks[0]['execution'], 'ok', checks)
         return run, checks
+
+    def test_native_required_name_anchors_are_captured_sealed_and_immutable(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence, validate_witnesses
+        from agent_ee.candidate import verify_snapshot
+        from agent_ee.storage import digest, read_json
+        names = {'schema': 'agent-ee.net-name-policy/1', 'requirement': {
+            'id': 'parity', 'source': {'path': 'requirements.md', 'locator': 'line 1'}},
+            'required': [{'name': 'VBUS', 'anchors': [{'reference': 'X9', 'pin': '1'}]}]}
+        for variant, outcome in [('control', 'pass'), ('renamed', 'defect'), ('ic-swap', 'defect')]:
+            with self.subTest(variant=variant):
+                run, checks = self.run_variant(variant, params={
+                    'source': {'kind': 'intent', 'path': 'intent.json'}}, name_policy=names)
+                self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', outcome), checks)
+                report = checks[1]['details']
+                self.assertEqual(len(report['anchors']['nets']), 1)
+                self.assertEqual(report['net_name_policy_sha256'], digest(run / 'inputs/names.json'))
+                baseline = read_json(run / 'baseline.json')
+                self.assertIn('names.json', baseline['files'])
+                freeze_evidence(run, checks)
+                verify_evidence(run, checks, required=True)
+                if outcome == 'defect':
+                    validate_witnesses(run, [{'check_id': 'parity', 'requirement_id': 'parity'}],
+                        [{'path': 'checks/parity.json', 'locator': 'anchor_mismatches'}])
+                path = run / 'work/parity/parity.json'
+                path.write_bytes(path.read_bytes() + b' ')
+                with self.assertRaises(ValueError):
+                    verify_evidence(run, checks, required=True)
+                (run / 'inputs/names.json').write_text('{}')
+                with self.assertRaises(ValueError):
+                    verify_snapshot(run)
+
+    def test_native_fixed_reference_anchor_detects_reannotation(self):
+        for variant, outcome in [('control', 'pass'), ('exchange-refs', 'defect')]:
+            with self.subTest(variant=variant):
+                _, checks = self.run_variant(variant, params={
+                    'source': {'kind': 'intent', 'path': 'intent.json'},
+                    'anchors': {'series': {'reference': 'R80'}}})
+                self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', outcome), checks)
 
     def test_actual_kicad_exports_match_precommitted_expectations(self):
         expected = json.loads((FIXTURE / 'native-expectations.json').read_text())
@@ -725,15 +936,52 @@ class FailureBoundaryTests(unittest.TestCase):
             with patch('agent_ee.native_netlist.MAX_BYTES', 8), self.assertRaisesRegex(Unsupported, 'byte limit'):
                 read_native_inventory(FIXTURE / 'native.xml')
 
-    def test_policy_rejects_hidden_reference_colors_and_unbounded_search(self):
+    def test_policy_rejects_mixed_identities_and_unbounded_search(self):
         from agent_ee.netlist_parity import validate_policy
         good = {'source': {'kind': 'golden_xml', 'path': 'golden.xml'}, 'predicate': 'topology',
                 'netlist_check': 'netlist', 'multiset': 'exactly'}
-        for patch in [{'anchors': {'series': {'reference': 'R80'}}}, {'max_search': 0},
+        for patch in [{'anchors': {'series': {'reference': 'R80', 'uuid': 'ambiguous'}}}, {'max_search': 0},
                       {'max_search': True}, {'max_search': 100001}, {'multiset': 'at_least'},
-                      {'source': {'kind': 'guessed', 'path': 'golden.xml'}}, {'predicate': 'instance'}]:
+                      {'source': {'kind': 'guessed', 'path': 'golden.xml'}}, {'predicate': 'instance'},
+                      {'net_name_policy': ''}, {'anchors': {'series': {'reference': 'R80'},
+                                                            'shunt': {'reference': 'R80'}}},
+                      {'predicate': 'components', 'net_name_policy': 'names.json'}]:
             with self.subTest(patch=patch), self.assertRaises(ValueError):
                 validate_policy({**good, **patch})
+
+    def test_net_name_policy_requires_capture_and_baseline_provenance(self):
+        import copy
+        import tempfile
+        from agent_ee.netlist_parity import capability
+        from agent_ee.storage import write_json
+        names = {'schema': 'agent-ee.net-name-policy/1', 'requirement': {
+            'id': 'parity', 'source': {'path': 'requirements.md', 'locator': 'Names'}},
+            'required': [{'name': 'VBUS', 'anchors': [{'reference': 'X9', 'pin': '1'}]}]}
+        params = {'source': {'kind': 'golden_xml', 'path': 'golden.xml'}, 'predicate': 'topology',
+                  'netlist_check': 'netlist', 'multiset': 'exactly', 'net_name_policy': 'names.json'}
+        scope = {'checks': [{'id': 'netlist', 'kind': 'netlist'},
+                            {'id': 'parity', 'kind': 'netlist_parity'}],
+                 'baseline': {'requirements': [{**names['requirement'], 'checks': ['parity']}]}}
+        files = dict.fromkeys(['golden.xml', 'names.json', 'requirements.md'], 'hash')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_json(root / 'names.json', names)
+            descriptor = capability(params, scope, files, root, 'parity')
+            self.assertEqual(descriptor['name_policy'], names)
+            self.assertEqual(set(descriptor['immutable_inputs']), set(files))
+            for missing in ('names.json', 'requirements.md'):
+                with self.subTest(missing=missing), self.assertRaises(ValueError):
+                    capability(params, scope, {k: v for k, v in files.items() if k != missing}, root, 'parity')
+            changed = copy.deepcopy(names)
+            changed['requirement']['source']['locator'] = 'unbound source'
+            write_json(root / 'names.json', changed)
+            with self.assertRaisesRegex(ValueError, 'baseline requirement source'):
+                capability(params, scope, files, root, 'parity')
+            changed = copy.deepcopy(names)
+            changed['required'].append(copy.deepcopy(changed['required'][0]))
+            write_json(root / 'names.json', changed)
+            with self.assertRaisesRegex(ValueError, 'duplicate required name'):
+                capability(params, scope, files, root, 'parity')
 
     def test_json_duplicate_fields_fail_closed(self):
         import tempfile

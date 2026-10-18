@@ -25,6 +25,13 @@ field from the retained coordinator records. Changing a claimed output hash, fil
 version, removing network isolation or relabelling a failed exit is refused,
 even when the forger also recomputes the receipt identity.
 
+Review and adjudication of a stage use the same [structured citation
+contract](result-reference.md#structured-citations) as other reviews. Fresh `/2`
+responses require a resolving `pointer`, `lines` or `xpath` on every citation;
+retained `/1` records may keep descriptive locators alone. Any supplied structured
+field is checked even in `/1`. A resolving location does not make a receipt into
+sealed check evidence or replace the accepted-defect witness gate.
+
 ## Step declaration
 
 ```json
@@ -288,6 +295,14 @@ sandboxed campaigns: a receipted routing step passes, a hand edit of the routing
 later turn fails although every check passes, and a campaign without steps is unaffected.
 
 ## Limits
+
+- When `stages.order` includes `fab` and a fab step is declared, the fab checks
+  require its sealed `out/fab` output. Before execution they stay unknown with
+  `fab_step_pending`; only otherwise complete checks and review can schedule
+  the coordinator turn. Fresh exports and CPL correction must match the step
+  output before acceptance. This resolves the shape D/F1/G1 scheduling trap;
+  a synthetic history without a fab receipt still fails
+  `stage_step_unreceipted`. See [declared fab steps](fab-export.md#declared-fab-steps).
 
 - Steps run after the writer session, on its delivered design. A tool the writer runs inside its
   own sandbox produces no receipt. Its effect counts only after capture, as before.

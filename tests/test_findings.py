@@ -8,9 +8,10 @@ from agent_ee.findings import (
     adjudicate,
     collect_findings,
     validate_check_result,
+    validate_citation,
+    validate_citation_path,
     validate_closure,
     validate_review,
-    validate_citation_path,
 )
 from agent_ee.storage import write_json
 
@@ -23,7 +24,7 @@ class FindingsTests(unittest.TestCase):
         self.source = self.root / "source"
         self.source.mkdir()
         (self.source / "rc.kicad_sch").write_text("(kicad_sch (symbol R1 100k))")
-        (self.source / "rc.kicad_pcb").write_text("(kicad_pcb (footprint R1 100k))")
+        (self.source / "rc.kicad_pcb").write_text("(kicad_pcb (footprint R1 100k) (via (at 113 100)))")
         (self.source / "requirements.md").write_text("0.62 <= Vout(1ms) <= 0.65 V")
         self.scope_path = self.root / "scope.json"
         self.scope_data = {
@@ -40,6 +41,8 @@ class FindingsTests(unittest.TestCase):
             ],
             "inputs": [{"path": "source", "at": "project"}],
         }
+        self.scope_data["review_profile"] = json.loads(
+            (Path(__file__).resolve().parents[1] / "profiles/claude.json").read_text())
         self.scope_path.write_text(json.dumps(self.scope_data))
         self.run_dir = self.root / "run1"
         self.run_dir.mkdir()
@@ -923,6 +926,242 @@ class FindingsTests(unittest.TestCase):
                 },
                 run3,
             )
+
+    def test_structured_citations_resolve_and_preserve_fields(self):
+        exp = self.run_dir / "review-work/circuit/experiments"
+        exp.mkdir(parents=True)
+        write_json(exp / "probe.json", {"a/b": {"~key": [None, 7]}, "": "empty key"})
+        (exp / "design.xml").write_text("<export><components><comp ref='R1'><value>10k</value></comp></components></export>")
+        examples = [
+            {"path": "checks/rc_transient.json", "pointer": "/details/v_1ms"},
+            {"path": "checks/rc_transient.json", "pointer": ""},
+            {"path": "inputs/project/rc.kicad_sch", "lines": [1, 1]},
+            {"path": "work/rc_transient/spice.log", "lines": [1, 1]},
+            {"path": "review-work/circuit/experiments/probe.json", "pointer": "/a~1b/~0key/0"},
+            {"path": "review-work/circuit/experiments/probe.json", "pointer": "/"},
+            {"path": "review-work/circuit/experiments/design.xml", "xpath": "/export/components/comp[@ref='R1']/value"},
+            {"path": "review-work/circuit/experiments/design.xml", "xpath": "./components/comp"},
+            {"path": "review-work/circuit/experiments/design.xml", "xpath": "/export"},
+            {"path": "checks/rc_transient.json", "pointer": "/outcome", "lines": [1, 2]},
+        ]
+        for fields in examples:
+            cite = {"locator": "Description is never parsed: /IN, e.g. R36/R37", **fields}
+            with self.subTest(cite=cite):
+                self.assertEqual(validate_citation(cite, self.run_dir, require_structured=True), cite)
+        check = {**self.rc_check, "evidence": [dict(path="checks/rc_transient.json", locator="metric", pointer="/details/v_1ms")]}
+        validate_check_result(check, self.run_dir)
+        self.assertEqual(collect_findings([], [check])[0]["evidence"], check["evidence"])
+
+    def test_structured_citations_refuse_missing_targets_and_malformed_fields(self):
+        exp = self.run_dir / "review-work/circuit/experiments"
+        exp.mkdir(parents=True)
+        write_json(exp / "probe.json", {"items": [{"id": "R1"}], "nets": {"/IN": ["R1.1"]}})
+        (exp / "design.xml").write_text("<export><components><comp ref='R1'/></components></export>")
+        (exp / "bad.xml").write_text("<export>")
+        (exp / "empty.txt").write_text("")
+        (exp / "binary").write_bytes(b"\x00\xff")
+        (exp / "pdf").write_bytes(b"%PDF-1.4\n")
+        bad = [
+            ("probe.json", {"pointer": "/no_such_field"}),
+            ("probe.json", {"pointer": "/items/R1"}),  # RFC 6901 arrays use indices, never IDs.
+            ("probe.json", {"pointer": "/items/01"}),
+            ("probe.json", {"pointer": "/items/-"}),
+            ("probe.json", {"pointer": "/items/1"}),
+            ("probe.json", {"pointer": "/items/-1"}),
+            ("probe.json", {"pointer": "/items/0/id/missing"}),
+            ("probe.json", {"pointer": "items/0"}),
+            ("probe.json", {"pointer": "/nets/~2IN"}),
+            ("probe.json", {"pointer": None}),
+            ("probe.json", {"pointer": 0}),
+            ("probe.json", {"pointer": "/items/0", "lines": [1, 9999]}),
+            ("design.xml", {"pointer": "/components/R999"}),
+            ("design.xml", {"xpath": "/export/components/comp[@ref='R999']"}),
+            ("design.xml", {"xpath": "/wrong/components"}),
+            ("design.xml", {"xpath": ".//comp["}),
+            ("design.xml", {"xpath": ""}),
+            ("design.xml", {"xpath": None}),
+            ("bad.xml", {"xpath": "."}),
+            ("empty.txt", {"lines": [1, 1]}),
+            ("binary", {"lines": [1, 1]}),
+            ("pdf", {"lines": [1, 1]}),
+        ]
+        bad += [("probe.json", {"lines": lines}) for lines in
+                (None, [], [1], [1, 2, 3], [True, 1], [1, False], [0, 1], [2, 1], [1.0, 2], "1-2")]
+        for name, fields in bad:
+            cite = {"path": "review-work/circuit/experiments/" + name, "locator": "R1 pin; shared tokens", **fields}
+            with self.subTest(cite=cite), self.assertRaises(ValueError):
+                validate_citation(cite, self.run_dir)
+        for description, pointer in (
+            ("R999 pin 7 on net /NO_SUCH_NET", "/nets/~1NO_SUCH_NET"),
+            ("U77 has no decoupling capacitor", "/items/U77"),
+        ):
+            with self.subTest(description=description), self.assertRaisesRegex(ValueError, "does not resolve"):
+                validate_citation({"path": "review-work/circuit/experiments/probe.json",
+                                   "locator": description, "pointer": pointer}, self.run_dir)
+        check = {**self.rc_check, "evidence": [dict(path="checks/rc_transient.json", locator="outcome", pointer="/missing")]}
+        with self.assertRaisesRegex(ValueError, "does not resolve"):
+            validate_check_result(check, self.run_dir)
+
+    def test_version_two_review_and_decisions_require_structured_citations(self):
+        cite = {"path": "checks/rc_transient.json", "locator": "Response metric", "pointer": "/details/v_1ms"}
+        review = {**self._review(findings=[self._finding(evidence=[cite])]), "schema": "agent-ee.review/2"}
+        def validate():
+            return validate_review(review, self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+        normalized = validate()
+        self.assertEqual(normalized["schema"], "agent-ee.review/2")
+        self.assertEqual(normalized["findings"][0]["evidence"], [cite])
+        findings = collect_findings([normalized], [])
+        decision = {"schema": "agent-ee.decisions/2", "candidate_id": self.candidate_id,
+                    "run_id": self.run_id, "decisions": [{"finding_id": findings[0]["id"],
+                    "disposition": "accepted", "reason": "Measured requirement violation", "evidence": [cite]}]}
+        self.assertEqual(adjudicate(findings, decision, self.run_dir)[0]["status"], "accepted")
+        del cite["pointer"]
+        with self.assertRaisesRegex(ValueError, "requires pointer, lines or xpath"):
+            validate()
+        with self.assertRaisesRegex(ValueError, "requires pointer, lines or xpath"):
+            adjudicate(findings, decision, self.run_dir)
+        cite["pointer"] = "/no_such_field"
+        for version in ("1", "2"):
+            review["schema"] = "agent-ee.review/" + version
+            decision["schema"] = "agent-ee.decisions/" + version
+            with self.assertRaisesRegex(ValueError, "does not resolve"):
+                validate()
+            with self.assertRaisesRegex(ValueError, "does not resolve"):
+                adjudicate(findings, decision, self.run_dir)
+
+    def test_citation_schema_stays_strict_through_codex_adapter(self):
+        from agent_ee.harnesses import strict_schema
+        from agent_ee.reviewers import REVIEW_SCHEMA, DECISIONS_SCHEMA, EVIDENCE_SCHEMA
+        combinations_seen = set()
+        for outer, key in ((REVIEW_SCHEMA, "findings"), (DECISIONS_SCHEMA, "decisions")):
+            actual = strict_schema(outer)["properties"][key]["items"]["properties"]["evidence"]
+            self.assertEqual(actual, EVIDENCE_SCHEMA)
+            for branch in actual["items"]["anyOf"]:
+                self.assertEqual(set(branch["required"]), set(branch["properties"]))
+                self.assertFalse(branch["additionalProperties"])
+                self.assertTrue({"path", "locator"} <= set(branch["required"]))
+                fields = frozenset(branch["required"]) - {"path", "locator"}
+                self.assertTrue(fields)
+                combinations_seen.add(fields)
+                # No omitted optional location becomes a required null placeholder.
+                for prop in branch["properties"].values():
+                    self.assertNotIn("anyOf", prop)
+        self.assertEqual(combinations_seen, {
+            frozenset(("pointer",)), frozenset(("lines",)), frozenset(("xpath",)),
+            frozenset(("pointer", "lines")), frozenset(("pointer", "xpath")),
+            frozenset(("lines", "xpath")), frozenset(("pointer", "lines", "xpath"))})
+
+    def test_fresh_reviewer_and_adjudicator_citation_refusals_are_resubmittable(self):
+        import copy
+        import time
+        from unittest.mock import patch
+        from agent_ee.reviewers import initial_reviews, adjudicator_call, EVIDENCE_SCHEMA
+
+        citation_schema = EVIDENCE_SCHEMA["items"]
+        self.assertEqual(len(citation_schema["anyOf"]), 7)
+        for branch in citation_schema["anyOf"]:
+            self.assertFalse(branch["additionalProperties"])
+            self.assertEqual(set(branch["required"]), set(branch["properties"]))
+            self.assertTrue(set(branch["required"]) & {"pointer", "lines", "xpath"})
+        packet = {"candidate_id": self.candidate_id, "run_id": self.run_id,
+                  "packet_sha256": self.packet_sha256}
+        counts = {}
+        def reviewer(run, role, definition, prompt, schema, timeout, **kwargs):
+            counts[role] = counts.get(role, 0) + 1
+            self.assertIn("Every evidence citation MUST include", prompt)
+            self.assertEqual(schema["properties"]["schema"]["enum"], ["agent-ee.review/2"])
+            self.assertEqual(schema["properties"]["findings"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
+            citation = {"path": "checks/rc_transient.json", "locator": "response"}
+            if counts[role] == 2:
+                self.assertIn("requires pointer, lines or xpath", prompt)
+                citation["pointer"] = "/details/v_1ms"
+            review = {**self._review(role=role, findings=[self._finding(evidence=[citation])]),
+                      "schema": "agent-ee.review/2"}
+            return {"execution": "ok"}, review
+        with patch("agent_ee.reviewers.reviewer_call", side_effect=reviewer):
+            reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30,
+                                              launch_context={"max_schema_resubmissions": 1})
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual([r["execution"] for r in records], ["ok", "ok"])
+        self.assertTrue(all(r["resubmissions_used"] == 1 for r in records))
+        findings = collect_findings(reviews, [])
+        def adjudicator(run, role, definition, prompt, schema, timeout, **kwargs):
+            counts[role] = counts.get(role, 0) + 1
+            self.assertIn("Every evidence citation MUST include", prompt)
+            self.assertEqual(schema["properties"]["schema"]["enum"], ["agent-ee.decisions/2"])
+            self.assertEqual(schema["properties"]["decisions"]["items"]["properties"]["evidence"], EVIDENCE_SCHEMA)
+            citation = {"path": "checks/rc_transient.json", "locator": "response"}
+            if counts[role] == 2:
+                self.assertIn("requires pointer, lines or xpath", prompt)
+                citation["pointer"] = "/details/v_1ms"
+            return {"execution": "ok"}, {"schema": "agent-ee.decisions/2", "candidate_id": self.candidate_id,
+                "run_id": self.run_id, "decisions": [{"finding_id": f["id"], "disposition": "accepted",
+                "reason": "Measured violation", "evidence": [copy.deepcopy(citation)]} for f in findings]}
+        with patch("agent_ee.reviewers.reviewer_call", side_effect=adjudicator):
+            record, decisions = adjudicator_call(self.run_dir, packet, findings, reviews,
+                time.monotonic() + 30, launch_context={"max_schema_resubmissions": 1})
+        self.assertEqual(record["execution"], "ok")
+        self.assertEqual(record["resubmissions_used"], 1)
+        self.assertEqual(len(decisions["decisions"]), len(findings))
+
+    def test_fresh_model_calls_cannot_return_legacy_schema(self):
+        import time
+        from unittest.mock import patch
+        from agent_ee.reviewers import initial_reviews, adjudicator_call
+        packet = {"candidate_id": self.candidate_id, "run_id": self.run_id,
+                  "packet_sha256": self.packet_sha256}
+        def reviewer(run, role, *args, **kwargs):
+            return {"execution": "ok"}, self._review(role=role, findings=[])
+        with patch("agent_ee.reviewers.reviewer_call", side_effect=reviewer):
+            reviews, records = initial_reviews(self.run_dir, packet, time.monotonic() + 30)
+        self.assertEqual(reviews, [])
+        self.assertTrue(all(r["execution"] == "malformed" and "fresh review requires" in r["error"] for r in records))
+        with patch("agent_ee.reviewers.reviewer_call", return_value=({"execution": "ok"}, {
+                "schema": "agent-ee.decisions/1", "candidate_id": self.candidate_id,
+                "run_id": self.run_id, "decisions": []})):
+            record, decisions = adjudicator_call(self.run_dir, packet, [], [], time.monotonic() + 30)
+        self.assertEqual(record["execution"], "malformed")
+        self.assertIn("fresh adjudication requires", record["error"])
+        self.assertIsNone(decisions)
+
+    def test_reviewer_nonexistent_target_probes_refused_on_retained_connectivity(self):
+        run = Path(__file__).resolve().parents[1] / "evidence/adjudicator-comparison/agy/singleton"
+        for locator, pointer in (
+            ("R999 pin 7 on net /NO_SUCH_NET", "/components/R999"),
+            ("R999 pin 7 on net /NO_SUCH_NET", "/nets/~1NO_SUCH_NET"),
+            ("U77 has no decoupling capacitor", "/components/U77"),
+        ):
+            with self.subTest(pointer=pointer), self.assertRaisesRegex(ValueError, "does not resolve"):
+                validate_citation({"path": "work/netlist/connectivity.json", "locator": locator,
+                                   "pointer": pointer}, run)
+        citation = {"path": "work/netlist/connectivity.json", "locator": "IN membership", "pointer": "/nets/~1IN/0"}
+        self.assertEqual(validate_citation(citation, run), citation)
+
+    def test_legacy_retained_locators_are_descriptive(self):
+        repo = Path(__file__).resolve().parents[1]
+        examples = [
+            ("evidence/adjudicator-comparison/agy/singleton", "work/netlist/connectivity.json",
+             "nets./IN (J1.1, R1.1) and nets./OUT (C1.1, J1.2, R1.2)"),
+            ("evidence/adjudicator-comparison/codex/calculation", "work/netlist/design.xml",
+             "/export/components/comp[@ref='R1']/value; /export/nets/net[@name='/IN'] and net[@name='/OUT']: R1.1 and R1.2 respectively"),
+            ("evidence/model-baselines-expanded/claude", "work/netlist/connectivity.json",
+             "/12V_KEY (J1.45,J2.90), /5V_SENSOR_1 (J2.40,J2.41), unconnected-(A1-~{FLT}-Pad2)"),
+            ("evidence/model-baselines-expanded/claude", "work/drc/drc.json",
+             "padstack/annular_width error items 'PTH pad [<no net>] of J1'"),
+            ("evidence/donor-verified", "work/netlist/connectivity.json",
+             "R36/R37 dnp:true; '/CAN2+':[C29.2,C33.2,D10.1,D11.1,J1.15,J2.73,R36.1,R37.1,U20.7,U21.7]"),
+            ("evidence/donor-verified", "work/erc/erc.json",
+             "by_type lib_symbol_mismatch=89, lib_symbol_issues=14, footprint_link_issues=8; e.g. 'The current configuration does not include the footprint library Simon' for J1 uuid 6971898b"),
+            ("evidence/donor-final", "work/drc/drc.json",
+             "violations: 106x type=lib_footprint_mismatch (e.g. C25 uuid 0070999b, R35 uuid 1905dec1); 9x type=lib_footprint_issues (e.g. P1 uuid 1646febd, J1 uuid 93ba26da, J4 uuid a7443703)"),
+        ]
+        for run, path, locator in examples:
+            citation = {"path": path, "locator": locator}
+            with self.subTest(locator=locator):
+                self.assertEqual(validate_citation(citation, repo / run), citation)
+        # Compatibility does not reinterpret or verify a legacy prose claim.
+        self.assertEqual(validate_citation({"path": "checks/rc_transient.json", "locator": "/no_such_field"},
+                                          self.run_dir)["locator"], "/no_such_field")
 
 
 if __name__ == "__main__":

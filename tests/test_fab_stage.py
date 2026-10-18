@@ -284,5 +284,206 @@ class NativeBomVariantStageTests(unittest.TestCase):
         self.assertEqual({c['label']: c['exit_code'] for c in receipt['commands']}['bom'], 0)
 
 
+
+def declared_fab_scope(inputs):
+    """Owned CPL fixture with the actual rung-1 fab producer's candidate paths."""
+    board, sch = 'project/rung1_rc.kicad_pcb', 'project/rung1_rc.kicad_sch'
+    checks = [{'id': 'netlist', 'kind': 'netlist', 'stage': 'verification'},
+              {'id': 'geometry', 'kind': 'geometry', 'stage': 'verification'},
+              {'id': 'fab-export', 'kind': 'fab_export', 'stage': 'fab', 'params': {'netlist_check': 'netlist'}},
+              {**fab_stage.rotation_check(inputs), 'stage': 'fab'},
+              {'id': 'fab', 'kind': 'fab_package', 'stage': 'fab', 'params': {'netlist_check': 'netlist'}}]
+    checks[3]['params']['export_check'] = 'fab-export'
+    requirement = 'project/requirements.md'
+    return {'schema': 'agent-ee.scope/2', 'name': 'Declared fab producer control',
+            'scope': 'Original CPL fixture; declared fab output must equal fresh native output.',
+            'board': board, 'schematic': sch, 'checks': checks,
+            'inputs': [{'path': str(p), 'at': p.name} for p in sorted(inputs.iterdir())],
+            'stages': {'schema': 'agent-ee.stages/1', 'order': ['verification', 'fab'],
+                       'subjects': {'verification': {'path': board, 'kind': 'footprints', 'references': ['R1']}},
+                       'finding_retry_limit': 3},
+            'generation': {'schema': 'agent-ee.generation/1', 'done_check': 'fab'},
+            'baseline': {'requirements': [{'id': 'R-cpl', 'statement': 'Check the declared fab output',
+                          'source': {'path': requirement, 'locator': 'R-cpl'},
+                          'checks': [c['id'] for c in checks]}],
+                         'targets': [requirement], 'reference_architectures': [requirement]}}
+
+
+def declared_fab_inputs(root):
+    inputs = candidate(root)
+    for extension in ('kicad_pcb', 'kicad_sch'):
+        (inputs / f'project/cpl.{extension}').rename(inputs / f'project/rung1_rc.{extension}')
+    shutil.copyfile(FIXTURE / 'requirements.md', inputs / 'project/requirements.md')
+    return inputs
+
+
+class DeclaredFabStepTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import time
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        from agent_ee.baseline import freeze_evidence
+        require_toolchain(native=True)
+        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-declared-fab-')
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.root = Path(cls.tmp.name)
+        cls.inputs = declared_fab_inputs(cls.root / 'inputs')
+        cls.scope = declared_fab_scope(cls.inputs)
+        write_json(cls.root / 'scope.json', cls.scope)
+        cls.spec = fab_stage.step(q.PACKAGE_ROOT, cls.scope['board'], cls.scope['schematic'])
+        cls.receipt_dir = cls.root / 'receipt'
+        cls.receipt = run_step(cls.receipt_dir, cls.inputs, cls.spec, {'test': 'declared-fab'})
+        cls.context = {'spec': cls.receipt['spec'], 'receipt': {
+            'path': str(cls.receipt_dir / 'receipt.json'),
+            'sha256': digest(cls.receipt_dir / 'receipt.json'), 'binding': cls.receipt['binding']}}
+        cls.run_dir = cls.root / 'run'
+        cls.run_dir.mkdir()
+        capture(cls.root / 'scope.json', cls.run_dir)
+        cls.results = run_checks(cls.run_dir, time.monotonic() + 300, fab_context=cls.context)
+        freeze_evidence(cls.run_dir, cls.results)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_all_fab_checks_grade_the_receipted_package_and_preserve_preview(self):
+        from agent_ee.baseline import verify_evidence
+        self.assertEqual(self.receipt['status'], 'completed')
+        self.assertEqual([(r['id'], r['execution'], r['outcome']) for r in self.results],
+                         [(c['id'], 'ok', 'info' if c['kind'] in ('geometry', 'netlist') else 'pass') for c in self.scope['checks']])
+        for result in self.results[2:]:
+            self.assertEqual(result['details']['fab_step'], self.context)
+            self.assertIn(f"work/{result['id']}/fab-step.json", result['evidence'])
+        verify_evidence(self.run_dir, self.results, required=True)
+        corrected = self.receipt_dir / 'run/out/fab/cpl.csv'
+        self.assertEqual(digest(corrected), digest(self.run_dir / 'work/cpl/cpl/cpl.csv'))
+        self.assertEqual(self.results[-1]['details']['rotation']['status'], 'PREVIEW_REQUIRED')
+        self.assertEqual(self.results[-1]['details']['fab_step_files']['cpl.csv'], digest(corrected))
+
+    def test_missing_receipt_is_unknown_for_every_fab_check_and_only_schedules_fab(self):
+        import time
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        from agent_ee.convergence import advance
+        pending_run = self.root / 'pending'
+        pending_run.mkdir()
+        capture(self.root / 'scope.json', pending_run)
+        results = run_checks(pending_run, time.monotonic() + 120,
+                             fab_context={'spec': self.receipt['spec'], 'receipt': None})
+        for result in results[2:]:
+            self.assertEqual((result['execution'], result['outcome']), ('not_run', 'unknown'))
+            self.assertEqual(result['details']['reason'], 'fab_step_pending')
+            self.assertFalse((pending_run / 'work' / result['id'] / 'fab').exists())
+        result = {'checks': results, 'outcome': 'incomplete', 'run_id': 'pending'}
+        record, decision = advance([], result, read_json(pending_run / 'candidate.json'), 2,
+                                   pending_fab=[r['id'] for r in results[2:]])
+        self.assertEqual((record['earliest_failing_stage'], decision['state']), ('fab', 'repair'))
+        self.assertEqual(record['outcome'], 'incomplete')
+
+    def context_for(self, spec, label):
+        folder = self.root / label
+        receipt = run_step(folder, self.inputs, spec, {'test': label})
+        self.assertEqual(receipt['status'], 'completed', receipt)
+        return {'spec': receipt['spec'], 'receipt': {'path': str(folder / 'receipt.json'),
+                'sha256': digest(folder / 'receipt.json'), 'binding': receipt['binding']}}
+
+    def test_changed_or_inapplicable_receipt_is_refused_not_pending(self):
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        manifest = read_json(self.run_dir / 'candidate.json')
+        ctx = Ctx(self.run_dir, manifest, self.scope['checks'][2], time.monotonic() + 120)
+        ctx.work = self.root / 'changed-context'
+        ctx.work.mkdir()
+        ctx.fab_context = json.loads(json.dumps(self.context))
+        ctx.fab_context['receipt']['sha256'] = '0' * 64
+        with self.assertRaisesRegex(CheckError, 'receipt changed'):
+            fab_stage.before_fab_check(ctx)
+        ctx.fab_context = self.context
+        ctx.manifest = {**manifest, 'files': {**manifest['files'], self.scope['board']: '0' * 64}}
+        with self.assertRaisesRegex(CheckError, 'not applicable'):
+            fab_stage.before_fab_check(ctx)
+        self.assertNotEqual(ctx.result['details'].get('reason'), 'fab_step_pending')
+
+    def test_a_sealed_but_different_package_is_refused_against_fresh_export(self):
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        # An original wrapper runs the real producer and changes its output before receipt sealing.
+        code = ("from agent_ee.fab_stage import main; main(['--board','project/rung1_rc.kicad_pcb',"
+                "'--schematic','project/rung1_rc.kicad_sch']); "
+                "from pathlib import Path; from agent_ee.storage import digest,read_json,write_json; "
+                "p=Path('/work/out/fab/bom.csv'); p.write_bytes(p.read_bytes()+b'\\n'); q=Path('/work/out/fab/cpl.csv'); q.write_bytes(q.read_bytes()+b'\\n'); "
+                "m=Path('/work/out/fab-manifest.json'); d=read_json(m); "
+                "[f.update(sha256=digest(p),bytes=p.stat().st_size) for f in d['files'] if f['path']=='bom.csv']; "
+                "[f.update(sha256=digest(q),bytes=q.stat().st_size) for f in d['files'] if f['path']=='cpl.csv']; "
+                "write_json(m,d)")
+        spec = {**self.spec, 'argv': self.spec['argv'][:5] + ['-c', code]}
+        context = self.context_for(spec, 'different-package')
+        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'), self.scope['checks'][2], time.monotonic()+120)
+        ctx.work = self.root / 'fresh-comparison'
+        shutil.copytree(self.run_dir / 'work/fab-export', ctx.work)
+        ctx.fab_context = context
+        fab_stage.before_fab_check(ctx)
+        with self.assertRaisesRegex(CheckError, 'differs from the fresh sandbox export'):
+            fab_stage.grade_native(ctx)
+        shutil.rmtree(ctx.work)
+        shutil.copytree(self.run_dir / 'work/cpl', ctx.work)
+        with self.assertRaisesRegex(CheckError, 'CPL differs from the fresh sandbox correction'):
+            fab_stage.grade_cpl(ctx)
+
+    def test_malformed_sealed_manifests_return_unknown_instead_of_crashing(self):
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        for label, relative in (('package', 'out/fab-manifest.json'),
+                                ('native', 'out/checks/work/fab/fab/manifest.json')):
+            with self.subTest(manifest=label):
+                code = ("from agent_ee.fab_stage import main; main(['--board','project/rung1_rc.kicad_pcb',"
+                        "'--schematic','project/rung1_rc.kicad_sch']); from pathlib import Path; "
+                        f"Path('/work/{relative}').write_text('[]')")
+                spec = {**self.spec, 'argv': self.spec['argv'][:5] + ['-c', code]}
+                context = self.context_for(spec, 'malformed-' + label)
+                ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'),
+                          self.scope['checks'][2], time.monotonic() + 120)
+                ctx.work = self.root / ('malformed-comparison-' + label)
+                shutil.copytree(self.run_dir / 'work/fab-export', ctx.work)
+                ctx.fab_context = context
+                fab_stage.before_fab_check(ctx)
+                with self.assertRaisesRegex(CheckError, 'manifest') as error:
+                    fab_stage.grade_native(ctx)
+                self.assertEqual(error.exception.execution, 'malformed')
+
+    def test_nonvolatile_manifest_metadata_must_match_the_fresh_export(self):
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'),
+                  self.scope['checks'][2], time.monotonic() + 120)
+        ctx.work = self.root / 'metadata-comparison'
+        shutil.copytree(self.run_dir / 'work/fab-export', ctx.work)
+        ctx.fab_context = self.context
+        fab_stage.before_fab_check(ctx)
+        path = ctx.work / 'fab/manifest.json'
+        manifest = read_json(path)
+        write_json(path, {**manifest, 'board_sha256': '0' * 64})
+        with self.assertRaisesRegex(CheckError, 'manifest differs from the fresh sandbox export'):
+            fab_stage.grade_native(ctx)
+
+    def test_missing_or_changed_sealed_artifact_stays_unknown(self):
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        ctx = Ctx(self.run_dir, read_json(self.run_dir / 'candidate.json'), self.scope['checks'][2], time.monotonic()+120)
+        ctx.work = self.root / 'missing-artifact'
+        ctx.work.mkdir()
+        ctx.fab_context = self.context
+        artifact = self.receipt_dir / 'run/out/fab/cpl.csv'
+        data = artifact.read_bytes()
+        try:
+            artifact.unlink()
+            with self.assertRaisesRegex(CheckError, 'artifacts changed'):
+                fab_stage.before_fab_check(ctx)
+        finally:
+            artifact.write_bytes(data)
+        self.assertNotEqual(ctx.result['details'].get('reason'), 'fab_step_pending')
+
+
 if __name__ == '__main__':
     unittest.main()

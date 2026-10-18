@@ -3,7 +3,7 @@
 from .storage import identity
 
 
-def advance(history, result, manifest, max_iterations):
+def advance(history, result, manifest, max_iterations, *, pending_fab=()):
     """Return a durable iteration record and a terminal/continuation diagnostic.
 
     Previously pass/info criteria and metric bounds are protected. Repairs must
@@ -25,6 +25,11 @@ def advance(history, result, manifest, max_iterations):
                       if c['stage'] == record['earliest_failing_stage']}
         record['recurring_findings'] = finding_keys([c for c in result['checks'] if c['id'] in active_ids])
     reason = None
+    if pending_fab:
+        record['pending_fab'] = list(pending_fab)
+        record['earliest_failing_stage'] = 'fab'
+        return record, {'state': 'repair' if len(history) + 1 < max_iterations else 'incomplete',
+                        'reason': 'fab_step_pending'}
     if result["outcome"] == "incomplete":
         return record, {"state": "incomplete", "reason": "execution_incomplete"}
     elif history:
@@ -32,7 +37,8 @@ def advance(history, result, manifest, max_iterations):
         regressions = sorted(protected & set(failed))
         if regressions:
             reason = "regression"
-        elif any(h["design_id"] == record["design_id"] for h in history):
+        elif (any(h["design_id"] == record["design_id"] for h in history)
+              and not (history[-1].get('pending_fab') and result['outcome'] == 'criteria_satisfied')):
             reason = "repeated_design"
         else:
             current_bounds = metric_bounds(record)

@@ -93,7 +93,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "a73b47d4c5e88e2e65a84c3c0f08005fa1cd9ee2948d03acb15f0b89b5532ce8",
+    "block-contract.json": "aa63affa098dc34e5ccbb8d00dcc7b2947e9b3237b8b74d6c9740af9dcec898e",
     "connectivity.json": "7267ae5f6d6d95aaf710a72cbdd7024fa8fe3e0bfe7d86c883f165f4af1e7837",
     "interface.json": "731dbf83ada0678a731f3365392a606e425c6e0c586579c121097a28070421d4",
     "parts.json": "7dfc0153ec07724fd4c25b8e8cd89553ab76e1e4d1184bf23ec1941f29d645f3",
@@ -424,7 +424,9 @@
     "paths": {
       "sheets/wbo2.kicad_sch": "sheets/wbo2.kicad_sch"
     },
-    "repository": "/home/halbritt/git/fome-mc"
+    "repository": "/home/halbritt/git/fome-mc",
+    "upstream_license": "MIT, Copyright (c) 2023 Matthew Kennedy (T9; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception.",
+    "upstream_origin": "mck1117 wideband Rev C at ca2adce (T9, T6; MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap"
   },
   "version": "draft-df304f332129"
 }

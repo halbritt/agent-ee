@@ -220,7 +220,7 @@ def _unused_ports(record):
     return unused
 
 
-def resolve(raw, captures):
+def resolve(raw, captures, *, _library_cache=None):
     result = dict(schema=RESOLVED_SCHEMA, execution='ok', outcome='pass', coverage='complete',
                   findings=[], intent_sha256=None, libraries=[], components=[], nets=[],
                   no_connects=[], hierarchy=[], ports=[], local_nets=[])
@@ -249,7 +249,8 @@ def resolve(raw, captures):
         result.update(execution='unsupported', outcome='unknown', coverage='missing')
         result['findings'] = [dict(code='projection_limit', location='/', message='scoped projection exceeds 8 MiB')]
         return ir._seal(result)
-    physical = ir._resolve_flat_intent(flat, captures, _pin_limit=MAX_TERMINALS)
+    physical = ir._resolve_flat_intent(flat, captures, _pin_limit=MAX_TERMINALS,
+                                       _library_cache=_library_cache)
     result.update({k: physical[k] for k in ('execution', 'coverage', 'libraries', 'components', 'no_connects')})
     result['findings'] = [f for f in physical['findings'] if f['code'] != 'singleton_net']
     result['intent_sha256'] = hashlib.sha256(ir._json_bytes(raw)).hexdigest()

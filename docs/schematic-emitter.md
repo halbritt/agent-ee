@@ -50,6 +50,42 @@ written the way KiCad writes them (for example mirror `x` at 180 becomes mirror
 The Python API can also write project `sym-lib-table` and `fp-lib-table` rows
 that point at `${KIPRJMOD}` paths. The emitter does not write board files.
 
+### Library subsets and emission cost
+
+AGENTEE-172 shares one content-addressed library parse across fresh intent
+resolution, symbol contexts and all sheet plans in an emission. The cache is
+local to that call and keyed by the SHA-256 of the actual bytes. Every declared
+path and hash is still checked, including unused libraries. The existing
+quote-preserving scan compares against that shared tree before serialization;
+selected definitions are copied before editing. No tree survives into the next
+emission. `build_context` also parses each library only once in a standalone call,
+including inherited properties.
+
+Use [symbol capture](symbol-capture.md) to keep captured inputs small. The
+generator and both rung-1 scaffold builders now capture subsets by default.
+Intent and emission receipts name the subset SHA-256; `symbol-captures.json`
+retains each existing capture receipt, including the full source SHA-256 and
+selected symbol/ancestor hashes. Whole and subset libraries produce identical
+project bytes for the same selection and layout; their provenance receipts
+differ because they identify different inputs.
+
+The original 130-component benchmark uses seven ICs, 40-pin headers and
+capacitors. Stock library bytes stay in the local run directory. Each run
+records library hashes, three complete emission timings without warmup, output
+hashes, host/tool identities and a sandboxed native export comparison of every
+connected and no-connect terminal. Capture and workload construction are timed
+separately. The 60-second target is recorded, never asserted in CI:
+
+```sh
+PYTHONPATH=src python3 scripts/benchmark_emitter.py --out build/emitter-benchmark
+```
+
+This synthetic workload measures emission; it is not a telemetry-pod design or
+an electrical qualification. `tests/test_schematic_emitter.py` separately checks
+byte-identical whole/subset emission for 20 parts, refusal of a missing symbol
+by name, one parse per content hash across hierarchical sheets, and hash drift
+on a subsequent emission.
+
 ## Output
 
 `<project>.kicad_pro` and `<project>.kicad_sch` (format version 20260306,
@@ -166,7 +202,7 @@ Generation either succeeds completely or writes nothing:
 | `resolution_*` | The resolver rejected the intent: unknown symbol or library, duplicate component or reference, unknown or unaccounted pin, missing or changed captured library (execution `failed`), or a version 1 intent with hierarchy (execution `unsupported`) |
 | `resolved_mismatch` | A supplied resolved record differs from the fresh resolution |
 | `layout_schema` | Malformed layout or table rows, or a transform for an unknown component |
-| `unsupported_symbol_node`, `unsupported_graphic` | An unknown top-level symbol node, or unit bounds the [symbol context](symbol-context.md) cannot compute (for example arcs) |
+| `unsupported_symbol_node`, `unsupported_graphic` | An unknown top-level symbol node, or unit bounds the [symbol context](symbol-context.md) cannot compute (such as degenerate arcs or `bezier`) |
 | `unlocatable_pin` | Pin geometry differs from the symbol context, or a pin endpoint is not exactly representable on the native 100 nm lattice |
 | `impossible_pin_endpoint` | Two pins would share one connection point, other than stacked pins of one unit on one net |
 | `malformed_net_name`, `duplicate_net_name` | Net names must be unique and match `[A-Za-z0-9_+.-]{1,64}`, so bus syntax, markup and text variables cannot change connectivity |
@@ -210,6 +246,11 @@ executor with networking unshared:
   `STM32H742Z_G-I_Tx`, resolves all 144 physical pins, passes native ERC with zero
   violations, and exports the expected supply, ground, VCAP and no-connect pins.
   Removing its captured parent refuses even when installed libraries are present.
+- Runtime-captured stock `Device:L` and `Connector:Conn_Coaxial` (whose body
+  graphics use circular arcs) emit, pass native ERC with zero violations, and
+  reproduce byte-identically under a forced native re-save; all `Device:L*`
+  inductor symbols compute complete bounds in `tests/test_symbol_context.py`
+  (AGENTEE-171).
 - The full regulator intent, including its declared ground symbol and two
   power flags, passes both native ERC and all three physical parity predicates.
   The shared parity adapter records the virtual `#` symbols that native XML
@@ -250,8 +291,8 @@ executor with networking unshared:
   symbols in multi-sheet designs are refused by the resolver until their native
   semantics are qualified. Sheet files must sit in the project directory.
 - A port's name must equal its child segment's label.
-- Derived replacement graphics/pins, alternate body styles with pins, arcs and
-  other graphics without qualified bounds are refused.
+- Derived replacement graphics/pins, alternate body styles with pins, degenerate
+  arcs, `bezier` curves and other graphics without qualified bounds are refused.
 - KiCad's native XML omits virtual `#` power and flag symbols. The
   [parity adapter](netlist-parity.md) projects qualified single-pin markers out
   of the physical graph and records each omission. Nets must retain at least

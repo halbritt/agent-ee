@@ -50,9 +50,10 @@ A golden XML netlist is a separately captured owner reference. It makes no
 library-resolution claim.
 
 `topology` compares exact physical-pin incidence and component multiplicity,
-independent of reference designators and net names. Component keys contain exact
-library symbol, exact value and native population state. Identical parts remain
-separate vertices. Net labels survive in diagnostics but do not confer identity.
+independent of reference designators and net names unless explicitly anchored below.
+Component keys contain exact library symbol, exact value and native population
+state. Identical parts remain separate vertices. Undeclared net labels survive
+in diagnostics but do not confer identity.
 No pin electrical-type, footprint adequacy or electrical behavior criterion is
 inferred. Native singleton nets remain in the graph except generated unconnected
 singletons compatible with an explicitly declared unconnected/no-connect pin.
@@ -69,10 +70,68 @@ and extra entries; `at_least` permits extras but still rejects missing counts.
 and requires unique correspondence for each selected logical component. For
 symmetric circuits, topology may be equivalent while instance correspondence is
 unknown. Optional `anchors` map logical component IDs to exact native
-`{"sheet":"/", "uuid":"..."}` identities. Reference names cannot be anchors.
+`{"sheet":"/", "uuid":"..."}` identities or explicitly fixed references.
 These identities must be explicitly declared; logical intent IDs alone never
 become native identities. Arbitrary exchanges of truly indistinguishable parts
 are graph automorphisms and cannot honestly be promised detectable without anchors.
+
+## Anchored search for repeated channels
+
+AGENTEE-192 adds explicit reference anchors and required-name anchors. Both
+`topology` and `instance` can use them; `components` refuses them because it
+does not evaluate connectivity. References remain unconstrained unless the
+captured scope declares them fixed:
+
+```json
+{"anchors": {"channel_1_input": {"reference": "R1"}}}
+```
+
+Each component anchor takes either exactly `reference` or exactly `sheet` and
+`uuid`. Duplicate identities are refused. Different declarations resolving to
+the same native component are a defect. A missing fixed reference, an incompatible
+component at that reference, or connectivity contradicting a resolved anchor is
+a defect. An unresolved sheet/UUID identity retains the existing unknown result.
+An unknown logical component ID is also unknown.
+
+Optional `net_name_policy` names a captured
+[`agent-ee.net-name-policy/1` policy](net-names.md). Its requirement ID and source
+must match a captured baseline requirement; the policy and its requirement
+source become immutable inputs. This reuses AGENTEE-44's required names and
+exported reference/pin anchors. The mutable level annotation does not select
+parity anchors. Suggested names and names merely shared by the two graphs never
+become anchors.
+
+```json
+{"net_name_policy": "verification/required-names.json"}
+```
+
+For each declared required name, the source must have one net with that basename.
+A missing or ambiguous source net is unknown. Native names and reference/pin
+terminals are evaluated with the existing net-name policy evaluator: absent,
+duplicate, displaced, split or conflicting required names are defects. Unresolved
+terminal anchors without an established mismatch are unknown. Hierarchical names
+use native basenames, as AGENTEE-44 does; repeated basenames cannot select one net.
+
+Resolved component and net anchors seed joint color refinement before the exact
+bijection search. Only vertices compatible with those constraints remain search
+candidates. Refinement proving incompatible color multiplicities establishes a
+defect without enumerating diagnostic permutations. Otherwise full physical-pin
+incidence and anchored net correspondence must still match exactly. Anchors do
+not raise the search bound or turn an exhausted search into a pass.
+
+The report's `anchors.components` and `anchors.nets` record resolved declarations
+and native identities; `anchor_mismatches` records established contradictions.
+`net_name_policy_sha256` binds the optional name policy. `search_steps` counts
+attempted component assignments, including used candidates, under the same bound.
+Early component-multiset failures precede anchor resolution.
+
+The owned `test_four_channel_symmetry_anchored` fixture has four identical RC
+ladders (48 components). Its deliberately scrambled native order exhausts 100000
+steps without anchors; four required-name anchors resolve it in 48 steps. Fixed
+references also resolve selected instance correspondence. Native tests verify
+anchor defects, witness sealing and policy immutability.
+
+## Bounds and reports
 
 Joint color refinement precedes bounded exact bijection search. `max_search`
 defaults to 100000 assignment attempts and may be reduced, never increased beyond

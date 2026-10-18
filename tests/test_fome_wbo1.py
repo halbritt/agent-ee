@@ -58,6 +58,11 @@ class CaptureTests(unittest.TestCase):
                                     for p in record['boundary_ports']))
                 self.assertFalse(any(l['origin'] == 'unresolved' for l in record['libraries']))
                 self.assertIn('fixtures/fome-mc/LICENSE-NOTICE.md', record['source']['license'])
+                for token in ('T9', 'T6', 'ca2adce', 'MIT'):
+                    self.assertIn(token, record['source']['upstream_origin'])
+                for token in ('MIT', 'Matthew Kennedy', 'CC-BY-SA-4.0'):
+                    self.assertIn(token, record['source']['upstream_license'])
+                self.assertEqual(read_json(root / 'block-contract.json')['source'], record['source'])
                 for path, expected in record['files'].items():
                     self.assertEqual(digest(root / path), expected)
         parts = {p['reference']: p for p in read_json(FIXTURE / 'blocks/wbo1/parts.json')['parts']}

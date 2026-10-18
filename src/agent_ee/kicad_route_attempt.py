@@ -5,13 +5,12 @@ standard library, so the coordinator can run it as
 ``/usr/bin/python3 -I -B /opt/agent-ee-routing/kicad_route_attempt.py`` from a
 read-only single-file mount whose bytes it hashes.
 
-The adapter is a compatibility layer for kicad-route ``08179cd`` only. That
-pin has no versioned result schema, no ``--version`` flag and no run locator,
-so this file checks the mounted tool code byte for byte against the pin and
-refuses anything else instead of guessing. The router's argv and environment
-come from constants and coordinator-declared arguments matched against fixed
-patterns; nothing the writer controls reaches them, and ``--backend-arg``,
-``--backend-env``, ``--force``, ``--canary`` and ``--rev`` are never passed.
+The adapter checks kicad-route's versioned result contract and the mounted
+code byte for byte against one qualified pin. Unknown schemas and changed
+code are refused. The router's argv and environment come from constants and
+coordinator-declared arguments matched against fixed patterns; nothing the
+writer controls reaches them, and ``--backend-arg``, ``--backend-env``,
+``--force``, ``--canary`` and ``--rev`` are never passed.
 
 The report is provenance. It never makes a check pass: acceptance comes only
 from agent-ee's own fresh checks on the captured proposal.
@@ -30,34 +29,46 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = '08179cdc97d08864da127f14d53ac46cf5a27851'
+PIN = 'e4979160a19b89837f9a9e9e25db620f3449f40a'
 # Tracked code at PIN (git cat-file blob). __pycache__ is never read: the
 # router runs with a private pycache prefix and bytecode writes disabled.
 PINNED_CODE = {
-    'bin/kicad-route': '03b2a21862c568a62373951ca03d4975961b51e83d978689e3a4eccf7f2cd76c',
+    'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
     'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
-    'src/kicad_route/blocked.py': '0b061d6c696006ceaf7fcd7729a6ac28821fb3161df616284a6fbf6abceca810',
-    'src/kicad_route/campaign.py': 'fece952726c8a18cefe209ac0ec7b38f15d945ad40d66c22c737fa27cd8c18a7',
-    'src/kicad_route/canary.py': '718a56b6b73b9830007e514fc6a154ffba2d26a6684167930ef008c8124c80f0',
-    'src/kicad_route/cli.py': '0409a15b837b34b84f9de844273fd728a0997340a78955a9345f5b42dff77bca',
-    'src/kicad_route/common.py': '4ce854d762064049bdd80cb2d6ab335dede89f99a4d47c89bead35695947a1c8',
-    'src/kicad_route/corpus.py': '194d0635cccdee9bf9f8eb6b1969956fd16a082e9ad5a57bf7974d3fd2e173e8',
-    'src/kicad_route/floor.py': '13ccb02c7b90add62b828208f315a2c8ac1fce79787097d94ee56c15a97edf08',
-    'src/kicad_route/kicad/facts.py': '05d3ccf6439b1bca28af9e422984b2e8199df00cab1cbaa4fe0399e6278aa911',
+    'src/kicad_route/barrier.py': 'de34c57c391248c4fdb02fdd9f71d6736edbc15621350be1ff188bc8b217df6c',
+    'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
+    'src/kicad_route/campaign.py': '5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6',
+    'src/kicad_route/canary.py': '38e56e7bd96f01025f9ca8a3c57d4f902f939723f55f50f214395561c3cbbf1c',
+    'src/kicad_route/cli.py': '3fbca381f4ccffdedaefaf1569f4786031608f32dc6a43f24608d358e438c393',
+    'src/kicad_route/common.py': 'ea3aeb3411fc67a44c0f8c34fa69358c75418f63a1c329abc9a428607c88abe6',
+    'src/kicad_route/contract.py': '56c3171679d715e3caa469e1ab55ff18420c1a3bf06fa16edd367a75019243ce',
+    'src/kicad_route/corpus.py': 'f63cedc1ec87b37b06c1a717f2eb02ec57af34a659b8f7e9e330eff5736bda14',
+    'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
+    'src/kicad_route/determinism.py': '653d6c37b4e69d50cd701223e23c6feb2e8afd5b240b5bdd5a5f4c1146af5778',
+    'src/kicad_route/evidence.py': '16ee3ace6fb54c9d365c98b556013f7e2e7269291337d06467beda70bdf5e2c9',
+    'src/kicad_route/floor.py': '2f954a2d1142c4f68d7e2904781f4470c0976af925a0a91c31c8de26d4f31ae6',
+    'src/kicad_route/kicad/barrier.py': 'ffeab974f15db240d55c1d3e8a19450d885be7ab33b7f595fdf79c5f6e2409e4',
+    'src/kicad_route/kicad/decoupling.py': '498624e3f38485519865bb871a01e3f62fc3a41c9bde80d2966ae3c05f7e88b5',
+    'src/kicad_route/kicad/facts.py': 'cbc90a12bfbbfcb5f9ff4637396992faff128a35a9d13ff494184a5d6e57b316',
     'src/kicad_route/kicad/locks.py': '5b15d4ddfbec9b7e32a841a16f9c1dd383b043c240a293251737e9cba218800a',
     'src/kicad_route/kicad/pour.py': 'a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14',
     'src/kicad_route/kicad/rename_nets.py': 'a51c1767c0ce1d0edf180700a026d695678228d56ece4bab688d9bfd3d23d2a8',
-    'src/kicad_route/kicad/specctra.py': 'b68be1788cb67f1e1dd4c2afb538e7af8b2cff00642ab503d83dfc90bf3f27cb',
-    'src/kicad_route/kicad/spokes.py': 'b1bff0c45cea66a4111c3159e7d76b40891a22a525218609502ce2c556eb9a91',
-    'src/kicad_route/ledger.py': '0181fd38986c09125656b187373f72b6f7d6f07d4d6bc4d30d75023e20b08a65',
-    'src/kicad_route/netnames.py': '17647bd81aa65090e4b903fb0918683818bbc0e3261a8d7c5e3f457a8b5facaa',
-    'src/kicad_route/pour.py': '972f3baa588bf7d53d784dd5c70afa5a87c50c21e2e117e58ad948ac1134b0bd',
+    'src/kicad_route/kicad/specctra.py': '0cd5031726ab48c7b3c2bf1dd3978837574d7452d7a79dda154123acb1aeb9d1',
+    'src/kicad_route/kicad/spokes.py': 'c419ea1123a6de2588358aa58d0dfaabd4d5f55d50d559023ce48d2271f12bd9',
+    'src/kicad_route/ledger.py': '37f140a1b6ccbf6c6ffa6724ea8acdf97e404eabd5ddb8c8c264a19cc1e6f752',
+    'src/kicad_route/netnames.py': '731bcf61a909ef2720fd90b074f6cfb991a1c6ea6bea7fecf5ba3cb7fc47304f',
+    'src/kicad_route/pour.py': '630b957fddeab33d108d634fb0f229f3c1471f80953e971effad27ca33beb2e9',
+    'src/kicad_route/procgroup.py': 'd843c9b334874d0334c5ea0e9a58d83d22581648e915d40f13a6d8c8b595a3d5',
     'src/kicad_route/provenance.py': 'cf82fd9940086584a8056787ae0ca4fd58ced78ed5737f85b4e5713501add49f',
+    'src/kicad_route/sandbox.py': 'dbdf52f09fa83f336d326bb0504624b94861d9195c1a7d817aa2f41fbe562b07',
     'src/kicad_route/skills.py': '2768f342c5389fe7e760b743584f726aac6e723d795d019125548405fc896363',
-    'src/kicad_route/snapshot.py': '1c685b8eec4f8df424138bf97c5ea6bb6249dbf33445655ee608280b05c71e23',
-    'src/kicad_route/spokes.py': 'a272ef12f8b97deee8f01c11933d18456c8a737076d78f6d6c8a224ba909859a',
+    'src/kicad_route/snapshot.py': '7c51203f4a439cc99a575e6bc5433f3ab78dda7735dcd03c940f6169fe7fb9a4',
+    'src/kicad_route/spokes.py': 'fc5b3f90c31cbcc9a9944628bfe6b9bc93dc31de21c893f8e476160f21033506',
     'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
+    'src/kicad_route/statemanifest.py': '55a0557ae0115967fbf6eb15c3bbc63c4c0d0fa9cac3de9c7d7c8725c1119a1a',
 }
+RESULT_SCHEMA = 'kicad-route/route/1'
+
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
 # Every report has exactly these keys, whatever the outcome.
 REPORT_KEYS = {'schema', 'adapter', 'request', 'reproducibility', 'tool_version', 'backend', 'process',
@@ -79,12 +90,13 @@ SAFE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 STAMP = re.compile(r'\d{8}T\d{6}\.\d{6}Z\Z')
 # Every top-level result.json/attempt.json key cli.run_attempt writes at PIN
 # (protect=existing). Any other shape is an incompatible tool.
-RESULT_KEYS = {'kind', 'backend', 'input', 'settings', 'scope', 'unsupported', 'floor', 'process',
+RESULT_KEYS = {'schema', 'measurement', 'evidence', 'tool_identity', 'sandbox', 'kind', 'backend',
+               'input', 'settings', 'scope', 'unsupported', 'floor', 'process',
                'routing', 'validation', 'candidate', 'run_dir', 'runtime_s', 'tool_versions',
                'finished_utc', 'exit_code', 'ledger'}
 ATTEMPT_KEYS = {'backend', 'project', 'board', 'schematic', 'input_fingerprint', 'source',
                 'reference_dir', 'candidate_dir', 'reference_facts', 'baseline', 'scope',
-                'settings', 'floor'}
+                'settings', 'floor', 'rules_files'}
 PROCESS = ('PASS', 'FAIL')
 ROUTING = ('COMPLETE', 'INCOMPLETE', 'NOT_RUN')
 VALIDATION = ('PASS', 'FAIL', 'NOT_RUN')
@@ -276,8 +288,8 @@ def default_layout(request):
 def tool_argv(request, layout):
     routing = Path(layout['work']) / 'routing'
     return [PYTHON, '-B', '-X', f'pycache_prefix={routing / "pycache"}',
-            str(Path(layout['checkout']) / 'bin' / 'kicad-route'), '--out', str(routing / 'out'),
-            'run', '--backend', request['backend'],
+            str(Path(layout['checkout']) / 'bin' / 'kicad-route'), 'run',
+            '--out', str(routing / 'out'), '--json', '--backend', request['backend'],
             '--dir', str(Path(layout['candidate']) / request['project']),
             '--board', request['board'], '--schematic', request['schematic'],
             '--name', request['name'], '--label', request['label'],
@@ -300,7 +312,7 @@ def expected_settings(request, rule_floor):
     return {'backend': request['backend'], 'budget_s': request['budget_s'], 'protect': 'existing',
             'max_iterations': None, 'passes': None, 'default_clearance_mm': None,
             'clearance_margin_mm': None, 'pour_area_loss_pct': None, 'pour_min_spokes': None,
-            'backend_args': [], 'backend_env': {}, 'reserve_spokes': None, 'stall_s': None,
+            'backend_args': [], 'backend_env': {}, 'reserve_spokes': None, 'barrier': None, 'stall_s': None,
             'mode': 'all', 'rule_floor_sha256': rule_floor}
 
 
@@ -353,6 +365,28 @@ def recomputed_exit(result):
     return 0
 
 
+def validated_candidate(validation, sha):
+    """Bind the post-refill candidate to DRC while recording the pre-refill hash."""
+    delivered = validation.get('delivered_board_sha256')
+    return (isinstance(delivered, str) and re.fullmatch(r'[0-9a-f]{64}', delivered) is not None and
+            validation.get('candidate_board_sha256') == sha and
+            validation.get('validated_board_sha256') == sha and
+            validation.get('refill_modified_board') is (delivered != sha))
+
+
+def refused_output(stdout):
+    """Only a known machine refusal can classify exit 4 as a refusal."""
+    try:
+        record = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False
+    return (isinstance(record, dict) and record.get('schema') == 'kicad-route/refusal/1' and
+            record.get('kind') == 'refusal' and _is_int(record.get('exit_code')) and
+            record['exit_code'] == 4 and record.get('command') == 'run' and
+            record.get('reason_class') in ('usage', 'input', 'ledger', 'canary', 'state') and
+            isinstance(record.get('message'), str) and bool(record['message']))
+
+
 def semantics(exit_code, result, attempt, refused_line, discovered, request):
     """Classify one finished attempt from its observed exit and reports alone.
 
@@ -373,6 +407,8 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', [f'exit {exit_code} without result.json']
     if exit_code == 4:
         return 'contradiction', ['refusal exit with a result.json']
+    if isinstance(result, dict) and result.get('schema') != RESULT_SCHEMA:
+        return 'contradiction', ['unknown result schema version']
     if not isinstance(result, dict) or set(result) != RESULT_KEYS:
         return 'contradiction', ['result.json shape differs from the pinned tool']
     if result['kind'] != 'route' or not _is_int(result['exit_code']) or result['exit_code'] != exit_code:
@@ -550,8 +586,7 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
         problems.append('input fingerprint differs from the reference snapshot')
     sha = cand_files.get(request['board'])
     validation = result['validation']
-    if (sha is None or validation.get('delivered_board_sha256') != sha or
-            validation.get('validated_board_sha256') != sha or validation.get('restored_project_files') != []):
+    if sha is None or not validated_candidate(validation, sha) or validation.get('restored_project_files') != []:
         problems.append('candidate board is not the board the router validated')
     return problems, sha, report_state, inventory
 
@@ -740,7 +775,7 @@ def attempt(request, layout, cancel=None):
     attempt_record = load_json(routing / 'attempt/attempt.json', load, 'attempt.json') if 'attempt.json' in retained else None
     report['backend'] = backend_of(result)
     stdout = (routing / 'kicad-route.stdout').read_bytes().decode('utf-8', 'replace')
-    refused_line = any(line.startswith('[route] refused: ') for line in stdout.splitlines())
+    refused_line = refused_output(stdout)
     process = report['process']
     if process['cancelled']:
         classification, reasons = 'cancelled', ['attempt cancelled; the router process group was killed']

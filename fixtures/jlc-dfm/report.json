@@ -1,0 +1,11 @@
+{
+  "schema": "agent-ee.jlc-dfm-report/1",
+  "supplier": "JLCPCB",
+  "gerber_zip_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "source": {
+    "path": "dfm/saved-report.txt",
+    "sha256": "e99f731c7facc9ed440bdcaa4d0868583a7bfcd5332dc8e90c516b3d21af5c51"
+  },
+  "status": "complete",
+  "findings": []
+}

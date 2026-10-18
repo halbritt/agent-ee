@@ -85,12 +85,9 @@ def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs
         receipts.append({'stage': f'{number}-{name}', 'path': rel(path, rundir), 'sha256': digest(path)})
     params = state['params']
     parts = read_json(state['parts'])
-    libraries, captured = [], {}
-    for library in g.SYMBOL_LIBRARIES:
-        raw = (g.STOCK / 'symbols' / f'{library}.kicad_sym').read_bytes()
-        libraries.append({'name': library, 'path': f'{library}.kicad_sym', 'sha256': g.sha256_bytes(raw)})
-        captured[f'{library}.kicad_sym'] = raw
-    intent = g.connectivity_intent(params, parts['parts'], libraries)
+    intent = g.connectivity_intent(params, parts['parts'], [])
+    libraries, captured, symbol_captures = g.capture_intent_libraries(intent)
+    intent['libraries'] = libraries
     resolved = resolve_intent(intent, captured)
     try:
         validate_resolved(resolved)
@@ -102,7 +99,8 @@ def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs
             'requirements': prep / 'requirements', 'intent': intent,
             'resolved_bytes': canonical_resolved(resolved) + b'\n', 'resolved': resolved,
             'envelope': g.envelope(params), 'request': request, 'prep_receipts': receipts,
-            'catalog': parts['catalog'], 'cpl_inputs': state.get('cpl_inputs')}
+            'catalog': parts['catalog'], 'cpl_inputs': state.get('cpl_inputs'),
+            'symbol_libraries': captured, 'symbol_captures': symbol_captures}
 
 
 def rel(path, root):
@@ -258,6 +256,11 @@ def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DI
     if prep.get('cpl_inputs'):
         shutil.copytree(prep['cpl_inputs'], generation / 'cpl')
     write_json(generation / 'intent.json', prep['intent'])
+    write_json(generation / 'symbol-captures.json', prep['symbol_captures'])
+    for path, data in prep['symbol_libraries'].items():
+        target = generation / 'symbols' / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
     (generation / 'resolved.json').write_bytes(prep['resolved_bytes'])
     shutil.copyfile(prep['parts_path'], generation / 'parts-manifest.json')
     catalog = prep['parts_path'].parent / 'catalog'
@@ -377,6 +380,8 @@ def compile_staged_scope(params, scope_dir, scaffold):
             item = {'path': os.path.relpath(scaffold / 'project', base), 'at': 'project'}
         elif item['at'] == 'requirements':
             item = {'path': os.path.relpath(scaffold / 'requirements', base), 'at': 'requirements'}
+        elif item['at'] == 'stock/symbols':
+            item = {'path': os.path.relpath(scaffold / 'generation/symbols', base), 'at': 'stock/symbols'}
         inputs.append(item)
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs

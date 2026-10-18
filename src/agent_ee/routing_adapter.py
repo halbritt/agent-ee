@@ -332,7 +332,7 @@ def _verify(run, report, inputs, receipt, layout):
             if process['timed_out'] or process['cancelled']:
                 raise ValueError(f'a {classification} attempt was timed out or cancelled')
             stdout = (routing / 'kicad-route.stdout').read_bytes().decode('utf-8', 'replace')
-            refused = any(line.startswith('[route] refused: ') for line in stdout.splitlines())
+            refused = attempt.refused_output(stdout)
             derived, _ = attempt.semantics(process['exit_code'], result, record, refused, found is not None,
                                            request)
             # A contradiction may sit over reports that alone classify otherwise, because some
@@ -399,7 +399,7 @@ def _bind(routing, retained, report, request, layout, result, record):
     if report['missing_artifacts']:
         raise ValueError(f'eligible attempt lacks {", ".join(report["missing_artifacts"])}')
     validation = result['validation']
-    if validation.get('delivered_board_sha256') != sha or validation.get('validated_board_sha256') != sha:
+    if not attempt.validated_candidate(validation, sha):
         raise ValueError('routed candidate is not the board the router validated')
     if validation.get('restored_project_files') != []:
         raise ValueError('the router restored project files of an eligible attempt')

@@ -69,6 +69,101 @@ class NativePlacerTest(unittest.TestCase):
         self.assertNotEqual(new['C1']['position_nm'], old['C1']['position_nm'])
         self.assertEqual(self.source.read_bytes(), self.saved)
 
+    def owned_keepout_source(self):
+        import pcbnew as k
+        board = k.LoadBoard(str(self.source))
+        owner = next(fp for fp in board.GetFootprints() if fp.GetReference() == 'U1')
+        zone = k.ZONE(owner)
+        zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowFootprints(True)
+        zone.SetDoNotAllowTracks(False)
+        zone.SetDoNotAllowVias(False)
+        zone.SetDoNotAllowPads(False)
+        layers = k.LSET()
+        layers.AddLayer(k.F_Cu)
+        layers.AddLayer(k.B_Cu)
+        zone.SetLayerSet(layers)
+        zone.Outline().NewOutline()
+        for x, y in ((2, 2), (8, 2), (8, 4), (4, 4), (4, 6), (2, 6)):
+            zone.Outline().Append(x*1_000_000, y*1_000_000)
+        owner.Add(zone)
+        k.SaveBoard(str(self.source), board)
+        return self.source.read_bytes()
+
+    def test_owned_keepout_native_drc_probe(self):
+        import json
+        import subprocess
+        from agent_ee.executor import execute
+        from agent_ee.placement import intersection_area, qualified_polygons
+        from agent_ee.placement_probe import extract
+        saved = self.owned_keepout_source()
+        source_facts = extract(self.source)
+        ids = {fp['ref']: fp['uuid'] for fp in source_facts['footprints']}
+        drc = self.root / 'before-drc.json'
+        run = subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+                              '--output', str(drc), str(self.source)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        hits = {i['uuid'] for v in json.loads(drc.read_text())['violations']
+                if v['type'] == 'items_not_allowed' for i in v['items']}
+        self.assertIn(ids['C1'], hits)  # Native positive control: the peer is inside.
+        self.assertNotIn(ids['U1'], hits)  # The owner overlaps its own rule area legally.
+        # Run the actual writer, probe and native DRC in the networkless sandbox.
+        inputs = self.root / 'keepout-inputs'
+        inputs.mkdir()
+        (inputs / 'board.kicad_pcb').write_bytes(saved)
+        (inputs / 'netlist.xml').write_bytes(self.netlist.read_bytes())
+        for fixed in (True, False):
+            config = {'policy': request(fixed_refs=['U1'] if fixed else [], priority_refs=['U1'],
+                                        step_budget=100000),
+                      'authorization': {**self.config['authorization'], 'writable_root': '/work',
+                                        'source_sha256': hashlib.sha256(saved).hexdigest()}}
+            (inputs / 'request.json').write_text(json.dumps(config))
+            work = self.root / ('keepout-fixed' if fixed else 'keepout-moving')
+            execution = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placer_runner',
+                '/candidate/board.kicad_pcb', '/candidate/netlist.xml', '--request', '/candidate/request.json',
+                '--destination', '/work/proposal', '--result', '/work/result.json'], timeout=120)
+            self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
+            result = json.loads((work / 'result.json').read_text())
+            self.assertEqual((result['status'], result['write_scope']['status']), ('placed', 'allowed'))
+            after = json.loads((work / 'proposal/placement-probe.json').read_text())
+            area, = after['rule_areas']
+            polygon, = qualified_polygons(area['outline'])
+            peer = next(f for f in after['footprints'] if f['ref'] == 'C1')
+            courtyard, = qualified_polygons(peer['courtyards']['F'])
+            self.assertEqual(intersection_area(polygon, courtyard), 0)
+            native = json.loads((work / 'proposal/native-drc.json').read_text())
+            self.assertFalse(any(v['type'] == 'items_not_allowed' for v in native['violations']), native)
+            if not fixed:
+                self.assertIn('U1', [t['reference'] for t in result['write_scope']['transforms']])
+        self.assertEqual(self.source.read_bytes(), saved)
+
+    def test_saved_owned_zone_edit_is_retained_and_never_published(self):
+        import json
+        import pcbnew as k
+        from unittest.mock import patch
+        from agent_ee import placer_runner as runner
+        saved = self.owned_keepout_source()
+        self.config['authorization']['source_sha256'] = hashlib.sha256(saved).hexdigest()
+        apply_plan = runner._apply_plan
+        def clear_rule(board, plan, output):
+            apply_plan(board, plan, output)
+            changed = k.LoadBoard(str(output))
+            owner = next(fp for fp in changed.GetFootprints() if fp.GetReference() == 'U1')
+            next(iter(owner.Zones())).SetDoNotAllowFootprints(False)
+            k.SaveBoard(str(output), changed)
+        destination = self.scratch / 'illegal-zone-save'
+        with patch.object(runner, '_apply_plan', clear_rule):
+            with self.assertRaisesRegex(ValueError, 'exceeded write scope'):
+                place_candidate(self.source, self.netlist, destination, self.config)
+        self.assertFalse(destination.exists())
+        retained, = self.scratch.glob('illegal-zone-save-failure-*')
+        proof = json.loads((retained / 'placement-write-scope.json').read_text())
+        self.assertEqual(proof['status'], 'refused')
+        self.assertIn('zone', ' '.join(proof['violations']))
+        failure = json.loads((retained / 'failure.json').read_text())
+        self.assertEqual((failure['execution'], failure['outcome']), ('failed', 'unknown'))
+        self.assertEqual(self.source.read_bytes(), saved)
+
     def test_refuses_unauthorized_or_existing_destination_and_wrong_netlist(self):
         import copy
         destination = self.scratch / 'proposal'

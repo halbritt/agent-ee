@@ -199,7 +199,7 @@ def _box(points):
 class _Symbol:
     """One placed instance: identity, properties and (when proven) sheet geometry."""
 
-    def __init__(self, node, sheet, embedded, natives, graph, rules):
+    def __init__(self, node, sheet, embedded, rules):
         self.uuid = _uuid(node)
         self.lib_id = field(node, 'lib_id', 1)[0]
         self.props = _properties(node)
@@ -207,6 +207,9 @@ class _Symbol:
         self.sheet = sheet
         self.gaps = []
         self.pins, self.body, self.power, self.lib_reference, self.native = [], None, False, None, None
+        self.pinless, self.resolved = False, False
+        self.inst_pins = {p[1] for p in children(node, 'pin') if len(p) > 1 and isinstance(p[1], str)}
+        self.lib_pins, self.unit_pins, self.declared_pins = set(), set(self.inst_pins), set(self.inst_pins)
         (self.x, self.y), angle = _xy(node)
         self.unit = int(field(node, 'unit', 1)[0]) if children(node, 'unit') else 1
         try:
@@ -222,6 +225,8 @@ class _Symbol:
         except (LibraryError, ValueError, KeyError) as exc:
             self.gap(LIB_RULES, str(exc), rules)
             return
+        self.resolved = True
+        self.lib_pins = {p['number'] for p in pins}
         units = [u for src in sources for u in children(embedded[src['symbol']], 'symbol')]
         lib_props = {}
         for src in sources:
@@ -244,6 +249,8 @@ class _Symbol:
             point = (self.x + dx, self.y + dy)
             self.pins.append(dict(number=pin['number'], name=pin['name'], point=point, hidden=hidden,
                                   inner=(point[0] + ix, point[1] + iy), net=None))
+        self.unit_pins = {p['number'] for p in self.pins} | self.inst_pins
+        self.declared_pins = self.lib_pins | self.unit_pins
         body_units = [[u[0], u[1], *[g for g in u[2:] if not (isinstance(g, list) and g[:1] == ['pin'])]]
                       for u in units]
         bounds = _bounds(body_units, [], self.unit)
@@ -257,14 +264,21 @@ class _Symbol:
             # A power symbol is not a netlist component; its pins carry its Value net.
             for pin in self.pins:
                 pin['net'] = self.props.get('Value', ('', False))[0]
+
+    def bind(self, natives, graph, rules):
+        if self.power or not self.resolved:
             return
         if graph is None:
+            self.pinless = not self.declared_pins
             return  # The design-level inventory gap already covers every net rule.
-        ref = natives.get((sheet['path'], self.uuid))
+        ref = natives.get((self.sheet['path'], self.uuid))
         if ref is None:
             self.gap(NET_RULES, 'no native netlist component for this sheet instance', rules)
             return
         self.native = ref
+        if not self.declared_pins:
+            self.pinless = True
+            return
         for pin in self.pins:
             nid = graph['memberships'].get((ref, pin['number']))
             pin['net'] = graph['nets'][nid]['name'] if nid is not None else None
@@ -287,7 +301,7 @@ class _Symbol:
                                   lib_id=self.lib_id, reason=reason, rules=affected))
 
     def proven(self, rule):
-        if rule in NET_RULES and not self.power and self.native is None:
+        if rule in NET_RULES and (self.pinless or (not self.power and self.native is None)):
             return False
         return not any(rule in g['rules'] for g in self.gaps)
 
@@ -354,15 +368,7 @@ class _Lint:
         self.power, self.ground = set(lint_profile['power_nets']), set(lint_profile['ground_nets'])
         self.classes = {k: v for k, v in lint_profile['symbols'].items()}
         self.natives = {}
-        if graph is None:
-            affected = sorted(NATIVE_RULES & set(self.rules))
-            if affected:
-                self.coverage.append(dict(sheet='/', sheet_path='/', file=sheets[0]['file'], rules=affected,
-                                          reason=f'native netlist inventory unusable: {inventory_error}'))
-        else:
-            for ref, comp in graph['components'].items():
-                for uid in comp['uuid'].split():
-                    self.natives[(comp['sheet'], uid)] = ref
+        self.pinless = []
         self.sheets = []
         for sheet in sheets:
             tree = sheet['tree']
@@ -372,9 +378,7 @@ class _Lint:
                     if len(node) < 2 or not isinstance(node[1], str) or node[1] in embedded:
                         raise LibraryError(f"{sheet['file']}: invalid or duplicate embedded symbol")
                     embedded[node[1]] = node
-            symbols = [_Symbol(n, sheet, embedded, self.natives, graph, self.rules) for n in children(tree, 'symbol')]
-            for sym in symbols:
-                self.coverage.extend(sym.gaps)
+            symbols = [_Symbol(n, sheet, embedded, self.rules) for n in children(tree, 'symbol')]
             wires = []
             for node in children(tree, 'wire'):
                 pts = children(node, 'pts')
@@ -398,6 +402,52 @@ class _Lint:
                                     junctions=[dict(uuid=_uuid(n), at=_xy(n)[0]) for n in children(tree, 'junction')],
                                     no_connects=[dict(uuid=_uuid(n), at=_xy(n)[0]) for n in children(tree, 'no_connect')],
                                     title=children(tree, 'title_block')))
+        if graph is not None:
+            try:
+                for ref, comp in graph['components'].items():
+                    for uid in comp['uuid'].split():
+                        self.natives[(comp['sheet'], uid)] = ref
+                verified_pinless, unresolved_refs = set(), set()
+                for model in self.sheets:
+                    for sym in model['symbols']:
+                        if sym.power:
+                            continue
+                        ref = self.natives.get((sym.sheet['path'], sym.uuid))
+                        if ref is None:
+                            continue
+                        comp = graph['components'][ref]
+                        if sym.declared_pins:
+                            if not comp['pins'] or not comp['library_pins'] or \
+                                    not sym.unit_pins <= set(comp['pins']) or \
+                                    not sym.lib_pins <= set(comp['library_pins']):
+                                raise ValueError(f'missing native pins for {ref} ({sym.lib_id})')
+                        elif sym.resolved:
+                            if comp['pins'] or comp['library_pins']:
+                                raise ValueError(f'unexpected native pins for pinless {ref} ({sym.lib_id})')
+                            verified_pinless.add(ref)
+                        else:
+                            unresolved_refs.add(ref)
+                for ref, comp in graph['components'].items():
+                    if (not comp['pins'] or not comp['library_pins']) and (
+                            ref not in verified_pinless or ref in unresolved_refs):
+                        raise ValueError(f'unqualified pinless native component {ref}')
+            except ValueError as exc:
+                self.natives = {}
+                graph, inventory_error = None, str(exc)
+                self.graph = None
+        if graph is None:
+            affected = sorted(NATIVE_RULES & set(self.rules))
+            if affected:
+                self.coverage.append(dict(sheet='/', sheet_path='/', file=sheets[0]['file'], rules=affected,
+                                          reason=f'native netlist inventory unusable: {inventory_error}'))
+        pinless = set()
+        for model in self.sheets:
+            for sym in model['symbols']:
+                sym.bind(self.natives, graph, self.rules)
+                if sym.pinless:
+                    pinless.add(sym.native or sym.reference)
+                self.coverage.extend(sym.gaps)
+        self.pinless = sorted(pinless)
 
     def emit(self, rule, sheet, items, message, action, at=None):
         finding = dict(rule=rule, severity=self.rules[rule], sheet=sheet['names'], sheet_path=sheet['path'],
@@ -777,10 +827,12 @@ class _Lint:
 def lint(sheets, graph, lint_profile, inventory_error=None):
     """Pure evaluation; returns findings, coverage gaps and the outcome.
 
-    ``graph`` is the strict native inventory, or None when it was refused
-    (``inventory_error``); every net-dependent rule is then missing coverage.
+    ``graph`` is the native inventory (or None when refused via
+    ``inventory_error``); if any symbol declaring pins lacks native pins, the
+    inventory is refused and every net-dependent rule becomes missing coverage.
     """
-    findings, coverage = _Lint(sheets, graph, lint_profile, inventory_error).run()
+    runner = _Lint(sheets, graph, lint_profile, inventory_error)
+    findings, coverage = runner.run()
     if any(f['severity'] == 'defect' for f in findings):
         outcome = 'defect'
     elif coverage:
@@ -791,6 +843,8 @@ def lint(sheets, graph, lint_profile, inventory_error=None):
     for finding in findings:
         counts[finding['rule']] = counts.get(finding['rule'], 0) + 1
     return dict(outcome=outcome, findings=findings, coverage=coverage, counts=dict(sorted(counts.items())),
+                pinless_components=runner.pinless, out_of_scope=dict(net_rules=runner.pinless),
+                native_inventory='refused' if runner.graph is None else 'complete',
                 sheets=[dict(path=s['path'], names=s['names'], file=s['file'], sha256=s['sha256']) for s in sheets])
 
 
@@ -819,10 +873,11 @@ def check_schematic_lint(ctx):
         raise CheckError('failed', str(exc)) from exc
     graph, inventory_error = None, None
     try:
-        # KiCad still exports a netlist around an unresolved symbol (no component,
-        # invented pin nets); the strict reader refuses it. Geometry and naming
-        # rules still run; every net rule becomes missing coverage.
-        graph = read_native_inventory(xml)
+        # Pinless symbols (mounting holes, fiducials, logos) have no <pins> in the
+        # native XML; read_native_inventory(..., pinless=True) admits them, while
+        # _Lint qualifies every component against the sheet's declared pins and
+        # refuses any symbol whose declared pins are missing from the XML.
+        graph = read_native_inventory(xml, pinless=True)
         if len(graph['sheets']) != producer['details']['sheet_instances']:
             raise ValueError('native XML hierarchy differs from producer coverage')
     except (Unsupported, OSError, ValueError, TypeError, KeyError, ParseError) as exc:
@@ -836,8 +891,7 @@ def check_schematic_lint(ctx):
     except (LibraryError, ValueError, TypeError, KeyError, IndexError) as exc:
         raise CheckError('malformed', f'schematic lint input unusable: {exc}') from exc
     report.update(schema=SCHEMA, candidate_id=ctx.manifest['candidate_id'], netlist_check=prior['id'],
-                  native_xml_sha256=digest(xml), native_inventory='refused' if graph is None else 'complete',
-                  profile=descriptor['profile'])
+                  native_xml_sha256=digest(xml), profile=descriptor['profile'])
     write_json(ctx.work / 'lint.json', report)
     ctx.evidence('lint.json')
     ctx.result['details'].update(report)

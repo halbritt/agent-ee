@@ -189,3 +189,8 @@ seal, check transplantation and tool-artifact mutations refuse verification or
 witness use. Source-aware verification refuses original-source drift; snapshot
 verification (`current_source=False` in the Python API) checks retained bytes
 independently. These controls do not establish engineering approval.
+
+[Pin electrical contracts](pin-contracts.md) consume verified facts separately
+from `pin_map`. They bind physical-pin voltage and connection/presence obligations
+to the existing owned parts manifest. A rejected citation leaves its affected
+obligations unknown; the fact checker itself gains no electrical predicate.

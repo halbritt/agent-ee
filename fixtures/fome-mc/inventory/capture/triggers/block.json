@@ -156,7 +156,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "3fab994d66ceff393c46b50060c09fc50ae6633a42f6cb302e8a3235436c4fd4",
+    "block-contract.json": "a87e33530e45cbabeed5cc80b9ffa7d8aa18ee5a3daff3a6874172fe53154d87",
     "connectivity.json": "e342e44dbf50d5ca44f21fefa8caba70fd52efa722d7b1a95c5bfcacce7c6357",
     "interface.json": "d0361f810904c41fb943c95b125168f091084ecc318f3997634931aa8fdecfa2",
     "parts.json": "57bcd3b6016db2c47bbb76b97b103099e29db07d8e40f0cebd2145ff37e4ce68",
@@ -373,11 +373,13 @@
   "sheet": "sheets/triggers.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus triggers at b3176cb",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus triggers at b3176cb (T8, T4, T6)",
     "paths": {
       "sheets/triggers.kicad_sch": "sheets/triggers.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus triggers at b3176cb (T8, T4, T6)"
   },
   "version": "draft-df304f332129"
 }

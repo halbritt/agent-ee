@@ -966,6 +966,7 @@ from .measurements import check_measurements, check_coupled_margins
 from .datasheet_facts import check_datasheet_facts, check_pin_map
 from .active_spice import check_active_spice
 from .kicad_happy import check_kicad_happy
+from .happy_severity_gate import check_severity_gate
 from .hardware_interface import check_hardware_interface
 from .passive_corners import check_passive_corners
 from .netlist_parity import check_netlist_parity
@@ -980,6 +981,7 @@ from .netlist_extra import check_netlist_extra
 from .net_names import check_net_names
 from .design_diff import check_regeneration_determinism
 from .design_rules import check_design_rules
+from .interval_assertions import check_interval_assertions
 from .placement_check import check_placement
 from .envelope_check import check_board_envelope
 from .assembly_readiness import check_assembly_readiness
@@ -1001,14 +1003,16 @@ from .fab_consistency import check_fab_consistency
 from .cpl_rotation import check_cpl_rotation
 from .jlc_cost import check_jlc_cost_estimate
 from .fab_package import check_fab_package
+from .jlc_dfm import check_jlc_dfm
 
 from .fab_roundtrip import check_fab_roundtrip
 
 from .schematic_lint import check_schematic_lint
+from .pin_contracts import check_pin_contracts
 from .block_adaptation import check_block_provenance
 
-CHECK_FUNCS = {"design_rules": check_design_rules, 'jlc_cost_estimate': check_jlc_cost_estimate, "regeneration_determinism": check_regeneration_determinism, "routing_equivalence": check_routing_equivalence, "net_names": check_net_names, 'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
-               "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
+CHECK_FUNCS = {'jlc_dfm': check_jlc_dfm, "design_rules": check_design_rules, 'jlc_cost_estimate': check_jlc_cost_estimate, "regeneration_determinism": check_regeneration_determinism, "interval_assertions": check_interval_assertions, "routing_equivalence": check_routing_equivalence, "net_names": check_net_names, 'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "kicad_happy_severity_gate": check_severity_gate, "hardware_interface": check_hardware_interface,
+               "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map, "pin_contracts": check_pin_contracts,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,
                "drc": check_drc, "netlist": check_netlist,
@@ -1022,7 +1026,7 @@ CHECK_FUNCS = {"design_rules": check_design_rules, 'jlc_cost_estimate': check_jl
 
 # ------------------------------------------------------------------ entry point
 
-def run_checks(run_dir, deadline):
+def run_checks(run_dir, deadline, *, fab_context=None):
     """Run every scope check; write checks/<id>.json immediately; return results."""
     run_dir = Path(run_dir)
     manifest = read_json(run_dir / "candidate.json")
@@ -1042,6 +1046,7 @@ def run_checks(run_dir, deadline):
             continue
         seen.add(cid)
         ctx = Ctx(run_dir, manifest, spec, deadline)
+        ctx.fab_context = fab_context
         func = CHECK_FUNCS.get(spec.get("kind"))
         try:
             if ctx.remaining() < MIN_CHECK_SECONDS:
@@ -1050,6 +1055,8 @@ def run_checks(run_dir, deadline):
                 raise CheckError("unsupported", f"unknown check kind {spec.get('kind')!r}")
             from .stages import before_check
             if before_check(ctx, results):
+                from .fab_stage import before_fab_check
+                before_fab_check(ctx)
                 func(ctx)
             from .stages import validate_gate_findings
             try:

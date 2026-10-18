@@ -185,6 +185,10 @@ class ReferenceBlockTests(unittest.TestCase):
             ('unsafe path', lambda r: r['files'].update({'../escape': '0'*64})),
             ('missing source path', lambda r: r['source'].update(paths={})),
             ('copied status', lambda r: r.update(runs=[dict(status='verified')])),
+            ('unpaired upstream origin', lambda r: r['source'].update(upstream_origin='T6: upstream')),
+            ('unpaired upstream license', lambda r: r['source'].update(upstream_license='GPL-3.0')),
+            ('empty upstream origin', lambda r: r['source'].update(upstream_origin='', upstream_license='GPL-3.0')),
+            ('empty upstream license', lambda r: r['source'].update(upstream_origin='T6: upstream', upstream_license='')),
         ]
         for name, mutate in cases:
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
@@ -196,6 +200,14 @@ class ReferenceBlockTests(unittest.TestCase):
                 (root / 'block.json').write_text(json.dumps(record))
                 with self.assertRaises(ValueError):
                     validate_block(root)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record = block(root)
+            record['source'].update(upstream_origin='T6: upstream sheet', upstream_license='CERN-OHL-S v2 / GPL-3.0')
+            write_json(root / 'block-contract.json', block_contract(record))
+            record['files']['block-contract.json'] = digest(root / 'block-contract.json')
+            write_json(root / 'block.json', record)
+            self.assertEqual(validate_block(root)['status'], 'unverified')
         for attack in ('changed sheet', 'extra file', 'symlink', 'wrong parts', 'nested metadata'):
             with self.subTest(attack=attack), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -424,9 +436,9 @@ class NativeReferenceBlockTests(unittest.TestCase):
             packet = read_json(Path(run) / 'packet.json')
             identity = {k: packet[k] for k in ('candidate_id', 'run_id')}
             if label == 'adjudicator':
-                return dict(execution='ok'), dict(schema='agent-ee.decisions/1', **identity, decisions=[])
+                return dict(execution='ok'), dict(schema='agent-ee.decisions/2', **identity, decisions=[])
             self.assertNotIn('"initial_reviews"', prompt)
-            return dict(execution='ok'), dict(schema='agent-ee.review/1', **identity,
+            return dict(execution='ok'), dict(schema='agent-ee.review/2', **identity,
                 packet_sha256=packet['packet_sha256'], role=label, coverage=['Owned fixture'],
                 limitations=['Scripted transport, no model inference'], findings=[])
         runtime = runtime_files()

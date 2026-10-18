@@ -30,6 +30,9 @@ and incomplete interface stubs for later capture. Its lint outcome covers only
 the declared lexical checks; executable checks must supply acceptance evidence.
 The [requirement-record compiler](requirement-scope.md) maps quoted spec
 requirements to the check specifications on this page; it adds no check kind.
+[Spec capture](spec-record.md) records a markdown spec's table rows, bullets and
+numbered items as requirement IDs with byte-exact locators; it adds no check
+kind either.
 Offline [decision capture](design-dialog.md) also prepares requirements without
 adding a check kind. Answers that exceed the JSON decoder's recursion limit
 produce `outcome: unknown` and an `answers_too_deep` finding, retain the raw
@@ -47,7 +50,9 @@ output is never schema-resubmitted. Campaigns may resubmit only model records
 under the [bounded output rule](campaign-guide.md#bounded-output-resubmission).
 Adjudicator citations may reference the verified immutable `baseline.json` for
 context, but accepted defects still require their sealed failed-check citation.
-See [response and citation rules](result-reference.md).
+New reviewer and adjudicator `/2` citations require a resolvable JSON `pointer`,
+text `lines` range or XML `xpath`; descriptive locators in retained `/1` records
+keep their compatibility rule. See [response and citation rules](result-reference.md#structured-citations).
 
 Opt-in [staged scopes](staged-campaign.md) first check declared native content.
 A successful native probe that confirms missing expected symbols, footprints or
@@ -95,6 +100,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
 | `regeneration_determinism` | Coordinator compares two captured boards, schematics, netlists or JSON probe outputs after removing IDs; no additional tool launched ([details](design-diff.md)) | Enclosing run deadline |
 | `design_rules` | Coordinator grades the enforced cards of a captured rule pack against the earlier native netlist, owner role bindings and verified datasheet facts; no additional tool launched ([details](design-rules.md)) | Enclosing run deadline |
+| `interval_assertions` | `/usr/bin/python3 -m agent_ee.interval_assertions /candidate DOCUMENT --snapshot SNAPSHOT --manifest-sha256 MANIFEST_SHA256 [--parts-manifest PARTS] --out /work/intervals.json`; exact rational worst-case evaluation of declared relations over pinned catalog and requirement intervals ([details](interval-assertions.md)) | 300 s |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_equivalence` | `/usr/bin/python3 -m agent_ee.routing_equivalence`; native saved copper comparison | 300 s |
@@ -111,7 +117,8 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD, and `sch export bom --variant NAME` on the schematic only with a declared `bom_variant`; see [fab export](fab-export.md) | 600 s per step |
-| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
+| `jlc_dfm` | Networkless Python parser over owner-captured source report and normalization; binds the declared zip SHA-256 to an earlier sealed package, then grades errors ([details](jlc-dfm.md)) | 60 s |
+| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; followed only by bound `jlc_dfm` checks ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 | `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
 | `jlc_cost_estimate` | Coordinator reads the earlier export's verified BOM/CPL/`pcb_summary.json`, the captured board pads, catalog snapshot and pricing table; informational only, no tool launched ([details](jlc-cost-estimate.md)) | Enclosing run deadline |
@@ -152,6 +159,19 @@ records the private full-feed measurements and reproduction command. Both helper
 now declare a 600-second ceiling because complete rederivation exceeded 120 seconds;
 the enclosing run deadline can shorten it. A timeout or absent report remains unknown.
 
+## Interval assertions
+
+The [interval assertion check](interval-assertions.md) takes `assertions` and,
+when any parameter cites the catalog, `snapshot` and `manifest_sha256`, plus an
+optional `parts_manifest` pinning the same snapshot. Every requirement ID the
+document cites must be a baseline requirement sourced from that document and
+bound to the check. Each assertion is one predicate. An unknown operand, an
+unbounded division or an unattained enclosure excess is unknown, never pass; a
+defect needs an attained parameter corner outside the target. A malformed
+expression or unit mismatch refuses the audit and is `execution: malformed` in
+a run. `intervals.json` records the input hashes, every parameter interval, and
+each assertion's computed interval, witness and operand origins.
+
 ## Approved parts membership
 
 The [approved-parts manifest](approved-parts.md) uses `agent-ee.parts/1` and
@@ -187,6 +207,11 @@ symbols through the shared connectivity resolver. Native ERC compares the embedd
 inherited definition with its captured project library; native netlist tests cover
 all 144 pins of a derived STM32 variant. Missing captured parents refuse emission
 before these checks run; installed libraries cannot supply missing capture bytes.
+AGENTEE-172 makes generator and rung-1 symbol captures subsets by default.
+Emission shares a content-addressed parse only within its call; every declared
+capture hash is still verified. Subset/source hashes remain in the capture and
+step receipts. These are provenance and performance changes, with no new check
+kind or acceptance credit. See [emitter cost and benchmark](schematic-emitter.md#library-subsets-and-emission-cost).
 
 ## ERC
 
@@ -245,6 +270,15 @@ these rule failures from independently established manufacturing failures.
 Native DRC coverage also depends on the project's configured checks and ignored
 rules; passing these checks is not full circuit function or fab qualification.
 
+The severities in force are the immutable project file's. ERC and DRC both record
+`details.by_severity`, `details.by_type` and `details.ignored_checks`, the keys
+kicad-cli reports at severity `ignore`. A warning is graded like an error. The
+[fome-mc severity template](scaffold.md#fome-mc-severity-template) (AGENTEE-189)
+carries fome-mc's pinned ERC and DRC severity maps. There is no waiver record:
+a reported item cannot be dispositioned as waived, and the capture refuses a
+source with ERC or DRC exclusions. Admitting violation-bound waivers is an
+owner decision that has not been made.
+
 Those project settings remain immutable during a campaign. A writer's
 `pcbnew.SaveBoard` may rewrite sibling `.kicad_pro`/`.kicad_prl` files and trip
 the immutable-input guard; the diagnostic names this likely cause when the
@@ -257,6 +291,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
+`e497916` (versioned `kicad-route/route/1` results)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -403,9 +438,16 @@ Required parameters are `source`, `netlist_check`, `predicate` (`topology`,
 so the coordinator can rederive it. One check maps to one baseline requirement.
 
 Exact physical-pin incidence preserves identical component instances and ignores
-reference and net names. Missing or extra parts, changed bindings and merged or
-split nets are defects. Ambiguous required instance correspondence, unresolvable
-match keys and bounded-search exhaustion are unknown. Scores describe a match;
+reference and net names by default. Optional `anchors` declare fixed references
+or sheet/UUID identities; `net_name_policy` reuses a captured AGENTEE-44 required-name
+policy bound to a baseline requirement. Resolved anchors seed color refinement
+and constrain the exact search. Reports retain the anchor set, policy hash,
+contradictions and assignment step count. A contradicted anchor is a defect;
+unresolved sheet/UUID identities and incomplete terminal evidence remain unknown.
+Both anchor forms are refused for the component-only predicate. Missing or extra
+parts, changed bindings and merged or split nets are defects. Ambiguous required
+instance correspondence, unresolvable match keys and bounded-search exhaustion
+are unknown. Scores describe a match;
 they do not decide acceptance. Electrical adequacy and footprint suitability are
 outside this check.
 
@@ -613,6 +655,28 @@ native prerequisites or the installation a test failure. The demonstrated host
 uses KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12.3; qualification
 inside the common completion image remains separate.
 
+## Installed kicad-happy severity gate
+
+`kind: "kicad_happy_severity_gate"` runs the installed v2.3.1 schematic, full
+PCB, cross-analysis and EMC analyzers offline in the sandbox. It requires a
+scope/2 or scope/3 baseline and exactly `installation`, `installation_sha256`
+and `dispositions` parameters. The installation pin follows the existing
+`kicad_happy` inventory. `dispositions` is a captured immutable requirement file
+using `agent-ee.happy-dispositions/1`; every warning finding ID requires its own
+record with `disposition: accepted_risk|false_positive`, `rationale` and
+`recorded_by`. No disposition can waive an error.
+
+Any error or warning without an exact-ID disposition is `ok/defect`. Valid
+reports with no errors and every warning dispositioned are `ok/pass`; unknown,
+missing or malformed analyzer output stays unknown. The exact disposition bytes,
+raw reports and normalized native/disposition pointers are cited and sealed;
+preflight and public `verify` recheck the installed pin. Scope/3 predicates are
+`happy-severity:no-errors/1` and `happy-severity:warnings-dispositioned/1`.
+See the [schema, failure boundaries and original fixtures](happy-severity-gate.md).
+Thermal and SPICE are excluded from this kind. Existing `kicad_happy` stages and
+policy are unchanged. This is a severity policy over emitted findings, not
+complete analyzer rule coverage or electrical/EMC certification.
+
 ## Hardware interface invariants
 
 `hardware_interface` requires `contract` and an earlier `netlist_check`. The
@@ -707,6 +771,15 @@ probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
 authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
 for the acceptance tests and remaining campaign and fabrication-limit gaps.
+The [placement adapter's property resave rule](placement-adapter.md#property-font-resave-default-agentee-147)
+admits KiCad's omitted 0.15 mm property-font thickness default during transform
+comparison; it does not grade placement or relax field value, layer or visibility checks.
+The [owned-zone write scope](placement-adapter.md#placement-write-scope)
+(AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
+The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
+footprint-forbidding polygons as exclusions for peer courtyards. These proposal
+rules do not change native DRC grading or the registered keepout predicate's
+unknown boundary for footprint-owned areas.
 A `defect` carries `details.gate_findings`, one identity per proved defect: the
 reference (or `+`-joined overlapping references, or ratsnest metric) and the
 defect kind; connector-edge violations use `connector_<kind>`. Only connector-edge
@@ -789,6 +862,11 @@ Its captured-parts scope declares `parts_subset`, `assembly_readiness` and
 `package_consistency`. Unknown stock, ratings or unmapped packages stay unknown.
 
 ## JLCPCB fab package
+
+With a counted campaign fab step, all three fab checks require its sealed
+package and compare it with fresh sandbox output. Missing step output stays
+unknown and can schedule a coordinator fab turn only when all other checks and
+review are complete. See [declared fab steps](fab-export.md#declared-fab-steps).
 
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
@@ -888,8 +966,8 @@ validation verifies their commit/path/blob and SHA-256 offline; unavailable Git
 objects keep the block unverified. These citations supply no board-check credit.
 
 [`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
-are exactly `{netlist_check}` and it must be the last declared check; an earlier
-`geometry` check is required. It runs the same export and consistency code on its
+are exactly `{netlist_check}`; only bound [`jlc_dfm`](jlc-dfm.md) checks may follow
+it. An earlier `geometry` check is required. It runs the same export and consistency code on its
 own staging tree and, on `pass`, records `details.artifacts`
 (`agent-ee.fab-artifacts/1`: gerbers.zip, every drill file, bom.csv, cpl.csv and
 manifest.json by sha256, bound to the candidate id and board digest). A missing,
@@ -905,3 +983,24 @@ record; a correction defect is a gate `defect`, any other non-pass is
 `unsupported`. Without one, `rotation` is `{status: not_declared}`. Done
 predicates admit only `fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`);
 see [CPL rotation in the done gate](fab-package.md#cpl-rotation).
+
+## Datasheet pin electrical contracts
+
+[`pin_contracts`](pin-contracts.md) takes exactly `manifest`, `facts_check`,
+`netlist_check`, `ground_nets`, `power_nets`, `rails` and `classes`. It consumes
+captured per-part contract blobs from the owned parts manifest, verified
+page-cited facts and retained native connectivity. Voltage compatibility,
+must-connect, no-connect, decoupling, pull-up, BOOT-to-SW capacitor and feedback
+divider presence are separate predicates. Every physical instance is evaluated
+independently. Missing, ambiguous or inapplicable facts and uncovered pins remain
+unknown, including a manufacturer mismatch. Scope/2 and scope/3 freeze the
+complete contract/fact/parts dependency closure. See the feature page for the
+exact schema, evidence and limits.
+
+## Saved supplier DFM report
+
+[`jlc_dfm`](jlc-dfm.md) binds an owner-saved source report and normalized findings
+to an earlier `fab_package` check. Params are exactly `{fab_check, report}`. Both
+report files are immutable baseline inputs. Missing or mismatched evidence is
+unknown; error findings are defects, warnings are advisory. Parsing runs in the
+networkless executor; the owner performs the upload outside agent-ee.

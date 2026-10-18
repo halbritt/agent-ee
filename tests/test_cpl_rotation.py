@@ -19,8 +19,12 @@ from agent_ee.cpl_rotation import (CYCLES, aggregate, capability, classify_pin1,
 from agent_ee.easyeda_footprint import SupplierError, symbol_pins
 from agent_ee.fab_export import cpl_rows
 from agent_ee.storage import digest, read_json, write_json
-from land_pattern_fixtures import component, pad
-from toolchain import require_toolchain
+try:
+    from land_pattern_fixtures import component, pad
+    from toolchain import require_toolchain
+except ImportError:
+    from tests.land_pattern_fixtures import component, pad
+    from tests.toolchain import require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures' / 'cpl-rotation'
 POLICY = (FIXTURE / 'jlc-cpl-policy.json').read_bytes()

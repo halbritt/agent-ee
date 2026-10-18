@@ -1,0 +1,54 @@
+{
+  "schema": "agent-ee.interval-assertions/1",
+  "correlation": "shared-symbol/independent-parameters",
+  "parameters": {
+    "vin": {
+      "source": "declared",
+      "requirement": "R-VIN",
+      "unit": "V",
+      "nominal": "10 V",
+      "tolerance_percent": "1"
+    },
+    "r1": {
+      "source": "catalog",
+      "lcsc": "C900001",
+      "attribute": "resistance",
+      "role": "toleranced",
+      "reference": "R1"
+    },
+    "r2": {
+      "source": "catalog",
+      "lcsc": "C900002",
+      "attribute": "resistance",
+      "role": "toleranced",
+      "reference": "R2"
+    },
+    "c1_rating": {
+      "source": "catalog",
+      "lcsc": "C900006",
+      "attribute": "voltage",
+      "role": "rating",
+      "reference": "C1"
+    }
+  },
+  "assertions": [
+    {
+      "id": "vout-band",
+      "requirement": "R-VOUT",
+      "expression": "vin * r2 / (r1 + r2)",
+      "unit": "V",
+      "target": {
+        "nominal": "3.3 V",
+        "tolerance_percent": "10"
+      }
+    },
+    {
+      "id": "c1-voltage-rating",
+      "requirement": "R-C1-RATING",
+      "lhs": "vin",
+      "op": "<=",
+      "rhs": "c1_rating",
+      "unit": "V"
+    }
+  ]
+}

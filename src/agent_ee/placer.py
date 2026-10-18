@@ -32,6 +32,8 @@ def transform(fp, position, rotation):
         return [x+position[0], y+position[1]]
     for courtyard in placed['courtyards'].values():
         courtyard['polygons'] = [[move(p) for p in poly] for poly in courtyard['polygons']]
+    for keepout in placed.get('packing_keepouts', []):
+        keepout['polygons'] = [[move(p) for p in poly] for poly in keepout['polygons']]
     for pad in placed['pads']:
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
@@ -98,6 +100,58 @@ def _qualified(capture):
     return outline[0]
 
 
+def _keepouts(capture):
+    """Reuse the native rule-area inventory; unqualified exclusions stop packing."""
+    owners = {fp['uuid']: fp for fp in capture['footprints']}
+    for fp in owners.values():
+        fp['packing_keepouts'] = []
+    obstacles = []
+    areas = capture.get('rule_areas', [])
+    if not isinstance(areas, list):
+        raise ValueError('malformed rule-area inventory')
+    for area in areas:
+        if (not isinstance(area, dict) or not isinstance(area.get('forbid'), dict) or
+                type(area['forbid'].get('footprints')) is not bool):
+            raise ValueError('malformed rule-area footprint flag')
+        if not area['forbid']['footprints']:
+            continue
+        owner = area.get('owner')
+        if not isinstance(owner, str) or (owner != 'board' and owner not in owners):
+            raise ValueError('unknown rule-area owner')
+        layers = area.get('layers')
+        copper = {'F.Cu', 'B.Cu', '*.Cu'} | {f'In{i}.Cu' for i in range(1, 31)}
+        if (not isinstance(layers, list) or not layers or
+                any(not isinstance(l, str) or l not in copper for l in layers) or
+                len(set(layers)) != len(layers)):
+            raise ValueError('malformed rule-area layers')
+        polygons = qualified_polygons(area.get('outline'))
+        target = obstacles if owner == 'board' else owners[owner]['packing_keepouts']
+        for side in ('F', 'B'):
+            if side + '.Cu' in layers or '*.Cu' in layers:
+                target.append({'side': side, 'polygons': polygons})
+    return obstacles
+
+
+def _keepout_boxes(obstacles):
+    return [entry for obstacle in obstacles for entry in
+            boxes({'courtyards': {obstacle['side']: obstacle}}).items()]
+
+
+def _in_keepouts(fp, obstacles):
+    return any(intersection_area(c, p) > 0
+               for obstacle in obstacles
+               for c in fp['courtyards'].get(obstacle['side'], {}).get('polygons', [])
+               for p in obstacle['polygons'])
+
+
+def _keepout_blocked(candidate, placed, obstacles):
+    # An owner is exempt from its own rule area. Check both directions when
+    # placing a module after peers: its moving keepout must not engulf them.
+    return (_in_keepouts(candidate, obstacles) or
+            any(_in_keepouts(candidate, fp.get('packing_keepouts', [])) or
+                _in_keepouts(fp, candidate.get('packing_keepouts', [])) for fp in placed))
+
+
 def pad_shape_qualification():
     """The pad-shape domain recorded in every complete plan."""
     return {'pcbnew_major': PAD_SHAPE_PCBNEW_MAJOR,
@@ -121,13 +175,16 @@ def _fits(candidate, outline):
 def _candidate_positions(fp, rotation, outline, reserved, gap):
     at_origin = transform(fp, [0, 0], rotation)
     bounds = list(boxes(at_origin).values())
-    x0, y0 = min(b[0] for b in bounds), min(b[1] for b in bounds)
-    x1, y1 = max(b[2] for b in bounds), max(b[3] for b in bounds)
-    xs = {p[0]-x0 for p in outline} | {p[0]-x1 for p in outline}
-    ys = {p[1]-y0 for p in outline} | {p[1]-y1 for p in outline}
-    for _, (a0, b0, a1, b1) in reserved:
-        xs.update((a0-gap-x1, a1+gap-x0, a0-x0, a1-x1))
-        ys.update((b0-gap-y1, b1+gap-y0, b0-y0, b1-y1))
+    bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
+               max(b[2] for b in bounds), max(b[3] for b in bounds))]
+    bounds.extend(b for _, b in _keepout_boxes(at_origin.get('packing_keepouts', [])))
+    xs, ys = set(), set()
+    for x0, y0, x1, y1 in bounds:
+        xs.update(p[0]-x for p in outline for x in (x0, x1))
+        ys.update(p[1]-y for p in outline for y in (y0, y1))
+        for _, (a0, b0, a1, b1) in reserved:
+            xs.update((a0-gap-x1, a1+gap-x0, a0-x0, a1-x1))
+            ys.update((b0-gap-y1, b1+gap-y0, b0-y0, b1-y1))
     for x in sorted(xs):
         for y in sorted(ys):
             yield x, y
@@ -209,15 +266,16 @@ def _part_impossibility(capture, outline):
     return None
 
 
-def _initial_reservations(capture, policy, outline):
+def _initial_reservations(capture, policy, outline, obstacles):
     fixed = set(policy['fixed_refs']) | {f['ref'] for f in capture['footprints'] if f.get('locked')}
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
     reserved = []
     for obstacle in policy['obstacles']:
         shell = {'courtyards': {obstacle['side']: {'polygons': obstacle['polygons']}}}
         reserved.extend(boxes(shell).items())
-    for fp in placed:
-        if not _fits(fp, outline) or _blocked(fp, reserved, policy['gap_nm']):
+    for i, fp in enumerate(placed):
+        if (not _fits(fp, outline) or _blocked(fp, reserved, policy['gap_nm']) or
+                _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError('fixed placement conflicts with outline, obstacle or reserved gap')
         reserved.extend(boxes(fp).items())
     return fixed, placed, reserved
@@ -230,6 +288,7 @@ def pack(capture, policy):
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
     try:
         outline = _qualified(capture)
+        obstacles = _keepouts(capture)
     except ValueError as exc:
         return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, str(exc))
     proof = _area_impossibility(capture, outline)
@@ -243,7 +302,7 @@ def pack(capture, policy):
                            f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's")
         return {**failure, 'proof': proof}
     try:
-        fixed, placed, reserved = _initial_reservations(capture, policy, outline)
+        fixed, placed, reserved = _initial_reservations(capture, policy, outline, obstacles)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc))
     priorities = {ref: i for i, ref in enumerate(policy['priority_refs'])}
@@ -252,14 +311,17 @@ def pack(capture, policy):
     steps = 0
     for fp in queue:
         best = None
+        anchors = reserved + _keepout_boxes(obstacles + [area for f in placed
+                                                        for area in f.get('packing_keepouts', [])])
         for rotation in (0, 90, 180, 270):
-            for position in _candidate_positions(fp, rotation, outline, reserved, policy['gap_nm']):
+            for position in _candidate_positions(fp, rotation, outline, anchors, policy['gap_nm']):
                 if steps == policy['step_budget']:
                     return _failure(capture, policy, 'packing_budget_exhausted', 'unknown', steps,
                                     'deterministic candidate budget exhausted')
                 steps += 1
                 proposed = transform(fp, position, rotation)
-                if _blocked(proposed, reserved, policy['gap_nm']) or not _fits(proposed, outline):
+                if (_blocked(proposed, reserved, policy['gap_nm']) or not _fits(proposed, outline) or
+                        _keepout_blocked(proposed, placed, obstacles)):
                     continue
                 key = (_wire_cost(proposed, placed, policy['ground_nets']), *position, rotation)
                 if best is None or key < best[0]:

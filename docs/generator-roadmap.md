@@ -39,7 +39,7 @@ What must exist at each stage before a rung can run:
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
-| 1 Requirements | Requirement IDs `R-native`, `R-width`, `R-response`, `R-fab`, `R-parts`, compiled from the spec by the [requirement-record compiler](requirement-scope.md) (AGENTEE-100); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
+| 1 Requirements | Requirement IDs `R-native`, `R-width`, `R-response`, `R-fab`, `R-parts`, compiled from the spec by the [requirement-record compiler](requirement-scope.md) (AGENTEE-100); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements captured from the pod spec's tables and lists by [spec capture](spec-record.md) (AGENTEE-158, `fixtures/telemetry-pod/spec-record.json`); envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
 | 2 Parts | Approved-parts manifest: R, C and header with LCSC bindings; stock footprints | Block manifest with snapshot stock state | Merged block manifests; assembly readiness | About 492 footprints against one catalogue snapshot |
 | 3 Schematic | One sheet; netlist parity with the fixture | One captured block, adapted, plus a root sheet | Several blocks integrated block-first | 15 sheets from power, MCU core, CAN, wideband and driver blocks |
 | 4 Placement | Three footprints placed and graded | Decoupling distance, connector on edge | Sub-layout reuse, congestion report | Budget measurements before any limit change |
@@ -270,21 +270,21 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `08179cd`. At that commit agent-ee relies on the following from
+kicad-route `e497916`. At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
   1 backend or process failure, or an early failure with no `result.json`;
-  2 valid but incomplete, and also argparse's usage exit; 3 fails validation,
-  regardless of completion; 4 refused before routing (ledger or canary), with
+  2 valid but incomplete; 3 fails validation,
+  regardless of completion; 4 refused before routing (usage, input, ledger, canary or state), with
   the run directory removed. agent-ee uses the board from 0 and 2 as a
   proposal only when the exact status combination and a contained candidate
   agree with the exit. It records 1 and 4 as missing routing coverage, never
   uses the board from 3, and treats any other combination as a contradiction.
-- **Outputs**: `--out` is a global option before `run`. Each attempt writes
+- **Outputs**: `--out` is accepted before or after `run`; the adapter uses `run --out /work/routing/out --json`. Each attempt writes
   `OUT/runs/<name>/<label>/<stamp>/` with a mutable `latest` link and no
-  top-level result. `result.json` has no schema version, and the pin has no
-  `--version` flag, so the tool version is recorded as unknown. Backend
+  top-level result. `result.json` requires schema `kicad-route/route/1`; unknown versions are
+  refused. The pin has no `--version` flag, so the tool version is recorded as unknown. Backend
   identity comes verbatim from `result.json`. agent-ee retains and hashes
   `result.json`, `attempt.json`, `RESULT.md`, `validate/` and the logs.
 - **Preservation**: project files, outline, layers, stackup, footprints, zones
@@ -360,6 +360,15 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 - Block evidence is provenance. A board's acceptance comes from the board's own
   checks, even for an unchanged block.
 - Nothing here confers hardware release authority or bench qualification.
+
+## Captured symbol subsets
+
+AGENTEE-172 reduces schematic input size through the existing symbol-capture
+boundary. Generator and rung-1 scaffold inputs retain selected symbols and
+ancestors with both source and subset hashes; emission shares parsed libraries
+within one invocation. The [emitter benchmark](schematic-emitter.md#library-subsets-and-emission-cost)
+records pod-scale timing and native connectivity evidence without changing
+generation acceptance or claiming a completed pod design.
 
 ## Captured CPL correction in fab stages
 

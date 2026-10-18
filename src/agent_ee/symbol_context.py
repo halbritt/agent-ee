@@ -11,13 +11,13 @@ BBOX_DEFINITION = ('Local body graphic centreline bounds plus complete pin segme
                    'common unit/body graphics included; text, stroke thickness and rendered labels excluded.')
 
 
-def _metadata(sources, captured_files):
-    from .symbol_library import parse_library, children, LibraryError
+def _metadata(sources, captured_files, cache):
+    from .symbol_library import children, LibraryError
     properties, units = {}, []
     for source in sources:
         # The shared resolver already established this exact, ordered inheritance
         # chain and refused unsupported replacements. No extends traversal here.
-        node = parse_library(captured_files[source['path']])[source['symbol']]
+        node = cache.symbols(captured_files[source['path']])[source['symbol']]
         keys = set()
         for prop in children(node, 'property'):
             if len(prop) < 3 or any(not isinstance(x, str) for x in prop[1:3]) or prop[1] in keys:
@@ -26,6 +26,38 @@ def _metadata(sources, captured_files):
             properties[prop[1]] = prop[2]
         units.extend(children(node, 'symbol'))
     return properties, units
+
+
+def _arc_points(graphic):
+    import math
+    from .symbol_library import field, nanometres, LibraryError
+    s, m, e = (tuple(map(nanometres, field(graphic, key, 2))) for key in ('start', 'mid', 'end'))
+    d = 2 * (s[0] * (m[1] - e[1]) + m[0] * (e[1] - s[1]) + e[0] * (s[1] - m[1]))
+    if not d:
+        raise LibraryError('degenerate arc')
+    ss, mm, ee = s[0] ** 2 + s[1] ** 2, m[0] ** 2 + m[1] ** 2, e[0] ** 2 + e[1] ** 2
+    nx = ss * (m[1] - e[1]) + mm * (e[1] - s[1]) + ee * (s[1] - m[1])
+    ny = ss * (e[0] - m[0]) + mm * (s[0] - e[0]) + ee * (m[0] - s[0])
+    if d < 0:
+        d, nx, ny = -d, -nx, -ny
+    r2_d2 = (d * s[0] - nx) ** 2 + (d * s[1] - ny) ** 2
+    if r2_d2 <= 0:
+        raise LibraryError('degenerate arc')
+    r_floor = math.isqrt(r2_d2)
+    r_ceil = r_floor if r_floor * r_floor == r2_d2 else r_floor + 1
+    dx, dy = e[0] - s[0], e[1] - s[1]
+    side_m = (m[0] - s[0]) * dy - (m[1] - s[1]) * dx
+    points = [s, e]
+    for sx, sy, px, py in (
+        (1, 0, -((-nx - r_ceil) // d), ny // d),
+        (0, 1, nx // d, -((-ny - r_ceil) // d)),
+        (-1, 0, (nx - r_ceil) // d, ny // d),
+        (0, -1, nx // d, (ny - r_ceil) // d),
+    ):
+        if any(((nx + sx * r - d * s[0]) * dy - (ny + sy * r - d * s[1]) * dx) * side_m >= 0
+               for r in (r_floor, r_ceil)):
+            points.append((px, py))
+    return points
 
 
 def _bounds(units, pins, unit):
@@ -71,6 +103,8 @@ def _bounds(units, pins, unit):
                     if radius <= 0:
                         raise LibraryError('invalid circle radius')
                     points.extend(((x - radius, y - radius), (x + radius, y + radius)))
+                elif kind == 'arc':
+                    points.extend(_arc_points(graphic))
                 elif kind in ('text', 'text_box'):
                     continue
                 else:
@@ -83,18 +117,19 @@ def _bounds(units, pins, unit):
         return dict(coverage='unsupported', bounds_nm=None, reason=str(exc))
 
 
-def build_context(libraries, captured_files, selection):
+def build_context(libraries, captured_files, selection, *, _library_cache=None):
     """Exact lib:symbol lookup; all pins survive names shared by several numbers."""
-    from .symbol_library import LibraryError
+    from .symbol_library import LibraryError, ParsedLibraries
+    cache = _library_cache if _library_cache is not None else ParsedLibraries()
     result = dict(schema='agent-ee.symbol-context/1', execution='ok', outcome='info',
                   selection=selection, query_sha256=digest(selection), sources=[], pins=[],
                   properties={}, description='', selected_body_style=1, bbox_definition=BBOX_DEFINITION, bbox_by_unit={})
     try:
-        pins, sources, power = _symbol_inventory(selection, libraries, captured_files)
+        pins, sources, power = _symbol_inventory(selection, libraries, captured_files, _library_cache=cache)
         presented_pins = [dict(p, body_style=int(p['source']['unit_symbol'].rsplit('_', 1)[1])) for p in pins]
         result.update(pins=sorted(presented_pins, key=lambda p: (p['unit'], p['number'], canonical(p))),
                       sources=sources, power=power)
-        properties, units = _metadata(sources, captured_files)
+        properties, units = _metadata(sources, captured_files, cache)
         result['properties'] = properties
         result['description'] = properties.get('Description', properties.get('ki_description', ''))
         unit_numbers = sorted({p['unit'] for p in pins if p['unit']}) or [1]

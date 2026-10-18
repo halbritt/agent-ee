@@ -42,7 +42,7 @@ the record verifies. Either command exits 2 on refused input.
 | 4 | placement | `placement` | AGENTEE-91 | the placement adapter's `agent-ee-placer` helper step |
 | 5 | routing | `routing` | AGENTEE-93 | `routing_adapter.step` `kicad-route-krt`, checked with `routing_adapter.verify` |
 | 6 | verification | `verification` | AGENTEE-104 | checks only |
-| 7 | fab | `fab` | AGENTEE-94 | checks only; the last check is `fab_package` |
+| 7 | fab | `fab` | AGENTEE-94 | checks only; `fab_package` seals exports, followed by any bound `jlc_dfm` checks |
 
 The receipt-stage column is the `stage` field that `stage_receipts` accepts. The
 two orders correspond one to one.
@@ -96,8 +96,10 @@ is verification.
 
 ## Done gate
 
-`done_gate` grades the fab stage with `fab_package`, declared last. A scope
-that already ends with `fab_package` is used unchanged. Otherwise its
+`done_gate` grades the fab stage with `fab_package`, followed only by bound
+[`jlc_dfm`](jlc-dfm.md) checks when declared. The driver preserves that order and
+groups both kinds in the fab stage unless their stage is explicit. A scope
+that already contains this package and its bound DFM consumers is used unchanged. Otherwise its
 `fab_export` and `fab_consistency` checks become one `fab_package` check with
 the export check's ID, and requirements that named them name it instead. A
 scope/2 or scope/3 also gains the generation marker, which baseline compilation

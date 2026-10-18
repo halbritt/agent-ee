@@ -64,6 +64,13 @@ class CommittedCaptureTests(unittest.TestCase):
         self.assertEqual(self.record['source']['paths']['sheets/psu.kicad_sch'], 'sheets/psu.kicad_sch')
         # The source repository is a label, and no planning document is captured.
         self.assertEqual(self.record['source']['repository'], 'fome-mc')
+        inventory_block, = read_json(FIXTURE / 'inventory.json')['blocks']
+        self.assertEqual(self.record['source']['upstream_origin'], inventory_block['origin'])
+        self.assertEqual(self.record['source']['upstream_license'], inventory_block['upstream_license'])
+        for token in ('T8', 'T4', 'T6', 'b3176cb'):
+            self.assertIn(token, self.record['source']['upstream_origin'])
+        self.assertIn('CC-BY-SA-4.0', self.record['source']['upstream_license'])
+        self.assertEqual(read_json(BLOCK / 'block-contract.json')['source'], self.record['source'])
         self.assertFalse(set(self.record['source']['paths'].values()) & set(DOCUMENTS))
         self.assertFalse([p for p in tree(CAPTURE) if '/sources/' in p or p.endswith('.md')])
         for path, data in tree(FIXTURE).items():

@@ -58,7 +58,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "4596491b4100cd2cce29a7abbe7abff77eadb1ea736070d55004eba0a82a0246",
+    "block-contract.json": "3d32a4644df4886abe92b411f7d41e6d1803e41dd7e064f63c7cb708387b635c",
     "connectivity.json": "c091bbaad781d62f8f43f77d61bec62dc1395a345e534c32cc6aad367aca8d15",
     "interface.json": "7515a8628cab64face33e8f51d34711152726f7b168139c30acc712eab9cd185",
     "parts.json": "3011293c2f7120774a4066e98bfb23c38a662e15105321d738e39e8cac80f00a",
@@ -264,11 +264,13 @@
   "sheet": "sheets/Keep_Alive.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: Polygonus-Universal-112 Keep_Alive at ddcf0f7",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: Polygonus-Universal-112 Keep_Alive at ddcf0f7 (T3, T4, T6)",
     "paths": {
       "sheets/Keep_Alive.kicad_sch": "sheets/Keep_Alive.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "Polygonus-Universal-112 Keep_Alive at ddcf0f7 (T3, T4, T6)"
   },
   "version": "draft-df304f332129"
 }

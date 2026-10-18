@@ -94,7 +94,8 @@ roles come only from the profile.
 | `lib_id` absent from the sheet's `lib_symbols`, unresolved inheritance, unsupported transform or alternate body style | Missing coverage for that symbol on every library-dependent rule. |
 | Body graphics outside the bounded subset, such as arcs | Missing coverage for that symbol on the overlap and label rules. |
 | Symbol with no native component, or a pin without native membership | Missing coverage for that symbol on the net rules. |
-| Native inventory refused | One design-level gap on every net rule, with `native_inventory: refused` in `lint.json`. The `netlist` producer audits only component identities, so it passes a design whose XML the lint's strict reader refuses. A pinless symbol, such as a mounting hole whose `libpart` has no `<pins>`, is one such case. |
+| Pinless symbol (`lib_symbols` definition and placed instance declare zero pins, e.g. mounting hole, fiducial or logo) | Admitted via `read_native_inventory(..., pinless=True)`. Geometry and presentation rules (`symbol-overlap/1`, `label-in-symbol/1`, `on-grid/1`, `hidden-properties/1`, `reference-visible/1`, `reference-prefix/1`) still evaluate on the symbol; it is recorded by reference in `pinless_components` and `out_of_scope.net_rules`, and net-dependent rules continue to evaluate on the rest of the design without a coverage gap. |
+| Native inventory refused | One design-level gap on every net rule, with `native_inventory: refused` in `lint.json`. The `netlist` producer audits only component identities, so it passes a design whose XML the lint refuses — such as a symbol that declares pins in the schematic (or in an unplaced unit) while its exported `<libpart>` or `<comp>` unit is missing those pins. |
 | Comparison work limit (4,000,000 per sheet) exceeded | Missing coverage for that rule on that sheet. |
 | Missing, failed or later `netlist` prerequisite | `execution=failed` or `unsupported`. An unresolved symbol ends here. KiCad still exports a netlist around it, but drops the component and invents `Net-(D1-Pad??)`. The producer then fails with `unexplained_omission`, and the lint does not run. |
 | Unreadable sheet, broken hierarchy, or sheet instances that differ from the native hierarchy | `execution=malformed`. |
@@ -108,8 +109,10 @@ defect beside unrelated missing coverage.
 ## Evidence
 
 `work/<id>/lint.json` (schema `agent-ee.schematic-lint/1`) retains the
-profile, sheet instances with file hashes, findings, coverage, per-rule counts
-and the native XML hash. The result also cites the prerequisite's `design.xml`.
+profile, sheet instances with file hashes, findings, coverage, per-rule counts,
+`pinless_components`, `out_of_scope` (`{"net_rules": [...]}`),
+`native_inventory` (`complete` or `refused`) and the native XML hash. The
+result also cites the prerequisite's `design.xml`.
 
 ## Limits
 

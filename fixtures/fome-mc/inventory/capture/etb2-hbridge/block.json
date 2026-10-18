@@ -205,7 +205,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "65bd553af1702d762fcd2fd5b153f24e38cf05ffbbaea84c643d65fc56fdb515",
+    "block-contract.json": "b5bd2ca953589343f3d8b55730de116a009a3df53f2344b52a408b5b8268bbc6",
     "connectivity.json": "a00579a77abf2fb5e0d64f5c2573bf3c550334259b0f8e02c55c4024fc5539e6",
     "interface.json": "f96656ccae09f756ab6bc6f4c0b6dd41b55b0a663d143ed3351d6116aa4d480e",
     "libs/symbols/tle9201_2.lib": "8c36dea1659c4c5e1bc7987f045a4e596c57309185d887aeef8ca8b40173b56d",
@@ -307,12 +307,14 @@
   "sheet": "sheets/stepper_etb.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus etb-9201 at b3176cb, drawn inline",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus etb-9201 at b3176cb, drawn inline (T8, T4, T6)",
     "paths": {
       "libs/symbols/tle9201_2.lib": "libs/symbols/tle9201_2.lib",
       "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus etb-9201 at b3176cb, drawn inline (T8, T4, T6)"
   },
   "version": "draft-df304f332129"
 }

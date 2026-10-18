@@ -61,7 +61,7 @@ OWNED = {
     'schematic': ('schematic_emitter', 'AGENTEE-40'),
     'board_population': ('forward_annotation', 'AGENTEE-52'),
     'placement': ('placement_adapter + placer_runner (agent-ee.placer/1)', 'AGENTEE-91, AGENTEE-54'),
-    'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route 08179cd)', 'AGENTEE-93'),
+    'routing': ('routing_adapter.step + kicad_route_attempt (kicad-route e497916)', 'AGENTEE-93'),
     'parity': ('netlist_parity check (intent, topology, exactly); fixtures/rc/control as recorded reference',
                'AGENTEE-41, AGENTEE-102'),
     'placement_checks': ('placement check kind (courtyard-overlap/1, outline-containment/1)', 'AGENTEE-92'),
@@ -149,7 +149,12 @@ def qualified_intent(prep):
 
 def intent_captures(intent):
     """The captured library bytes the intent names, keyed by its own library paths."""
-    return {lib['path']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes() for lib in intent['libraries']}
+    from .symbol_capture import capture_libraries
+    selections = {c['lib_id'] for c in intent['components']}
+    sources = {lib['name']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes()
+               for lib in intent['libraries']}
+    _, captured, _ = capture_libraries(selections, sources)
+    return {lib['path']: captured[Path(lib['path']).name] for lib in intent['libraries']}
 
 
 def ground_net(params):
@@ -282,16 +287,20 @@ def catalog_attempt(prep, work):
     if len(copies) != 1:
         raise PrepareFailure('expected one catalog copy beside the parts manifest')
     raw = copies[0].read_bytes()
-    rows = list(csv.DictReader(io.StringIO(raw.decode('utf-8'))))
+    try:
+        rows, header_schema, columns = g.read_catalog_with_schema(raw)
+    except g.StageFailure as exc:
+        raise PrepareFailure(str(exc)) from exc
     out_rows, seen = [], set()
     for row in rows:
         library, _, footprint = row['Footprint'].partition(':')
-        if library not in CATALOG_CATEGORIES or not row['LCSC Part #'] or row['LCSC Part #'] in seen:
+        lcsc = g.catalog_lcsc(row)
+        if library not in CATALOG_CATEGORIES or not lcsc or lcsc in seen:
             continue
-        seen.add(row['LCSC Part #'])
+        seen.add(lcsc)
         category, attribute, unit = CATALOG_CATEGORIES[library]
         package = next((size for size in g.CHIP_SIZES if f'_{size}_' in footprint), footprint)
-        out_rows.append({'lcsc': row['LCSC Part #'], 'mfr': '', 'mpn': '', 'package': package,
+        out_rows.append({'lcsc': lcsc, 'mfr': '', 'mpn': '', 'package': package,
                          'category': category, 'stock': '', 'price1': '', 'is_basic': '', 'is_preferred': '',
                          'last_seen': '', 'attributes': json.dumps({attribute: row['Comment']})})
     work.mkdir(parents=True)
@@ -313,6 +322,7 @@ def catalog_attempt(prep, work):
                              'format': 'csv'}]}
     write_json(work / 'catalog-source.json', manifest)
     result = {'module': 'agent_ee.catalog.capture_catalog', 'plane': 'AGENTEE-27',
+              'header_schema': header_schema, 'columns': columns,
               'source_rows': len(rows), 'catalog_rows': len(out_rows),
               'derivation': ('fome-mc BOM rows of Resistor_SMD/Capacitor_SMD with an LCSC number; lcsc, package '
                              '(from the footprint name), category and the Comment value copied; mfr, mpn, stock, '
@@ -366,16 +376,21 @@ def write_scaffold(rundir, prep):
         QUALIFIED_REQUIREMENTS + (CPL_REQUIREMENT_TEXT if prep.get('cpl_inputs') else ''))
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
+    captured = {lib['path']: prep['symbol_libraries'][Path(lib['path']).name] for lib in intent['libraries']}
+    for path, data in captured.items():
+        target = scaffold / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    write_json(generation / 'symbol-captures.json', prep['symbol_captures'])
     footprints = footprint_manifest(prep['parts']['parts'])
     if 'approved_bundle' in prep['parts']:
         from .parts_manifest import load_manifest, qualify_manifest
         from .rung1_parts import MANIFEST, check_cad_inputs
-        stock = {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
-                 for lib in g.SYMBOL_LIBRARIES}
+        stock = prep['symbol_libraries']
         bundle = prep['parts_path'].parent / 'approved'
         declared = load_manifest(bundle, MANIFEST)
         check_cad_inputs(qualify_manifest(declared, bundle), bundle, stock, footprints)
-    resolved = resolve_intent(intent, intent_captures(intent))
+    resolved = resolve_intent(intent, captured)
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
         raise PrepareFailure('qualified intent did not resolve: ' + json.dumps(resolved['findings'])[:2000])
     if prep.get('cpl_inputs'):
@@ -436,6 +451,8 @@ def compile_staged_scope(params, scope_dir, scaffold):
             item = {'path': os.path.relpath(scaffold / 'project', base), 'at': 'project'}
         elif item['at'] == 'requirements':
             item = {'path': os.path.relpath(scaffold / 'requirements', base), 'at': 'requirements'}
+        elif item['at'] == 'stock/symbols':
+            item = {'path': os.path.relpath(scaffold / 'stock/symbols', base), 'at': 'stock/symbols'}
         inputs.append(item)
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs
@@ -734,9 +751,10 @@ def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs
 
 
 def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, parts_manifest=None,
-          cpl_inputs=None):
+          cpl_inputs=None, catalog_checkout=None):
     rundir = Path(rundir).absolute()
-    prep = prepare(spec, rundir, parts_manifest=parts_manifest, cpl_inputs=cpl_inputs)
+    prep = prepare(spec, rundir, catalog_checkout=catalog_checkout, parts_manifest=parts_manifest,
+                   cpl_inputs=cpl_inputs)
     catalog = ({'status': 'captured', 'catalog': prep['parts']['catalog']}
                if 'approved_bundle' in prep['parts'] else catalog_attempt(prep, rundir / 'parts-catalog'))
     scaffold, scaffold_record = write_scaffold(rundir, prep)
@@ -1069,7 +1087,7 @@ def main(argv=None):
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
     parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
-                        help='kicad-route checkout at the adapter pin 08179cd with vendor/krt and .venv-krt '
+                        help='kicad-route checkout at the adapter pin e497916 with vendor/krt and .venv-krt '
                              '(default: $AGENT_EE_KICAD_ROUTE_CHECKOUT, else /opt/kicad-route)')
     parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',

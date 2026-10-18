@@ -1,0 +1,10 @@
+{
+  "schema": "agent-ee.footprint-capture-request/1",
+  "library": "ampseal",
+  "repository": "fome-mc",
+  "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+  "kicad_version": "10.0.7",
+  "members": [
+    "libs/footprints/ampseal.pretty/ampseal-23.kicad_mod"
+  ]
+}

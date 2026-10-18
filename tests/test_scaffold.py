@@ -332,11 +332,11 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
             if label == 'adjudicator':
                 result = read_json(run / 'result.json')
                 decisions = [dict(finding_id=f['id'], disposition='accepted', reason='Sealed expected content absent.',
-                    evidence=[dict(path='checks/' + f['local_id'] + '.json', locator='outcome')])
+                    evidence=[dict(path='checks/' + f['local_id'] + '.json', locator='outcome', pointer='/outcome')])
                     for f in result['findings']]
-                return dict(execution='ok'), dict(schema='agent-ee.decisions/1', **binding, decisions=decisions)
+                return dict(execution='ok'), dict(schema='agent-ee.decisions/2', **binding, decisions=decisions)
             self.assertNotIn('"initial_reviews"', prompt)
-            return dict(execution='ok'), dict(schema='agent-ee.review/1', **binding,
+            return dict(execution='ok'), dict(schema='agent-ee.review/2', **binding,
                 packet_sha256=packet['packet_sha256'], role=label, coverage=['native presence'],
                 limitations=['scripted test response'], findings=[])
         # Only inference is scripted; runtime fingerprints, native checks,

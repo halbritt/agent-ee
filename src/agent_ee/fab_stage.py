@@ -9,11 +9,187 @@ from . import cpl_rotation
 from .baseline import freeze_evidence, verify_evidence
 from .candidate import capture, source_manifest
 from .checks import run_checks
-from .fab_export import verify_manifest
+from .fab_export import inventory, verify_manifest
 from .fab_package import ROTATION_STATUSES
 from .storage import digest, read_json, write_json
 
 CPL_ROOT = Path('generation/cpl')
+FAB_CHECKS = frozenset({'fab_export', 'cpl_rotation', 'fab_package'})
+PACKAGE_SCHEMA = 'agent-ee.rung1-fab-manifest/0-experimental'
+
+
+def campaign_context(root, state, config, scope):
+    """Select the declared fab producer and its latest anchored campaign receipt."""
+    from .stage_receipts import validate_step
+    from .stage_done import _receipts
+    if 'fab' not in (scope.get('stages') or {}).get('order', []):
+        return None
+    steps = [validate_step(s, host=False) for s in config.get('implementation_steps', [])
+             if s['stage'] == 'fab']
+    if not steps:
+        return None
+    if len(steps) != 1:
+        raise ValueError('fab checks require exactly one declared fab package producer')
+    context = {'spec': steps[0], 'receipt': None}
+    for number in range(1, len(state['history']) + 1):
+        work = Path(root) / 'implementations' / str(number)
+        for k, sha, receipt in _receipts(root, state, str(number)):
+            if receipt['spec'] == steps[0]:
+                link = read_json(work / 'stage-receipts.json')['receipts'][k - 1]
+                context['receipt'] = {'path': str(work / link['path']), 'sha256': sha,
+                                      'binding': receipt['binding']}
+    return context
+
+
+def before_fab_check(ctx):
+    """Unknown until the declared step runs; a failed/stale receipt is never pending."""
+    from .checks import CheckError
+    from .stage_receipts import after_tree, validate_receipt, ADOPTABLE
+    context = getattr(ctx, 'fab_context', None)
+    if context is None or ctx.spec['kind'] not in FAB_CHECKS:
+        return
+    write_json(ctx.work / 'fab-step.json', context)
+    ctx.evidence('fab-step.json')
+    ctx.result['details']['fab_step'] = context
+    link = context['receipt']
+    if link is None:
+        ctx.result['details']['reason'] = 'fab_step_pending'
+        raise CheckError('not_run', 'declared fab step has no sealed output; run the coordinator fab step')
+    try:
+        path = Path(link['path'])
+        if path.is_symlink() or digest(path) != link['sha256']:
+            raise ValueError('fab step receipt changed')
+        receipt = validate_receipt(path.parent, binding=link['binding'])
+        if receipt['spec'] != context['spec'] or receipt['status'] not in ADOPTABLE:
+            raise ValueError('fab step receipt is not adoptable or differs from the declaration')
+        if after_tree(receipt) != ctx.manifest['files']:
+            raise ValueError('fab step output is not applicable to this captured candidate')
+        if not receipt['artifacts'] or any(sha is None for sha in receipt['artifacts'].values()):
+            raise ValueError('fab step lacks complete sealed artifacts')
+    except (OSError, ValueError) as exc:
+        raise CheckError('malformed', f'declared fab step refused: {exc}') from exc
+
+
+def _step_package(ctx):
+    """Retained output paths only after receipt validation, with every byte in its seal."""
+    from .checks import CheckError
+    context = getattr(ctx, 'fab_context', None)
+    if context is None:
+        return None
+    path = Path(context['receipt']['path'])
+    receipt = read_json(path)
+    output = path.parent / 'run/out/fab'
+    manifest = path.parent / 'run/out/fab-manifest.json'
+    files = inventory(output)
+    expected = {f'out/fab/{rel}': sha for rel, sha in files.items()}
+    if not files or any(receipt['artifacts'].get(rel) != sha for rel, sha in expected.items()):
+        raise CheckError('malformed', 'declared fab step output is missing or not sealed by its receipt')
+    # The shared producer retains native exports separately from the corrected package.
+    if not manifest.is_file() or receipt['artifacts'].get('out/fab-manifest.json') != digest(manifest):
+        raise CheckError('malformed', 'declared fab step has no sealed package manifest')
+    record = read_json(manifest)
+    if (not isinstance(record, dict) or record.get('schema') != PACKAGE_SCHEMA
+            or record.get('status') not in ROTATION_STATUSES
+            or record.get('physical_validation') is not (record['status'] == 'ok')
+            or len(record['files']) != len(files)
+            or {f['path']: f['sha256'] for f in record['files']} != files
+            or record['board']['sha256'] != ctx.manifest['files'][ctx.scope['board']]
+            or record['schematic']['sha256'] != ctx.manifest['files'][ctx.scope['schematic']]):
+        raise CheckError('malformed', 'declared fab package manifest disagrees with its output or candidate')
+    native = path.parent / 'run/out/checks/work/fab/fab'
+    native_files = verify_manifest(native, read_json(native / 'manifest.json'))
+    for rel, sha in {**native_files, 'manifest.json': digest(native / 'manifest.json')}.items():
+        if receipt['artifacts'].get(f'out/checks/work/fab/fab/{rel}') != sha:
+            raise CheckError('malformed', 'declared fab step native export is not sealed')
+    report = read_json(output / 'cpl-rotation.json')
+    if (record['status'] != report['status'] or record['physical_validation'] != report['physical_validation']
+            or record['rotation']['report_sha256'] != files['cpl-rotation.json']
+            or record['native_export']['sha256'] != digest(native / 'manifest.json')):
+        raise CheckError('malformed', 'declared fab package manifest disagrees with its sealed reports')
+    return native, output, files
+
+
+def grade_native(ctx):
+    """Compare fresh sandbox output, then grade the receipted producer's native bytes."""
+    from .checks import CheckError
+    try:
+        package = _step_package(ctx)
+        if package is None:
+            return
+        native, output, files = package
+        fresh_manifest = read_json(ctx.work / 'fab/manifest.json')
+        native_manifest = read_json(native / 'manifest.json')
+        actual = verify_manifest(ctx.work / 'fab', fresh_manifest)
+        sealed = verify_manifest(native, native_manifest)
+        context_fields = {'candidate_id', 'generated_utc'}
+        if ({k: v for k, v in fresh_manifest.items() if k not in context_fields}
+                != {k: v for k, v in native_manifest.items() if k not in context_fields}):
+            raise ValueError('declared fab step manifest differs from the fresh sandbox export')
+        if actual != sealed or {k: v for k, v in files.items() if k not in ('cpl.csv', 'cpl-rotation.json')} != {
+                k: v for k, v in actual.items() if k != 'cpl.csv'}:
+            raise ValueError('declared fab step output differs from the fresh sandbox export')
+        if not any(c['kind'] == 'cpl_rotation' for c in ctx.scope['checks']) and files['cpl.csv'] != actual['cpl.csv']:
+            raise ValueError('corrected step CPL requires a declared cpl_rotation check')
+        for rel in actual:
+            source = native / rel if rel == 'cpl.csv' else output / rel
+            shutil.copyfile(source, ctx.work / 'fab' / rel)
+        verify_manifest(ctx.work / 'fab', fresh_manifest)
+        ctx.result['details']['fab_step_files'] = files
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CheckError('malformed', f'declared fab step refused: {exc}') from exc
+
+
+def grade_cpl(ctx):
+    """Fresh correction must equal the sealed step CPL, including its preview status."""
+    from .checks import CheckError
+    try:
+        package = _step_package(ctx)
+        if package is None:
+            return
+        _, output, files = package
+        report = read_json(ctx.work / 'cpl-rotation.json')
+        retained = read_json(output / 'cpl-rotation.json')
+        references = {'candidate_id', 'export', 'geometry'}
+        if ({k: v for k, v in report.items() if k not in references}
+                != {k: v for k, v in retained.items() if k not in references}
+                or report['export']['cpl_sha256'] != retained['export']['cpl_sha256']):
+            raise ValueError('declared fab step CPL report differs from the fresh correction')
+        corrected = ctx.work / 'cpl/cpl.csv'
+        if digest(corrected) != files['cpl.csv']:
+            raise ValueError('declared fab step CPL differs from the fresh sandbox correction')
+        shutil.copyfile(output / 'cpl.csv', corrected)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CheckError('malformed', f'declared fab step refused: {exc}') from exc
+
+
+def pending_checks(result):
+    """A coordinator obligation can schedule a turn, while the review stays incomplete."""
+    pending = [c['id'] for c in result['checks']
+               if c['kind'] in FAB_CHECKS and (c['execution'], c['outcome']) == ('not_run', 'unknown')
+               and c.get('details', {}).get('reason') == 'fab_step_pending'
+               and c['details'].get('fab_step', {}).get('receipt', 'absent') is None]
+    if not pending:
+        return []
+    from .cli import outcome
+    # Evaluate readiness without the absent artifacts, never change their recorded unknown verdicts.
+    ready = {**result, 'checks': [c for c in result['checks'] if c['id'] not in pending],
+             'expected_check_ids': [c for c in result['expected_check_ids'] if c not in pending]}
+    return pending if outcome(ready) == 'criteria_satisfied' else []
+
+
+def verify_check_context(run, result, expected):
+    """Replay the coordinator context from frozen config and the preceding receipt indexes."""
+    for check in result['checks']:
+        if check['kind'] not in FAB_CHECKS:
+            continue
+        context = check.get('details', {}).get('fab_step')
+        gated = check.get('details', {}).get('reason') in ('stage_blocked', 'stage_not_reached')
+        if context != (None if gated else expected):
+            raise ValueError('fab check context differs from the declared step and anchored receipt')
+        if context is not None:
+            rel = f"work/{check['id']}/fab-step.json"
+            if rel not in check['evidence'] or read_json(Path(run) / rel) != context:
+                raise ValueError('fab check omits its sealed step witness')
 
 
 def rotation_check(inputs):
@@ -144,7 +320,7 @@ def package(run, target, manifest_path):
     shutil.copyfile(corrected, target / 'cpl.csv')
     shutil.copyfile(report_path, target / 'cpl-rotation.json')
     schematic = candidate['scope']['schematic']
-    data = {'schema': 'agent-ee.rung1-fab-manifest/0-experimental', 'qualification': 'experimental-unqualified',
+    data = {'schema': PACKAGE_SCHEMA, 'qualification': 'experimental-unqualified',
             'status': report['status'], 'physical_validation': report['physical_validation'],
             'board': {'path': manifest['board_path'], 'sha256': manifest['board_sha256']},
             'schematic': {'path': schematic, 'sha256': candidate['files'][schematic]},

@@ -36,7 +36,9 @@ parity pass unchanged. The binding reads the XML with the shared reader's
 writes an empty `<pins/>` for each of its units. Those parts are admitted with
 an empty inventory, and parity then requires a matching `pinless_symbols`
 declaration. An empty `<pins/>` on a library part, or a unit with pins on a
-pinless part, is still malformed. Other consumers of the reader stay strict.
+pinless part, is still malformed. [`schematic_lint`](schematic-lint.md) also
+opts into `pinless` mode and qualifies each component against the sheet's
+resolved symbol pins; other consumers of the reader stay strict.
 
 ## Runtime sequence
 

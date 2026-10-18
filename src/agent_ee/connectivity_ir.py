@@ -9,7 +9,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 
-from .symbol_library import ELECTRICAL_TYPES, LibraryError, children, parse_library, resolve_symbol
+from .symbol_library import ELECTRICAL_TYPES, LibraryError, ParsedLibraries, children, resolve_symbol
 
 INTENT_SCHEMA = 'agent-ee.connectivity-intent/1'
 RESOLVED_SCHEMA = 'agent-ee.resolved-connectivity/1'
@@ -122,7 +122,7 @@ def _seal(record):
     return record
 
 
-def _resolve_flat_intent(intent, captured_libraries, *, _pin_limit=None):
+def _resolve_flat_intent(intent, captured_libraries, *, _pin_limit=None, _library_cache=None):
     """Resolve explicit path→bytes captures; never reads a file or environment."""
     result = dict(schema=RESOLVED_SCHEMA, execution='ok', outcome='pass', coverage='complete',
                   findings=[], intent_sha256=None, libraries=[], components=[], nets=[],
@@ -150,6 +150,7 @@ def _resolve_flat_intent(intent, captured_libraries, *, _pin_limit=None):
     if result['hierarchy'] or result['ports']:
         incomplete('unsupported')
         finding('hierarchy_unsupported', '/', 'hierarchy and ports retained but not resolved in v1')
+    cache = _library_cache if _library_cache is not None else ParsedLibraries()
     libraries = {}
     for lib in raw['libraries']:
         if lib['name'] in libraries or any(x['path'] == lib['path'] for x in result['libraries']):
@@ -162,7 +163,7 @@ def _resolve_flat_intent(intent, captured_libraries, *, _pin_limit=None):
                 raise LibraryError('missing captured library: ' + lib['path'])
             if not isinstance(data, bytes) or hashlib.sha256(data).hexdigest() != lib['sha256']:
                 raise LibraryError('captured library hash/type mismatch')
-            libraries[lib['name']] = (lib, parse_library(data))
+            libraries[lib['name']] = (lib, cache.symbols(data))
         except LibraryError as exc:
             incomplete('failed')
             finding('library_coverage', '/libraries/' + lib['name'], str(exc))
@@ -365,16 +366,16 @@ def _validate_intent(value):
         _validate_flat_intent(value)
 
 
-def resolve_intent(intent, captured_libraries):
+def resolve_intent(intent, captured_libraries, *, _library_cache=None):
     """Resolve captured bytes with explicit version dispatch; v1 remains unchanged."""
     try:
         raw = _read_json(intent)
     except (ValueError, TypeError, UnicodeError, RecursionError):
-        return _resolve_flat_intent(intent, captured_libraries)
+        return _resolve_flat_intent(intent, captured_libraries, _library_cache=_library_cache)
     if isinstance(raw, dict) and raw.get('schema') == 'agent-ee.connectivity-intent/2':
         from ._connectivity_hierarchy import resolve
-        return resolve(raw, captured_libraries)
-    return _resolve_flat_intent(intent, captured_libraries)
+        return resolve(raw, captured_libraries, _library_cache=_library_cache)
+    return _resolve_flat_intent(intent, captured_libraries, _library_cache=_library_cache)
 
 
 def validate_resolved(record):

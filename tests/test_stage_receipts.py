@@ -1070,10 +1070,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         if label == 'adjudicator':
             checks = [read_json(p) for p in (run / 'checks').glob('*.json')]
             decisions = [{'finding_id': 'check/' + c['id'], 'disposition': 'accepted', 'reason': 'R1 failed',
-                'evidence': [{'path': 'checks/' + c['id'] + '.json', 'locator': 'outcome'}]}
+                'evidence': [{'path': 'checks/' + c['id'] + '.json', 'locator': 'outcome', 'pointer': '/outcome'}]}
                 for c in checks if c['outcome'] == 'defect']
-            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/1', **ident, 'decisions': decisions}
-        return {'execution': 'ok'}, {'schema': 'agent-ee.review/1', **ident,
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2', **ident, 'decisions': decisions}
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/2', **ident,
             'packet_sha256': packet['packet_sha256'], 'role': label,
             'coverage': ['protocol'], 'limitations': ['scripted test response'], 'findings': []}
 

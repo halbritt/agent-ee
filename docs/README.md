@@ -31,6 +31,7 @@ product's hardware qualification.
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
 | Emit intent net constraints as KiCad netclasses and width rules | [Net constraints](net-constraints.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
+| Check worst-case algebraic requirements (dividers, ratings) across part tolerances | [Interval assertions](interval-assertions.md) |
 | Keep owner-declared net names stable through generation | [Net-name provenance](net-names.md) |
 | Check that regenerated boards, schematics or netlists match without UUID churn, or diff two repair candidates | [Canonical design diff](design-diff.md) |
 | Give the writer rule-card guidance that only qualified adapters grade | [Design-rule cards](design-rules.md) |
@@ -113,13 +114,14 @@ context; they are not substitutes for the current references above.
 [PCB DC path resistance](dc-path.md) specifies the optional native endpoint-only
 conduction model, explicit material contracts and independent owned oracles.
 
-- [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity.
+- [Captured footprint assignment](footprint-libraries.md) — complete captured member inventory and exact electrical pad/pin parity; [pinned legacy footprint conversion](footprint-libraries.md#converting-pinned-legacy-footprints) through `kicad-cli fp upgrade`.
 - [Supplier land-pattern cross-check](land-pattern.md) — captured EasyEDA land pattern versus KiCad footprint copper/hole IoU and pin agreement through a registered check.
 - [JLCPCB CPL rotation](cpl-rotation.md) — pad-box midpoints, versioned rotation policy and pin-1 frame verification against captured supplier footprints.
 - [JLCPCB cost estimate](jlc-cost-estimate.md) — informational fab and assembly cost from a captured, versioned pricing table; unknown part classes stay unknown.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; the placement writer is integrated with staged campaigns.
 - [Assembly and test access](dfa-dft.md) — declared connector orientation, test-point probe access and coverage, and the derived `bringup_plan.json`.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
+- [Spec capture](spec-record.md) — markdown requirements spec (headings, pipe tables, bullet and numbered lists) to `agent-ee.spec-record/1` with declared-code IDs and byte-exact locators; malformed or unsupported markdown is refused with its byte offset.
 - [Requirement record to scope](requirement-scope.md) — deterministic compilation of a spec-quoting requirement record into a scope/2 with every requirement and check mapped; the rung-1 instance.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison used by the supplier/native check.

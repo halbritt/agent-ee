@@ -79,3 +79,29 @@ class MetricConvergenceTests(unittest.TestCase):
         result["checks"][0]["details"] = {"margins": {"heat": {"max": -1}, "loop": {"max": 2}}}
         _, state = advance([first, second], result, manifest, 5)
         self.assertEqual(state["reason"], "metric_regression")
+
+
+class PendingFabTests(unittest.TestCase):
+    def test_unknown_artifacts_schedule_only_after_every_other_obligation_is_satisfied(self):
+        from agent_ee.fab_stage import pending_checks
+        pending = {'id': 'fab', 'kind': 'fab_package', 'execution': 'not_run', 'outcome': 'unknown',
+                   'details': {'reason': 'fab_step_pending', 'fab_step': {'receipt': None}}}
+        native = {'id': 'native', 'kind': 'netlist', 'execution': 'ok', 'outcome': 'info'}
+        result = {'state': 'complete', 'checks': [native, pending], 'expected_check_ids': ['native', 'fab'],
+                  'expected_review_roles': ['circuit', 'physical'],
+                  'reviews': [{'role': role} for role in ('circuit', 'physical')],
+                  'review_executions': [{'role': role, 'execution': 'ok'} for role in ('circuit', 'physical')],
+                  'adjudicated': True, 'findings': []}
+        self.assertEqual(pending_checks(result), ['fab'])
+        for change in ({'adjudicated': False}, {'reviews': []}, {'empirical_feedback': ['pending']},
+                       {'findings': [{'status': 'accepted'}]},
+                       {'checks': [{**native, 'execution': 'failed', 'outcome': 'unknown'}, pending]},
+                       {'checks': [native, {**pending, 'execution': 'failed'}]},
+                       {'checks': [native, {**pending, 'kind': 'measurement_adapter'}]},
+                       {'checks': [native, {**pending, 'details': {'reason': 'fab_step_pending'}}]}):
+            with self.subTest(change=change):
+                self.assertEqual(pending_checks({**result, **change}), [])
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,54 @@
+{
+  "conversion": {
+    "first": {
+      "argv": [
+        "kicad-cli",
+        "fp",
+        "upgrade",
+        "--output",
+        "/work/converted.pretty",
+        "/candidate/source.pretty"
+      ],
+      "console_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exit_code": 0
+    },
+    "second": {
+      "argv": [
+        "kicad-cli",
+        "fp",
+        "upgrade",
+        "--force",
+        "--output",
+        "/work/resaved.pretty",
+        "/candidate/converted.pretty"
+      ],
+      "console_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exit_code": 0
+    },
+    "second_conversion": "byte-identical"
+  },
+  "kicad_version": "10.0.7",
+  "library": "ampseal",
+  "limitations": [
+    "Conversion and identity only: no land-pattern dimension, datasheet or mechanical-fit qualification; 3D model references are kept unresolved."
+  ],
+  "manifest": {
+    "path": "footprint-libraries.json",
+    "sha256": "921a2f970846b1c8e3759db626826538bfe7e7c4b877c574bad8f33b5e0c4ff5"
+  },
+  "members": [
+    {
+      "path": "ampseal.pretty/ampseal-23.kicad_mod",
+      "sha256": "09eeab39c4b2c21c8cca8b38da3c996540768856771830b1f57094843852e950",
+      "source": {
+        "blob": "2f09e3a5c9bd66421dee3223cb12596307f8181a",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "path": "libs/footprints/ampseal.pretty/ampseal-23.kicad_mod",
+        "repository": "fome-mc",
+        "sha256": "1d215442ea890504cf2fc8ac956da6ce5dd658d990243546d47586553c6b825a"
+      }
+    }
+  ],
+  "schema": "agent-ee.footprint-capture/1"
+}

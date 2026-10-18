@@ -13,8 +13,8 @@ from unittest.mock import patch
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee import stage_receipts
-from kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
-from toolchain import require_toolchain
+from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
+from tests.toolchain import require_toolchain
 
 DRIVER = ('import json, sys\nsys.path.insert(0, "/opt/agent-ee-routing")\n'
           'import kicad_route_attempt as a\n'

@@ -43,9 +43,92 @@ STOCK = Path('/usr/share/kicad')
 SYMBOL_LIBRARIES = ('Connector_Generic', 'Device', 'power')
 # The owner's fome-mc BOM is read live and copied only into the run directory; fome-mc
 # design data is not republished in this repository.
-CATALOG_CHECKOUT = Path.home() / 'git' / 'fome-mc'
+def _default_catalog_checkout():
+    env = os.environ.get('AGENT_EE_FOME_MC_CHECKOUT')
+    if env:
+        return Path(env)
+    home_checkout = Path.home() / 'git' / 'fome-mc'
+    if home_checkout.exists():
+        return home_checkout
+    import pwd
+    try:
+        pw_checkout = Path(pwd.getpwuid(os.getuid()).pw_dir) / 'git' / 'fome-mc'
+    except KeyError:
+        return home_checkout
+    return pw_checkout if pw_checkout.exists() else home_checkout
+
+
+CATALOG_CHECKOUT = _default_catalog_checkout()
 CATALOG_PATH = 'export/BOM-fome-mc.csv'
 CATALOG_COLUMNS = ['Comment', 'Designator', 'Footprint', 'LCSC Part #', 'Quantity']
+CATALOG_COLUMNS_4 = ['Comment', 'Designator', 'Footprint', 'LCSC']
+CATALOG_HEADER_SCHEMAS = {
+    'five_column': CATALOG_COLUMNS,
+    'four_column': CATALOG_COLUMNS_4,
+}
+PACKAGE_MAP_PATH = REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json'
+# Captured footprint library map for library-less footprints in the 4-column fome-mc BOM
+# (from fome-mc 11f03c8/e7f5ae3 libs/footprints/<Library>.pretty/<Footprint>.kicad_mod).
+FOME_FOOTPRINT_MAP = {
+    'ATWINC1500-MR210UB': 'ampseal:ATWINC1500-MR210UB',
+    'BatteryHolder_Keystone_1060_1x2032': 'Battery:BatteryHolder_Keystone_1060_1x2032',
+    'CP_Elec_8x10.5': 'Capacitor_SMD:CP_Elec_8x10.5',
+    'C_0402_1005Metric': 'Capacitor_SMD:C_0402_1005Metric',
+    'C_0603_1608Metric': 'Capacitor_SMD:C_0603_1608Metric',
+    'C_0805_2012Metric': 'Capacitor_SMD:C_0805_2012Metric',
+    'C_1206_3216Metric': 'Capacitor_SMD:C_1206_3216Metric',
+    'C_1210_3225Metric': 'Capacitor_SMD:C_1210_3225Metric',
+    'Crystal_SMD_5032-2Pin_5.0x3.2mm': 'Crystal:Crystal_SMD_5032-2Pin_5.0x3.2mm',
+    'D_SMA': 'Diode_SMD:D_SMA',
+    'D_SMC': 'Diode_SMD:D_SMC',
+    'D_SOD-123': 'Diode_SMD:D_SOD-123',
+    'HTSSOP-28-1EP_4.4x9.7mm_P0.65mm_EP2.85x5.4mm': 'Package_SO:HTSSOP-28-1EP_4.4x9.7mm_P0.65mm_EP2.85x5.4mm',
+    'Infineon_PG-DSO-12-9': 'Package_SO:Infineon_PG-DSO-12-9',
+    'Infineon_PG-DSO-20-32': 'Package_SO:Infineon_PG-DSO-20-32',
+    'Infineon_PG-DSO-8-43': 'Package_SO:Infineon_PG-DSO-8-43',
+    'LED_0603_1608Metric': 'LED_SMD:LED_0603_1608Metric',
+    'LGA-8_6x8mm_P1.25mm': 'ampseal:LGA-8_6x8mm_P1.25mm',
+    'LQFP-144_20x20mm_P0.5mm': 'Package_QFP:LQFP-144_20x20mm_P0.5mm',
+    'LQFP-32_7x7mm_P0.8mm': 'Package_QFP:LQFP-32_7x7mm_P0.8mm',
+    'L_0805_2012Metric': 'Inductor_SMD:L_0805_2012Metric',
+    'L_1210_3225Metric': 'Inductor_SMD:L_1210_3225Metric',
+    'MSOP-10_3x3mm_P0.5mm': 'Package_SO:MSOP-10_3x3mm_P0.5mm',
+    'MWSA0503': 'sunlord-MWSA0503:MWSA0503',
+    'MountingHole_4.3mm_M4': 'MountingHole:MountingHole_4.3mm_M4',
+    'PG-DSO-36-72': 'PG-DSO-36-72:PG-DSO-36-72',
+    'PG-TSDSO-24-1': 'tsdso24:PG-TSDSO-24-1',
+    'PinHeader_1x01_P2.54mm_Vertical': 'Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical',
+    'PinHeader_1x02_P2.54mm_Vertical': 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical',
+    'PinHeader_1x06_P2.54mm_Vertical': 'Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical',
+    'PinHeader_2x05_P1.27mm_Vertical_SMD': 'Connector_PinHeader_1.27mm:PinHeader_2x05_P1.27mm_Vertical_SMD',
+    'PowerSSO-16': 'PowerSSO:PowerSSO-16',
+    'R_0402_1005Metric': 'Resistor_SMD:R_0402_1005Metric',
+    'R_0603_1608Metric': 'Resistor_SMD:R_0603_1608Metric',
+    'R_0805_2012Metric': 'Resistor_SMD:R_0805_2012Metric',
+    'R_1206_3216Metric': 'Resistor_SMD:R_1206_3216Metric',
+    'R_Array_Convex_4x0603': 'Resistor_SMD:R_Array_Convex_4x0603',
+    'SO-8_3.9x4.9mm_P1.27mm': 'Package_SO:SO-8_3.9x4.9mm_P1.27mm',
+    'SOIC-14_3.9x8.7mm_P1.27mm': 'Package_SO:SOIC-14_3.9x8.7mm_P1.27mm',
+    'SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm': 'Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm',
+    'SOIC-8_3.9x4.9mm_P1.27mm': 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm',
+    'SOT-23': 'Package_TO_SOT_SMD:SOT-23',
+    'SOT-23-5': 'Package_TO_SOT_SMD:SOT-23-5',
+    'SOT-23-6': 'Package_TO_SOT_SMD:SOT-23-6',
+    'SOT-323_SC-70': 'Package_TO_SOT_SMD:SOT-323_SC-70',
+    'ST_HLGA-10_2.5x2.5mm_P0.6mm_LayoutBorder3x2y': 'Package_LGA:ST_HLGA-10_2.5x2.5mm_P0.6mm_LayoutBorder3x2y',
+    'SW_SPST_EVQQ2': 'Button_Switch_SMD:SW_SPST_EVQQ2',
+    'SolderJumper-2_P1.3mm_Open_TrianglePad1.0x1.5mm': 'Jumper:SolderJumper-2_P1.3mm_Open_TrianglePad1.0x1.5mm',
+    'TO-252-2': 'Package_TO_SOT_SMD:TO-252-2',
+    'TSOT-23-5': 'Package_TO_SOT_SMD:TSOT-23-5',
+    'TSSOP-14_4.4x5mm_P0.65mm': 'Package_SO:TSSOP-14_4.4x5mm_P0.65mm',
+    'Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical': 'Connector:Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical',
+    'USB_B_TE_5787834_Vertical': 'Connector_USB:USB_B_TE_5787834_Vertical',
+    'ampseal-23': 'ampseal:ampseal-23',
+    'ampseal-35': 'ampseal:ampseal-35',
+    'ampseal-35-2': 'ampseal:ampseal-35-2',
+    'conn_5_2.5mm': 'conn_5_2.5mm:conn_5_2.5mm',
+    'via-0.6': 'via:via-0.6',
+}
 SCOPE_TEMPLATE = REPO_ROOT / 'fixtures/closed-loop/control.scope.json'
 FIXTURE_PROJECT = REPO_ROOT / 'fixtures/rc/control'
 PROJECT_NAME = 'rung1_rc'
@@ -472,8 +555,8 @@ def stage_requirements(stage, state, options):
 
 # ------------------------------------------------------------------ stage 2: parts
 
-def capture_catalog(checkout=None):
-    """The fome-mc BOM as committed at the checkout's HEAD; working-tree edits are not used.
+def capture_catalog(checkout=None, *, rev='HEAD'):
+    """The fome-mc BOM as committed at the checkout's HEAD (or pinned rev); working-tree edits are not used.
 
     Another session may be editing fome-mc. Reading the committed blob gives exact
     provenance (commit + sha256); a differing working copy is recorded, never read.
@@ -485,7 +568,7 @@ def capture_catalog(checkout=None):
         if proc.returncode:
             raise StageFailure('catalog provenance unavailable: ' + proc.stderr.decode(errors='replace').strip())
         return proc.stdout
-    head = git('rev-parse', 'HEAD').decode().strip()
+    head = git('rev-parse', rev).decode().strip()
     raw = git('show', f'{head}:{CATALOG_PATH}')
     commit = git('log', '-1', '--format=%H', head, '--', CATALOG_PATH).decode().strip()
     working = path.read_bytes() if path.is_file() else None
@@ -498,10 +581,95 @@ def capture_catalog(checkout=None):
     return path, raw, source
 
 
-def read_catalog(raw):
-    rows = list(csv.DictReader(io.StringIO(raw.decode('utf-8'))))
-    if not rows or list(rows[0]) != CATALOG_COLUMNS:
-        raise StageFailure('catalog columns differ from ' + ','.join(CATALOG_COLUMNS))
+_CAPTURED_FOOTPRINT_MAP = None
+
+
+def captured_footprint_map():
+    """Return the captured short-name -> Library:Footprint map without guessing."""
+    global _CAPTURED_FOOTPRINT_MAP
+    if _CAPTURED_FOOTPRINT_MAP is not None:
+        return dict(_CAPTURED_FOOTPRINT_MAP)
+    table = dict(FOME_FOOTPRINT_MAP)
+    if PACKAGE_MAP_PATH.is_file():
+        package_map = json.loads(PACKAGE_MAP_PATH.read_text())
+        for full_name in package_map.get('footprints', {}):
+            library, _, short_name = full_name.partition(':')
+            if not library or not short_name:
+                continue
+            existing = table.get(short_name)
+            if existing is not None and existing != full_name:
+                raise StageFailure(f'ambiguous footprint map entry for {short_name}: {existing} vs {full_name}')
+            table[short_name] = full_name
+    _CAPTURED_FOOTPRINT_MAP = table
+    return dict(_CAPTURED_FOOTPRINT_MAP)
+
+
+def catalog_lcsc(row):
+    """Return the LCSC column value from a catalog row across declared BOM header schemas."""
+    for column in ('LCSC Part #', 'LCSC'):
+        if column in row and row[column] is not None:
+            return row[column]
+    raise StageFailure('catalog row lacks an LCSC column')
+
+
+def designator_quantity(designator_text):
+    """Derive integer quantity text from a comma-separated Designator cell; refuse empty designators."""
+    parts = [item.strip() for item in (designator_text or '').split(',')]
+    if not (designator_text or '').strip() or any(not item for item in parts):
+        raise StageFailure(f'invalid catalog Designator cell: {designator_text!r}')
+    return str(len(parts))
+
+
+def resolve_catalog_footprint(footprint, footprint_map=None):
+    """Resolve a catalog footprint through the captured footprint map; refuse unmapped library-less names."""
+    text = (footprint or '').strip()
+    if not text:
+        raise StageFailure('empty catalog footprint')
+    if ':' in text:
+        library, _, short_name = text.partition(':')
+        if not library or not short_name:
+            raise StageFailure('malformed catalog footprint: ' + text)
+        return text
+    fmap = captured_footprint_map() if footprint_map is None else footprint_map
+    resolved = fmap.get(text)
+    if not resolved:
+        raise StageFailure('unmapped library-less footprint: ' + text)
+    return resolved
+
+
+def read_catalog_with_schema(raw, *, footprint_map=None):
+    """Parse a BOM catalog under the two declared header schemas; return (rows, schema_name, columns)."""
+    reader = csv.DictReader(io.StringIO(raw.decode('utf-8')))
+    header = list(reader.fieldnames or [])
+    schema_name = next((name for name, cols in CATALOG_HEADER_SCHEMAS.items() if header == cols), None)
+    if schema_name is None:
+        raise StageFailure(
+            f"catalog columns {','.join(header)!r} differ from declared schemas "
+            f"{','.join(CATALOG_COLUMNS)} and {','.join(CATALOG_COLUMNS_4)}"
+        )
+    raw_rows = list(reader)
+    if not raw_rows:
+        raise StageFailure('catalog has no rows cleanly matching ' + ','.join(header))
+    fmap = captured_footprint_map() if footprint_map is None else footprint_map
+    rows = []
+    for raw_row in raw_rows:
+        if None in raw_row or any(value is None for value in raw_row.values()):
+            raise StageFailure('catalog row column count differs from ' + ','.join(header))
+        footprint = resolve_catalog_footprint(raw_row['Footprint'], fmap)
+        lcsc = catalog_lcsc(raw_row)
+        quantity = (designator_quantity(raw_row['Designator'])
+                    if schema_name == 'four_column' else raw_row['Quantity'])
+        row = dict(raw_row)
+        row['Footprint'] = footprint
+        row['LCSC Part #'] = lcsc
+        row['LCSC'] = lcsc
+        row['Quantity'] = quantity
+        rows.append(row)
+    return rows, schema_name, list(header)
+
+
+def read_catalog(raw, *, footprint_map=None):
+    rows, _, _ = read_catalog_with_schema(raw, footprint_map=footprint_map)
     return rows
 
 
@@ -513,20 +681,21 @@ def select_part(rows, lib_id, value):
     for index, row in enumerate(rows, start=2):
         if row['Comment'] != value:
             continue
-        entry = {'catalog_line': index, 'footprint': row['Footprint'], 'lcsc': row['LCSC Part #'],
+        lcsc = catalog_lcsc(row)
+        entry = {'catalog_line': index, 'footprint': row['Footprint'], 'lcsc': lcsc,
                  'quantity': row['Quantity']}
         match = re.fullmatch(family['pattern'], row['Footprint'])
         if not match:
             rejected.append({**entry, 'reason': 'footprint is not a two-terminal chip of the symbol family'})
         elif match[1] not in CHIP_SIZES:
             rejected.append({**entry, 'reason': 'unknown chip size ' + match[1]})
-        elif not re.fullmatch(r'C\d+', row['LCSC Part #']):
+        elif not re.fullmatch(r'C\d+', lcsc):
             rejected.append({**entry, 'reason': 'no LCSC part number'})
         elif not row['Quantity'].isdigit():
             rejected.append({**entry, 'reason': 'quantity is not an integer'})
         else:
             size = CHIP_SIZES.index(match[1])
-            key = [abs(size - CHIP_SIZES.index(default)), -size, -int(row['Quantity']), int(row['LCSC Part #'][1:])]
+            key = [abs(size - CHIP_SIZES.index(default)), -size, -int(row['Quantity']), int(lcsc[1:])]
             candidates.append({**entry, 'package': match[1], 'rank_key': key})
     candidates.sort(key=lambda c: c['rank_key'])
     if not candidates:
@@ -555,12 +724,12 @@ def stage_parts(stage, state, options):
     if params['header']['assembly'] == 'assembled':
         raise StageFailure('assembled header requires a captured parts/1 manifest')
     path, raw, source = capture_catalog(options.get('catalog_checkout'))
-    rows = read_catalog(raw)
+    rows, header_schema, columns = read_catalog_with_schema(raw)
     (stage.dir / 'catalog').mkdir()
     copy = stage.dir / 'catalog' / path.name
     copy.write_bytes(raw)
     stage.input(copy, 'fome-mc BOM catalog (committed blob, copied)')
-    stage.receipt['details']['catalog'] = source
+    stage.receipt['details']['catalog'] = {**source, 'header_schema': header_schema, 'columns': columns}
     components = [('Device:R', params['resistor']), ('Device:C', params['capacitor'])]
     parts, selections = {}, {}
     for lib_id, part in components:
@@ -577,7 +746,7 @@ def stage_parts(stage, state, options):
                              if chosen['package'] != default else 'fixture default package')}
     header = params['header']
     value = 'Conn_01x%02d' % header['pins']
-    datasheet_column = next((c for c in CATALOG_COLUMNS if c.lower() == 'datasheet'), None)
+    datasheet_column = next((c for c in columns if c.lower() == 'datasheet'), None)
     footprint = 'Connector_PinHeader_2.54mm:PinHeader_1x%02d_P2.54mm_Vertical' % header['pins']
     catalog_rows = [i for i, row in enumerate(rows, start=2) if row['Comment'] == value]
     if catalog_rows:
@@ -605,7 +774,7 @@ def stage_parts(stage, state, options):
     manifest = {
         'schema': PARTS_SCHEMA, 'qualification': QUALIFICATION,
         'catalog': {'path': stage.rel(copy), 'sha256': source['sha256'], 'source': source,
-                    'columns': CATALOG_COLUMNS},
+                    'columns': columns},
         'policy': {'value_match': 'catalog Comment equals the intent value exactly',
                    'families': {k: v['pattern'] for k, v in FAMILIES.items()},
                    'rank': ['distance from the fixture default chip size', 'larger chip first on equal distance',
@@ -676,6 +845,19 @@ def expected_nets(intent):
             for net in intent['nets']}
 
 
+def capture_intent_libraries(intent):
+    """Host-side subset capture for rung-1's explicit parts and implicit power markers."""
+    from .symbol_capture import capture_libraries
+    selections = {c['lib_id'] for c in intent['components']}
+    power_nets = {n['name'] for n in intent['nets'] if not n['name'].startswith('/')}
+    if power_nets:
+        selections.update('power:' + name for name in power_nets)
+        selections.add('power:PWR_FLAG')
+    sources = {name: (STOCK / 'symbols' / f'{name}.kicad_sym').read_bytes()
+               for name in sorted({s.split(':')[0] for s in selections})}
+    return capture_libraries(selections, sources)
+
+
 def native_candidate(root, project, footprint_libraries=()):
     """A read-only sandbox view: project/ plus captured stock tables and libraries."""
     copy_tree(project, root / 'project')
@@ -686,8 +868,17 @@ def native_candidate(root, project, footprint_libraries=()):
     for table in ('sym-lib-table', 'fp-lib-table'):
         shutil.copyfile(STOCK / 'template' / table, root / 'stock' / 'template' / table)
     (root / 'stock' / 'symbols').mkdir()
-    for library in SYMBOL_LIBRARIES:
-        shutil.copyfile(STOCK / 'symbols' / f'{library}.kicad_sym', root / 'stock' / 'symbols' / f'{library}.kicad_sym')
+    from .symbol_capture import capture_libraries
+    from .symbol_library import children, field, parse_sexpr
+    selections = {field(symbol, 'lib_id', 1)[0]
+                  for sch in Path(project).rglob('*.kicad_sch')
+                  for symbol in children(parse_sexpr(sch.read_bytes()), 'symbol')}
+    sources = {name: (STOCK / 'symbols' / f'{name}.kicad_sym').read_bytes()
+               for name in sorted({s.split(':')[0] for s in selections})}
+    _, captured, receipts = capture_libraries(selections, sources)
+    for path, data in captured.items():
+        (root / 'stock' / 'symbols' / path).write_bytes(data)
+    write_json(root / 'stock' / 'symbol-captures.json', receipts)
     return root
 
 
@@ -755,15 +946,17 @@ def stage_schematic(stage, state, options):
     stage.input(state['parts'], 'parts manifest')
     libraries_dir = stage.dir / 'libraries'
     libraries_dir.mkdir()
-    libraries, captured = [], {}
-    for library in SYMBOL_LIBRARIES:
-        source = STOCK / 'symbols' / f'{library}.kicad_sym'
-        raw = source.read_bytes()
-        (libraries_dir / source.name).write_bytes(raw)
-        libraries.append({'name': library, 'path': source.name, 'sha256': sha256_bytes(raw)})
-        captured[source.name] = raw
-        stage.input(source, 'stock symbol library')
-    intent = connectivity_intent(params, manifest['parts'], libraries)
+    intent = connectivity_intent(params, manifest['parts'], [])
+    libraries, captured, receipts = capture_intent_libraries(intent)
+    intent['libraries'] = libraries
+    for lib in libraries:
+        (libraries_dir / lib['path']).write_bytes(captured[lib['path']])
+        stage.input(STOCK / 'symbols' / lib['path'], 'stock symbol library')
+    write_json(stage.dir / 'symbol-captures.json', receipts)
+    stage.output(libraries_dir, 'captured symbol subsets')
+    stage.output(stage.dir / 'symbol-captures.json', 'symbol subset provenance')
+    stage.receipt['details']['symbol_captures'] = receipts
+    state['symbol_libraries'] = libraries_dir
     write_json(stage.dir / 'intent.json', intent)
     stage.output(stage.dir / 'intent.json', 'connectivity intent')
     resolved = resolve_intent(intent, captured)
@@ -973,6 +1166,14 @@ def stage_review(stage, state, options):
         stage.tool(tool)
     scope_path = Path(state['scope'])
     scope = json.loads(scope_path.read_text())
+    if state.get('symbol_libraries'):
+        for item in scope['inputs']:
+            if item['at'] == 'stock/symbols':
+                item['path'] = str(state['symbol_libraries'].absolute())
+                item.pop('include', None)
+        scope_path = scope_path.with_name('rung1.captured.scope.json')
+        write_json(scope_path, scope)
+        state['scope'] = scope_path
     if scope['schematic'] != f"project/{state['name']}.kicad_sch":
         # Fixture stand-in only: the project kept its own name; the scope is re-pointed, not edited.
         scope['schematic'] = f"project/{state['name']}.kicad_sch"

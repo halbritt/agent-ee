@@ -10,6 +10,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -166,6 +167,84 @@ class TransformTests(unittest.TestCase):
 
 
 class DeterminismTests(unittest.TestCase):
+    def twenty_parts(self):
+        intent = load('regulator.intent.json')
+        intent['components'] = [dict(id=f'c{i}', reference=f'C{i}', lib_id='OwnedGen:CAP',
+                                     value='100n', footprint='', units=[1]) for i in range(1, 21)]
+        intent['nets'] = [dict(id=f'n{p}', name=f'N{p}',
+                               terminals=[dict(component=c['id'], pin=dict(number=p))
+                                          for c in intent['components']]) for p in ('1', '2')]
+        intent['no_connects'] = []
+        intent['libraries'] = intent['libraries'][:1]
+        return intent, captures(intent)
+
+    def test_subset_equivalence(self):
+        from agent_ee.symbol_capture import capture_symbols
+        intent, whole = self.twenty_parts()
+        layout = load('regulator.layout.json')
+        before, whole_files = emit_schematic(intent, whole, layout)
+        self.assertEqual(before['execution'], 'ok', before['findings'])
+        subset, receipt = capture_symbols(whole['lib/Owned_Gen.kicad_sym'], ['CAP'], library='OwnedGen')
+        intent['libraries'][0]['sha256'] = hashlib.sha256(subset).hexdigest()
+        after, subset_files = emit_schematic(intent, {'lib/Owned_Gen.kicad_sym': subset}, layout)
+        self.assertEqual(after['execution'], 'ok', after['findings'])
+        self.assertEqual(len(intent['components']), 20)
+        self.assertEqual(whole_files, subset_files)
+        self.assertEqual(after['libraries'][0]['sha256'], receipt['output']['sha256'])
+
+    def test_subset_missing_symbol_refused(self):
+        from agent_ee.symbol_capture import capture_symbols
+        intent, whole = self.twenty_parts()
+        subset, _ = capture_symbols(whole['lib/Owned_Gen.kicad_sym'], ['CONN3'], library='OwnedGen')
+        intent['libraries'][0]['sha256'] = hashlib.sha256(subset).hexdigest()
+        result, files = emit_schematic(intent, {'lib/Owned_Gen.kicad_sym': subset}, load('regulator.layout.json'))
+        self.assertIsNone(files)
+        self.assertEqual(result['outcome'], 'unknown')
+        findings = [f for f in result['findings'] if f['code'] == 'resolution_unknown_symbol']
+        self.assertEqual(len(findings), 20)
+        self.assertTrue(all(f['message'] == 'unknown symbol: CAP' for f in findings))
+
+    def test_each_library_parsed_once_per_emission_including_hierarchy(self):
+        from agent_ee import symbol_library
+        for name in ('regulator', 'two_level'):
+            intent = load(name + '.intent.json')
+            captured = captures(intent)
+            for _ in range(2):
+                with mock.patch.object(symbol_library, 'parse_sexpr', wraps=symbol_library.parse_sexpr) as parse:
+                    result, _ = emit_schematic(intent, captured, load(name + '.layout.json'))
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                self.assertCountEqual([call.args[0] for call in parse.call_args_list], list(captured.values()))
+
+    def test_subsequent_emission_revalidates_changed_and_unused_libraries(self):
+        intent = load('regulator.intent.json')
+        captured = captures(intent)
+        result, _ = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok')
+        # Identical bytes may share a parse, but not a declaration's hash check.
+        intent['libraries'].append(dict(name='Unused', path='lib/Unused.kicad_sym', sha256='0' * 64))
+        captured['lib/Unused.kicad_sym'] = captured['lib/Owned_Gen.kicad_sym']
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertIsNone(files)
+        self.assertTrue(any(f['code'] == 'resolution_library_coverage' for f in result['findings']))
+        intent['libraries'][-1]['sha256'] = hashlib.sha256(captured['lib/Unused.kicad_sym']).hexdigest()
+        result, _ = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        captured['lib/Unused.kicad_sym'] += b' '
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertIsNone(files)
+        self.assertTrue(any(f['code'] == 'resolution_library_coverage' for f in result['findings']))
+
+    def test_identical_library_bytes_at_distinct_paths_share_one_parse(self):
+        from agent_ee import symbol_library
+        intent, captured = self.twenty_parts()
+        lib = intent['libraries'][0]
+        intent['libraries'].append(dict(lib, name='Unused', path='lib/Alias.kicad_sym'))
+        captured['lib/Alias.kicad_sym'] = captured[lib['path']]
+        with mock.patch.object(symbol_library, 'parse_sexpr', wraps=symbol_library.parse_sexpr) as parse:
+            result, _ = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        self.assertEqual(parse.call_count, 1)
+
     def test_part_binding_fields_are_hidden_and_override_library_defaults(self):
         intent = load('regulator.intent.json')
         binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',
@@ -329,7 +408,9 @@ class RefusalTests(unittest.TestCase):
         variant(vo, vo.replace('7.62 0', '-7.62 0'), 'impossible_pin_endpoint')
         variant(vo, vo.replace('7.62 0', '7.600001 0'), 'unlocatable_pin')
         body = '(symbol "REG3_0_1"\n'
-        variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 6)\n'
+        variant(body, body + '\t\t\t(bezier\n\t\t\t\t(pts (xy -5.08 5.08) (xy 0 6) (xy 0 6) (xy 5.08 5.08))\n'
+                '\t\t\t)\n', 'unsupported_graphic')
+        variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 5.08)\n'
                 '\t\t\t\t(end 5.08 5.08)\n\t\t\t)\n', 'unsupported_graphic')
 
     def test_stacked_pins_share_one_label_only_on_one_net(self):
@@ -630,6 +711,71 @@ class NativeEmissionTests(unittest.TestCase):
         self.assertEqual(result['execution'], 'ok', result['findings'])
         _, _, _, (_, shorted, _) = self.native_run('regulator', files, 'short')
         self.assertEqual(shorted['/VIN'], [['C1', '1'], ['J1', '1'], ['J1', '3'], ['U1', '1'], ['U1', '3']])
+
+    def test_inductor_and_coax_emit(self):
+        import os
+        from agent_ee.symbol_capture import capture_symbols
+        stock_dir = Path('/usr/share/kicad/symbols')
+        for lib_file in ('Device.kicad_sym', 'Connector.kicad_sym'):
+            if not (stock_dir / lib_file).is_file():
+                if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+                    raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: stock library missing: ' + lib_file)
+                self.skipTest('stock library missing: ' + lib_file)
+        dev_sub, _ = capture_symbols((stock_dir / 'Device.kicad_sym').read_bytes(), ['L'], library='Device')
+        con_sub, _ = capture_symbols((stock_dir / 'Connector.kicad_sym').read_bytes(), ['Conn_Coaxial'],
+                                     library='Connector')
+        pwr_raw = (PROJECT / 'lib/Owned_Power.kicad_sym').read_bytes()
+        captured = {'lib/Device.kicad_sym': dev_sub, 'lib/Connector.kicad_sym': con_sub,
+                    'lib/Owned_Power.kicad_sym': pwr_raw}
+        libs = [
+            dict(name='Device', path='lib/Device.kicad_sym', sha256=hashlib.sha256(dev_sub).hexdigest()),
+            dict(name='Connector', path='lib/Connector.kicad_sym', sha256=hashlib.sha256(con_sub).hexdigest()),
+            dict(name='OwnedPower', path='lib/Owned_Power.kicad_sym', sha256=hashlib.sha256(pwr_raw).hexdigest()),
+        ]
+        intent = dict(
+            schema='agent-ee.connectivity-intent/1',
+            libraries=libs,
+            components=[
+                dict(id='j1', reference='J1', lib_id='Connector:Conn_Coaxial', value='SMA',
+                     footprint='OwnedFP:CAP_2PAD', units=[1]),
+                dict(id='l1', reference='L1', lib_id='Device:L', value='4u7',
+                     footprint='OwnedFP:CAP_2PAD', units=[1]),
+                dict(id='gnd', reference='#PWR01', lib_id='OwnedPower:GND', value='GND', footprint='', units=[1]),
+                dict(id='flg', reference='#FLG01', lib_id='OwnedPower:PWR_FLAG', value='PWR_FLAG',
+                     footprint='', units=[1]),
+            ],
+            nets=[
+                dict(id='rf', name='RF_IN', terminals=[
+                    dict(component='j1', pin=dict(number='1')),
+                    dict(component='l1', pin=dict(number='1')),
+                ]),
+                dict(id='gnd', name='GND', terminals=[
+                    dict(component='j1', pin=dict(number='2')),
+                    dict(component='l1', pin=dict(number='2')),
+                    dict(component='gnd', pin=dict(number='1')),
+                    dict(component='flg', pin=dict(number='1')),
+                ]),
+            ],
+            no_connects=[],
+        )
+        layout = dict(schema='agent-ee.schematic-layout/1',
+                      namespace='6f0f7f0e-5c43-5b8e-9a51-2a3f2c1d0e40', project='coax_inductor')
+        symbol_table = {'Device': '${KIPRJMOD}/lib/Device.kicad_sym',
+                        'Connector': '${KIPRJMOD}/lib/Connector.kicad_sym',
+                        'OwnedPower': '${KIPRJMOD}/lib/Owned_Power.kicad_sym'}
+        footprint_table = {'OwnedFP': '${KIPRJMOD}/lib/OwnedFP.pretty'}
+        result, files = emit_schematic(intent, captured, layout,
+                                       symbol_table=symbol_table, footprint_table=footprint_table)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project, work, erc, (components, nets, singles) = self.native_run(
+            'coax_inductor', {**captured, **files}, 'coax_inductor')
+        violations = [v for sheet in erc['sheets'] for v in sheet['violations']]
+        self.assertEqual(violations, [])
+        self.assertEqual({ref: c['lib'] for ref, c in components.items()},
+                         {'J1': ('Connector', 'Conn_Coaxial'), 'L1': ('Device', 'L')})
+        self.assertEqual(nets, {'/RF_IN': [['J1', '1'], ['L1', '1']], 'GND': [['J1', '2'], ['L1', '2']]})
+        self.assertEqual(singles, {})
+        self.assertNativeResave(project, work, 'coax_inductor', files)
 
 
 if __name__ == '__main__':

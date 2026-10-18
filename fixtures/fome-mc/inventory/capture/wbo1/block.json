@@ -93,7 +93,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "b52d2a0f0f6c60a8247bbd9cbbe077acf556bff550b9bd78a40fe42b73e5d8c6",
+    "block-contract.json": "6afd7e451156ebf0e8ecdfc3705079129791d4775394db5086465d94c2ca7f6f",
     "connectivity.json": "63f3f04579b2fa9bcd82b625d2bc3ecdcbcb52d70a8f2e596b93a0dcc462e81c",
     "interface.json": "4a2f93d41f41a5185d9d2b7959e872fb095e02b935b2f9c49952ffd97f404c6f",
     "parts.json": "c12be7320681b3bb0f1152044d3b951926decb719043977087577163b4c610bb",
@@ -420,11 +420,13 @@
   "sheet": "sheets/wbo1.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (MIT, Matthew Kennedy 2023)",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (T9, T6; MIT, Matthew Kennedy 2023)",
     "paths": {
       "sheets/wbo1.kicad_sch": "sheets/wbo1.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "MIT, Copyright (c) 2023 Matthew Kennedy (T9; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception.",
+    "upstream_origin": "mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (T9, T6; MIT, Matthew Kennedy 2023)"
   },
   "version": "draft-df304f332129"
 }

@@ -19,6 +19,7 @@ REAL = json.loads((ROOT / 'docs/file-origins.json').read_text())
 UNRESOLVED = 'unresolved-owner-decision-required'
 PROPOSED = 'proposed-mit-pending-owner-approval'
 CONFIRMED = 'owner-confirmed'
+DERIVED = 'derived'
 
 
 def origin(status, **extra):
@@ -132,27 +133,42 @@ class RepositoryInventoryTests(unittest.TestCase):
         for item in self.files.values():
             if item['permission_status'] == PROPOSED:
                 self.assertLessEqual(set(item['origins']), origins.OWNED, item['path'])
-        # The one confirmed third-party origin is the owner decision of 2026-10-18 on fome-mc fixtures.
+        # T16 is the sole owner-confirmed origin, and every T16 file folds to derived (nothing is owner-confirmed).
         confirmed = {key for key, value in REAL['origins'].items() if value['permission_status'] == CONFIRMED}
         self.assertEqual(confirmed, {'T16'})
+        self.assertEqual([item['path'] for item in self.files.values() if item['permission_status'] == CONFIRMED], [])
         for key, value in REAL['origins'].items():
             if key not in origins.OWNED and key not in confirmed:
                 self.assertEqual(value['permission_status'], UNRESOLVED, key)
 
     def test_fome_mc_psu_capture_reports_its_unresolved_upstream(self):
-        # T16 is the owner decision of 2026-10-18; the PSU sheet still embeds Polygonus (T3, unresolved).
+        # Owner decision of 2026-10-18: T16 files fold to derived with upstream origin ids and licences named.
         t16 = REAL['origins']['T16']
         self.assertEqual(t16['permission_status'], CONFIRMED)
-        self.assertIn('T3', t16['embedded_origins'])
-        self.assertEqual(REAL['origins']['T3']['permission_status'], UNRESOLVED)
+        self.assertEqual(t16['embedded_origins'], ['T3', 'T4', 'T6', 'T8', 'T9'])
+        expected_upstream = [{'id': key, 'upstream_license': REAL['origins'][key]['upstream_license']}
+                             for key in ('T3', 'T4', 'T5', 'T6', 'T8', 'T9')]
+        for key in ('T3', 'T4', 'T5', 'T6', 'T8', 'T9'):
+            self.assertEqual(REAL['origins'][key]['permission_status'], UNRESOLVED)
         sheet = self.files['fixtures/fome-mc/psu/capture/psu/sheets/psu.kicad_sch']
-        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
-                         ('copied-design', ['T16'], UNRESOLVED))
+        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status'], sheet['upstream_origins']),
+                         ('copied-design', ['T16'], DERIVED, expected_upstream))
         for path in ('fixtures/fome-mc/psu/capture/psu/block.json', 'fixtures/fome-mc/psu/inventory.json',
                      'fixtures/fome-mc/psu/board/interface.json'):
             self.assertIn('T16', self.files[path]['origins'], path)
-            self.assertEqual(self.files[path]['permission_status'], UNRESOLVED, path)
+            self.assertEqual(self.files[path]['permission_status'], DERIVED, path)
+            self.assertEqual(self.files[path]['upstream_origins'], expected_upstream, path)
         self.assertFalse([p for p in self.files if p.startswith('fixtures/fome-mc/psu/capture/psu/sources/')])
+
+    def test_fome_mc_ampseal_conversion_reports_its_polygonus_upstream(self):
+        # AGENTEE-169: the converted fome-mc blob is the Polygonus b3176cb blob (T8, unresolved).
+        footprint = self.files['fixtures/fome-mc/ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod']
+        self.assertEqual((footprint['kind'], footprint['origins'], footprint['permission_status']),
+                         ('copied-design', ['T16', 'T8'], UNRESOLVED))
+        self.assertEqual(REAL['origins']['T8']['permission_status'], UNRESOLVED)
+        drawing = self.files['fixtures/pod/ampseal/drawing-776228.json']
+        self.assertEqual((drawing['kind'], drawing['origins']), ('owned-metadata', ['AE']))
+        self.assertFalse([p for p in self.files if p.startswith('fixtures/pod/') and p.endswith('.pdf')])
 
     def test_fome_mc_fixtures_follow_the_recorded_owner_decision(self):
         t16 = REAL['origins']['T16']
@@ -160,14 +176,34 @@ class RepositoryInventoryTests(unittest.TestCase):
         self.assertIn('### fome-mc reference sheets are committed as fixtures',
                       (ROOT / 'docs/decisions.md').read_text())
         self.assertIn('df304f3321296f7e517e0d2e2aa52e1380d52993', t16['upstream']['revisions'])
+        expected_upstream = [{'id': key, 'upstream_license': REAL['origins'][key]['upstream_license']}
+                             for key in ('T3', 'T4', 'T5', 'T6', 'T8', 'T9')]
         sheet = self.files['fixtures/fome-mc/inventory/capture/wbo1/sheets/wbo1.kicad_sch']
-        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
-                         ('copied-design', ['T16'], UNRESOLVED))  # T16 embeds unresolved Polygonus (T3)
+        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status'], sheet['upstream_origins']),
+                         ('copied-design', ['T16'], DERIVED, expected_upstream))
         entry = self.files['fixtures/fome-mc/inventory/capture/wbo1/block.json']
-        self.assertEqual((entry['kind'], entry['permission_status']), ('retained-output', UNRESOLVED))
+        self.assertEqual((entry['kind'], entry['permission_status'], entry['upstream_origins']),
+                         ('retained-output', DERIVED, expected_upstream))
+        for path in ('fixtures/fome-mc/wbo1/blocks/wbo1/sheets/wbo1.kicad_sch',
+                     'fixtures/fome-mc/wbo1/blocks/wbo2/sheets/wbo2.kicad_sch',
+                     'fixtures/fome-mc/wbo1/blocks/wbo1/block.json',
+                     'fixtures/fome-mc/wbo1/blocks/wbo2/block.json',
+                     'fixtures/fome-mc/wbo1/expected-baseline.json',
+                     'fixtures/fome-mc/wbo1/upstream-parity.json',
+                     'fixtures/fome-mc/wbo1/reference.kicad_sch'):
+            with self.subTest(path=path):
+                self.assertIn('T16', self.files[path]['origins'])
+                self.assertEqual(self.files[path]['permission_status'], DERIVED)
+                self.assertEqual(self.files[path]['upstream_origins'], expected_upstream)
         self.assertEqual(self.files['fixtures/fome-mc/LICENSE-NOTICE.md']['permission_status'], PROPOSED)
         inventory_file = self.files['fixtures/fome-mc/inventory/block-inventory.json']
-        self.assertEqual((inventory_file['origins'], inventory_file['permission_status']), (['AE', 'T16'], UNRESOLVED))
+        self.assertEqual((inventory_file['origins'], inventory_file['permission_status'],
+                          inventory_file['upstream_origins']),
+                         (['AE', 'T16'], DERIVED, expected_upstream))
+        for doc in ('fixtures/fome-mc/LICENSE-NOTICE.md', 'docs/third-party-origins.md'):
+            text = (ROOT / doc).read_text()
+            for token in ('T3', 'T4', 'T6', 'T8', 'T9', 'CC-BY-SA-4.0', 'Matthew Kennedy', 'derived'):
+                self.assertIn(token, text, f'{doc} missing {token}')
 
     def test_walk_exclusions_mirror_gitignore(self):
         lines = {line.strip() for line in (ROOT / '.gitignore').read_text().splitlines()
@@ -258,17 +294,20 @@ class InventoryBoundaryTests(unittest.TestCase):
             rules = [rule(['fixture/a.kicad_sch'], ['T2'], 'copied-design'),
                      rule(['fixture/b.kicad_sch'], ['T4'], 'copied-design'),
                      rule(['fixture/c.json'], ['AE', 'T5'], 'owned-metadata')]
-            # T2 embeds unresolved T1; T4 embeds T5, which is confirmed and embeds nothing.
+            # T2 embeds unresolved T1 (folds to derived); T4 embeds T5, which is confirmed and embeds nothing.
             data = inventory(rules, T2=origin(CONFIRMED, embedded_origins=['T1'], **record),
                              T4=origin(CONFIRMED, embedded_origins=['T5'], **record), T5=origin(CONFIRMED, **record))
             errors, summary = tree.check(data)
             self.assertEqual(errors, [])
-            self.assertEqual([f['permission_status'] for f in summary['inventory']], [UNRESOLVED, CONFIRMED, CONFIRMED])
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [DERIVED, CONFIRMED, CONFIRMED])
             self.assertEqual([f['origins'] for f in summary['inventory']], [['T2'], ['T4'], ['AE', 'T5']])
-            # Embedding is transitive: T5 embedding T1 makes every file reaching it unresolved.
+            self.assertEqual(summary['inventory'][0]['upstream_origins'], [{'id': 'T1', 'upstream_license': 'u'}])
+            # Embedding is transitive: T5 embedding T1 makes every confirmed file reaching it derived.
             data['origins']['T5']['embedded_origins'] = ['T1']
             errors, summary = tree.check(data)
-            self.assertEqual([f['permission_status'] for f in summary['inventory']], [UNRESOLVED] * 3)
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [DERIVED] * 3)
+            for item in summary['inventory']:
+                self.assertIn({'id': 'T1', 'upstream_license': 'u'}, item['upstream_origins'])
             for embedded, expected in ((['T99'], "origin T2: unknown embedded origin 'T99'"),
                                        (['T2'], 'origin T2: embeds itself'),
                                        ('T1', 'origin T2: embedded_origins must be a list')):

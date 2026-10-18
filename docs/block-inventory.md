@@ -42,11 +42,13 @@ bytes do not depend on where the source was cloned. The same identity is the
   single-block inventory such as the [PSU block](fome-psu-block.md) uses it. Every
   native component must still be accounted for, and `"all"` on an occurrence that
   holds a block reference is refused.
-- `blocks`: `id` (lowercase slug), `role`, `title`, `origin`, `instances`
-  (`{path, references}`, where `references` is `"all"` or an explicit list),
-  `boundary` (`{document, locator}`, the source of the interface requirement) and
-  `pending` requirements (`id`, `statement`, `document`, `locator`, `conditions`,
-  `blocked_by`).
+- `blocks`: `id` (lowercase slug), `role`, `title`, `origin`,
+  `upstream_license`, `instances` (`{path, references}`, where `references` is
+  `"all"` or an explicit list), `boundary` (`{document, locator}`, the source of
+  the interface requirement) and `pending` requirements (`id`, `statement`,
+  `document`, `locator`, `conditions`, `blocked_by`). Capture copies `origin`
+  and `upstream_license` into `block.json` as `source.upstream_origin` and
+  `source.upstream_license`.
 
 ## What capture does
 

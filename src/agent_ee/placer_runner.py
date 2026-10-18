@@ -68,6 +68,8 @@ def _unrouted_board(source):
     if len(board.GetTracks()) or len(board.Zones()):
         raise ValueError('initial placer refuses existing tracks, vias or zones')
     for fp in board.GetFootprints():
+        if any(not zone.GetIsRuleArea() for zone in fp.Zones()):
+            raise ValueError('initial placer refuses footprint-owned copper zones')
         if any(s.GetLayer() == pcbnew.Edge_Cuts for s in list(fp.GraphicalItems()) + list(fp.GetFields())):
             raise ValueError('initial placer refuses footprint-owned board edges')
     return board
@@ -182,7 +184,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes):
 def _retain_failure(root, name, scratch, error):
     retained = Path(tempfile.mkdtemp(prefix=name + '-failure-', dir=root))
     names = ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json',
-             'placement-judgment.json', 'native-drc.json', 'native-drc.stdout.txt',
+             'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json')
     for name in names:
         path = scratch / name
@@ -222,6 +224,12 @@ def place_candidate(source, netlist, destination, request):
             write_json(scratch / 'placement-plan.json', plan)
             try:
                 report = _evaluate_proposal(board, output, plan, netlist_bytes)
+                from .placement_adapter import write_scope
+                scope = write_scope(source.read_bytes(), output.read_bytes())
+                write_json(scratch / 'placement-write-scope.json', scope)
+                if scope['status'] != 'allowed':
+                    raise ValueError(f"native saved placement exceeded write scope: {scope['violations']}")
+                report['write_scope'] = scope
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
                 write_json(scratch / 'placement-result.json', report)

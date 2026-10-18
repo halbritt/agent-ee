@@ -51,7 +51,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "6bdf6ddddbaf63133f98e415a6880a97cee770a30b55461020218b11486b1c93",
+    "block-contract.json": "524824416274861a5d7103ab059322957c10b79f4fe29409ee23cf3f6d7786be",
     "connectivity.json": "6bb7b1ea8f82a48f831ef92b79b1e79230d425cf36c445304fc7cd316954c7ee",
     "interface.json": "7833495305157fbe6fa4bfc790fc2bc20492d82bf26dbb868f4a0f9cac0114ea",
     "parts.json": "17518a2881ade5dc5b39a6fb29270fe7975b6ad0fd54881375632285eaedf720",
@@ -239,11 +239,13 @@
   "sheet": "sheets/knock.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus knock at b3176cb",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus knock at b3176cb (T8, T6)",
     "paths": {
       "sheets/knock.kicad_sch": "sheets/knock.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus knock at b3176cb (T8, T6)"
   },
   "version": "draft-df304f332129"
 }

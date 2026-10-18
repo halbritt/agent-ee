@@ -113,6 +113,21 @@ class PreflightTests(unittest.TestCase):
         source.write_text('# changed after capture')
         self.assert_refused('declared_installation_drift')
 
+    def test_severity_analyzer_pin_and_required_runtime_are_gated(self):
+        from agent_ee.kicad_happy import installation
+        from agent_ee.storage import write_json
+        root = self.run / 'analyzer'
+        write_json(root / '.claude-plugin/plugin.json', {'name': 'kicad-happy', 'version': '2.3.1'})
+        source = root / 'skills/probe.py'
+        source.parent.mkdir()
+        source.write_text('# installed source')
+        self.optional_expectation([{'kind': 'kicad_happy_severity_gate', 'params': {
+            'installation': str(root), 'installation_sha256': installation(root)['sha256']}}])
+        self.assertIn('/usr/bin/python3', self.expected['required_runtime'])
+        self.assertEqual(self.expected['declared_installations'], {str(root): installation(root)['sha256']})
+        source.write_text('# changed after capture')
+        self.assert_refused('declared_installation_drift')
+
     def test_path_shadow_cannot_replace_absolute_active_solver_identity(self):
         # Probe identities independently of the test host's installed toolchain.
         def which(name):
@@ -309,7 +324,7 @@ class PreflightTests(unittest.TestCase):
             verify_receipt(self.run, {'execution': 'ok'}, self.expected, 'circuit', 'initial')
 
     def test_unused_harness_change_is_recorded_and_launch_proceeds(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.preflight import verify_receipt
         from agent_ee.storage import digest, write_json
         require_toolchain()
