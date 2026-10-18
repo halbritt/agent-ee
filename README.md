@@ -289,6 +289,10 @@ The `parts_subset` check compares native symbol/footprint/supplier identities
 and required instances; absent native evidence leaves coverage unknown.
 The [Rung-1 captured-parts route](docs/rung1-parts.md) consumes that bundle
 with an explicitly assembled J1 and runs the existing assembly and package checks.
+The [rung-1 stage-ordered driver](docs/rung1-stages.md) runs one RC candidate
+through requirements, parts, schematic, placement, routing, verification and
+fab. It records stages that were not reached rather than passed, and writes a
+record that `verify` recomputes against the same agent-ee commit.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
 are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap
