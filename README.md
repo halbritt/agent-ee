@@ -198,6 +198,10 @@ are advisory. Neither check establishes electrical adequacy.
 survive generation: each names exactly one native net at its declared terminals.
 Suggested-name collisions are reported as information with deterministic
 proposals, and names without a level annotation are unknown.
+The [regeneration determinism check](docs/design-diff.md) compares a regenerated
+board, schematic or netlist with a reference after removing UUIDs, timestamps
+and tool headers. It reports per-path differences and structural and placement
+hashes, and records byte differences without grading them.
 The [package consistency check](docs/package-consistency.md) compares each
 footprint with its LCSC part's package in a pinned catalog through a captured
 mapping table. Unmapped names are unknown; land-pattern geometry is not compared.
