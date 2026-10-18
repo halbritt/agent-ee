@@ -18,6 +18,7 @@ SPEC.loader.exec_module(origins)
 REAL = json.loads((ROOT / 'docs/file-origins.json').read_text())
 UNRESOLVED = 'unresolved-owner-decision-required'
 PROPOSED = 'proposed-mit-pending-owner-approval'
+CONFIRMED = 'owner-confirmed'
 
 
 def origin(status, **extra):
@@ -129,11 +130,16 @@ class RepositoryInventoryTests(unittest.TestCase):
 
     def test_only_agent_ee_origins_are_proposed_for_mit(self):
         for item in self.files.values():
-            if item['permission_status'] != UNRESOLVED:
+            if item['permission_status'] == PROPOSED:
                 self.assertLessEqual(set(item['origins']), origins.OWNED, item['path'])
+            elif item['permission_status'] == CONFIRMED:
+                self.assertTrue(set(item['origins']) - origins.OWNED, item['path'])
         for key, value in REAL['origins'].items():
             if key not in origins.OWNED:
-                self.assertEqual(value['permission_status'], UNRESOLVED, key)
+                # A third-party origin is unresolved unless an owner decision is recorded.
+                self.assertIn(value['permission_status'], (UNRESOLVED, CONFIRMED), key)
+                if value['permission_status'] == CONFIRMED:
+                    self.assertTrue(value['owner_record'].strip(), key)
 
     def test_walk_exclusions_mirror_gitignore(self):
         lines = {line.strip() for line in (ROOT / '.gitignore').read_text().splitlines()
@@ -212,6 +218,10 @@ class InventoryBoundaryTests(unittest.TestCase):
             errors, summary = tree.check(inventory(rules, T1=record))
             self.assertEqual(errors, [])
             self.assertEqual(summary['inventory'][0]['permission_status'], 'owner-confirmed')
+            # A generated record mixing agent-ee output with confirmed material is not MIT-proposed.
+            mixed = [rule(['fixture/'], ['AE-RUN', 'T1'], 'retained-output')]
+            errors, summary = tree.check(inventory(mixed, T1=record))
+            self.assertEqual((errors, summary['inventory'][0]['permission_status']), ([], 'owner-confirmed'))
 
     def test_third_party_origin_cannot_be_proposed_for_mit(self):
         with SyntheticTree({'src/a.py': 'x'}) as tree:

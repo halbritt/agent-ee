@@ -166,7 +166,9 @@ def status(inventory, ids):
     statuses = {inventory['origins'][key]['permission_status'] for key in ids}
     if UNRESOLVED in statuses:
         return UNRESOLVED
-    return PROPOSED if PROPOSED in statuses else CONFIRMED
+    # The MIT proposal covers only files whose every origin is proposed; an owner-confirmed
+    # third-party origin keeps the file under that owner decision instead.
+    return CONFIRMED if CONFIRMED in statuses else PROPOSED
 
 
 def capture_origins(inventory, manifest):

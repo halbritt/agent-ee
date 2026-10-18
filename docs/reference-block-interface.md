@@ -95,10 +95,11 @@ scripted and establishes no model-review quality claim. Run them on the host:
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_reference_blocks -v
 ```
 
-No FOME-MC sheet is distributed with this library. The proposed `psu` and `wbo1`
-entries still need authorized source acquisition, explicit electrical
-declarations, parts qualification and complete passing sealed runs. Owned
-controls establish capture behavior, not qualification of those actual blocks.
+The fome-mc `psu` block is committed under `fixtures/fome-mc/psu/`, following the
+owner decision of 2026-10-18 ([PSU block](fome-psu-block.md)). It is unverified
+and still needs explicit electrical declarations, parts qualification and
+complete passing sealed runs. Owned controls establish capture behavior, not
+qualification of the actual blocks.
 
 [Block adaptation](block-adaptation.md) instantiates a captured flat block into a
 pre-created child sheet and maps its requirements to fresh board checks. The

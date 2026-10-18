@@ -2165,6 +2165,16 @@
     },
     {
       "paths": [
+        "tests/test_fome_psu_block.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression tests for AGENTEE-106. The only KiCad text is an empty pre-created sheet literal; the tests read the committed fome-mc capture and copy nothing from it into the source."
+    },
+    {
+      "paths": [
         "fixtures/fome-mc/psu/capture/"
       ],
       "kind": "retained-output",

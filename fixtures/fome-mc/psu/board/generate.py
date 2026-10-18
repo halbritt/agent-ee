@@ -135,7 +135,8 @@ def sheet(name, file, sheet_uuid, x, y, height, pins):
             + f'(instances (project "{NAME}" (path "/{FOME_ROOT_UUID}" (page "{2 if name == "psu" else 3}")))))')
 
 
-def root_schematic():
+def root_schematic(psu_file=PSU_SHEET_FILE):
+    """The root sheet; ``psu_file`` names the PSU child (another path for a block adaptation)."""
     items, psu_pins, mcu_pins = [], [], []
     left, right, mcu_x, top = 60.96, 91.44, 132.08, 40.64
     for index, (port, shape, kind, net) in enumerate(PSU_PORTS):
@@ -154,7 +155,7 @@ def root_schematic():
             items.append(f'(wire (pts (xy {right} {y}) (xy {mcu_x} {y})) (stroke (width 0) (type default)) '
                          f'(uuid "{uid("wire/" + port)}"))')
     height = round(5.08 * 2 + 2.54 * len(PSU_PORTS), 2)
-    items.append(sheet('psu', PSU_SHEET_FILE, PSU_SHEET_UUID, left, top, height, psu_pins))
+    items.append(sheet('psu', psu_file, PSU_SHEET_UUID, left, top, height, psu_pins))
     items.append(sheet('mcu', STUB_FILE, uid('sheet/mcu'), mcu_x, top, height, mcu_pins))
     # Standalone boundary: J1 supplies 12V_RAW and its return. The PSU sheet already
     # flags 12V_RAW; the root flags J1's GND return and Q1's switched 12V_PROT, which

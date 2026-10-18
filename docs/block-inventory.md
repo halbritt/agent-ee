@@ -28,7 +28,11 @@ PYTHONPATH=src python3 -m agent_ee.block_inventory capture INVENTORY.json \
 - `documents`: names mapped to repository paths. Each block captures the ones its
   requirements cite under `sources/`, so requirement sources are captured files.
 - `unassigned`: `{instance, references, reason}` for native components that
-  belong to no block, for example root-sheet connectors.
+  belong to no block, for example root-sheet connectors. `references` may be
+  `"all"` for a whole sheet occurrence outside every captured block. A
+  single-block inventory such as the [PSU block](fome-psu-block.md) uses it. Every
+  native component must still be accounted for, and `"all"` on an occurrence that
+  holds a block reference is refused.
 - `blocks`: `id` (lowercase slug), `role`, `title`, `origin`, `instances`
   (`{path, references}`, where `references` is `"all"` or an explicit list),
   `boundary` (`{document, locator}`, the source of the interface requirement) and
