@@ -54,6 +54,9 @@ Outputs preserve raw idea, questions, original requirements and, when present,
 answers. `dialog.json` records their hashes, normalized answer provenance,
 dependency frontiers, findings and `acceptance_ready: false`. Missing or invalid
 answers yield `outcome: unknown`, exit 1 and **no derived requirement files**.
+If answer JSON exceeds the decoder's recursion limit, capture records
+`answers_too_deep` with reason `answers JSON nesting exceeds decoder recursion limit`.
+The raw answers and their hash are retained; no nesting is flattened or truncated.
 Malformed question/original-requirement schemas and I/O failures exit 2. Existing
 output directories are refused; an I/O failure can leave partial staging files.
 
