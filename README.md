@@ -153,6 +153,8 @@ and hierarchical annotation application remain unqualified.
 intent and libraries or an explicit golden netlist. Resolved intent is rederived
 before comparison. Exact instance connectivity catches exchanges that collapsed
 part labels can miss; ambiguous correspondence and search exhaustion remain unknown.
+Missing, malformed or contradictory native connectivity artifacts leave parity
+coverage unknown.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs. Neither check establishes electrical adequacy.
 The [package consistency check](docs/package-consistency.md) compares each

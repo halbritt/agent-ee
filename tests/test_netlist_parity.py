@@ -209,17 +209,46 @@ class NativeParityTests(unittest.TestCase):
                 _, checks = self.run_variant(variant)
                 self.assertEqual(checks[1]['execution'], 'ok', checks)
                 self.assertEqual(checks[1]['outcome'], outcome, checks)
+                report = checks[1]['details']
+                if outcome == 'pass':
+                    self.assertEqual(report['scores']['jaccard'], 1.0)
+                    self.assertEqual(report['scores']['f1'], 1.0)
+                if variant == 'off-pin':
+                    self.assertTrue(any(binding['kind'] == 'missing_binding' and
+                        binding['component'] == 'R80' and binding['pin'] == '1'
+                        for binding in report['bindings']), report)
+                    self.assertIn('/VBUS', report['native_net_names'].values())
+                if variant in ('missing', 'extra'):
+                    entries = report['missing_components' if variant == 'missing' else 'extra_components']
+                    self.assertEqual(entries, [{'key': ['Owned:R', '10k', True], 'count': 1}])
+
+    def test_native_binding_defects_name_original_intent_nets(self):
+        for variant in ('ic-swap', 'merge'):
+            with self.subTest(variant=variant):
+                _, checks = self.run_variant(variant, params={
+                    'source': {'kind': 'intent', 'path': 'intent.json'}})
+                self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', 'defect'), checks)
+                report = checks[1]['details']
+                affected = {report['expected_net_names'][nid] for nid in report['missing_nets']}
+                self.assertTrue({'VBUS', 'VCC'} <= affected, report)
+                if variant == 'merge':
+                    self.assertTrue(any({'VBUS', 'VCC'} <= {
+                        report['expected_net_names'][nid] for nid in merge['expected']}
+                        for merge in report['merged_nets']), report)
 
     def test_native_report_and_xml_are_sealed_and_intent_immutable(self):
         from agent_ee.baseline import freeze_evidence, verify_evidence, validate_witnesses
         from agent_ee.candidate import verify_snapshot
+        from agent_ee.storage import digest
         run, checks = self.run_variant('ic-swap')
         self.assertEqual(checks[1]['outcome'], 'defect', checks)
+        self.assertEqual(checks[1]['details']['connectivity_sha256'],
+                         digest(run / 'work/netlist/connectivity.json'))
         freeze_evidence(run, checks)
         witness = [{'requirement_id': 'parity', 'check_id': 'parity'}]
         citation = [{'path': 'checks/parity.json', 'locator': 'missing_nets'}]
         validate_witnesses(run, witness, citation)
-        for rel in ['work/parity/parity.json', 'work/netlist/design.xml']:
+        for rel in ['work/parity/parity.json', 'work/netlist/design.xml', 'work/netlist/connectivity.json']:
             path = run / rel
             original = path.read_bytes()
             path.write_bytes(original + b' ')
@@ -264,6 +293,70 @@ class NativeParityTests(unittest.TestCase):
             check_netlist_parity(ctx)
         self.assertEqual(raised.exception.execution, 'failed')
         self.assertEqual(ctx.result['outcome'], 'unknown')
+
+    def test_connectivity_projection_failures_cannot_establish_parity(self):
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        from agent_ee.netlist_parity import check_netlist_parity
+        from agent_ee.storage import read_json
+        run, _ = self.run_variant()
+        manifest = read_json(run / 'candidate.json')
+        paths = [run / 'inputs/golden.xml', run / 'work/netlist/design.xml',
+                 run / 'work/netlist/connectivity.json']
+        for path in paths:
+            original = path.read_bytes()
+            corruptions = [('missing', None, 'failed'), ('unreadable_directory', None, 'failed'),
+                           ('unreadable_file', original, 'failed'),
+                           ('unparseable', b'{broken' if path.suffix == '.json' else b'<broken', 'malformed')]
+            if path.suffix == '.json':
+                changed = json.loads(original)
+                changed['nets'].pop(next(iter(changed['nets'])))
+                corruptions += [('wrong_shape', b'{}', 'malformed'),
+                                ('contradictory', json.dumps(changed).encode(), 'malformed'),
+                                ('duplicate_fields', b'{"components":{},"components":{},"nets":{}}', 'malformed'),
+                                ('excessive_nesting', b'[' * 10000 + b'0' + b']' * 10000, 'malformed')]
+            for name, content, execution in corruptions:
+                with self.subTest(path=path.name, corruption=name):
+                    path.unlink()
+                    if name == 'unreadable_directory':
+                        path.mkdir()
+                    elif content is not None:
+                        path.write_bytes(content)
+                        if name == 'unreadable_file':
+                            path.chmod(0)
+                    try:
+                        ctx = Ctx(run, manifest, manifest['scope']['checks'][1], time.monotonic() + 30)
+                        with self.assertRaises(CheckError) as raised:
+                            check_netlist_parity(ctx)
+                        self.assertEqual(raised.exception.execution, execution)
+                        self.assertEqual(ctx.result['outcome'], 'unknown')
+                        self.assertEqual(ctx.result['details'].get('evaluated_predicates', []), [])
+                    finally:
+                        if path.is_dir():
+                            path.rmdir()
+                        elif path.exists():
+                            path.chmod(0o600)
+                        path.write_bytes(original)
+
+    def test_actual_native_export_failure_is_failed_unknown(self):
+        import time
+        from agent_ee.baseline import freeze_evidence, validate_witnesses
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        run, _ = self.run_variant()
+        (run.parent / 'parity.kicad_sch').write_text('(kicad_sch (version 20250114) broken')
+        failed = run.parent / 'failed-export'
+        failed.mkdir()
+        capture(run.parent / 'scope.json', failed)
+        checks = run_checks(failed, time.monotonic() + 90)
+        self.assertEqual((checks[0]['execution'], checks[0]['outcome']), ('failed', 'unknown'), checks)
+        self.assertNotEqual(checks[0]['details']['tool']['exit_code'], 0)
+        self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('failed', 'unknown'), checks)
+        self.assertEqual(checks[1]['details'].get('evaluated_predicates', []), [])
+        freeze_evidence(failed, checks)
+        with self.assertRaises(ValueError):
+            validate_witnesses(failed, [{'requirement_id': 'parity', 'check_id': 'parity'}],
+                               [{'path': 'checks/parity.json', 'locator': 'outcome'}])
 
     def test_capability_baselines_and_whole_check_witness_scope(self):
         import copy
@@ -591,4 +684,13 @@ class FailureBoundaryTests(unittest.TestCase):
             path = Path(tmp) / 'intent.json'
             path.write_text('{"schema":"one","schema":"two"}')
             with self.assertRaisesRegex(ValueError, 'duplicate JSON'):
+                read_json_source(path)
+
+    def test_excessively_nested_json_is_a_malformed_input(self):
+        import tempfile
+        from agent_ee.netlist_parity import read_json_source
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'connectivity.json'
+            path.write_bytes(b'[' * 10000 + b'0' + b']' * 10000)
+            with self.assertRaisesRegex(ValueError, 'nesting'):
                 read_json_source(path)

@@ -261,7 +261,10 @@ def read_json_source(path):
         raise Unsupported('source byte limit exceeded')
     def invalid_constant(value):
         raise ValueError(f'non-finite JSON constant: {value}')
-    return json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+    try:
+        return json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+    except RecursionError as exc:
+        raise ValueError('JSON nesting exceeds parser limit') from exc
 
 
 def validate_policy(params):
@@ -375,7 +378,7 @@ PROVENANCE = {'golden_xml': 'captured_golden_native_xml', 'intent': 'resolved_fr
 
 
 def check_netlist_parity(ctx):
-    from .checks import CheckError
+    from .checks import CheckError, parse_xml_netlist
     from .datasheet_facts import prerequisite
     from .storage import digest, read_json, write_json
     from xml.etree.ElementTree import ParseError
@@ -385,9 +388,11 @@ def check_netlist_parity(ctx):
         producer = read_json(ctx.run_dir / 'checks' / f"{ctx.params['netlist_check']}.json")
         if producer.get('execution') != 'ok':
             raise CheckError('failed', 'native netlist producer did not complete successfully')
-        xml = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'design.xml')
-        # Retain the old export for navigation but never use it as graph authority.
-        prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'connectivity.json')
+        try:
+            xml = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'design.xml')
+            connectivity = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'connectivity.json')
+        except CheckError as exc:
+            raise CheckError('failed', str(exc)) from exc
         expected, resolution = _source_inventory(ctx.inputs, descriptor['policy'])
         if resolution is not None:
             write_json(ctx.work / 'resolved-intent.json', resolution)
@@ -397,6 +402,10 @@ def check_netlist_parity(ctx):
             raise CheckError(status if status in ('failed', 'malformed', 'unsupported') else 'unsupported',
                              'intent resolution incomplete or rejected; see resolved-intent.json')
         actual = read_native_inventory(xml)
+        # The navigation projection must still be a valid product of this XML;
+        # exact topology continues to use the full physical-pin inventory.
+        if read_json_source(connectivity) != parse_xml_netlist(xml):
+            raise ValueError('retained connectivity projection differs from native XML')
         if len(actual['sheets']) != producer['details']['sheet_instances']:
             raise ValueError('XML hierarchy count differs from native producer coverage')
         missing_ids = set(descriptor['policy']['instance_components']) - expected['components'].keys()
@@ -405,6 +414,7 @@ def check_netlist_parity(ctx):
         report = compare(expected, actual, descriptor['policy'])
         report.update(schema='agent-ee.netlist-parity-result/1', candidate_id=ctx.manifest['candidate_id'],
             source_sha256=digest(ctx.inputs / ctx.params['source']['path']), native_xml_sha256=digest(xml),
+            connectivity_sha256=digest(connectivity),
             intent_sha256=resolution['intent_sha256'] if resolution else None,
             source_provenance=PROVENANCE[ctx.params['source']['kind']],
             intent_source_sha256=digest(ctx.inputs / ctx.params['source']['intent'])

@@ -121,6 +121,29 @@ not a functional acceptance limit. The native XML and original schematic remain
 available to check the extraction. Simulation consumes this generated
 connectivity from the same run; it does not use fixture-specific wiring.
 
+## Intent and golden netlist parity
+
+The [`netlist_parity` check](netlist-parity.md) compares a captured golden XML
+netlist or captured connectivity intent with an earlier native `netlist` check.
+Required parameters are `source`, `netlist_check`, `predicate` (`topology`,
+`components`, or `instance`) and `multiset` (`exactly` or, for component counts,
+`at_least`). Resolved intent requires its captured originating intent and libraries
+so the coordinator can rederive it. One check maps to one baseline requirement.
+
+Exact physical-pin incidence preserves identical component instances and ignores
+reference and net names. Missing or extra parts, changed bindings and merged or
+split nets are defects. Ambiguous required instance correspondence, unresolvable
+match keys and bounded-search exhaustion are unknown. Scores describe a match;
+they do not decide acceptance. Electrical adequacy and footprint suitability are
+outside this check.
+
+The full native `design.xml` supplies the graph. The retained `connectivity.json`
+must parse and agree with the existing XML projection. Missing or unreadable
+inputs and unsuccessful exports give execution `failed`; malformed or
+contradictory inputs give `malformed`. These failures have outcome `unknown`.
+The report records hashes of the source and both native artifacts; ordinary
+coordinator evidence sealing also covers those artifacts.
+
 ## Saved-board geometry
 
 | Parameter | Meaning |
