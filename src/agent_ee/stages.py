@@ -67,9 +67,17 @@ def projection(checks, scope):
 
 
 def progress(previous, current):
-    """Only the previously earliest failing stage can earn stage progress."""
+    """Only the previously earliest failing stage can earn stage progress.
+
+    Its failed checks shrink, or the same checks report a strict subset of the
+    previous finding identities: a cleared finding is progress, a new one is not.
+    """
     stage = previous['earliest_failing_stage']
-    return stage is not None and set(current['stage_failures'][stage]) < set(previous['stage_failures'][stage])
+    if stage is None:
+        return False
+    before, after = set(previous['stage_failures'][stage]), set(current['stage_failures'][stage])
+    return after < before or (after == before and current['earliest_failing_stage'] == stage and
+                              set(current['recurring_findings']) < set(previous.get('recurring_findings', [])))
 
 
 def native_references(path, kind):
@@ -263,6 +271,19 @@ def validate_gate_findings(check):
                 json.dumps(fix['params'], allow_nan=False)
             except (ValueError, TypeError) as exc:
                 raise ValueError('gate finding parameters must be finite JSON') from exc
+
+
+def project_findings(check_id, entries):
+    """Deduplicated gate findings from (entity, kind[, suggested_fix]); None when any defect lacks an identity."""
+    findings, seen = [], set()
+    for entity, kind, *fix in entries:
+        if any(not isinstance(v, str) or not v.strip() for v in (entity, kind)):
+            return None
+        if (entity, kind) not in seen:
+            seen.add((entity, kind))
+            findings.append({'check_id': check_id, 'entity': entity, 'kind': kind,
+                             **({'suggested_fix': fix[0]} if fix and fix[0] is not None else {})})
+    return findings or None
 
 
 def finding_keys(checks):
