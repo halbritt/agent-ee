@@ -45,6 +45,50 @@ does not validate. The scope/3 predicates are
 `cpl-rotation:pad-centroid-midpoint`, `cpl-rotation:policy` and
 `cpl-rotation:pin1-frame`.
 
+## Generator fab integration
+
+`generate`, `rung1_campaign` and `rung1_qualified` accept `--cpl-inputs DIRECTORY`.
+The directory must contain `jlc-cpl-policy.json` in the policy format above and
+`supplier/*.provenance.json` with their raw supplier files. Capture copies it to
+`generation/cpl/`; each provenance `path` must therefore name its captured raw
+file, for example `generation/cpl/supplier/C123.raweasy.json`. The existing
+supplier provenance schema, size and digest checks apply. No policy or supplier
+geometry is inferred from the catalog or the KiCad footprint. These inputs join
+the immutable baseline; they are outside the writer's design paths.
+
+Stage 7 and the rung-1 `export-fab` step use
+[`fab_stage.py`](../src/agent_ee/fab_stage.py). Its declared
+`agent-ee.stage-step/1` runs in the networkless executor and retains the
+AGENTEE-95 receipt, captured candidate, baseline, native netlist, geometry,
+`fab_export` package and `cpl_rotation` report. The older fixture entry point
+[`fab.py`](../fixtures/rung1/staged/steps/fab.py) delegates to this same module.
+Both rung scopes also declare `fab_export` followed by `cpl_rotation` for fresh
+coordinator checks. The qualified rung retains its native consistency check.
+
+The exporter leaves the native package untouched. Only complete `ok/pass` CPL
+coverage can produce a derived package. It copies the corrected `cpl.csv` and
+rotation report alongside the other exports. `fab-manifest.json` hashes the
+final files and records the original export manifest digest, policy digest,
+`applied_corrections`, `unmatched_footprints`, `status: PREVIEW_REQUIRED` and
+`physical_validation: false`. The qualified rung derives its package from the
+final review's checked outputs outside the sealed review run. Paths inside the
+copied rotation report retain their check-workspace meaning; final package paths
+and hashes are listed in the derived fab manifest.
+
+Missing policy, an empty supplier set, missing per-part supplier coverage,
+invalid provenance, native tool failure, geometry conflict or a policy/frame
+defect cannot publish a completed package. Receipts retain the failed exit and
+available check evidence. A successfully corrected package still needs the
+JLCPCB preview: the generator's stage status is `PREVIEW_REQUIRED`, and all
+three generation records keep `done: false` while that status is pending.
+No owner preview evidence store is created by this integration.
+
+The existing `fab_export` limitations still apply. In particular, the generated
+rung's hand-soldered non-DNP header has no LCSC binding and is unsupported by
+that exporter; this integration does not convert it to DNP or silently omit it.
+An explicit input directory enables the rotation stage, but does not resolve
+that independent export gap.
+
 ## Midpoints
 
 Mid X/Mid Y are the centre of the union of all the footprint's native pad boxes
@@ -239,6 +283,11 @@ A populated probe footprint that is missing from the CPL makes the result
   reading of symbol `P` records was checked only locally.
 
 ## Tests
+
+[tests/test_fab_stage.py](../tests/test_fab_stage.py) exercises the real nested
+sandbox and receipt path, corrected SOIC rotation and header midpoint, immutable
+policy and raw supplier hashes, missing policy/supplier refusals, and preview
+status propagation through generation records.
 
 [tests/test_cpl_rotation.py](../tests/test_cpl_rotation.py) covers:
 

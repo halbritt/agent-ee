@@ -18,16 +18,17 @@ calls or defines:
 | Board envelope (`agent-ee.rung1-envelope/0-experimental`) | `impl/envelope-boundary-repair` (AGENTEE-85) |
 | Board build and row placement ([board-build.md](board-build.md)) | placement writer and placer adapter (AGENTEE-91, AGENTEE-92); stock pad shapes AGENTEE-109 |
 | Routing call to `kicad-route` | `impl/external-routing-adapter` (AGENTEE-93); sandboxed state KICADROUTE-6 |
-| Fab export | the `fab_export` check kind (AGENTEE-23) |
+| Fab export | `fab_export` then `cpl_rotation`, through the shared receipted fab step (AGENTEE-23, AGENTEE-72, AGENTEE-95, AGENTEE-126) |
 | Part selection from a design BOM | catalog snapshot and selector (AGENTEE-27, AGENTEE-28) |
 
 ## Command
 
 ```sh
 PYTHONPATH=src /usr/bin/python3 -m agent_ee.generate fixtures/rung1/spec.md \
-  --out build/rung1-run --profile profiles/claude-baseline.json
+  --out build/rung1-run --profile profiles/claude-baseline.json \
+  --cpl-inputs /path/to/your-cpl-inputs
 PYTHONPATH=src /usr/bin/python3 -m agent_ee.generate fixtures/rung1/spec.md \
-  --out build/rung1-skip --skip-review
+  --out build/rung1-skip --skip-review --cpl-inputs /path/to/your-cpl-inputs
 ```
 
 `--out` must not exist. Without `--skip-review`, `--profile` is required and
@@ -54,7 +55,7 @@ never starts after an earlier failure; it is recorded as `not_reached`.
 | 4 placement | Writes the envelope (50 x 30 mm outline at 100,100 mm; J1 fixed 2.54 mm inside the left edge) and packing policy, then runs `agent_ee.board_build` in the sandbox | `board_build` exits non-zero (its exit meanings are kept in the error) |
 | 5 routing | Runs `kicad-route --out stages/5-routing/out run --backend krt --budget 300` in a copy of the placed project and copies the candidate to `RUNDIR/design/` | kicad-route exits non-zero (0 is complete and valid) |
 | 6 review | Runs `agent-ee campaign` on the compiled scope (review profile from `--profile`, implementation = the adjudicator's harness/model, 3 iterations), then `verify-campaign` | The campaign state is not `criteria_satisfied`, or verification fails |
-| 7 fab | Exports Gerbers, drill, positions and BOM with `kicad-cli` in the sandbox from the last reviewed candidate, rewrites them for JLCPCB and hashes everything into `fab-manifest.json` | An export fails, a file is empty, or BOM and CPL designators differ |
+| 7 fab | Runs native netlist, geometry, `fab_export` and `cpl_rotation` through an AGENTEE-95 stage receipt; derives a corrected package and hashes its files and correction report | Policy or supplier capture is missing, an export/check fails, or CPL coverage is incomplete; successful correction retains `PREVIEW_REQUIRED` |
 
 With `--skip-review`, stage 6 runs `agent-ee review --checks-only` instead.
 Its status is `not_reached:review_skipped` when every declared check executed
@@ -89,7 +90,8 @@ catalog sha256, catalog line, symbol, value and reference.
 A part the spec names hand-soldered (the header) gets
 `JLCPCB_Assembly: "not_assembled"` with its reason, and is refused if the
 catalog has a row for its value, so the rule cannot hide a sourced part. Stage 7
-drops these parts from the BOM and CPL and lists them in the fab manifest.
+now uses the owned `fab_export` rules. The non-DNP header has no LCSC binding,
+so that exporter refuses it. It is not silently omitted or changed to DNP.
 
 ## Record and done gate
 
@@ -97,7 +99,11 @@ drops these parts from the BOM and CPL and lists them in the fab manifest.
 stage with its status, error and receipt hash, the campaign verdict, the fab
 manifest hash and the placer used. `done` is true only when the campaign
 verdict is `criteria_satisfied` **and** the fab exports exist, are nonempty and
-match their manifest hashes. The driver never relaxes, overrides or
+match their manifest hashes **and** no physical placement preview is pending.
+The corrected package retains `PREVIEW_REQUIRED`, so it cannot make the record
+done. Supply `--cpl-inputs DIRECTORY` with the
+[captured policy and supplier tree](cpl-rotation.md#generator-fab-integration).
+The driver never relaxes, overrides or
 reinterprets a check, reviewer, adjudicator or convergence result.
 
 ## Limitations
@@ -107,8 +113,8 @@ reinterprets a check, reviewer, adjudicator or convergence result.
 - The catalog is a design BOM: no stock, price, tolerance or rating data.
 - kicad-route runs as an ordinary process; its state directory is not yet
   mounted read-only (KICADROUTE-6).
-- Gerber and drill files embed timestamps. CPL rotations are KiCad-native
-  (AGENTEE-72). There is no DFM or Gerber re-parse (AGENTEE-73, AGENTEE-74).
+- Fab export uses the owned native exporter and captured CPL policy. The
+  bottom-side transform still needs a real JLCPCB preview. No DFM is claimed.
 - The envelope is an exact-key input of `board_build`, so it carries its
   experimental status in the schema name only.
 

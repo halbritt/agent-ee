@@ -404,17 +404,16 @@ class IntegrationTest(unittest.TestCase):
             record = g.generate(SPEC, run, skip_review=True, catalog_checkout=catalog)
             statuses = {s['name']: s['status'] for s in record['stages']}
             self.assertEqual(statuses, {'requirements': 'ok', 'parts': 'ok', 'schematic': 'ok', 'placement': 'ok',
-                                        'routing': 'ok', 'review': 'not_reached:review_skipped', 'fab': 'ok'},
+                                        'routing': 'ok', 'review': 'not_reached:review_skipped', 'fab': 'failed'},
                              [s['error'] for s in record['stages']])
             routing = json.loads((run / record['stages'][4]['receipt']).read_text())
             self.assertEqual(routing['tools']['kicad-route']['resolved'], str(route / 'bin/kicad-route'))
             self.assertFalse(record['done'])
-            self.assertTrue(record['fab_exports_exist'])
+            self.assertFalse(record['fab_exports_exist'])
             for item in record['stages']:
                 g.validate_receipt(json.loads((run / item['receipt']).read_text()))
-            fab = json.loads((run / 'stages/7-fab/fab-manifest.json').read_text())
-            self.assertEqual(fab['excluded_from_bom'], ['J1'])
-            self.assertEqual(sorted(fab['cpl_designators']), ['C1', 'R1'])
+            console = (run / 'stages/7-fab/export-fab/run/console.log').read_text()
+            self.assertIn('CPL rotation policy is not captured', console)
 
 
 if __name__ == '__main__':

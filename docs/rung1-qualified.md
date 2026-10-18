@@ -17,9 +17,9 @@ routing reports in a run are the owned, qualified ones.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_qualified \
-  fixtures/rung1/spec.md --out RUNDIR --dry-run
+  fixtures/rung1/spec.md --out RUNDIR --dry-run --cpl-inputs /path/to/your-cpl-inputs
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_qualified \
-  fixtures/rung1/spec.md --out RUNDIR
+  fixtures/rung1/spec.md --out RUNDIR --cpl-inputs /path/to/your-cpl-inputs
 ```
 
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
@@ -57,7 +57,7 @@ reviewer or writer call is recorded as it happened and never retried.
 | placement | `placement_adapter` with helper `agent-ee.placer/1` (AGENTEE-91, AGENTEE-54) | campaign `placement_adapter` declaration; no row fallback |
 | routing | `routing_adapter.step` and `kicad_route_attempt` (AGENTEE-93) | step `kicad-route-krt`, adoptable exits `[0, 2]` as the adapter declares |
 | verification | `rc_transient` check | unchanged from the closed-loop control |
-| fab | `fab_export` (AGENTEE-23), `fab_consistency` (AGENTEE-73), `part_binding` (AGENTEE-32) checks | stage `fab` in the scope; no driver export |
+| fab | `fab_export`, `fab_consistency`, `part_binding`, then `cpl_rotation` checks | stage `fab`; receipted `export-fab` step; corrected package remains `PREVIEW_REQUIRED` |
 
 `board_build.py` is not used at all: forward annotation populates the board.
 
@@ -79,6 +79,7 @@ routing, verification, fab. Checks, in order:
 | `binding` | `part_binding` | fab | R-binding |
 | `fab` | `fab_export` | fab | R-fab |
 | `fab-consistency` | `fab_consistency` | fab | R-fab-consistency |
+| `cpl` | `cpl_rotation` | fab | R-cpl |
 
 The golden netlist is a sandboxed `kicad-cli` XML export of a copy of
 `fixtures/rc/control`, captured under `generation/golden/`. The subjects are
@@ -98,7 +99,8 @@ failing stage (`campaign.step_plan`, `agent-ee.step-plan/1`):
 | schematic | `emit-schematic` (`steps/emit.sh`), then `forward-annotate` (`steps/annotate.sh`) |
 | placement | the placement adapter: writer transforms, then one `agent-ee-placer` helper receipt |
 | routing | `kicad-route-krt` from `routing_adapter.step` |
-| verification, fab | none: these stages have no generation step |
+| verification | none |
+| fab | shared `export-fab` step (`fab_export` followed by `cpl_rotation`), with an AGENTEE-95 receipt |
 
 The wrappers in [fixtures/rung1/qualified/steps](../fixtures/rung1/qualified/steps/)
 only call the owned CLIs. Forward annotation is a schematic-turn step because
@@ -151,8 +153,14 @@ either source tree was changed.
 | `campaign/` | the campaign root |
 | `rung1-qualified-record.json` | `agent-ee.rung1-qualified-record/0-experimental` |
 
-`done` is the campaign verdict `criteria_satisfied` with `verify-campaign`
-exit 0. The fab package is graded by checks inside the scope.
+`done` needs the campaign verdict `criteria_satisfied`, `verify-campaign`
+exit 0, a corrected fab package and no pending physical preview. The current
+CPL report retains `PREVIEW_REQUIRED`, so it keeps `done: false`.
+`--cpl-inputs DIRECTORY` supplies the immutable
+[policy and supplier tree](cpl-rotation.md#generator-fab-integration). Without
+that policy, scope capture refuses the missing dependency. The qualified
+record points to the derived corrected package; the sealed native export and
+check evidence stay unchanged.
 
 ## Recorded run (2026-10-17)
 

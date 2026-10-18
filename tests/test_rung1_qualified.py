@@ -130,7 +130,7 @@ class StepsTest(unittest.TestCase):
         steps = q.check_steps(self.schematic_steps(), mutable)
         self.assertEqual([(s['stage'], s['step']) for s in steps],
                          [('schematic', 'emit-schematic'), ('schematic', 'forward-annotate'),
-                          ('routing', 'kicad-route-krt')])
+                          ('routing', 'kicad-route-krt'), ('fab', 'export-fab')])
         for name in ('emit.sh', 'annotate.sh'):
             self.assertTrue((q.STEPS_DIR / name).is_file())
 
@@ -174,7 +174,9 @@ class ScopeTest(unittest.TestCase):
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
         cls.rundir.mkdir()
-        cls.prep = q.prepare(SPEC, cls.rundir, catalog_checkout=catalog)
+        from tests.test_fab_stage import rotation_inputs
+        cls.prep = q.prepare(SPEC, cls.rundir, catalog_checkout=catalog,
+                             cpl_inputs=rotation_inputs(root / 'cpl-inputs'))
         cls.scaffold, cls.record = q.write_scaffold(cls.rundir, cls.prep)
         cls.scope = q.compile_staged_scope(cls.prep['params'], cls.rundir, cls.scaffold)
         cls.scope_path = cls.rundir / 'scope.json'
@@ -191,7 +193,7 @@ class ScopeTest(unittest.TestCase):
         traced = {c for r in self.scope['baseline']['requirements'] for c in r['checks']}
         self.assertEqual(traced, {c['id'] for c in self.scope['checks']})
         kinds = {c['id']: c['kind'] for c in self.scope['checks']}
-        for kind in ('netlist_parity', 'placement', 'part_binding', 'fab_export', 'fab_consistency'):
+        for kind in ('netlist_parity', 'placement', 'part_binding', 'fab_export', 'fab_consistency', 'cpl_rotation'):
             self.assertIn(kind, kinds.values())
         rc_step = next(c for c in self.scope['checks'] if c['id'] == 'rc-step')
         self.assertEqual((rc_step['params']['input_net'], rc_step['params']['ground_net']), ('/IN', '/GND'))
@@ -200,9 +202,20 @@ class ScopeTest(unittest.TestCase):
     def test_real_loaders_accept_the_scope_and_freeze_generation_inputs(self):
         result = q.validate_scope_file(self.scope_path, self.rundir / 'validation-inputs')
         self.assertIn('generation/golden/rc_control.xml', result['baseline_files'])
+        self.assertIn('generation/cpl/jlc-cpl-policy.json', result['baseline_files'])
+        self.assertIn('generation/cpl/supplier/C910020.raweasy.json', result['baseline_files'])
         self.assertIn('generation/placement-policy.json', result['immutable_generation_inputs'])
         self.assertEqual(sorted(result['mutable_inputs']),
                          sorted([f'project/{q.NAME}.kicad_sch', f'project/{q.NAME}.kicad_pcb']))
+
+    def test_scope_without_captured_rotation_policy_is_refused(self):
+        scope = json.loads(json.dumps(self.scope))
+        generation = next(i for i in scope['inputs'] if i['at'] == 'generation')
+        generation['exclude'] = ['cpl/jlc-cpl-policy.json']
+        path = self.rundir / 'missing-policy.scope.json'
+        path.write_text(json.dumps(scope))
+        with self.assertRaisesRegex(ValueError, 'jlc-cpl-policy.json must be captured'):
+            q.validate_scope_file(path, self.rundir / 'missing-policy-inputs')
 
     def test_scaffold_board_matches_the_envelope_outline_and_lacks_the_fixed_connector(self):
         trip = {f['field']: f['status'] for f in self.record['envelope']['scaffold_round_trip']['fields']}

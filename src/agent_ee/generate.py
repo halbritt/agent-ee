@@ -3,7 +3,8 @@
 Run ``python3 -m agent_ee.generate SPEC.md --out RUNDIR`` (see docs/generate.md).
 Every stage writes ``RUNDIR/stages/N-NAME/receipt.json``; a stage never starts
 after an earlier failure. ``rung1-record.json`` says ``done: true`` only when the
-review verdict is ``criteria_satisfied`` and the fab exports exist and are nonempty.
+review verdict is ``criteria_satisfied``, the fab exports exist and are nonempty,
+and no physical placement preview remains pending.
 """
 import argparse
 import csv
@@ -37,7 +38,7 @@ ENVELOPE_SCHEMA = 'agent-ee.rung1-envelope/0-experimental'
 STAGES = ((1, 'requirements'), (2, 'parts'), (3, 'schematic'), (4, 'placement'),
           (5, 'routing'), (6, 'review'), (7, 'fab'))
 STATUSES = ('ok', 'failed', 'not_reached', 'not_reached:review_skipped',
-            'not_reached:dependency_missing')
+            'not_reached:dependency_missing', 'PREVIEW_REQUIRED')
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 STOCK = Path('/usr/share/kicad')
@@ -258,7 +259,7 @@ def validate_receipt(receipt):
     for command in receipt['commands']:
         if not isinstance(command.get('argv'), list) or 'exit_code' not in command:
             raise ValueError('command record requires argv and exit_code')
-    reached = receipt['status'] in ('ok', 'failed', 'not_reached:review_skipped')
+    reached = receipt['status'] in ('ok', 'failed', 'not_reached:review_skipped', 'PREVIEW_REQUIRED')
     if reached and not (receipt['started'] and receipt['finished']):
         raise ValueError('a reached stage needs started and finished timestamps')
     if receipt['status'] == 'failed' and not receipt['error']:
@@ -449,6 +450,17 @@ def stage_requirements(stage, state, options):
     template = json.loads(SCOPE_TEMPLATE.read_text())
     stage.input(SCOPE_TEMPLATE, 'scope/2 template')
     scope = compile_scope(template, params, PROJECT_NAME)
+    if options.get('cpl_inputs'):
+        from .fab_stage import copy_rotation_inputs, rotation_check
+        from .cpl_rotation import capability
+        captured = copy_rotation_inputs(options['cpl_inputs'], stage.rundir)
+        stage.input(options['cpl_inputs'], 'CPL policy and supplier source')
+        stage.output(captured, 'captured CPL policy and supplier footprints')
+        scope['inputs'].append({'path': '../generation', 'at': 'generation'})
+        files = {p.relative_to(stage.rundir).as_posix(): digest(p) for p in captured.rglob('*') if p.is_file()}
+        scope['baseline']['targets'] += capability(rotation_check(stage.rundir)['params'], files,
+                                                    stage.rundir)['immutable_inputs']
+        state['cpl_inputs'] = captured
     scope_path = stage.rundir / 'scope' / 'rung1.scope.json'
     write_json(scope_path, scope)
     stage.output(requirements, 'scope requirements')
@@ -1081,78 +1093,30 @@ def deterministic_zip(target, files):
 
 
 def stage_fab(stage, state, options):
+    from .fab_stage import step
+    from .stage_receipts import run_step, validate_receipt as validate_stage_receipt
     name = state['name']
     source = Path(state['reviewed_inputs'])
-    board, sch = source / 'project' / f'{name}.kicad_pcb', source / 'project' / f'{name}.kicad_sch'
-    if not board.is_file() or not sch.is_file():
-        raise StageFailure('reviewed candidate project is missing its board or schematic')
-    stage.input(board, 'reviewed board')
-    stage.input(sch, 'reviewed schematic')
-    stage.tool('kicad-cli')
-    stage.tool('bwrap')
-    layers = copper_layers(board.read_text()) + list(FAB_LAYERS)
-    manifest_parts = json.loads(Path(state['parts']).read_text())
-    excluded = {e['ref']: e for e in manifest_parts['assembly_exclusions']}
-    steps = {
-        'gerbers': ['kicad-cli', 'pcb', 'export', 'gerbers', '--layers', ','.join(layers),
-                    '-o', '/work/out/', f'/candidate/project/{name}.kicad_pcb'],
-        'drill': ['kicad-cli', 'pcb', 'export', 'drill', '--format', 'excellon', '--excellon-units', 'mm',
-                  '--excellon-separate-th', '-o', '/work/out/', f'/candidate/project/{name}.kicad_pcb'],
-        'pos': ['kicad-cli', 'pcb', 'export', 'pos', '--format', 'csv', '--units', 'mm', '--side', 'both',
-                '--exclude-dnp', '-o', '/work/out/positions.csv', f'/candidate/project/{name}.kicad_pcb'],
-        'bom': ['kicad-cli', 'sch', 'export', 'bom', '--fields', 'Value,Reference,Footprint,LCSC',
-                '--labels', 'Comment,Designator,Footprint,LCSC Part #', '--group-by', 'Value,Footprint,LCSC',
-                '--ref-delimiter', ',', '--ref-range-delimiter', '', '--exclude-dnp',
-                '-o', '/work/out/bom.csv', f'/candidate/project/{name}.kicad_sch'],
-    }
-    package = stage.dir / 'package'
-    for sub in ('gerbers', 'drill'):
-        (package / sub).mkdir(parents=True)
-    for label, argv in steps.items():
-        work = stage.dir / 'steps' / label
-        (work / 'out').mkdir(parents=True)
-        seed_kicad_config(work, source)
-        result = stage.sandboxed(source, work, argv, timeout=600, label=label)
-        if result['exit_code'] != 0:
-            raise StageFailure(f'kicad-cli {label} export failed; see ' + stage.rel(work / 'console.log'))
-    gerbers = sorted((stage.dir / 'steps/gerbers/out').iterdir())
-    drills = sorted((stage.dir / 'steps/drill/out').iterdir())
-    for path in gerbers:
-        shutil.copyfile(path, package / 'gerbers' / path.name)
-    for path in drills:
-        shutil.copyfile(path, package / 'drill' / path.name)
-    cpl, cpl_kept, cpl_dropped = jlcpcb_cpl((stage.dir / 'steps/pos/out/positions.csv').read_text(), excluded)
-    bom, bom_kept, bom_dropped = jlcpcb_bom((stage.dir / 'steps/bom/out/bom.csv').read_text(), excluded)
-    (package / 'cpl.csv').write_text(cpl)
-    (package / 'bom.csv').write_text(bom)
-    deterministic_zip(package / f'{name}-gerbers.zip',
-                      {p.name: p for p in sorted((package / 'gerbers').iterdir()) + sorted((package / 'drill').iterdir())})
-    files = sorted(p for p in package.rglob('*') if p.is_file())
-    empty = [p.name for p in files if p.stat().st_size == 0]
-    manifest = {
-        'schema': FAB_SCHEMA, 'qualification': QUALIFICATION, 'producer': 'agent_ee.generate stage 7 (driver export)',
-        'qualified_check': 'AGENTEE-23 (fab_export check kind; patch attached there, not duplicated here)',
-        'board': {'path': stage.rel(board), 'sha256': digest(board)},
-        'schematic': {'path': stage.rel(sch), 'sha256': digest(sch)},
-        'kicad_cli': tool_identity('kicad-cli'), 'gerber_layers': layers,
-        'assembly_exclusions': list(excluded.values()),
-        'bom_designators': bom_kept, 'cpl_designators': cpl_kept,
-        'excluded_from_bom': bom_dropped, 'excluded_from_cpl': cpl_dropped,
-        'files': [{'path': str(p.relative_to(package)), 'bytes': p.stat().st_size, 'sha256': digest(p)} for p in files],
-        'limitations': ['Gerber and drill files embed creation timestamps; hashes bind these bytes only',
-                        'CPL rotations are KiCad-native; JLCPCB rotation correction is AGENTEE-72',
-                        'No DFM, layer reconciliation or Gerber re-parse (AGENTEE-73, AGENTEE-74, AGENTEE-76)']}
-    write_json(stage.dir / 'fab-manifest.json', manifest)
-    stage.output(package, 'fab package')
+    spec = step(PACKAGE_ROOT, f'project/{name}.kicad_pcb', f'project/{name}.kicad_sch')
+    receipt_dir = stage.dir / 'export-fab'
+    receipt = run_step(receipt_dir, source, spec, {'stage': 7, 'name': 'fab'})
+    validate_stage_receipt(receipt_dir)
+    stage.output(receipt_dir / 'receipt.json', 'fab stage receipt')
+    stage.receipt['details']['stage_receipt'] = stage.rel(receipt_dir / 'receipt.json')
+    if receipt['status'] != 'completed':
+        raise StageFailure(f"fab stage {receipt['status']} (exit {receipt['exit_code']}); see "
+                           + stage.rel(receipt_dir / 'run/console.log'))
+    out = receipt_dir / 'run/out'
+    manifest = json.loads((out / 'fab-manifest.json').read_text())
+    copy_tree(out / 'fab', stage.dir / 'package')
+    shutil.copyfile(out / 'fab-manifest.json', stage.dir / 'fab-manifest.json')
+    stage.output(stage.dir / 'package', 'corrected fab package')
     stage.output(stage.dir / 'fab-manifest.json', 'fab manifest')
-    stage.receipt['details'].update(gerbers=len(gerbers), drills=len(drills), bom=bom_kept, cpl=cpl_kept,
-                                    excluded={'bom': bom_dropped, 'cpl': cpl_dropped})
-    stage.receipt['limitations'].append('This is the driver\'s export; the qualified check kind is AGENTEE-23.')
+    stage.receipt['details'].update(status=manifest['status'], physical_validation=False,
+                                    rotation=manifest['rotation'])
     state['fab_manifest'] = stage.dir / 'fab-manifest.json'
-    if empty or len(gerbers) < len(layers) or not drills or not cpl_kept or not bom_kept:
-        raise StageFailure(f'fab package incomplete: empty={empty} gerbers={len(gerbers)} drills={len(drills)}')
-    if sorted(cpl_kept) != sorted(bom_kept):
-        raise StageFailure(f'BOM designators {bom_kept} differ from CPL designators {cpl_kept}')
+    state['fab_status'] = manifest['status']
+    return manifest['status']
 
 
 STAGE_FUNCTIONS = {'requirements': stage_requirements, 'parts': stage_parts, 'schematic': stage_schematic,
@@ -1173,7 +1137,7 @@ def fab_exists(manifest_path):
 
 
 def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, max_seconds=2400, functions=None,
-             catalog_checkout=None):
+             catalog_checkout=None, cpl_inputs=None):
     """Run every stage in order; returns the rung-1 record."""
     rundir = Path(rundir)
     if rundir.exists():
@@ -1184,7 +1148,7 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
     functions = {**STAGE_FUNCTIONS, **(functions or {})}
     options = {'spec': str(Path(spec).absolute()), 'profile': str(Path(profile).absolute()) if profile else None,
                'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
-               'catalog_checkout': catalog_checkout}
+               'catalog_checkout': catalog_checkout, 'cpl_inputs': cpl_inputs}
     state, stages, blocked = {}, [], None
     for number, name in STAGES:
         stage = Stage(rundir, number, name)
@@ -1214,7 +1178,7 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
     verdict = state.get('verdict')
     fab_ok = fab_exists(state.get('fab_manifest'))
     # The gate is exactly the contract's: never relaxed, overridden or reinterpreted here.
-    done = verdict == 'criteria_satisfied' and fab_ok
+    done = verdict == 'criteria_satisfied' and fab_ok and state.get('fab_status') != 'PREVIEW_REQUIRED'
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, 'spec': {'path': options['spec'], 'sha256': digest(spec)},
               'options': {'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
                           'profile': options['profile'],
@@ -1222,12 +1186,12 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
               'generator': tool_identity('agent_ee'), 'stages': stages, 'verdict': verdict,
               'fab_manifest': ({'path': 'stages/7-fab/fab-manifest.json', 'sha256': digest(state['fab_manifest'])}
                                if state.get('fab_manifest') else None),
-              'fab_exports_exist': fab_ok, 'done': done,
+              'fab_exports_exist': fab_ok, 'fab_status': state.get('fab_status'), 'done': done,
               # Every stage is an experimental driver step; placement in particular may be the
               # row stand-in rather than the landed placer (AGENTEE-109).
               'stage_qualification': {name: QUALIFICATION for _, name in STAGES},
               'placement': {'qualification': QUALIFICATION, 'placer': state.get('placer')},
-              'done_rule': 'campaign verdict criteria_satisfied AND fab exports exist and are nonempty'}
+              'done_rule': 'campaign verdict criteria_satisfied AND fab exports exist and are nonempty AND no physical preview is pending'}
     write_json(rundir / 'rung1-record.json', record)
     return record
 
@@ -1237,6 +1201,7 @@ def main(argv=None):
     parser.add_argument('spec', type=Path)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path)
+    parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--skip-review', action='store_true')
     parser.add_argument('--stand-in-fixture', action='store_true',
                         help='use fixtures/rc/control when G1/G2 are absent (stages marked dependency_missing)')
@@ -1244,7 +1209,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         record = generate(args.spec, args.out, profile=args.profile, skip_review=args.skip_review,
-                          stand_in=args.stand_in_fixture, max_seconds=args.max_seconds)
+                          stand_in=args.stand_in_fixture, max_seconds=args.max_seconds, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, ValueError, OSError) as exc:
         parser.exit(2, f'generate refused: {exc}\n')
     for item in record['stages']:

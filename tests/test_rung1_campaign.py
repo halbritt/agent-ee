@@ -47,7 +47,9 @@ class Prepared(unittest.TestCase):
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
         cls.rundir.mkdir()
-        cls.prep = rc.prepare(SPEC, cls.rundir, catalog_checkout=catalog)
+        from tests.test_fab_stage import rotation_inputs
+        cls.prep = rc.prepare(SPEC, cls.rundir, catalog_checkout=catalog,
+                              cpl_inputs=rotation_inputs(root / 'cpl-inputs'))
         cls.scaffold, cls.record = rc.write_scaffold(cls.rundir, cls.prep)
 
     @classmethod
@@ -102,8 +104,8 @@ class ScaffoldTest(Prepared):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
         self.assertEqual([(c['id'], c['stage']) for c in scope['checks']],
                          [('erc', 'schematic'), ('netlist', 'schematic'), ('drc', 'placement'),
-                          ('geometry', 'routing'), ('rc-step', 'verification')])
-        self.assertEqual(declaration(scope)['order'], ['schematic', 'placement', 'routing', 'verification'])
+                          ('geometry', 'routing'), ('rc-step', 'verification'), ('fab', 'fab'), ('cpl', 'fab')])
+        self.assertEqual(declaration(scope)['order'], ['schematic', 'placement', 'routing', 'verification', 'fab'])
         self.assertEqual(scope['mutable_inputs'], ['project/rung1_rc.kicad_sch', 'project/rung1_rc.kicad_pcb'])
         rc_step = next(c for c in scope['checks'] if c['id'] == 'rc-step')
         self.assertEqual((rc_step['params']['step_v'], rc_step['params']['measurements'][0]),

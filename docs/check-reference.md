@@ -652,7 +652,10 @@ the captured supplier footprint, which detects quarter-turn offsets,
 reflections and diode polarity. Each row appears in exactly one of
 `applied_corrections` or `unmatched_footprints`. Missing geometry or a
 duplicate designator never falls back to the anchor. The status stays
-`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
+`PREVIEW_REQUIRED`. The generator fab stage and both rung-1 scopes now run it
+after `fab_export`; their derived package manifest records the corrections and
+policy digest. Missing policy or supplier coverage fails closed, and a pending
+preview prevents `done`. See [CPL rotation](cpl-rotation.md#generator-fab-integration).
 
 ## Scaffold preparation
 
