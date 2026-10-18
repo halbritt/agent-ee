@@ -174,20 +174,22 @@ def evaluate(policy, graph):
             'outcome':('defect' if violations else 'pass') if complete else 'unknown'}
 
 
-def check_netlist_extra(ctx):
+def native_graph(ctx):
+    """Strict native inventory of the earlier netlist check, cross-checked against its projection.
+
+    Returns ``(prior_spec, xml_path, connectivity_path, graph)``. Raises CheckError:
+    ``unsupported`` for an absent/forward prerequisite or native resource bounds,
+    ``failed`` for missing, failed, malformed or mismatched prerequisite bytes.
+    """
     from .checks import CheckError, parse_xml_netlist
     from .datasheet_facts import prerequisite
     from .native_netlist import read_native_inventory
     from .netlist_parity import Unsupported
-    try:
-        descriptor = capability(ctx.params, ctx.scope, ctx.manifest['files'], ctx.inputs, ctx.cid)
-        specs = ctx.scope['checks']
-        prior = next((s for s in specs[:specs.index(ctx.spec)]
-                      if s['id'] == ctx.params['netlist_check'] and s['kind'] == 'netlist'), None)
-        if prior is None:
-            raise ValueError('native netlist prerequisite must precede topology check')
-    except (ValueError, TypeError, KeyError, OSError) as exc:
-        raise CheckError('unsupported', str(exc)) from exc
+    specs = ctx.scope['checks']
+    prior = next((s for s in specs[:specs.index(ctx.spec)]
+                  if s['id'] == ctx.params['netlist_check'] and s['kind'] == 'netlist'), None)
+    if prior is None:
+        raise CheckError('unsupported', 'native netlist prerequisite must precede this check')
     try:
         xml = prerequisite(ctx, prior['id'], 'netlist', 'design.xml')
         connectivity = prerequisite(ctx, prior['id'], 'netlist', 'connectivity.json')
@@ -204,6 +206,16 @@ def check_netlist_extra(ctx):
         raise CheckError('unsupported', str(exc)) from exc
     except (OSError, ValueError, TypeError, KeyError, ParseError) as exc:
         raise CheckError('failed', str(exc)) from exc
+    return prior, xml, connectivity, graph
+
+
+def check_netlist_extra(ctx):
+    from .checks import CheckError
+    try:
+        descriptor = capability(ctx.params, ctx.scope, ctx.manifest['files'], ctx.inputs, ctx.cid)
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        raise CheckError('unsupported', str(exc)) from exc
+    prior, xml, connectivity, graph = native_graph(ctx)
     report = evaluate(descriptor['policy'], graph)
     report.update(schema='agent-ee.netlist-extra-result/1', candidate_id=ctx.manifest['candidate_id'],
         netlist_check=prior['id'], native_xml_sha256=digest(xml), connectivity_sha256=digest(connectivity),

@@ -938,6 +938,7 @@ from .symbol_checks import check_symbol_pins
 from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
 from .netlist_extra import check_netlist_extra
+from .net_names import check_net_names
 from .placement_check import check_placement
 from .envelope_check import check_board_envelope
 from .assembly_readiness import check_assembly_readiness
@@ -964,7 +965,7 @@ from .fab_roundtrip import check_fab_roundtrip
 from .schematic_lint import check_schematic_lint
 from .block_adaptation import check_block_provenance
 
-CHECK_FUNCS = {'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+CHECK_FUNCS = {"net_names": check_net_names, 'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,

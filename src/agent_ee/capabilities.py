@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('fab_package', 'cpl_rotation', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -329,6 +329,11 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             from .block_adaptation import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
             prerequisite(params.get('netlist_check'), ('netlist',))
+        elif kind == 'net_names':
+            from .net_names import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
+            prerequisite(params.get('netlist_check'), ('netlist',))
+            captured(params['levels'])
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
