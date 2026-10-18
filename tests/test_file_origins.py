@@ -154,6 +154,16 @@ class RepositoryInventoryTests(unittest.TestCase):
             self.assertEqual(self.files[path]['permission_status'], UNRESOLVED, path)
         self.assertFalse([p for p in self.files if p.startswith('fixtures/fome-mc/psu/capture/psu/sources/')])
 
+    def test_fome_mc_ampseal_conversion_reports_its_polygonus_upstream(self):
+        # AGENTEE-169: the converted fome-mc blob is the Polygonus b3176cb blob (T8, unresolved).
+        footprint = self.files['fixtures/fome-mc/ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod']
+        self.assertEqual((footprint['kind'], footprint['origins'], footprint['permission_status']),
+                         ('copied-design', ['T16', 'T8'], UNRESOLVED))
+        self.assertEqual(REAL['origins']['T8']['permission_status'], UNRESOLVED)
+        drawing = self.files['fixtures/pod/ampseal/drawing-776228.json']
+        self.assertEqual((drawing['kind'], drawing['origins']), ('owned-metadata', ['AE']))
+        self.assertFalse([p for p in self.files if p.startswith('fixtures/pod/') and p.endswith('.pdf')])
+
     def test_fome_mc_fixtures_follow_the_recorded_owner_decision(self):
         t16 = REAL['origins']['T16']
         self.assertIn('fome-mc reference sheets are committed as fixtures', t16['owner_record'])

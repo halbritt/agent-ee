@@ -1,0 +1,56 @@
+{
+  "schema": "agent-ee.pod-land-drawing/1",
+  "drawing": {
+    "manufacturer": "TE Connectivity",
+    "number": "776228",
+    "revision": "C14",
+    "title": "23 position vertical AMPSEAL header assembly with flange seal",
+    "sheets": {
+      "contact_numbering": 1,
+      "pcb_layout": 2
+    },
+    "copy": {
+      "retrieved_from": "https://www.farnell.com/cad/2916153.pdf",
+      "retrieved_on": "2026-10-18",
+      "bytes": 409939,
+      "sha256": "14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8",
+      "committed": false,
+      "note": "Host-side copy read for the dimension values below; not committed (vendor document, origin T10 rules). te.com refused the download (HTTP 403)."
+    }
+  },
+  "frame": {
+    "datum": "upper-left peg hole: the left hole of the 47.4 mm pair, on the side of contacts 1 to 8",
+    "x": "toward contact 8",
+    "y": "toward contacts 16 to 23",
+    "view": "component side, as KiCad shows a front-layer footprint (sheet 1 mating-face view numbers contact 1 top left, 8 top right, 9 and 15 at the middle row ends, 16 bottom left, 23 bottom right, with the 47.4 mm hole pair above contact row 1 to 8)"
+  },
+  "dimensions_mm": {
+    "contact_pitch": "4",
+    "row_pitch": "4",
+    "middle_row_offset": "2",
+    "upper_peg_spacing": "47.4",
+    "lower_peg_spacing": "50.4",
+    "upper_peg_to_first_column": "9.7",
+    "upper_peg_to_middle_row": "10.8",
+    "peg_row_spacing": "18.1",
+    "contact_hole_diameter": "1.75",
+    "contact_hole_tolerance": "0.1",
+    "peg_hole_diameter": "2"
+  },
+  "rows": [
+    {"first": 1, "last": 8, "row": -1, "offset": false},
+    {"first": 9, "last": 15, "row": 0, "offset": true},
+    {"first": 16, "last": 23, "row": 1, "offset": false}
+  ],
+  "assumptions": [
+    "The drawing dimensions the lower peg pair by its spacing only; it is taken as centred on the upper pair, as drawn (a pixel measurement of the sheet 2 render agrees within 0.1 mm)."
+  ],
+  "part": {
+    "proposed_mpn": "776228-1",
+    "manufacturer": "TE Connectivity",
+    "variant": "black housing, tin plating (drawing 776228 part table)",
+    "status": "pending-owner-confirmation",
+    "owner_gate": "AGENTEE-169: confirm 776228-1 as the header MPN",
+    "consumer": "AGENTEE-167 (pod-10) part record"
+  }
+}

@@ -360,6 +360,9 @@ with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references. The [native-bound mode](docs/native-binding.md)
 requires the declaration to match every native board component, its exact
 selection and its captured library pins; declared-only reports remain distinct.
+[Pinned legacy footprints](docs/footprint-libraries.md#converting-pinned-legacy-footprints)
+from another repository's object store are converted with `kicad-cli fp upgrade`
+and recorded with commit, path, blob id and SHA-256 (the telemetry pod's AMPSEAL-23).
 A [land-pattern geometry kernel](docs/land-geometry.md) compares supported pad
 shapes using exact areas or certified bounds. Its supplier/native check adapter
 and supplier qualification remain pending; the kernel alone cannot accept a part.

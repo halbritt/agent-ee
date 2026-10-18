@@ -1,0 +1,19 @@
+{
+  "schema": "agent-ee.footprint-assignments-input/1",
+  "libraries": [
+    {
+      "name": "Connector_Generic",
+      "path": "stock/symbols/Connector_Generic.kicad_sym",
+      "sha256": "b40057d620867e58e8c3d1be9ab822bba6955e76ccfc566fd0945eedcf527fd3"
+    }
+  ],
+  "components": [
+    {
+      "reference": "J1",
+      "lib_id": "Connector_Generic:Conn_01x23",
+      "footprint": "ampseal:ampseal-23",
+      "assembly": "through_hole",
+      "connector": {"rows": 1, "columns": 23}
+    }
+  ]
+}
