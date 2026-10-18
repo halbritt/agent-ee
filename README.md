@@ -200,6 +200,12 @@ The [fab round-trip check](docs/fab-roundtrip.md) re-parses native Gerber and
 Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill
 histograms, copper pad/via flash counts and outline bounds within 1 µm. Its
 narrow parser fails closed on unsupported constructs; artwork is not compared.
+The [CPL rotation check](docs/cpl-rotation.md) rewrites the exported CPL to
+native pad-box midpoints. It applies a captured, versioned rotation policy and
+requires every rotation to agree with the pin-1 frame of the captured supplier
+footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
+diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
+JLCPCB placement preview validates rotation physically.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact

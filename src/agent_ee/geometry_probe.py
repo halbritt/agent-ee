@@ -1,8 +1,10 @@
 """Extract saved-board geometry facts through pcbnew (runs inside the sandbox).
 
 Judgment-free: emits what the saved .kicad_pcb actually contains (footprints
-with DNP/BOM/position/board-only attributes, pads with size/drill/position/net, track segments, vias,
-zones, nets, unconnected count). agent_ee.checks applies declared criteria.
+with DNP/BOM/position/board-only attributes, lib id, orientation and exact nm
+anchor; pads with size/drill/position/net and their native board-space bounding
+box in integer nm; track segments, vias, zones, nets, unconnected count).
+agent_ee.checks applies declared criteria.
 UUIDs use KIID.AsString() (str(KIID) is only a SWIG proxy repr).
 """
 
@@ -38,6 +40,11 @@ def pad_attribute(pad):
     return int(value)
 
 
+def box_nm(box):
+    """Native BOX2I as integer nm [left, top, right, bottom] (no rounding)."""
+    return [int(box.GetX()), int(box.GetY()), int(box.GetRight()), int(box.GetBottom())]
+
+
 def extract(board_path):
     import pcbnew
     from .placement_probe import primitive, prove_contours
@@ -62,6 +69,8 @@ def extract(board_path):
             "uuid": fp.m_Uuid.AsString(),
             "position_mm": vec_mm(fp.GetPosition()),
             "position_nm": [int(fp.GetPosition().x), int(fp.GetPosition().y)],
+            "orientation_deg": float(fp.GetOrientationDegrees()),
+            "fpid": fp.GetFPIDAsString(),
             "pads": [],
         }
         for pad in fp.Pads():
@@ -78,6 +87,7 @@ def extract(board_path):
                 "drill_mm": vec_mm(drill),
                 "drill_nm": [int(drill.x), int(drill.y)],
                 "flash_layers": [board.GetLayerName(layer) for layer in copper if pad.FlashLayer(layer)],
+                "bbox_nm": box_nm(pad.GetBoundingBox()),
                 "uuid": pad.m_Uuid.AsString(),
             }
             if net:

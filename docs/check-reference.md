@@ -58,6 +58,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
+| `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -599,6 +600,18 @@ or a missing sealed log is unknown coverage; broken hashes or malformed CSV
 are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
 through a sealed requirement/check witness. Rotation correction and DFM are
 outside this check.
+
+## JLCPCB CPL rotation
+
+`cpl_rotation` takes `export_check`, `geometry_check`, a captured `policy`,
+captured `supplier_footprints` provenance records and `source_tolerance_nm`.
+It writes a JLC CPL whose rows are native pad-box midpoints, and it applies the
+versioned policy. Every rotation is cross-checked against the pin-1 frame of
+the captured supplier footprint, which detects quarter-turn offsets,
+reflections and diode polarity. Each row appears in exactly one of
+`applied_corrections` or `unmatched_footprints`. Missing geometry or a
+duplicate designator never falls back to the anchor. The status stays
+`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
 
 ## Scaffold preparation
 
