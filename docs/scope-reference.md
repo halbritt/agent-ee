@@ -27,7 +27,7 @@ specific to the original workstation; adapt them before using it elsewhere.
 | `baseline` | Required for scope/2 | Requirement/check mappings and captured target/reference sources; see [closed-loop contract](closed-loop.md) |
 | `mutable_inputs` | Optional list | Campaign-editable captured design paths; default board and schematic |
 | `empirical` | Optional captured path | Coordinator-generated calibration bundle for bench feedback |
-| `generation` | Optional `{schema: "agent-ee.generation/1", done_check}` | Generation scope marker: the last check must be `done_check` of kind `fab_package` with an acceptance requirement mapped to it, or capture refuses the scope; bound into the baseline ([done gate](fab-package.md#generation-scopes)) |
+| `generation` | Optional `{schema: "agent-ee.generation/1", done_check}` | Generation scope marker: `done_check` must be `fab_package`, followed only by bound `jlc_dfm` checks, with an acceptance requirement mapped to the package, or capture refuses the scope; bound into the baseline ([done gate](fab-package.md#generation-scopes)) |
 | `envelope` | Scope/3 only: `{path, profile, dialog}` | Captured [board envelope](board-envelope.md#baseline-integration); its obligations are re-derived and enforced at capture |
 | `requirements` | List, default `[]` | Captured input-relative text files placed first in the packet |
 | `limitations` | List of strings, default `[]` | Explicit omitted conditions or analyses retained in the report |

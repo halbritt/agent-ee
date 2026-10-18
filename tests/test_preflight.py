@@ -324,7 +324,7 @@ class PreflightTests(unittest.TestCase):
             verify_receipt(self.run, {'execution': 'ok'}, self.expected, 'circuit', 'initial')
 
     def test_unused_harness_change_is_recorded_and_launch_proceeds(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.preflight import verify_receipt
         from agent_ee.storage import digest, write_json
         require_toolchain()

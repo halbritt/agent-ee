@@ -2658,6 +2658,16 @@
         "AE"
       ],
       "reviewed": "Original two-pad ground-link fixture and generator, reviewed 2026-10-18. All symbol, pad, trace, zone and outline geometry is authored here; no stock library or external design bytes. OwnedGroundLink2 identifies the fixture, not a manufacturer device."
+    },
+    {
+      "paths": [
+        "fixtures/jlc-dfm/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-156 original synthetic DFM normalization and source capture; no supplier text or design files. See fixtures/jlc-dfm/PROVENANCE.md."
     }
   ]
 }

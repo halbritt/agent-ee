@@ -114,7 +114,8 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD, and `sch export bom --variant NAME` on the schematic only with a declared `bom_variant`; see [fab export](fab-export.md) | 600 s per step |
-| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
+| `jlc_dfm` | Networkless Python parser over owner-captured source report and normalization; binds the declared zip SHA-256 to an earlier sealed package, then grades errors ([details](jlc-dfm.md)) | 60 s |
+| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; followed only by bound `jlc_dfm` checks ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 | `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
 | `jlc_cost_estimate` | Coordinator reads the earlier export's verified BOM/CPL/`pcb_summary.json`, the captured board pads, catalog snapshot and pricing table; informational only, no tool launched ([details](jlc-cost-estimate.md)) | Enclosing run deadline |
@@ -939,8 +940,8 @@ validation verifies their commit/path/blob and SHA-256 offline; unavailable Git
 objects keep the block unverified. These citations supply no board-check credit.
 
 [`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
-are exactly `{netlist_check}` and it must be the last declared check; an earlier
-`geometry` check is required. It runs the same export and consistency code on its
+are exactly `{netlist_check}`; only bound [`jlc_dfm`](jlc-dfm.md) checks may follow
+it. An earlier `geometry` check is required. It runs the same export and consistency code on its
 own staging tree and, on `pass`, records `details.artifacts`
 (`agent-ee.fab-artifacts/1`: gerbers.zip, every drill file, bom.csv, cpl.csv and
 manifest.json by sha256, bound to the candidate id and board digest). A missing,
@@ -969,3 +970,11 @@ independently. Missing, ambiguous or inapplicable facts and uncovered pins remai
 unknown, including a manufacturer mismatch. Scope/2 and scope/3 freeze the
 complete contract/fact/parts dependency closure. See the feature page for the
 exact schema, evidence and limits.
+
+## Saved supplier DFM report
+
+[`jlc_dfm`](jlc-dfm.md) binds an owner-saved source report and normalized findings
+to an earlier `fab_package` check. Params are exactly `{fab_check, report}`. Both
+report files are immutable baseline inputs. Missing or mismatched evidence is
+unknown; error findings are defects, warnings are advisory. Parsing runs in the
+networkless executor; the owner performs the upload outside agent-ee.

@@ -14,8 +14,9 @@ it mandatory.
 
 - Params are exactly `{netlist_check}`, the ID of an earlier `netlist` check.
   Layer and output overrides are refused, as in `fab_export/1`.
-- It must be the last declared check. Declared anywhere else it is
-  `unsupported/unknown`, and scope/3 coverage refuses it.
+- It is last except for following [`jlc_dfm`](jlc-dfm.md) checks naming this
+  package. Any other following check is `unsupported/unknown`, and scope/3
+  coverage refuses the package.
 - Scope/3 also requires an earlier `geometry` check, the native footprint
   inventory the consistency gate reads.
 
@@ -61,7 +62,7 @@ baseline, and `verify` refuses the run if any of them changes.
 
 | Condition | Result |
 | --- | --- |
-| Params not exactly `{netlist_check}`, or the check is not declared last | `unsupported`, `unknown` |
+| Params not exactly `{netlist_check}`, or a following check is not a bound `jlc_dfm` | `unsupported`, `unknown` |
 | Any `fab_export` refusal or failure: netlist prerequisite missing, unsupported board feature, unbound part, native nonzero exit, missing/empty/unparseable native output, designator disagreement | The export's `failed`, `malformed`, `unsupported` or `interrupted`, `unknown`; no `fab/` package |
 | Any `fab_consistency` structural fault or coverage gap: missing, empty, unlisted or rehashed staged file, broken zip, unparseable CSV or summary, unverifiable tool identity, missing geometry | The gate's `malformed` or `unsupported`, `unknown` |
 | A gate defect: designator parity, LCSC/footprint conflict, CPL side or coordinates, unresolved 3D model, export-log diagnostic | `ok`, `defect`, summary `fab package done gate failed: ...` |
@@ -132,7 +133,7 @@ Baseline compilation, which runs at capture, refuses the scope unless:
 
 - the schema is scope/2 or scope/3;
 - the marker is exactly `{schema, done_check}`;
-- the last declared check is `done_check` and its kind is `fab_package`;
+- `done_check` is `fab_package`, followed only by bound `jlc_dfm` checks;
 - a baseline requirement maps to `done_check`, with `intent: "acceptance"` on
   scope/3.
 
@@ -140,7 +141,8 @@ The marker is copied into the baseline, so it is part of the `baseline_id`.
 A campaign therefore cannot drop it, or the done check, without changing its
 immutable baseline, which the campaign refuses. Removing the `fab_package`
 check or its requirement from a generation scope is refused at capture with
-`generation scope must declare its fab_package done check last` (or, when only
+`generation scope must declare its fab_package done check last` or
+`fab_package done check last: only bound jlc_dfm checks may follow` (or, when only
 the requirement is removed, `every check must trace to a baseline requirement`
 on scope/2 and `generation scope requires an acceptance requirement mapped to
 fab_package` on scope/3).
