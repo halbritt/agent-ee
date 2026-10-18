@@ -244,7 +244,8 @@ onto the symbol; capturing a PDF does not verify its applicability or its
 engineering claims.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
-pinned local commit and checks declared ports against the native sheet. It credits
+pinned local commit without Git transports or replacement refs, and checks
+declared ports against the native sheet. Missing local blobs are refused. It credits
 sealed interface evidence only for the block's actual native components and
 hierarchy. Parts subsets, layouts and adapted designs still need qualification;
 a passing run on a separate schematic cannot qualify the block.

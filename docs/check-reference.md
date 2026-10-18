@@ -475,6 +475,22 @@ schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
 
+## Reference-block evidence validation
+
+The [reference-block validator](reference-block-interface.md) is an offline
+capture/validation command, outside the check registry. It compares every block
+payload hash with the referenced run's candidate inventory and invokes the
+public run verifier, including baseline and coordinator evidence sealing.
+Changed sheet bytes are refused even when the block's local hashes are updated.
+Missing, incomplete or escalated runs leave the block unverified.
+
+Only passing `hardware_interface` requirements bound to the actual native block
+occurrences can currently contribute coverage. A checked shadow sheet cannot
+qualify an unused captured block. Optional layouts and other check families
+remain unverified. Parts payload bytes and the schema identifier are retained;
+this command does not qualify parts membership or selection. Adapted blocks
+require fresh checks on the new board candidate.
+
 ## Footprint assignment
 
 `footprint_assignment` requires captured `manifest` and `declaration` paths and

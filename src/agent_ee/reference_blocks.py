@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 import posixpath
 from pathlib import Path, PurePosixPath
 import re
@@ -316,7 +317,10 @@ def validate_block(directory, run_locations=None):
 
 
 def _git(repo, *args):
-    proc = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, check=True)
+    # Read the named objects, without local replacements or promisor downloads.
+    # Denying transports also covers Git versions without the lazy-fetch guard.
+    env = dict(os.environ, GIT_NO_REPLACE_OBJECTS='1', GIT_NO_LAZY_FETCH='1', GIT_ALLOW_PROTOCOL='')
+    proc = subprocess.run(['git', '-C', str(repo), *args], capture_output=True, check=True, env=env)
     return proc.stdout
 
 

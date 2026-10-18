@@ -1,5 +1,6 @@
 """Owned fixtures for reference provenance; no copied third-party design assets."""
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,11 @@ SHEET = b'''(kicad_sch (version 20250114) (generator "eeschema")
  (hierarchical_label "VIN" (shape input) (at 10 10 0)
   (effects (font (size 1.27 1.27)))
   (uuid "cb914ae0-18b3-43de-8045-9d41a1731b16")))'''
+
+
+def git(repo, *args):
+    return subprocess.run(['git', '-C', str(repo), *args], check=True,
+                          capture_output=True, text=True).stdout.strip()
 
 
 def block(root):
@@ -89,11 +95,7 @@ class ReferenceBlockTests(unittest.TestCase):
                     validate_block(root)
 
     def test_offline_git_capture_pins_committed_bytes_and_refuses_links(self):
-        import subprocess
         from agent_ee.reference_blocks import capture_block
-        def git(repo, *args):
-            return subprocess.run(['git', '-C', str(repo), *args], check=True,
-                                  capture_output=True, text=True).stdout.strip()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / 'source'
@@ -111,6 +113,14 @@ class ReferenceBlockTests(unittest.TestCase):
             captured = read_json(root / 'capture/block.json')
             self.assertEqual(captured['source']['commit'], commit)
             self.assertEqual((repo / 'sheet.kicad_sch').read_text(), 'dirty source must not be captured')
+            # A local replacement ref must not change the meaning of a pinned commit.
+            (repo / 'sheet.kicad_sch').write_bytes(SHEET + b'\n')
+            git(repo, 'add', '.')
+            git(repo, '-c', 'user.name=Owned', '-c', 'user.email=owned@example.invalid', 'commit', '-qm', 'Replacement fixture')
+            replacement = git(repo, 'rev-parse', 'HEAD')
+            git(repo, 'replace', commit, replacement)
+            capture_block(record, repo, commit, root / 'unreplaced', parts=repo / 'parts.json')
+            self.assertEqual((root / 'unreplaced/sheet.kicad_sch').read_bytes(), SHEET)
             with self.assertRaises(FileExistsError):
                 capture_block(record, repo, commit, root / 'capture', parts=repo / 'parts.json')
             (repo / 'sheet.kicad_sch').unlink()
@@ -119,6 +129,36 @@ class ReferenceBlockTests(unittest.TestCase):
             git(repo, '-c', 'user.name=Owned', '-c', 'user.email=owned@example.invalid', 'commit', '-qm', 'Link fixture')
             with self.assertRaisesRegex(ValueError, 'regular committed file'):
                 capture_block(record, repo, git(repo, 'rev-parse', 'HEAD'), root / 'bad', parts=repo / 'parts.json')
+
+    def test_missing_promised_blob_is_refused_without_contacting_remote(self):
+        import shlex
+        from agent_ee.reference_blocks import capture_block
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / 'source'
+            repo.mkdir()
+            record = block(repo)
+            git(repo, 'init', '-q')
+            git(repo, 'add', '.')
+            git(repo, '-c', 'user.name=Owned', '-c', 'user.email=owned@example.invalid', 'commit', '-qm', 'Owned fixture')
+            commit = git(repo, 'rev-parse', 'HEAD')
+            git(repo, 'config', 'uploadpack.allowFilter', 'true')
+            clone = root / 'partial'
+            git(root, 'clone', '--filter=blob:none', '--no-checkout', repo.as_uri(), str(clone))
+            missing = git(clone, 'rev-list', '--objects', '--missing=print', '--all')
+            blob = git(repo, 'rev-parse', commit + ':sheet.kicad_sch')
+            self.assertIn('?' + blob, missing.splitlines())
+            # A real local transport observer catches lazy fetch without network I/O.
+            contacted = root / 'remote-contacted'
+            upload = root / 'upload-pack'
+            upload.write_text('#!/bin/sh\nprintf fetched > ' + shlex.quote(str(contacted)) +
+                              '\nexec git-upload-pack "$@"\n')
+            upload.chmod(0o700)
+            git(clone, 'config', 'remote.origin.uploadpack', str(upload))
+            with self.assertRaises(subprocess.CalledProcessError):
+                capture_block(record, clone, commit, root / 'capture', parts=repo / 'parts.json')
+            self.assertFalse(contacted.exists(), 'offline capture contacted its promisor remote')
+            self.assertFalse((root / 'capture').exists())
 
 
 class NativeReferenceBlockTests(unittest.TestCase):
