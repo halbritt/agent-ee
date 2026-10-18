@@ -411,6 +411,26 @@ class DeclarationAndContextTest(unittest.TestCase):
         self.assertEqual(request['authorization'], {'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
             'source_sha256': hashlib.sha256(b'board bytes').hexdigest(), 'writable_root': '/work/placement'})
 
+    def test_policy_propagates_scope_edge_clearance_check_and_fab_profile_margin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = Path(tmp)
+            (inputs / 'project').mkdir()
+            (inputs / BOARD).write_text(TEXT)
+            (inputs / SCHEMATIC).write_text('(kicad_sch)')
+            write_json(inputs / POLICY, {'schema': 'agent-ee.packing-policy/1', 'fixed_refs': []})
+            profile_rel = 'project/fab-profile.json'
+            write_json(inputs / profile_rel, {'limits': [{'key': 'min_edge_clearance_mm', 'value': 0.3}]})
+            files = {rel: digest(inputs / rel) for rel in (BOARD, SCHEMATIC, POLICY, profile_rel)}
+            bound = {'policy': POLICY}
+            manifest = {'files': files, 'scope': {'checks': [
+                {'kind': 'fab_profile', 'params': {'fab_profile': profile_rel}},
+            ]}}
+            self.assertEqual(pa._policy(inputs, bound, manifest)['min_courtyard_edge_mm'], 0.3)
+            manifest['scope']['checks'].append({
+                'kind': 'placement', 'params': {'criterion': 'edge-clearance/1', 'min_courtyard_edge_mm': 0.5}
+            })
+            self.assertEqual(pa._policy(inputs, bound, manifest)['min_courtyard_edge_mm'], 0.5)
+
     def test_helper_outcomes_other_than_completed_are_incomplete(self):
         for status in ('failed', 'timeout', 'cancelled', 'unavailable', 'refused', 'partial'):
             with self.subTest(status), self.assertRaisesRegex(ValueError, 'no default placement substituted'):
