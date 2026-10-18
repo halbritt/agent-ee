@@ -4,10 +4,10 @@
 connectivity record without drawing any wires. It is a private experimental
 stand-in for the rung-1 generator driver. Its parts-manifest and receipt schemas
 carry `0-experimental` names and its receipt says
-`"qualification": "experimental-unqualified"`. The owned implementation on
-branch `impl/native-emitter` (AGENTEE-40/52, commit 477b597) supersedes it at
-integration. Do not register this module as a check, and do not cite its
-receipt as qualification evidence.
+`"qualification": "experimental-unqualified"`. The
+[native emitter](schematic-emitter.md) (AGENTEE-40) is now implemented alongside
+it; the experimental rung-1 driver still calls this module. Do not register
+this module as a check, and do not cite its receipt as qualification evidence.
 
 The emitter does not run KiCad. Native ERC and netlist export of its output are
 the caller's checks. Rung 1 runs them in `agent_ee.generate`.

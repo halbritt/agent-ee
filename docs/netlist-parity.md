@@ -92,6 +92,18 @@ An unsuccessful export, missing file, malformed inventory or unresolved predicat
 cannot produce a passing witness. Only the configured predicate is evaluated;
 one parity check cannot witness multiple independently scoped requirements.
 
+For captured intent, single-unit, single-pin power/flag symbols with `#`
+references, no footprint and a connected `power_in` or `power_out` pin are
+projected out of the physical graph, matching KiCad 10's XML export. The report
+lists each one in `normalized_power_symbols` with its logical ID, reference,
+library symbol, pin, net and source locator. Every physical terminal remains in
+its declared net; the component count and instance predicates cover physical
+components. An instance predicate targeting an omitted marker is unknown.
+Unqualified virtual symbols, disconnected markers and any net left with fewer
+than two physical terminals are unsupported. This normalization cannot prove
+that a power symbol or flag is present, or establish a power-drive declaration;
+native ERC must grade the emitted schematic separately.
+
 The owned test circuit declares two identical resistors and a numbered port.
 Expectations were committed before native execution. Native tests exercise full
 renaming, reference exchange, port pin swap, label merge, a label displaced 1 mm,

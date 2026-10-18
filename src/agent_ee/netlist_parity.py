@@ -71,7 +71,39 @@ def resolved_inventory(record):
     if set(nc) | graph['memberships'].keys() != all_pins:
         raise ValueError('resolved pin accounting incomplete')
     graph['no_connects'] = tuple(nc)
-    return graph
+    return _physical_power_projection(graph, record)
+
+
+def _physical_power_projection(graph, record):
+    """KiCad omits virtual power/flag references from its physical XML netlist.
+
+    Retain every physical terminal and record the omitted markers. Their
+    presence and electrical drive declarations require native ERC separately.
+    """
+    virtual = {}
+    for comp in record['components']:
+        if not comp['power'] and not comp['reference'].startswith('#'):
+            continue
+        if (not comp['power'] or not comp['reference'].startswith('#') or comp['footprint']
+                or len(comp['pins']) != 1 or len(comp['units']) != 1
+                or comp['pins'][0]['electrical_type'] not in ('power_in', 'power_out')):
+            raise Unsupported('unqualified virtual power symbol: ' + comp['id'])
+        cid, pin = comp['id'], comp['pins'][0]['number']
+        if (cid, pin) not in graph['memberships']:
+            raise Unsupported('virtual power symbol must be connected: ' + cid)
+        virtual[cid] = dict(component=cid, reference=comp['reference'], lib_id=comp['lib_id'], pin=pin,
+                            net=graph['memberships'][cid, pin], locator=graph['components'][cid]['locator'])
+    if not virtual:
+        return graph
+    nets = {}
+    for nid, net in graph['nets'].items():
+        terminals = tuple(t for t in net['terminals'] if t[0] not in virtual)
+        if len(terminals) < 2:
+            raise Unsupported('power projection requires two physical terminals per net: ' + nid)
+        nets[nid] = {**net, 'terminals': terminals}
+    components = {cid: comp for cid, comp in graph['components'].items() if cid not in virtual}
+    return {**graph, **terminal_inventory(components, nets),
+            'normalized_power_symbols': [virtual[cid] for cid in sorted(virtual)]}
 
 
 def comparison_key(component):
@@ -199,6 +231,11 @@ def compare(expected, actual, policy):
         'extra_components': [{'key': list(k), 'count': v} for k, v in sorted(extra.items())],
         'expected_components': expected['components'], 'native_components': actual['components'],
         'component_matches': {}, 'correspondence_evaluated': False, 'search_steps': 0}
+    if expected.get('normalized_power_symbols'):
+        report['normalized_power_symbols'] = expected['normalized_power_symbols']
+    if set(policy.get('instance_components', ())) - expected['components'].keys():
+        report.update(execution='unsupported', reason='unresolved physical instance predicate')
+        return report
     if predicate == 'components':
         report['outcome'] = 'defect' if missing or (extra and policy['multiset'] == 'exactly') else 'pass'
         return report
@@ -421,6 +458,10 @@ def check_netlist_parity(ctx):
         ctx.result['limitations'].append('Exact schematic incidence and component counts only. '
             'Scores are descriptive; electrical adequacy, footprint suitability and PCB routing are outside coverage. '
             'Automorphic instance correspondence requires explicit immutable anchors.')
+        if report.get('normalized_power_symbols'):
+            ctx.result['limitations'].append('Virtual power/flag symbols are omitted by native XML and '
+                'listed in normalized_power_symbols. Parity checks physical connectivity; '
+                'it cannot establish the presence of these markers or their ERC drive declarations.')
     except Unsupported as exc:
         raise CheckError('unsupported', str(exc)) from exc
     except OSError as exc:

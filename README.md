@@ -151,8 +151,10 @@ changes to a board with protected placement and routing. Full campaign generatio
 and hierarchical annotation application remain unqualified.
 [Netlist parity](docs/netlist-parity.md) compares native connectivity with captured
 intent and libraries or an explicit golden netlist. Resolved intent is rederived
-before comparison. Exact instance connectivity catches exchanges that collapsed
-part labels can miss; ambiguous correspondence and search exhaustion remain unknown.
+before comparison. Qualified virtual power symbols omitted by native XML are
+listed in the parity report; physical terminals remain exact. Exact instance
+connectivity catches exchanges that collapsed part labels can miss; ambiguous
+correspondence and search exhaustion remain unknown.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs. Neither check establishes electrical adequacy.
 The [package consistency check](docs/package-consistency.md) compares each
