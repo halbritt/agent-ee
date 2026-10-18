@@ -2143,6 +2143,16 @@
         "AE"
       ],
       "reviewed": "Original one-line shell guard that refuses committed merge-conflict markers anywhere in the tree; integrator tooling added 2026-10-18 after markers reached main in a docs port."
+    },
+    {
+      "paths": [
+        "tests/test_tree_hygiene.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers; no fixtures, no KiCad text."
     }
   ]
 }
