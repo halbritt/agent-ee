@@ -134,6 +134,12 @@ class PreflightTests(unittest.TestCase):
         self.runtime = {**self.runtime, '/usr/bin/ngspice': {'path': '/usr/bin/ngspice', 'sha256': 'changed'}}
         self.assert_refused('runtime_drift')
 
+    def test_routing_equivalence_requires_pcbnew_before_dispatch(self):
+        self.runtime['pcbnew'] = {'path': None, 'sha256': None}
+        self.optional_expectation([{'kind': 'routing_equivalence', 'params': {}}])
+        self.assertIn('pcbnew', self.expected['required_runtime'])
+        self.assert_refused('missing_binary:pcbnew')
+
     def test_routing_requires_both_native_interfaces_before_dispatch(self):
         self.runtime['kicad-cli'] = self.runtime['/usr/bin/python3']
         self.runtime['pcbnew'] = {'path': None, 'sha256': None}
@@ -176,7 +182,7 @@ class PreflightTests(unittest.TestCase):
         verify_receipt(self.run, record, self.expected, 'circuit', 'initial')
 
     def test_native_networkless_probe_and_tamper_detection(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.preflight import verify_receipt
         from agent_ee.storage import write_json
         require_toolchain()
@@ -228,7 +234,7 @@ class PreflightTests(unittest.TestCase):
     def test_claude_override_checked_path_is_the_mounted_path(self):
         import json
         import os
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.storage import identity
         from agent_ee.harnesses import executable_for
         require_toolchain()
@@ -254,7 +260,7 @@ class PreflightTests(unittest.TestCase):
         calls.assert_called_once()
 
     def test_foreign_baseline_receipt_is_rejected_even_with_updated_link_hash(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.preflight import verify_receipt
         from agent_ee.storage import digest, write_json
         require_toolchain()
