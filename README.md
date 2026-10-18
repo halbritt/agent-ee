@@ -275,8 +275,10 @@ retain publication and review-attempt history across interruptions. Recovery
 never repeats inference automatically; an uncertain review needs an explicit
 fresh attempt, and retained evidence remains protected from overlapping outputs.
 
-Thermal solvers, post-layout parasitic extraction, DFM/DFA/DFT analysis and BOM
-lifecycle services are **not bundled**. They need separately qualified tools,
+Thermal solvers, post-layout parasitic extraction, DFM analysis and BOM
+lifecycle services are **not bundled**. The [`dfa_dft` check](docs/dfa-dft.md)
+covers only declared connector orientation, test-point probe access and
+test-point coverage, and derives a bring-up plan. They need separately qualified tools,
 models and adapters. The built-in passive simulation is not a general active
 circuit simulator. The [coverage guide](docs/coverage.md) spells out these limits.
 

@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -202,7 +202,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             raise ValueError(f'unknown capability kind: {kind}')
         if not isinstance(params, dict):
             raise ValueError('params must be an object')
-        if kind not in ('geometry', 'placement', 'board_envelope') and 'criterion' in params:
+        if kind not in ('geometry', 'placement', 'board_envelope', 'dfa_dft') and 'criterion' in params:
             raise ValueError('unknown criterion for check kind')
         if not isinstance(params.get('calibration_inputs', []), list):
             raise ValueError('calibration_inputs must be a list')
@@ -255,6 +255,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     if not envelope_declarations(validate((Path(inputs) / params['envelope']).read_bytes())):
                         raise ValueError('envelope declares no fixed connectors')
             result['predicates'] = predicate_names(params)
+        elif kind == 'dfa_dft':
+            from .dfa_dft import capability as dfa_dft_capability
+            captured(scope.get('board'))
+            result['predicates'] = dfa_dft_capability(params, scope, spec, prerequisite)
         elif kind == 'kicad_happy':
             from .kicad_happy import describe_capability
             captured(scope.get('schematic'))

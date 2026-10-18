@@ -361,7 +361,8 @@ The [measurement-adapter reference](measurement-adapters.md) defines producer an
 parser invocation, every supported parameter, request/report formats, retained
 artifacts, margin arithmetic, domain/condition rules and failure paths. These
 interfaces can host independently qualified engineering tools; installing
-agent-ee does not install thermal, parasitic, DFM/DFA/DFT or supply-chain adapters.
+agent-ee does not install thermal, parasitic, DFM or supply-chain adapters. Declared
+assembly and test access geometry is the separate [`dfa_dft`](dfa-dft.md) check.
 
 In scope/2, bounded `rc_transient` results also expose electrical scalar metrics
 and margins for coupling and empirical correction. Unbounded measurements remain
@@ -502,6 +503,17 @@ and returns unknown. Complete scope/3 envelope capture still requires that
 manufacturing authority; holes, keepouts and multiple fixed connectors also
 remain unsupported for acceptance. See the [native envelope contract](board-envelope.md#native-envelope-check)
 for evidence, binding and failure boundaries.
+
+## Assembly and test access
+
+`dfa_dft` evaluates one declared criterion per check over the sandboxed
+saved-board probe. `connector-orientation/1` checks that each connector faces
+its nearest edge, given its declared insertion direction. `testpoint-access/1`
+checks that no declared test point lies under another courtyard on the same
+side. `testpoint-coverage/1` requires a declared probe point on every rail and
+acceptance-measured net, and writes `bringup_plan.json`. See
+[assembly and test access](dfa-dft.md) for parameters, the plan schema and
+unknown boundaries.
 
 ## Qualified passive tolerance endpoints
 
