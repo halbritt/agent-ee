@@ -1,0 +1,313 @@
+{
+  "baseline_id": "93376f233f301074cc40c14b19d9d2170e15288ee1f262183f816a60052eb240",
+  "coverage": {
+    "checks": {
+      "erc": {
+        "can_evaluate_bound": true,
+        "capability_version": "erc/1",
+        "check_id": "erc",
+        "immutable_inputs": [],
+        "kind": "erc",
+        "predicates": [
+          "native:erc:violations"
+        ],
+        "prerequisites": [],
+        "status": "supported",
+        "unsupported_reasons": []
+      },
+      "interface": {
+        "can_evaluate_bound": true,
+        "capability_version": "hardware_interface/1",
+        "check_id": "interface",
+        "immutable_inputs": [
+          "interface.json"
+        ],
+        "kind": "hardware_interface",
+        "predicates": [
+          "interface:C301:present",
+          "interface:C301:value",
+          "interface:C301.2:net",
+          "interface:C302:present",
+          "interface:C302:value",
+          "interface:C302.1:net",
+          "interface:C303:present",
+          "interface:C303:value",
+          "interface:C304:present",
+          "interface:C304:value",
+          "interface:C304.1:net",
+          "interface:C304.2:net",
+          "interface:C305:present",
+          "interface:C305:value",
+          "interface:C305.2:net",
+          "interface:C306:present",
+          "interface:C306:value",
+          "interface:C306.2:net",
+          "interface:C307:present",
+          "interface:C307:value",
+          "interface:C307.2:net",
+          "interface:C308:present",
+          "interface:C308:value",
+          "interface:C308.1:net",
+          "interface:C308.2:net",
+          "interface:C309:present",
+          "interface:C309:value",
+          "interface:C309.2:net",
+          "interface:C310:present",
+          "interface:C310:value",
+          "interface:C310.2:net",
+          "interface:C311:present",
+          "interface:C311:value",
+          "interface:C311.2:net",
+          "interface:C312:present",
+          "interface:C312:value",
+          "interface:C312.2:net",
+          "interface:C313:present",
+          "interface:C313:value",
+          "interface:C313.2:net",
+          "interface:C314:present",
+          "interface:C314:value",
+          "interface:C314.2:net",
+          "interface:C316:present",
+          "interface:C316:value",
+          "interface:C316.1:net",
+          "interface:C316.2:net",
+          "interface:C317:present",
+          "interface:C317:value",
+          "interface:C317.1:net",
+          "interface:C317.2:net",
+          "interface:D301:present",
+          "interface:D301:value",
+          "interface:D301.1:net",
+          "interface:D302:present",
+          "interface:D302:value",
+          "interface:D303:present",
+          "interface:D303:value",
+          "interface:D304:present",
+          "interface:D304:value",
+          "interface:D304.1:net",
+          "interface:Q301:present",
+          "interface:Q301:value",
+          "interface:Q301.2:net",
+          "interface:Q301.3:net",
+          "interface:R301:present",
+          "interface:R301:value",
+          "interface:R302:present",
+          "interface:R302:value",
+          "interface:R302.2:net",
+          "interface:R303:present",
+          "interface:R303:value",
+          "interface:R303.1:net",
+          "interface:R304:present",
+          "interface:R304:value",
+          "interface:R305:present",
+          "interface:R305:value",
+          "interface:R305.2:net",
+          "interface:R306:present",
+          "interface:R306:value",
+          "interface:R307:present",
+          "interface:R307:value",
+          "interface:R308:present",
+          "interface:R308:value",
+          "interface:R308.1:net",
+          "interface:R309:present",
+          "interface:R309:value",
+          "interface:R309.1:net",
+          "interface:R310:present",
+          "interface:R310:value",
+          "interface:R310.1:net",
+          "interface:R310.2:net",
+          "interface:R311:present",
+          "interface:R311:value",
+          "interface:R311.2:net",
+          "interface:R312:present",
+          "interface:R312:value",
+          "interface:R312.2:net",
+          "interface:R313:present",
+          "interface:R313:value",
+          "interface:R313.1:net",
+          "interface:R314:present",
+          "interface:R314:value",
+          "interface:R314.2:net",
+          "interface:R315:present",
+          "interface:R315:value",
+          "interface:R316:present",
+          "interface:R316:value",
+          "interface:R317:present",
+          "interface:R317:value",
+          "interface:R318:present",
+          "interface:R318:value",
+          "interface:R319:present",
+          "interface:R319:value",
+          "interface:R320:present",
+          "interface:R320:value",
+          "interface:R320.1:net",
+          "interface:R321:present",
+          "interface:R321:value",
+          "interface:R321.2:net",
+          "interface:R324:present",
+          "interface:R324:value",
+          "interface:R325:present",
+          "interface:R325:value",
+          "interface:R326:present",
+          "interface:R326:value",
+          "interface:R326.1:net",
+          "interface:R327:present",
+          "interface:R327:value",
+          "interface:R329:present",
+          "interface:R329:value",
+          "interface:R329.1:net",
+          "interface:R329.2:net",
+          "interface:R330:present",
+          "interface:R330:value",
+          "interface:R330.1:net",
+          "interface:R331:present",
+          "interface:R331:value",
+          "interface:R332:present",
+          "interface:R332:value",
+          "interface:R333:present",
+          "interface:R333:value",
+          "interface:R334:present",
+          "interface:R334:value",
+          "interface:R334.1:net",
+          "interface:U301:present",
+          "interface:U301:value",
+          "interface:U301.10:net",
+          "interface:U301.11:net",
+          "interface:U302:present",
+          "interface:U302:value",
+          "interface:U302.15:net",
+          "interface:U302.16:net",
+          "interface:U302.31:net",
+          "interface:U302.32:net",
+          "interface:U302.4:net",
+          "interface:U302.7:net",
+          "interface:U303:present",
+          "interface:U303:value",
+          "interface:U303.1:net",
+          "interface:U303.3:net",
+          "interface:U305:present",
+          "interface:U305:value",
+          "interface:U305.2:net",
+          "interface:U307:present",
+          "interface:U307:value",
+          "interface:U307.2:net",
+          "interface:U307.3:net",
+          "interface:U307.6:net",
+          "interface:U307.7:net",
+          "interface:U307.8:net",
+          "interface:U309:present",
+          "interface:U309:value",
+          "interface:U309.1:net",
+          "interface:U309.3:net",
+          "interface:pb1-ground",
+          "interface:vdda-name",
+          "interface:channel2-strap",
+          "interface:vdda-vdd-isolation",
+          "interface:channel-isolation"
+        ],
+        "prerequisites": [
+          {
+            "check_id": "netlist",
+            "kind": "netlist"
+          }
+        ],
+        "status": "supported",
+        "unsupported_reasons": []
+      },
+      "netlist": {
+        "can_evaluate_bound": false,
+        "capability_version": "netlist/1",
+        "check_id": "netlist",
+        "immutable_inputs": [],
+        "kind": "netlist",
+        "predicates": [],
+        "prerequisites": [],
+        "status": "supported",
+        "unsupported_reasons": []
+      }
+    },
+    "coverage_id": "cf58e4c4857e10393662e0c35e4e98400480606871092507718834cf6c3779e4",
+    "policy": "executable-acceptance/1",
+    "requirements": {
+      "native": {
+        "acceptance_checks": [
+          "erc"
+        ],
+        "intent": "acceptance",
+        "mapped_checks": [
+          "erc",
+          "netlist"
+        ]
+      },
+      "wideband-interface": {
+        "acceptance_checks": [
+          "interface"
+        ],
+        "intent": "acceptance",
+        "mapped_checks": [
+          "interface"
+        ]
+      }
+    },
+    "schema": "agent-ee.coverage/1"
+  },
+  "criteria": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "files": {
+    "COVERAGE.md": "7ad526d3d1c2b4f3c61758c7d41bb293f86cdb90409f96b4fa0d98521517601a",
+    "blocks/wbo1/block.json": "ca28cc050b501f4cd86bfb3cfd9ddebc12423bf6a0cb7083cafd5eac6e2386d0",
+    "blocks/wbo2/block.json": "ad6c34e7139a1fe90fda38c5966fa59470ef135a1db686702f26283ed99e153e",
+    "interface.json": "382a375067f6c59acc420f2585a8fc0adbf59aaa8f11b4157cdae6830f0d7f84"
+  },
+  "reference_architectures": [
+    "blocks/wbo1/block.json",
+    "blocks/wbo2/block.json"
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc",
+        "netlist"
+      ],
+      "id": "native",
+      "intent": "acceptance",
+      "source": {
+        "locator": "Native checks",
+        "path": "COVERAGE.md"
+      },
+      "statement": "The captured two-channel reference loads natively, passes ERC and exports its physical components."
+    },
+    {
+      "checks": [
+        "interface"
+      ],
+      "id": "wideband-interface",
+      "intent": "acceptance",
+      "source": {
+        "locator": "Captured native interface",
+        "path": "COVERAGE.md"
+      },
+      "statement": "Retain captured wbo1 component values, external nets, PB1 ground, channel 2 PA8 high, and separate VDDA rails."
+    }
+  ],
+  "schema": "agent-ee.baseline/2",
+  "targets": [
+    "COVERAGE.md"
+  ]
+}

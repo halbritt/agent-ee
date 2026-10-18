@@ -12,7 +12,7 @@ from agent_ee.baseline import freeze_evidence, verify_evidence, validate_witness
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.checks import run_checks
 from agent_ee.storage import read_json, write_json
-from toolchain import require_toolchain
+from tests.toolchain import require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures/hardware-interface'
 spec = importlib.util.spec_from_file_location('interface_fixture', FIXTURE / 'generate.py')
@@ -68,6 +68,23 @@ class InterfaceTests(unittest.TestCase):
         self.contract['invariants'] = []
         with self.assertRaisesRegex(ValueError, 'invariants'):
             validate_contract(self.contract)
+
+    def test_external_block_citations_cannot_supply_board_requirement_authority(self):
+        from agent_ee.hardware_interface import capability
+        source = dict(kind='pinned-external', repository='owned', commit='a' * 40,
+                      path='requirements.md', blob='b' * 40, sha256='c' * 64)
+        for invariant in self.contract['invariants']:
+            invariant['source'] = source
+        rid = self.contract['invariants'][0]['requirement']
+        scope = dict(baseline=dict(requirements=[dict(id=rid, source=source, checks=['interface'])]))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_json(root / 'contract.json', self.contract)
+            params = dict(contract='contract.json', netlist_check='native')
+            with self.assertRaisesRegex(ValueError, 'exact captured requirement source'):
+                capability(params, scope, {'contract.json'}, root, 'interface')
+            self.assertEqual(capability(params, scope, {'contract.json'}, root,
+                                        'interface', block_sources=True)['contract'], self.contract)
 
     def test_contract_refuses_ambiguous_or_wildcard_authority(self):
         for mutation in (

@@ -1,0 +1,80 @@
+{
+  "baseline": {
+    "reference_architectures": [
+      "blocks/wbo1/block.json",
+      "blocks/wbo2/block.json"
+    ],
+    "requirements": [
+      {
+        "checks": [
+          "netlist"
+        ],
+        "id": "adapted-native",
+        "intent": "informational",
+        "source": {
+          "locator": "Adaptation",
+          "path": "COVERAGE.md"
+        },
+        "statement": "Export the freshly instantiated and adapted native channel; native graph assertions run in test_fome_wbo1."
+      }
+    ],
+    "targets": [
+      "COVERAGE.md"
+    ]
+  },
+  "board": "project/reference.kicad_pcb",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "adapted-interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "adapted-interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "at": "project",
+      "path": "project"
+    },
+    {
+      "at": "blocks",
+      "path": "blocks"
+    },
+    {
+      "at": "instance.json",
+      "path": "instance.json"
+    },
+    {
+      "at": "COVERAGE.md",
+      "path": "COVERAGE.md"
+    },
+    {
+      "at": "adapted-interface.json",
+      "path": "adapted-interface.json"
+    }
+  ],
+  "limitations": [
+    "No fabrication or physical-board qualification. Empty original board supplies the required schematic-review container only.",
+    "Upstream Rev C parity, functional models, parts qualification, heater geometry and independent reviews are pending."
+  ],
+  "mutable_inputs": [
+    "project/wbo2.kicad_sch"
+  ],
+  "name": "wbo1 to wbo2 native adaptation fixture",
+  "requirements": [
+    "COVERAGE.md"
+  ],
+  "schema": "agent-ee.scope/3",
+  "schematic": "project/reference.kicad_sch",
+  "scope": "Native acquisition evidence for the rung-2 wideband reference. Incomplete engineering coverage; see COVERAGE.md."
+}

@@ -83,9 +83,14 @@ def validate_contract(contract):
             raise ValueError('duplicate invariant id')
         ids.add(iid)
         text(invariant['requirement'])
-        exact_keys(invariant['source'], 'path locator')
-        safe_relative(invariant['source']['path'])
-        text(invariant['source']['locator'])
+        source = invariant['source']
+        if isinstance(source, dict) and source.get('kind') == 'pinned-external':
+            from .reference_blocks import _source
+            _source(source, ())
+        else:
+            exact_keys(source, 'path locator')
+            safe_relative(source['path'])
+            text(source['locator'])
         if kind in ('component', 'value'):
             if invariant['component'] not in components:
                 raise ValueError('unknown invariant component')
@@ -121,7 +126,7 @@ def load_contract(inputs, path):
     return validate_contract(json.loads(raw, object_pairs_hook=unique_object))
 
 
-def capability(params, scope, files, inputs, check_id):
+def capability(params, scope, files, inputs, check_id, *, block_sources=False):
     exact_keys(params, 'contract netlist_check')
     rel = str(safe_relative(params['contract']))
     if rel not in files or inputs is None:
@@ -136,8 +141,9 @@ def capability(params, scope, files, inputs, check_id):
         raise ValueError('interface requirement mappings must match declared invariant requirements')
     for invariant in contract['invariants']:
         req = requirements.get(invariant['requirement'])
-        if (not req or invariant['source'] != req['source'] or
-                check_id not in req['checks'] or invariant['source']['path'] not in files):
+        external = invariant['source'].get('kind') == 'pinned-external'
+        if (not req or invariant['source'] != req['source'] or check_id not in req['checks'] or
+                (external and not block_sources) or (not external and invariant['source']['path'] not in files)):
             raise ValueError('interface invariant requires exact captured requirement source and check mapping')
     return {'contract': contract, 'immutable_inputs': [rel],
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
