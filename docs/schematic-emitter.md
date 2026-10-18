@@ -61,6 +61,10 @@ KiCad 10.0):
   coordinate. Nets driven by a global `power_in` power symbol use global labels;
   other nets use local labels. Explicit no-connect pins get no-connect markers.
   No wires are drawn.
+- Stacked pins (distinct pins of one unit on one connection point, as stock
+  MCU symbols stack their VSS pins) are emitted only when the intent puts them
+  all on one net. KiCad joins them natively, so one label serves the stack.
+  A stack spanning two nets, or holding a no-connect pin, is refused.
 - Power and flag symbols appear only where the intent declares them as
   components. The emitter never adds a power symbol or flag.
 - Pin offsets must be exactly representable on the native 100 nm coordinate
@@ -153,7 +157,7 @@ Generation either succeeds completely or writes nothing:
 | `derived_symbol_unsupported` | The symbol uses `extends`; KiCad's flattening into `lib_symbols` is not natively qualified here |
 | `unsupported_symbol_node`, `unsupported_graphic` | An unknown top-level symbol node, or unit bounds the [symbol context](symbol-context.md) cannot compute (for example arcs) |
 | `unlocatable_pin` | Pin geometry differs from the symbol context, or a pin endpoint is not exactly representable on the native 100 nm lattice |
-| `impossible_pin_endpoint` | Two pins would share one connection point |
+| `impossible_pin_endpoint` | Two pins would share one connection point, other than stacked pins of one unit on one net |
 | `malformed_net_name`, `duplicate_net_name` | Net names must be unique and match `[A-Za-z0-9_+.-]{1,64}`, so bus syntax, markup and text variables cannot change connectivity |
 | `malformed_reference`, `malformed_value`, `malformed_footprint` | References need a number and a `#` prefix exactly for power symbols; values refuse control characters, backslashes and `${`; footprints are empty or `Library:Name` |
 | `power_net_mismatch`, `unsupported_power_symbol` | A `power_in` power symbol's value must equal its net's name; power symbols have one connected pin |
@@ -175,6 +179,12 @@ executor with networking unshared:
   connects natively as specified, and label coordinates match a hand-derived
   endpoint table.
 - Swapped or shorted terminals change the native netlist.
+- A regulator variant whose spare pin is stacked on its ground pin gives zero
+  ERC violations, and both stacked pins appear on the native `GND` net. The
+  same stack refuses when the spare pin is on another net or a no-connect.
+  `tests/test_symbol_capture.py` qualifies the captured stock `STM32H723ZGTx`
+  with its nine stacked VSS pins the same way (see
+  [large-symbol capture](symbol-capture.md#qualification)).
 - `tests/test_emitter_parity.py` passes the emitted output through the AGENTEE-41
   parity predicates: topology, components and instance anchors computed from
   the identity contract. Omitted, shorted and swapped terminals, an extra
