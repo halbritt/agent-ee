@@ -148,3 +148,80 @@ class PlacerTest(unittest.TestCase):
         for fp in reverse['footprints']:
             fp['courtyards']['F']['polygons'][0].reverse()
         self.assertEqual(pack(board, request())['placements'], pack(reverse, request())['placements'])
+
+    def test_edge_margin(self):
+        from agent_ee.placement_predicates import edge_clearance
+        from test_placement import MM, rectangle
+        board = capture([part('U1', 5, 5), part('C1', 5, 5), part('R1', 5, 5)], rectangle(0, 0, 20, 20))
+        margin_mm = 1.5
+        margin_nm = int(margin_mm * MM)
+        unmargined = pack(board, request(fixed_refs=[]))
+        self.assertEqual((unmargined['status'], unmargined['min_courtyard_edge_mm']), ('planned', 0.0))
+        # Without an edge margin, parts are placed flush against the outline (0 mm from Edge.Cuts).
+        unmargined_by_ref = {p['ref']: p for p in unmargined['placements']}
+        unmargined_placed = capture([
+            part(fp['ref'], unmargined_by_ref[fp['ref']]['position_nm'][0] / MM,
+                 unmargined_by_ref[fp['ref']]['position_nm'][1] / MM)
+            for fp in board['footprints']
+        ], rectangle(0, 0, 20, 20))
+        self.assertEqual(edge_clearance(unmargined_placed, margin_nm)['status'], 'defect')
+
+        plan = pack(board, request(fixed_refs=[], min_courtyard_edge_mm=margin_mm))
+        self.assertEqual(plan['status'], 'planned')
+        self.assertEqual(plan['min_courtyard_edge_mm'], margin_mm)
+        by_ref = {p['ref']: p for p in plan['placements']}
+        placed = capture([
+            part(fp['ref'], by_ref[fp['ref']]['position_nm'][0] / MM, by_ref[fp['ref']]['position_nm'][1] / MM)
+            for fp in board['footprints']
+        ], rectangle(0, 0, 20, 20))
+        clearance = edge_clearance(placed, margin_nm)
+        self.assertEqual(clearance['status'], 'pass', clearance)
+        self.assertEqual(len(clearance['measured']), 3)
+        for item in clearance['measured']:
+            self.assertGreaterEqual(item['distance_mm'], margin_mm)
+
+        # Boundary checks: invalid margin values raise ValueError; margin wider than board exhausts search.
+        for bad in (-0.1, True, '1.5', 1e-7):
+            with self.assertRaises(ValueError):
+                pack(board, request(fixed_refs=[], min_courtyard_edge_mm=bad))
+        tight = pack(capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20)),
+                     request(fixed_refs=[], min_courtyard_edge_mm=1.5))
+        self.assertEqual((tight['status'], tight['min_courtyard_edge_mm']), ('packing_search_exhausted', 1.5))
+
+    def test_edge_mounted_exempt(self):
+        from agent_ee.placement_predicates import edge_clearance
+        from test_placement import MM, rectangle
+        # AMPSEAL connector mounted flush on the x=0 board edge, inside the 1.5 mm edge margin.
+        ampseal = part('J1', 2, 6, shape=rectangle(0, 2, 4, 8))
+        board = capture([ampseal, part('U1', 2, 6), part('C1', 2, 6)], rectangle(0, 0, 20, 20))
+        plan = pack(board, request(fixed_refs=['J1'], min_courtyard_edge_mm=1.5))
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        self.assertEqual(plan['min_courtyard_edge_mm'], 1.5)
+        by_ref = {p['ref']: p for p in plan['placements']}
+        self.assertTrue(by_ref['J1']['fixed'])
+        self.assertEqual(by_ref['J1']['position_nm'], [2 * MM, 6 * MM])
+        self.assertEqual(by_ref['J1']['rotation_deg'], 0)
+        # Movable footprints U1 and C1 are placed at least 1.5 mm from every outline edge.
+        movable = capture([
+            part(ref, by_ref[ref]['position_nm'][0] / MM, by_ref[ref]['position_nm'][1] / MM)
+            for ref in ('U1', 'C1')
+        ], rectangle(0, 0, 20, 20))
+        self.assertEqual(edge_clearance(movable, int(1.5 * MM))['status'], 'pass')
+
+        # Locked edge-mounted footprints are likewise exempt by reference.
+        locked_board = capture([ampseal, part('U1', 2, 6)], rectangle(0, 0, 20, 20))
+        locked_board['footprints'][0]['locked'] = True
+        locked_plan = pack(locked_board, request(fixed_refs=[], min_courtyard_edge_mm=1.5))
+        self.assertEqual(locked_plan['status'], 'planned')
+        j1_locked = next(p for p in locked_plan['placements'] if p['ref'] == 'J1')
+        self.assertTrue(j1_locked['fixed'])
+        self.assertEqual(j1_locked['position_nm'], [2 * MM, 6 * MM])
+
+
+def test_edge_margin():
+    PlacerTest('test_edge_margin').test_edge_margin()
+
+
+def test_edge_mounted_exempt():
+    PlacerTest('test_edge_mounted_exempt').test_edge_mounted_exempt()
+

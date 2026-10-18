@@ -62,11 +62,20 @@ class NativePlacerTest(unittest.TestCase):
                          (self.scratch / 'two/candidate.kicad_pcb').read_bytes())
         self.assertEqual(first['judgment']['verdict'], 'pass')
         self.assertEqual(first['native_courtyard_overlaps'], [])
+        self.assertEqual(first['min_courtyard_edge_mm'], 0.0)
+        from agent_ee.placement_predicates import edge_clearance
         from agent_ee.placement_probe import extract
         old = {f['ref']: f for f in extract(self.source)['footprints']}
         new = {f['ref']: f for f in extract(self.scratch / 'one/candidate.kicad_pcb')['footprints']}
         self.assertEqual(new['U1'], old['U1'])
         self.assertNotEqual(new['C1']['position_nm'], old['C1']['position_nm'])
+        margined = place_candidate(self.source, self.netlist, self.scratch / 'margined',
+                                   {**self.config, 'min_courtyard_edge_mm': 0.5})
+        self.assertEqual((margined['status'], margined['min_courtyard_edge_mm']), ('placed', 0.5))
+        self.assertEqual(edge_clearance(extract(self.scratch / 'margined/candidate.kicad_pcb'), 500_000)['status'], 'pass')
+        with self.assertRaisesRegex(ValueError, 'conflicting min_courtyard_edge_mm'):
+            place_candidate(self.source, self.netlist, self.scratch / 'conflict',
+                            {**self.config, 'policy': request(min_courtyard_edge_mm=0.3), 'min_courtyard_edge_mm': 0.5})
         self.assertEqual(self.source.read_bytes(), self.saved)
 
     def test_refuses_unauthorized_or_existing_destination_and_wrong_netlist(self):

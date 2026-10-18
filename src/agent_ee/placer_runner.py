@@ -175,7 +175,8 @@ def _evaluate_proposal(board, output, plan, netlist_bytes):
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
-            'status': 'placed', 'outcome': 'info', 'plan': plan, 'judgment': judgment,
+            'status': 'placed', 'outcome': 'info', 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
+            'plan': plan, 'judgment': judgment,
             'native_courtyard_overlaps': overlaps, 'authority': 'disposable-unsealed-proposal'}
 
 
@@ -194,6 +195,17 @@ def _retain_failure(root, name, scratch, error):
     return retained
 
 
+def _effective_policy(request):
+    policy = request['policy']
+    margin = request.get('min_courtyard_edge_mm')
+    if margin is None or not isinstance(policy, dict):
+        return policy
+    existing = policy.get('min_courtyard_edge_mm')
+    if existing is not None and existing != margin:
+        raise ValueError('conflicting min_courtyard_edge_mm between request and policy')
+    return {**policy, 'min_courtyard_edge_mm': margin}
+
+
 def place_candidate(source, netlist, destination, request):
     """Publish only a fully saved/judged proposal in a fresh authorized directory.
 
@@ -210,10 +222,11 @@ def place_candidate(source, netlist, destination, request):
         facts = extract(source)
         _netlist_binding(netlist_bytes, facts)
         board = _unrouted_board(source)
-        plan = pack(facts, request['policy'])
+        policy = _effective_policy(request)
+        plan = pack(facts, policy)
         refusal = plan['status'] == 'planned' and _padstack_refusal(board)
         if refusal:
-            return _failure(facts, request['policy'], 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
+            return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
         if plan['status'] != 'planned':
             return plan
         with tempfile.TemporaryDirectory(prefix='.placement-staging-', dir=root) as temporary:
