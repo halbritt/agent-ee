@@ -34,9 +34,10 @@ REQUEST = {'policy': {'schema': 'agent-ee.packing-policy/1', 'step_budget': 1000
 def placeholder_library(root):
     """Owned copies of the stock footprints with every pad made rectangular.
 
-    The landed placer (AGENTEE-54) accepts only rectangular pads. These are
-    mechanical placeholders for exercising the placed path; they are not
-    production footprint models and are never written to the repository.
+    The placer accepts the stock pad shapes (AGENTEE-109); these placeholders
+    predate that and still exercise the judge, parity and byte-identity paths
+    on a second footprint set. They are not production footprint models and
+    are never written to the repository.
     """
     for lib, name in LIBRARIES.items():
         text = (STOCK / f'{lib}.pretty' / f'{name}.kicad_mod').read_text()
@@ -143,7 +144,9 @@ class NativeBoardBuildTest(unittest.TestCase):
                 for net in root.findall('nets/net') for n in net.findall('node')}
 
     def test_stock_pads_place_with_exact_xml_nets_and_preserved_pad_geometry(self):
+        from agent_ee.placement import judge
         from agent_ee.placement_probe import extract
+        from agent_ee.placer import pad_shape_qualification
         self.assertEqual(self.xml_terminals(), EXPECTED)
         receipt = self.build('stock')
         out = self.root / 'stock'
@@ -165,9 +168,26 @@ class NativeBoardBuildTest(unittest.TestCase):
             return {(f['ref'], p['number']): (p['shape'], p['size_nm'])
                     for f in board['footprints'] for p in f['pads']}
         self.assertEqual(pad_geometry(placed), pad_geometry(facts))
+        shapes = {(f['ref'], p['number']): p['shape'] for f in placed['footprints'] for p in f['pads']}
+        self.assertEqual(shapes, {('C1', '1'): 4, ('C1', '2'): 4, ('R1', '1'): 4, ('R1', '2'): 4,
+                                  ('J1', '1'): 1, ('J1', '2'): 0, ('J1', '3'): 0})  # Stock roundrect/circle.
         self.assertEqual({(f['ref'], p['number']): p['net']
                           for f in placed['footprints'] for p in f['pads']}, EXPECTED)
+        j1 = next(f for f in placed['footprints'] if f['ref'] == 'J1')
+        self.assertEqual((j1['position_nm'], j1['locked']), ([103_810_000, 112_460_000], True))
+        self.assertEqual(judge(placed)['verdict'], 'pass')
+        self.assertEqual((receipt['placed']['judgment']['verdict'], receipt['placed']['judgment']['outcome']),
+                         ('pass', 'pass'))
+        result = json.loads((out / 'placed/placement-result.json').read_text())
+        self.assertEqual((result['status'], result['native_courtyard_overlaps']), ('placed', []))
+        self.assertEqual(result['plan']['pad_shapes'], pad_shape_qualification())
+        native = json.loads((out / 'placement/proposal/native-drc.json').read_text())
+        self.assertFalse({v['type'] for v in native['violations']}
+                         & {'courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'}, native['violations'])
         self.assertEqual(receipt['placed']['parity']['schematic_parity'], 0)
+        parity = json.loads((out / receipt['placed']['parity']['report']).read_text())
+        self.assertEqual((parity['schematic_parity'], parity['violations']), ([], []))
+        self.assertGreater(len(parity['unconnected_items']), 0)  # Unrouted, as expected.
         self.assertNotIn('placer_reason', receipt)
         self.assertEqual(json.loads((out / 'build-receipt.json').read_text()), receipt)
         self.assertEqual((receipt['schema'], receipt['qualification']),

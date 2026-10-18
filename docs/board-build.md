@@ -148,6 +148,16 @@ build places these footprints, preserves their pad shapes, sizes and nets,
 and retains exact schematic parity. Unsupported pad geometry still produces
 a typed unknown rather than a passing placement.
 
+`test_stock_pads_place_with_exact_xml_nets_and_preserved_pad_geometry` builds
+the control from the unchanged installed footprints with the 50 x 30 mm
+envelope and J1 fixed. It checks the status `placed`, the judge verdict
+`pass` on the saved board, an empty `native_courtyard_overlaps` list and no
+courtyard violation in the placer's native DRC report, the recorded
+`pad_shapes` qualification, and zero schematic-parity items and violations.
+It also checks that C1 and R1 keep roundrect pads (4), J1 keeps one
+rectangular and two circular pads (1, 0, 0), and J1 stays locked at its
+envelope position.
+
 The tests show the placed path with owned placeholder copies of the three
 footprints in which every pad is rectangular. The placeholders exist only in
 the test's temporary directory. They are not production footprint models,
