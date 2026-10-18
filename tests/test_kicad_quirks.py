@@ -145,6 +145,9 @@ class ErcOracleTest(unittest.TestCase):
         raw = report('10.0.7')
         raw['sheets'][0]['violations'][0]['items'] = []
         self.assertWithheld(raw, erc_coordinate_regime('10.0.7'), 'has no located items')
+        raw = report('10.0.7')
+        raw['sheets'][0]['violations'][10]['items'].append('stray')
+        self.assertWithheld(raw, erc_coordinate_regime('10.0.7'), 'non-object item')
 
     def test_inputs_are_not_mutated(self):
         raw = report('10.0.6')

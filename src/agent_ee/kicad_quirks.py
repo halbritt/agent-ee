@@ -91,6 +91,7 @@ def erc_locations(report, regime):
                      'severity': violation.get('severity') if isinstance(violation, dict) else None, 'items': []}
             for item in items if isinstance(items, list) else []:
                 if not isinstance(item, dict):
+                    reasons.append(f"violation {entry['type']!r} has a non-object item")
                     continue
                 pos = item.get('pos')
                 entry['items'].append({'uuid': item.get('uuid'), 'description': item.get('description'),
