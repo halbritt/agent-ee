@@ -360,7 +360,7 @@ STM32_TABLES = dict(symbol_table={'MCU_ST_STM32H7': '${KIPRJMOD}/lib/MCU_ST_STM3
                     footprint_table={'Package_QFP': '${KIPRJMOD}/lib/Package_QFP.pretty'})
 
 
-def stm32_sheet_inputs(output, flags=True):
+def stm32_sheet_inputs(output, flags=True, symbol='STM32H723ZGTx'):
     """Intent, layout and captures for an emitted STM32H723ZGTx core sheet."""
     def term(component, number):
         return dict(component=component, pin=dict(number=str(number)))
@@ -370,7 +370,7 @@ def stm32_sheet_inputs(output, flags=True):
            for path, name in names.items()}
     part = lambda id, ref, lib_id, value, footprint='': dict(id=id, reference=ref, lib_id=lib_id, value=value,
                                                               footprint=footprint, units=[1])
-    components = [part('mcu', 'U26', 'MCU_ST_STM32H7:STM32H723ZGTx', 'STM32H723ZGTx',
+    components = [part('mcu', 'U26', 'MCU_ST_STM32H7:' + symbol, symbol,
                        'Package_QFP:LQFP-144_20x20mm_P0.5mm'),
                   part('c_vcap1', 'C1', 'OwnedGen:CAP', '2u2'), part('c_vcap2', 'C2', 'OwnedGen:CAP', '2u2'),
                   part('gnd', '#PWR01', 'OwnedPower:GND', 'GND'),
@@ -445,6 +445,31 @@ class StockStm32Tests(unittest.TestCase):
         self.assertEqual(binding['symbols'], [dict(name='STM32H723ZGTx', sha256=self.receipt['symbols'][0]['sha256'])])
         self.assertEqual(binding['resolved_sha256'], record['canonical_sha256'])
 
+
+    def test_derived_stm32_resolves_exact_parent_inventory_and_missing_parent_refuses(self):
+        symbol = 'STM32H742ZITx'
+        output, receipt = capture_symbols(self.data, [symbol], library='MCU_ST_STM32H7')
+        intent, _, lib = stm32_sheet_inputs(output, symbol=symbol)
+        result = resolve_intent(intent, lib)
+        self.assertEqual((result['execution'], result['outcome'], result['coverage']), ('ok', 'pass', 'complete'))
+        comp = next(c for c in result['components'] if c['id'] == 'mcu')
+        self.assertEqual([s['symbol'] for s in comp['sources']], ['STM32H742Z_G-I_Tx', symbol])
+        self.assertEqual({p['number'] for p in comp['pins']}, {str(n) for n in range(1, 145)})
+        self.assertEqual({p['electrical_type']: sum(q['electrical_type'] == p['electrical_type']
+                                                 for q in comp['pins']) for p in comp['pins']}, TYPE_COUNTS)
+        self.assertEqual({int(p['number']) for p in comp['pins'] if p['name'] == 'VSS'}, VSS)
+        self.assertEqual({int(p['number']) for p in comp['pins'] if p['name'] == 'VDD'}, VDD)
+        # Retain only the selected child, with a fresh hash: absent ancestors
+        # must fail resolution, rather than falling back to installed libraries.
+        _, _, spans = scan_library(output)
+        span = spans[symbol]
+        child_only = b'(kicad_symbol_lib ' + output[span['start']:span['end']] + b')'
+        path = 'lib/MCU_ST_STM32H7.kicad_sym'
+        lib[path] = child_only
+        next(l for l in intent['libraries'] if l['path'] == path)['sha256'] = hashlib.sha256(child_only).hexdigest()
+        refused, files = emit_schematic(intent, lib, stm32_sheet_inputs(output)[1])
+        self.assertIsNone(files)
+        self.assertIn('missing parent symbol', str(refused['findings']))
 
     def test_stacked_ground_pins_emit_one_label_and_conflicting_stacks_refuse(self):
         intent, layout, lib = stm32_sheet_inputs(self.output)
@@ -545,20 +570,25 @@ class NativeCaptureTests(unittest.TestCase):
         return project
 
     def test_emitted_stm32_sheet_embedding_capture_passes_native_erc_and_netlist(self):
+        for symbol in ('STM32H723ZGTx', 'STM32H742ZITx'):
+            with self.subTest(symbol=symbol):
+                self.check_emitted_stm32(symbol)
+
+    def check_emitted_stm32(self, symbol):
         data = stock_library(self)
-        output, receipt = capture_symbols(data, ['STM32H723ZGTx'], library='MCU_ST_STM32H7')
-        intent, layout, lib = stm32_sheet_inputs(output)
+        output, receipt = capture_symbols(data, [symbol], library='MCU_ST_STM32H7')
+        intent, layout, lib = stm32_sheet_inputs(output, symbol=symbol)
         result, files = emit_schematic(intent, lib, layout, **STM32_TABLES)
         self.assertEqual(result['execution'], 'ok', result['findings'])
         self.assertEqual(result['libraries'][0]['sha256'], receipt['output']['sha256'])
-        project = self.stm32_project(files, lib, 'stm32')
-        violations, _ = self.erc(project, 'stm32-erc', 'mcu')
+        project = self.stm32_project(files, lib, symbol)
+        violations, _ = self.erc(project, symbol + '-erc', 'mcu')
         self.assertEqual(violations, [])
-        work = self.tmp / 'stm32-netlist'
+        work = self.tmp / (symbol + '-netlist')
         run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
                    '-o', '/work/design.xml', '/candidate/mcu.kicad_sch')
         components, nets, singles = native_netlist(work / 'design.xml')
-        self.assertEqual(components['U26']['lib'], ('MCU_ST_STM32H7', 'STM32H723ZGTx'))
+        self.assertEqual(components['U26']['lib'], ('MCU_ST_STM32H7', symbol))
         self.assertEqual(components['U26']['footprint'], 'Package_QFP:LQFP-144_20x20mm_P0.5mm')
         mcu = lambda pins: [['U26', str(n)] for n in pins]
         self.assertEqual({name: sorted(nodes) for name, nodes in nets.items()},
@@ -570,10 +600,10 @@ class NativeCaptureTests(unittest.TestCase):
         self.assertTrue(all('no_connect' in kind for _, kind in singles.values()))
         # Control: ERC does evaluate the MCU's power pins. Without the supply
         # flag nothing drives +3V3, and native ERC must say so.
-        intent, layout, lib = stm32_sheet_inputs(output, flags=False)
+        intent, layout, lib = stm32_sheet_inputs(output, flags=False, symbol=symbol)
         result, files = emit_schematic(intent, lib, layout, **STM32_TABLES)
         self.assertEqual(result['execution'], 'ok', result['findings'])
-        violations, _ = self.erc(self.stm32_project(files, lib, 'stm32-control'), 'stm32-control-erc', 'mcu')
+        violations, _ = self.erc(self.stm32_project(files, lib, symbol + '-control'), symbol + '-control-erc', 'mcu')
         self.assertEqual(sorted({v['type'] for v in violations}), ['power_pin_not_driven'])
 
 

@@ -148,6 +148,12 @@ The hierarchy extraction recognizes KiCad sheet-file property text; it is not a
 general KiCad parser. Unusual future syntax needs an adapter/test update. ERC
 also compares native reported sheet count with the expected instance count.
 
+The [schematic emitter](schematic-emitter.md) also flattens captured `extends`
+symbols through the shared connectivity resolver. Native ERC compares the embedded
+inherited definition with its captured project library; native netlist tests cover
+all 144 pins of a derived STM32 variant. Missing captured parents refuse emission
+before these checks run; installed libraries cannot supply missing capture bytes.
+
 ## ERC
 
 No check parameters are currently interpreted. The JSON report must contain a

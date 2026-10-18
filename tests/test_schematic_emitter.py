@@ -43,6 +43,23 @@ def emit(intent_name='regulator', intent=None, layout=None, **kwargs):
     return emit_schematic(intent, captures(intent), layout, **kwargs)
 
 
+def derived_inputs(name='regulator', parent='CAP', middle='', leaf=''):
+    """Owned two-level derivation; only Value is overridden at the leaf."""
+    intent = load(name + '.intent.json')
+    captured = captures(intent)
+    path = 'lib/Owned_Gen.kicad_sym'
+    prop = ('(property "Value" "DERIVED" (at 0 0 0) (show_name no) '
+            '(do_not_autoplace no) (effects (font (size 1.27 1.27))))')
+    addition = (f'(symbol "MID" (extends "{parent}") {middle})'
+                f'(symbol "DERIVED" (extends "MID") {prop} {leaf})')
+    captured[path] = captured[path].rstrip()[:-1] + addition.encode() + b')'
+    intent['libraries'][0]['sha256'] = hashlib.sha256(captured[path]).hexdigest()
+    for comp in intent['components']:
+        if comp['lib_id'] == 'OwnedGen:' + parent:
+            comp['lib_id'] = 'OwnedGen:DERIVED'
+    return intent, captured
+
+
 def stacked(edit=None):
     """Regulator whose REG3 pin 4 sits on GND pin 2's connection point, as
     stock MCU symbols stack their VSS pins; ``edit`` adjusts the intent."""
@@ -164,6 +181,22 @@ class DeterminismTests(unittest.TestCase):
         self.assertEqual(len([p for p in children(symbol, 'property') if p[1] == 'Datasheet']), 1)
         self.assertIn(['hide', 'yes'], props['LCSC'])
         self.assertEqual(files, emit(intent=intent)[1])
+
+    def test_derived_metadata_overrides_without_mutating_capture(self):
+        intent, captured = derived_inputs(middle='(in_pos_files no) (property "Owner" "middle")',
+                                         leaf='(exclude_from_sim yes) (property "Owner" "leaf")')
+        before = dict(captured)
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        root = parse_sexpr(files['regulator.kicad_sch'])
+        embedded = next(n for n in children(children(root, 'lib_symbols')[0], 'symbol')
+                        if n[1] == 'OwnedGen:DERIVED')
+        props = {p[1]: p[2] for p in children(embedded, 'property')}
+        self.assertEqual((props['Reference'], props['Value'], props['Owner']), ('C', 'DERIVED', 'leaf'))
+        self.assertEqual(children(embedded, 'in_pos_files'), [['in_pos_files', 'no']])
+        self.assertEqual(children(embedded, 'exclude_from_sim'), [['exclude_from_sim', 'yes']])
+        self.assertEqual(captured, before)
+        self.assertEqual(files, emit_schematic(intent, captured, load('regulator.layout.json'))[1])
 
     def test_repeat_and_input_order_give_identical_bytes(self):
         first = emit(**tables())[1]
@@ -352,18 +385,30 @@ class RefusalTests(unittest.TestCase):
             lambda i: i.update(hierarchy=[{'sheet': 'child'}])))
         self.assertEqual(result['execution'], 'unsupported')
 
-    def test_derived_symbols_are_refused_until_qualified(self):
-        intent = load('regulator.intent.json')
-        files = captures(intent)
-        data = files['lib/Owned_Gen.kicad_sym'].decode().rstrip()[:-1]
-        data += ('\t(symbol "CAP_DERIVED"\n\t\t(extends "CAP")\n\t\t(property "Reference" "C"\n\t\t\t(at 0 0 0)\n\t\t)\n'
-                 '\t\t(property "Value" "CAP_DERIVED"\n\t\t\t(at 0 0 0)\n\t\t)\n\t)\n)\n')
-        files['lib/Owned_Gen.kicad_sym'] = data.encode()
-        intent['libraries'][0]['sha256'] = hashlib.sha256(data.encode()).hexdigest()
-        intent['components'][2]['lib_id'] = 'OwnedGen:CAP_DERIVED'
-        result, out = emit_schematic(intent, files, load('regulator.layout.json'))
-        self.assertIsNone(out and sorted(out))
-        self.assertIn('derived_symbol_unsupported', [f['code'] for f in result['findings']])
+    def test_invalid_derived_chains_fail_closed(self):
+        for parent, middle, leaf, message in (
+                ('MISSING', '', '', 'missing parent'),
+                ('DERIVED', '', '', 'extends cycle'),
+                ('CAP', '(extends "CAP")', '', 'expected one extends'),
+                ('CAP', '', '(symbol "DERIVED_1_1")', 'replacement graphics/pins')):
+            with self.subTest(message=message):
+                intent, captured = derived_inputs(parent=parent, middle=middle, leaf=leaf)
+                # Missing/cyclic parents still target the leaf.
+                intent['components'][2]['lib_id'] = 'OwnedGen:DERIVED'
+                result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                self.assertIsNone(files)
+                self.assertNotEqual(result['execution'], 'ok')
+                self.assertEqual(result['files'], [])
+                self.assertIn(message, str(result['findings']))
+
+    def test_unknown_or_duplicate_ancestor_metadata_is_not_dropped(self):
+        for middle in ('(unqualified yes)', '(in_bom yes) (in_bom no)', '(in_bom maybe)',
+                       '(property "Value" "A") (property "Value" "B")'):
+            with self.subTest(middle=middle):
+                intent, captured = derived_inputs(middle=middle)
+                result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                self.assertIsNone(files)
+                self.assertIn('unsupported_symbol_node', [f['code'] for f in result['findings']])
 
     def test_layout_contract(self):
         for edit in (lambda l: l.update(namespace='not-a-uuid'), lambda l: l.update(project='../x'),
@@ -527,6 +572,33 @@ class NativeEmissionTests(unittest.TestCase):
         self.assertEqual(len(components['U1']['uuid'].split()), 2)
         errors = [v for s in erc['sheets'] for v in s['violations'] if v['severity'] == 'error']
         self.assertEqual(errors, [])
+
+    def test_derived_chain_inherits_pins_properties_and_connects_natively(self):
+        from agent_ee.connectivity_ir import resolve_intent
+        for name, parent in (('regulator', 'CAP'), ('transforms', 'DUAL')):
+            with self.subTest(parent=parent):
+                intent, captured = derived_inputs(name, parent)
+                layout = load(name + '.layout.json')
+                resolved = resolve_intent(intent, captured)
+                comp = next(c for c in resolved['components'] if c['lib_id'] == 'OwnedGen:DERIVED')
+                self.assertEqual([s['symbol'] for s in comp['sources']], [parent, 'MID', 'DERIVED'])
+                result, files = emit_schematic(intent, captured, layout, **tables())
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                self.assertEqual(files, emit_schematic(intent, captured, layout, **tables())[1])
+                embedded = next(n for n in children(children(parse_sexpr(files[name + '.kicad_sch']),
+                                                             'lib_symbols')[0], 'symbol')
+                                if n[1] == 'OwnedGen:DERIVED')
+                self.assertEqual(children(embedded, 'extends'), [])
+                self.assertTrue(all(u[1].startswith('DERIVED_') for u in children(embedded, 'symbol')))
+                props = {p[1]: p[2] for p in children(embedded, 'property')}
+                self.assertEqual(props['Value'], 'DERIVED')
+                self.assertIn('Reference', props)
+                project, work, erc, graph = self.native_run(name, {**files, **captured}, name + '-derived')
+                self.assertEqual([v for sh in erc['sheets'] for v in sh['violations']], [])
+                baseline = self.native_run(name, emit(name, **tables())[1], name + '-base')[3]
+                self.assertEqual(graph[1:], baseline[1:])
+                self.assertEqual(graph[0][comp['reference']]['lib'], ('OwnedGen', 'DERIVED'))
+                self.assertNativeResave(project, work, name, files)
 
     def test_stacked_same_net_pins_connect_natively(self):
         intent, captured = stacked(on_ground)

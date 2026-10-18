@@ -57,6 +57,12 @@ KiCad 10.0):
 
 - Each selected unit is one symbol instance. Exact captured symbol
   definitions are embedded under `lib_symbols` as `Library:Symbol`.
+  For `extends` symbols (AGENTEE-135), the emitter consumes the shared resolver's
+  validated ancestor-to-child source chain. Parent graphics and pins are embedded
+  under the selected symbol's unit names; child properties and explicit flags
+  override inherited values. The embedded definition has no `extends` dependency.
+  Missing parents, cycles and replacement graphics/pins fail resolution before
+  any output is built. Captured library bytes and source locators stay unchanged.
 - Every connected pin endpoint gets a net label at the exact transformed pin
   coordinate. Nets driven by a global `power_in` power symbol use global labels;
   other nets use local labels. Explicit no-connect pins get no-connect markers.
@@ -160,7 +166,6 @@ Generation either succeeds completely or writes nothing:
 | `resolution_*` | The resolver rejected the intent: unknown symbol or library, duplicate component or reference, unknown or unaccounted pin, missing or changed captured library (execution `failed`), or a version 1 intent with hierarchy (execution `unsupported`) |
 | `resolved_mismatch` | A supplied resolved record differs from the fresh resolution |
 | `layout_schema` | Malformed layout or table rows, or a transform for an unknown component |
-| `derived_symbol_unsupported` | The symbol uses `extends`; KiCad's flattening into `lib_symbols` is not natively qualified here |
 | `unsupported_symbol_node`, `unsupported_graphic` | An unknown top-level symbol node, or unit bounds the [symbol context](symbol-context.md) cannot compute (for example arcs) |
 | `unlocatable_pin` | Pin geometry differs from the symbol context, or a pin endpoint is not exactly representable on the native 100 nm lattice |
 | `impossible_pin_endpoint` | Two pins would share one connection point, other than stacked pins of one unit on one net |
@@ -197,6 +202,14 @@ executor with networking unshared:
   identical part and changed UUIDs each fail the matching predicate. The
   AGENTEE-41 modules are imported directly, so their absence is an error,
   never a skip.
+- An owned two-level derived capacitor and multi-unit symbol inherit all physical
+  pins and common units, retain parent properties and override the leaf Value.
+  Native ERC has zero violations, native nets equal the base-symbol controls,
+  and forced native saves reproduce the emitted bytes apart from the generator.
+  The runtime-captured stock `STM32H742ZITx`, derived from
+  `STM32H742Z_G-I_Tx`, resolves all 144 physical pins, passes native ERC with zero
+  violations, and exports the expected supply, ground, VCAP and no-connect pins.
+  Removing its captured parent refuses even when installed libraries are present.
 - The full regulator intent, including its declared ground symbol and two
   power flags, passes both native ERC and all three physical parity predicates.
   The shared parity adapter records the virtual `#` symbols that native XML
@@ -237,8 +250,8 @@ executor with networking unshared:
   symbols in multi-sheet designs are refused by the resolver until their native
   semantics are qualified. Sheet files must sit in the project directory.
 - A port's name must equal its child segment's label.
-- Derived (`extends`) symbols, alternate body styles with pins, arcs and other
-  graphics without qualified bounds are refused.
+- Derived replacement graphics/pins, alternate body styles with pins, arcs and
+  other graphics without qualified bounds are refused.
 - KiCad's native XML omits virtual `#` power and flag symbols. The
   [parity adapter](netlist-parity.md) projects qualified single-pin markers out
   of the physical graph and records each omission. Nets must retain at least

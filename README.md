@@ -172,7 +172,8 @@ its node limit, such as `MCU_ST_STM32H7`, are first copied into a
 [captured subset library](docs/symbol-capture.md) with source provenance. Hierarchical port names
 that would short distinct local nets are rejected. Repeated sheet files and
 multi-sheet global power remain unsupported. The [native emitter](docs/schematic-emitter.md)
-produces flat and supported hierarchical schematics from that captured intent.
+produces flat and supported hierarchical schematics from that captured intent,
+including inherited pins and units of captured `extends` symbols.
 A [schematic readability lint](docs/schematic-lint.md) reports overlaps, wires
 through pins, rail and divider orientation, rail labels, grid and title-block
 findings that ERC does not produce. They are style findings unless a profile
