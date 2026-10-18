@@ -1,7 +1,9 @@
 """Scheduling evidence from real, networkless scripted harness subprocesses."""
 import contextlib
+import copy
 import io
 import json
+import math
 import os
 import signal
 import subprocess
@@ -9,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,7 +20,8 @@ from toolchain import require_toolchain, toolchain_test
 from agent_ee.cli import outcome, run_review
 from agent_ee.candidate import capture
 from agent_ee.executor import execute
-from agent_ee.reviewers import initial_reviews
+from agent_ee.preflight import capture_expectation
+from agent_ee.reviewers import build_packet, initial_reviews
 from agent_ee.storage import digest, read_json, write_json
 
 
@@ -49,6 +53,8 @@ print(json.dumps(response), flush=True)
 
 
 class ConcurrentReviewTests(unittest.TestCase):
+    _coordinator_timings = None
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -59,12 +65,13 @@ class ConcurrentReviewTests(unittest.TestCase):
         definition = {"harness": "codex", "model": "scripted-test", "effort": "high", "timeout_s": 5}
         self.profile = {"schema": "agent-ee.profile/1", "name": "scripted",
             "reviewers": [{**definition, "role": "circuit"}, {**definition, "role": "physical"}],
-            "adjudicator": definition}
+            "adjudicator": dict(definition)}
         self.scope = {"schema": "agent-ee.scope/1", "name": "scheduling", "scope": "scheduling protocol",
             "inputs": [{"path": "source", "at": "design"}], "review_profile": self.profile}
         self.settings = {"circuit": {"sleep": 1.2, "fail": False},
                          "physical": {"sleep": 1.2, "fail": False}}
         self.calls = []
+        self.dispatch_intervals = {}
         runtime = {name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
                    for name in ('codex', 'claude', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli')}
         runtime_patch = patch('agent_ee.cli.runtime_files', return_value=runtime)
@@ -79,13 +86,171 @@ class ConcurrentReviewTests(unittest.TestCase):
         packet = {"candidate_id": manifest["candidate_id"], "run_id": "scripted-run", "packet_sha256": "packet"}
         write_json(run / "packet.json", packet)
         from agent_ee.cli import policy_files, runtime_files
-        from agent_ee.preflight import capture_expectation
         selected = manifest['scope']['review_profile']
         definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')} for d in
                        [*selected['reviewers'], selected['adjudicator']]]
         self.context = {'expected': capture_expectation({'run_id': packet['run_id'],
             'policy_files': policy_files(), 'runtime_files': runtime_files()}, manifest, definitions)}
         return run, packet
+
+    def configure_coordinator_scope(self):
+        fixture = Path(__file__).resolve().parents[1] / "fixtures/rc/control.scope.json"
+        self.scope = read_json(fixture)
+        for entry in self.scope["inputs"]:
+            entry["path"] = str((fixture.parent / entry["path"]).resolve())
+        self.scope["inputs"].append({"path": str(self.root / "source"), "at": "design"})
+        self.scope["review_profile"] = self.profile
+        # A real native netlist export suffices for this scheduling test.
+        self.scope["checks"] = [{"id": "netlist", "kind": "netlist"}]
+
+    def measure_coordinator_timings(self):
+        if ConcurrentReviewTests._coordinator_timings is not None:
+            return dict(ConcurrentReviewTests._coordinator_timings)
+        from agent_ee.cli import policy_files, runtime_files
+        saved_scope = copy.deepcopy(self.scope)
+        saved_profile = copy.deepcopy(self.profile)
+        saved_settings = copy.deepcopy(self.settings)
+        saved_calls = list(self.calls)
+        saved_intervals = dict(self.dispatch_intervals)
+        try:
+            probe_root = self.root / "timing-probe"
+            probe_root.mkdir(exist_ok=True)
+            probe_definition = {"harness": "codex", "model": "scripted-test", "effort": "high", "timeout_s": 30}
+            self.profile = {
+                "schema": "agent-ee.profile/1",
+                "name": "scripted-probe",
+                "reviewers": [{**probe_definition, "role": "circuit"}, {**probe_definition, "role": "physical"}],
+                "adjudicator": dict(probe_definition),
+            }
+            self.configure_coordinator_scope()
+            probe_scope = probe_root / "scope.json"
+            probe_run = probe_root / "run"
+            write_json(probe_scope, self.scope)
+            export_start = time.monotonic()
+            with contextlib.redirect_stdout(io.StringIO()):
+                run_review(probe_scope, probe_run, 180, checks_only=True)
+            export_s = time.monotonic() - export_start
+            probe_result = read_json(probe_run / "result.json")
+            checks = probe_result.get("checks", [])
+            if (
+                probe_result.get("error")
+                or not checks
+                or checks[0].get("execution") != "ok"
+                or checks[0].get("outcome") not in ("pass", "info")
+            ):
+                load_1m = os.getloadavg()[0]
+                self.fail(
+                    f"budget exceeded under load {load_1m:.2f} "
+                    f"(timing probe checks_only failed after {export_s:.3f}s: {probe_result.get('error') or checks})"
+                )
+            netlist_exec = probe_run / "work/netlist/execution.json"
+            netlist_s = float(read_json(netlist_exec).get("duration_s", export_s)) if netlist_exec.is_file() else export_s
+            manifest = read_json(probe_run / "candidate.json")
+            packet = build_packet(probe_run, checks, probe_result["run_id"])
+            definitions = [
+                {**d, "tool_mode": self.profile.get("tool_mode", "investigate")}
+                for d in [*self.profile["reviewers"], self.profile["adjudicator"]]
+            ]
+            context = {
+                "expected": capture_expectation(
+                    {"run_id": packet["run_id"], "policy_files": policy_files(), "runtime_files": runtime_files()},
+                    manifest,
+                    definitions,
+                )
+            }
+            self.settings = {"circuit": {"sleep": 0.0, "fail": False}, "physical": {"sleep": 0.0, "fail": False}}
+            harness_start = time.monotonic()
+            with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
+                _, records = initial_reviews(probe_run, packet, harness_start + 60, launch_context=context)
+            harness_s = time.monotonic() - harness_start
+            if len(records) != 2 or any(r.get("execution") != "ok" for r in records):
+                load_1m = os.getloadavg()[0]
+                self.fail(
+                    f"budget exceeded under load {load_1m:.2f} "
+                    f"(timing probe harness failed after {harness_s:.3f}s: {records})"
+                )
+            ConcurrentReviewTests._coordinator_timings = {
+                "export_s": max(export_s, 0.05),
+                "netlist_s": max(netlist_s, 0.01),
+                "harness_s": max(harness_s, 0.05),
+            }
+            return dict(ConcurrentReviewTests._coordinator_timings)
+        finally:
+            self.scope = saved_scope
+            self.profile = saved_profile
+            self.settings = saved_settings
+            self.calls = saved_calls
+            self.dispatch_intervals = saved_intervals
+
+    def coordinator_budget(self, waves=1):
+        timings = self.measure_coordinator_timings()
+        scale = max(1.0, timings["harness_s"])
+        for role_settings in self.settings.values():
+            role_settings["sleep"] = round(role_settings["sleep"] * scale, 3)
+        max_sleep = max((s["sleep"] for s in self.settings.values()), default=0.0)
+        total_sleep = sum(s["sleep"] for s in self.settings.values())
+        role_timeout = max(5, math.ceil(4.0 * timings["harness_s"] + max_sleep + 2.0))
+        for definition in self.profile["reviewers"]:
+            definition["timeout_s"] = role_timeout
+        self.profile["adjudicator"]["timeout_s"] = role_timeout
+        budget = 3.0 * timings["export_s"] + (waves + 4.0) * timings["harness_s"] + total_sleep
+        return budget, timings
+
+    def assert_within_budget(self, elapsed, budget, timings, result=None, context="coordinator run"):
+        budget_exhausted = elapsed >= budget
+        if result is not None:
+            records = result.get("review_executions", [])
+            for record in records:
+                if record.get("execution") == "timeout":
+                    budget_exhausted = True
+                if "global review budget expired" in record.get("error", ""):
+                    budget_exhausted = True
+            for limitation in result.get("limitations", []):
+                if "Wall-clock work budget exhausted" in limitation:
+                    budget_exhausted = True
+            if (
+                records
+                and all(r.get("execution") == "ok" for r in records)
+                and not result.get("adjudicated")
+                and not result.get("error")
+            ):
+                budget_exhausted = True
+        if budget_exhausted:
+            load_1m = os.getloadavg()[0]
+            self.fail(
+                f"budget exceeded under load {load_1m:.2f} "
+                f"({context}: elapsed={elapsed:.3f}s, budget={budget:.3f}s, "
+                f"export_s={timings['export_s']:.3f}s, netlist_s={timings['netlist_s']:.3f}s, "
+                f"harness_s={timings['harness_s']:.3f}s)"
+            )
+
+    def assert_concurrent_initial_reviews(self, run, roles=("circuit", "physical")):
+        run = Path(run)
+        intervals = []
+        durations = []
+        for role in roles:
+            work = run / "review-work" / role
+            start_time = read_json(work / "experiments/start.json")["time"]
+            finish_path = work / "experiments/finish.json"
+            if finish_path.is_file():
+                finish_time = read_json(finish_path)["time"]
+            else:
+                finish_time = self.dispatch_intervals[role][1]
+            intervals.append((start_time, finish_time))
+            durations.append(float(read_json(run / f"review-executions/{role}.json")["duration_s"]))
+        wave_span = max(e for _, e in intervals) - min(s for s, _ in intervals)
+        serial_budget = sum(durations)
+        self.assertLess(
+            wave_span,
+            serial_budget,
+            f"initial roles {roles} exceeded derived concurrent budget: "
+            f"span={wave_span:.3f}s >= serial_budget={serial_budget:.3f}s",
+        )
+        self.assertLess(
+            max(s for s, _ in intervals),
+            min(e for _, e in intervals),
+            f"initial roles {roles} did not overlap in time: {intervals}",
+        )
 
     def harness(self, run, role, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         self.calls.append(role)
@@ -105,10 +270,12 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assertNotIn('"initial_reviews"', prompt)
         self.assertIn(f"Your role is {role}.", prompt)
         work = Path(run) / "review-work" / role
+        dispatch_start = time.monotonic()
         record = execute(Path(run) / "inputs", work,
             ["/usr/bin/python3", "/candidate/design/harness.py"], timeout=timeout,
             stdin=json.dumps({"role": role, "identity": identity, **self.settings[role]}),
             **({"cancellation": cancellation} if cancellation is not None else {}))
+        self.dispatch_intervals[role] = (dispatch_start, time.monotonic())
         value = json.loads((work / "stdout.log").read_text().splitlines()[-1]) if record["execution"] == "ok" else None
         return record, value
 
@@ -215,36 +382,28 @@ class ConcurrentReviewTests(unittest.TestCase):
 
     def test_coordinator_adjudicates_only_after_both_initial_roles_settle(self):
         require_toolchain(native=True)
-        fixture = Path(__file__).resolve().parents[1] / "fixtures/rc/control.scope.json"
-        self.scope = read_json(fixture)
-        for entry in self.scope["inputs"]:
-            entry["path"] = str((fixture.parent / entry["path"]).resolve())
-        self.scope["inputs"].append({"path": str(self.root / "source"), "at": "design"})
-        self.scope["review_profile"] = self.profile
-        # A real native netlist export suffices for this scheduling test.
-        self.scope["checks"] = [{"id": "netlist", "kind": "netlist"}]
+        self.configure_coordinator_scope()
         self.settings["circuit"]["sleep"] = .6
         self.settings["physical"]["sleep"] = .2
+        budget, timings = self.coordinator_budget(waves=1)
         write_json(self.root / "scope.json", self.scope)
         run = self.root / "coordinator"
+        start = time.monotonic()
         with patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(self.root / "scope.json", run, 30)
+            status = run_review(self.root / "scope.json", run, budget)
+        elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
+        self.assert_within_budget(elapsed, budget, timings, result=result)
         self.assertEqual(status, 0, result)
         self.assertEqual(result["outcome"], "criteria_satisfied")
         self.assertEqual(self.calls[-1], "adjudicator")
         self.assertCountEqual(self.calls[:-1], ["circuit", "physical"])
         self.assertEqual([r["role"] for r in result["reviews"]], ["circuit", "physical"])
+        self.assert_concurrent_initial_reviews(run)
 
     def test_coordinator_reports_failure_incomplete_and_does_not_adjudicate(self):
         require_toolchain(native=True)
-        fixture = Path(__file__).resolve().parents[1] / "fixtures/rc/control.scope.json"
-        self.scope = read_json(fixture)
-        for entry in self.scope["inputs"]:
-            entry["path"] = str((fixture.parent / entry["path"]).resolve())
-        self.scope["inputs"].append({"path": str(self.root / "source"), "at": "design"})
-        self.scope["review_profile"] = self.profile
-        self.scope["checks"] = [{"id": "netlist", "kind": "netlist"}]
+        self.configure_coordinator_scope()
         # Two successful peers must not allow a new adjudicator call on the
         # failed harness when a profile declares more than two initial roles.
         self.profile["reviewers"][1]["harness"] = "claude"
@@ -252,17 +411,57 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.settings["circuit"] = {"sleep": .25, "fail": True}
         self.settings["physical"]["sleep"] = .6
         self.settings["independent"] = {"sleep": .1, "fail": False}
+        budget, timings = self.coordinator_budget(waves=2)
         write_json(self.root / "scope.json", self.scope)
         run = self.root / "coordinator"
+        start = time.monotonic()
         with patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
-            status = run_review(self.root / "scope.json", run, 30)
+            status = run_review(self.root / "scope.json", run, budget)
+        elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
+        self.assert_within_budget(elapsed, budget, timings, result=result)
         self.assertEqual(status, 1, result)
         self.assertEqual(result["outcome"], "incomplete")
         self.assertFalse(result["adjudicated"])
         self.assertNotIn("adjudicator", self.calls)
         self.assertEqual([r["role"] for r in result["reviews"]], ["physical", "independent"])
         self.assert_retained(run, result["review_executions"])
+        self.assert_concurrent_initial_reviews(run)
+
+    def test_derived_budget_catches_serialised_reviewers(self):
+        require_toolchain(native=True)
+        self.configure_coordinator_scope()
+        self.settings["circuit"]["sleep"] = .6
+        self.settings["physical"]["sleep"] = .2
+        budget, timings = self.coordinator_budget(waves=1)
+        write_json(self.root / "scope.json", self.scope)
+        run = self.root / "coordinator-serial"
+        real_executor = ThreadPoolExecutor
+        with patch(
+            "agent_ee.reviewers.ThreadPoolExecutor",
+            side_effect=lambda max_workers=None, *a, **kw: real_executor(max_workers=1, *a, **kw),
+        ), patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
+            status = run_review(self.root / "scope.json", run, budget)
+        result = read_json(run / "result.json")
+        self.assertEqual(status, 0, result)
+        with self.assertRaisesRegex(AssertionError, r"exceeded derived concurrent budget"):
+            self.assert_concurrent_initial_reviews(run)
+
+    def test_exhausted_coordinator_budget_reports_named_load_failure(self):
+        timings = {"export_s": 12.5, "netlist_s": 0.45, "harness_s": 0.4}
+        with self.assertRaisesRegex(AssertionError, r"^budget exceeded under load [0-9]+\.[0-9]{2} "):
+            self.assert_within_budget(31.0, 30.0, timings, result={"state": "complete", "review_executions": []})
+        with self.assertRaisesRegex(AssertionError, r"^budget exceeded under load [0-9]+\.[0-9]{2} "):
+            self.assert_within_budget(
+                10.0,
+                30.0,
+                timings,
+                result={
+                    "state": "complete",
+                    "adjudicated": False,
+                    "review_executions": [{"role": "circuit", "execution": "ok"}, {"role": "physical", "execution": "ok"}],
+                },
+            )
 
 
     def test_owner_sigint_cancels_process_groups_and_queued_roles(self):
@@ -278,6 +477,8 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assert_owner_cancellation("launch")
 
     def assert_owner_cancellation(self, phase):
+        budget, timings = self.coordinator_budget(waves=1)
+        driver_budget = max(120, math.ceil(budget * 2))
         driver = r'''import json, os, subprocess, sys, time
 from pathlib import Path
 from unittest.mock import patch
@@ -333,20 +534,26 @@ with ExitStack() as stack:
         stack.enter_context(patch('agent_ee.executor.sandbox_argv', side_effect=slow_probe))
     if sys.argv[2] == 'launch':
         stack.enter_context(patch('agent_ee.executor.subprocess.Popen', side_effect=launching))
-    status = run_review(root / 'scope.json', root / 'run', 120)
+    status = run_review(root / 'scope.json', root / 'run', int(sys.argv[3]))
 sys.exit(0 if status == 1 else 2)
 '''
-        process = subprocess.Popen([sys.executable, '-c', driver, str(self.root), phase],
+        process = subprocess.Popen([sys.executable, '-c', driver, str(self.root), phase, str(driver_budget)],
             env={**os.environ, "PYTHONPATH": "src:tests"}, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.addCleanup(lambda: process.poll() is None and process.kill())
         run = self.root / "run"
-        deadline = time.monotonic() + 30
+        wait_start = time.monotonic()
+        deadline = wait_start + budget
         marker = 'review-work/*/preflight/probe/probe-start' if phase == 'preflight' else 'review-work/*/experiments/pids'
         while len(list(run.glob(marker))) < 2:
             if process.poll() is not None:
                 self.fail(str(process.communicate()) + str(read_json(run / "result.json").get("error")))
             if time.monotonic() >= deadline:
-                self.fail("reviewers did not start")
+                self.assert_within_budget(
+                    time.monotonic() - wait_start,
+                    budget,
+                    timings,
+                    context=f"owner cancellation ({phase}) reviewer startup",
+                )
             time.sleep(.02)
         # Namespace PIDs are not host PIDs: inspect host descendants through /proc.
         def descendants(pid):
