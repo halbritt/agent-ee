@@ -502,6 +502,45 @@ class CatalogTests(unittest.TestCase):
                 self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
                 self.assertIn('category table mismatch', report['details']['error'])
 
+    def test_repinned_duplicate_typed_row_replacing_an_omitted_row_is_unknown(self):
+        # agent-452 ee128 review R1: PRAGMA quick_check does not verify UNIQUE constraints, so a
+        # typed table holding C1 twice and omitting C2 keeps the row count and the autoindex name.
+        from agent_ee.catalog import DERIVED_COLUMNS, catalog_check, category_columns, table_sql
+        from catalog_repin import repin
+        import sqlite3
+        base = dict(lcsc='C1', mfr='Owned fixture', mpn='R1', package='0603', category='resistor',
+                    stock='123', price1='0.01', is_basic='1', is_preferred='0', last_seen='2026-10-17')
+        snapshot, _ = self.captured('duplicate-typed', [
+            {**base, 'lcsc': f'C{number}', 'mpn': f'R{number}',
+             'attributes': json.dumps({'resistance': resistance})}
+            for number, resistance in ((1, '1 kohm +/-1%'), (2, '10 kohm +/-5%'))])
+        decls = ','.join(f'{key} ' + ('INTEGER' if key in ('stock', 'is_basic', 'is_preferred') else 'TEXT')
+                         for key in DERIVED_COLUMNS)
+        decls += ',' + ','.join(f'{column} TEXT' for column in category_columns('resistor'))
+        database = snapshot / 'catalog.sqlite3'
+        with sqlite3.connect(database) as connection:
+            connection.execute(f'CREATE TABLE r2 ({decls})')
+            connection.execute("INSERT INTO r2 SELECT * FROM resistor WHERE lcsc='C1'")
+            connection.execute("INSERT INTO r2 SELECT * FROM resistor WHERE lcsc='C1'")
+            connection.execute('CREATE INDEX idx2 ON r2(lcsc)')
+            connection.execute('DROP TABLE resistor')
+            connection.execute('ALTER TABLE r2 RENAME TO resistor')
+        with sqlite3.connect(database) as connection:
+            connection.execute('PRAGMA writable_schema=ON')
+            connection.execute("UPDATE sqlite_master SET sql=? WHERE type='table' AND name='resistor'",
+                               (table_sql('resistor'),))
+            connection.execute("UPDATE sqlite_master SET name='sqlite_autoindex_resistor_1', sql=NULL "
+                               "WHERE name='idx2'")
+        with sqlite3.connect(database) as connection:
+            self.assertEqual(connection.execute('PRAGMA quick_check').fetchall(), [('ok',)])
+            self.assertEqual([row[0] for row in connection.execute('SELECT lcsc FROM resistor')], ['C1', 'C1'])
+        pin = repin(snapshot)
+        with self.assertRaisesRegex(ValueError, 'category table mismatch'):
+            load_catalog(snapshot, pin)
+        report = catalog_check(snapshot, pin)
+        self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+        self.assertIn('category table mismatch', report['details']['error'])
+
     def test_rederivation_refuses_json_type_coercion_and_noncanonical_raw_text(self):
         from agent_ee.catalog import catalog_check
         from catalog_repin import repin

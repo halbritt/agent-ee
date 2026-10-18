@@ -475,13 +475,15 @@ def read_database(payload, manifest):
                 (category,)).fetchone()
             if mismatch:
                 raise ValueError('derived category table mismatch')
-            count = 0
+            # quick_check does not verify UNIQUE constraints, so a repinned typed table may hold
+            # a duplicated row in place of an omitted one: track distinct keys, not a row count.
+            seen = set()
             columns = ','.join(('lcsc', *category_columns(category)))
             for lcsc, *intervals in connection.execute(f'SELECT {columns} FROM {category}'):
-                if tuple(intervals) != interval_cells(by_lcsc[lcsc], category):
+                if lcsc in seen or tuple(intervals) != interval_cells(by_lcsc[lcsc], category):
                     raise ValueError('derived category table mismatch')
-                count += 1
-            if count != counts[category]:
+                seen.add(lcsc)
+            if len(seen) != counts[category]:
                 raise ValueError('derived category table mismatch')
         return rows
 
