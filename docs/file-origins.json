@@ -521,12 +521,13 @@
     },
     {
       "paths": [
-        "docs/block-inventory.md",
         "docs/argon-assessment.md",
+        "docs/block-inventory.md",
+        "docs/decisions.md",
         "docs/fable-assessment.md",
         "docs/integration-review-argon.md",
-        "docs/via-probe-correction.md",
-        "docs/third-party-origins.md"
+        "docs/third-party-origins.md",
+        "docs/via-probe-correction.md"
       ],
       "kind": "owned-documentation",
       "origins": [

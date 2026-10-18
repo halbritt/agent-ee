@@ -379,9 +379,30 @@ def _sequence_violations(before, after, where):
             [f'{where}: added or changed {labels[i]}' for i in added])
 
 
+def _property_font_defaults(node):
+    """Comparison-only form of KiCad 10's omitted property font thickness (0.15 mm).
+
+    Strip only that explicit default, from one unambiguous effects/font path. Other
+    children and their order stay exact; the saved bytes and evidence hashes never change.
+    """
+    # Reference/Value/Datasheet/Description load an omitted thickness as zero and a resave never
+    # adds it (only custom fields get the 0.15 default); Footprint is not a saved PCB field.
+    if (node[0] != 'property' or len(node) < 3 or not all(isinstance(t, str) for t in node[1:3]) or
+            node[1] in ('Reference', 'Value', 'Datasheet', 'Description', 'Footprint')):
+        return node
+    effects = children(node, 'effects')
+    fonts = children(effects[0], 'font') if len(effects) == 1 else []
+    if len(fonts) != 1 or children(fonts[0], 'thickness') != [['thickness', '0.15']]:
+        return node
+    font = [c for c in fonts[0] if c != ['thickness', '0.15']]
+    effect = [font if c is fonts[0] else c for c in effects[0]]
+    return [effect if c is effects[0] else c for c in node]
+
+
 def _child_follows(before, after, rotation):
     """Whether a keyed child is unchanged, or a rotated child whose `at` angle advanced exactly
-    by the footprint's quarter turn. A malformed or inexact child angle never follows a turn."""
+    by the footprint's quarter turn, allowing only the property font thickness default.
+    A malformed or inexact child angle never follows a turn."""
     if before[0] not in ROTATED_CHILDREN or not children(before, 'at'):
         return before == after
     if rotation == 0 and before == after:
@@ -389,6 +410,7 @@ def _child_follows(before, after, rotation):
     b_at, a_at = _at(before), _at(after)
     if b_at is None or a_at is None or rotation not in QUARTER_TURNS:
         return False
+    before, after = _property_font_defaults(before), _property_font_defaults(after)
     rest = [[c for c in node if not (isinstance(c, list) and c and c[0] == 'at')] for node in (before, after)]
     return (rest[0] == rest[1] and b_at[:2] == a_at[:2] and b_at[3] == a_at[3] and
             _turn(a_at[2] - b_at[2] - rotation) == 0)
