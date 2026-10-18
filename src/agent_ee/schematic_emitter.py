@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 
 from .connectivity_ir import _json_bytes, _read_json, canonical_resolved, resolve_intent, validate_resolved
 from .symbol_context import build_context
-from .symbol_library import LibraryError, children, parse_sexpr
+from .symbol_library import LibraryError, ParsedLibraries, children, parse_sexpr
 
 LAYOUT_SCHEMA = 'agent-ee.schematic-layout/1'
 RESULT_SCHEMA = 'agent-ee.schematic-emission/1'
@@ -68,14 +68,14 @@ class Q(str):
     """A quoted S-expression atom; plain ``str`` atoms are written bare."""
 
 
-def _scan(data):
+def _scan(data, *, shared=None):
     """Quote-aware tree for re-serialization, cross-checked against the shared reader.
 
     The shared ``parse_sexpr`` remains the structural authority and enforces the
     byte/depth/node limits first. This scan only records which atoms were quoted;
     any disagreement with the shared tree refuses the capture.
     """
-    shared = parse_sexpr(data)
+    shared = parse_sexpr(data) if shared is None else shared
     text, pos, stack, roots = data.decode('utf-8'), 0, [], []
     while pos < len(text):
         char = text[pos]
@@ -336,9 +336,9 @@ def _box(points):
             max(p[0] for p in points), max(p[1] for p in points)]
 
 
-def _plan(resolved, captured, intent_libraries, transforms):
+def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
     """Validate every component, unit, pin and net before any output is built."""
-    trees, units, net_of, nc = {}, [], {}, set()
+    units, net_of, nc = [], {}, set()
     for net in resolved['nets']:
         location = '/nets/' + net['id']
         if not isinstance(net['name'], str) or not (NAME.fullmatch(net['name']) or GENERATED.fullmatch(net['name'])):
@@ -354,9 +354,10 @@ def _plan(resolved, captured, intent_libraries, transforms):
         location = '/components/' + comp['id']
         library, symbol = comp['lib_id'].split(':')
         lib = libraries[library]
-        if lib['path'] not in trees:
-            trees[lib['path']] = _scan(captured[lib['path']])
-        symbols[comp['id']] = _library_symbol(trees[lib['path']], symbol, comp['lib_id'], location, comp['sources'])
+        if lib['sha256'] not in trees:
+            data = captured[lib['path']]
+            trees[lib['sha256']] = _scan(data, shared=cache.root(data))
+        symbols[comp['id']] = _library_symbol(trees[lib['sha256']], symbol, comp['lib_id'], location, comp['sources'])
         if not REFERENCE.fullmatch(comp['reference']) or comp['reference'].startswith('#') != comp['power']:
             raise EmissionError('malformed_reference',
                                 'reference must be annotated; # prefix exactly for power symbols', location)
@@ -396,7 +397,7 @@ def _plan(resolved, captured, intent_libraries, transforms):
             # instance is excluded from BOM and board whatever the library says,
             # while the embedded library copy keeps its own flags.
             flags = dict(flags, in_bom='no', on_board='no')
-        context = build_context(intent_libraries, captured, comp['lib_id'])
+        context = build_context(intent_libraries, captured, comp['lib_id'], _library_cache=cache)
         if context['execution'] != 'ok':
             raise EmissionError('symbol_context', context.get('message', 'symbol context unavailable'), location)
         context_pins = {(p['number'], p['unit'], p['x_nm'], p['y_nm'], p['orientation'])
@@ -640,7 +641,7 @@ def _sheet(item, anchor, namespace, project, path, page, endpoints):
     return node, labels
 
 
-def _hierarchy(resolved, captured, intent_libraries, transforms, project):
+def _hierarchy(resolved, captured, intent_libraries, transforms, project, cache, trees):
     """Per-sheet plans for a resolved-connectivity/2 record, validated before any output.
 
     Segments come from ``local_nets`` with their AGENTEE-39 labels; the only
@@ -682,7 +683,7 @@ def _hierarchy(resolved, captured, intent_libraries, transforms, project):
         views[sheet_of[nc['component']]]['no_connects'].append(nc)
     plans, kids = {}, {}
     for sid, view in views.items():
-        plans[sid] = _plan(view, captured, intent_libraries, transforms)
+        plans[sid] = _plan(view, captured, intent_libraries, transforms, cache, trees)
         kids[sid] = sorted((s for s in sheets.values() if s['parent'] == sid), key=lambda s: s['local_id'])
     below = {(sheets[p['child']]['parent'], p['parent_net']) for p in resolved['ports']}
     for sid, view in views.items():
@@ -775,7 +776,8 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
         raw = _read_json(intent)
     except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
         return refuse('input_schema', str(exc), execution='malformed')
-    resolved = resolve_intent(raw, captured_libraries)
+    cache, trees = ParsedLibraries(), {}
+    resolved = resolve_intent(raw, captured_libraries, _library_cache=cache)
     result.update(intent_sha256=resolved['intent_sha256'], resolved_sha256=resolved['canonical_sha256'],
                   libraries=resolved['libraries'])
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
@@ -791,9 +793,9 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
         namespace, project, transforms = _validate_layout(layout, components)
         if resolved['schema'] == HIERARCHY_SCHEMA:
             files, root, paper = _emit_hierarchy(*_hierarchy(resolved, captured_libraries, raw['libraries'],
-                                                             transforms, project), namespace, project)
+                                                             transforms, project, cache, trees), namespace, project)
         else:
-            units, global_nets = _plan(resolved, captured_libraries, raw['libraries'], transforms)
+            units, global_nets = _plan(resolved, captured_libraries, raw['libraries'], transforms, cache, trees)
             files, root, paper = _emit(resolved, units, global_nets, namespace, project)
         if symbol_table is not None:
             files['sym-lib-table'] = _table('symbol', symbol_table)

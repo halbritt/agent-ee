@@ -61,6 +61,20 @@ def resolved_bytes(intent, captures):
 
 
 class OwnedEmissionTests(unittest.TestCase):
+    def test_libraries_are_parsed_once_and_never_retained_between_emissions(self):
+        from unittest import mock
+        from agent_ee import symbol_library
+        from agent_ee.symbol_capture import capture_symbols
+        extra, _ = capture_symbols(OWNED, ['R'], library='Extra')
+        intent = owned_intent()
+        intent['libraries'].append(dict(name='Extra', path='Extra.kicad_sym', sha256=hashlib.sha256(extra).hexdigest()))
+        captures = {'Owned.kicad_sym': OWNED, 'Extra.kicad_sym': extra}
+        record = resolved_bytes(intent, captures)
+        for _ in range(2):
+            with mock.patch.object(symbol_library, 'parse_sexpr', wraps=symbol_library.parse_sexpr) as parse:
+                emit(record, captures, manifest(['R1', 'R2']), TEMPLATE, 'owned')
+            self.assertCountEqual([call.args[0] for call in parse.call_args_list], list(captures.values()))
+
     def emit_owned(self, intent=None, parts=None, captures=None):
         record = resolved_bytes(intent or owned_intent(), {'Owned.kicad_sym': OWNED})
         return emit(record, captures or {'Owned.kicad_sym': OWNED}, parts or manifest(['R1', 'R2']),

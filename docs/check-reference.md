@@ -204,6 +204,11 @@ symbols through the shared connectivity resolver. Native ERC compares the embedd
 inherited definition with its captured project library; native netlist tests cover
 all 144 pins of a derived STM32 variant. Missing captured parents refuse emission
 before these checks run; installed libraries cannot supply missing capture bytes.
+AGENTEE-172 makes generator and rung-1 symbol captures subsets by default.
+Emission shares a content-addressed parse only within its call; every declared
+capture hash is still verified. Subset/source hashes remain in the capture and
+step receipts. These are provenance and performance changes, with no new check
+kind or acceptance credit. See [emitter cost and benchmark](schematic-emitter.md#library-subsets-and-emission-cost).
 
 ## ERC
 

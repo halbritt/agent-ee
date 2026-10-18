@@ -193,6 +193,10 @@ that would short distinct local nets are rejected. Repeated sheet files and
 multi-sheet global power remain unsupported. The [native emitter](docs/schematic-emitter.md)
 produces flat and supported hierarchical schematics from that captured intent,
 including inherited pins and units of captured `extends` symbols.
+Generator and rung-1 drivers capture only selected symbols and their ancestors
+by default; the emitter parses each library once per emission. The
+[130-component benchmark](docs/schematic-emitter.md#library-subsets-and-emission-cost)
+records timings and native netlist parity against captured library hashes.
 A [schematic readability lint](docs/schematic-lint.md) reports overlaps, wires
 through pins, rail and divider orientation, rail labels, grid and title-block
 findings that ERC does not produce. They are style findings unless a profile

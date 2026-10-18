@@ -676,6 +676,19 @@ def expected_nets(intent):
             for net in intent['nets']}
 
 
+def capture_intent_libraries(intent):
+    """Host-side subset capture for rung-1's explicit parts and implicit power markers."""
+    from .symbol_capture import capture_libraries
+    selections = {c['lib_id'] for c in intent['components']}
+    power_nets = {n['name'] for n in intent['nets'] if not n['name'].startswith('/')}
+    if power_nets:
+        selections.update('power:' + name for name in power_nets)
+        selections.add('power:PWR_FLAG')
+    sources = {name: (STOCK / 'symbols' / f'{name}.kicad_sym').read_bytes()
+               for name in sorted({s.split(':')[0] for s in selections})}
+    return capture_libraries(selections, sources)
+
+
 def native_candidate(root, project, footprint_libraries=()):
     """A read-only sandbox view: project/ plus captured stock tables and libraries."""
     copy_tree(project, root / 'project')
@@ -686,8 +699,17 @@ def native_candidate(root, project, footprint_libraries=()):
     for table in ('sym-lib-table', 'fp-lib-table'):
         shutil.copyfile(STOCK / 'template' / table, root / 'stock' / 'template' / table)
     (root / 'stock' / 'symbols').mkdir()
-    for library in SYMBOL_LIBRARIES:
-        shutil.copyfile(STOCK / 'symbols' / f'{library}.kicad_sym', root / 'stock' / 'symbols' / f'{library}.kicad_sym')
+    from .symbol_capture import capture_libraries
+    from .symbol_library import children, field, parse_sexpr
+    selections = {field(symbol, 'lib_id', 1)[0]
+                  for sch in Path(project).rglob('*.kicad_sch')
+                  for symbol in children(parse_sexpr(sch.read_bytes()), 'symbol')}
+    sources = {name: (STOCK / 'symbols' / f'{name}.kicad_sym').read_bytes()
+               for name in sorted({s.split(':')[0] for s in selections})}
+    _, captured, receipts = capture_libraries(selections, sources)
+    for path, data in captured.items():
+        (root / 'stock' / 'symbols' / path).write_bytes(data)
+    write_json(root / 'stock' / 'symbol-captures.json', receipts)
     return root
 
 
@@ -755,15 +777,17 @@ def stage_schematic(stage, state, options):
     stage.input(state['parts'], 'parts manifest')
     libraries_dir = stage.dir / 'libraries'
     libraries_dir.mkdir()
-    libraries, captured = [], {}
-    for library in SYMBOL_LIBRARIES:
-        source = STOCK / 'symbols' / f'{library}.kicad_sym'
-        raw = source.read_bytes()
-        (libraries_dir / source.name).write_bytes(raw)
-        libraries.append({'name': library, 'path': source.name, 'sha256': sha256_bytes(raw)})
-        captured[source.name] = raw
-        stage.input(source, 'stock symbol library')
-    intent = connectivity_intent(params, manifest['parts'], libraries)
+    intent = connectivity_intent(params, manifest['parts'], [])
+    libraries, captured, receipts = capture_intent_libraries(intent)
+    intent['libraries'] = libraries
+    for lib in libraries:
+        (libraries_dir / lib['path']).write_bytes(captured[lib['path']])
+        stage.input(STOCK / 'symbols' / lib['path'], 'stock symbol library')
+    write_json(stage.dir / 'symbol-captures.json', receipts)
+    stage.output(libraries_dir, 'captured symbol subsets')
+    stage.output(stage.dir / 'symbol-captures.json', 'symbol subset provenance')
+    stage.receipt['details']['symbol_captures'] = receipts
+    state['symbol_libraries'] = libraries_dir
     write_json(stage.dir / 'intent.json', intent)
     stage.output(stage.dir / 'intent.json', 'connectivity intent')
     resolved = resolve_intent(intent, captured)
@@ -973,6 +997,14 @@ def stage_review(stage, state, options):
         stage.tool(tool)
     scope_path = Path(state['scope'])
     scope = json.loads(scope_path.read_text())
+    if state.get('symbol_libraries'):
+        for item in scope['inputs']:
+            if item['at'] == 'stock/symbols':
+                item['path'] = str(state['symbol_libraries'].absolute())
+                item.pop('include', None)
+        scope_path = scope_path.with_name('rung1.captured.scope.json')
+        write_json(scope_path, scope)
+        state['scope'] = scope_path
     if scope['schematic'] != f"project/{state['name']}.kicad_sch":
         # Fixture stand-in only: the project kept its own name; the scope is re-pointed, not edited.
         scope['schematic'] = f"project/{state['name']}.kicad_sch"

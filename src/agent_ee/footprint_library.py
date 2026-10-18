@@ -299,8 +299,9 @@ def index_footprints(manifest, captured_files, declarations=None):
     return _seal(result)
 
 
-def _symbol_inventory(lib_id, libraries, captured_files):
-    from .symbol_library import parse_library, resolve_symbol, LibraryError
+def _symbol_inventory(lib_id, libraries, captured_files, *, _library_cache=None):
+    from .symbol_library import ParsedLibraries, resolve_symbol, LibraryError
+    cache = _library_cache if _library_cache is not None else ParsedLibraries()
     if not isinstance(lib_id, str) or lib_id.count(':') != 1:
         raise FootprintError('exact library:symbol identity required')
     library, symbol = lib_id.split(':')
@@ -326,10 +327,10 @@ def _symbol_inventory(lib_id, libraries, captured_files):
         try:
             if b'\x00' in data:
                 raise LibraryError('NUL byte in native symbol library')
-            symbols = parse_library(data)
+            symbols = cache.symbols(data)
             if name == library:
                 if symbol not in symbols:
-                    raise FootprintError('selected symbol absent from captured library')
+                    raise FootprintError('selected symbol absent from captured library: ' + lib_id)
                 selected = resolve_symbol(symbols, symbol, path, sha)
         except LibraryError as exc:
             raise FootprintError(str(exc)) from exc

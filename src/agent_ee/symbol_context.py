@@ -11,13 +11,13 @@ BBOX_DEFINITION = ('Local body graphic centreline bounds plus complete pin segme
                    'common unit/body graphics included; text, stroke thickness and rendered labels excluded.')
 
 
-def _metadata(sources, captured_files):
-    from .symbol_library import parse_library, children, LibraryError
+def _metadata(sources, captured_files, cache):
+    from .symbol_library import children, LibraryError
     properties, units = {}, []
     for source in sources:
         # The shared resolver already established this exact, ordered inheritance
         # chain and refused unsupported replacements. No extends traversal here.
-        node = parse_library(captured_files[source['path']])[source['symbol']]
+        node = cache.symbols(captured_files[source['path']])[source['symbol']]
         keys = set()
         for prop in children(node, 'property'):
             if len(prop) < 3 or any(not isinstance(x, str) for x in prop[1:3]) or prop[1] in keys:
@@ -83,18 +83,19 @@ def _bounds(units, pins, unit):
         return dict(coverage='unsupported', bounds_nm=None, reason=str(exc))
 
 
-def build_context(libraries, captured_files, selection):
+def build_context(libraries, captured_files, selection, *, _library_cache=None):
     """Exact lib:symbol lookup; all pins survive names shared by several numbers."""
-    from .symbol_library import LibraryError
+    from .symbol_library import LibraryError, ParsedLibraries
+    cache = _library_cache if _library_cache is not None else ParsedLibraries()
     result = dict(schema='agent-ee.symbol-context/1', execution='ok', outcome='info',
                   selection=selection, query_sha256=digest(selection), sources=[], pins=[],
                   properties={}, description='', selected_body_style=1, bbox_definition=BBOX_DEFINITION, bbox_by_unit={})
     try:
-        pins, sources, power = _symbol_inventory(selection, libraries, captured_files)
+        pins, sources, power = _symbol_inventory(selection, libraries, captured_files, _library_cache=cache)
         presented_pins = [dict(p, body_style=int(p['source']['unit_symbol'].rsplit('_', 1)[1])) for p in pins]
         result.update(pins=sorted(presented_pins, key=lambda p: (p['unit'], p['number'], canonical(p))),
                       sources=sources, power=power)
-        properties, units = _metadata(sources, captured_files)
+        properties, units = _metadata(sources, captured_files, cache)
         result['properties'] = properties
         result['description'] = properties.get('Description', properties.get('ki_description', ''))
         unit_numbers = sorted({p['unit'] for p in pins if p['unit']}) or [1]

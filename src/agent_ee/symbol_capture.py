@@ -179,6 +179,30 @@ def implementation():
     return dict(module=__name__, sha256=_sha(Path(__file__).read_bytes()))
 
 
+def capture_libraries(selections, sources):
+    """Capture an exact lib_id set from explicit nickname-to-bytes sources.
+
+    Returns intent library declarations, path-to-subset bytes and the existing
+    per-library capture receipts. No installed-library lookup occurs here.
+    """
+    selected = {}
+    for lib_id in selections:
+        if not isinstance(lib_id, str) or lib_id.count(':') != 1:
+            raise CaptureError('exact library:symbol identity required')
+        library, symbol = lib_id.split(':')
+        selected.setdefault(library, set()).add(symbol)
+    libraries, captured, receipts = [], {}, []
+    for library, symbols in sorted(selected.items()):
+        if library not in sources:
+            raise CaptureError('missing source library: ' + library)
+        path = library + '.kicad_sym'
+        subset, receipt = capture_symbols(sources[library], sorted(symbols), library=library, source_file=path)
+        libraries.append(dict(name=library, path=path, sha256=_sha(subset)))
+        captured[path] = subset
+        receipts.append(receipt)
+    return libraries, captured, receipts
+
+
 def capture_symbols(data, selected, *, library, source_file=None, limits=None):
     """Pure capture: returns ``(library_bytes, receipt)`` or raises ``CaptureError``."""
     if not isinstance(library, str) or not LIBRARY_NAME.fullmatch(library):

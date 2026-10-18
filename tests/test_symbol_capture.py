@@ -59,6 +59,22 @@ def oversized(*symbols):
 
 
 class ScanBoundaryTests(unittest.TestCase):
+    def test_capture_libraries_uses_exact_selection_and_shared_closure(self):
+        from agent_ee.symbol_capture import capture_libraries
+        source = library(base('ROOT', ('1', 'IN', 2.54)), derived('LEAF', 'ROOT'),
+                         base('UNUSED', ('1', 'OUT', -2.54)))
+        declarations, captured, receipts = capture_libraries(['Owned:LEAF', 'Owned:LEAF'], {'Owned': source})
+        self.assertEqual(declarations, [dict(name='Owned', path='Owned.kicad_sym',
+                                            sha256=hashlib.sha256(captured['Owned.kicad_sym']).hexdigest())])
+        self.assertEqual(set(parse_library(captured['Owned.kicad_sym'])), {'ROOT', 'LEAF'})
+        self.assertEqual(receipts[0]['selected'], ['LEAF'])
+        verify_capture(receipts[0], captured['Owned.kicad_sym'], source)
+        for selection, sources, message in ((['Owned:MISSING'], {'Owned': source}, 'unknown symbol: MISSING'),
+                                             (['Absent:X'], {'Owned': source}, 'missing source library: Absent'),
+                                             (['Owned'], {'Owned': source}, 'exact library:symbol')):
+            with self.assertRaisesRegex(CaptureError, message):
+                capture_libraries(selection, sources)
+
     def test_inherited_closure_keeps_exact_source_bytes_and_order(self):
         parts = [derived('LEAF', 'MID'), base('OTHER', ('1', 'A', 0)),
                  base('ROOT', ('1', 'IN', 2.54), ('2', 'OUT', -2.54)), derived('MID', 'ROOT')]
