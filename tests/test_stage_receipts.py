@@ -102,6 +102,31 @@ class StepDeclarationTests(unittest.TestCase):
         self.assertEqual(spec['artifacts'], [])
         self.assertIsNone(spec['backend_report'])
 
+    def test_artifact_only_step_validates_without_design_writes(self):
+        for host in (True, False):
+            with self.subTest(host=host):
+                spec = validate_step(self.spec(stage='fab', writes={}, artifacts=['out/fab']), host=host)
+                self.assertEqual(spec['writes'], {})
+                self.assertEqual(spec['artifacts'], ['out/fab'])
+
+    def test_step_requires_writes_or_artifacts(self):
+        for overrides in ({'writes': {}}, {'writes': {}, 'artifacts': []}):
+            with self.subTest(overrides), self.assertRaisesRegex(ValueError, 'at least one write or artifact'):
+                validate_step(self.spec(**overrides))
+        for writes in (None, [], '', False):
+            with self.subTest(writes=writes), self.assertRaisesRegex(ValueError, 'writes must be a map'):
+                validate_step(self.spec(writes=writes, artifacts=['out/fab']))
+        spec = self.spec(artifacts=['out/fab'])
+        del spec['writes']
+        with self.assertRaisesRegex(ValueError, 'missing fields'):
+            validate_step(spec)
+
+    def test_artifact_only_step_preserves_artifact_path_rules(self):
+        for artifacts in (None, 'out/fab', ['out/fab', 'out/fab'], ['../out/fab'],
+                          ['design/project/board.txt'], ['stdout.log']):
+            with self.subTest(artifacts=artifacts), self.assertRaises(ValueError):
+                validate_step(self.spec(writes={}, artifacts=artifacts))
+
     def test_refuses_tools_and_writes_outside_declared_authority(self):
         cases = {
             'stage': dict(stage='optimizer'),
@@ -199,6 +224,126 @@ class StepFixture(unittest.TestCase):
 
 
 class StepExecutionTests(StepFixture):
+    @toolchain_test
+    def test_artifact_only_step_hashes_artifacts_and_adopts_without_writing_design(self):
+        spec = self.spec('plant', json.dumps({'files': {
+            'out/fab/board.gbr': 'original Gerber fixture',
+            'out/fab/board.drl': 'original drill fixture',
+            'out/manifest.json': '{}'}}), stage='fab', writes={},
+            artifacts=['out/fab', 'out/manifest.json'])
+        before = stage_receipts.file_tree(self.design)
+        stats = {rel: (self.design / rel).stat() for rel in before[0]}
+        path, receipt = self.run_step(spec)
+        self.assertEqual((receipt['status'], receipt['exit_code']), ('completed', 0))
+        self.assertEqual(receipt['inputs'], before[0])
+        self.assertEqual(receipt['outputs'], {})
+        self.assertEqual(receipt['changed'], [])
+        self.assertEqual(receipt['violations'], [])
+        self.assertEqual(receipt['artifacts'], {rel: digest(path / 'run' / rel) for rel in (
+            'out/fab/board.gbr', 'out/fab/board.drl', 'out/manifest.json')})
+        self.assertEqual(validate_receipt(path, binding=self.binding), receipt)
+        adopt(path, receipt, self.design)
+        self.assertEqual(stage_receipts.file_tree(self.design), before)
+        for rel, stat in stats.items():
+            after = (self.design / rel).stat()
+            self.assertEqual((after.st_ino, after.st_mtime_ns, after.st_ctime_ns),
+                             (stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns))
+        work = self.root / 'work'
+        anchor = bind_implementation(work, self.design, 1, 'c' * 64)
+        index = verify_implementation(work, anchor, 1, 'c' * 64, captured=before[0], steps=[spec], complete=True)
+        self.assertEqual(index['receipts'][0]['applicability'], 'applicable')
+        (self.design / 'project/board.txt').write_text('later writer edit')
+        with self.assertRaisesRegex(ValueError, 'design changed during stage step'):
+            adopt(path, receipt, self.design)
+        self.assertEqual(build_index(work, self.design, 1, 'c' * 64)['receipts'][0]['applicability'],
+                         'not_applicable')
+
+    @toolchain_test
+    def test_artifact_only_step_refuses_unhashed_declared_artifacts(self):
+        cases = (
+            ('missing', {'files': {'out/other.json': '{}'}}, 'out/result.json'),
+            ('partly produced', {'files': {'out/kept.json': '{}'}}, 'out/result.json'),
+            ('empty directory', None, 'out/result/'),
+            ('link', {'links': {'out/result.json': '/candidate/project/board.txt'}}, 'out/result.json'),
+            ('special', {'fifos': ['out/result.json']}, 'out/result.json'),
+            ('nested link', {'files': {'out/result/kept.json': '{}'},
+                             'links': {'out/result/link': '/candidate/project/board.txt'}}, 'out/result/link'),
+        )
+        before = stage_receipts.file_tree(self.design)
+        for label, plan, missing in cases:
+            with self.subTest(label=label):
+                artifacts = ['out/result'] if label in ('empty directory', 'nested link') else ['out/result.json']
+                if label == 'partly produced':
+                    artifacts.append('out/kept.json')
+                if label == 'empty directory':
+                    argv = ['/usr/bin/python3', '-c',
+                            'from pathlib import Path; Path("out/result").mkdir(parents=True)']
+                else:
+                    argv = ['/usr/bin/python3', '/tool/step.py', 'plant', json.dumps(plan)]
+                path, receipt = self.run_step(self.spec(argv=argv, stage='fab', writes={}, artifacts=artifacts))
+                self.assertEqual((receipt['status'], receipt['exit_code']), ('refused', 0))
+                self.assertEqual(receipt['violations'], ['missing_artifact:' + missing])
+                self.assertIsNone(receipt['artifacts'][missing])
+                self.assertEqual(receipt['outputs'], {})
+                self.assertEqual(receipt['changed'], [])
+                self.assertEqual(validate_receipt(path), receipt)
+                with self.assertRaisesRegex(ValueError, 'no output adopted'):
+                    adopt(path, receipt, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), before)
+                self.assertEqual(build_index(self.root / 'work', self.design, 1, 'c' * 64)['receipts'][-1]
+                                 ['applicability'], 'not_applicable')
+
+    @toolchain_test
+    def test_artifact_only_receipt_refuses_changed_or_missing_artifacts(self):
+        path, receipt = self.run_step(self.spec('plant', json.dumps({'files': {'out/result.json': '{}'}}),
+                                                writes={}, artifacts=['out/result.json']))
+        artifact = path / 'run/out/result.json'
+        for contents in ('tampered', None):
+            with self.subTest(contents=contents):
+                if contents is None:
+                    artifact.unlink()
+                else:
+                    artifact.write_text(contents)
+                with self.assertRaisesRegex(ValueError, 'artifacts changed'):
+                    validate_receipt(path)
+                with self.assertRaisesRegex(ValueError, 'artifacts changed'):
+                    adopt(path, receipt, self.design)
+
+    @toolchain_test
+    def test_artifact_only_step_refuses_design_edits_additions_and_deletions(self):
+        before = stage_receipts.file_tree(self.design)
+        cases = (
+            ({'files': {'design/project/board.txt': 'changed'}}, 'write_outside_scope:project/board.txt'),
+            ({'files': {'design/project/extra.txt': 'added'}}, 'inventory_changed:project/extra.txt'),
+            ({'remove': ['design/project/rules.txt']}, 'inventory_changed:project/rules.txt'),
+        )
+        for plan, violation in cases:
+            with self.subTest(violation=violation):
+                plan.setdefault('files', {})['out/result.json'] = '{}'
+                path, receipt = self.run_step(self.spec('plant', json.dumps(plan), writes={},
+                                                        artifacts=['out/result.json']))
+                self.assertEqual((receipt['status'], receipt['exit_code']), ('refused', 0))
+                self.assertIn(violation, receipt['violations'])
+                self.assertEqual(receipt['outputs'], {})
+                self.assertEqual(receipt['artifacts'], {'out/result.json': digest(path / 'run/out/result.json')})
+                self.assertEqual(validate_receipt(path), receipt)
+                with self.assertRaisesRegex(ValueError, 'no output adopted'):
+                    adopt(path, receipt, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), before)
+
+    @toolchain_test
+    def test_artifact_only_step_failure_does_not_become_adoptable(self):
+        for code, delay, status in ((3, 0, 'failed'), (0, 30, 'timeout')):
+            with self.subTest(status=status):
+                plan = {'files': {'out/result.json': '{}'}, 'exit': code, 'sleep': delay}
+                path, receipt = self.run_step(self.spec('plant', json.dumps(plan), writes={},
+                    artifacts=['out/result.json'], timeout_s=1, version_argv=None))
+                self.assertEqual(receipt['status'], status)
+                self.assertEqual(receipt['outputs'], {})
+                self.assertEqual(validate_receipt(path), receipt)
+                with self.assertRaisesRegex(ValueError, 'no output adopted'):
+                    adopt(path, receipt, self.design)
+
     @toolchain_test
     def test_completed_step_records_coordinator_observed_identity_and_adopts_exactly(self):
         before = (self.design / 'project/board.txt').read_bytes()
