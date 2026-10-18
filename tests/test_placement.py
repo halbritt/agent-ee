@@ -98,10 +98,39 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(board, before)
         board['footprints'][1]['pads'][0]['net'] = 'VBUS'
         report = judge(board, policy)
-        self.assertEqual(report['associations'][0]['kind'], 'interface_filter')
+        # 8 mm from J1 is beyond C1's 2.5 mm limit: no waiver, and no IC on VBUS.
+        self.assertEqual(report['associations'][0]['kind'], 'unassociated')
+        self.assertEqual(report['score'], 85)
+        board['footprints'][3]['position_nm'] = [int(10.5*MM), MM]
+        report = judge(board, policy)
+        self.assertEqual(report['associations'][0], {'ref': 'C1', 'kind': 'interface_filter', 'connectors': ['J1'],
+                                                     'nearest_connector': 'J1', 'distance_mm': 2.5, 'nets': ['VBUS']})
         self.assertEqual(report['score'], 85)
         policy['capacitors']['C2']['deduction'] = 150
         self.assertEqual(judge(board, policy)['verdict'], 'pass')
+
+    def test_connector_waiver_needs_the_capacitor_within_its_limit(self):
+        board = capture([part('U1', 1, 1), part('C1', 4, 1), part('C2', 5, 1), part('J1', 19, 1)])
+        for fp in board['footprints']:
+            fp['pads'] = [{'net': 'VCC'}, {'net': 'GND'}]
+        policy = {'schema': 'agent-ee.placement-policy/1', 'ground_nets': ['GND'], 'ic_refs': ['U1'],
+                  'connector_refs': ['J1'], 'max_shared_refs': 8,
+                  'capacitors': {'C1': {'capacitance_nf': 100, 'max_distance_mm': 2.5, 'deduction': 15},
+                                 'C2': {'capacitance_nf': 1000, 'max_distance_mm': 5, 'deduction': 15}}}
+        report = judge(board, policy)
+        self.assertEqual([(a['ref'], a['kind']) for a in report['associations']],
+                         [('C1', 'decoupling'), ('C2', 'decoupling')])
+        self.assertEqual([(a['ref'], a['distance_mm']) for a in report['advisories']], [('C1', 3)])
+        self.assertEqual(report['score'], 85)
+        board['footprints'][3]['position_nm'] = [int(5.5*MM), MM]
+        report = judge(board, policy)
+        self.assertEqual([(a['ref'], a['kind']) for a in report['associations']],
+                         [('C1', 'interface_filter'), ('C2', 'interface_filter')])
+        self.assertEqual((report['advisories'], report['score']), ([], 100))
+
+    def test_no_policy_gives_no_score(self):
+        report = judge(capture([part('U1', 2, 2)]))
+        self.assertEqual((report['verdict'], report['score'], report['advisories']), ('pass', None, []))
 
     def test_shared_net_cap_and_ground_exclusion_are_explicit(self):
         board = capture([part('U1', 1, 1), part('C1', 8, 1)])
@@ -127,3 +156,34 @@ class JudgeTest(unittest.TestCase):
         board['board_sha256'] = ''
         with self.assertRaises(ValueError):
             judge(board)
+
+    def test_off_board_parts_listed_and_reasons_name_the_unknown(self):
+        outline = polygon([(0, 0), (10, 0), (10, 10), (6, 10), (6, 4), (4, 4), (4, 10), (0, 10)])
+        report = judge(capture([part('U1', 2, 6, shape=rectangle(2, 6, 6, 2)), part('C1', 1, 1)], outline))
+        self.assertEqual(report['off_board'], ['U1'])
+        self.assertEqual(judge(capture([part('U1', 2, 2)]))['off_board'], [])
+        for status in ('outline_missing', 'outline_unproven'):
+            board = capture([part('U1', 2, 2)])
+            board['outline'] = {'status': status}
+            self.assertEqual(judge(board)['unknown'], [{'kind': 'outline', 'reason': status}])
+        board = capture([part('U1', 2, 2), part('C1', 8, 8)])
+        board['footprints'][1]['courtyards'] = {}
+        report = judge(board)
+        self.assertEqual(report['unknown'], [{'kind': 'courtyard', 'ref': 'C1', 'reason': 'missing'}])
+        self.assertEqual(report['verdict'], 'unknown')
+
+    def test_connector_edge_advisory_deducts_without_deciding_verdict(self):
+        board = capture([part('J1', 1, 9), part('J2', 9, 9)])
+        policy = {'schema': 'agent-ee.placement-policy/1', 'ground_nets': [], 'ic_refs': [],
+                  'connector_refs': ['J1', 'J2'], 'max_shared_refs': 8, 'capacitors': {},
+                  'connector_edge': {'max_distance_mm': 2, 'deduction': 10}}
+        report = judge(board, policy)
+        self.assertEqual([(a['kind'], a['ref'], a['distance_mm']) for a in report['advisories']],
+                         [('connector_edge_distance', 'J2', 9)])
+        self.assertEqual((report['score'], report['verdict']), (90, 'pass'))
+        board['outline'] = {'status': 'outline_unproven'}
+        report = judge(board, policy)
+        self.assertEqual((report['score'], report['advisories'], report['verdict']), (100, [], 'unknown'))
+        policy['connector_edge'] = {'max_distance_mm': -1, 'deduction': 10}
+        with self.assertRaises(ValueError):
+            judge(board, policy)
