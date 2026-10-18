@@ -30,6 +30,9 @@ and incomplete interface stubs for later capture. Its lint outcome covers only
 the declared lexical checks; executable checks must supply acceptance evidence.
 The [requirement-record compiler](requirement-scope.md) maps quoted spec
 requirements to the check specifications on this page; it adds no check kind.
+[Spec capture](spec-record.md) records a markdown spec's table rows, bullets and
+numbered items as requirement IDs with byte-exact locators; it adds no check
+kind either.
 Offline [decision capture](design-dialog.md) also prepares requirements without
 adding a check kind. Answers that exceed the JSON decoder's recursion limit
 produce `outcome: unknown` and an `answers_too_deep` finding, retain the raw

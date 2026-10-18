@@ -1523,6 +1523,16 @@
     },
     {
       "paths": [
+        "fixtures/telemetry-pod/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "The owner's telemetry pod requirements spec (2026-10-17), copied byte for byte as spec.md (sha256 c5128ef9391e2114e7a399b352a957472ad26b93ca76e3179cc04b2b51194572; it names third-party parts and links vendor pages but copies no vendor text), and spec-record.json captured from it by agent_ee.spec_record (AGENTEE-158); see docs/spec-record.md."
+    },
+    {
+      "paths": [
         "fixtures/stages/"
       ],
       "kind": "owned-fixture",
