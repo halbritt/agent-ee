@@ -1,13 +1,14 @@
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from agent_ee.baseline import compile_baseline, freeze_evidence, load_baseline, validate_witnesses
 from agent_ee.candidate import capture, verify_snapshot
-from agent_ee.findings import adjudicate, collect_findings, validate_citation_path
+from agent_ee.findings import adjudicate, collect_findings, validate_citation, validate_citation_path
 from agent_ee.reviewers import build_packet
-from agent_ee.storage import write_json
+from agent_ee.storage import read_json, write_json
 
 
 class BaselineTests(unittest.TestCase):
@@ -71,6 +72,54 @@ class BaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "symlink"):
             validate_citation_path("baseline.json", self.run)
 
+    def test_baseline_whitespace_reformat_and_nonexistent_locators_refused(self):
+        original = (self.run / "baseline.json").read_bytes()
+        parsed = read_json(self.run / "baseline.json")
+        findings = collect_findings([], [self.check])
+
+        for reformatted in (
+            json.dumps(parsed, separators=(",", ":")).encode("utf-8"),
+            (json.dumps(parsed, indent=4, sort_keys=True) + "\n").encode("utf-8"),
+            original + b"\n",
+        ):
+            (self.run / "baseline.json").write_bytes(reformatted)
+            with self.assertRaisesRegex(ValueError, "immutable baseline changed"):
+                load_baseline(self.run)
+            with self.assertRaisesRegex(ValueError, "immutable baseline changed"):
+                verify_snapshot(self.run)
+            with self.assertRaisesRegex(ValueError, "immutable baseline changed"):
+                validate_citation({"path": "baseline.json", "locator": "/criteria"}, self.run)
+
+        (self.run / "baseline.json").write_bytes(original)
+        for valid_loc in ("/criteria", "/requirements/0/id", "requirements/R1", "/files"):
+            self.assertEqual(
+                validate_citation({"path": "baseline.json", "locator": valid_loc}, self.run),
+                {"path": "baseline.json", "locator": valid_loc},
+            )
+
+        for bad_loc in ("/no_such_field", "/no_such_field/x", "requirements/R999", "/criteria/99"):
+            with self.subTest(bad_locator=bad_loc):
+                with self.assertRaisesRegex(ValueError, "does not resolve"):
+                    validate_citation({"path": "baseline.json", "locator": bad_loc}, self.run)
+                with self.assertRaisesRegex(ValueError, "does not resolve"):
+                    adjudicate(
+                        findings,
+                        {
+                            "schema": "agent-ee.decisions/1",
+                            "candidate_id": self.manifest["candidate_id"],
+                            "run_id": "run1",
+                            "decisions": [
+                                {
+                                    "finding_id": "check/response",
+                                    "disposition": "accepted",
+                                    "reason": "Citing nonexistent baseline field",
+                                    "evidence": [*self.evidence, {"path": "baseline.json", "locator": bad_loc}],
+                                }
+                            ],
+                        },
+                        self.run,
+                    )
+
     def test_navigation_cannot_substitute_for_a_sealed_check_witness(self):
         build_packet(self.run, [self.check], "run1")
         with self.assertRaisesRegex(ValueError, "cited check"):
@@ -124,7 +173,7 @@ class BaselineTests(unittest.TestCase):
             "run_id": "run1", "decisions": [{"finding_id": "check/response", "disposition": "accepted",
                 "reason": "R1 violated", "evidence": self.evidence}]}
         self.assertEqual(adjudicate(findings, decisions, self.run)[0]["status"], "accepted")
-        decisions["decisions"][0]["evidence"] = [{"path": "inputs/design/board", "locator": "text"}]
+        decisions["decisions"][0]["evidence"] = [{"path": "inputs/design/board", "locator": "board"}]
         with self.assertRaisesRegex(ValueError, "cited check"):
             adjudicate(findings, decisions, self.run)
 

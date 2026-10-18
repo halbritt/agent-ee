@@ -1,6 +1,8 @@
 """Finding validation, non-voting collection, and evidence-grounded adjudication."""
 
 import copy
+import hashlib
+import json
 import re
 from pathlib import Path, PurePosixPath
 
@@ -38,6 +40,26 @@ DECISIONS_TOP_KEYS = frozenset(("schema", "candidate_id", "run_id", "decisions")
 DECISION_REQUIRED_KEYS = frozenset(("finding_id", "disposition", "reason", "evidence"))
 DECISION_OPTIONAL_KEYS = frozenset(("duplicate_of", "checks", "previous_run"))
 
+_LOCATOR_STOPWORDS = frozenset({
+    "a", "an", "and", "after", "all", "are", "as", "at", "be", "block", "blocks",
+    "both", "bullet", "by", "canonical", "check", "col", "column", "confirms",
+    "content", "criteria", "criterion", "deck", "detail", "details",
+    "element", "elements", "empty", "entities", "entity", "entry", "entries",
+    "equals", "export", "failed", "field", "fields", "file", "for", "from",
+    "header", "identical", "in", "independent", "is", "island", "islands",
+    "item", "items", "key", "keys", "line", "lines", "list", "mapping", "matches",
+    "membership", "min", "max", "missing", "name", "naming", "net", "nets", "no",
+    "none", "not", "observation", "observed", "of", "on", "one", "only", "or",
+    "pad", "pads", "packet", "page", "pages", "part", "parts", "per", "present",
+    "project", "quote", "re-export", "reason", "record", "records", "ref",
+    "report", "result", "results", "row", "rows", "rule", "rules", "section",
+    "sections", "sentence", "sentences", "setup", "sha256", "sheet", "source",
+    "status", "summary", "symbol", "symbols", "table", "target",
+    "targets", "template", "text", "that", "the", "to", "token", "tokens",
+    "tool", "tracks", "unit", "units", "unverified", "value", "values", "via",
+    "vias", "whole", "with", "within", "without",
+})
+
 
 def safe_id(value, label="id"):
     if not isinstance(value, str) or not SAFE_ID_RE.fullmatch(value) or ".." in value:
@@ -55,6 +77,272 @@ def _str_list(value, label):
     if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
         raise ValueError(f"{label} must be a list of non-empty strings")
     return list(value)
+
+
+def _resolve_json_steps(node, steps):
+    cur = node
+    for seg in steps:
+        if isinstance(cur, dict):
+            if seg not in cur:
+                return False, None
+            cur = cur[seg]
+        elif isinstance(cur, list):
+            if seg.isdigit() and 0 <= int(seg) < len(cur):
+                cur = cur[int(seg)]
+            else:
+                matches = [
+                    el for el in cur
+                    if isinstance(el, dict)
+                    and any(el.get(k) == seg for k in ("id", "name", "key", "ref", "code", "role", "metric"))
+                ]
+                if not matches:
+                    return False, None
+                cur = matches[0] if len(matches) == 1 else matches
+        else:
+            return False, None
+    return True, cur
+
+
+def _resolve_json_path(doc, steps, *, root_only=False):
+    ok, val = _resolve_json_steps(doc, steps)
+    if ok or root_only:
+        return ok, val
+    if isinstance(doc, dict):
+        for sub_key in ("details", "coverage", "baseline", "scope", "report", "metrics"):
+            if sub_key in doc and isinstance(doc[sub_key], (dict, list)):
+                ok, val = _resolve_json_steps(doc[sub_key], steps)
+                if ok:
+                    return True, val
+    return False, None
+
+
+def _json_contains_scalar_or_key(node, token):
+    t_low = token.lower()
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if str(k).lower() == t_low or _json_contains_scalar_or_key(v, token):
+                return True
+        return False
+    if isinstance(node, list):
+        if token.isdigit() and 0 <= int(token) < len(node):
+            return True
+        return any(_json_contains_scalar_or_key(el, token) for el in node)
+    if node is None:
+        return t_low == "null"
+    if isinstance(node, bool):
+        return t_low == ("true" if node else "false")
+    return t_low in str(node).lower()
+
+
+def _value_matches(resolved, expected_raw):
+    exp = expected_raw.strip().strip("\"'")
+    if isinstance(resolved, (int, float)) and not isinstance(resolved, bool):
+        try:
+            f_exp = float(exp)
+            return abs(float(resolved) - f_exp) <= 1e-5 * max(1.0, abs(float(resolved)))
+        except ValueError:
+            return False
+    if isinstance(resolved, (list, dict)):
+        if exp == "[]" and isinstance(resolved, list) and [x for x in resolved if x != ""] == []:
+            return True
+        try:
+            return resolved == json.loads(expected_raw)
+        except Exception:
+            return exp in json.dumps(resolved)
+    return str(resolved).lower() == exp.lower()
+
+
+def validate_citation_locator(path_norm, locator, run_dir):
+    loc = locator.strip()
+    target = Path(run_dir) / path_norm
+    data = target.read_bytes()
+
+    m_check = re.fullmatch(r"check:([A-Za-z0-9_.-]+)", loc)
+    if m_check:
+        cid = m_check.group(1)
+        if path_norm == f"checks/{cid}.json" or path_norm.startswith(f"work/{cid}/"):
+            return
+        if path_norm.endswith(".json") and data:
+            try:
+                doc = json.loads(data.decode("utf-8"))
+                if isinstance(doc, dict) and doc.get("id") == cid:
+                    return
+            except ValueError:
+                pass
+        raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
+
+    if not data:
+        raise ValueError(f"citation locator {locator!r} resolves to nothing in empty {path_norm!r}")
+
+    if data.startswith((b"\x89PNG\r\n\x1a\n", b"%" + b"PDF-")):
+        if loc.startswith("/") or re.search(r"\b(?:line|row)s?\s+\d+\b", loc, flags=re.IGNORECASE):
+            raise ValueError(f"citation locator {locator!r} does not resolve in binary {path_norm!r}")
+        return
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"citation locator {locator!r} cannot resolve in binary {path_norm!r}") from exc
+    if not text.strip():
+        raise ValueError(f"citation locator {locator!r} resolves to nothing in blank {path_norm!r}")
+    lines = text.splitlines()
+    norm_text = " ".join(re.sub(r"\)\s*\(", ") (", text).split()).lower()
+    file_sha = hashlib.sha256(data).hexdigest()
+
+    is_json = path_norm.endswith(".json")
+    doc = None
+    if is_json:
+        try:
+            doc = json.loads(text)
+        except ValueError as exc:
+            raise ValueError(f"cited JSON artifact is malformed: {path_norm!r}") from exc
+
+    m_line_prefix = re.match(r"^(?:line|row)s?\s+(\d+)(?:\s*[-–]\s*(\d+))?\s*[:;]\s*(.+)$", loc, flags=re.IGNORECASE)
+    for m_lr in re.finditer(r"\b(?:line|row)s?\s+(\d+)(?:\s*[-–]\s*(\d+))?\b", loc, flags=re.IGNORECASE):
+        start_n = int(m_lr.group(1))
+        end_n = int(m_lr.group(2)) if m_lr.group(2) else start_n
+        if start_n < 1 or end_n < start_n or end_n > len(lines):
+            raise ValueError(f"citation locator {locator!r} line/row out of range in {path_norm!r}")
+
+    quote_scan = re.sub(r"\[[^\[\]]*\]", " ", loc)
+    for q1, q2 in re.findall(r"'([^']+)'|\"([^\"]+)\"", quote_scan):
+        q = q1 or q2
+        for part in re.split(r"\.\.\.|…", q):
+            part_norm = " ".join(re.sub(r"\)\s*\(", ") (", part).split()).lower()
+            if part_norm and part_norm not in norm_text:
+                raise ValueError(f"citation locator {locator!r} quoted text {part!r} not found in {path_norm!r}")
+
+    unquoted = re.sub(r"'[^']*'|\"[^\"]*\"", " ", loc)
+    no_neg = re.sub(r"\bno\b[^,;()]*", " ", unquoted, flags=re.IGNORECASE)
+
+    if loc.startswith("/"):
+        if is_json:
+            if loc == "/":
+                if not doc:
+                    raise ValueError(f"citation locator {locator!r} resolves to nothing in {path_norm!r}")
+                return
+            unparen = re.sub(r"\([^()]*\)", " ", loc)
+            ptrs = re.findall(r"(?:^|(?<=[\s,;]))(/[A-Za-z0-9_.~/-]+)", unparen)
+            if not ptrs:
+                raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
+            for ptr in ptrs:
+                steps = [s.replace("~1", "/").replace("~0", "~") for s in ptr.lstrip("/").split("/") if s]
+                ok, _ = _resolve_json_path(doc, steps, root_only=True)
+                if not ok:
+                    raise ValueError(f"citation locator {locator!r} pointer {ptr!r} does not resolve in {path_norm!r}")
+            for utok in re.findall(r"[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+", no_neg):
+                if utok.lower() not in norm_text:
+                    raise ValueError(
+                        f"citation locator {locator!r} identifier {utok!r} does not resolve in {path_norm!r}"
+                    )
+            return
+        lead = loc.split()[0].rstrip(",;:")
+        if lead.lower() not in norm_text:
+            raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
+        return
+
+    if is_json:
+        m_slash = re.match(r"^([A-Za-z_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_.-]+)+)(?:\s|\(|$)", loc)
+        if m_slash:
+            raw_path = m_slash.group(1)
+            steps = [s for s in raw_path.split("/") if s]
+            ok, _ = _resolve_json_path(doc, steps)
+            if not ok and raw_path.lower() not in norm_text:
+                raise ValueError(f"citation locator {locator!r} path {raw_path!r} does not resolve in {path_norm!r}")
+            if ok:
+                return
+
+        dotted_matches = list(re.finditer(
+            r"(?<![A-Za-z0-9_./-])([A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*|\[\d+\])+)(?:=([^\s,;)]+))?",
+            unquoted
+        ))
+        checked_dotted = False
+        for m_dot in dotted_matches:
+            expr, eq_val = m_dot.group(1), m_dot.group(2)
+            parts = [p for p in re.split(r"\.|\[(\d+)\]", expr) if p is not None and p != ""]
+            if len(parts) == 2 and (
+                parts[1] in ("json", "kicad_pcb", "kicad_sch", "kicad_pro", "kicad_prl", "xml", "txt", "md", "csv", "cir", "py", "h", "log", "Cu")
+                or (re.fullmatch(r"[A-Z]+\d+", parts[0]) and parts[1].isdigit())
+            ):
+                continue
+            ok, val = _resolve_json_path(doc, parts)
+            if not ok:
+                raise ValueError(f"citation locator {locator!r} path {expr!r} does not resolve in {path_norm!r}")
+            if eq_val is not None and not _value_matches(val, eq_val):
+                raise ValueError(f"citation locator {locator!r} value mismatch for {expr!r} in {path_norm!r}")
+            checked_dotted = True
+
+        kv_matches = list(re.finditer(
+            r"(?<![A-Za-z0-9_./\[-])([A-Za-z_][A-Za-z0-9_-]*)=([^\s,;)]+)",
+            unquoted
+        ))
+        checked_kv = False
+        for m_kv in kv_matches:
+            k_name, eq_val = m_kv.group(1), m_kv.group(2)
+            ok, val = _resolve_json_path(doc, [k_name])
+            if ok:
+                if not _value_matches(val, eq_val):
+                    raise ValueError(f"citation locator {locator!r} value mismatch for {k_name!r} in {path_norm!r}")
+                checked_kv = True
+        if checked_dotted or checked_kv:
+            return
+
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", loc):
+            if _json_contains_scalar_or_key(doc, loc):
+                return
+            raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
+
+    if loc.lower() in ("all", "all rows", "whole file", "whole sheet"):
+        return
+    if re.fullmatch(r"(?:line|row)s?\s+\d+(?:\s*[-–]\s*\d+)?", loc, flags=re.IGNORECASE):
+        return
+    m_sec_range = re.fullmatch(r"(?:section|item)s?\s+(\d+)(?:\s*[-–]\s*(\d+))?", loc, flags=re.IGNORECASE)
+    if m_sec_range:
+        s_n = int(m_sec_range.group(1))
+        e_n = int(m_sec_range.group(2)) if m_sec_range.group(2) else s_n
+        if all(re.search(rf"\b{n}\b", text) for n in range(s_n, e_n + 1)):
+            return
+        raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
+
+    target_norm = norm_text
+    if m_line_prefix and not is_json:
+        s_ln = int(m_line_prefix.group(1))
+        e_ln = int(m_line_prefix.group(2)) if m_line_prefix.group(2) else s_ln
+        slice_text = "\n".join(lines[s_ln - 1 : e_ln])
+        target_norm = " ".join(re.sub(r"\)\s*\(", ") (", slice_text).split()).lower()
+
+    loc_norm = " ".join(re.sub(r"\)\s*\(", ") (", loc).split()).lower()
+    if loc_norm in target_norm:
+        return
+
+    m_absent_from = re.search(r"\b([A-Za-z0-9_.-]+)\s+absent\s+from\b", loc, flags=re.IGNORECASE)
+    if m_absent_from and not is_json:
+        missing_tok = m_absent_from.group(1).lower()
+        if not re.search(rf"\b{re.escape(missing_tok)}\b", norm_text):
+            return
+
+    m_abs = re.match(r"^(?:whole\s+(?:file|sheet)\s*[:;]?\s*)?no\s+(.+)$", loc, flags=re.IGNORECASE)
+    if m_abs and not is_json:
+        absent_tokens = [
+            t.strip("._-") for t in re.findall(r"[A-Za-z0-9_.-]+", m_abs.group(1).lower())
+            if t.strip("._-") and t.strip("._-") not in _LOCATOR_STOPWORDS and t.strip("._-") not in ("nodes", "node", "anywhere")
+        ]
+        if absent_tokens and all(f"({t}" not in norm_text for t in absent_tokens):
+            return
+
+    cleaned = re.sub(r"\b(?:line|row|section|item)s?\s+\d+(?:\s*[-–]\s*\d+)?\b", " ", loc.lower())
+    raw_tokens = [t.strip("._-") for t in re.findall(r"[A-Za-z0-9_.-]+", cleaned)]
+    tokens = [t for t in raw_tokens if t and not all(c == "." for c in t)]
+    substantive = [t for t in tokens if t not in _LOCATOR_STOPWORDS]
+    check_tokens = substantive if substantive else tokens
+    if not check_tokens:
+        raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
+    matched = [
+        t for t in check_tokens
+        if t in target_norm or (len(t) >= 8 and file_sha.startswith(t))
+    ]
+    if not matched:
+        raise ValueError(f"citation locator {locator!r} does not resolve in {path_norm!r}")
 
 
 def validate_citation_path(path_value, run_dir):
@@ -106,6 +394,7 @@ def validate_citation(item, run_dir):
         raise ValueError(f"malformed evidence citation: {item!r}")
     path_norm = validate_citation_path(item["path"], run_dir)
     locator = _nonempty_str(item["locator"], "evidence locator")
+    validate_citation_locator(path_norm, locator, run_dir)
     return {"path": path_norm, "locator": locator}
 
 
@@ -135,7 +424,10 @@ def validate_check_result(check, run_dir=None):
         if not isinstance(p, str) or not p.strip():
             raise ValueError(f"check {cid}: invalid evidence entry {entry!r}")
         if run_dir is not None:
-            validate_citation_path(p, run_dir)
+            path_norm = validate_citation_path(p, run_dir)
+            if isinstance(entry, dict) and "locator" in entry:
+                loc = _nonempty_str(entry["locator"], "evidence locator")
+                validate_citation_locator(path_norm, loc, run_dir)
     return check
 
 

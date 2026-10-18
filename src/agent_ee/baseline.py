@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from .candidate import safe_relative
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, identity, json_bytes, read_json, write_json
 
 GENERATION_SCHEMA = "agent-ee.generation/1"
 
@@ -206,7 +206,8 @@ def load_baseline(run):
     expected = compile_baseline(manifest["scope"], manifest["files"], Path(run) / "inputs")
     if expected is None:
         return None
-    if read_json(Path(run) / "baseline.json") != expected:
+    path = Path(run) / "baseline.json"
+    if not path.is_file() or path.is_symlink() or path.read_bytes() != json_bytes(expected):
         raise ValueError("immutable baseline changed")
     return expected
 

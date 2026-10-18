@@ -8,9 +8,10 @@ from agent_ee.findings import (
     adjudicate,
     collect_findings,
     validate_check_result,
+    validate_citation,
+    validate_citation_path,
     validate_closure,
     validate_review,
-    validate_citation_path,
 )
 from agent_ee.storage import write_json
 
@@ -23,7 +24,7 @@ class FindingsTests(unittest.TestCase):
         self.source = self.root / "source"
         self.source.mkdir()
         (self.source / "rc.kicad_sch").write_text("(kicad_sch (symbol R1 100k))")
-        (self.source / "rc.kicad_pcb").write_text("(kicad_pcb (footprint R1 100k))")
+        (self.source / "rc.kicad_pcb").write_text("(kicad_pcb (footprint R1 100k) (via (at 113 100)))")
         (self.source / "requirements.md").write_text("0.62 <= Vout(1ms) <= 0.65 V")
         self.scope_path = self.root / "scope.json"
         self.scope_data = {
@@ -922,6 +923,86 @@ class FindingsTests(unittest.TestCase):
                     ],
                 },
                 run3,
+            )
+
+    def test_citation_locator_resolution_refuses_nonexistent_targets_across_all_cited_paths(self):
+        exp_dir = self.run_dir / "review-work" / "circuit" / "experiments"
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        write_json(exp_dir / "probe.json", {"measured": {"v_1ms": 0.0952}, "items": [{"id": "R1", "ohms": 100000}]})
+        (exp_dir / "empty.txt").write_text("")
+
+        for valid_cite in (
+            {"path": "checks/rc_transient.json", "locator": "/details/v_1ms"},
+            {"path": "checks/rc_transient.json", "locator": "details.v_1ms=0.095162582"},
+            {"path": "checks/rc_transient.json", "locator": "outcome=defect"},
+            {"path": "inputs/project/rc.kicad_sch", "locator": "line 1: symbol R1"},
+            {"path": "work/rc_transient/spice.log", "locator": "line 1: v_1ms"},
+            {"path": "review-work/circuit/experiments/probe.json", "locator": "/measured/v_1ms"},
+            {"path": "review-work/circuit/experiments/probe.json", "locator": "/items/R1/ohms"},
+        ):
+            with self.subTest(valid=valid_cite):
+                self.assertEqual(validate_citation(valid_cite, self.run_dir), valid_cite)
+
+        for bad_cite, err_pattern in (
+            ({"path": "checks/rc_transient.json", "locator": "/no_such_field"}, "does not resolve"),
+            ({"path": "checks/rc_transient.json", "locator": "/details/no_such_metric"}, "does not resolve"),
+            ({"path": "checks/rc_transient.json", "locator": "details.no_such_metric"}, "does not resolve"),
+            ({"path": "checks/rc_transient.json", "locator": "details.v_1ms=0.6321"}, "value mismatch"),
+            ({"path": "checks/rc_transient.json", "locator": "outcome=pass"}, "value mismatch"),
+            ({"path": "checks/rc_transient.json", "locator": "nonexistent_token"}, "does not resolve"),
+            ({"path": "inputs/project/rc.kicad_sch", "locator": "line 99"}, "line/row out of range"),
+            ({"path": "inputs/project/rc.kicad_sch", "locator": "'(symbol U99)'"}, "quoted text .* not found"),
+            ({"path": "inputs/project/rc.kicad_sch", "locator": "/no_such_sheet"}, "does not resolve"),
+            ({"path": "inputs/project/rc.kicad_sch", "locator": "nonexistent_component_xyz"}, "does not resolve"),
+            ({"path": "work/rc_transient/spice.log", "locator": "line 5: v_1ms"}, "line/row out of range"),
+            ({"path": "work/rc_transient/spice.log", "locator": "line 1: no_such_signal"}, "does not resolve"),
+            ({"path": "review-work/circuit/experiments/probe.json", "locator": "/no_such_field/x"}, "does not resolve"),
+            ({"path": "review-work/circuit/experiments/probe.json", "locator": "items/U99/ohms"}, "does not resolve"),
+            ({"path": "review-work/circuit/experiments/empty.txt", "locator": "line 1"}, "empty"),
+        ):
+            with self.subTest(bad=bad_cite), self.assertRaisesRegex(ValueError, err_pattern):
+                validate_citation(bad_cite, self.run_dir)
+
+        with self.assertRaisesRegex(ValueError, "does not resolve"):
+            validate_review(
+                self._review(
+                    findings=[
+                        self._finding(
+                            evidence=[{"path": "checks/rc_transient.json", "locator": "/no_such_field/x"}]
+                        )
+                    ]
+                ),
+                self.candidate_id,
+                self.run_id,
+                self.packet_sha256,
+                self.run_dir,
+            )
+
+        concern = validate_review(
+            self._review(findings=[{**self._finding(fid="minor-obs", assessment="concern"), "severity": "minor"}]),
+            self.candidate_id,
+            self.run_id,
+            self.packet_sha256,
+            self.run_dir,
+        )
+        collected = collect_findings([concern], [self.erc_check])
+        with self.assertRaisesRegex(ValueError, "does not resolve"):
+            adjudicate(
+                collected,
+                {
+                    "schema": "agent-ee.decisions/1",
+                    "candidate_id": self.candidate_id,
+                    "run_id": self.run_id,
+                    "decisions": [
+                        {
+                            "finding_id": "circuit/minor-obs",
+                            "disposition": "noted",
+                            "reason": "Bogus locator in adjudication citation",
+                            "evidence": [{"path": "inputs/project/rc.kicad_pcb", "locator": "/no_such_field"}],
+                        }
+                    ],
+                },
+                self.run_dir,
             )
 
 

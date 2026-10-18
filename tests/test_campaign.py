@@ -765,7 +765,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                     'severity': 'major', 'assessment': 'defect', 'reasoning': '15 V exceeds 10 V',
                     'witnesses': [{'requirement_id': 'R1', 'check_id': 'response'}],
                     'evidence': [{'path': 'checks/response.json' if valid else 'inputs/design/board',
-                                  'locator': 'outcome'}]}]
+                                  'locator': 'outcome' if valid else 'board'}]}]
                 if counts[key] > 1 and drop_finding:
                     response['findings'] = []
             if label == 'adjudicator':
