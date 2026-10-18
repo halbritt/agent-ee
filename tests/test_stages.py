@@ -191,18 +191,151 @@ class NativePresenceTests(unittest.TestCase):
                             '(symbol (property "Reference" "R1")) '
                             '(symbol (property "Reference" "C1")))')
             self.assertEqual(native_references(path, 'symbols'), ['C1', 'R1'])
-            path.write_text('(kicad_sch (version 20250114) '
-                            '(symbol (property "Reference" "R1")) '
-                            '(symbol (in_bom no) (on_board no) (property "Reference" "#PWR01")))')
-            self.assertEqual(native_references(path, 'symbols'), ['R1'])
-            # Emitted power symbols and flags keep the library's in_bom/on_board yes.
-            path.write_text('(kicad_sch (version 20250114) '
-                            '(symbol (property "Reference" "R1")) '
-                            '(symbol (in_bom yes) (on_board yes) (property "Reference" "#FLG01")))')
-            self.assertEqual(native_references(path, 'symbols'), ['R1'])
             path.write_text('(kicad_sch (version 20250114) (sheet (uuid "child")))')
             with self.assertRaisesRegex(ValueError, 'hierarchical'):
                 native_references(path, 'symbols')
+
+    def test_virtual_exclusion_requires_library_power_and_both_instance_flags(self):
+        import itertools
+        import tempfile
+        from pathlib import Path
+        from agent_ee.stages import native_references
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'design.kicad_sch'
+            for power, in_bom, on_board in itertools.product((False, True), ('yes', 'no'), ('yes', 'no')):
+                with self.subTest(power=power, in_bom=in_bom, on_board=on_board):
+                    path.write_text('(kicad_sch (version 20260306) (lib_symbols '
+                                    f'(symbol "Owned:S" {"(power)" if power else ""})) '
+                                    f'(symbol (lib_id "Owned:S") (in_bom {in_bom}) (on_board {on_board}) '
+                                    '(property "Reference" "#R9")))')
+                    if power and in_bom == on_board == 'no':
+                        self.assertEqual(native_references(path, 'symbols'), [])
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'disagrees'):
+                            native_references(path, 'symbols')
+
+    def test_missing_ambiguous_or_malformed_power_metadata_cannot_exclude_a_reference(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.stages import native_references
+        instance = ('(symbol (lib_id "Owned:S") (in_bom no) (on_board no) '
+                    '(property "Reference" "#PWR01"))')
+        caches = ['', '(lib_symbols)', '(lib_symbols (symbol "Other:S" (power)))',
+                  '(lib_symbols (symbol "Owned:S" (power)) (symbol "Owned:S" (power)))',
+                  '(lib_symbols (symbol "Owned:S" (power nonsense)))',
+                  '(lib_symbols (symbol "Owned:S" (power) (power)))',
+                  '(lib_symbols (symbol "Owned:S" (power))) (lib_symbols)']
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'design.kicad_sch'
+            for cache in caches:
+                with self.subTest(cache=cache):
+                    path.write_text(f'(kicad_sch (version 20260306) {cache} {instance})')
+                    with self.assertRaises(ValueError):
+                        native_references(path, 'symbols')
+
+    def test_nonpower_no_no_instance_cannot_be_excluded(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.stages import native_references
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'design.kicad_sch'
+            path.write_text('(kicad_sch (version 20260306) (lib_symbols (symbol "Owned:R")) '
+                            '(symbol (lib_id "Owned:R") (in_bom no) (on_board no) '
+                            '(property "Reference" "R1")))')
+            with self.assertRaisesRegex(ValueError, 'disagrees'):
+                native_references(path, 'symbols')
+
+    def test_power_classification_uses_embedded_name_and_not_reference_spelling(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.stages import native_references
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'design.kicad_sch'
+            path.write_text('(kicad_sch (version 20260306) '
+                            '(lib_symbols (symbol "Embedded:GND" (power))) '
+                            '(symbol (lib_id "Other:Symbol") (lib_name "Embedded:GND") '
+                            '(in_bom no) (on_board no) (property "Reference" "V1")))')
+            self.assertEqual(native_references(path, 'symbols'), [])
+
+
+class NativeHashPresenceTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.inputs = self.root / 'inputs'
+        self.inputs.mkdir()
+        self.path = self.inputs / 'schematic.kicad_sch'
+        self.source = (Path(__file__).resolve().parents[1] / 'fixtures/stages/schematic.kicad_sch').read_text()
+
+    def probe(self, source):
+        from agent_ee.executor import execute
+        self.path.write_text(source)
+        return execute(self.inputs, self.root / 'probe',
+                       ['/usr/bin/python3', '-B', '-m', 'agent_ee.stages',
+                        '/candidate/schematic.kicad_sch', 'symbols', '/work/references.json'], timeout=60)
+
+    def native_export(self, source):
+        from agent_ee.executor import execute
+        import xml.etree.ElementTree as ET
+        self.path.write_text(source)
+        native = execute(self.inputs, self.root / 'export',
+                         ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                          '-o', '/work/native.xml', '/candidate/schematic.kicad_sch'], timeout=60)
+        self.assertEqual(native['execution'], 'ok', native)
+        return sorted(c.get('ref') for c in ET.parse(self.root / 'export/native.xml').findall('./components/comp'))
+
+    def test_ordinary_resistor_renamed_hash_reference_refuses_without_expected_inventory(self):
+        from agent_ee.storage import read_json
+        source = self.source.replace('"R1"', '"#R9"')
+        # Establish the actual native omission independently of the bounded reader.
+        self.assertEqual(self.native_export(source), ['C1'])
+        record = self.probe(source)
+        self.assertEqual(record['execution'], 'failed', record)
+        self.assertNotEqual(read_json(self.root / 'probe/execution.json')['exit_code'], 0)
+        self.assertIn('disagrees', (self.root / 'probe/console.log').read_text())
+        self.assertFalse((self.root / 'probe/references.json').exists())
+
+    def test_hash_named_nonpower_no_no_refuses(self):
+        source = self.source.replace('"R1"', '"#R9"').replace(
+            '(unit 1) (in_bom yes) (on_board yes)', '(unit 1) (in_bom no) (on_board no)', 1)
+        record = self.probe(source)
+        self.assertEqual(record['execution'], 'failed', record)
+        self.assertIn('disagrees', (self.root / 'probe/console.log').read_text())
+        self.assertFalse((self.root / 'probe/references.json').exists())
+
+    def test_nonpower_no_no_with_ordinary_reference_disagrees_with_native_export(self):
+        source = self.source.replace('(unit 1) (in_bom yes) (on_board yes)',
+                                     '(unit 1) (in_bom no) (on_board no)', 1)
+        self.assertEqual(self.native_export(source), ['C1', 'R1'])
+        record = self.probe(source)
+        self.assertEqual(record['execution'], 'failed', record)
+        self.assertIn('disagrees', (self.root / 'probe/console.log').read_text())
+        self.assertFalse((self.root / 'probe/references.json').exists())
+
+    def test_genuine_power_gnd_with_no_no_flags_is_excluded(self):
+        from agent_ee.storage import read_json
+        # Original one-pin power fixture, with no third-party symbol geometry.
+        start = self.source.index('(symbol "Owned:R"')
+        end = self.source.index('(symbol "Owned:C"')
+        power = ('(symbol "power:GND" (power) (in_bom no) (on_board no) '
+                 '(property "Reference" "#PWR" (at 0 0 0) (effects (font (size 1 1)))) '
+                 '(property "Value" "GND" (at 0 0 0) (effects (font (size 1 1)))) '
+                 '(symbol "GND_1_1" (pin power_in line (at 0 0 0) (length 0) '
+                 '(name "GND" (effects (font (size 1 1)))) '
+                 '(number "1" (effects (font (size 1 1)))))))\n')
+        source = (self.source[:start] + power + self.source[end:]).replace(
+            '"Owned:R"', '"power:GND"').replace('"R1"', '"#PWR01"').replace('"10k"', '"GND"').replace(
+            '(unit 1) (in_bom yes) (on_board yes)', '(unit 1) (in_bom no) (on_board no)', 1)
+        record = self.probe(source)
+        self.assertEqual(record['execution'], 'ok', record)
+        self.assertEqual(read_json(self.root / 'probe/references.json'), ['C1'])
+        self.assertEqual(read_json(self.root / 'probe/native-observation.json')['native_references'], ['C1'])
+        self.assertTrue((self.root / 'probe/native-netlist.xml').is_file())
 
 
 from toolchain import toolchain_test
@@ -280,6 +413,28 @@ class StageExecutionTests(unittest.TestCase):
         self.run = self.root / 'populated'
         self.run.mkdir()
         self.manifest = capture(self.root / 'scope.json', self.run)
+
+    @toolchain_test
+    def test_hash_reference_disagreement_is_unknown_even_when_not_expected(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.candidate import capture
+        from agent_ee.storage import write_json
+        self.populated_capture()
+        path = self.root / 'source/design.kicad_sch'
+        path.write_text(path.read_text().replace('"R1"', '"#R9"'))
+        self.scope['stages']['subjects']['schematic']['references'] = ['C1']
+        write_json(self.root / 'scope.json', self.scope)
+        self.run = self.root / 'hash-reference'
+        self.run.mkdir()
+        capture(self.root / 'scope.json', self.run)
+        results = self.checks()
+        self.assertEqual([(c['execution'], c['outcome']) for c in results],
+                         [('failed', 'unknown'), ('not_run', 'unknown'), ('not_run', 'unknown')])
+        self.assertNotIn('reason', results[0]['details'])
+        self.assertFalse((self.run / 'work/erc/stage-subject.json').exists())
+        self.assertIn('disagrees', (self.run / 'work/erc/stage-subject/console.log').read_text())
+        freeze_evidence(self.run, results)
+        verify_evidence(self.run, results, required=True)
 
     @toolchain_test
     def test_handler_crash_and_missing_output_are_unknown_and_never_absence(self):

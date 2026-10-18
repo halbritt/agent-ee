@@ -60,15 +60,20 @@ bounded text reader before an absence witness can be produced. The probe retains
 its native observation and, for schematics, the raw XML netlist. Public verification
 requires successful probe execution and checks these observations against the
 captured inventory. It counts top-level placed symbols or footprints by explicit Reference property,
-or saved straight/arc segments. Nested library definitions are not instances. Symbols explicitly excluded from
-both BOM and board (`in_bom no`, `on_board no`) are outside component presence,
-and so are symbols whose Reference starts with `#` (power symbols and `PWR_FLAG`,
-which KiCad's netlist export omits whatever their `in_bom`/`on_board` flags);
-the resulting inventory must still agree with native export.
-Eeschema also places power symbols and `PWR_FLAG` with `in_bom no` and
-`on_board no`, and the owned [schematic emitter](schematic-emitter.md) writes
-them the same way, so a schematic with power symbols passes the probe on its
-flags as well as on its references.
+or saved straight/arc segments. Nested library definitions are not instances.
+Only symbols whose matching embedded library definition has a `power` flag and
+whose instance explicitly declares both `in_bom no` and `on_board no` are excluded
+from physical presence. The library definition is selected by `lib_name` when
+present, otherwise `lib_id`; missing or ambiguous definitions refuse classification.
+A Reference starting with `#` must meet these same conditions, or the probe
+refuses the disagreement. KiCad omits such references even for ordinary parts,
+so agreement with the exported reference list alone cannot qualify them.
+The probe also refuses ordinary non-power symbols marked no/no; KiCad still
+exports these references. The disagreement leaves coverage unknown.
+
+Eeschema and the owned [schematic emitter](schematic-emitter.md) write power
+symbols and `PWR_FLAG` with `in_bom no` and `on_board no`, so a schematic with
+power symbols passes the probe on those flags together with the library power flag.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
 bounded to 32 MiB and 128 levels. The qualified source-version set is schematic

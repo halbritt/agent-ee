@@ -80,6 +80,23 @@ def progress(previous, current):
                               set(current['recurring_findings']) < set(previous.get('recurring_findings', [])))
 
 
+def excluded_power_symbol(root, node):
+    """Only explicit nonphysical instances of embedded power definitions are virtual."""
+    from .symbol_library import LibraryError, children, field
+    caches = children(root, 'lib_symbols')
+    if len(caches) != 1:
+        raise LibraryError('stage power classification requires one embedded symbol cache')
+    key = field(node, 'lib_name' if children(node, 'lib_name') else 'lib_id', 1)[0]
+    definitions = [s for s in children(caches[0], 'symbol') if len(s) >= 2 and s[1] == key]
+    if len(definitions) != 1:
+        raise LibraryError('stage power classification requires one matching embedded symbol')
+    power = children(definitions[0], 'power')
+    if power and (len(power) != 1 or power[0][1:] not in ([], ['global'], ['local'])):
+        raise LibraryError('unsupported stage power flag')
+    return (bool(power) and children(node, 'in_bom') == [['in_bom', 'no']] and
+            children(node, 'on_board') == [['on_board', 'no']])
+
+
 def native_references(path, kind):
     """Read only explicit native Reference properties; hierarchical sheets unsupported."""
     from pathlib import Path
@@ -101,12 +118,15 @@ def native_references(path, kind):
         props = [p for p in children(node, 'property') if len(p) >= 2 and p[1] == 'Reference']
         if len(props) != 1 or len(props[0]) < 3 or not isinstance(props[0][2], str) or not props[0][2].strip():
             raise LibraryError('native stage subject has missing/ambiguous Reference')
-        if kind == 'symbols' and children(node, 'in_bom') == [['in_bom', 'no']] and children(node, 'on_board') == [['on_board', 'no']]:
-            continue
-        if kind == 'symbols' and props[0][2].startswith('#'):
-            # KiCad's netlist exporter omits virtual references (power symbols, PWR_FLAG)
-            # whatever their in_bom/on_board flags; native_probe still compares the result.
-            continue
+        if kind == 'symbols':
+            excluded = (children(node, 'in_bom') == [['in_bom', 'no']] and
+                        children(node, 'on_board') == [['on_board', 'no']])
+            if excluded or props[0][2].startswith('#'):
+                if excluded_power_symbol(root, node):
+                    continue
+                # XML hides ordinary # references but retains ordinary no/no parts.
+                raise LibraryError('bounded inventory disagrees with native reader: '
+                                   'virtual exclusion requires a power symbol with in_bom no and on_board no')
         references.append(props[0][2])
     if len(set(references)) != len(references):
         raise LibraryError('native stage subject has duplicate references')
