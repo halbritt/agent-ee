@@ -329,6 +329,9 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             from .block_adaptation import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
             prerequisite(params.get('netlist_check'), ('netlist',))
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
         elif kind == 'net_names':
             from .net_names import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
