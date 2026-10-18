@@ -315,9 +315,10 @@ def _property_font_defaults(node):
     Strip only that explicit default, from one unambiguous effects/font path. Other
     children and their order stay exact; the saved bytes and evidence hashes never change.
     """
-    # Datasheet/Description load omitted thickness as zero; Footprint is not a saved PCB field.
+    # Reference/Value/Datasheet/Description load an omitted thickness as zero and a resave never
+    # adds it (only custom fields get the 0.15 default); Footprint is not a saved PCB field.
     if (node[0] != 'property' or len(node) < 3 or not all(isinstance(t, str) for t in node[1:3]) or
-            node[1] in ('Datasheet', 'Description', 'Footprint')):
+            node[1] in ('Reference', 'Value', 'Datasheet', 'Description', 'Footprint')):
         return node
     effects = children(node, 'effects')
     fonts = children(effects[0], 'font') if len(effects) == 1 else []
