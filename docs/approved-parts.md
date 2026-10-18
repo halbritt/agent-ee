@@ -58,7 +58,7 @@ A **blob** is exactly `{path, sha256}`; a **located blob** adds `locator`.
 | `population` | `native-dnp-optional-only/1` |
 | `parts` | Nonempty list of at most 4096 logical parts |
 
-Each part has exactly these fields:
+Each part has these required fields and the optional `pin_contract` field:
 
 | Field | Meaning |
 | --- | --- |
@@ -70,6 +70,7 @@ Each part has exactly these fields:
 | `lcsc`, `mpn`, `manufacturer` | Exact nonempty catalog identities; LCSC uses `C` followed by a positive decimal integer |
 | `stock` | Historical integer quantity, or null for unknown; rederived from the captured row |
 | `datasheet` | One of the two explicit forms below |
+| `pin_contract` (optional) | Captured blob for [page-cited electrical obligations](pin-contracts.md); included in the immutable dependency closure |
 
 A captured datasheet has exactly `status: captured`, `required` boolean,
 `artifact` blob and `provenance` located blob. An unavailable datasheet has

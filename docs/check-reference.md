@@ -847,3 +847,16 @@ empty or unparseable export file is `failed`, `malformed` or `unsupported` with
 outcome `unknown`, or a gate `defect`; never `pass`. A scope with a `generation`
 marker is refused at capture unless this check is last and an acceptance
 requirement maps to it.
+
+## Datasheet pin electrical contracts
+
+[`pin_contracts`](pin-contracts.md) takes exactly `manifest`, `facts_check`,
+`netlist_check`, `ground_nets`, `power_nets`, `rails` and `classes`. It consumes
+captured per-part contract blobs from the owned parts manifest, verified
+page-cited facts and retained native connectivity. Voltage compatibility,
+must-connect, no-connect, decoupling, pull-up, BOOT-to-SW capacitor and feedback
+divider presence are separate predicates. Every physical instance is evaluated
+independently. Missing, ambiguous or inapplicable facts and uncovered pins remain
+unknown, including a manufacturer mismatch. Scope/2 and scope/3 freeze the
+complete contract/fact/parts dependency closure. See the feature page for the
+exact schema, evidence and limits.

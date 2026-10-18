@@ -358,7 +358,7 @@ def check_datasheet_facts(ctx):
                       summary='All datasheet citations verified' if verified else 'Unverified datasheet citations')
 
 
-def prerequisite(ctx, cid, kind, artifact):
+def prerequisite(ctx, cid, kind, artifact, *, allow_unsupported=False):
     from .checks import CheckError, SAFE_ID
     if not isinstance(cid, str) or not SAFE_ID.fullmatch(cid):
         raise CheckError('unsupported', f'{kind} prerequisite needs a safe check id')
@@ -367,7 +367,8 @@ def prerequisite(ctx, cid, kind, artifact):
     if not spec or spec['kind'] != kind or not path.is_file():
         raise CheckError('unsupported', f'{kind} prerequisite missing or not yet run')
     result = read_json(path)
-    if result.get('candidate_id') != ctx.manifest['candidate_id'] or result.get('execution') != 'ok':
+    allowed = ('ok', 'unsupported') if allow_unsupported else ('ok',)
+    if result.get('candidate_id') != ctx.manifest['candidate_id'] or result.get('execution') not in allowed:
         raise CheckError('unsupported', f'{kind} prerequisite unverified')
     rel = f'work/{cid}/{artifact}'
     if rel not in result['evidence'] or not (ctx.run_dir / rel).is_file():

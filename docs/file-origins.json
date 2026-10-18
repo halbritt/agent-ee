@@ -2307,6 +2307,36 @@
         "AE"
       ],
       "reviewed": "Original regression-test code containing synthetic KiCad board and XML netlist literals (a legacy net-code board and a two-component netlist); referenced fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "src/agent_ee/pin_contracts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original implementation and documentation for AGENTEE-59. tscircuit/circuit-json source_pin_attributes, parts-engine reconcile-datasheet-circuit-json and checks voltage/must-connect paths are mechanism references supplied by the ticket, linked in docs/pin-contracts.md. No upstream source, fixtures, pin database or vendor datasheet content was retrieved or copied."
+    },
+    {
+      "paths": [
+        "tests/test_pin_contracts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic electrical contracts, hand-authored connectivity oracle and owned KiCad/PDF format literals. Vendor part numbers name mechanism replays only; no vendor pin table, third-party design or fixture content copied. Reuses agent-ee owned test generators."
+    },
+    {
+      "paths": [
+        "docs/pin-contracts.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-59 feature documentation, including ticket-supplied tscircuit and parts-engine mechanism-reference links. No upstream content copied or retrieved; those links do not assert current licensing or behavior."
     }
   ]
 }

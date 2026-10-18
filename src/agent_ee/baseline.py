@@ -94,6 +94,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "parts_subset":
             from .parts_subset import capability
             paths.update(capability(params, files, inputs, scope, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "pin_contracts":
+            from .pin_contracts import capability
+            paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "block_provenance":
             from .block_adaptation import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
