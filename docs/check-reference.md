@@ -48,6 +48,9 @@ Neither catalog check acquires data or establishes current supplier inventory.
 The [pinned native feed](catalog.md#pinned-jlcparts-acquisition) is acquired on the
 host before capture; its explicit stocked-parts profile excludes zero-stock and
 unsupported-category rows. A missing row cannot establish upstream unavailability.
+The [full-feed runtime qualification](catalog.md#full-feed-runtime-qualification)
+exceeded the 120-second helper ceiling on the busy host; that measurement is not
+qualification of a full-feed sealed check within its default budget.
 
 ## Hierarchy validation
 

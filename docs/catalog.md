@@ -224,3 +224,21 @@ that a record lives entirely in that piece. The format name pins the import
 profile policy. Repeat capture uses the same manifest and volumes; byte identity
 is qualified within the same SQLite version. Offline reads and checks retain
 the existing manifest/DB/date identity and evidence-authority rules.
+
+
+## Full-feed runtime qualification
+
+The pinned stocked profile produced 334,455 rows in a 749,039,616-byte DB on
+SQLite 3.45.1. A real networkless `select_parts` query for 1 kΩ ±1%, 0603
+returned 179 eligible candidates and selected C21190, retaining Basic=true,
+stock=8,013,731 and snapshot date 2026-09-14. That private qualification used a
+900-second process limit and completed in 327 seconds on the busy host.
+These are captured facts, not current supplier availability.
+
+The shared reader revalidates the whole snapshot before selection. The sealed
+`catalog` and `part_selection` runners retain their 120-second ceilings and the
+enclosing run deadline; this full feed has **not** been qualified within that
+ceiling. A timeout remains interrupted/unknown coverage. The original fixture
+checks qualify the check/evidence boundaries, while the large private query
+qualifies native conversion and offline selection at its recorded runtime.
+Do not infer full-feed sealed-check throughput from the small controls.
