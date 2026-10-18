@@ -304,6 +304,10 @@ def run_campaign(config_path, out):
     from .stage_receipts import validate_step
     for spec in steps:
         validate_step(spec)
+    from .stage_receipts import validate_pre_receipts, validate_pre_receipt, import_pre_receipts
+    pre_receipts = validate_pre_receipts(config.get('pre_receipts', []))
+    for link in pre_receipts:
+        validate_pre_receipt(config_path.parent, link)
     if 'routing_adapter' in config:
         from .routing_adapter import campaign_spec, validate_campaign_step
         spec = campaign_spec(config['routing_adapter'], {'scope': scope}, scope.get('mutable_inputs',
@@ -326,6 +330,8 @@ def run_campaign(config_path, out):
     with writer_lock(root):
         root.mkdir(parents=True, exist_ok=False)
         (root / ".campaign-root").touch()
+        if 'pre_receipts' in config:
+            config['pre_receipts'] = import_pre_receipts(root, pre_receipts, config_path.parent)
         write_json(root / "config.json", config)
         write_json(root / "profile.json", profile)
         state = {"schema": "agent-ee.campaign-state/1", "state": "running", "history": [],
@@ -334,6 +340,8 @@ def run_campaign(config_path, out):
                  "implementation_records": {},
                  "launch_environment": {"policy_files": policy_files(), "runtime_files": runtime_files()},
                  "implementation_definition": {**config["implementation"], "tool_mode": "investigate"}}
+        if 'pre_receipts' in config:
+            state['pre_receipts'] = {link['path']: link['sha256'] for link in config['pre_receipts']}
         write_json(root / "state.json", state)
         return continue_campaign(root, state, scope_path, time.monotonic() + seconds)
 

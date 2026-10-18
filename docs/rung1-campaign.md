@@ -54,6 +54,7 @@ the package that ran the campaign, and spends no inference.
 | `scaffold/requirements/` | `spec.md`, `system.md`, `targets.md`, `reference.md` from stage 1 |
 | `scaffold/generation/` | Connectivity intent, resolved record, parts manifest and catalog copy, envelope, placement request, and an immutable template board |
 | `scaffold-receipt/` | The `write-scaffold` [stage receipt](stage-receipts.md) with its retained inputs, run and version records |
+| `campaign/pre-receipts/1/` | The imported scaffold receipt that `verify-campaign` revalidates against the first capture |
 | `scaffold-checks/` | kicad-cli ERC, XML netlist export and parity DRC of the empty files, on sandboxed copies |
 | `scope.json`, `campaign.json` | The staged scope/2 and the `agent-ee.campaign/1` configuration |
 | `campaign/` | The campaign root: runs, implementations, stage receipts, state |
@@ -164,8 +165,13 @@ verify-campaign printed after recomputing them from the final run.
   missing from the capture, or is in the capture but not in the receipt (for example a
   planted `project/rung1_rc.kicad_dru`) leaves it unbound, as do a missing receipt and a
   missing capture. A record of a campaign from before the scaffold receipt existed is
-  therefore never `done` when it is rebuilt. `verify-campaign` does not check this binding;
-  only this record's `done` does.
+  therefore never `done` when it is rebuilt. New configurations declare this receipt under
+  `pre_receipts` with the generic binding `{"pre_receipt": 1}` and the relative source path
+  `scaffold-receipt/receipt.json`. Campaign start copies it into `campaign/pre-receipts/1/`;
+  `verify-campaign` checks that copy and its exact first-capture binding. The rung 1 record
+  uses the same copy, without falling back to the original if it is missing or invalid.
+  Dry runs check the original receipt. Older campaigns without a pre-receipt declaration
+  retain the record-only check.
 - The final state lists the `agent-ee.stage-done/1` binding that verify-campaign
   recomputed (`stage_receipts_done.bound`). The schematic must be `emit-schematic`'s
   output, and the board must have passed through `build-board` and then `route-krt`

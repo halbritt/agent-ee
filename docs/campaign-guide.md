@@ -38,6 +38,7 @@ The configuration schema is `agent-ee.campaign/1`:
 | `max_seconds` | Finite number 1–86400; monotonic campaign work budget |
 | `max_schema_resubmissions` | Integer 0 or 1, excluding booleans; defaults to 1 per role per iteration and is stored explicitly in captured `config.json`; 0 preserves a single call |
 | `implementation_steps` | Optional list of `agent-ee.stage-step/1` declarations, run by the coordinator after each writer session; in a staged campaign only the earliest failing stage's steps run; see [stage receipts](stage-receipts.md) |
+| `pre_receipts` | Optional list of `{path, sha256, binding}` entries for coordinator receipts made before the first capture; start imports their retained runs and verification binds them to run 1; see [pre-receipts](stage-receipts.md#receipts-before-the-first-capture) |
 | `placement_adapter` | Optional `agent-ee.placement-adapter/1` declaration for staged scopes with a placement stage; see [placement adapter](placement-adapter.md) |
 
 See the [complete executable configuration](../fixtures/closed-loop/campaign.json)

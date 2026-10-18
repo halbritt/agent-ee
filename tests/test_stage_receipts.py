@@ -23,7 +23,10 @@ from agent_ee.stage_receipts import (adopt, applicability, bind_implementation, 
                                      sandbox_profile, validate_receipt, validate_step, verify_implementation)
 from agent_ee.storage import digest, identity, read_json, write_json
 
-from toolchain import toolchain_test
+try:
+    from toolchain import toolchain_test
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.toolchain import toolchain_test
 
 TOOL = '''import json, os, sys, time
 from pathlib import Path
@@ -550,6 +553,155 @@ def everything(path):
     return found
 
 
+class PreReceiptTests(StepFixture):
+    def prepare_campaign(self, code=0):
+        path, receipt = self.run_step(self.spec('edit', str(code)))
+        self.link = {'path': str(path / 'receipt.json'), 'sha256': digest(path / 'receipt.json'),
+                     'binding': receipt['binding']}
+        self.campaign = self.root / 'campaign'
+        self.campaign.mkdir()
+        self.links = stage_receipts.import_pre_receipts(self.campaign, [self.link], self.root)
+        self.state = {'history': [{'run': str(self.campaign / 'runs/1')}],
+                      'pre_receipts': {link['path']: link['sha256'] for link in self.links}}
+        self.captured = stage_receipts.after_tree(receipt)
+        write_json(self.campaign / 'runs/1/candidate.json', {'files': self.captured})
+        write_json(self.campaign / 'config.json', {'pre_receipts': self.links})
+        return path, receipt
+
+    def verify(self):
+        stage_receipts.verify_campaign_receipts(self.campaign, self.state)
+
+    @toolchain_test
+    def test_copies_and_revalidates_receipt_without_live_source_or_host_tool(self):
+        path, _ = self.prepare_campaign()
+        self.assertEqual(self.links[0]['path'], 'pre-receipts/1/receipt.json')
+        shutil.rmtree(path)
+        shutil.rmtree(self.tool)
+        self.verify()
+        # Extra folders not owned by the receipt may be captured (e.g. stock libraries).
+        write_json(self.campaign / 'runs/1/candidate.json', {'files': {**self.captured, 'stock/extra': 'f' * 64}})
+        self.verify()
+
+    @toolchain_test
+    def test_changed_missing_and_added_capture_files_are_unbound(self):
+        self.prepare_campaign()
+        variants = [{**self.captured, 'project/board.txt': '0' * 64},
+                    {k: v for k, v in self.captured.items() if k != 'project/rules.txt'},
+                    {**self.captured, 'project/planted.txt': '0' * 64}]
+        for files in variants:
+            with self.subTest(files=files):
+                write_json(self.campaign / 'runs/1/candidate.json', {'files': files})
+                with self.assertRaisesRegex(ValueError, 'differs from first capture'):
+                    self.verify()
+        self.state['history'] = []
+        with self.assertRaisesRegex(ValueError, 'no first capture binding'):
+            self.verify()
+
+    @toolchain_test
+    def test_missing_edited_foreign_and_unanchored_receipts_refuse(self):
+        self.prepare_campaign()
+        target = self.campaign / self.links[0]['path']
+        original = target.read_bytes()
+        target.unlink()
+        with self.assertRaisesRegex(ValueError, 'changed, unsafe or missing'):
+            self.verify()
+        target.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'changed, unsafe or missing'):
+            self.verify()
+        target.write_bytes(original)
+        anchors = self.state.pop('pre_receipts')
+        with self.assertRaisesRegex(ValueError, 'anchors differ'):
+            self.verify()
+        self.state['pre_receipts'] = anchors
+        self.links[0]['binding'] = {'foreign': True}
+        write_json(self.campaign / 'config.json', {'pre_receipts': self.links})
+        with self.assertRaisesRegex(ValueError, 'foreign stage receipt binding'):
+            self.verify()
+
+    @toolchain_test
+    def test_receipt_tool_rewrite_cannot_reanchor_itself(self):
+        self.prepare_campaign()
+        target = self.campaign / self.links[0]['path']
+        forged = read_json(target)
+        forged['tool']['executable']['sha256'] = '0' * 64
+        forged['tool_after']['executable']['sha256'] = '0' * 64
+        forged['identity'] = identity({k: v for k, v in forged.items() if k != 'identity'})
+        write_json(target, forged)
+        with self.assertRaisesRegex(ValueError, 'changed, unsafe or missing'):
+            self.verify()
+        self.state['pre_receipts'][self.links[0]['path']] = digest(target)
+        with self.assertRaisesRegex(ValueError, 'anchors differ'):
+            self.verify()  # the frozen config hash is independent of the rewritten run and state anchor
+
+    @toolchain_test
+    def test_links_and_external_retained_paths_cannot_replace_imports(self):
+        path, _ = self.prepare_campaign()
+        target = self.campaign / 'pre-receipts/1'
+        shutil.rmtree(target)
+        target.symlink_to(path, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'changed, unsafe or missing'):
+            self.verify()
+        target.unlink()
+        shutil.copytree(path, target)
+        original = (target / 'receipt.json').read_bytes()
+        (target / 'receipt.json').unlink()
+        (target / 'receipt.json').symlink_to(path / 'receipt.json')
+        with self.assertRaisesRegex(ValueError, 'changed, unsafe or missing'):
+            self.verify()
+        (target / 'receipt.json').unlink()
+        (target / 'receipt.json').write_bytes(original)
+        self.links[0]['path'] = str(path / 'receipt.json')
+        write_json(self.campaign / 'config.json', {'pre_receipts': self.links})
+        with self.assertRaisesRegex(ValueError, 'not campaign-local'):
+            self.verify()
+
+    @toolchain_test
+    def test_missing_retained_output_and_unlisted_import_refuse(self):
+        self.prepare_campaign()
+        output = self.campaign / 'pre-receipts/1/run/design/project/board.txt'
+        original = output.read_bytes()
+        output.unlink()
+        with self.assertRaisesRegex(ValueError, 'outputs changed'):
+            self.verify()
+        output.write_bytes(original)
+        (self.campaign / 'pre-receipts/2').mkdir()
+        with self.assertRaisesRegex(ValueError, 'inventory differs'):
+            self.verify()
+
+    @toolchain_test
+    def test_import_refuses_wrong_hash_binding_and_unadoptable_status(self):
+        path, receipt = self.run_step(self.spec('edit', '1'))
+        link = {'path': str(path / 'receipt.json'), 'sha256': digest(path / 'receipt.json'),
+                'binding': receipt['binding']}
+        with self.assertRaisesRegex(ValueError, 'not adoptable: failed'):
+            stage_receipts.import_pre_receipts(self.root / 'refused', [link], self.root)
+        self.assertFalse((self.root / 'refused').exists())
+        for bad, error in (({**link, 'sha256': '0' * 64}, 'changed, unsafe or missing'),
+                           ({**link, 'binding': {'wrong': 1}}, 'foreign stage receipt binding'),
+                           ({**link, 'binding': {**receipt['binding'], 'receipt_index': True}},
+                            'foreign stage receipt binding')):
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                stage_receipts.import_pre_receipts(self.root / 'refused', [bad], self.root)
+
+    @toolchain_test
+    def test_import_destination_cannot_recurse_into_its_own_source(self):
+        path, receipt = self.run_step(self.spec())
+        link = {'path': str(path / 'receipt.json'), 'sha256': digest(path / 'receipt.json'),
+                'binding': receipt['binding']}
+        with self.assertRaisesRegex(ValueError, 'destination is inside its source'):
+            stage_receipts.import_pre_receipts(path / 'nested', [link], self.root)
+        self.assertFalse((path / 'nested').exists())
+
+    def test_declaration_requires_exact_shape_hash_and_binding(self):
+        valid = {'path': 'receipt/receipt.json', 'sha256': 'a' * 64, 'binding': {'pre_receipt': 1}}
+        for invalid in (None, {}, [None], [dict(valid, extra=True)],
+                        [dict(valid, path='')], [dict(valid, sha256='a')],
+                        [dict(valid, binding={})], [dict(valid, binding='scaffold')]):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                stage_receipts.validate_pre_receipts(invalid)
+        self.assertEqual(stage_receipts.validate_pre_receipts([valid]), [valid])
+
+
 class CoordinatorBoundaryTests(StepFixture):
     """A step tool may plant links and special files in /work; the coordinator never follows them."""
 
@@ -936,6 +1088,74 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(self.root / 'campaign.json', self.root / 'campaign')
         return status, read_json(self.root / 'campaign/state.json')
+
+    def pre_receipt(self):
+        design = self.root / 'initial'
+        shutil.copytree(self.root / 'source', design / 'design')
+        spec = self.step(stage='scaffold', step='write-scaffold',
+                         argv=['/usr/bin/python3', '-c', 'print("scaffold already prepared")'])
+        path = self.root / 'scaffold-receipt'
+        receipt = run_step(path, design, spec, {'pre_receipt': 1})
+        self.assertEqual(receipt['status'], 'completed')
+        link = {'path': 'scaffold-receipt/receipt.json', 'sha256': digest(path / 'receipt.json'),
+                'binding': {'pre_receipt': 1}}
+        self.config['pre_receipts'] = [link]
+        return path
+
+    @toolchain_test
+    def test_pre_receipt_composes_with_implementation_receipts_and_stage_done(self):
+        self.staged_scope()
+        path = self.pre_receipt()
+        status, state = self.campaign([self.step()])
+        self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
+        self.assertIn('stage_done', state)
+        self.assertTrue(state['stage_receipts'])
+        self.assertEqual(state['pre_receipts'], {'pre-receipts/1/receipt.json': digest(path / 'receipt.json')})
+        root = self.root / 'campaign'
+        config = read_json(root / 'config.json')
+        self.assertEqual(config['pre_receipts'][0]['path'], 'pre-receipts/1/receipt.json')
+        self.assertEqual([s['stage'] for s in config['implementation_steps']], ['placement'])
+        shutil.rmtree(path)
+        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+        receipt_path = root / config['pre_receipts'][0]['path']
+        receipt_path.write_bytes(receipt_path.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'pre_receipt changed'):
+            verify_campaign(root)
+
+    @toolchain_test
+    def test_pre_receipt_differing_from_run_one_stops_campaign(self):
+        self.pre_receipt()
+        write_json(self.root / 'source/design.json', {'value': 16})
+        status, state = self.campaign([self.step()])
+        self.assertEqual((status, state['state']), (1, 'incomplete'))
+        self.assertIn('pre_receipt output differs from first capture', state['error'])
+        self.assertFalse((self.root / 'campaign/implementations').exists())
+        with self.assertRaisesRegex(ValueError, 'pre_receipt output differs from first capture'):
+            verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_pre_receipt_does_not_satisfy_a_declared_in_campaign_stage(self):
+        self.staged_scope()
+        write_json(self.root / 'source/design.json', {'value': 5})
+        self.pre_receipt()
+        status, state = self.campaign([self.step()])
+        self.assertEqual((status, state['state']), (1, 'incomplete'))
+        self.assertIn('stage_step_unreceipted', state['error'])
+        self.assertNotIn('stage_done', state)
+        self.assertFalse((self.root / 'campaign/implementations').exists())
+        root = self.root / 'campaign'
+        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        write_json(root / 'state.json', {**state, 'state': 'criteria_satisfied'})
+        with self.assertRaisesRegex(ValueError, 'stage_step_unreceipted'):
+            verify_campaign(root)
+
+    def test_invalid_pre_receipt_refuses_before_campaign_creation(self):
+        for declaration in ([{'path': 'missing/receipt.json', 'sha256': 'a' * 64, 'binding': {'pre_receipt': 1}}],
+                            [{'path': 'missing/receipt.json', 'sha256': None, 'binding': {}}], None):
+            self.config['pre_receipts'] = declaration
+            with self.subTest(declaration=declaration), self.assertRaises(ValueError):
+                self.campaign([])
+            self.assertFalse((self.root / 'campaign').exists())
 
     def staged_scope(self):
         scope = read_json(self.root / 'scope.json')

@@ -105,9 +105,9 @@ class ScaffoldTest(Prepared):
 
     def test_scaffold_files_are_the_adopted_outputs_of_a_retained_scaffold_receipt(self):
         summary = self.record['stage_receipt']
-        receipt_dir = Path(summary['receipt']).parent
+        receipt_dir = (self.rundir / summary['receipt']).parent
         self.assertEqual(receipt_dir, self.rundir / 'scaffold-receipt')
-        receipt = validate_receipt(receipt_dir, binding={'rung1': 'scaffold', 'receipt_index': 1})
+        receipt = validate_receipt(receipt_dir, binding={'pre_receipt': 1})
         self.assertEqual((summary['stage'], summary['step'], summary['status'], summary['exit_code']),
                          ('scaffold', 'write-scaffold', 'completed', 0))
         self.assertEqual(summary['receipt_sha256'], digest(receipt_dir / 'receipt.json'))
@@ -131,27 +131,52 @@ class ScaffoldTest(Prepared):
         base = {'scaffold': {'stage_receipt': self.record['stage_receipt']}}
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp)
-            self.assertEqual(rc.first_capture_binding(base, run)['bound'], False)
+            self.assertEqual(rc.first_capture_binding(base, run, receipt_root=self.rundir)['bound'], False)
             files = dict(self.record['files'], **{'stock/symbols/Device.kicad_sym': 'x'})
             (run / 'candidate.json').write_text(json.dumps({'files': files}))
-            binding = rc.first_capture_binding(base, run)
+            binding = rc.first_capture_binding(base, run, receipt_root=self.rundir)
             self.assertEqual((binding['bound'], binding['differences']), (True, []))
             # A file planted in a scaffold directory before capture is not in the receipt: unbound.
             for planted in ('project/rung1_rc.kicad_dru', 'generation/extra.json', 'requirements/extra.md'):
                 (run / 'candidate.json').write_text(json.dumps({'files': dict(files, **{planted: '1' * 64})}))
-                binding = rc.first_capture_binding(base, run)
+                binding = rc.first_capture_binding(base, run, receipt_root=self.rundir)
                 self.assertEqual((binding['bound'], binding['differences']), (False, [planted]))
             files['project/rung1_rc.kicad_pcb'] = '0' * 64
             (run / 'candidate.json').write_text(json.dumps({'files': files}))
-            binding = rc.first_capture_binding(base, run)
+            binding = rc.first_capture_binding(base, run, receipt_root=self.rundir)
             self.assertEqual((binding['bound'], binding['differences']), (False, ['project/rung1_rc.kicad_pcb']))
             del files['project/rung1_rc.kicad_pcb']
             (run / 'candidate.json').write_text(json.dumps({'files': files}))
-            self.assertFalse(rc.first_capture_binding(base, run)['bound'])
-            self.assertEqual(rc.first_capture_binding({}, run),
+            self.assertFalse(rc.first_capture_binding(base, run, receipt_root=self.rundir)['bound'])
+            self.assertEqual(rc.first_capture_binding({}, run, receipt_root=self.rundir),
                              {'bound': False, 'error': 'no scaffold stage receipt recorded'})
             forged = {'scaffold': {'stage_receipt': dict(self.record['stage_receipt'], receipt_sha256='0' * 64)}}
-            self.assertIn('changed after it was recorded', rc.first_capture_binding(forged, run)['error'])
+            self.assertIn('changed after it was recorded', rc.first_capture_binding(forged, run, receipt_root=self.rundir)['error'])
+
+    def test_scaffold_pre_receipt_is_local_and_rebinds_the_driver_to_the_campaign_copy(self):
+        from agent_ee.stage_receipts import import_pre_receipts
+        summary = self.record['stage_receipt']
+        self.assertEqual(summary['receipt'], 'scaffold-receipt/receipt.json')
+        link = rc.scaffold_pre_receipt(self.record)
+        self.assertEqual(link['binding'], {'pre_receipt': 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'campaign'
+            links = import_pre_receipts(root, [link], self.rundir)
+            run = root / 'runs/1'
+            run.mkdir(parents=True)
+            (run / 'candidate.json').write_text(json.dumps({'files': self.record['files']}))
+            (root / 'config.json').write_text(json.dumps({'pre_receipts': links}))
+            (root / 'state.json').write_text(json.dumps({
+                'history': [{'run': str(run)}], 'pre_receipts': {links[0]['path']: links[0]['sha256']}}))
+            base = {'scaffold': {'stage_receipt': summary}}
+            # The original source is not available here: the imported receipt must suffice.
+            binding = rc.first_capture_binding(base, run, receipt_root=Path(tmp) / 'absent')
+            self.assertTrue(binding['bound'], binding)
+            self.assertEqual(binding['receipt'], 'pre-receipts/1/receipt.json')
+            (root / 'pre-receipts/1/receipt.json').unlink()
+            binding = rc.first_capture_binding(base, run, receipt_root=self.rundir)
+            self.assertFalse(binding['bound'])  # never fall back to the still-valid original
+            self.assertIn('pre_receipt changed', binding['error'])
 
     def test_failed_scaffold_step_keeps_its_receipt_and_writes_no_project(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -331,6 +356,22 @@ class NativeScaffoldTest(Prepared):
         self.assertEqual(loads['erc']['violations'], 0)
         self.assertEqual(loads['netlist']['components'], 0)
         self.assertEqual((loads['drc']['violations'], loads['drc']['schematic_parity']), (0, 0))
+
+    def test_build_declares_scaffold_only_as_a_pre_receipt(self):
+        built = self.rundir / 'built'
+        built.mkdir()
+        route = built / 'route'
+        route.mkdir()
+        base, scope_path, config_path = rc.build(SPEC, built,
+            profile_path=ROOT / 'profiles/claude-baseline.json', kicad_route=route,
+            catalog_checkout=self.rundir.parent / 'catalog')
+        config = json.loads(config_path.read_text())
+        summary = base['scaffold']['stage_receipt']
+        self.assertEqual(config['pre_receipts'], [{'path': 'scaffold-receipt/receipt.json',
+            'sha256': summary['receipt_sha256'], 'binding': {'pre_receipt': 1}}])
+        self.assertEqual(digest(built / config['pre_receipts'][0]['path']), summary['receipt_sha256'])
+        self.assertNotIn('scaffold', [s['stage'] for s in config['implementation_steps']])
+        self.assertNotIn('scaffold', json.loads(scope_path.read_text())['stages']['order'])
 
     def test_checks_only_review_of_the_empty_candidate_witnesses_stage_absence(self):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)

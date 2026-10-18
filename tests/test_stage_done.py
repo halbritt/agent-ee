@@ -14,8 +14,12 @@ from agent_ee.campaign import verify_campaign
 from agent_ee.stage_done import SCHEMA, stage_done, verify_done
 from agent_ee.storage import digest, read_json, write_json
 
-import test_stage_receipts
-from toolchain import toolchain_test
+try:
+    import test_stage_receipts
+    from toolchain import toolchain_test
+except ImportError:  # module-qualified invocation from the repository root
+    from tests import test_stage_receipts
+    from tests.toolchain import toolchain_test
 
 BOARD, SCH, NOTES = 'project/board.kicad_pcb', 'project/board.kicad_sch', 'project/notes.txt'
 
