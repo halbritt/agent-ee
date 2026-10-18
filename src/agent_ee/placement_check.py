@@ -217,5 +217,38 @@ def check_placement(ctx):
                           summary=f"{criterion}: pad-centre MST proxy {result['totals']['manhattan_nm'] / 10**6} mm "
                                   'Manhattan; no declared maximum')
         return
+    if status == 'defect':
+        findings = gate_findings(ctx.cid, result['defects'])
+        if findings:
+            ctx.result['details']['gate_findings'] = findings
     ctx.result.update(execution='ok', outcome='defect' if status == 'defect' else 'pass',
                       summary=f"{criterion}: {len(result['defects'])} proved violation(s)")
+
+
+def gate_findings(cid, defects):
+    """Findings per proved defect. Only connector-edge violations carry a suggested_fix, taken
+    from the owner declaration that the predicate grades against; fixes stay advisory."""
+    from .stages import project_findings
+    entries = []
+    for defect in defects:
+        if 'violations' in defect:
+            entries += [(defect.get('reference'), f"connector_{v.get('kind')}", connector_fix(defect, v))
+                        for v in defect['violations']]
+        elif 'refs' in defect:
+            refs = defect['refs']
+            entries.append(('+'.join(sorted(refs)) if all(isinstance(r, str) and r for r in refs) else None,
+                            defect.get('kind')))
+        else:
+            entries.append((defect.get('ref', defect.get('metric')), defect.get('kind')))
+    return project_findings(cid, entries)
+
+
+def connector_fix(defect, violation):
+    if violation.get('kind') == 'off_declared_edge_position':
+        x, y = defect['measured']['anchor_mm']
+        return {'op': 'move', 'params': {'x_mm': x, 'y_mm': y}}
+    if violation.get('kind') == 'rotation':
+        return {'op': 'rotate', 'params': {'rotation_deg': violation['declared_deg']}}
+    if violation.get('kind') == 'side':
+        return {'op': 'flip', 'params': {'side': violation['declared']}}
+    return None

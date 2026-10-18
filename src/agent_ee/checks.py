@@ -266,12 +266,31 @@ def check_erc(ctx):
     })
     ctx.result["execution"] = "ok"
     if violations:
+        findings = erc_findings(ctx.cid, sheets)
+        if findings:
+            ctx.result["details"]["gate_findings"] = findings
         ctx.result["outcome"] = "defect"
         ctx.result["summary"] = (f"ERC ran on {len(sheets)} sheet instance(s) and reported "
                                  f"{len(violations)} violation(s): {ctx.result['details']['by_severity']}")
     else:
         ctx.result["outcome"] = "pass"
         ctx.result["summary"] = f"ERC ran on {len(sheets)} sheet instance(s) with zero violations"
+
+
+def erc_findings(cid, sheets):
+    """Native violation identities: sheet path plus item descriptions, and the ERC type.
+
+    No suggested_fix: the native report carries no machine-applicable repair.
+    """
+    from .stages import project_findings
+    identities = []
+    for sheet in sheets:
+        for v in sheet.get("violations", []):
+            items = [i.get("description") if isinstance(i, dict) else None for i in v.get("items") or [None]]
+            if not isinstance(sheet.get("path"), str) or any(not isinstance(d, str) or not d.strip() for d in items):
+                return None
+            identities.append((sheet["path"] + " " + "; ".join(sorted(items)), v.get("type")))
+    return project_findings(cid, identities)
 
 
 # One native DRC execution; a projection only changes which raw categories are

@@ -147,6 +147,11 @@ No check parameters are currently interpreted. The JSON report must contain a
 `sheets` list covering the expected number of instances. Violations are counted
 across sheets, grouped by severity/type, and retained in `erc.json`; ignored
 check keys are reported. Any returned violation makes the check `defect`.
+A defect also carries [`details.gate_findings`](staged-campaign.md#progress-and-repair):
+one identity per distinct violation, with `entity` the sheet path plus the sorted
+native item descriptions and `kind` the native violation type. No `suggested_fix`
+is attached; if any violation lacks item descriptions or a type, the check
+omits the list rather than report a partial one.
 
 An undriven power-input message describes the native symbol/connectivity rule.
 It does not alone establish that a physical rail has no supply. A reviewer must
@@ -591,6 +596,12 @@ probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
 authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
 for the acceptance tests and remaining campaign and fabrication-limit gaps.
+A `defect` carries `details.gate_findings`, one identity per proved defect: the
+reference (or `+`-joined overlapping references, or ratsnest metric) and the
+defect kind; connector-edge violations use `connector_<kind>`. Only connector-edge
+findings carry a `suggested_fix`, copied from the owner declaration the
+predicate grades: `move` to the declared anchor, `rotate` to the declared
+rotation, or `flip` to the declared side. Hints are advisory and never applied.
 
 ## Board envelope predicates
 

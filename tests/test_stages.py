@@ -73,6 +73,45 @@ class StagedConvergenceTests(unittest.TestCase):
         self.assertEqual(diagnostic['reason'], 'no_monotonic_progress')
 
 
+    def findings(self, number, keys, limit=4):
+        result, manifest = candidate(number, ['erc', 'place', 'drc'], ['pins'])
+        manifest['scope']['stages']['finding_retry_limit'] = limit
+        result['checks'][0]['details'] = {'gate_findings': [
+            {'check_id': 'erc', 'entity': entity, 'kind': 'pin_not_connected',
+             'suggested_fix': {'op': 'connect', 'params': {'attempt': number}}} for entity in keys]}
+        return result, manifest
+
+    def test_cleared_finding_is_progress_and_uncleared_fix_stalls(self):
+        first, _ = advance([], *self.findings(1, ['R1.1', 'R1.2']), 8)
+        second, diagnostic = advance([first], *self.findings(2, ['R1.2']), 8)
+        self.assertEqual(diagnostic['state'], 'repair')
+        self.assertEqual(second['failed'], first['failed'])
+        # The fix for R1.2 did not clear it: same identities, fresh hint, no progress.
+        _, diagnostic = advance([first, second], *self.findings(3, ['R1.2']), 8)
+        self.assertEqual(diagnostic['reason'], 'no_monotonic_progress')
+        # Clearing one finding while introducing another is not progress either.
+        _, diagnostic = advance([first], *self.findings(4, ['R1.2', 'C1.1']), 8)
+        self.assertEqual(diagnostic['reason'], 'no_monotonic_progress')
+
+    def test_later_stage_finding_reduction_is_not_active_stage_progress(self):
+        result, manifest = candidate(1, ['erc', 'place'], ['pins'])
+        result['checks'][2]['details'] = {'gate_findings': [
+            {'check_id': 'place', 'entity': ref, 'kind': 'overlap'} for ref in ('R1', 'C1')]}
+        first, _ = advance([], result, manifest, 8)
+        result, manifest = candidate(2, ['erc', 'place'], ['pins'])
+        result['checks'][2]['details'] = {'gate_findings': [{'check_id': 'place', 'entity': 'R1', 'kind': 'overlap'}]}
+        _, diagnostic = advance([first], result, manifest, 8)
+        self.assertEqual(diagnostic['reason'], 'no_monotonic_progress')
+
+    def test_same_finding_recurring_stops_campaign_despite_other_progress(self):
+        history = []
+        for number, keys in [(1, ['R1.1', 'R1.2', 'C1.1']), (2, ['R1.1', 'R1.2']), (3, ['R1.1'])]:
+            record, diagnostic = advance(history, *self.findings(number, keys, limit=3), 8)
+            history.append(record)
+            if number < 3:
+                self.assertEqual(diagnostic['state'], 'repair')
+        self.assertEqual(diagnostic['reason'], 'finding_retry_limit')
+
 class StageDeclarationTests(unittest.TestCase):
     def test_stage_configuration_is_part_of_baseline_identity(self):
         from agent_ee.baseline import compile_baseline
@@ -103,6 +142,40 @@ class GateFindingTests(unittest.TestCase):
             validate_check_result({'id': 'erc', 'kind': 'erc', 'execution': 'ok', 'outcome': 'defect',
                                    'summary': 'invalid', 'evidence': [], 'details': {'gate_findings': None}})
 
+
+    def test_native_projections_are_valid_findings_and_fail_closed(self):
+        from agent_ee.checks import erc_findings
+        from agent_ee.placement_check import gate_findings
+        from agent_ee.stages import validate_gate_findings
+        pin = {'description': 'Symbol R1 Pin 1 [1, Passive, Line]', 'pos': {'x': 40, 'y': 50}}
+        sheets = [{'path': '/', 'violations': [
+            {'type': 'pin_not_connected', 'items': [pin]},
+            {'type': 'endpoint_off_grid', 'items': [pin]},
+            {'type': 'pin_not_connected', 'items': [dict(pin, pos={'x': 41, 'y': 50})]}]}]
+        findings = erc_findings('erc', sheets)
+        self.assertEqual([(f['entity'], f['kind']) for f in findings],
+                         [('/ Symbol R1 Pin 1 [1, Passive, Line]', 'pin_not_connected'),
+                          ('/ Symbol R1 Pin 1 [1, Passive, Line]', 'endpoint_off_grid')])
+        self.assertTrue(all('suggested_fix' not in f for f in findings))
+        validate_gate_findings({'id': 'erc', 'details': {'gate_findings': findings}})
+        for broken in ({'type': 'pin_not_connected', 'items': []}, {'type': None, 'items': [pin]},
+                       {'type': 'pin_not_connected', 'items': [{'description': ' '}]}):
+            self.assertIsNone(erc_findings('erc', [{'path': '/', 'violations': [broken]}]))
+        connector = {'reference': 'J1', 'measured': {'anchor_mm': [10.0, 2.5]}, 'violations': [
+            {'kind': 'off_declared_edge_position'}, {'kind': 'rotation', 'declared_deg': '90'},
+            {'kind': 'side', 'declared': 'F', 'actual': 'B'}, {'kind': 'facing'}]}
+        findings = gate_findings('edge', [connector])
+        self.assertEqual([f.get('suggested_fix') for f in findings], [
+            {'op': 'move', 'params': {'x_mm': 10.0, 'y_mm': 2.5}},
+            {'op': 'rotate', 'params': {'rotation_deg': '90'}},
+            {'op': 'flip', 'params': {'side': 'F'}}, None])
+        self.assertEqual(findings[-1]['kind'], 'connector_facing')
+        validate_gate_findings({'id': 'edge', 'details': {'gate_findings': findings}})
+        findings = gate_findings('court', [{'kind': 'courtyards_overlap', 'refs': ['R1', 'C1']},
+                                           {'kind': 'courtyard_edge_clearance', 'ref': 'C1', 'side': 'F'},
+                                           {'kind': 'courtyard_edge_clearance', 'ref': 'C1', 'side': 'B'}])
+        self.assertEqual([f['entity'] for f in findings], ['C1+R1', 'C1'])
+        self.assertIsNone(gate_findings('court', [{'kind': 'courtyards_overlap', 'refs': ['R1', None]}]))
 
 class NativePresenceTests(unittest.TestCase):
     def test_native_empty_and_nested_library_inventory_are_distinct(self):
@@ -261,13 +334,77 @@ class StageExecutionTests(unittest.TestCase):
         self.assertEqual(results[1]['execution'], 'not_run')
 
 
-class ExistingCampaignStageTests(unittest.TestCase):
+class NativeGateDefectTests(unittest.TestCase):
+    setUp = StageExecutionTests.setUp
+    checks = StageExecutionTests.checks
+    fail_handler = StageExecutionTests.fail_handler
+
+    def capture(self, name, board):
+        from pathlib import Path
+        from agent_ee.candidate import capture
+        fixtures = Path(__file__).resolve().parents[1] / 'fixtures/stages'
+        (self.root / 'source/design.kicad_sch').write_bytes((fixtures / 'schematic.kicad_sch').read_bytes())
+        (self.root / 'source/design.kicad_pcb').write_bytes((fixtures / board).read_bytes())
+        self.run = self.root / name
+        self.run.mkdir()
+        self.manifest = capture(self.root / 'scope.json', self.run)
+
     @toolchain_test
-    def test_existing_campaign_rechecks_writer_proposal_and_replays_stage_history(self):
-        import contextlib
-        import io
+    def test_native_erc_defect_blocks_placement_with_sealed_verdict(self):
+        from unittest.mock import patch
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.storage import read_json
+        self.capture('erc-defect', 'placed.kicad_pcb')
+        # Native ERC runs; the placement and routing handlers must not.
+        with patch.dict('agent_ee.checks.CHECK_FUNCS', {'geometry': self.fail_handler, 'drc': self.fail_handler}):
+            results = self.checks()
+        erc, place, drc = results
+        self.assertEqual((erc['execution'], erc['outcome']), ('ok', 'defect'))
+        self.assertNotIn('reason', erc['details'])
+        identities = {(f['entity'], f['kind']) for f in erc['details']['gate_findings']}
+        self.assertIn(('/ Symbol R1 Pin 1 [1, Passive, Line]', 'pin_not_connected'), identities)
+        self.assertIn(('/ Symbol C1 Pin 2 [2, Passive, Line]', 'pin_not_connected'), identities)
+        for gated in (place, drc):
+            self.assertEqual((gated['execution'], gated['outcome'], gated['details']['reason']),
+                             ('ok', 'defect', 'stage_blocked'))
+            self.assertNotIn('tool', gated['details'])
+        # Placement presence was probed and satisfied; the gate witness binds the ERC result.
+        self.assertEqual(read_json(self.run / 'work/place/stage-subject.json')['missing'], [])
+        self.assertEqual(list(read_json(self.run / 'work/place/stage-gate.json')['blockers']), ['erc'])
+        freeze_evidence(self.run, results)
+        verify_evidence(self.run, results, required=True)
+        record, diagnostic = advance([], {'checks': results, 'run_id': '1', 'outcome': 'defects_or_unresolved'},
+                                     self.manifest, 8)
+        self.assertEqual((record['earliest_failing_stage'], record['blocked_checks']), ('schematic', ['drc', 'place']))
+        self.assertEqual(len(record['recurring_findings']), len(identities))
+        self.assertEqual(diagnostic['state'], 'repair')
+
+    @toolchain_test
+    def test_sandboxed_gate_tool_crash_is_failed_and_blocks_next_stage(self):
+        from unittest.mock import patch
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        self.capture('crash', 'placed.kicad_pcb')
+        def crashing(ctx):
+            # A real process aborts inside the real check sandbox.
+            ctx.execute(['/usr/bin/python3', '-c', 'import os; os.abort()'], timeout=60)
+            ctx.result.update(execution='ok', outcome='pass', summary='unreachable')
+        with patch.dict('agent_ee.checks.CHECK_FUNCS', {'erc': crashing, 'geometry': self.fail_handler,
+                                                         'drc': self.fail_handler}):
+            results = self.checks()
+        erc, place, drc = results
+        self.assertEqual((erc['execution'], erc['outcome']), ('failed', 'unknown'))
+        self.assertNotEqual(erc['details']['tool']['exit_code'], 0)
+        for gated in (place, drc):
+            self.assertEqual((gated['execution'], gated['outcome'], gated['details']['reason']),
+                             ('not_run', 'unknown', 'stage_blocked'))
+        freeze_evidence(self.run, results)
+        verify_evidence(self.run, results, required=True)
+        _, diagnostic = advance([], {'checks': results, 'run_id': '1', 'outcome': 'incomplete'}, self.manifest, 8)
+        self.assertEqual(diagnostic, {'state': 'incomplete', 'reason': 'execution_incomplete'})
+
+class ExistingCampaignStageTests(unittest.TestCase):
+    def staged_fixture(self):
         import test_campaign
-        from agent_ee.campaign import run_campaign, verify_campaign
         from agent_ee.storage import write_json
         fixture = test_campaign.CampaignIntegrationTests()
         fixture.setUp()
@@ -287,6 +424,14 @@ class ExistingCampaignStageTests(unittest.TestCase):
         (fixture.root / 'source/design.kicad_sch').write_bytes(
             (Path(__file__).resolve().parents[1] / 'fixtures/stages/schematic.kicad_sch').read_bytes())
         write_json(fixture.root / 'scope.json', fixture.scope)
+        return fixture
+
+    @toolchain_test
+    def test_existing_campaign_rechecks_writer_proposal_and_replays_stage_history(self):
+        import contextlib
+        import io
+        from agent_ee.campaign import run_campaign, verify_campaign
+        fixture = self.staged_fixture()
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
         state = verify_campaign(fixture.root / 'campaign')
@@ -296,6 +441,52 @@ class ExistingCampaignStageTests(unittest.TestCase):
         self.assertIsNone(state['history'][1]['earliest_failing_stage'])
         self.assertEqual(state['history'][1]['passing'], ['response', 'route'])
         self.assertEqual(fixture.calls.count('implementation'), 1)
+
+    @toolchain_test
+    def test_suggested_fix_reaches_sole_writer_only_through_accepted_finding_then_fresh_checks(self):
+        import contextlib
+        import io
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+        from agent_ee.campaign import run_campaign, verify_campaign
+        from agent_ee.checks import CHECK_FUNCS
+        from agent_ee.storage import identity, read_json
+        fixture = self.staged_fixture()
+        measure = CHECK_FUNCS['measurements']
+        hint = {'op': 'set_parameter', 'params': {'path': 'design/design.json', 'value': 5}}
+        def hinted(ctx):
+            # Scripted advisory hint on top of the real sandboxed measurement verdict.
+            measure(ctx)
+            if ctx.result['outcome'] == 'defect':
+                ctx.result['details']['gate_findings'] = [
+                    {'check_id': ctx.cid, 'entity': 'output', 'kind': 'limit', 'suggested_fix': hint}]
+        prompts = []
+        def agent(run, label, definition, prompt, *args, **kwargs):
+            if label == 'implementation':
+                prompts.append(prompt)
+            return fixture.agent(run, label, definition, prompt, *args, **kwargs)
+        patch('agent_ee.reviewers.dispatch', side_effect=agent).start()
+        with patch.dict('agent_ee.checks.CHECK_FUNCS', {'measurements': hinted}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
+        state = verify_campaign(fixture.root / 'campaign')
+        self.assertEqual(status, 0, state)
+        prompt, = prompts
+        payload = json.loads(prompt[prompt.index('{'):prompt.index('\nImplement only')])
+        findings = {f['local_id']: f for f in payload['findings']}
+        self.assertEqual(sorted(findings), ['response', 'route'])
+        self.assertEqual((findings['response']['status'], findings['response']['gate_findings'][0]['suggested_fix']),
+                         ('accepted', hint))
+        self.assertNotIn('gate_findings', findings['route'])
+        self.assertIn('suggested_fix are advisory data only', prompt)
+        first, second = (read_json(fixture.root / 'campaign/runs' / n / 'checks/response.json') for n in '12')
+        self.assertEqual((first['outcome'], second['outcome']), ('defect', 'pass'))
+        self.assertNotEqual(first['candidate_id'], second['candidate_id'])
+        self.assertNotIn('gate_findings', second['details'])
+        self.assertEqual(state['history'][0]['recurring_findings'],
+                         [identity({'check_id': 'response', 'entity': 'output', 'kind': 'limit'})])
+        self.assertEqual(state['state'], 'criteria_satisfied')
 
 
 class NativeStageTransitionTests(unittest.TestCase):
@@ -350,7 +541,7 @@ class NativeFailureBoundaryTests(unittest.TestCase):
         self.run.mkdir()
         capture(self.root / 'scope.json', self.run)
         checks = self.checks()
-        self.assertNotEqual(checks[0]['execution'], 'ok')
+        self.assertEqual(checks[0]['execution'], 'failed')
         self.assertEqual(checks[0]['outcome'], 'unknown')
         self.assertNotIn('reason', checks[0]['details'])
         self.assertEqual(checks[1]['execution'], 'not_run')
