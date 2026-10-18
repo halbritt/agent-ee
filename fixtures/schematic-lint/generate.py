@@ -103,7 +103,7 @@ def sheet(name, file, x, y, w, h, pins=(), page='2'):
     return node
 
 
-def schematic(items, file_uuid=ROOT_UUID, title=None, lib_names=None):
+def schematic(items, file_uuid=ROOT_UUID, title=None, lib_names=None, extra_libs=()):
     """Serialised KiCad 10 schematic bytes; ``title`` maps title/date/rev/company."""
     title = {'title': 'Lint fixture', 'date': '2026-10-17', 'rev': 'A'} if title is None else title
     root = ['kicad_sch', ['version', '20260306'], ['generator', Q('eeschema')], ['generator_version', Q('10.0')],
@@ -114,11 +114,24 @@ def schematic(items, file_uuid=ROOT_UUID, title=None, lib_names=None):
             block.append([key, Q(title[key])])
     if len(block) > 1:
         root.append(block)
-    root.append(['lib_symbols', *embedded(lib_names)])
+    root.append(['lib_symbols', *embedded(lib_names), *extra_libs])
     root += list(items)
     root.append(['sheet_instances', ['path', Q('/'), ['page', Q('1')]]])
     root.append(['embedded_fonts', 'no'])
     return ('\n'.join(_dump(root)) + '\n').encode()
+
+
+def hole():
+    """Owned pinless body (a mounting-hole outline), embedded only in the ``pinless`` variant."""
+    props = [['property', Q(k), Q(v), ['at', '0', y, '0'], *([['hide', 'yes']] if hide else []),
+              ['effects', ['font', ['size', '1.27', '1.27']]]]
+             for k, v, y, hide in (('Reference', 'H', '2.54', False), ('Value', 'Hole', '-2.54', False),
+                                   ('Footprint', '', '0', True), ('Datasheet', '', '0', True),
+                                   ('Description', 'Owned pinless mounting hole', '0', True))]
+    body = ['symbol', Q('Hole_0_1'), ['circle', ['center', '0', '0'], ['radius', '1.27'],
+            ['stroke', ['width', '0.254'], ['type', 'default']], ['fill', ['type', 'none']]]]
+    return ['symbol', Q('Lint:Hole'), ['pin_names', ['offset', '0']], ['exclude_from_sim', 'no'],
+            ['in_bom', 'yes'], ['on_board', 'yes'], *props, body]
 
 
 def child_path(name):
@@ -249,11 +262,16 @@ def design(variant='control'):
                   label('label', 'SENSE_R', 127, 105.41, 'sense-r8')]
     if variant == 'wire-overlap':
         items.append(wire((50.8, 55.88), (50.8, 60.96), 'mid-overlap'))
+    if variant == 'pinless':
+        # KiCad exports H1 with a <libpart> that has no <pins>: the netlist
+        # producer admits it, the lint's strict native inventory does not.
+        items.append(symbol('H1', 'Lint:Hole', 25.4, 25.4, value='Hole', pins=()))
     title = {'title': 'Lint fixture', 'date': '2026-10-17', 'rev': ''} if variant == 'no-revision' else None
     names = None
     if variant == 'unresolved':
         names = [n for n in ('R', 'C', 'LDO', 'ASYM', '+3V3', 'VCC_3V3', 'GND')]
-    return {'lint.kicad_sch': schematic(items, title=title, lib_names=names),
+    extra = [hole()] if variant == 'pinless' else []
+    return {'lint.kicad_sch': schematic(items, title=title, lib_names=names, extra_libs=extra),
             'power.kicad_sch': child(rail_label=variant == 'rail-label')}
 
 

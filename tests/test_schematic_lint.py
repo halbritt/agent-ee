@@ -15,7 +15,7 @@ from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import run_checks
 from agent_ee.executor import execute
-from agent_ee.schematic_lint import RULES, _Lint, capability, lint, load_sheets, profile
+from agent_ee.schematic_lint import NATIVE_RULES, RULES, _Lint, capability, lint, load_sheets, profile
 from agent_ee.storage import read_json, write_json
 from toolchain import require_toolchain
 
@@ -270,13 +270,40 @@ class NativeLintTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
         self.assertEqual(self.lint_result('control', params)['outcome'], 'pass')
 
-    def test_unresolved_symbol_and_unknown_rule_never_pass(self):
-        result = self.lint_result('unresolved')
+    def test_unresolved_symbol_never_passes(self):
+        # KiCad exports a netlist without D1-D3; the producer refuses it, so the
+        # lint never evaluates (its own D1-D3 gaps: OfflineRuleTests).
+        params = dict(PARAMS, rules=dict(RULES, **{'led-chain-order/1': 'defect'}))
+        run, results = self.run_variant('unresolved', params)
+        netlist, result = results['netlist'], results['lint']
+        self.assertEqual((netlist['execution'], netlist['outcome']), ('failed', 'unknown'), netlist)
+        self.assertEqual(netlist['details']['missing_refs'], ['D1', 'D2', 'D3'])
+        self.assertEqual([(g['references'], g['lib_id'], g['problem']) for g in netlist['details']['hierarchy_gaps']],
+                         [([ref], 'Lint:LED', 'unexplained_omission') for ref in ('D1', 'D2', 'D3')])
+        self.assertFalse((run / 'work/netlist/connectivity.json').exists())
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'), result)
+        self.assertIn('netlist prerequisite unverified', result['summary'])
+        self.assertEqual((result['evidence'], result['details']), ([], {}))
+        self.assertFalse((run / 'work/lint/lint.json').exists())
+
+    def test_refused_native_inventory_is_missing_coverage_not_pass(self):
+        # A pinless H1 passes the netlist producer's identity audit, but the
+        # lint's strict inventory refuses its <pins>-less libpart.
+        params = dict(PARAMS, rules=dict(RULES, **{'led-chain-order/1': 'defect'}))
+        run, results = self.run_variant('pinless', params)
+        netlist, result = results['netlist'], results['lint']
+        self.assertEqual((netlist['execution'], netlist['outcome']), ('ok', 'info'), netlist)
+        self.assertIn('H1', netlist['details']['refs'])
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'unknown'), result)
-        gaps = result['details']['coverage']
-        self.assertEqual(sorted(g['reference'] for g in gaps if 'reference' in g), ['D1', 'D2', 'D3'])
         self.assertEqual(result['details']['native_inventory'], 'refused')
-        self.assertTrue(any('native netlist inventory unusable' in g['reason'] for g in gaps))
+        self.assertEqual(result['details']['findings'], [])
+        self.assertEqual(result['details']['coverage'], [dict(
+            sheet='/', sheet_path='/', file='lint.kicad_sch', rules=sorted(NATIVE_RULES),
+            reason='native netlist inventory unusable: expected one native pins')])
+        self.assertEqual(read_json(run / 'work/lint/lint.json')['native_inventory'], 'refused')
+        self.assertIn('work/lint/lint.json', result['evidence'])
+
+    def test_unknown_rule_never_passes(self):
         unknown = self.lint_result('control', dict(PARAMS, rules={'no-such-rule/1': 'warning'}))
         self.assertEqual((unknown['execution'], unknown['outcome']), ('unsupported', 'unknown'), unknown)
 

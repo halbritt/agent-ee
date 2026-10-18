@@ -348,9 +348,23 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
         self.assertEqual(status, 1, state)
         self.assertIn('implementation', calls, dict(state=state['state'], history=state['history'],
             adjudication=read_json(self.root / 'campaign/runs/1/adjudicator-execution.json')))
-        # AGENTEE-115 checks the proposal invariant inside the bounded call and names the refusal there.
+        # The writer's inventory violation is the structured call's invariant: a
+        # recorded, retained refusal with no resubmission and no proposal.
+        self.assertEqual(calls.count('implementation'), 1)
         self.assertEqual(state['error'], 'ValueError: implementation execution failed; no provider fallback: '
                                          'implementation changed the captured file inventory')
+        work = self.root / 'campaign/implementations/1'
+        record = read_json(work / 'implementation-execution.json')
+        self.assertEqual((record['execution'], record['error'], record['resubmissions_used']),
+                         ('refused', 'implementation changed the captured file inventory', 0))
+        self.assertEqual([(a['execution'], a['error']) for a in record['attempts']],
+                         [('refused', 'implementation changed the captured file inventory')])
+        archive = work / record['attempts'][0]['path']
+        self.assertEqual(read_json(archive / 'execution.json')['execution'], 'refused')
+        self.assertEqual(read_json(archive / 'response.json'), dict(summary='scripted inventory violation'))
+        self.assertEqual((archive / 'review-work/implementation/design/project/added.txt').read_text(), 'test refusal')
+        self.assertEqual(state['implementation_records'], {'1': digest(work / 'implementation-execution.json')})
+        self.assertFalse((work / 'proposal.scope.json').exists())
         self.assertEqual([c['execution'] for c in result['checks']], ['ok', 'ok'])
         self.assertEqual([c['details']['reason'] for c in result['checks']], ['stage_not_reached', 'stage_not_reached'])
         self.assertTrue(result['adjudicated'])
