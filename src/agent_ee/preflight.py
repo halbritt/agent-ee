@@ -9,6 +9,36 @@ from .executor import execute
 from .storage import digest, identity, read_json, write_json
 
 
+# Runtime entries each harness launch mounts; every other entry is the native tool set.
+HARNESS_RUNTIME = {'claude': ('claude',), 'codex': ('codex', 'codex_tool_host'), 'agy': ('agy',)}
+
+
+def profile_definitions(scope):
+    """Definitions a run's profile launches: reviewers, then the adjudicator."""
+    selected = scope.get('review_profile') or {}
+    return [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
+            for d in [*selected.get('reviewers', []), *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
+
+
+def runtime_drift(expected, observed, definitions):
+    """Classify runtime differences; only harnesses no definition invokes become observations.
+
+    Native tools and unknown entries always gate. Without definitions, or with
+    an unrecognized harness, every harness is treated as used."""
+    names = {name for entries in HARNESS_RUNTIME.values() for name in entries}
+    if definitions is None or any(not isinstance(d, dict) or d.get('harness') not in HARNESS_RUNTIME
+                                  for d in definitions):
+        used = names
+    else:
+        used = {name for d in definitions for name in HARNESS_RUNTIME[d['harness']]}
+    harnesses = {name: 'used' if name in used else 'unused' for name in sorted(names)}
+    changed = sorted(k for k in expected.keys() | observed.keys() if expected.get(k) != observed.get(k))
+    return {'harnesses': harnesses,
+            'gated': [k for k in changed if harnesses.get(k, 'used') == 'used'],
+            'unused_changes': [{'name': k, 'expected': expected.get(k), 'observed': observed.get(k)}
+                               for k in changed if harnesses.get(k) == 'unused']}
+
+
 def capture_expectation(result, manifest, definitions, *, inputs=None):
     """Capture once before checks/edits; callers supply the original runtime."""
     from .baseline import compile_baseline
@@ -98,6 +128,10 @@ def guard(run, role, definition, context, cancellation=None):
             if time.monotonic() >= context['deadline']:
                 raise ValueError('deadline_exhausted')
         observed['runtime_files'] = runtime_files(checkpoint=checkpoint)
+        drift = runtime_drift(expected['runtime_files'], observed['runtime_files'], expected['definitions'])
+        # Unused-harness changes are provenance; the launch still pins every used entry.
+        receipt['runtime_classification'] = drift['harnesses']
+        receipt['unused_runtime_changes'] = drift['unused_changes']
         harness = definition['harness']
         executable = observed['runtime_files'][harness]['path']
         required = [harness, *expected['required_runtime']]
@@ -106,7 +140,8 @@ def guard(run, role, definition, context, cancellation=None):
         missing = [name for name in required if not observed['runtime_files'].get(name, {}).get('sha256')]
         if missing:
             raise ValueError('missing_binary:' + ','.join(missing))
-        if observed['runtime_files'] != expected['runtime_files']:
+        if drift['gated']:
+            receipt['runtime_drift'] = drift['gated']
             raise ValueError('runtime_drift')
         if harness != 'claude':
             with Path(executable).open('rb') as binary:
@@ -205,7 +240,13 @@ def verify_receipt(run, record, expected, role, boundary):
         if receipt['reasons']:
             raise ValueError('successful preflight contains refusal reasons')
         observed = receipt.get('observed', {})
-        if any(observed.get(k) != expected[k] for k in ('policy_files', 'runtime_files', 'declared_tools', 'declared_installations')):
+        if any(observed.get(k) != expected[k] for k in ('policy_files', 'declared_tools', 'declared_installations')):
+            raise ValueError('preflight observation mismatch')
+        if not isinstance(observed.get('runtime_files'), dict):
+            raise ValueError('preflight observation mismatch')
+        drift = runtime_drift(expected['runtime_files'], observed['runtime_files'], expected['definitions'])
+        if (drift['gated'] or receipt.get('runtime_classification') != drift['harnesses'] or
+                receipt.get('unused_runtime_changes') != drift['unused_changes']):
             raise ValueError('preflight observation mismatch')
         probe = receipt.get('probe', {})
         if not isinstance(probe, dict) or probe != read_json(path.parent / 'probe/execution.json'):
@@ -228,11 +269,8 @@ def verify_calls(run, result, manifest):
         return
     expected = result['launch_expectation']
     validate_expectation(expected)
-    selected = manifest['scope'].get('review_profile', {})
-    definitions = [{**d, 'tool_mode': selected.get('tool_mode', 'investigate')}
-                   for d in [*selected.get('reviewers', []),
-                             *([selected['adjudicator']] if selected.get('adjudicator') else [])]]
-    if expected != capture_expectation(result, manifest, definitions, inputs=Path(run) / 'inputs'):
+    if expected != capture_expectation(result, manifest, profile_definitions(manifest['scope']),
+                                       inputs=Path(run) / 'inputs'):
         raise ValueError('launch expectation differs from captured run')
     invocation_ids = set()
     for record in result.get('review_executions', []):

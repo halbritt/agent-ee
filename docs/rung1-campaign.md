@@ -157,7 +157,10 @@ snapshot at 08179cd (KRT v0.23.1). The run stopped early with the state
   replaced at 20:47:51Z. The adjudicator was not run. The review stopped with
   `implementation or tool runtime changed during review; rerun required`, and
   the campaign stopped with `tool runtime changed; rerun under the current
-  tools`. `verify-campaign` exits 2 for the same reason.
+  tools`. `verify-campaign` exits 2 for the same reason. AGENTEE-112 now
+  records an unused harness change as an observation, and the review
+  continues. The retained run was made under the earlier policy, so it still
+  fails verification with `review implementation changed`.
 - The fab step consumed the board and schematic of the iteration-2 candidate.
   It made 15 files, and the BOM and CPL list C1 and R1, with J1 excluded as
   `not_assembled`. That candidate was not accepted.

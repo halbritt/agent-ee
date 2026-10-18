@@ -317,13 +317,13 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
         return 1
 
 
-def verify_campaign(root):
+def verify_campaign(root, *, observations=None):
     root = Path(root).resolve()
     with writer_lock(root):
-        return verify_campaign_records(root)
+        return verify_campaign_records(root, observations=observations)
 
 
-def verify_campaign_records(root):
+def verify_campaign_records(root, *, observations=None):
     """Existing integrity decisions; caller establishes coherent reads if needed."""
     from .cli import verify
 
@@ -362,7 +362,7 @@ def verify_campaign_records(root):
         if (str(run) != stored["run"] or str(snapshot) != stored["result_snapshot"] or
                 digest(snapshot) != stored["result_sha256"]):
             raise ValueError("campaign history result link changed")
-        current = verify(run, current_source=False)
+        current = verify(run, current_source=False, observations=observations)
         result = read_json(snapshot)
         if current != result:
             # Bench registration appends facts without rewriting the original

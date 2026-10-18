@@ -432,6 +432,90 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(result['outcome'], 'incomplete')
         self.assertTrue(any('runtime_drift' in record.get('error', '') for record in result['review_executions']))
 
+    def harness_runtime(self, name):
+        """Pinned runtime with every harness present, and the same runtime after a host update of name."""
+        base = {entry: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+                for entry in ('codex', 'codex_tool_host', 'claude', 'agy', 'bwrap', '/usr/bin/python3')}
+        return base, {**base, name: {'path': '/usr/bin/true', 'sha256': 'replaced-by-host-update'}}
+
+    def review_with_update_after_checks(self, name):
+        from agent_ee.checks import run_checks as real_checks
+        base, updated = self.harness_runtime(name)
+        current = {'runtime': base}
+        patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: current['runtime']).start()
+        def checks(*args, **kwargs):
+            result = real_checks(*args, **kwargs)
+            current['runtime'] = updated
+            return result
+        with patch('agent_ee.checks.run_checks', side_effect=checks), contextlib.redirect_stdout(io.StringIO()):
+            run_review(self.root / 'scope.json', self.root / 'run', 30)
+        return base, updated, read_json(self.root / 'run/result.json')
+
+    @toolchain_test
+    def test_unused_harness_update_after_checks_is_observed_and_review_completes(self):
+        from agent_ee.cli import main
+        base, updated, result = self.review_with_update_after_checks('agy')
+        self.assertCountEqual(self.calls, ['circuit', 'physical', 'adjudicator'])
+        self.assertEqual(result['state'], 'complete', result.get('error'))
+        self.assertTrue(result['adjudicated'])
+        self.assertEqual(result['runtime_observations'],
+                         [{'name': 'agy', 'expected': base['agy'], 'observed': updated['agy']}])
+        for role in ('circuit', 'physical', 'adjudicator'):
+            receipt = read_json(self.root / f'run/review-work/{role}/preflight/receipt.json')
+            self.assertEqual(receipt['result'], 'ok')
+            self.assertEqual(receipt['runtime_classification'],
+                             {'agy': 'unused', 'claude': 'unused', 'codex': 'used', 'codex_tool_host': 'used'})
+            self.assertEqual([c['name'] for c in receipt['unused_runtime_changes']], ['agy'])
+        self.assertIn('unused harness `agy`', (self.root / 'run/REPORT.md').read_text())
+        observations = []
+        self.assertEqual(verify(self.root / 'run', observations=observations), result)
+        self.assertEqual([c['name'] for c in observations], ['agy'])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(['verify', str(self.root / 'run')]), 0)
+        self.assertIn('observation: unused harness runtime agy changed', out.getvalue())
+
+    @toolchain_test
+    def test_used_harness_update_after_checks_still_refuses_review(self):
+        _, _, result = self.review_with_update_after_checks('codex')
+        self.assertEqual(self.calls, [])
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertIn('implementation or tool runtime changed during review; rerun required', result['error'])
+        self.assertTrue(all('runtime_drift' in r.get('error', '') for r in result['review_executions']))
+        with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
+            verify(self.root / 'run')
+
+    @toolchain_test
+    def test_retained_campaign_observes_unused_harness_update_and_refuses_used(self):
+        from agent_ee.campaign import implement as real_implement
+        from agent_ee.cli import main
+        base, updated = self.harness_runtime('agy')
+        current = {'runtime': base}
+        patch('agent_ee.cli.runtime_files', side_effect=lambda **kwargs: current['runtime']).start()
+        def update(*args, **kwargs):
+            # The writer's pinned environment is the campaign start, before this update.
+            current['runtime'] = updated
+            return real_implement(*args, **kwargs)
+        root = self.root / 'campaign'
+        with patch('agent_ee.campaign.implement', side_effect=update), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', root), 0)
+        self.assertIn('implementation', self.calls)
+        receipt = read_json(root / 'implementations/1/review-work/implementation/preflight/receipt.json')
+        self.assertEqual(receipt['result'], 'ok')
+        self.assertEqual([c['name'] for c in receipt['unused_runtime_changes']], ['agy'])
+        observations = []
+        self.assertEqual(verify_campaign(root, observations=observations)['state'], 'criteria_satisfied')
+        self.assertEqual([c['name'] for c in observations], ['agy'])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(['verify-campaign', str(root)]), 0)
+        self.assertIn('observation: unused harness runtime agy changed', out.getvalue())
+        current['runtime'] = {**updated, 'codex': {'path': '/usr/bin/true', 'sha256': 'replaced-by-host-update'}}
+        with self.assertRaisesRegex(ValueError, 'tool runtime changed'):
+            verify_campaign(root)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(['verify-campaign', str(root)]), 2)
+
     @toolchain_test
     def test_campaign_verification_requires_separate_implementation_receipt(self):
         with contextlib.redirect_stdout(io.StringIO()):
