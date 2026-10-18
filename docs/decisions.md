@@ -283,3 +283,104 @@ AGENTEE-111, AGENTEE-112 and AGENTEE-115 implement this decision; their
 acceptance criteria name the bound, the recorded count and the retained refused
 output. The coordinator (`agent-423`) recorded this entry; the owner's answer
 is the authority.
+
+## Owner decisions of 2026-10-18
+
+The owner answered eight questions the burndown reviews had parked. The
+coordinator (`agent-423`) put each as a multiple choice with a recommendation;
+the owner's choice is quoted. Plane items are updated by the integrator
+(`agent-449`). Each entry states what it preserves and excludes.
+
+### Konnect fixtures are replaced by owned equivalents
+
+> Owned fixtures, mark Done
+
+AGENTEE-28 (part selection) and AGENTEE-53 (placement judge) named a Konnect
+fixture in an acceptance criterion. Konnect is AGPL-3.0. Both criteria are
+reworded to the owned equivalents already in the tree, which the reviews proved
+exercise the same behaviour (for 53, a local read-only probe of the real Konnect
+board scored the expected 70 with both decoupling deductions). Preserves the
+licence boundary: no Konnect bytes, hashes, identifiers or derived geometry
+enter agent-ee. Excludes vendoring Konnect material under any label.
+
+### fome-mc reference sheets are committed as fixtures
+
+> Commit captured sheets as fixtures
+
+AGENTEE-89, 105 and 118 capture the fome-mc PSU and wideband sheets as reference
+blocks. The captured sheets go into agent-ee under `fixtures/`, each with the
+fome-mc commit and sha256 it was captured from, through the offline Git capture
+path (no network, no remote transport). Preserves decision 2: a block is a
+captured artifact bound to its source commit and evidence. Excludes copying by
+hand, capturing from a dirty or unpinned checkout, and committing anything from
+fome-mc that is not a block the generator consumes. A licence statement for the
+fome-mc material must accompany the first such fixture; the owner holds the
+rights to both repositories.
+
+### Scaffold is done as stage one
+
+> Done as stage one, new item for producer
+
+AGENTEE-87 closes with its declared limits (a hand-written scope and a captured
+project template). One new item carries the automatic producer that builds the
+scope and project rules from the envelope and parts list; AGENTEE-134 carries
+migrating the two rung-1 drivers onto `scaffold.py`. Excludes a third scaffold
+implementation.
+
+### Convergence contract signed off with two guards
+
+> Sign off with two small guards
+
+AGENTEE-88's contract stands as implemented: progress is stage advancement, so a
+writer must deliver a whole stage in one turn; `finding_retry_limit` counts the
+first appearance. Two guards are added: a `finding_retry_limit` below 2 is
+refused at config load (a limit of 1 would escalate before any repair), and
+regression protection covers `info` checks as well as `pass`. Excludes counting
+progress by remaining findings.
+
+### Assembly readiness: three of nine
+
+> Amend to 3 of 9, keep Done
+
+AGENTEE-29's criterion read 4 of 9 components on the clean_boost-style fixture;
+the code and the real fixture give 3 of 9 (C1, R2, U1) and the doc states which
+six are not reached and why. The criterion is amended to 3 of 9. Excludes
+reopening the item to reach a fourth binding on a non-target fixture.
+
+### Bounded resubmission covers disposition-rule refusals
+
+> Yes, keep as merged
+
+The resubmission catch in `review_run.structured_call` includes the
+adjudicator's six evidence-model disposition rules in `findings.adjudicate`
+(for example, an established check defect cannot be `noted`). One recorded
+resubmission with the rule appended is within the 2026-10-17 decision. Preserves
+the gates: the evidence rules still decide the final output; the refused attempt
+is retained; the finding set is invariant. Excludes narrowing the catch to
+structural errors.
+
+### Routing determinism is geometric equivalence
+
+> Geometric equivalence
+
+AGENTEE-96 and KICADROUTE-7 asked that a repeated KRT run reproduce the same
+board hash. Two runs produce identical copper geometry with different bytes
+(segment order, UUIDs). Determinism is defined as an identical normalized copper
+geometry set; a check compares geometry, not file bytes, and records byte
+differences without failing them. kicad-route records the same definition in its
+routing decisions. Excludes a byte-identical criterion and a writer-side
+normalization requirement.
+
+### Done requires each stage through its declared step (amends decision 1)
+
+> Yes, require stage receipts for done
+
+Decision 1's "done" (scope/2 checks pass and fab exports exist) gains a third
+condition: for every stage with a declared `agent-ee.stage-step/1` step, the
+content the checks graded must be the content that step's receipt produced.
+Writer-made content in such a stage fails done even when the checks pass. This
+closes AGENTEE-114 by contract: the qualified rung-1 run showed the live writer
+hand-routing with pcbnew where a routing step was declared. Preserves the single
+writer and the check set as the acceptance authority; receipts become part of
+the acceptance rule rather than provenance only. Excludes stages with no
+declared step, where the writer remains the producer.
