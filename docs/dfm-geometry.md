@@ -91,8 +91,8 @@ not board-only, and not excluded from position files.
 
 ## Results and unknowns
 
-Each rule record has `execution`, `status`, `checked`, `findings` and
-`unsupported` items. Status is one of these:
+Each rule record has `execution`, `status`, `checked`, `false_negative_classes`,
+`findings` and `unsupported` items. Status is one of these:
 
 - `pass`: the rule checked at least one item and found nothing.
 - `defect`: the rule produced at least one finding.
@@ -132,6 +132,12 @@ finding becomes an accepted defect only through the existing check and
 adjudication flow.
 
 ## Limits
+
+Each rule definition carries its fixed `false_negative_classes`. They come from
+the rule definitions, never from the board, and are recorded on each rule in
+`dfm-report.json` and `details.rules` as well as in `dfm-report.json` and
+`checks/<id>.json` `limitations`, so a passing result states what each rule
+cannot see:
 
 - The rules read saved geometry only. Zone fill is used as saved.
 - The probe reads the saved thickness with the shared S-expression parser. It

@@ -275,9 +275,11 @@ rule. The rules are annular ring, via aspect ratio, acid trap, SMD bridge gap,
 component courtyard spacing, differential-pair skew and copper balance, and each
 is evaluated on the probe's exact `--dfm` facts. Findings carry a code,
 coordinates, native UUIDs and references, plus per-finding `gate_findings`
-identities. A rule that cannot evaluate an item, such as one with no saved board
-thickness, a blind via, an unfilled zone or a missing courtyard, is
-`unsupported`, and the check becomes `unsupported/unknown`.
+identities. Each rule also records its definition-bound `false_negative_classes`
+in `details.rules` and `limitations`. A rule that cannot evaluate an item, such
+as one with no saved board thickness, a blind via, a custom PTH pad, an unfilled
+zone or a missing courtyard, is `unsupported`, and the check becomes
+`unsupported/unknown`.
 
 ## Native netlist
 

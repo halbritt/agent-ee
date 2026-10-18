@@ -12,7 +12,9 @@ from toolchain import require_toolchain
 from agent_ee import candidate, checks
 from agent_ee.baseline import freeze_evidence, validate_witnesses, verify_evidence
 from agent_ee.capabilities import describe_check
-from agent_ee.dfm_geometry import compile_profile, evaluate
+from agent_ee.dfm_geometry import (
+    FALSE_NEGATIVE_CLASSES, RULES, SUITE_LIMITATION, compile_profile, evaluate, rule_limitation,
+)
 from agent_ee.storage import write_json
 
 import dfm_fixture
@@ -308,6 +310,41 @@ class ProfileTests(unittest.TestCase):
         for rid in ('annular-ring', 'via-aspect', 'acid-trap', 'diff-skew'):
             self.assertEqual(by_id[rid]['execution'], 'unsupported', rid)
 
+    def test_each_rule_lists_definition_bound_false_negative_classes_and_exercised_class_is_never_pass(self):
+        for kind, (_, _, classes) in RULES.items():
+            with self.subTest(rule=kind):
+                self.assertTrue(classes)
+                self.assertEqual(FALSE_NEGATIVE_CLASSES[kind], classes)
+                self.assertTrue(all(isinstance(c, str) and c.strip() for c in classes))
+        profile = compile_profile(dfm_fixture.PROFILE)
+        expected_limits = [SUITE_LIMITATION, *(rule_limitation(r) for r in profile['rules'])]
+        empty_report = evaluate(facts(), profile)
+        broken_report = evaluate(facts(vias=[{'uuid': 'v'}], tracks=[{'uuid': 't'}], board_thickness_nm=None), profile)
+        for report in (empty_report, broken_report):
+            self.assertEqual(report['limitations'], expected_limits)
+            for rule in report['rules']:
+                self.assertEqual(rule['false_negative_classes'], list(FALSE_NEGATIVE_CLASSES[rule['rule']]))
+        exercised = (
+            (RING, {'pads': [{**pad('c', 'J1', '1', 'N', rect(0, 0, 1, 1), attribute='PTH',
+                                    drill_nm=[400000, 400000]), 'shape': 'CUSTOM'}]}),
+            (ASPECT, {'vias': [via('b', 1, 1, 0.6, 0.3, kind='BLIND')]}),
+            (ACID, {'tracks': [track('t1', (10, 20), (14, 20)), track('arc', (10, 20), (6, 20), mid=(8, 20))]}),
+            (BRIDGE, {'pads': [{**pad('s', 'R1', '1', 'A', rect(0, 0, 1, 1)), 'polygons_nm': {}}]}),
+            (SPACING, {'courtyards': [{'ref': 'R1', 'footprint_uuid': 'fp-R1', 'side': 'F.Cu', 'pad_count': 2,
+                                       'board_only': False, 'exclude_from_pos_files': False,
+                                       'position_nm': [0, 0], 'polygons_nm': [], 'holes': 0}]}),
+            (SKEW, {'pads': [pad('p', 'J1', '1', 'USB_D+', rect(0, 0, 1, 1)),
+                             pad('n', 'J1', '2', 'USB_D-', rect(2, 0, 3, 1))],
+                    'tracks': [track('dp', (0, 0), (5, 0), 'USB_D+')]}),
+            (BALANCE, {'copper_area': {'F.Cu': {'area_nm2': 50, 'bbox_nm': [0, 0, 1, 1], 'unfilled_zones': ['z1']},
+                                       'B.Cu': {'area_nm2': 50, 'bbox_nm': [0, 0, 1, 1], 'unfilled_zones': []}}}),
+        )
+        for spec, overrides in exercised:
+            with self.subTest(exercised=spec['rule']):
+                result = run(spec, **overrides)
+                self.assertEqual((result['execution'], result['status']), ('unsupported', 'not_evaluated'))
+                self.assertEqual(result['false_negative_classes'], list(FALSE_NEGATIVE_CLASSES[spec['rule']]))
+
 
 class SavedThicknessTests(unittest.TestCase):
     def thickness(self, text):
@@ -359,11 +396,29 @@ class NativeDfmTests(unittest.TestCase):
         [result] = checks.run_checks(run, time.monotonic() + 300)
         return run, result
 
+    def assert_runtime_limitations(self, result, report=None, profile=None):
+        compiled = compile_profile(profile or dfm_fixture.PROFILE)
+        expected = [SUITE_LIMITATION, *(rule_limitation(r) for r in compiled['rules'])]
+        self.assertEqual(result['limitations'], expected)
+        joined = '\n'.join(result['limitations'])
+        for phrase in ('mid-track T-junction acid traps are not detected',
+                       'junctions inside pad copper or a via disk count as covered',
+                       'ERROR_OUTSIDE', 'custom/trapezoid/chamfered PTH pads', 'unfilled zones'):
+            if profile is None:
+                self.assertIn(phrase, joined)
+        for rule in result['details']['rules']:
+            self.assertEqual(rule['false_negative_classes'], list(FALSE_NEGATIVE_CLASSES[rule['rule']]))
+        if report is not None:
+            self.assertEqual(report['limitations'], expected)
+            for rule in report['rules']:
+                self.assertEqual(rule['false_negative_classes'], list(FALSE_NEGATIVE_CLASSES[rule['rule']]))
+
     def test_seeded_board_reports_every_geometric_defect_through_the_check(self):
         run, result = self.run_board()
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result['summary'])
         report = json.loads((run / 'work/dfm/dfm-report.json').read_text())
         self.assertEqual(report['candidate_id'], result['candidate_id'])
+        self.assert_runtime_limitations(result, report)
         rules = {r['id']: r for r in report['rules']}
         self.assertEqual({k: r['status'] for k, r in rules.items()},
                          {'acid-trap': 'defect', 'annular-ring': 'defect', 'component-spacing': 'defect',
@@ -393,10 +448,12 @@ class NativeDfmTests(unittest.TestCase):
                            [{'path': 'checks/dfm.json', 'locator': 'details.findings'}])
 
     def test_compliant_twin_passes_every_rule(self):
-        _, result = self.run_board(via_size=0.6, bridge_gap=0.3, acid_angle=90, arc=False)
+        run, result = self.run_board(via_size=0.6, bridge_gap=0.3, acid_angle=90, arc=False)
+        report = json.loads((run / 'work/dfm/dfm-report.json').read_text())
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['details'])
         self.assertEqual(result['details']['findings'], [])
         self.assertEqual({r['status'] for r in result['details']['rules']}, {'pass'})
+        self.assert_runtime_limitations(result, report)
 
     def test_copper_balance_measures_united_native_copper(self):
         profile = copy.deepcopy(dfm_fixture.PROFILE)
@@ -406,6 +463,7 @@ class NativeDfmTests(unittest.TestCase):
         [finding] = result['details']['findings']
         self.assertEqual(finding['layers'], ['F.Cu', 'B.Cu'])
         self.assertGreater(finding['measured_share'], 0.9)
+        self.assert_runtime_limitations(result, profile=profile)
 
     def test_board_without_saved_thickness_leaves_aspect_ratio_unsupported(self):
         run, result = self.run_board(thickness=False)
@@ -414,6 +472,7 @@ class NativeDfmTests(unittest.TestCase):
         self.assertEqual((rules['via-aspect']['execution'], rules['via-aspect']['status']),
                          ('unsupported', 'not_evaluated'))
         self.assertIn('thickness', rules['via-aspect']['reason'])
+        self.assert_runtime_limitations(result)
         freeze_evidence(run, [result])
         with self.assertRaisesRegex(ValueError, 'failed criterion'):
             validate_witnesses(run, [{'requirement_id': 'R-dfm', 'check_id': 'dfm'}],
@@ -423,6 +482,18 @@ class NativeDfmTests(unittest.TestCase):
         _, result = self.run_board(courtyards=False, via_size=0.6, bridge_gap=0.3, acid_angle=90, arc=False)
         self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
         self.assertIn('component-spacing', result['summary'])
+        self.assert_runtime_limitations(result)
+
+    def test_board_exercising_custom_pad_or_unfilled_zone_gets_unknown_not_pass(self):
+        for flag, rule_id in (('custom_pad', 'annular-ring'), ('unfilled_zone', 'copper-balance')):
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as sub:
+                self.root = Path(sub)
+                _, result = self.run_board(via_size=0.6, bridge_gap=0.3, acid_angle=90, arc=False, **{flag: True})
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
+                by_id = {r['id']: r for r in result['details']['rules']}
+                self.assertEqual((by_id[rule_id]['execution'], by_id[rule_id]['status']),
+                                 ('unsupported', 'not_evaluated'))
+                self.assert_runtime_limitations(result)
 
 
 class CapabilityTests(unittest.TestCase):
