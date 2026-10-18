@@ -1,5 +1,6 @@
 # agent-ee native-check image: the demonstrated KiCad 10.0.7 / ngspice 42 /
-# Bubblewrap 0.9.0 / Python 3.12 toolchain plus this checkout's source launcher.
+# Bubblewrap 0.9.0 / Python 3.12 toolchain, the pinned kicad-route/KRT router
+# and this checkout's source launcher.
 # Pin enforcement and required runtime privileges: docs/container.md.
 #
 # Every pin fails closed: an unavailable exact version stops `apt-get install`,
@@ -8,7 +9,7 @@
 
 # Ubuntu 24.04 (noble) multi-architecture index digest, pulled 2026-10-17.
 ARG UBUNTU_DIGEST=sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
-FROM ubuntu:24.04@${UBUNTU_DIGEST}
+FROM ubuntu:24.04@${UBUNTU_DIGEST} AS native
 
 # One snapshot timestamp freezes both the Ubuntu archive and the KiCad PPA, so
 # the exact package versions below stay installable after newer uploads.
@@ -75,6 +76,20 @@ RUN set -eu; \
         test -e "/usr/share/kicad/$f"; \
     done
 
+# Build stage for the pinned routing tool: pip and curl stay in this stage only.
+# docker/kicad-route/install.sh holds the source commits, the prebuilt router
+# hash and the hash-locked wheel list; any mismatch fails the build.
+FROM native AS kicad-route-build
+ARG PYTHON3_PIP_VERSION=24.0+dfsg-1ubuntu1.3
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" curl; \
+    rm -rf /var/lib/apt/lists/*
+COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
+RUN /usr/local/share/agent-ee/kicad-route/install.sh install
+
+FROM native
+
 # Installed analyzer tool, kept outside the agent-ee package and candidate.
 # Runtime analysis remains networkless; only the image build fetches this pin.
 ARG KICAD_HAPPY_COMMIT=06840467ad0f5d76af45f64449b1f5ecb10f052f
@@ -86,6 +101,26 @@ RUN set -eu; \
     /usr/bin/python3 -c 'import json; assert json.load(open("/opt/kicad-happy/.claude-plugin/plugin.json"))["version"] == "2.3.1"'; \
     rm -rf /opt/kicad-happy/.git
 
+# Test reference tool only: the fab-consistency zstd decoder is compared with
+# frames from the zstd CLI, from the same snapshot as the image's libzstd1.
+ARG ZSTD_VERSION=1.5.5+dfsg2-2build1.1
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
+    apt-mark hold zstd; \
+    rm -rf /var/lib/apt/lists/*; \
+    zstd --version | grep -q 'v1\.5\.5'
+
+# kicad-route 08179cd with KRT v0.23.1 for the routing stage. The checkout is
+# its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
+# routing steps mount it read-only in the tool sandbox. The verification runs
+# without network, so KRT's startup checks cannot fetch or rebuild anything.
+ENV AGENT_EE_KICAD_ROUTE_CHECKOUT=/opt/kicad-route
+COPY --from=kicad-route-build --chown=10001:10001 /opt/kicad-route /opt/kicad-route
+COPY --from=kicad-route-build /opt/kicad-route.install.json /opt/kicad-route.install.json
+COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
+RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
+
 # Source-launcher installation, as in docs/installation.md: the launcher uses
 # /usr/bin/python3 (which imports pcbnew) and locates src/ from its checkout.
 COPY . /opt/agent-ee
@@ -94,7 +129,7 @@ RUN set -eu; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee
 
 LABEL org.opencontainers.image.title="agent-ee" \
-      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12"
+      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0, Python 3.12 and kicad-route/KRT 0.23.1"
 
 # Bubblewrap needs an unprivileged user namespace; run as a non-root user.
 USER agentee

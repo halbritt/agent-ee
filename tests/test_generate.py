@@ -17,13 +17,12 @@ from unittest import mock
 
 from agent_ee import generate as g
 try:
-    from toolchain import require_toolchain
+    from toolchain import require_kicad_route, require_toolchain
 except ImportError:  # run as tests.test_generate from the repository root
-    from tests.toolchain import require_toolchain
+    from tests.toolchain import require_kicad_route, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / 'fixtures/rung1/spec.md'
-LIVE_CATALOG = Path.home() / 'git/fome-mc/export/BOM-fome-mc.csv'
 HEADER = 'Comment,Designator,Footprint,LCSC Part #,Quantity\n'
 # Owned synthetic catalog rows (test values, not supplier data).
 ROWS = [
@@ -262,12 +261,6 @@ class PartsTest(unittest.TestCase):
             with self.assertRaises(g.StageFailure):
                 g.stage_parts(stage, {'params': state['params']}, {'catalog_checkout': checkout})
 
-    @unittest.skipUnless(LIVE_CATALOG.is_file(), 'live fome-mc BOM absent')
-    def test_live_fome_mc_catalog_selection(self):
-        _, raw, _ = g.capture_catalog(LIVE_CATALOG.parents[1])
-        rows = g.read_catalog(raw)
-        self.assertEqual(g.select_part(rows, 'Device:R', '10k')[0]['footprint'], 'Resistor_SMD:R_0402_1005Metric')
-        self.assertEqual(g.select_part(rows, 'Device:C', '100n')[0]['footprint'], 'Capacitor_SMD:C_0603_1608Metric')
 
 
 class ScopeTest(unittest.TestCase):
@@ -387,21 +380,20 @@ class IntegrationTest(unittest.TestCase):
 
     def test_skip_review_run(self):
         require_toolchain(native=True)
-        missing = [name for name in ('schematic_emit.py', 'board_build.py')
-                   if not (g.PACKAGE_ROOT / 'agent_ee' / name).is_file()]
-        if missing:
-            self.skipTest('rung-1 builder modules absent: ' + ', '.join(missing))
-        if shutil.which('kicad-route') is None:
-            self.skipTest('kicad-route not on PATH')
-        if not LIVE_CATALOG.is_file():
-            self.skipTest('live fome-mc BOM absent')
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-') as tmp:
+        # Stage 5 runs `kicad-route` from PATH: the pinned checkout's launcher.
+        route = require_kicad_route()
+        path = os.pathsep.join([str(route / 'bin'), os.environ.get('PATH', '')])
+        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-') as tmp, \
+                mock.patch.dict(os.environ, {'PATH': path}), mock.patch.dict(g._TOOLS, clear=True):
+            catalog = git_catalog(Path(tmp) / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
             run = Path(tmp) / 'run'
-            record = g.generate(SPEC, run, skip_review=True)
+            record = g.generate(SPEC, run, skip_review=True, catalog_checkout=catalog)
             statuses = {s['name']: s['status'] for s in record['stages']}
             self.assertEqual(statuses, {'requirements': 'ok', 'parts': 'ok', 'schematic': 'ok', 'placement': 'ok',
                                         'routing': 'ok', 'review': 'not_reached:review_skipped', 'fab': 'ok'},
                              [s['error'] for s in record['stages']])
+            routing = json.loads((run / record['stages'][4]['receipt']).read_text())
+            self.assertEqual(routing['tools']['kicad-route']['resolved'], str(route / 'bin/kicad-route'))
             self.assertFalse(record['done'])
             self.assertTrue(record['fab_exports_exist'])
             for item in record['stages']:

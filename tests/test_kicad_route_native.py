@@ -1,7 +1,9 @@
 """Actual kicad-route (pinned 08179cd) and KRT on the original placed RC, read-only.
 
-Opt-in: set AGENT_EE_KICAD_ROUTE_CHECKOUT to a clean kicad-route checkout at
-the pin with its installed KRT state. The placed RC is the hand-made RC
+AGENT_EE_KICAD_ROUTE_CHECKOUT names a clean kicad-route checkout at the pin with
+its installed KRT state; the standard image sets it to /opt/kicad-route. Unset,
+the native tests skip, or fail under AGENT_EE_REQUIRE_TOOLCHAIN=1; a configured
+checkout that does not qualify always fails. The placed RC is the hand-made RC
 control with every track, via and zone removed; footprint placement, outline,
 schematic, project and library tables are unchanged. This exercises the real
 router; the policy fixture tests live in test_kicad_route_adapter.py.
@@ -9,22 +11,20 @@ router; the policy fixture tests live in test_kicad_route_adapter.py.
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
+from agent_ee import stage_receipts
 from agent_ee.executor import execute
-from toolchain import require_toolchain
-
-try:
-    from agent_ee import stage_receipts
-except ImportError:  # AGENTEE-95 lands separately; root integrates both.
-    stage_receipts = None
+from toolchain import require_kicad_route, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECKOUT = os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT')
 STRIP = r'''
 import sys, pcbnew
 board = pcbnew.LoadBoard(sys.argv[1])
@@ -41,14 +41,16 @@ print("placed")
 '''
 
 
-@unittest.skipUnless(CHECKOUT, 'set AGENT_EE_KICAD_ROUTE_CHECKOUT to run actual kicad-route')
 class NativeKicadRouteTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.checkout = require_kicad_route()
+
     def setUp(self):
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-native-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.checkout = Path(CHECKOUT).resolve()
         check = routing_adapter.preflight(self.checkout)
         self.assertEqual(check['problems'], [])
 
@@ -112,7 +114,21 @@ class NativeKicadRouteTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
             routing_adapter.verify(work, inputs)
 
-    @unittest.skipIf(stage_receipts is None, 'AGENTEE-95 agent_ee.stage_receipts is not integrated on this branch')
+    def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
+        """Pinned code and present state files are not enough: KRT must import."""
+        broken = self.root / 'broken-route'
+        for top in ('bin', 'src'):
+            shutil.copytree(self.checkout / top, broken / top, ignore=shutil.ignore_patterns('__pycache__'))
+        (broken / '.git').mkdir()
+        (broken / '.git/HEAD').write_text(attempt.PIN + '\n')
+        subprocess.run(['/usr/bin/python3', '-m', 'venv', '--without-pip', str(broken / '.venv-krt')], check=True)
+        (broken / 'vendor/krt/py_router').mkdir(parents=True)
+        (broken / 'vendor/krt/py_router/route.py').write_text('')
+        self.assertEqual(routing_adapter.preflight(broken)['problems'], [])
+        with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_CHECKOUT': str(broken)}):
+            with self.assertRaisesRegex(AssertionError, "(?s)KRT runtime import failed.*No module named 'grid_router'"):
+                require_kicad_route()
+
     def test_krt_attempt_as_a_coordinator_stage_receipt(self):
         placed = self.placed_rc()
         spec = self.spec()
@@ -131,6 +147,45 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.forge_validated_board(receipt_dir / 'run')
         with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
             routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
+
+
+class NativePrerequisiteTest(unittest.TestCase):
+    """How the native class reports an absent, required or misconfigured kicad-route."""
+
+    def run_native(self, checkout=None, strict=False):
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(ROOT / 'tests'), str(ROOT / 'src')]))
+        for name in ('AGENT_EE_KICAD_ROUTE_CHECKOUT', 'AGENT_EE_REQUIRE_TOOLCHAIN'):
+            env.pop(name, None)
+        if checkout is not None:
+            env['AGENT_EE_KICAD_ROUTE_CHECKOUT'] = str(checkout)
+        if strict:
+            env['AGENT_EE_REQUIRE_TOOLCHAIN'] = '1'
+        return subprocess.run([sys.executable, '-m', 'unittest', '-v',
+                               'test_kicad_route_native.NativeKicadRouteTest'],
+                              cwd=ROOT / 'tests', env=env, capture_output=True, text=True, timeout=120)
+
+    def test_unset_checkout_is_a_documented_skip(self):
+        result = self.run_native()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('OK (skipped=1)', result.stderr)
+        self.assertIn('AGENT_EE_KICAD_ROUTE_CHECKOUT is unset', result.stderr)
+
+    def test_unset_checkout_fails_in_strict_mode(self):
+        result = self.run_native(strict=True)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn('AGENT_EE_REQUIRE_TOOLCHAIN=1: toolchain prerequisite: AGENT_EE_KICAD_ROUTE_CHECKOUT is unset',
+                      result.stderr)
+        self.assertNotIn('skipped', result.stderr)
+
+    def test_configured_checkout_that_does_not_qualify_fails_without_strict_mode(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-route-absent-') as tmp:
+            result = self.run_native(checkout=Path(tmp) / 'kicad-route')
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertIn('does not qualify', result.stderr)
+        self.assertIn(f'is not the pinned {attempt.PIN}', result.stderr)
+        self.assertIn('missing installed backend dependency: KICAD_ROUTE_STATE/.venv-krt/bin/python',
+                      result.stderr)
+        self.assertNotIn('skipped', result.stderr)
 
 
 if __name__ == '__main__':

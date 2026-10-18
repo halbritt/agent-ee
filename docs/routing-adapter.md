@@ -290,8 +290,8 @@ following from that draft:
 integration must call after `validate_receipt`, both before adoption and when
 verifying a campaign. Generic stage-receipt checks do not interpret the routing
 report. `test_kicad_route_stage_receipt.py` and the receipt case in
-`test_kicad_route_native.py` run against `agent_ee.stage_receipts` once both are
-integrated. They are skipped until then.
+`test_kicad_route_native.py` import `agent_ee.stage_receipts` unconditionally;
+a missing or broken module fails their collection.
 
 ## Qualification on the original placed RC
 
@@ -303,6 +303,21 @@ real router on it when `AGENT_EE_KICAD_ROUTE_CHECKOUT` names a pinned checkout,
 once directly under the executor and once as an AGENTEE-95 receipt. Each run
 verifies with the production pin, then forges the retained validated-board hash
 on the real bytes and checks that `verify` refuses it.
+
+The [standard image](container.md#pinned-routing-tool) installs the pinned
+checkout at `/opt/kicad-route` and sets the variable, so strict CI runs these
+tests. Their prerequisite, `require_kicad_route()` in
+[tests/toolchain.py](../tests/toolchain.py), behaves as follows:
+
+| Configuration | Without `AGENT_EE_REQUIRE_TOOLCHAIN` | With `AGENT_EE_REQUIRE_TOOLCHAIN=1` |
+| --- | --- | --- |
+| Variable unset | Class skipped: `AGENT_EE_KICAD_ROUTE_CHECKOUT is unset` | Failure |
+| Set; HEAD, pinned code or KRT state files fail `preflight` | Failure naming every problem | Failure |
+| Set; KRT's venv cannot import `grid_router`, numpy, scipy or shapely | Failure with the import error | Failure |
+
+`NativePrerequisiteTest` exercises the first two rows in a child unittest
+process; the native class covers the broken-runtime row with a pinned copy of
+the code and an empty venv.
 [`test_kicad_route_adapter.py`](../tests/test_kicad_route_adapter.py) covers
 exits 0 to 4, contradictions, timeout and cancellation with a coordinator-owned
 fixture router. Its retained-verification cases forge one claim at a time with

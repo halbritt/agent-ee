@@ -27,6 +27,8 @@ hosted run exposed an AppArmor user-namespace requirement, handled below.
 | Python 3.12 | `python3=3.12.3-0ubuntu2.1` | Exact apt version; build fails unless the interpreter reports 3.12 |
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
+| zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
+| kicad-route with KRT 0.23.1 | kicad-route `08179cdc97d08864da127f14d53ac46cf5a27851`, KRT tag `v0.23.1` = `295f9ee197517e8323726853361eb137cc08ba9e` | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -40,6 +42,54 @@ fixed by the snapshot timestamp rather than individual version strings.
 source-file hashes. Optional tools absent from a basic installation do not
 become required merely by running doctor. An explicitly configured broken
 analyzer does fail the probe.
+
+## Pinned routing tool
+
+The routing stage's external tool is installed in a separate build stage and
+only its final tree is copied into the image. The pins live in
+[docker/kicad-route/install.sh](../docker/kicad-route/install.sh) and the
+hash-locked [wheel list](../docker/kicad-route/krt-requirements.txt):
+
+| Input | Pin | Enforcement |
+| --- | --- | --- |
+| kicad-route | Commit `08179cd…` from `github.com/halbritt/kicad-route` | Depth-1 fetch of that commit, detached checkout, `HEAD` compared. The routing adapter's preflight again checks `HEAD` and every tracked `bin/`/`src/` blob hash |
+| KRT | Tag `v0.23.1`, commit `295f9ee…` from `github.com/drandyhaas/KiCadRoutingTools` | Tag fetched and peeled; must equal the commit. The tag stays so kicad-route's `git describe` reports `v0.23.1` in `result.json` |
+| KRT `requirements.txt` | SHA-256 `139aba6f…` | It lists only version floors, so it is never installed. A changed file fails the build until the wheel lock is reviewed |
+| Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | CPython 3.12 manylinux x86-64 wheels, `pip download --require-hashes --only-binary=:all: --no-deps`, then installed offline from those files into `/opt/kicad-route/.venv-krt`, a venv of the image's `/usr/bin/python3`. The venv must hold exactly these four distributions |
+| Rust router | Release asset `grid_router-linux-x86_64.so`, SHA-256 `d42aa6c6…` | Downloaded directly and hash-checked. KRT's `build_router.py` is never called: it asks GitHub for the newest release and can fall back to a cargo build |
+| Build-only installers | `python3-pip=24.0+dfsg-1ubuntu1.3` and `curl` from the same apt snapshot | Present only in the build stage |
+
+Only linux/amd64 is qualified. On another architecture the build stops with an
+unsupported-architecture error instead of using the x86-64 router.
+kicad-route's own `update` command, which resolves the latest releases, never
+runs. No Rust toolchain or Freerouting is installed; the Freerouting backend is
+not available in the image.
+
+The final image verifies the copy with `install.sh verify` in a build step
+without network: both commits, clean worktrees, the router hash, the exact venv
+contents, that every native library in the venv and router resolves with `ldd`,
+the imports KRT needs and KRT's own `py_router/startup_checks.py`. The build
+writes a provenance record to `/opt/kicad-route.install.json`: source URLs and
+commits, the requirements and wheel-lock hashes, the router URL and hash, the
+interpreter, every wheel file with its version, licence metadata and SHA-256,
+and the architecture. It records inputs; it does not claim that KRT routes a
+board byte-identically on every run.
+
+`AGENT_EE_KICAD_ROUTE_CHECKOUT=/opt/kicad-route` is set in the image, and the
+checkout is its own `KICAD_ROUTE_STATE`. The tree is owned by the runtime user
+(UID 10001), as a native checkout is owned by its user. That lets git inside the
+tool sandbox read the repository, which it refuses for another owner. The
+routing adapter mounts the tree read-only in the networkless tool sandbox, and
+the native tests check that writes there fail with `EROFS` and that the tree's
+hashes are unchanged. See [routing adapter](routing-adapter.md).
+
+Licences: kicad-route and KRT are MIT and their `LICENSE` files stay in the
+tree. The wheels keep their licence files in their `dist-info` directories,
+including notices for bundled native libraries. KRT's checkout also contains
+third-party resources with their own notices, for example
+`py_router/stage3d/vendor/three/LICENSE` and the example boards under `awx/`.
+Building the image locally is distinct from publishing it; the image is not
+published.
 
 Updating a pin means changing the build argument, rebuilding and rerunning the
 suite and fixtures. A new tool binary changes `runtime_files`, so earlier results
@@ -156,8 +206,8 @@ whether that material may be republished, so run outputs stay on the ephemeral
 runner and only the gate summary reaches the job page.
 
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` is the strict-toolchain contract: toolchain tests
-must fail rather than skip when KiCad, ngspice, Bubblewrap or a usable user
-namespace is missing. CI also refuses any skip on its own, so a skip cannot pass
+must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user
+namespace, the installed kicad-happy or the pinned kicad-route is missing. CI also refuses any skip on its own, so a skip cannot pass
 unnoticed whatever the test suite's skip behavior.
 
 The workflow file has been checked locally for YAML structure, and its image,
