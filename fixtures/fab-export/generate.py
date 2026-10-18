@@ -1,4 +1,9 @@
-"""Original owned fab-export fixture: one schematic, a 2-layer and a 4-layer board.
+"""Original owned fab-export fixture: one schematic, a 2-layer and two 4-layer boards.
+
+pod4.kicad_pcb is the 4-layer pod probe for fab_roundtrip (AGENTEE-195): the same
+parts and nets with the pad shapes KiCad plots through aperture macros (rounded,
+rotated, chamfered, custom and trapezoid pads, a rotated oval), arc tracks and
+saved zone fills on inner and outer copper.
 
 Every footprint, symbol, part-binding value and coordinate here is synthetic and
 written for agent-ee; nothing is copied from FOME-MC, a donor, a supplier or a
@@ -78,7 +83,70 @@ def schematic():
     return '\n'.join(out) + '\n)\n'
 
 
-def make_board(path, copper_layers):
+def pod_pad(p, ref, pin, pad):
+    """Pod probe pad shapes; each one is plotted by KiCad 10 through an aperture macro."""
+    if ref in ('R1', 'R2'):
+        pad.SetShape(p.PAD_SHAPE_ROUNDRECT)
+        pad.SetRoundRectRadiusRatio(0.25)
+    elif ref == 'C1':
+        pad.SetOrientationDegrees(30)
+    elif ref == 'C2':
+        pad.SetShape(p.PAD_SHAPE_CUSTOM)
+        pad.SetAnchorPadShape(p.F_Cu, p.PAD_SHAPE_CIRCLE)
+        pad.SetSize(p.VECTOR2I(400000, 400000))
+        outline = p.VECTOR_VECTOR2I()
+        for x, y in ((-450000, -475000), (450000, -475000), (300000, 475000), (-450000, 475000)):
+            outline.append(p.VECTOR2I(x, y))
+        pad.AddPrimitivePoly(p.F_Cu, outline, 0, True)
+    elif ref == 'C10':
+        pad.SetShape(p.PAD_SHAPE_CHAMFERED_RECT)
+        pad.SetChamferRectRatio(p.F_Cu, 0.2)
+        pad.SetChamferPositions(p.F_Cu, 1)  # top-left corner
+        pad.SetOrientationDegrees(45)
+    elif ref == 'C3':
+        pad.SetShape(p.PAD_SHAPE_TRAPEZOID)
+        pad.SetDelta(p.F_Cu, p.VECTOR2I(200000, 0))
+        pad.SetOrientationDegrees(10)
+    elif ref == 'J1' and pin == '2':
+        pad.SetShape(p.PAD_SHAPE_OVAL)
+        pad.SetSize(p.VECTOR2I(1700000, 2200000))
+        pad.SetOrientationDegrees(15)
+
+
+def pod_copper(p, board, nets, vec):
+    """Arc tracks on both outer layers and filled zones on three copper layers."""
+    def arc(start, mid, end, layer, net):
+        item = p.PCB_ARC(board)
+        item.SetStart(vec(*start))
+        item.SetMid(vec(*mid))
+        item.SetEnd(vec(*end))
+        item.SetWidth(250000)
+        item.SetLayer(layer)
+        item.SetNet(nets[net])
+        board.Add(item)
+
+    def zone(layer, net, corners):
+        item = p.ZONE(board)
+        item.SetLayer(layer)
+        item.SetNet(nets[net])
+        outline = item.Outline()
+        outline.NewOutline()
+        for x, y in corners:
+            point = vec(x, y)
+            outline.Append(point.x, point.y)
+        board.Add(item)
+
+    arc((23.2, 10.0), (21.6, 12.0), (23.2, 14.0), p.F_Cu, 'OUT')
+    arc((6.0, 12.54), (8.5, 15.5), (12.0, 16.5), p.B_Cu, 'GND')
+    zone(p.In1_Cu, 'GND', ((1, 1), (35, 1), (35, 19), (1, 19)))
+    zone(p.In2_Cu, 'MID', ((1, 1), (17, 1), (17, 19), (1, 19)))
+    zone(p.In2_Cu, 'OUT', ((19, 1), (35, 1), (35, 19), (19, 19)))
+    zone(p.B_Cu, 'GND', ((26, 2), (34, 2), (34, 18), (26, 18)))
+    board.BuildConnectivity()
+    p.ZONE_FILLER(board).Fill(board.Zones())
+
+
+def make_board(path, copper_layers, pod=False):
     import pcbnew as p
     board = p.BOARD()
     board.SetCopperLayerCount(copper_layers)
@@ -116,6 +184,8 @@ def make_board(path, copper_layers):
                 pad.SetLayerSet(p.PAD.PTHMask())
                 pad.SetPosition(vec(x, y - 2.54 + 2.54 * i))
                 pad.SetNet(nets[pin_nets[pin]])
+                if pod:
+                    pod_pad(p, ref, pin, pad)
                 fp.Add(pad)
             peg = p.PAD(fp)
             peg.SetNumber('')
@@ -137,6 +207,8 @@ def make_board(path, copper_layers):
                 pad.SetLayerSet(layers(p.F_Cu, p.F_Paste, p.F_Mask))
                 pad.SetPosition(vec(x - 0.8 + 1.6 * i, y))
                 pad.SetNet(nets[pin_nets[pin]])
+                if pod:
+                    pod_pad(p, ref, pin, pad)
                 fp.Add(pad)
         fp.SetDNP(dnp)  # after SetAttributes, which replaces every attribute flag
         board.Add(fp)
@@ -171,6 +243,8 @@ def make_board(path, copper_layers):
         edge.SetEnd(vec(*b))
         edge.SetWidth(50000)
         board.Add(edge)
+    if pod:
+        pod_copper(p, board, nets, vec)
     p.SaveBoard(str(path), board)
 
 
@@ -182,3 +256,4 @@ if __name__ == '__main__':
     (args.directory / 'fab.kicad_sch').write_text(schematic())
     make_board(args.directory / 'fab.kicad_pcb', 2)
     make_board(args.directory / 'fab4.kicad_pcb', 4)
+    make_board(args.directory / 'pod4.kicad_pcb', 4, pod=True)

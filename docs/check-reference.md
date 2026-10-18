@@ -450,7 +450,8 @@ four decimal places. Track items also retain `native_class` and exact `width_nm`
 counts. A failed unconnected-count query is recorded as unavailable information,
 not silently replaced with zero. Other extraction failures fail the probe.
 Fabrication facts also retain copper stack order, a proven straight outline,
-exact pad/via `drill_nm` and native `flash_layers`; see [fab round-trip](fab-roundtrip.md).
+exact pad/via `drill_nm` and native `flash_layers`, per-layer pad `flash_bbox_nm`,
+`zone_fill_outlines` and `copper_conductor_shapes`; see [fab round-trip](fab-roundtrip.md).
 
 With `criterion: "copper-width/1"`, declared tracks and native arcs are checked
 using integer-nanometre widths without the legacy tolerance/rounding. Empty or
@@ -869,10 +870,13 @@ production envelope obligations continue to fail closed.
 
 [`fab_roundtrip`](fab-roundtrip.md), with exactly `{export_check}`, separately
 compares every enabled layer, round PTH/NPTH drill histograms, copper pad/via
-flash counts and outline bounds within 1 µm. It consumes earlier sealed export
-and geometry evidence. Missing layers/files and count/bound mismatches are named
-defects. Inch units and unknown Gerber commands are malformed; unsupported
-constructs are unknown with a 1-based source line. Artwork is outside coverage.
+flash counts, flashed pad extents (aperture macros evaluated exactly), Conductor
+track/arc draw counts, zone-fill region counts and outline bounds within 1 µm.
+It consumes earlier sealed export and geometry evidence. Missing layers/files and
+count/extent/bound mismatches are named defects. Inch units and unknown Gerber
+commands are malformed. Constructs outside KiCad 10's set (G75 arcs, G36/G37
+regions, macro primitives 1/4/5/20/21) are unknown with a 1-based source line.
+Artwork rendering is outside coverage.
 
 ## Captured block adaptation
 
