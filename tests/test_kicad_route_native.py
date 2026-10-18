@@ -10,12 +10,14 @@ router; the policy fixture tests live in test_kicad_route_adapter.py.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 import unittest.mock
+import uuid
 from pathlib import Path
 
 from agent_ee import kicad_route_attempt as attempt
@@ -135,6 +137,25 @@ class NativeKicadRouteTest(unittest.TestCase):
         (self.root / 'repeated-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
         self.assertTrue(report['geometry_equal'], report)
         self.assertIn('byte_equal', report)
+        raw = outputs[1].read_text()
+        segment = re.search(r'\t\(segment\b.*?\n\t\)', raw, re.S).group()
+        duplicate = re.sub(r'\(uuid "[^"]+"\)', f'(uuid "{uuid.uuid4()}")', segment)
+        duplicated = self.root / 'duplicated.kicad_pcb'
+        duplicated.write_text(raw.rstrip()[:-1] + '\n' + duplicate + '\n)\n')
+        duplicate_report = compare_boards(duplicated, outputs[0])
+        (self.root / 'duplicate-comparison.json').write_text(json.dumps(duplicate_report, indent=2) + '\n')
+        self.assertFalse(duplicate_report['geometry_equal'])
+        self.assertFalse(duplicate_report['byte_equal'])
+        self.assertEqual(len(duplicate_report['board_geometry']), len(report['board_geometry']) + 1)
+        self.assertEqual(len(duplicate_report['only_board']), 1)
+        element = duplicate_report['only_board'][0]
+        self.assertEqual(element['kind'], 'PCB_TRACK')
+        self.assertIn('endpoints_nm', element)
+        self.assertEqual(duplicate_report['only_reference'], [])
+        self.assertEqual(duplicate_report['board_duplicates'], [{'element': element, 'count': 2}])
+        self.assertEqual(duplicate_report['reference_duplicates'], [])
+        self.assertEqual(duplicate_report['count_differences'], [
+            {'element': element, 'board_count': 2, 'reference_count': 1}])
         import pcbnew as k
         board = k.LoadBoard(str(outputs[1]))
         track = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK')

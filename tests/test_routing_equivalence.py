@@ -8,13 +8,20 @@ import uuid
 from pathlib import Path
 
 from agent_ee import baseline, checks
-from agent_ee.routing_equivalence import canonical_ring, compare_boards
+from agent_ee.routing_equivalence import canonical_ring, canonical_set, compare_boards
 from agent_ee.storage import digest, identity, write_json
 from tests.routing_fixture import make_board
 from tests.toolchain import require_toolchain
 
 
 class CanonicalRingTest(unittest.TestCase):
+    def test_canonical_inventory_retains_multiplicity_and_ignores_order(self):
+        first, second = {'kind': 'PCB_TRACK'}, {'kind': 'PCB_VIA'}
+        inventory = canonical_set([first, second, first])
+        self.assertEqual(inventory, canonical_set([second, first, first]))
+        self.assertEqual(len(inventory), 3)
+        self.assertNotEqual(inventory, canonical_set([first, second]))
+
     def test_start_winding_and_closing_vertex_are_irrelevant(self):
         points = [(0, 0), (10, 0), (10, 10), (0, 10)]
         expected = canonical_ring(points)
@@ -87,6 +94,41 @@ class RoutingEquivalenceTest(unittest.TestCase):
         self.assertEqual(report['only_board'][0]['kind'], 'PCB_TRACK')
         self.assertIn('endpoints_nm', report['only_board'][0])
         self.assertIn('net', report['only_board'][0])
+
+    def test_exact_duplicate_segments_are_counted_and_named_in_both_directions(self):
+        raw = self.board.read_text()
+        segment = re.search(r'\t\(segment\b.*?\n\t\)', raw, re.S).group()
+        for count in (2, 3):
+            with self.subTest(count=count):
+                copies = [re.sub(r'\(uuid "[^"]+"\)', f'(uuid "{uuid.uuid4()}")', segment)
+                          for _ in range(count - 1)]
+                self.board.write_text(raw.rstrip()[:-1] + '\n' + '\n'.join(copies) + '\n)\n')
+                report = self.compare()
+                self.assertFalse(report['geometry_equal'])
+                self.assertFalse(report['byte_equal'])
+                element = report['only_board'][0]
+                self.assertEqual(element['kind'], 'PCB_TRACK')
+                self.assertEqual(report['only_board'], [element] * (count - 1))
+                self.assertEqual(report['only_reference'], [])
+                self.assertEqual(report['board_duplicates'], [{'element': element, 'count': count}])
+                self.assertEqual(report['reference_duplicates'], [])
+                self.assertEqual(report['count_differences'], [
+                    {'element': element, 'board_count': count, 'reference_count': 1}])
+                self.assertEqual(len(report['board_geometry']), len(report['reference_geometry']) + count - 1)
+                reverse = compare_boards(self.reference, self.board)
+                self.assertFalse(reverse['geometry_equal'])
+                self.assertEqual(reverse['only_reference'], report['only_board'])
+                self.assertEqual(reverse['only_board'], [])
+                self.assertEqual(reverse['reference_duplicates'], report['board_duplicates'])
+                self.assertEqual(reverse['count_differences'], [
+                    {'element': element, 'board_count': 1, 'reference_count': count}])
+        self.reference.write_bytes(self.board.read_bytes())
+        self.board.write_text(self.board.read_text() + '\n')
+        report = self.compare()
+        self.assertTrue(report['geometry_equal'])
+        self.assertFalse(report['byte_equal'])
+        self.assertEqual(report['board_duplicates'], report['reference_duplicates'])
+        self.assertEqual(report['count_differences'], [])
 
     def test_width_layer_net_and_via_drill_are_geometry(self):
         edits = [lambda t, b, k: t.SetWidth(t.GetWidth() + 1),

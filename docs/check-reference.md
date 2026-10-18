@@ -207,7 +207,8 @@ and solver path is implemented, even when those inputs are named in the contract
 The [routing equivalence check](routing-equivalence.md) compares the captured
 board with `params.reference_board`, an immutable captured routed output. It
 normalizes native tracks, arcs, vias and zones in integer nanometres into sorted
-sets. It retains differing elements and both board hashes; UUID, ordering and
+multisets, preserving exact duplicate counts. It retains differing elements,
+per-element duplicate counts and count differences, and both board hashes; UUID, ordering and
 other byte-only changes are informational. Empty or unsupported native
 inventories and failed execution remain unknown. This check does not replace
 routing completeness, DRC or parity.

@@ -2,9 +2,9 @@
 
 `routing_equivalence` compares the captured `scope.board` with a second captured
 routed board. It implements the owner decision that routing determinism means
-equal normalized copper geometry sets. Board hashes remain evidence; unequal
-bytes alone never fail this check. The check does not run the router or rewrite
-either board.
+equal normalized copper geometry multisets, including primitive counts. Board
+hashes remain evidence; unequal bytes alone never fail this check. The check does
+not run the router or rewrite either board.
 
 ```json
 {
@@ -34,12 +34,13 @@ The existing native geometry reader extracts these facts from each saved board:
 
 All lengths and coordinates are integer KiCad board units (nanometres), without
 float rounding. Contours ignore their starting vertex, winding and repeated
-closing vertex. Element JSON is sorted and deduplicated into a canonical set;
-UUIDs and serialization order do not participate. Net codes are resolved to net
-names by pcbnew. Equal geometry sets pass even when board hashes differ.
+closing vertex. Element JSON is sorted into a canonical multiset that retains
+duplicates; UUIDs and serialization order do not participate. Net codes are
+resolved to net names by pcbnew. Equal geometry and element counts pass even when
+board hashes differ.
 
 This is equality of saved routed primitives. Splitting or merging segments,
-changing zone partitioning or retessellating contours can change the set even if
+changing zone partitioning or retessellating contours can change the multiset even if
 the union of occupied copper area is equivalent. Pads, footprint placement,
 copper text and graphical copper are outside this routing criterion. It is not
 a connectivity, DRC, completeness or fabrication check; retain those checks.
@@ -52,6 +53,10 @@ The retained `work/<check-id>/comparison.json` has schema
 `agent-ee.routing-equivalence/1`. It records `geometry_equal`, informational
 `byte_equal`, both board SHA-256 hashes, native pcbnew version, both complete
 canonical inventories, and `only_board` / `only_reference` elements. A differing
+count repeats the excess element in the corresponding difference list.
+`board_duplicates` and `reference_duplicates` list each duplicated `element` with
+its total occurrence `count`. `count_differences` names each differing `element`
+with its `board_count` and `reference_count` (zero when absent). A differing
 segment is identified by kind, net, layer, width and coordinates rather than an
 unstable UUID. A geometry difference is execution `ok`, outcome `defect`; native
 execution failures retain outcome `unknown`. Ordinary execution records and
@@ -61,6 +66,7 @@ evidence sealing bind this report to the candidate and check witnesses.
 baseline immutability, sealed witnesses and failure boundaries.
 `tests.test_kicad_route_native.NativeKicadRouteTest.test_repeated_krt_runs_compare_geometry_and_name_a_moved_segment`
 runs the pinned KRT twice on the owned placed RC, compares the routed outputs,
-then moves one segment and requires that the comparison identify the difference.
+then duplicates one segment exactly and moves one segment, requiring that each
+comparison identify the differing element and the duplicate's count.
 Set `AGENT_EE_KICAD_ROUTE_CHECKOUT` to the qualified pinned checkout and
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` to require all native prerequisites.

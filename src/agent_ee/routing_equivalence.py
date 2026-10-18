@@ -1,5 +1,6 @@
 """Compare saved routed copper primitives, independently of serialization order."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -35,7 +36,8 @@ def canonical_ring(points):
 
 
 def canonical_set(elements):
-    return sorted({canonical(e) for e in elements})
+    """Return a sorted canonical multiset, retaining exact duplicate primitives."""
+    return sorted(canonical(e) for e in elements)
 
 
 def compare_boards(board, reference):
@@ -47,15 +49,22 @@ def compare_boards(board, reference):
     copper = [canonical_set(routing_facts(str(p))) for p in (board, reference)]
     if not copper[0] or not copper[1]:
         raise ValueError('empty routed copper inventory cannot establish determinism')
-    left, right = map(set, copper)
+    left, right = map(Counter, copper)
     return {'schema': 'agent-ee.routing-equivalence/1', 'units': 'nm',
             'geometry_equal': left == right, 'byte_equal': blobs[0] == blobs[1],
             'board_sha256': hashlib.sha256(blobs[0]).hexdigest(),
             'reference_sha256': hashlib.sha256(blobs[1]).hexdigest(),
             'board_geometry': [json.loads(e) for e in copper[0]],
             'reference_geometry': [json.loads(e) for e in copper[1]],
-            'only_board': [json.loads(e) for e in sorted(left - right)],
-            'only_reference': [json.loads(e) for e in sorted(right - left)]}
+            'only_board': [json.loads(e) for e in sorted((left - right).elements())],
+            'only_reference': [json.loads(e) for e in sorted((right - left).elements())],
+            'board_duplicates': [{'element': json.loads(e), 'count': left[e]}
+                                 for e in sorted(left) if left[e] > 1],
+            'reference_duplicates': [{'element': json.loads(e), 'count': right[e]}
+                                     for e in sorted(right) if right[e] > 1],
+            'count_differences': [{'element': json.loads(e), 'board_count': left[e],
+                                   'reference_count': right[e]}
+                                  for e in sorted(left.keys() | right.keys()) if left[e] != right[e]]}
 
 
 def check_routing_equivalence(ctx):
