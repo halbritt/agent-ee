@@ -27,6 +27,7 @@ product's hardware qualification.
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |
+| Emit intent net constraints as KiCad netclasses and width rules | [Net constraints](net-constraints.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |

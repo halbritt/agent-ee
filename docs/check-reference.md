@@ -262,6 +262,7 @@ coordinator evidence sealing also covers those artifacts.
 | `exclude_nets` | Exact exempt net names; legacy default empty, explicit list required for copper-width/1 |
 | `criterion` | Optional `copper-width/1` selects versioned straight-track and arc coverage |
 | `covered_primitives` | Required with copper-width/1: exactly `["PCB_TRACK", "PCB_ARC"]` |
+| `net_constraints` | Optional with copper-width/1: captured [net-constraint record](net-constraints.md) whose per-net netclass minimums raise the limit for their nets |
 
 Use a finite positive numeric width justified by an actual requirement. The
 legacy handler converts the value to float but does not comprehensively reject invalid
@@ -295,7 +296,11 @@ unsupported eligible geometry is `unsupported/unknown`, including when another
 primitive is known narrow. Complete coverage is `ok/defect` for any below-limit
 primitive, otherwise `ok/pass`. Candidate-bound `copper-width.json` retains all
 primitive identities, values, limits, statuses and coverage counts alongside the
-raw probe report. Vias remain separate; zones, pads and graphic copper shapes
+raw probe report. With `net_constraints`, each primitive's limit is the larger of
+`min_track_width_mm` and its net's recorded netclass minimum. The record must
+pass, and the captured board-sibling `.kicad_pro` must carry its classes and exact
+patterns. Both are immutable inputs; a missing or mismatched binding is
+`unsupported/unknown` ([net constraints](net-constraints.md)). Vias remain separate; zones, pads and graphic copper shapes
 are outside this routing-width criterion. See [coverage](coverage.md) for the
 complete class/count contract. Opting in changes the scope/2 baseline identity;
 existing baseline criteria keep their historical meaning.

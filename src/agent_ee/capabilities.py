@@ -64,6 +64,8 @@ def _geometry(params):
             raise ValueError('copper-width/1 requires explicit exclude_nets')
         if 'min_track_width_mm' not in params:
             raise ValueError('missing width limit')
+    elif 'net_constraints' in params:
+        raise ValueError('net_constraints requires copper-width/1')
     excluded = params.get('exclude_nets', [])
     if not isinstance(excluded, list) or any(not isinstance(n, str) for n in excluded):
         raise ValueError('exclude_nets must be a list of net names')
@@ -229,6 +231,14 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'geometry':
             captured(scope.get('board'))
             result['predicates'] = _geometry(params)
+            if 'net_constraints' in params:
+                # The record and the netclasses it binds are acceptance policy, never repairable.
+                captured(params['net_constraints'], immutable=True)
+                project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))
+                captured(project, immutable=True)
+                if inputs is not None:
+                    from .net_constraints import net_minimums
+                    net_minimums(Path(inputs) / params['net_constraints'], Path(inputs) / project)
         elif kind == 'rc_transient':
             result['predicates'] = _rc_transient(params, prerequisite)
         elif kind == 'board_envelope':

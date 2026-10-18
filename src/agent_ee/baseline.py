@@ -131,6 +131,10 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "placement":
             from .placement_check import parameters
             paths.update(str(safe_relative(p)) for p in parameters(params))
+        if spec.get("kind") == "geometry" and "net_constraints" in params:
+            # The recorded netclass minimums and the project carrying them stay fixed.
+            paths.add(str(safe_relative(params["net_constraints"])))
+            paths.add(str(safe_relative(scope["board"]).with_suffix(".kicad_pro")))
         if spec.get("kind") == "passive_corners":
             paths.add(str(safe_relative(params["qualification"])))
         if spec.get("kind") == "measurements":

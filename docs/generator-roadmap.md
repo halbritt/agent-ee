@@ -67,6 +67,9 @@ CPL coordinate and export-log checks. The separate
 [Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74) compares
 layer presence, drill histograms, copper pad/via flashes and outline bounds.
 CPL rotation policy remains AGENTEE-72.
+[Net constraints](net-constraints.md) (AGENTEE-47) emit intent netclasses, width
+rules and the record that `copper-width/1` binds. Rung 2's routing row still
+needs those outputs carried into a scaffold template and a native routing attempt.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
