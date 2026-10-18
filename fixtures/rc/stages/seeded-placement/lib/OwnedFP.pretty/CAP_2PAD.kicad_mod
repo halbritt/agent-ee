@@ -1,0 +1,77 @@
+(footprint "CAP_2PAD"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Owned two-pad capacitor land pattern fixture")
+	(property "Reference" "REF**"
+		(at 0 -2.4 0)
+		(layer "F.SilkS")
+		(uuid "537298a0-414f-4b3e-b7b2-6ab41239ce47")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "CAP_2PAD"
+		(at 0 2.4 0)
+		(layer "F.Fab")
+		(uuid "fb46ef57-3150-4aa7-bebd-18d43ec41d15")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "c4b298a1-c0fe-46f3-bff5-ac03541bdf86")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d5d5a18f-b9bc-48a8-85f5-66b27d2154ee")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_rect
+		(start -1.7 -0.9)
+		(end 1.7 0.9)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "b423b730-c1b0-4fc1-8067-92987561d360")
+	)
+	(pad "1" smd rect
+		(at -0.95 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "88f3d722-e9d8-4337-b4d8-a8f78375a877")
+	)
+	(pad "2" smd rect
+		(at 0.95 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "5faa0c1c-935f-4a39-813b-a1ceb48d0cf2")
+	)
+	(embedded_fonts no)
+)

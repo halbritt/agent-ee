@@ -64,6 +64,8 @@ jobs:
 
       - name: Documentation check
         run: docker run --rm --network none -w /opt/agent-ee "$IMAGE" python3 scripts/check_docs.py
+      - name: Refuse committed merge-conflict markers
+        run: sh scripts/check_conflict_markers.sh
 
       # Run directories hold copies of the candidate inputs, including third-party
       # design files (the FOME-MC-origin RC fixture and stock KiCad library

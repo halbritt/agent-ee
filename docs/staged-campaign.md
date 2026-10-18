@@ -61,8 +61,14 @@ its native observation and, for schematics, the raw XML netlist. Public verifica
 requires successful probe execution and checks these observations against the
 captured inventory. It counts top-level placed symbols or footprints by explicit Reference property,
 or saved straight/arc segments. Nested library definitions are not instances. Symbols explicitly excluded from
-both BOM and board (`in_bom no`, `on_board no`) are outside component presence;
+both BOM and board (`in_bom no`, `on_board no`) are outside component presence,
+and so are symbols whose Reference starts with `#` (power symbols and `PWR_FLAG`,
+which KiCad's netlist export omits whatever their `in_bom`/`on_board` flags);
 the resulting inventory must still agree with native export.
+Eeschema also places power symbols and `PWR_FLAG` with `in_bom no` and
+`on_board no`, and the owned [schematic emitter](schematic-emitter.md) writes
+them the same way, so a schematic with power symbols passes the probe on its
+flags as well as on its references.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
 bounded to 32 MiB and 128 levels. The qualified source-version set is schematic
@@ -92,9 +98,12 @@ or an unsupported model remains unknown once its declared stage opens.
 
 The reducer records `earliest_failing_stage`, per-stage failed sets,
 `blocked_checks`, the stage-policy identity and recurring finding identities in
-each history record. Only shrinking the failed set of the previously earliest
-failing stage earns stage progress. Clearing that stage permits the next one.
-An unchanged failed set can earn progress only through the existing strict metric
+each history record. Stage progress is earned only in the previously earliest
+failing stage: its failed set shrinks, or the same checks fail with a strict
+subset of the previous finding identities (a check without `gate_findings`
+contributes its check id). A fix that does not clear its finding, or that clears
+one finding while introducing another, is not progress. Clearing that stage
+permits the next one. Otherwise progress requires the existing strict metric
 rule applied within that active stage: comparable bounds, at least one negative
 margin improves, no other negative margin worsens, and no new failed check.
 Improving a later stage cannot mask an earlier stall.
@@ -121,6 +130,9 @@ Checks may attach `details.gate_findings`:
 ]
 ```
 
+Native [ERC and placement checks](check-reference.md#erc) attach identity
+findings; only placement connector-edge findings carry declaration-derived
+`move`, `rotate` or `flip` hints. Other producers may be added per check.
 Each finding requires nonempty `check_id`, `entity`, `kind`; `check_id` must match
 its enclosing check. Duplicate entity/kind identities, unknown fields, malformed
 fixes and nonfinite JSON parameters are rejected. `suggested_fix` is optional and
@@ -135,7 +147,14 @@ or satisfy a criterion. Every captured proposal receives fresh checks.
 placed and saved-copper presence. Tests run sandboxed presence probes, real narrow
 board geometry checks and the existing campaign with a synthetic measurement
 producer and scripted independent reviewer/adjudicator responses. Scripted ERC
-in the transition test is explicitly not native ERC evidence. Existing unstaged
+in the transition test is explicitly not native ERC evidence. Separately, native
+ERC on the schematic snapshot reports unconnected pins: that defect blocks the
+present placement subject with a sealed `stage_blocked` witness and the placement
+handler does not run. A real process aborting inside the check sandbox gives
+`execution: failed` and leaves later stages `not_run/unknown`; the run is
+incomplete. A campaign test shows an accepted finding's hint reaching the sole
+writer and the writer's proposal receiving fresh checks; that hint is scripted
+over a real sandboxed measurement. Existing unstaged
 convergence tests remain unchanged.
 
 Run the stage and unchanged convergence tests from the repository root with:
@@ -158,7 +177,11 @@ and routing writer constraints remain separate lanes. The writer prompt limits w
 failing stage; arbitrary writer investigative commands are not a stage-specific
 OS allowlist. Coordinator-run steps honor the same gate: a staged campaign's step plan holds
 only the earliest failing stage's [implementation steps](stage-receipts.md#campaign-integration),
-and the [placement adapter](placement-adapter.md) runs only on placement turns. Owner convergence-contract acceptance remains outstanding.
+and the [placement adapter](placement-adapter.md) runs only on placement turns. When steps are declared,
+the retained writer prompt lists all steps and their write paths, identifies the scheduled steps, and
+reserves their stages for coordinator execution. A writer change to a scheduled step's output is
+refused as `writer_step_output_edit` before any step runs. The writer can prepare other mutable inputs
+or return a no-op summary. Owner convergence-contract acceptance remains outstanding.
 
 The ordered scheduler changes the identity of `checks.py`, which the existing
 passive-corner contract pins as its parser module. Requalification compared the

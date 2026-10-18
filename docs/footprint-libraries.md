@@ -30,8 +30,9 @@ physical components the check is informational; it supplies no passing assignmen
 criterion.
 
 The check parameters are `manifest` and `declaration` captured relative paths,
-and `assembly_intent`, a list of `{reference, assembly, connector}` records fixed
-in the scope. A declaration cannot change those owner assembly predicates.
+`assembly_intent`, a list of `{reference, assembly, connector}` records fixed
+in the scope, and an optional captured `declarations` path (see
+[owner declarations](#owner-declarations)). A declaration cannot change those owner assembly predicates.
 Scope/2 and scope/3 freeze manifest and library dependencies; the selection
 file remains candidate data. Scope/3 advertises only assignment/parity coverage.
 
@@ -41,6 +42,43 @@ whose explicit layers are exclusively paste are paste-only. Those two roles are
 excluded from electrical parity. Numbered copper pads are never silently ignored.
 Repeated thermal pads sharing a number remain distinct records without inventing
 extra symbol pins. Custom padstacks and unqualified forms refuse coverage.
+
+## Owner declarations
+
+An optional `declarations` check parameter names a captured
+`agent-ee.footprint-declarations/1` file. It is an immutable scope input, hashed
+into the baseline like the manifest, never candidate data. Nothing in it is
+inferred from names, tags or descriptions. It has two lists:
+
+- `footprints`: `{footprint, mechanical_pads, thermal_via_pads, custom_pads,
+  assembly, rationale}` keyed by exact `library:footprint`. `mechanical_pads`
+  lists numbers, which can include `""`. Copper or numbered NPTH pads with
+  those numbers get role `mechanical` with `declared: "mechanical"`, so they
+  leave electrical parity and the connector count. `thermal_via_pads` lists
+  numbers whose through-hole copper pads are vias beside an SMD pad with the same
+  number. Those pads stay electrical, are marked `thermal_via`, and do not make
+  the footprint mixed technology. `custom_pads` lists numbers whose `custom` or
+  `trapezoid` shapes, `options` or `primitives` are accepted for numbering only;
+  the geometry is recorded as `declared_custom` and is not qualified. `padstack`
+  is still refused. `assembly` (`smd`, `through_hole` or `null`) stands in for a
+  missing native `attr`.
+- `pinless_symbols`: `{lib_id, rationale}` for physical symbols without pins
+  (mounting holes, fiducials). A declared pinless component must still select a
+  present footprint. Every electrical pad on that footprint is an extra-pad
+  defect. Its assembly comes from the footprint's single native attribute, or
+  from the footprint's declared assembly when it has none.
+
+Each declaration must apply. A declared number that matches no affected pad, a
+thermal-via number without both SMD and through-hole copper pads, a footprint
+that is not a manifest member, an assembly declared beside a native `smd` or
+`through_hole` attribute, or a pinless declaration on a symbol with pins leaves
+coverage unknown. A malformed file is `malformed`. A declaration never removes
+a pin's requirement. A symbol pin whose only pads are declared mechanical is
+reported as `missing_pads`. Reports retain `declarations_sha256`, the
+footprint's `footprint_declaration`, the `mechanical_pads` it actually applied,
+and the `pinless` record. Undeclared MP pads remain extra-pad defects. Undeclared
+pinless symbols, thermal vias, attr-less footprints and custom pads remain
+unknown.
 
 Empty fields and absent exact selections are defects only with complete library
 coverage. Missing/extra numbers identify each affected reference and footprint.
@@ -55,6 +93,7 @@ Standalone indexing or assignment runs offline:
 ```sh
 python3 -m agent_ee.footprint_library manifest.json --captures captured --out index.json
 python3 -m agent_ee.footprint_library manifest.json --captures captured --assignments selections.json --out assignments.json
+python3 -m agent_ee.footprint_library manifest.json --captures captured --assignments selections.json --declarations declarations.json --out declared.json
 ```
 
 `--query` performs literal exact `library:footprint` lookup. Output files must be

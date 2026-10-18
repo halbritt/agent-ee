@@ -21,6 +21,7 @@ from toolchain import require_toolchain
 
 from agent_ee import candidate, checks
 from agent_ee.baseline import freeze_evidence, validate_witnesses, verify_evidence
+from agent_ee.placement_check import gate_findings
 from agent_ee.placement_predicates import board_axis, connector_edge, envelope_declarations, native_rotation
 from agent_ee.placement_probe import extract
 
@@ -176,6 +177,8 @@ class NativePlacementGates(unittest.TestCase):
         self.assertStatus(courtyard, 'ok', 'defect')
         defect, = courtyard['details']['defects']
         self.assertEqual(sorted(defect['refs']), ['C1', 'R1'])
+        self.assertEqual(courtyard['details']['gate_findings'],
+                         [{'check_id': 'courtyard', 'entity': 'C1+R1', 'kind': 'courtyards_overlap'}])
         raw = json.loads((run / 'work/drc-placement/drc.json').read_text())
         native, = [v for v in raw['violations'] if v['type'] == 'courtyards_overlap']
         self.assertEqual(defect['native']['items'], [{k: i.get(k) for k in ('uuid', 'description', 'pos')}
@@ -248,6 +251,9 @@ class NativePlacementGates(unittest.TestCase):
         self.assertStatus(results['edge-over'], 'ok', 'defect')
         defect, = results['edge-over']['details']['defects']
         self.assertEqual((defect['ref'], defect['distance_mm'], defect['minimum_mm']), ('C1', 0.25, 0.250001))
+        self.assertEqual(results['edge-over']['details']['gate_findings'],
+                         [{'check_id': 'edge-over', 'entity': 'C1', 'kind': 'courtyard_edge_clearance'}])
+        self.assertNotIn('gate_findings', results['edge-exact']['details'])
 
     def test_ratsnest_byte_identical_oracle_and_declared_maxima(self):
         source = self.source()
@@ -371,6 +377,13 @@ class NativePlacementGates(unittest.TestCase):
         result = connector_edge(moved, envelope_declarations(record))
         violation, = result['defects'][0]['violations']
         self.assertEqual((violation['edge'], violation['distance_mm'], violation['inset_mm']), ('left', 3.0, 7.0))
+        # The declaration-derived move hint, applied to a fresh capture, clears its finding.
+        finding, = gate_findings('connector', result['defects'])
+        self.assertEqual((finding['entity'], finding['kind'], finding['suggested_fix']['op']),
+                         ('J1', 'connector_off_declared_edge_position', 'move'))
+        target = finding['suggested_fix']['params']
+        fixed = extract(self.source(move={'J1': (target['x_mm'], target['y_mm'])}) / 'project/rc_filter.kicad_pcb')
+        self.assertEqual(connector_edge(fixed, envelope_declarations(record))['status'], 'pass')
         envelope = (REPO / 'tests/fixtures/placement/rc.envelope.json').read_bytes()
         source = self.source(move={'J1': (103, 100)}, extra={'project/rc.envelope.json': envelope})
         spec = placement('connector', 'connector-edge/1', envelope='project/rc.envelope.json')

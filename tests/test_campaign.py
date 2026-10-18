@@ -6,17 +6,130 @@ qualification of the synthetic measurement fixture as a physical simulator.
 import contextlib
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee.campaign import run_campaign, verify_campaign, campaign_feedback
+from agent_ee.campaign import run_campaign, verify_campaign, campaign_feedback, check_proposal
 from agent_ee.cli import run_review, verify
 from agent_ee.empirical import bench_review
 from agent_ee.storage import digest, read_json, write_json
 
-from toolchain import toolchain_test
+from toolchain import require_toolchain, toolchain_test
+
+
+class ImmutableInputGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-saveboard-guard-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        project = self.source / 'project'
+        project.mkdir(parents=True)
+        # Original minimal project: no external symbols, footprints or libraries.
+        (project / 'owned.kicad_pcb').write_text('''(kicad_pcb
+ (version 20260206) (generator "pcbnew") (generator_version "10.0")
+ (general (thickness 1.6))
+ (layers (0 "F.Cu" signal) (2 "B.Cu" signal) (25 "Edge.Cuts" user))
+ (setup (pad_to_mask_clearance 0))
+)
+''')
+        for suffix in ('.kicad_pro', '.kicad_prl'):
+            (project / ('owned' + suffix)).write_text('{}\n')
+        (project / 'other.kicad_pro').write_text('{}\n')
+        self.manifest = {'files': {p.relative_to(self.source).as_posix(): digest(p)
+                                   for p in sorted(self.source.rglob('*')) if p.is_file()},
+                         'scope': {'board': 'project/owned.kicad_pcb', 'checks': []}}
+        self.state = {'mutable_inputs': ['project/owned.kicad_pcb'], 'baseline': {'files': {}}}
+        self.design = self.root / 'design'
+        shutil.copytree(self.source, self.design)
+
+    def test_unchanged_project_and_board_only_edit_are_allowed(self):
+        check_proposal(self.design, self.manifest, self.state)
+        board = self.design / 'project/owned.kicad_pcb'
+        board.write_text(board.read_text().replace('1.6', '1.7'))
+        check_proposal(self.design, self.manifest, self.state)
+
+    def test_sibling_hint_requires_same_stem_directory_and_changed_board(self):
+        cases = [('project/owned.kicad_pro', False), ('project/owned.kicad_prl', False),
+                 ('project/other.kicad_pro', True), ('elsewhere/owned.kicad_pro', True),
+                 ('project/owned.kicad_sch', True)]
+        for index, (rel, board_changed) in enumerate(cases):
+            with self.subTest(rel=rel, board_changed=board_changed):
+                manifest = {**self.manifest, 'files': dict(self.manifest['files'])}
+                design = self.root / f'case-{index}'
+                shutil.copytree(self.source, design)
+                path = design / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    path.write_text('original')
+                    manifest['files'][rel] = digest(path)
+                path.write_text('changed')
+                if board_changed:
+                    (design / 'project/owned.kicad_pcb').write_text('changed board')
+                with self.assertRaises(ValueError) as caught:
+                    check_proposal(design, manifest, self.state)
+                self.assertEqual(str(caught.exception),
+                                 f'implementation changed immutable verification input: {rel}')
+
+    def test_new_siblings_and_links_still_refuse(self):
+        added = self.design / 'project/new.kicad_prl'
+        added.write_text('{}\n')
+        with self.assertRaisesRegex(ValueError, 'captured file inventory'):
+            check_proposal(self.design, self.manifest, self.state)
+        added.unlink()
+        sibling = self.design / 'project/owned.kicad_pro'
+        sibling.unlink()
+        sibling.symlink_to(self.source / 'project/owned.kicad_pro')
+        with self.assertRaisesRegex(ValueError, 'live link'):
+            check_proposal(self.design, self.manifest, self.state)
+
+    def test_native_saveboard_sibling_rewrites_are_refused_with_writer_rule(self):
+        require_toolchain(native=True)
+        from agent_ee.executor import execute
+        work = self.root / 'saveboard'
+        program = '''import shutil
+import pcbnew
+shutil.copytree('/candidate', '/work/design')
+path = '/work/design/project/owned.kicad_pcb'
+board = pcbnew.LoadBoard(path)
+board.GetDesignSettings().SetBoardThickness(1700000)
+assert pcbnew.SaveBoard(path, board)
+'''
+        record = execute(self.source, work, ['/usr/bin/python3', '-c', program], timeout=60)
+        self.assertEqual(record['execution'], 'ok', (work / 'console.log').read_text())
+        self.assertEqual(record['exit_code'], 0)
+        self.assertIn('--unshare-net', record['sandbox_argv'])
+        design = work / 'design'
+        self.assertNotEqual(digest(design / 'project/owned.kicad_pcb'),
+                            self.manifest['files']['project/owned.kicad_pcb'])
+        with self.assertRaisesRegex(ValueError, 'likely pcbnew.SaveBoard side effect'):
+            check_proposal(design, self.manifest, self.state)
+        for suffix in ('.kicad_pro', '.kicad_prl'):
+            rel = 'project/owned' + suffix
+            with self.subTest(suffix=suffix):
+                self.assertNotEqual(digest(design / rel), self.manifest['files'][rel])
+                # Isolate each real native rewrite so both refusal paths are exercised.
+                isolated = self.root / suffix[1:]
+                shutil.copytree(self.source, isolated)
+                for changed in ('project/owned.kicad_pcb', rel):
+                    shutil.copyfile(design / changed, isolated / changed)
+                with self.assertRaises(ValueError) as caught:
+                    check_proposal(isolated, self.manifest, self.state)
+                message = str(caught.exception)
+                self.assertIn(f'implementation changed immutable verification input: {rel}', message)
+                self.assertIn('pcbnew.SaveBoard', message)
+                self.assertIn('likely', message)
+                self.assertIn('sandboxed step runner', message)
+                self.assertIn('staging copy', message)
+                self.assertIn('immutable', message)
+        # Adopt only the saved board from staging; the delivered project's siblings stay exact.
+        shutil.copyfile(design / 'project/owned.kicad_pcb', self.design / 'project/owned.kicad_pcb')
+        check_proposal(self.design, self.manifest, self.state)
+        self.assertEqual({p.relative_to(self.source).as_posix(): digest(p)
+                          for p in self.source.rglob('*') if p.is_file()}, self.manifest['files'])
 
 
 class CampaignIntegrationTests(unittest.TestCase):
@@ -168,6 +281,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(state['history'][0], first['history'][0])
         self.assertEqual(state['history'][1]['failed'], ['response'])
         fresh = verify(self.root / 'campaign/runs/4')
+        self.assertEqual(fresh['max_schema_resubmissions'], 1)
+        self.assertEqual(verify(self.root / 'campaign/runs/3')['max_schema_resubmissions'], 1)
         metric = fresh['checks'][0]['details']['metrics']['output']
         self.assertEqual((metric['nominal'], metric['lower'], metric['upper']), (1, 2, 2))
         self.assertEqual(len(read_json(self.root / 'fresh-feedback/empirical/calibration.json')['observations']), 4)
@@ -433,6 +548,24 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertTrue(any('runtime_drift' in record.get('error', '') for record in result['review_executions']))
 
     @toolchain_test
+    def test_capture_refusal_surfaces_the_run_error_not_a_missing_candidate(self):
+        # An undeclared envelope obligation is refused inside capture, before any candidate exists.
+        self.scope["baseline"]["requirements"][0]["id"] = "R-envelope-undeclared"
+        write_json(self.root / "scope.json", self.scope)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 1)
+        root = self.root / "campaign"
+        state, result = read_json(root / "state.json"), read_json(root / "runs/1/result.json")
+        self.assertFalse((root / "runs/1/candidate.json").exists())
+        self.assertEqual(result["outcome"], "incomplete")
+        self.assertIn("without a scope envelope declaration: R-envelope-undeclared", result["error"])
+        self.assertEqual((state["state"], state["error"]),
+                         ("incomplete", f"ValueError: run 1 captured no candidate: {result['error']}"))
+        self.assertNotIn("candidate.json", state["error"])
+        self.assertEqual((state["history"], self.calls), ([], []))
+        self.assertEqual(verify_campaign(root)["state"], "incomplete")
+
+    @toolchain_test
     def test_campaign_verification_requires_separate_implementation_receipt(self):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
@@ -460,3 +593,278 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         result = read_json(self.root / 'run/result.json')
         self.assertEqual(result['outcome'], 'incomplete')
         self.assertIn('preflight receipt changed', result['error'])
+
+    def witness_agent(self, *, twice_invalid=False, drop_finding=False):
+        """Script one structural refusal while retaining the same engineering claim."""
+        counts = {}
+        (self.root / 'source/resubmission_harness.py').write_text(
+            'import json, sys\nrequest = json.load(sys.stdin)\nprint(json.dumps(request["response"]))\n')
+        def agent(run, label, definition, prompt, schema, timeout, **kwargs):
+            record, response = self.agent(run, label, definition, prompt, schema, timeout, **kwargs)
+            key = (str(run), label)
+            counts[key] = counts.get(key, 0) + 1
+            if label == 'physical' and read_json(Path(run) / 'checks/response.json')['outcome'] == 'defect':
+                valid = counts[key] > 1 and not twice_invalid
+                response['findings'] = [{
+                    'id': 'output', 'title': 'Output exceeds R1', 'location': 'design/design.json',
+                    'condition': 'load', 'mechanism': 'Declared measurement exceeds maximum',
+                    'severity': 'major', 'assessment': 'defect', 'reasoning': '15 V exceeds 10 V',
+                    'witnesses': [{'requirement_id': 'R1', 'check_id': 'response'}],
+                    'evidence': [{'path': 'checks/response.json' if valid else 'inputs/design/board',
+                                  'locator': 'outcome'}]}]
+                if counts[key] > 1 and drop_finding:
+                    response['findings'] = []
+            if label == 'adjudicator':
+                reviews = [read_json(p) for p in (Path(run) / 'reviews').glob('*.json')]
+                for review in reviews:
+                    for finding in review['findings']:
+                        response['decisions'].append({
+                            'finding_id': review['role'] + '/' + finding['id'], 'disposition': 'duplicate',
+                            'duplicate_of': 'check/response', 'reason': 'Same executable R1 violation',
+                            'evidence': [{'path': 'checks/response.json', 'locator': 'outcome'}]})
+            if label == 'physical':
+                from agent_ee.executor import execute
+                work = Path(run) / 'review-work' / label
+                (work / 'experiments').mkdir(exist_ok=True)
+                execution = execute(Path(run) / 'inputs', work,
+                    ['/usr/bin/python3', '/candidate/design/resubmission_harness.py'],
+                    stdin=json.dumps({'response': response}), timeout=timeout, network=False,
+                    cancellation=kwargs.get('cancellation'))
+                record.update(execution)
+                response = json.loads((work / 'stdout.log').read_text()) if execution['execution'] == 'ok' else None
+            return record, response
+        return agent
+
+    @toolchain_test
+    def test_witness_resubmission_completes_campaign_with_retained_refusal(self):
+        """AGENTEE-115: the rung-1 witness refusal must not discard the campaign."""
+        with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent()), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+        root = self.root / 'campaign'
+        state = verify_campaign(root)
+        self.assertEqual(state['state'], 'criteria_satisfied')
+        self.assertEqual(read_json(root / 'config.json')['max_schema_resubmissions'], 1)
+        run = root / 'runs/1'
+        result = verify(run)
+        record = next(r for r in result['review_executions'] if r['role'] == 'physical')
+        self.assertEqual(record['execution'], 'ok')
+        self.assertEqual(record['resubmissions_used'], 1)
+        self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
+        first, second = [run / a['path'] for a in record['attempts']]
+        for archive in (first, second):
+            raw = read_json(archive / 'execution.json')
+            self.assertEqual(raw['exit_code'], 0)
+            self.assertIn('--unshare-net', raw['sandbox_argv'])
+            console = archive / 'review-work/physical/stdout.log'
+            self.assertEqual(json.loads(console.read_text()), read_json(archive / 'response.json'))
+        error = read_json(first / 'execution.json')['error']
+        self.assertEqual(error, 'witness needs an unchanged cited check result')
+        self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
+        self.assertEqual((second / 'prompt.txt').read_text(),
+                         (first / 'prompt.txt').read_text() + '\nOUTPUT VALIDATION ERROR:\n' + error)
+        self.assertEqual(read_json(first / 'schema.json'), read_json(second / 'schema.json'))
+        receipts = [read_json(p / 'review-work/physical/preflight/receipt.json') for p in (first, second)]
+        self.assertNotEqual(receipts[0]['invocation_id'], receipts[1]['invocation_id'])
+        for field in ('definition', 'expectation_id', 'candidate_id', 'baseline_id', 'observed'):
+            self.assertEqual(receipts[0][field], receipts[1][field])
+        from agent_ee.findings import validate_review
+        packet = read_json(run / 'packet.json')
+        with self.assertRaisesRegex(ValueError, error):
+            validate_review(read_json(first / 'response.json'), packet['candidate_id'], packet['run_id'],
+                            packet['packet_sha256'], run)
+        self.assertEqual(validate_review(read_json(second / 'response.json'), packet['candidate_id'],
+                                        packet['run_id'], packet['packet_sha256'], run)['role'], 'physical')
+        self.assertEqual(self.calls.count('physical'), 3)  # two calls in iteration one, one fresh in two
+        self.assertEqual(len(state['history']), 2)
+        (first / 'response.json').write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'evidence changed'):
+            verify(run)
+
+    @toolchain_test
+    def test_second_invalid_witness_is_terminal_and_unrepaired(self):
+        with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent(twice_invalid=True)), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        root = self.root / 'campaign'
+        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        run = root / 'runs/1'
+        result = verify(run)
+        self.assertEqual(result['state'], 'incomplete')
+        self.assertNotIn('adjudicator', self.calls)
+        self.assertNotIn('implementation', self.calls)
+        record = read_json(run / 'review-executions/physical.json')
+        self.assertEqual(record['execution'], 'malformed')
+        self.assertEqual(record['resubmissions_used'], 1)
+        self.assertEqual(len(record['attempts']), 2)
+        self.assertEqual(self.calls.count('physical'), 2)
+        self.assertEqual(read_json(run / record['attempts'][0]['path'] / 'response.json'),
+                         read_json(run / record['attempts'][1]['path'] / 'response.json'))
+        self.assertFalse((run / 'reviews/physical.json').exists())
+
+    @toolchain_test
+    def test_zero_resubmission_configuration_preserves_single_shot_refusal(self):
+        config = read_json(self.root / 'campaign.json')
+        config['max_schema_resubmissions'] = 0
+        write_json(self.root / 'campaign.json', config)
+        with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent()), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        record = read_json(self.root / 'campaign/runs/1/review-executions/physical.json')
+        self.assertEqual(record['execution'], 'malformed')
+        self.assertEqual(record['resubmissions_used'], 0)
+        self.assertEqual(self.calls.count('physical'), 1)
+        verify_campaign(self.root / 'campaign')
+
+    def test_invalid_resubmission_limits_refuse_before_campaign_creation(self):
+        config = read_json(self.root / 'campaign.json')
+        for value in (True, -1, 2, 1.5, '1', None):
+            with self.subTest(value=value):
+                config['max_schema_resubmissions'] = value
+                write_json(self.root / 'campaign.json', config)
+                with self.assertRaisesRegex(ValueError, 'max_schema_resubmissions'):
+                    run_campaign(self.root / 'campaign.json', self.root / 'invalid')
+                self.assertFalse((self.root / 'invalid').exists())
+
+    @toolchain_test
+    def test_resubmission_cannot_drop_the_invalid_finding(self):
+        with patch('agent_ee.reviewers.dispatch', side_effect=self.witness_agent(drop_finding=True)), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        record = read_json(self.root / 'campaign/runs/1/review-executions/physical.json')
+        self.assertEqual(record['execution'], 'refused')
+        self.assertEqual(record['error'], 'resubmission changed finding set')
+        self.assertNotIn('adjudicator', self.calls)
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+
+    @toolchain_test
+    def test_adjudicator_resubmission_reuses_exact_finding_set(self):
+        def agent(*args, **kwargs):
+            record, response = self.agent(*args, **kwargs)
+            if args[1] == 'adjudicator' and self.calls.count('adjudicator') == 1:
+                response['decisions'][0]['evidence'][0]['path'] = 'baseline.json'
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+        run = self.root / 'campaign/runs/1'
+        record = read_json(run / 'adjudicator-execution.json')
+        self.assertEqual(record['resubmissions_used'], 1)
+        self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
+        first, second = [run / a['path'] for a in record['attempts']]
+        self.assertIn('citation path must reside', read_json(first / 'execution.json')['error'])
+        self.assertTrue((second / 'prompt.txt').read_text().startswith((first / 'prompt.txt').read_text()))
+        self.assertEqual(read_json(first / 'response.json')['decisions'][0]['evidence'][0]['path'], 'baseline.json')
+        verify_campaign(self.root / 'campaign')
+
+    @toolchain_test
+    def test_writer_resubmission_reissues_summary_without_another_design(self):
+        def agent(*args, **kwargs):
+            record, response = self.agent(*args, **kwargs)
+            if args[1] == 'implementation' and self.calls.count('implementation') == 1:
+                response = {'summary': []}
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)
+        root = self.root / 'campaign'
+        work = root / 'implementations/1'
+        record = read_json(work / 'implementation-execution.json')
+        self.assertEqual(record['resubmissions_used'], 1)
+        self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'ok'])
+        self.assertEqual(self.calls.count('implementation'), 2)
+        verify_campaign(root)
+        altered = {k: v for k, v in record.items() if k != 'attempts'}
+        write_json(work / 'implementation-execution.json', altered)
+        with self.assertRaisesRegex(ValueError, 'implementation execution record changed'):
+            verify_campaign(root)
+        write_json(work / 'implementation-execution.json', record)
+        archive = work / record['attempts'][0]['path']
+        (archive / 'prompt.txt').write_text('changed refused-call provenance')
+        with self.assertRaisesRegex(ValueError, 'resubmission record changed'):
+            verify_campaign(root)
+
+    @toolchain_test
+    def test_writer_resubmission_cannot_change_delivered_design(self):
+        def agent(*args, **kwargs):
+            record, response = self.agent(*args, **kwargs)
+            if args[1] == 'implementation':
+                if self.calls.count('implementation') == 1:
+                    response = {'summary': []}
+                else:
+                    write_json(Path(args[0]) / 'review-work/implementation/design/design/design.json', {'value': 6})
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        work = self.root / 'campaign/implementations/1'
+        record = read_json(work / 'implementation-execution.json')
+        self.assertEqual(record['execution'], 'refused')
+        self.assertEqual(record['error'], 'resubmission changed implementation design')
+        self.assertFalse((work / 'proposal.scope.json').exists())
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')
+
+    @toolchain_test
+    def test_runtime_drift_between_refusal_and_resubmission_never_dispatches_again(self):
+        from agent_ee.cli import runtime_files
+        observed = runtime_files()
+        scripted = self.witness_agent()
+        def call(*args, **kwargs):
+            record, response = scripted(*args, **kwargs)
+            if args[1] == 'physical' and response is not None:
+                drift = patch('agent_ee.cli.runtime_files', return_value={
+                    **observed, 'codex': {**observed['codex'], 'sha256': '0' * 64}})
+                drift.start()
+                self.addCleanup(drift.stop)
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=call), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        run = self.root / 'campaign/runs/1'
+        record = read_json(run / 'review-executions/physical.json')
+        self.assertEqual(self.calls.count('physical'), 1)
+        self.assertEqual([a['execution'] for a in record['attempts']], ['malformed', 'not_run'])
+        self.assertIn('runtime_drift', record['error'])
+        self.assertEqual(read_json(run / 'result.json')['state'], 'incomplete')
+        self.assertNotIn('adjudicator', self.calls)
+
+    @toolchain_test
+    def test_initial_call_interruption_keeps_verifiable_attempt_provenance(self):
+        def agent(*args, **kwargs):
+            record, response = self.agent(*args, **kwargs)
+            if args[1] == 'physical':
+                raise KeyboardInterrupt
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_review(self.root / 'scope.json', self.root / 'run', 30), 1)
+        run = self.root / 'run'
+        result = verify(run)
+        self.assertEqual(result['state'], 'interrupted')
+        record = next(r for r in result['review_executions'] if r['role'] == 'physical')
+        self.assertEqual(record['execution'], 'interrupted')
+        self.assertEqual(len(record['attempts']), 1)
+
+    @toolchain_test
+    def test_malformed_check_output_is_executed_once_without_resubmission(self):
+        (self.root / 'source/adapter.py').write_text('raise RuntimeError("scripted parser failure")\n')
+        solver = self.root / 'source/solver.py'
+        solver.write_text(solver.read_text() +
+            '\nwith Path("check-invocations.log").open("a") as marker:\n    marker.write("executed\\n")\n')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        run = self.root / 'campaign/runs/1'
+        self.assertEqual((run / 'work/response/tool/check-invocations.log').read_text().splitlines(), ['executed'])
+        result = verify(run)
+        self.assertEqual(result['checks'][0]['outcome'], 'unknown')
+        self.assertNotEqual(result['checks'][0]['execution'], 'ok')
+        self.assertEqual(len(result['checks']), 1)
+        self.assertFalse((run / 'review-attempts/response').exists())
+        self.assertNotIn('implementation', self.calls)
+
+    @toolchain_test
+    def test_missing_failed_writer_workspace_refuses_campaign_verification(self):
+        import shutil
+        def agent(*args, **kwargs):
+            record, response = self.agent(*args, **kwargs)
+            if args[1] == 'implementation':
+                response = {'summary': []}
+            return record, response
+        with patch('agent_ee.reviewers.dispatch', side_effect=agent), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 1)
+        root = self.root / 'campaign'
+        self.assertEqual(verify_campaign(root)['state'], 'incomplete')
+        shutil.rmtree(root / 'implementations/1')
+        with self.assertRaisesRegex(ValueError, 'implementation execution record changed'):
+            verify_campaign(root)

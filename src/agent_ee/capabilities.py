@@ -12,10 +12,10 @@ from pathlib import Path, PurePosixPath
 from .storage import identity
 
 
-KINDS = frozenset(('fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('fab_package', 'cpl_rotation', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -64,6 +64,8 @@ def _geometry(params):
             raise ValueError('copper-width/1 requires explicit exclude_nets')
         if 'min_track_width_mm' not in params:
             raise ValueError('missing width limit')
+    elif 'net_constraints' in params:
+        raise ValueError('net_constraints requires copper-width/1')
     excluded = params.get('exclude_nets', [])
     if not isinstance(excluded, list) or any(not isinstance(n, str) for n in excluded):
         raise ValueError('exclude_nets must be a list of net names')
@@ -229,6 +231,14 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'geometry':
             captured(scope.get('board'))
             result['predicates'] = _geometry(params)
+            if 'net_constraints' in params:
+                # The record and the netclasses it binds are acceptance policy, never repairable.
+                captured(params['net_constraints'], immutable=True)
+                project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))
+                captured(project, immutable=True)
+                if inputs is not None:
+                    from .net_constraints import net_minimums
+                    net_minimums(Path(inputs) / params['net_constraints'], Path(inputs) / project)
         elif kind == 'rc_transient':
             result['predicates'] = _rc_transient(params, prerequisite)
         elif kind == 'board_envelope':
@@ -315,6 +325,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
+        elif kind == 'block_provenance':
+            from .block_adaptation import capability
+            descriptor = capability(params, scope, files, inputs, spec['id'])
+            prerequisite(params.get('netlist_check'), ('netlist',))
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
         elif kind == 'schematic_lint':
             from .schematic_lint import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
@@ -344,6 +361,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'fab_profile':
             from .fab_profile import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'dfm_geometry':
+            from .dfm_geometry import capability
+            captured(scope.get('board'))
+            descriptor = capability(params, scope, files, inputs)
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
@@ -389,6 +413,23 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'fab_consistency':
             from .fab_consistency import capability
             result['predicates'] = capability(params, scope, prerequisite, captured)
+        elif kind == 'cpl_rotation':
+            from .cpl_rotation import capability
+            descriptor = capability(params, files, inputs)
+            prerequisite(params['export_check'], ('fab_export',))
+            prerequisite(params['geometry_check'], ('geometry',))
+            captured(scope.get('board'))
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'fab_package':
+            from .fab_package import capability
+            result['predicates'] = capability(params, scope, spec, prerequisite, captured)
+            captured(scope.get('board'))
+            captured(scope.get('schematic'))
+            project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))
+            if project in files:
+                captured(project, immutable=True)
         elif kind == 'hardware_interface':
             from .hardware_interface import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])

@@ -229,9 +229,8 @@ class RungPartsTests(unittest.TestCase):
         from agent_ee import executor, forward_annotation
         from agent_ee.cli import run_review, verify
         from agent_ee.schematic_emitter import emit_schematic
-        captures = {lib['path']: (g.STOCK / 'symbols' / lib['path']).read_bytes()
-                    for lib in prep['intent']['libraries']}
-        emission, files = emit_schematic(q.qualified_intent(prep), captures, q.layout())
+        intent = q.qualified_intent(prep)
+        emission, files = emit_schematic(intent, q.intent_captures(intent), q.layout())
         self.assertEqual(emission['execution'], 'ok', emission)
         schematic = scaffold / f'project/{q.NAME}.kicad_sch'
         schematic.write_bytes(files[q.NAME + '.kicad_sch'])

@@ -64,10 +64,10 @@ Any property whose name matches `^PARAM_[A-Za-z0-9_]+$` (for example `PARAM_resi
    ```json
    {"min": "9900", "max": "10100", "nominal": "10000", "unit": "ohm"}
    ```
-   - `min` and `max` are required finite numbers or numeric strings parsed with exact `Decimal`.
+   - `min` and `max` are required finite numbers or numeric strings parsed with exact `Decimal` (ASCII digits only; underscores in numbers and exponents or precisions outside `MAX_DECIMAL_EXPONENT=1000` / `MAX_DECIMAL_SIGNIFICAND_DIGITS=28` are rejected).
    - `nominal` is optional; when present, it must satisfy `min <= nominal <= max`.
    - Must satisfy `min <= max`.
-   - `unit` is a required non-empty trimmed string.
+   - `unit` is a required non-empty trimmed string belonging to the declared `PARAM_UNITS` vocabulary (SI prefixes `f`/`p`/`n`/`u`/`m`/`k`/`M`/`G` on `ohm`/`Ohm`/`F`/`H`/`V`/`A`/`W`/`Hz`/`s`/`m`/`g`, plus `degC`, `K`, `C/W`, `K/W`, `%`, `ppm`, `ppm/K`, `ppm/degC`, `dB`, `bps`/`kbps`/`Mbps`/`Gbps`, `rad`, `deg`, `lm`, `cd`, `mcd`, `T`/`mT`/`uT`).
 
 2. **Discrete Set Form**:
    ```json
@@ -79,8 +79,8 @@ Any property whose name matches `^PARAM_[A-Za-z0-9_]+$` (for example `PARAM_resi
 
 3. **Strict JSON Rules**:
    - Duplicate JSON keys are rejected.
-   - `NaN`, `Infinity`, `-Infinity`, booleans, and `null` bounds are rejected.
-   - Any violation raises `PartBindingMalformedError`.
+   - `NaN`, `Infinity`, `-Infinity`, booleans, `null` bounds, underscores in numbers, non-ASCII digits, decimal overflow, and unknown units are rejected.
+   - Any violation raises `PartBindingMalformedError`. During `validate_part_bindings`, a malformed `PARAM_*` property is recorded under `param_errors` and sets that reference's outcome in `reference_outcomes` to `malformed` while still evaluating all other references.
 
 ---
 
@@ -93,10 +93,26 @@ Any property whose name matches `^PARAM_[A-Za-z0-9_]+$` (for example `PARAM_resi
   - Reference or Value is `PWR_FLAG`.
   - Symbol's library definition in `(lib_symbols ...)` carries `(power)` (including via `(extends ...)`), or `lib_id` starts with `power:`.
   - Symbol has `(on_board no)`.
-- **Board (`.kicad_pcb`)**:
+- **Board (`.kicad_pcb`)**: these markers exclude a footprint only when it has
+  no copper pads:
   - Footprint `(attr ...)` contains `virtual` or `board_only`.
   - Reference starts with `#` or equals `REF**`.
   - Footprint has `(on_board no)`.
+
+A pad declaring a layer ending in `.Cu` (including `*.Cu` and inner layers)
+makes the footprint bindable regardless of those markers, except for qualified
+bare NPTH holes described below. Binding validation and schematic/board parity
+still apply. Marked padless mechanical footprints
+and those with only non-copper pads retain their virtual exemption.
+The board component record retains `attrs`, `board_only`, `reference` and
+`on_board`, and adds `has_copper_pads`; its `virtual` field records the effective
+exemption. A bare, unnumbered NPTH hole is also non-copper when the existing
+`land_pattern` native qualifier proves that its pad and drill shapes and sizes
+coincide with no offset, even if it declares `*.Cu`. An NPTH with an annulus or
+unqualified geometry keeps its copper classification and requires bindings.
+Malformed NPTH geometry encountered during that qualification is `malformed`.
+Missing, empty, repeated or non-atom pad layer lists are also `malformed`, so
+ambiguous coverage cannot qualify a footprint as virtual.
 
 ### DNP and Explicit `no-LCSC` Markers
 
@@ -123,7 +139,7 @@ disagreements.
 When both `sch_bytes` and `pcb_bytes` are supplied to `validate_part_bindings`:
 1. **Presence Parity**:
    - Every non-virtual schematic symbol with `on_board=True` and `dnp=False` must have a corresponding footprint on the board.
-   - Every non-virtual, non-`board_only` footprint on the board must have a corresponding non-virtual `on_board` symbol in the schematic.
+   - Every non-virtual footprint on the board must have a corresponding non-virtual `on_board` symbol in the schematic.
 2. **Property & Parameter Parity**:
    - For every reference present in both schematic and board, `LCSC`, `Manufacturer`, `Partnumber`, `Datasheet` (with `"~"` and `""` normalized as empty), `Footprint` (schematic `Footprint` property vs board footprint `lib_id`), `Value`, effective `dnp`, native DNP (`(dnp yes)` or footprint `dnp` attribute; an authored `DNP` property is not native), `in_bom`, and normalized `PARAM_*` dictionaries must match.
    - Two different non-empty values are a disagreement (`defect`). A binding property (`LCSC`, `Manufacturer`, `Partnumber`, `Datasheet` or a `PARAM_*`) present on one side only is a missing binding on the other side (`unknown`), never a pass. A footprint that lacks the properties is therefore `unknown` for that reference.
@@ -136,18 +152,20 @@ When both `sch_bytes` and `pcb_bytes` are supplied to `validate_part_bindings`:
 
 | Condition | `execution` | `outcome` | Reason |
 |---|---|---|---|
-| Unparseable S-expression, wrong root tag, invalid `PARAM_*` JSON, duplicate keys, missing `unit`, or `min > max` | `malformed` | `unknown` | Structural or parameter literal syntax failure |
+| Unparseable S-expression, wrong root tag, invalid `PARAM_*` JSON, decimal overflow, underscore/non-ASCII number, duplicate keys, missing/unsupported `unit`, or `min > max` | `malformed` | `unknown` | Structural or parameter literal syntax failure |
 | Uncaptured child sheet, unsafe `Sheetfile`, sheet cycle or unmatched occurrence | `malformed` | `unknown` | Hierarchy coverage is incomplete |
 | Non-empty `disagreements` (schematic/board mismatch, missing parity, multi-unit conflict) or `invalid_bindings` (e.g. `LCSC` = `"12345"` or `"C0"`) | `ok` | `defect` | Binding violation or schematic/board contradiction |
 | Non-empty `missing_bindings` (missing `LCSC` without a marker, `Manufacturer` or `Partnumber` on a non-virtual component, a one-sided binding property, or an unannotated reference) and no defects | `ok` | `unknown` | Incomplete binding coverage is never reported as `pass` |
 | Zero non-virtual components evaluated and no defects/missing bindings | `ok` | `info` | Nothing eligible to qualify |
 | At least one non-virtual component evaluated with zero disagreements, invalid bindings, or missing bindings | `ok` | `pass` | All evaluated bindings are valid and consistent |
 
-`reference_outcomes` maps each evaluated reference to `pass`, `unknown` or
-`defect`. A reference with any invalid binding or disagreement is `defect`;
-otherwise one with any missing binding is `unknown`; otherwise it is `pass`.
-The run outcome follows the table above, so a defect elsewhere never hides
-an `unknown` reference.
+`reference_outcomes` maps each evaluated reference to `pass`, `unknown`,
+`defect` or `malformed`. A reference with a malformed `PARAM_*` property is
+`malformed` (and does not prevent other references from being evaluated);
+otherwise one with any invalid binding or disagreement is `defect`; otherwise
+one with any missing binding is `unknown`; otherwise it is `pass`.
+The run outcome follows the table above, so a defect or malformed parameter
+elsewhere never hides another reference's outcome.
 
 ## Native generation
 

@@ -87,6 +87,14 @@ The owned fixture generator in `tests/routing_fixture.py` creates independent
 native boards without libraries or third-party design assets. Strict native tests
 cover 0.3/0.1 mm skew against 0.15 mm, three vias against two, length and clearance,
 overlapping rules, missing routing, impedance and unchanged captured bytes.
+Malformed custom rules must leave coverage unknown; a captured project that
+ignores the via-count check must still produce a defect after staging enables it.
+Run these controls and the shared fabricator runner tests with:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_routing_rules tests.test_fab_profile tests.test_fab_profile_conjunctive -v
+```
+
 Public scope/3 review/verify tests exercise real native measurements with
 scripted independent reviewer transports and centralized adjudication, sealed
 witness validation, supported pass/defect, partial coverage and deliberate

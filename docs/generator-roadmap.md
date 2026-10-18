@@ -37,7 +37,7 @@ What must exist at each stage before a rung can run:
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
-| 1 Requirements | Requirement IDs (the fixture's `R-native`, `R-width`, `R-response`); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
+| 1 Requirements | Requirement IDs `R-native`, `R-width`, `R-response`, `R-fab`, `R-parts`, compiled from the spec by the [requirement-record compiler](requirement-scope.md) (AGENTEE-100); envelope with the fixture outline, 2-layer stackup and header edge | Sheet requirements from FOME-MC sources; envelope for a standalone board with one connector | Board requirements; envelope with enclosure connectors | FOME-MC requirements as captured; 4-layer envelope |
 | 2 Parts | Approved-parts manifest: R, C and header with LCSC bindings; stock footprints | Block manifest with snapshot stock state | Merged block manifests; assembly readiness | About 492 footprints against one catalogue snapshot |
 | 3 Schematic | One sheet; netlist parity with the fixture | One captured block, adapted, plus a root sheet | Several blocks integrated block-first | 15 sheets from power, MCU core, CAN, wideband and driver blocks |
 | 4 Placement | Three footprints placed and graded | Decoupling distance, connector on edge | Sub-layout reuse, congestion report | Budget measurements before any limit change |
@@ -70,8 +70,30 @@ CPL coordinate and export-log checks. The separate
 [Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74) compares
 layer presence, drill histograms, copper pad/via flashes and outline bounds.
 CPL rotation policy remains AGENTEE-72.
+
+CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
+The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
+
+CPL rotation correction is [`cpl_rotation`](cpl-rotation.md) (AGENTEE-72).
+
+[`fab_package`](fab-package.md)
+(AGENTEE-94) is the done gate: declared last, it runs the
+[`fab_export`](fab-export.md) producer (AGENTEE-23) and the
+[consistency gate](fab-consistency.md) (AGENTEE-73), including native CPL
+coordinate and export-log checks, and seals the artifact hashes. A scope with a
+`generation` marker is refused at capture without it.
+
+[Net constraints](net-constraints.md) (AGENTEE-47) emit intent netclasses, width
+rules and the record that `copper-width/1` binds. Rung 2's routing row still
+needs those outputs carried into a scaffold template and a native routing attempt.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
+
+The [original RC stage fixtures](rc-stage-fixtures.md) provide unplaced,
+placed-unrouted and seeded placement inputs with native checks and a recorded
+KRT attempt. They are independent alternatives to the FOME-MC reference;
+AGENTEE-103's exact control-derived variants remain blocked by unresolved
+third-party rights. These fixtures do not qualify the complete rung.
 
 ## Starting a campaign from an empty candidate
 
@@ -141,6 +163,12 @@ and preserves checks and baseline mappings. Automatic scope/rule compilation,
 hierarchical staged presence and complete production envelope acceptance remain
 unavailable. The experimental rung-1 driver still uses its earlier
 [RC campaign scaffold](rung1-campaign.md).
+
+The [block adapter](block-adaptation.md) can now fill pre-created child sheets
+from captured flat blocks, freeze instance records and map block requirements
+to fresh board checks. It is a standalone scaffold seam; AGENTEE-87 still owns
+the command that creates the complete empty candidate. Two properties of the
+current reducer also stop a generation campaign early, and AGENTEE-88 addresses them:
 
 Opt-in [staged campaigns](staged-campaign.md) implement AGENTEE-48/88 in the
 existing check scheduler and convergence reducer:
@@ -272,8 +300,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   checkout, catalogue or network source.
 - Tool versions and executable hashes are recorded per run. Writer-side tools
   (scaffold, placers, kicad-route) get [stage receipts](stage-receipts.md)
-  (AGENTEE-95). The receipt format and the campaign seam exist; no scaffold,
-  placer or kicad-route step is wired to them yet.
+  (AGENTEE-95). The campaign runs declared kicad-route steps through the routing
+  adapter and verifies their receipts and semantics before adoption and on replay.
+  The placement adapter also uses this receipt pipeline.
 - Checks run sandboxed with `execution` separate from `outcome`. A crash,
   missing output or unsupported input is unknown coverage, never a pass.
 - Initial reviewers are independent; only sealed coordinator check findings

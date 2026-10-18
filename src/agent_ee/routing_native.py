@@ -179,7 +179,7 @@ def stage_board(source, directory, constraint):
     return target
 
 
-def run_constraint(source, root, constraint, probe):
+def run_constraint(source, root, constraint, probe, directory=None):
     record = {k: constraint[k] for k in ('id', 'requirement', 'expected')}
     record.update(status='not_evaluated', execution='unsupported')
     if constraint['execution'] != 'ready':
@@ -187,7 +187,13 @@ def run_constraint(source, root, constraint, probe):
     if 'geometry' in constraint:
         from .fab_profile import evaluate_geometry
         return evaluate_geometry(constraint, probe['fabrication'])
-    directory = root / constraint['id']
+    if 'terms' in constraint:
+        (root / constraint['id']).mkdir()
+        terms = [run_constraint(source, root, term, probe, root / constraint['id'] / term['expected']['key'])
+                 for term in constraint['terms']]
+        from .fab_profile import evaluate_conjunctive
+        return evaluate_conjunctive(record, terms)
+    directory = directory or root / constraint['id']
     target = stage_board(source, directory, constraint)
     record['rules_sha256'] = digest(target.with_suffix('.kicad_dru'))
     record['generated_rules_sha256'] = constraint['rules_sha256']

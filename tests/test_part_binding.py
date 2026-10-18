@@ -108,6 +108,7 @@ def build_synthetic_pcb(footprints: list[dict]) -> bytes:
             lines.append(f"    (property {_quote_sexpr(k)} {_quote_sexpr(v)} (at 0 0 0))")
         for kind, text_val in fp.get("fp_texts", []):
             lines.append(f"    (fp_text {kind} {_quote_sexpr(text_val)} (at 0 0 0))")
+        lines.extend("    " + pad for pad in fp.get("pads", []))
         lines.append("  )")
         fp_blocks.append("\n".join(lines))
 
@@ -378,12 +379,120 @@ class PartBindingTests(unittest.TestCase):
         info_report = validate_part_bindings(sch_virtual_only, pcb_virtual_only)
         self.assertEqual((info_report["execution"], info_report["outcome"]), ("ok", "info"))
 
+    def test_copper_pads_override_virtual_markers(self):
+        # AGENTEE-132: copper pads must not inherit a marker-only exemption.
+        markers = {
+            "board_only": {"attrs": ["board_only"]},
+            "virtual": {"attrs": ["virtual"]},
+            "REF**": {},
+            "hash_reference": {},
+            "on_board_no": {"on_board": False},
+        }
+        pads = {
+            "front": '(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask"))',
+            "back": '(pad "1" smd rect (at 0 0) (size 1 1) (layers "B.Cu" "B.Mask"))',
+            "inner": '(pad "1" smd rect (at 0 0) (size 1 1) (layers "In1.Cu"))',
+            "through": '(pad "1" thru_hole circle (at 0 0) (size 2 2) (drill 1) (layers "*.Cu" "*.Mask"))',
+            "npth_annulus": '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 1) (layers "*.Cu" "*.Mask"))',
+        }
+        for marker, flags in markers.items():
+            ref = {"REF**": "REF**", "hash_reference": "#R1"}.get(marker, "R1")
+            for surface, pad in pads.items():
+                with self.subTest(marker=marker, surface=surface):
+                    footprint = {**flags, "properties": {"Reference": ref}, "pads": [pad,
+                        '(pad "" np_thru_hole circle (at 4 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask"))']}
+                    pcb = build_synthetic_pcb([
+                        footprint,
+                        {"properties": valid_r1_props(Reference="R2")},
+                    ])
+                    report = validate_part_bindings(pcb_bytes=pcb)
+                    self.assertEqual((report["execution"], report["outcome"]), ("ok", "unknown"))
+                    self.assertEqual(report["reference_outcomes"], {ref: "unknown", "R2": "pass"})
+                    self.assertNotIn(ref, report["virtual_references"])
+                    self.assertEqual({m["property"] for m in report["missing_bindings"]},
+                                     {"LCSC", "Manufacturer", "Partnumber"})
+                    comp = report["board_components"][ref]
+                    self.assertTrue(comp["has_copper_pads"])
+                    self.assertEqual(comp["attrs"], flags.get("attrs", ["smd"]))
+                    self.assertEqual(comp["on_board"], flags.get("on_board", True))
+                    self.assertEqual(comp["reference"], ref)
+
+                    # A marker cannot suppress an invalid binding or presence parity.
+                    bad = build_synthetic_pcb([{**footprint, "properties": valid_r1_props(Reference=ref, LCSC="bad")}])
+                    invalid = validate_part_bindings(pcb_bytes=bad)
+                    self.assertEqual(invalid["reference_outcomes"], {ref: "defect"})
+                    self.assertEqual(invalid["invalid_bindings"][0]["property"], "LCSC")
+                    absent = validate_part_bindings(build_synthetic_sch([]), pcb)
+                    self.assertEqual(absent["reference_outcomes"][ref], "defect")
+                    self.assertIn(ref, [d["reference"] for d in absent["disagreements"] if d["field"] == "presence"])
+
+    def test_copper_markers_preserve_paired_binding_parity(self):
+        props = valid_r1_props()
+        sch = build_synthetic_sch([{"lib_id": "Device:R", "properties": props}])
+        pad = '(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))'
+        for attrs in (["board_only"], ["virtual"]):
+            with self.subTest(attrs=attrs):
+                footprint = {"attrs": attrs, "properties": props, "pads": [pad]}
+                report = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+                self.assertEqual((report["execution"], report["outcome"]), ("ok", "pass"))
+                footprint["properties"] = {**props, "Partnumber": "OTHER"}
+                mismatch = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+                self.assertEqual(mismatch["reference_outcomes"], {"R1": "defect"})
+                self.assertEqual([d["field"] for d in mismatch["disagreements"]], ["Partnumber"])
+
+    def test_copper_board_only_cannot_hide_virtual_status_disagreement(self):
+        props = valid_r1_props()
+        sch = build_synthetic_sch([{"lib_id": "Device:R", "properties": props, "on_board": False}])
+        footprint = {"attrs": ["board_only"], "properties": props}
+        mechanical = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+        self.assertEqual(mechanical["outcome"], "info")
+        footprint["pads"] = ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))']
+        copper = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+        self.assertEqual(copper["reference_outcomes"], {"R1": "defect"})
+        self.assertEqual([d["field"] for d in copper["disagreements"]], ["virtual"])
+
+    def test_non_copper_marked_mechanical_footprints_stay_virtual(self):
+        for marker in ({"attrs": ["board_only"]}, {"attrs": ["virtual"]}, {}):
+            for pads in ([], ['(pad "" smd rect (at 0 0) (size 1 1) (layers "F.Paste"))'],
+                         ['(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask"))'],
+                         ['(pad "" np_thru_hole oval (at 0 0) (size 3 5) (drill oval 3 5) (layers "*.Cu" "*.Mask"))']):
+                with self.subTest(marker=marker, pads=pads):
+                    ref = "M1" if marker else "REF**"
+                    pcb = build_synthetic_pcb([{**marker, "properties": {"Reference": ref}, "pads": pads}])
+                    report = validate_part_bindings(build_synthetic_sch([]), pcb)
+                    self.assertEqual((report["execution"], report["outcome"]), ("ok", "info"))
+                    self.assertEqual(report["virtual_references"], [ref])
+                    self.assertEqual(report["evaluated_references"], [])
+                    self.assertFalse(report["board_components"][ref]["has_copper_pads"])
+
+    def test_malformed_npth_geometry_is_unknown_not_virtual(self):
+        for preceding in ([], ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))']):
+            with self.subTest(preceding=preceding):
+                pcb = build_synthetic_pcb([{
+                    "attrs": ["board_only"], "properties": valid_r1_props(),
+                    "pads": [*preceding, '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (layers "*.Cu"))'],
+                }])
+                report = validate_part_bindings(pcb_bytes=pcb)
+                self.assertEqual((report["execution"], report["outcome"]), ("malformed", "unknown"))
+                self.assertIn("drill", report["errors"][0])
+
+    def test_ambiguous_pad_layers_are_malformed_not_virtual(self):
+        for pad in ('(pad "1" smd rect)', '(pad "1" smd rect (layers))',
+                    '(pad "1" smd rect (layers (unknown)))',
+                    '(pad "1" smd rect (layers "F.Cu") (layers "B.Cu"))'):
+            with self.subTest(pad=pad):
+                pcb = build_synthetic_pcb([{"attrs": ["virtual"], "properties": {"Reference": "R1"}, "pads": [pad]}])
+                report = validate_part_bindings(pcb_bytes=pcb)
+                self.assertEqual((report["execution"], report["outcome"]), ("malformed", "unknown"))
+                self.assertIn("pad layers", report["errors"][0])
+
     def test_3_malformed_param_values_and_sexpr(self):
         bad_param_cases = [
             ("unparseable_json", "{not_json"),
             ("duplicate_keys", '{"min": "1", "min": "2", "max": "3", "unit": "V"}'),
             ("missing_unit", '{"min": "1", "max": "2"}'),
             ("empty_unit", '{"min": "1", "max": "2", "unit": "   "}'),
+            ("unknown_unit", '{"min": "1", "max": "2", "unit": "banana"}'),
             ("reversed_bounds", '{"min": "10", "max": "5", "unit": "ohm"}'),
             ("nominal_out_of_range", '{"min": "1", "max": "5", "nominal": "6", "unit": "V"}'),
             ("nan_constant", '{"min": NaN, "max": 5, "unit": "V"}'),
@@ -392,6 +501,12 @@ class PartBindingTests(unittest.TestCase):
             ("empty_values_set", '{"values": [], "unit": "V"}'),
             ("mixed_interval_and_set", '{"min": "1", "max": "2", "values": ["1"], "unit": "V"}'),
             ("missing_max", '{"min": "1", "unit": "V"}'),
+            ("overflow_json_number", '{"min": 1, "max": 1e999999999, "unit": "V"}'),
+            ("overflow_string_number", '{"min": "1", "max": "1e999999999", "unit": "V"}'),
+            ("underflow_json_number", '{"min": 1e-999999999, "max": 1, "unit": "V"}'),
+            ("underscore_in_number_string", '{"min": "1_000", "max": "2_000", "unit": "ohm"}'),
+            ("underscore_in_set_string", '{"values": ["1_000", "2000"], "unit": "ohm"}'),
+            ("non_ascii_digits", '{"min": "\\u0661", "max": "\\u0662", "unit": "ohm"}'),
         ]
         for label, raw in bad_param_cases:
             with self.subTest(case=label):
@@ -406,6 +521,7 @@ class PartBindingTests(unittest.TestCase):
                     ("malformed", "unknown"),
                     f"case {label} did not produce malformed/unknown: {report}",
                 )
+                self.assertEqual(report["reference_outcomes"], {"R1": "malformed"})
                 self.assertTrue(report["errors"])
 
         # Unparseable S-expression and wrong root tag
@@ -609,6 +725,32 @@ class PartBindingTests(unittest.TestCase):
             [{"path": "checks/bindings.json", "locator": "disagreements"}],
         )
 
+        # Marked copper footprints remain visible in captured and sealed evidence.
+        for marker, flags in (("board_only", {"attrs": ["board_only"]}),
+                              ("virtual", {"attrs": ["virtual"]}), ("REF**", {})):
+            with self.subTest(marker=marker):
+                ref = "REF**" if marker == "REF**" else "R1"
+                pcb = build_synthetic_pcb([{
+                    **flags, "properties": {"Reference": ref},
+                    "pads": ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))'],
+                }])
+                run, result = run_candidate(build_synthetic_sch([]), pcb)
+                self.assertEqual((result["execution"], result["outcome"]), ("ok", "defect"))
+                report = read_json(run / "work/bindings/part_binding.json")
+                comp = report["board_components"][ref]
+                self.assertTrue(comp["has_copper_pads"])
+                self.assertFalse(comp["virtual"])
+                self.assertEqual(comp["attrs"], flags.get("attrs", ["smd"]))
+                self.assertEqual(comp["reference"], ref)
+                self.assertIn("LCSC", [m["property"] for m in report["missing_bindings"]])
+                self.assertIn("presence", [d["field"] for d in report["disagreements"]])
+                freeze_evidence(run, [result])
+                verify_evidence(run, [result], required=True)
+                validate_witnesses(
+                    run, [{"requirement_id": "REQ_BINDING", "check_id": "bindings"}],
+                    [{"path": "checks/bindings.json", "locator": "disagreements"}],
+                )
+
     def test_8_footprint_missing_properties_is_unknown_for_that_reference(self):
         props = valid_r1_props()
         sch = build_synthetic_sch([
@@ -805,6 +947,110 @@ class PartBindingTests(unittest.TestCase):
         del partial["other.kicad_sch"]
         _, res_partial = run(partial, hier_board())
         self.assertEqual((res_partial["execution"], res_partial["outcome"]), ("malformed", "unknown"))
+
+    def test_14_decimal_overflow_unit_vocabulary_and_per_reference_malformed(self):
+        # 1. Valid units in declared vocabulary pass; unknown units fail closed as malformed
+        for unit in ("ohm", "kohm", "Mohm", "V", "mV", "A", "mA", "W", "mW", "F", "nF", "uF", "H", "uH", "Hz", "MHz", "degC", "%", "ppm"):
+            with self.subTest(valid_unit=unit):
+                parsed = parse_param_value(json.dumps({"min": "1", "max": "10", "unit": unit}), "PARAM_x")
+                self.assertEqual(parsed["unit"], unit)
+
+        for bad_unit in ("banana", "volts", "ohms", "Ω", "°C", "123"):
+            with self.subTest(bad_unit=bad_unit):
+                with self.assertRaises(PartBindingMalformedError):
+                    parse_param_value(json.dumps({"min": "1", "max": "10", "unit": bad_unit}), "PARAM_x")
+
+        # 2. Underscores and non-ASCII digits in numeric strings are rejected
+        for bad_num in ("1_000", "10_000.5", "1e1_0", "\u0661\u0662"):
+            with self.subTest(bad_num=bad_num):
+                with self.assertRaises(PartBindingMalformedError):
+                    parse_param_value(json.dumps({"min": bad_num, "max": "100000", "unit": "ohm"}), "PARAM_r")
+
+        # 3. Decimal overflow on R1 is recorded as execution=malformed for R1 only,
+        # while R2 (pass) and R3 (defect) are still evaluated, and run_checks writes records for all checks.
+        huge = '{"min": 1, "max": 1e999999999, "unit": "V"}'
+        r1_props = valid_r1_props(Reference="R1", PARAM_voltage=huge)
+        r2_props = valid_r1_props(Reference="R2")
+        r3_props = valid_r1_props(Reference="R3", LCSC="C11111")
+        sch = build_synthetic_sch([
+            {"lib_id": "Device:R", "properties": r1_props},
+            {"lib_id": "Device:R", "properties": r2_props},
+            {"lib_id": "Device:R", "properties": r3_props},
+        ])
+        pcb = build_synthetic_pcb([
+            {
+                "lib_id": "Resistor_SMD:R_0603_1608Metric",
+                "properties": {k: v for k, v in r1_props.items() if k != "Footprint"},
+            },
+            {
+                "lib_id": "Resistor_SMD:R_0603_1608Metric",
+                "properties": {k: v for k, v in r2_props.items() if k != "Footprint"},
+            },
+            {
+                "lib_id": "Resistor_SMD:R_0603_1608Metric",
+                "properties": {
+                    **{k: v for k, v in r3_props.items() if k != "Footprint"},
+                    "LCSC": "C22222",
+                },
+            },
+        ])
+        report = validate_part_bindings(sch, pcb, require_datasheet=True, require_params=True)
+        self.assertEqual((report["execution"], report["outcome"]), ("malformed", "unknown"))
+        self.assertEqual(report["evaluated_references"], ["R1", "R2", "R3"])
+        self.assertEqual(
+            report["reference_outcomes"],
+            {"R1": "malformed", "R2": "pass", "R3": "defect"},
+        )
+        self.assertEqual([d["reference"] for d in report["disagreements"]], ["R3"])
+        self.assertEqual({e["reference"] for e in report["param_errors"]}, {"R1"})
+
+        # End-to-end via run_checks with two checks: neither aborts and both write check records
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "design.kicad_sch").write_bytes(sch)
+            (root / "design.kicad_pcb").write_bytes(pcb)
+            (root / "requirements.md").write_text("Bindings requirement.\n", encoding="utf-8")
+            paths = ["design.kicad_sch", "design.kicad_pcb", "requirements.md"]
+            checks = [
+                {"id": "bindings_all", "kind": "part_binding", "params": {"require_params": True}},
+                {"id": "bindings_board", "kind": "part_binding", "params": {"board": "design.kicad_pcb"}},
+            ]
+            scope = {
+                "schema": "agent-ee.scope/3",
+                "schematic": "design.kicad_sch",
+                "board": "design.kicad_pcb",
+                "inputs": [{"path": p, "at": p} for p in paths],
+                "checks": checks,
+                "requirements": ["requirements.md"],
+                "baseline": {
+                    "requirements": [{
+                        "id": "REQ_BINDING",
+                        "statement": "Every component has valid bindings.",
+                        "source": {"path": "requirements.md", "locator": "L1"},
+                        "checks": ["bindings_all", "bindings_board"],
+                        "intent": "acceptance",
+                    }],
+                    "targets": ["requirements.md"],
+                    "reference_architectures": ["requirements.md"],
+                },
+            }
+            write_json(root / "scope.json", scope)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            capture(root / "scope.json", run_dir)
+            results = run_checks(run_dir, time.monotonic() + 30)
+            self.assertEqual(len(results), 2)
+            for res in results:
+                self.assertEqual((res["execution"], res["outcome"]), ("malformed", "unknown"))
+                self.assertTrue((run_dir / "checks" / f"{res['id']}.json").is_file())
+            self.assertEqual(
+                results[0]["details"]["reference_outcomes"],
+                {"R1": "malformed", "R2": "pass", "R3": "defect"},
+            )
+            self.assertEqual(
+                results[1]["details"]["reference_outcomes"],
+                {"R1": "malformed", "R2": "pass", "R3": "defect"},
+            )
 
 
 if __name__ == "__main__":

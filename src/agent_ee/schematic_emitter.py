@@ -28,6 +28,8 @@ HIERARCHY_SCHEMA = 'agent-ee.resolved-connectivity/2'  # AGENTEE-39 hierarchical
 # KiCad 10.0 native schematic format, as written by eeschema/kicad-cli 10.0.7.
 SCH_VERSION = '20260306'
 GENERATOR = 'agent-ee-schematic-emitter'
+# The importable module name, also under ``python -m`` (where __name__ is __main__).
+MODULE = __spec__.name if __name__ == '__main__' and __spec__ else __name__
 GENERATOR_VERSION = '10.0'
 GRID = 2540000          # Symbol anchors (nm).
 CONNECTION_GRID = 100  # Exact native schematic coordinate lattice (nm).
@@ -365,6 +367,11 @@ def _plan(resolved, captured, intent_libraries, transforms):
     for comp in resolved['components']:
         location = '/components/' + comp['id']
         embedded, flags, properties = symbols[comp['id']]
+        if comp['power']:
+            # Eeschema places power symbols and flags as virtual markers: the
+            # instance is excluded from BOM and board whatever the library says,
+            # while the embedded library copy keeps its own flags.
+            flags = dict(flags, in_bom='no', on_board='no')
         context = build_context(intent_libraries, captured, comp['lib_id'])
         if context['execution'] != 'ok':
             raise EmissionError('symbol_context', context.get('message', 'symbol context unavailable'), location)
@@ -730,7 +737,7 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
     is never a source of geometry. Any refusal returns no files at all.
     """
     result = dict(schema=RESULT_SCHEMA, execution='failed', outcome='unknown', findings=[],
-                  implementation=dict(module=__name__, sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),
+                  implementation=dict(module=MODULE, sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),
                   intent_sha256=None, resolved_sha256=None, layout_sha256=None, libraries=[],
                   root_uuid=None, paper=None, files=[])
     def refuse(code, message, location='/', execution='failed'):

@@ -5,6 +5,8 @@ from pathlib import Path
 from .candidate import safe_relative
 from .storage import digest, identity, read_json, write_json
 
+GENERATION_SCHEMA = "agent-ee.generation/1"
+
 
 def compile_baseline(scope, files, inputs=None):
     """Bind the complete baseline and verification criteria to captured bytes."""
@@ -13,6 +15,8 @@ def compile_baseline(scope, files, inputs=None):
     if scope.get("schema") == "agent-ee.scope/1":
         if "envelope" in scope:
             raise ValueError("a scope envelope requires agent-ee.scope/3 executable coverage")
+        if "generation" in scope:
+            raise ValueError("a generation scope requires an agent-ee.scope/2 or scope/3 baseline")
         return None
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
         raise ValueError("unknown scope schema")
@@ -53,6 +57,7 @@ def compile_baseline(scope, files, inputs=None):
         covered.update(bound)
     if covered != set(checks):
         raise ValueError("every check must trace to a baseline requirement")
+    generation = generation_marker(scope)
     for category in ("targets", "reference_architectures"):
         values = baseline[category]
         if not isinstance(values, list) or not values:
@@ -77,6 +82,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "land_pattern":
             from .land_pattern import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "cpl_rotation":
+            from .cpl_rotation import capability
+            paths.update(capability(params, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "symbol_pins":
             from .symbol_checks import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
@@ -86,6 +94,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "parts_subset":
             from .parts_subset import capability
             paths.update(capability(params, files, inputs, scope, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "block_provenance":
+            from .block_adaptation import capability
+            paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "netlist_extra":
             from .netlist_extra import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
@@ -104,6 +115,9 @@ def compile_baseline(scope, files, inputs=None):
             from .fab_profile import capability
             descriptor = capability(params, scope, files, inputs, spec["id"])
             paths.update(descriptor["immutable_inputs"])
+        if spec.get("kind") == "dfm_geometry":
+            from .dfm_geometry import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "assembly_readiness":
             from .assembly_readiness import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])
@@ -131,6 +145,10 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "placement":
             from .placement_check import parameters
             paths.update(str(safe_relative(p)) for p in parameters(params))
+        if spec.get("kind") == "geometry" and "net_constraints" in params:
+            # The recorded netclass minimums and the project carrying them stay fixed.
+            paths.add(str(safe_relative(params["net_constraints"])))
+            paths.add(str(safe_relative(scope["board"]).with_suffix(".kicad_pro")))
         if spec.get("kind") == "passive_corners":
             paths.add(str(safe_relative(params["qualification"])))
         if spec.get("kind") == "measurements":
@@ -150,11 +168,31 @@ def compile_baseline(scope, files, inputs=None):
              "files": {p: files[p] for p in sorted(paths)}, "criteria": scope["checks"]}
     if stages is not None:
         value['stages'] = stages
+    if generation is not None:
+        value["generation"] = generation
     if envelope is not None:
         value["envelope"] = envelope["record"]
     if audited:
         value.update(schema="agent-ee.baseline/2", coverage=coverage)
     return {**value, "baseline_id": identity(value)}
+
+
+def generation_marker(scope):
+    """A generation scope's done gate: its last check is fab_package with an acceptance requirement."""
+    marker = scope.get("generation")
+    if marker is None:
+        return None
+    if not isinstance(marker, dict) or marker != {"schema": GENERATION_SCHEMA, "done_check": marker.get("done_check")}:
+        raise ValueError(f"generation marker must be exactly {{schema: {GENERATION_SCHEMA}, done_check}}")
+    done = marker["done_check"]
+    last = scope["checks"][-1]
+    if last.get("id") != done or last.get("kind") != "fab_package":
+        raise ValueError("generation scope must declare its fab_package done check last")
+    audited = scope["schema"] == "agent-ee.scope/3"
+    if not any(done in req["checks"] and (not audited or req["intent"] == "acceptance")
+               for req in scope["baseline"]["requirements"]):
+        raise ValueError("generation scope requires an acceptance requirement mapped to fab_package")
+    return dict(marker)
 
 
 def load_baseline(run):

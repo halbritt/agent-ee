@@ -1,0 +1,10 @@
+[route] krt on rc_stage -> out/runs/rc_stage/ee103/20261018T051928.197323Z
+[route] scope: all (3 of 3 nets)
+[route] baseline: native DRC of the untouched input (refilled)
+[route] routing with krt (budget 60s)
+[route] process: PASS
+[route] validating the candidate (refill, DRC + parity, preservation)
+[route] routing: COMPLETE
+[route] validation: PASS
+[route] candidate: out/runs/rc_stage/ee103/20261018T051928.197323Z/candidate/project/rc_stage.kicad_pcb
+[route] result: out/runs/rc_stage/ee103/20261018T051928.197323Z/result.json  (exit 0)

@@ -7,15 +7,24 @@ fab lane interface contract v1 under `work/<check-id>/fab/`:
     gerbers/          one plot per enabled fab layer, Protel (JLC) extensions
     drill/            exactly one PTH and one NPTH Excellon file + Gerber X2 maps
     bom.csv           part-binding properties from the native XML netlist of a
-                      preceding `netlist` check for the board's non-DNP
+                      preceding `netlist` check for the board's assembled
                       footprints, grouped by LCSC number
-    cpl.csv           native position file rewritten to the JLCPCB CPL header
+    cpl.csv           native position file rewritten to the JLCPCB CPL header,
+                      without the parts the declared exclusion rule omits
     gerbers.zip       gerbers/ + drill/, deterministic member order and metadata
     pcb_summary.json  native `kicad-cli pcb export stats` JSON
     manifest.json     agent-ee.fab-manifest/1, written last and only on success
 
-No rotation, offset or pin-1 policy is applied to the CPL (AGENTEE-72 owns
-that); rotations are the native position-file values. Outcome `pass` means
+Assembled means board non-DNP and not omitted by the optional declared
+`assembly_exclusion` rule (v1: `JLCPCB_Assembly=not_assembled`). The rule is a
+check parameter, so it is part of the captured, hashed scope. A part is omitted
+only when its netlist field and its board footprint property both carry the
+marker; the omitted designators and their rule are listed in the manifest.
+Without a declared rule, a populated part that carries the marker is refused.
+
+No rotation, offset or pin-1 policy is applied to the CPL; rotations are the
+native position-file values. The separate `cpl_rotation` check (AGENTEE-72)
+derives the corrected JLC CPL from this staging. Outcome `pass` means
 only that every export succeeded, validated, agrees on assembled designators
 and was hashed into a complete manifest. It does not establish DFM, part or
 placement consistency (AGENTEE-73) or orderability. Missing, empty or unparseable
@@ -67,6 +76,10 @@ STATS_TIME = re.compile(r'^(\s*"date": ")\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(",?)$', 
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 STEP_CEILING = 600
 TOKEN_RE = re.compile(r'\s+|;[^\n]*|\(|\)|"(?:[^"\\]|\\.)*"|[^\s();"]+')
+# Declared assembly exclusion rules: rule text -> (symbol/footprint field, marker value).
+# The rung-1 generator writes this field on hand-soldered parts (AGENTEE-122).
+ASSEMBLY_RULES = {'JLCPCB_Assembly=not_assembled': ('JLCPCB_Assembly', 'not_assembled')}
+RULE_FIELDS = frozenset(field for field, _ in ASSEMBLY_RULES.values())
 
 
 def _error(execution, message):
@@ -77,12 +90,20 @@ def _error(execution, message):
 # ------------------------------------------------------------ pure validation
 
 def validate_params(params):
-    """v1 interprets exactly one parameter; layer overrides are refused."""
-    if not isinstance(params, dict) or set(params) != {'netlist_check'}:
-        raise ValueError('fab_export/1 params must be exactly {"netlist_check"}; '
-                         'layer and output overrides are refused in v1')
+    """v1 interprets `netlist_check` and an optional `assembly_exclusion` rule.
+
+    Layer and output overrides are refused; the rule must be one of
+    ASSEMBLY_RULES verbatim.
+    """
+    if (not isinstance(params, dict) or 'netlist_check' not in params or
+            not set(params) <= {'netlist_check', 'assembly_exclusion'}):
+        raise ValueError('fab_export/1 params must be {"netlist_check"} plus optional '
+                         '"assembly_exclusion"; layer and output overrides are refused in v1')
     if not isinstance(params['netlist_check'], str) or not params['netlist_check']:
         raise ValueError('netlist_check must name the preceding netlist check')
+    rule = params.get('assembly_exclusion')
+    if 'assembly_exclusion' in params and (not isinstance(rule, str) or rule not in ASSEMBLY_RULES):
+        raise ValueError(f'assembly_exclusion {rule!r} is not one of {sorted(ASSEMBLY_RULES)}')
     return params
 
 
@@ -227,8 +248,11 @@ def board_facts(data):
         if side not in ('F.Cu', 'B.Cu'):
             raise ValueError(f'footprint {ref} is on {side}, not F.Cu or B.Cu')
         dnp = 'dnp' in attrs
+        fields = [p[1:3] for p in _lists(fp, 'property') if len(p) > 2 and p[1] in RULE_FIELDS]
+        if len({name for name, _ in fields}) != len(fields):
+            raise ValueError(f'footprint {ref} repeats an assembly rule property')
         record = {'ref': ref, 'side': 'Top' if side == 'F.Cu' else 'Bottom', 'dnp': dnp,
-                  'attributes': sorted(attrs)}
+                  'attributes': sorted(attrs), 'fields': dict(fields)}
         footprints.append(record)
         if not REF_RE.match(ref):
             unsupported.append(f'footprint reference {ref!r} is not a plain designator')
@@ -257,9 +281,10 @@ def part_bindings(xml_path):
     """Binding inputs from the native XML netlist for every physical component.
 
     Returns (components, unsupported). Each component has its schematic `dnp`
-    flag, schematic BOM/board exclusions, value, footprint and the `LCSC`,
-    `Manufacturer`, `Partnumber` and `PartNumber` symbol fields verbatim.
-    Which components are assembled is decided by `assembled_parts`.
+    flag, schematic BOM/board exclusions, value, footprint, the `LCSC`,
+    `Manufacturer`, `Partnumber` and `PartNumber` symbol fields verbatim, and
+    any assembly-rule field (RULE_FIELDS) it carries. Which components are
+    assembled is decided by `assembly_exclusions` and `assembled_parts`.
     """
     root = ET.parse(xml_path).getroot()
     components, unsupported = {}, []
@@ -279,12 +304,55 @@ def part_bindings(xml_path):
                            'value': (comp.findtext('value') or '').strip(),
                            'footprint': (comp.findtext('footprint') or '').strip(),
                            'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
-                           'Partnumber': fields.get('Partnumber', ''), 'PartNumber': fields.get('PartNumber', '')}
+                           'Partnumber': fields.get('Partnumber', ''), 'PartNumber': fields.get('PartNumber', ''),
+                           'fields': {name: fields[name] for name in sorted(RULE_FIELDS) if name in fields}}
     return components, unsupported
 
 
-def assembled_parts(components, footprints):
-    """BOM parts under the board DNP authority.
+def assembly_exclusions(rule, components, footprints):
+    """Populated parts the declared rule omits from BOM and CPL.
+
+    Returns (excluded, unsupported); `excluded` is a natural-ordered list of
+    {"designator", "rule"}. Board DNP stays authoritative: a board-DNP part is
+    never listed, whatever it carries. For a populated part, the netlist field
+    and the board footprint property must agree exactly (both absent or equal);
+    a disagreement, an unrecognised marker value, a marked part with no board
+    footprint, or any marked part when no rule is declared is refused rather
+    than resolved. `rule` is an ASSEMBLY_RULES key or None.
+    """
+    board = {}
+    for fp in footprints:
+        board.setdefault(fp['ref'], []).append(fp)
+    excluded, unsupported = [], []
+    markers = {value for _, value in ASSEMBLY_RULES.values()}
+    for ref in sorted(set(components) | set(board), key=natural_key):
+        fps = board.get(ref, [])
+        if any(fp['dnp'] for fp in fps) or (not fps and components[ref]['dnp']):
+            continue
+        on_board = [fp.get('fields', {}) for fp in fps]
+        in_netlist = components[ref].get('fields', {}) if ref in components else {}
+        sources = on_board + [in_netlist]
+        if not any(sources):
+            continue
+        if any(source != in_netlist for source in on_board):
+            unsupported.append(f'{ref} assembly fields disagree: netlist '
+                               f'{in_netlist if ref in components else "has no component"}, board {on_board}')
+            continue
+        for name, value in sorted(sources[0].items()):
+            if value not in markers:
+                unsupported.append(f'{ref} {name}={value!r} is not a recognised assembly marker')
+            elif rule is None or ASSEMBLY_RULES[rule] != (name, value):
+                unsupported.append(f'populated {ref} carries {name}={value} but the scope declares '
+                                   f'no matching assembly_exclusion rule')
+            elif not fps:
+                unsupported.append(f'{ref} is excluded by {rule} but has no board footprint')
+            else:
+                excluded.append({'designator': ref, 'rule': rule})
+    return excluded, unsupported
+
+
+def assembled_parts(components, footprints, excluded=()):
+    """BOM parts under the board DNP authority, less rule-excluded designators.
 
     Returns (parts, disagreements, unsupported). The board footprint `dnp`
     attribute decides assembly for every component that has a footprint, so
@@ -293,7 +361,9 @@ def assembled_parts(components, footprints):
     a populated schematic part missing from the board still reaches the BOM and
     fails designator agreement. A component whose schematic and board DNP flags
     differ is listed in `disagreements`, never resolved silently; the
-    fab_consistency gate reports it as a `designator_parity` defect.
+    fab_consistency gate reports it as a `designator_parity` defect. A
+    designator in `excluded` (from `assembly_exclusions`) is populated but not
+    assembled, so it needs no binding.
     """
     board_dnp = {}
     for fp in footprints:
@@ -308,7 +378,7 @@ def assembled_parts(components, footprints):
             unsupported.append(f'populated component {ref} carries {comp["excluded"]}; '
                                'v1 refuses non-DNP exclusions')
             continue
-        if not assembled:
+        if not assembled or ref in excluded:
             continue
         if not REF_RE.match(ref):
             unsupported.append(f'component reference {ref!r} is not a plain designator')
@@ -584,8 +654,13 @@ def check_fab_export(ctx):
         components, part_problems = part_bindings(xml)
     except (ET.ParseError, OSError) as exc:
         raise _error('malformed', f'native XML netlist unreadable: {exc}') from exc
-    parts, disagreements, assembly_problems = assembled_parts(components, facts['footprints'])
-    unsupported += part_problems + assembly_problems
+    rule = params.get('assembly_exclusion')
+    excluded, exclusion_problems = assembly_exclusions(rule, components, facts['footprints'])
+    details['assembly_exclusion'] = {'rule': rule, 'declared_by': f'scope check {ctx.cid!r} params',
+                                     'scope_sha256': ctx.manifest.get('scope_sha256'), 'excluded': excluded}
+    parts, disagreements, assembly_problems = assembled_parts(
+        components, facts['footprints'], {e['designator'] for e in excluded})
+    unsupported += part_problems + exclusion_problems + assembly_problems
     try:
         rows, flagged = bom_rows(parts)
     except ValueError as exc:
@@ -606,7 +681,7 @@ def check_fab_export(ctx):
     if fab.exists() or fab.is_symlink():
         raise _error('malformed', 'fab staging directory already exists; refusing stale outputs')
     try:
-        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
+        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded)
     except BaseException:
         if fab.is_dir():
             shutil.rmtree(ctx.work / 'fab.incomplete', ignore_errors=True)
@@ -619,7 +694,7 @@ def check_fab_export(ctx):
         raise
 
 
-def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab):
+def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded):
     details = ctx.result['details']
     version_dir = _step(ctx, 'version', ['kicad-cli', 'version'])
     version = (version_dir / 'stdout.log').read_text(errors='replace').strip()
@@ -715,9 +790,13 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
         pos = _outputs(pos_dir, 'pos').get('pos.csv')
         if pos is None:
             raise ValueError('kicad-cli pos wrote no pos.csv')
-        cpl = cpl_rows(pos.read_text(encoding='utf-8'))
+        native = cpl_rows(pos.read_text(encoding='utf-8'))
     except (ValueError, KeyError, TypeError, UnicodeError, OSError) as exc:
         raise _error('malformed', f'native fab output unusable: {exc}') from exc
+    # Rule-excluded parts are populated, so the native position file lists them;
+    # they are dropped here only after the native set matched the board.
+    excluded_refs = [e['designator'] for e in excluded]
+    cpl = [row for row in native if row[0] not in excluded_refs]
     (fab / 'cpl.csv').write_text(render_cpl(cpl))
     (fab / 'bom.csv').write_text(render_bom(rows))
     (fab / 'pcb_summary.json').write_text(summary[0])
@@ -727,10 +806,14 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
         raise _error('malformed', 'Gerber and drill file names collide in the flat zip')
     write_zip(fab / 'gerbers.zip', members)
 
+    native_refs = sorted((r[0] for r in native), key=natural_key)
     cpl_refs = sorted((r[0] for r in cpl), key=natural_key)
     bom_refs = sorted((ref for row in rows for ref in row[0].split(',')), key=natural_key)
-    details['designators'] = {'board_non_dnp': facts['board_non_dnp'], 'cpl': cpl_refs, 'bom': bom_refs,
-                              'agree': facts['board_non_dnp'] == cpl_refs == bom_refs}
+    assembled = [ref for ref in facts['board_non_dnp'] if ref not in excluded_refs]
+    details['designators'] = {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded_refs,
+                              'assembled': assembled, 'native_pos': native_refs, 'cpl': cpl_refs,
+                              'bom': bom_refs, 'agree': native_refs == facts['board_non_dnp'] and
+                              assembled == cpl_refs == bom_refs}
     details['bom_rows'] = len(rows)
     details['cpl_rows'] = len(cpl)
     for path in sorted(fab.rglob('*')):
@@ -740,12 +823,12 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
         details['flagged_parts'] = flagged
         raise _error('unsupported', 'BOM has parts without a complete LCSC/manufacturer/part-number '
                                     'binding: ' + ', '.join(f['reference'] for f in flagged))
-    if cpl_refs != facts['board_non_dnp']:
-        raise _error('malformed', f'native position file designators {cpl_refs} differ from the board '
+    if native_refs != facts['board_non_dnp']:
+        raise _error('malformed', f'native position file designators {native_refs} differ from the board '
                                   f'non-DNP footprints {facts["board_non_dnp"]}')
-    if bom_refs != facts['board_non_dnp']:
-        raise _error('malformed', f'BOM designators {bom_refs} differ from the board '
-                                  f'non-DNP footprints {facts["board_non_dnp"]}')
+    if bom_refs != assembled or cpl_refs != assembled:
+        raise _error('malformed', f'BOM designators {bom_refs} or CPL designators {cpl_refs} differ from the '
+                                  f'board assembled footprints {assembled} (non-DNP less excluded {excluded_refs})')
     try:
         files = inventory(fab)
     except ValueError as exc:
@@ -754,7 +837,8 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
         'schema': SCHEMA, 'candidate_id': ctx.manifest['candidate_id'],
         'board_path': board_rel, 'board_sha256': board_sha, 'tool': tool, 'files': files,
         'copper_layers': facts['copper_layers'], 'enabled_fab_layers': layers,
-        'drill': roles, 'designators': {'board_non_dnp': facts['board_non_dnp']},
+        'drill': roles, 'designators': {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded,
+                                        'exclusion_rule': rule},
         'generated_utc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
     write_json(fab / 'manifest.json', manifest)
@@ -766,11 +850,16 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
     details['manifest_sha256'] = digest(fab / 'manifest.json')
     ctx.result['limitations'] += [
         'CPL rotations are the native KiCad position-file values; no JLC rotation, offset or '
-        'pin-1 policy was applied (AGENTEE-72)',
+        'pin-1 policy was applied; the cpl_rotation check (AGENTEE-72) corrects them',
         'pass means the exports exist, parsed, agree on designators and are hashed; '
         'part, side and model consistency require fab_consistency (AGENTEE-73)',
         'no DFM, panelisation, stock, price or orderability evaluation',
     ]
+    if excluded:
+        ctx.result['limitations'].append(
+            f'{", ".join(excluded_refs)} populated but excluded from BOM and CPL by the declared rule '
+            f'{rule}; the parts remain on the board, Gerbers and drill and must be fitted outside '
+            'JLC assembly')
     if details['dnp_disagreements']:
         ctx.result['limitations'].append(
             'schematic and board DNP flags disagree on ' +
@@ -781,5 +870,6 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
     ctx.result['outcome'] = 'pass'
     ctx.result['summary'] = (f"JLCPCB fab package exported by kicad-cli {version}: "
                              f"{len(expected)} layer plots ({facts['copper_layers']} copper), PTH/NPTH "
-                             f"drills, {len(rows)} BOM row(s), {len(cpl)} CPL row(s), manifest bound to "
+                             f"drills, {len(rows)} BOM row(s), {len(cpl)} CPL row(s), "
+                             f"{len(excluded)} rule-excluded part(s), manifest bound to "
                              f"board {board_sha[:12]}")

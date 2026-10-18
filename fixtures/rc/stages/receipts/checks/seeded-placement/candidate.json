@@ -1,0 +1,181 @@
+{
+  "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+  "files": {
+    "project/fp-lib-table": "e4212417f18fd0b58d1e0b4ac046b296fa1a9b6625be667f455e5cbba77c77a3",
+    "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "ea709653381ed3f2774ed177900b9d999b34aa8e4bc8e12992ddebfa9554b7a3",
+    "project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "e85f3a6a4f7a19cfd5e8a1646aa6b60acc3d9e87bda9d914de6c91835779bc11",
+    "project/lib/Owned_Gen.kicad_sym": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1",
+    "project/lib/StageRC.kicad_sym": "89f88dee4eaa462e730f645d29a4f14d73507dd8bf56fe266bc8bd39c02399c0",
+    "project/rc_stage.kicad_pcb": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+    "project/rc_stage.kicad_prl": "02ce83ca5884239a85a0d1bb157257b512cdc8cd8f5e037bb071993ba2392e53",
+    "project/rc_stage.kicad_pro": "c745669befeac97f6e966bdd384ceae7868d0246f6544a59859fc28788a2b83b",
+    "project/rc_stage.kicad_sch": "91bf9666349cc634ed94c16a8d10cf96aa4e1f1770f01e152442e7c8454e5651",
+    "project/sym-lib-table": "bb13ab4fe47da9f272904fa00505f27fac37ced434541d6f5971addf617f5be4",
+    "requirements/placed-unrouted.md": "b9dfbde31b2c9836fa49faa9851b30ca32ef1a2d3fe55fa4d224fb1304fa5a7a",
+    "requirements/seeded-placement.md": "badd75445c85a0f30f39ea94dc3c3f78b22df29b1716e6bd5a833241af90b29d",
+    "requirements/unplaced.md": "8ac972d41d08fd45fc1e594271f5aefe01a061d85966e3b474a704b64f99d945"
+  },
+  "schema": "agent-ee.candidate/1",
+  "scope": {
+    "baseline": {
+      "reference_architectures": [
+        "requirements/seeded-placement.md"
+      ],
+      "requirements": [
+        {
+          "checks": [
+            "erc"
+          ],
+          "id": "R-erc",
+          "source": {
+            "locator": "R-erc",
+            "path": "requirements/seeded-placement.md"
+          },
+          "statement": "Native ERC has no issues."
+        },
+        {
+          "checks": [
+            "netlist"
+          ],
+          "id": "R-netlist",
+          "source": {
+            "locator": "R-netlist",
+            "path": "requirements/seeded-placement.md"
+          },
+          "statement": "Native XML exports the three-component RC network."
+        },
+        {
+          "checks": [
+            "drc-placement"
+          ],
+          "id": "R-drc-placement",
+          "source": {
+            "locator": "R-drc-placement",
+            "path": "requirements/seeded-placement.md"
+          },
+          "statement": "Native placement violations and schematic parity have no issues; unrouted connectivity is ungraded."
+        },
+        {
+          "checks": [
+            "courtyard"
+          ],
+          "id": "R-courtyard",
+          "source": {
+            "locator": "R-courtyard",
+            "path": "requirements/seeded-placement.md"
+          },
+          "statement": "Mounting-side courtyards do not overlap."
+        },
+        {
+          "checks": [
+            "containment"
+          ],
+          "id": "R-containment",
+          "source": {
+            "locator": "R-containment",
+            "path": "requirements/seeded-placement.md"
+          },
+          "statement": "Every courtyard is wholly inside the board outline."
+        },
+        {
+          "checks": [
+            "drc-final"
+          ],
+          "id": "R-drc-final",
+          "source": {
+            "locator": "R-drc-final",
+            "path": "requirements/seeded-placement.md"
+          },
+          "statement": "Native DRC including connectivity and schematic parity has no issues."
+        }
+      ],
+      "targets": [
+        "requirements/seeded-placement.md"
+      ]
+    },
+    "board": "project/rc_stage.kicad_pcb",
+    "checks": [
+      {
+        "id": "erc",
+        "kind": "erc"
+      },
+      {
+        "id": "netlist",
+        "kind": "netlist"
+      },
+      {
+        "id": "drc-placement",
+        "kind": "drc",
+        "params": {
+          "projection": "placement-stage/1"
+        }
+      },
+      {
+        "id": "courtyard",
+        "kind": "placement",
+        "params": {
+          "criterion": "courtyard-overlap/1",
+          "drc_check": "drc-placement"
+        }
+      },
+      {
+        "id": "containment",
+        "kind": "placement",
+        "params": {
+          "criterion": "outline-containment/1",
+          "drc_check": "drc-placement"
+        }
+      },
+      {
+        "id": "drc-final",
+        "kind": "drc"
+      }
+    ],
+    "inputs": [
+      {
+        "at": "project",
+        "path": "seeded-placement"
+      },
+      {
+        "at": "requirements",
+        "path": "requirements"
+      }
+    ],
+    "limitations": [
+      "Original alternative, not a derivative of the unresolved FOME-MC control.",
+      "No simulation, manufacturing qualification or complete campaign is claimed. Zone fill is graded as saved.",
+      "Expected seeded defects remain defects; fixture expectations never invert a production grade."
+    ],
+    "mutable_inputs": [
+      "project/rc_stage.kicad_pcb"
+    ],
+    "name": "Original RC seeded-placement stage fixture",
+    "requirements": [
+      "requirements/seeded-placement.md"
+    ],
+    "schema": "agent-ee.scope/2",
+    "schematic": "project/rc_stage.kicad_sch",
+    "scope": "Checks-only stage boundary qualification: seeded-placement; expected initial outcomes are declared in requirements/seeded-placement.md."
+  },
+  "scope_path": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement.scope.json",
+  "scope_sha256": "b08e9168cd41a15cdcd298df852c60e16d372fbe0abef14cc74a8fdc780bb0eb",
+  "source_revisions": {
+    "project": "8de6317cb723045e8621efdf07e6a5bae43506ff",
+    "requirements": "8de6317cb723045e8621efdf07e6a5bae43506ff"
+  },
+  "sources": {
+    "project/fp-lib-table": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/fp-lib-table",
+    "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod",
+    "project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/lib/OwnedFP.pretty/CONN_1x3.kicad_mod",
+    "project/lib/Owned_Gen.kicad_sym": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/lib/Owned_Gen.kicad_sym",
+    "project/lib/StageRC.kicad_sym": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/lib/StageRC.kicad_sym",
+    "project/rc_stage.kicad_pcb": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/rc_stage.kicad_pcb",
+    "project/rc_stage.kicad_prl": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/rc_stage.kicad_prl",
+    "project/rc_stage.kicad_pro": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/rc_stage.kicad_pro",
+    "project/rc_stage.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/rc_stage.kicad_sch",
+    "project/sym-lib-table": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/seeded-placement/sym-lib-table",
+    "requirements/placed-unrouted.md": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/requirements/placed-unrouted.md",
+    "requirements/seeded-placement.md": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/requirements/seeded-placement.md",
+    "requirements/unplaced.md": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/requirements/unplaced.md"
+  }
+}
