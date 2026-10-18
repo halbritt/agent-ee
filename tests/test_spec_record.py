@@ -101,7 +101,7 @@ class PodSpecTests(unittest.TestCase):
         self.assertEqual(sorted(imu['cells']), ['Decision', 'Function', 'Not chosen', 'Why'])
         self.assertEqual(imu['cells']['Decision'], 'LSM6DSO32, SPI')
         ac4 = next(r for r in self.record['requirements'] if r['id'] == 'POD-AC-4')
-        self.assertTrue(ac4['text'].startswith('kicad-happy analyzers report no findings at error level'))
+        self.assertTrue(ac4['text'].startswith('The kicad-happy schematic, PCB, cross-analysis and EMC analyzers'))
         self.assertEqual((ac4['locator']['list'], ac4['locator']['item'], ac4['cells']), (1, 4, {}))
         self.assertEqual([t['headers'] for t in self.record['tables']][2],
                          ['Function', 'Decision', 'Why', 'Not chosen'])

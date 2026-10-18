@@ -121,9 +121,11 @@ Refused, each with its offset:
 
 ## The telemetry pod fixture
 
-`fixtures/telemetry-pod/spec.md` is the owner's telemetry pod requirements
-(2026-10-17), copied byte for byte (SHA-256
-`c5128ef9391e2114e7a399b352a957472ad26b93ca76e3179cc04b2b51194572`).
+`fixtures/telemetry-pod/spec.md` is the owner's telemetry pod requirements,
+revision 2 (2026-10-18, which folds the owner decisions of that day into the
+text and supersedes the 2026-10-17 text with SHA-256 `c5128ef9…`), copied byte
+for byte (SHA-256
+`09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493`).
 `fixtures/telemetry-pod/spec-record.json` is its capture with the command above:
 7 function rows, 8 interface rows, 8 component-decision rows, 6 mechanical
 bullets, 9 acceptance items and 10 paragraphs. `tests/test_spec_record.py`

@@ -18,8 +18,8 @@
       "text": "Telemetry pod requirements"
     },
     {
-      "byte_end": 64,
-      "byte_start": 54,
+      "byte_end": 226,
+      "byte_start": 216,
       "code": "PU",
       "heading_path": [
         "Telemetry pod requirements",
@@ -29,8 +29,8 @@
       "text": "Purpose"
     },
     {
-      "byte_end": 847,
-      "byte_start": 836,
+      "byte_end": 1009,
+      "byte_start": 998,
       "code": "FN",
       "heading_path": [
         "Telemetry pod requirements",
@@ -40,8 +40,8 @@
       "text": "Function"
     },
     {
-      "byte_end": 2307,
-      "byte_start": 2294,
+      "byte_end": 2548,
+      "byte_start": 2535,
       "code": "IF",
       "heading_path": [
         "Telemetry pod requirements",
@@ -51,8 +51,8 @@
       "text": "Interfaces"
     },
     {
-      "byte_end": 4494,
-      "byte_start": 4472,
+      "byte_end": 4992,
+      "byte_start": 4970,
       "code": "CD",
       "heading_path": [
         "Telemetry pod requirements",
@@ -62,8 +62,8 @@
       "text": "Component decisions"
     },
     {
-      "byte_end": 7901,
-      "byte_start": 7872,
+      "byte_end": 8667,
+      "byte_start": 8638,
       "code": "ME",
       "heading_path": [
         "Telemetry pod requirements",
@@ -73,8 +73,8 @@
       "text": "Mechanical and environment"
     },
     {
-      "byte_end": 9405,
-      "byte_start": 9383,
+      "byte_end": 10171,
+      "byte_start": 10149,
       "code": "AC",
       "heading_path": [
         "Telemetry pod requirements",
@@ -98,8 +98,8 @@
   },
   "lists": [
     {
-      "byte_end": 9381,
-      "byte_start": 8087,
+      "byte_end": 10147,
+      "byte_start": 8853,
       "heading_path": [
         "Telemetry pod requirements",
         "Mechanical and environment"
@@ -110,8 +110,8 @@
       "section": "Mechanical and environment"
     },
     {
-      "byte_end": 10990,
-      "byte_start": 9590,
+      "byte_end": 12748,
+      "byte_start": 10356,
       "heading_path": [
         "Telemetry pod requirements",
         "Acceptance criteria"
@@ -126,7 +126,7 @@
     {
       "id": "POD-DOC-P1",
       "locator": {
-        "byte_end": 52,
+        "byte_end": 214,
         "byte_start": 30,
         "heading_path": [
           "Telemetry pod requirements"
@@ -134,14 +134,14 @@
         "paragraph": 1
       },
       "section": "Telemetry pod requirements",
-      "text": "Oct 17, 2026 \u00b7 @Heath",
-      "text_sha256": "9aed9af574caad12d55b5abf03efa3d9a1a0a8fac7c31fc6f1ab9d1d9578d65f"
+      "text": "Oct 17, 2026 \u00b7 @Heath \u00b7 Revision 2, Oct 18, 2026: the owner decisions of 2026-10-18 are folded into the text below; this file supersedes the Oct 17 text (sha256 c5128ef9391e2114\u2026).",
+      "text_sha256": "8922838e744dc9d75145f1b3ff6d4e965704718ac379984e57996cba5fa454b8"
     },
     {
       "id": "POD-PU-P1",
       "locator": {
-        "byte_end": 497,
-        "byte_start": 66,
+        "byte_end": 659,
+        "byte_start": 228,
         "heading_path": [
           "Telemetry pod requirements",
           "Purpose"
@@ -155,8 +155,8 @@
     {
       "id": "POD-PU-P2",
       "locator": {
-        "byte_end": 834,
-        "byte_start": 499,
+        "byte_end": 996,
+        "byte_start": 661,
         "heading_path": [
           "Telemetry pod requirements",
           "Purpose"
@@ -170,8 +170,8 @@
     {
       "id": "POD-FN-P1",
       "locator": {
-        "byte_end": 1136,
-        "byte_start": 849,
+        "byte_end": 1298,
+        "byte_start": 1011,
         "heading_path": [
           "Telemetry pod requirements",
           "Function"
@@ -185,8 +185,8 @@
     {
       "id": "POD-FN-P2",
       "locator": {
-        "byte_end": 2292,
-        "byte_start": 1949,
+        "byte_end": 2533,
+        "byte_start": 2111,
         "heading_path": [
           "Telemetry pod requirements",
           "Function"
@@ -194,14 +194,14 @@
         "paragraph": 2
       },
       "section": "Function",
-      "text": "The pod also relays every CAN1 frame it receives from the ECU to RaceChrono over the BLE DIY CAN characteristic, filtered to the IDs RaceChrono subscribes to. The four analog channels are 12-bit and ratiometric to the 5 V supply that powers the sensors, so the ECU's 5V\\_SENSOR\\_2 rail or a local regulator may feed them without recalibration.",
-      "text_sha256": "cafae6dcb251329b47ad83e1240185d7567a1df068f8b250e1d5db4663c4f78d"
+      "text": "The pod also relays every CAN1 frame it receives from the ECU to RaceChrono over the BLE DIY CAN characteristic, filtered to the IDs RaceChrono subscribes to. The four analog channels are 12-bit and ratiometric to the pod's own 5 V sensor supply (see Interfaces), so the channels need no recalibration against the regulator. The pod is a standalone unit with its own power supply; the ECU's 5V\\_SENSOR\\_2 rail is not used.",
+      "text_sha256": "b4c4aa94851e0e77215c3d4a863ff564104dce0a30d82a6a75934e7d7435a93a"
     },
     {
       "id": "POD-IF-P1",
       "locator": {
-        "byte_end": 2715,
-        "byte_start": 2309,
+        "byte_end": 2956,
+        "byte_start": 2550,
         "heading_path": [
           "Telemetry pod requirements",
           "Interfaces"
@@ -215,8 +215,8 @@
     {
       "id": "POD-CD-P1",
       "locator": {
-        "byte_end": 4805,
-        "byte_start": 4496,
+        "byte_end": 5303,
+        "byte_start": 4994,
         "heading_path": [
           "Telemetry pod requirements",
           "Component decisions"
@@ -230,8 +230,8 @@
     {
       "id": "POD-ME-P1",
       "locator": {
-        "byte_end": 8085,
-        "byte_start": 7903,
+        "byte_end": 8851,
+        "byte_start": 8669,
         "heading_path": [
           "Telemetry pod requirements",
           "Mechanical and environment"
@@ -245,8 +245,8 @@
     {
       "id": "POD-AC-P1",
       "locator": {
-        "byte_end": 9588,
-        "byte_start": 9407,
+        "byte_end": 10354,
+        "byte_start": 10173,
         "heading_path": [
           "Telemetry pod requirements",
           "Acceptance criteria"
@@ -260,8 +260,8 @@
     {
       "id": "POD-AC-P2",
       "locator": {
-        "byte_end": 11240,
-        "byte_start": 10992,
+        "byte_end": 12998,
+        "byte_start": 12750,
         "heading_path": [
           "Telemetry pod requirements",
           "Acceptance criteria"
@@ -285,28 +285,28 @@
       "id": "POD-FN-LATERAL-LONGITUDINAL-VERTICAL-ACCELERATION",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1364,
-        "byte_start": 1233,
+        "byte_end": 1526,
+        "byte_start": 1395,
         "cells": {
           "Published as": [
-            1321,
-            1362
+            1483,
+            1524
           ],
           "Quantity": [
-            1235,
-            1279
+            1397,
+            1441
           ],
           "Range": [
-            1295,
-            1309
+            1457,
+            1471
           ],
           "Rate": [
-            1312,
-            1318
+            1474,
+            1480
           ],
           "Sensor on the pod": [
-            1282,
-            1292
+            1444,
+            1454
           ]
         },
         "heading_path": [
@@ -333,28 +333,28 @@
       "id": "POD-FN-YAW-ROLL-PITCH-RATE",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1446,
-        "byte_start": 1365,
+        "byte_end": 1608,
+        "byte_start": 1527,
         "cells": {
           "Published as": [
-            1425,
-            1444
+            1587,
+            1606
           ],
           "Quantity": [
-            1367,
-            1388
+            1529,
+            1550
           ],
           "Range": [
-            1402,
-            1413
+            1564,
+            1575
           ],
           "Rate": [
-            1416,
-            1422
+            1578,
+            1584
           ],
           "Sensor on the pod": [
-            1391,
-            1399
+            1553,
+            1561
           ]
         },
         "heading_path": [
@@ -381,28 +381,28 @@
       "id": "POD-FN-LEAN-AND-PITCH-ANGLE",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1540,
-        "byte_start": 1447,
+        "byte_end": 1702,
+        "byte_start": 1609,
         "cells": {
           "Published as": [
-            1533,
-            1538
+            1695,
+            1700
           ],
           "Quantity": [
-            1449,
-            1469
+            1611,
+            1631
           ],
           "Range": [
-            1507,
-            1521
+            1669,
+            1683
           ],
           "Rate": [
-            1524,
-            1530
+            1686,
+            1692
           ],
           "Sensor on the pod": [
-            1472,
-            1504
+            1634,
+            1666
           ]
         },
         "heading_path": [
@@ -429,28 +429,28 @@
       "id": "POD-FN-FRONT-FORK-TRAVEL",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1633,
-        "byte_start": 1541,
+        "byte_end": 1795,
+        "byte_start": 1703,
         "cells": {
           "Published as": [
-            1626,
-            1631
+            1788,
+            1793
           ],
           "Quantity": [
-            1543,
-            1560
+            1705,
+            1722
           ],
           "Range": [
-            1604,
-            1614
+            1766,
+            1776
           ],
           "Rate": [
-            1617,
-            1623
+            1779,
+            1785
           ],
           "Sensor on the pod": [
-            1563,
-            1601
+            1725,
+            1763
           ]
         },
         "heading_path": [
@@ -477,28 +477,28 @@
       "id": "POD-FN-REAR-SHOCK-TRAVEL",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1725,
-        "byte_start": 1634,
+        "byte_end": 1887,
+        "byte_start": 1796,
         "cells": {
           "Published as": [
-            1718,
-            1723
+            1880,
+            1885
           ],
           "Quantity": [
-            1636,
-            1653
+            1798,
+            1815
           ],
           "Range": [
-            1697,
-            1706
+            1859,
+            1868
           ],
           "Rate": [
-            1709,
-            1715
+            1871,
+            1877
           ],
           "Sensor on the pod": [
-            1656,
-            1694
+            1818,
+            1856
           ]
         },
         "heading_path": [
@@ -525,28 +525,28 @@
       "id": "POD-FN-FRONT-AND-REAR-BRAKE-PRESSURE",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1826,
-        "byte_start": 1726,
+        "byte_end": 1988,
+        "byte_start": 1888,
         "cells": {
           "Published as": [
-            1819,
-            1824
+            1981,
+            1986
           ],
           "Quantity": [
-            1728,
-            1757
+            1890,
+            1919
           ],
           "Range": [
-            1796,
-            1807
+            1958,
+            1969
           ],
           "Rate": [
-            1810,
-            1816
+            1972,
+            1978
           ],
           "Sensor on the pod": [
-            1760,
-            1793
+            1922,
+            1955
           ]
         },
         "heading_path": [
@@ -573,28 +573,28 @@
       "id": "POD-FN-POSITION-SPEED-HEADING-ALTITUDE",
       "kind": "table_row",
       "locator": {
-        "byte_end": 1947,
-        "byte_start": 1827,
+        "byte_end": 2109,
+        "byte_start": 1989,
         "cells": {
           "Published as": [
-            1912,
-            1945
+            2074,
+            2107
           ],
           "Quantity": [
-            1829,
-            1863
+            1991,
+            2025
           ],
           "Range": [
-            1882,
-            1901
+            2044,
+            2063
           ],
           "Rate": [
-            1904,
-            1909
+            2066,
+            2071
           ],
           "Sensor on the pod": [
-            1866,
-            1879
+            2028,
+            2041
           ]
         },
         "heading_path": [
@@ -618,16 +618,16 @@
       "id": "POD-IF-CAN1",
       "kind": "table_row",
       "locator": {
-        "byte_end": 3042,
-        "byte_start": 2759,
+        "byte_end": 3283,
+        "byte_start": 3000,
         "cells": {
           "Interface": [
-            2761,
-            2765
+            3002,
+            3006
           ],
           "Requirement": [
-            2768,
-            3040
+            3009,
+            3281
           ]
         },
         "heading_path": [
@@ -651,16 +651,16 @@
       "id": "POD-IF-BLUETOOTH-LE",
       "kind": "table_row",
       "locator": {
-        "byte_end": 3238,
-        "byte_start": 3043,
+        "byte_end": 3479,
+        "byte_start": 3284,
         "cells": {
           "Interface": [
-            3045,
-            3057
+            3286,
+            3298
           ],
           "Requirement": [
-            3060,
-            3236
+            3301,
+            3477
           ]
         },
         "heading_path": [
@@ -679,21 +679,21 @@
     {
       "cells": {
         "Interface": "Power in",
-        "Requirement": "Fused switched 12 V from the main relay (J1-27) and power ground (J1-34). Operate from 9 V to 16 V; survive 12 V automotive transients (ISO 7637-2 pulses, 40 V clamp) and reverse polarity. Budget under 2 A at 12 V including sensors."
+        "Requirement": "Switched 12 V from the main-relay output, spliced in the harness on the same circuit that feeds the ECU's J1-27 input, through the pod's own 2 A fuse; ground to chassis on the ECU's J1-34 (CHASSIS\\_ECU\\_GND) circuit. The pod never draws power from the ECU. Operate from 9 V to 16 V; survive 12 V automotive transients (ISO 7637-2 pulses, 40 V clamp) and reverse polarity. Budget under 2 A at 12 V including sensors."
       },
       "id": "POD-IF-POWER-IN",
       "kind": "table_row",
       "locator": {
-        "byte_end": 3486,
-        "byte_start": 3239,
+        "byte_end": 3910,
+        "byte_start": 3480,
         "cells": {
           "Interface": [
-            3241,
-            3249
+            3482,
+            3490
           ],
           "Requirement": [
-            3252,
-            3484
+            3493,
+            3908
           ]
         },
         "heading_path": [
@@ -706,8 +706,8 @@
         "table": 1
       },
       "section": "Interfaces",
-      "text": "| Power in | Fused switched 12 V from the main relay (J1-27) and power ground (J1-34). Operate from 9 V to 16 V; survive 12 V automotive transients (ISO 7637-2 pulses, 40 V clamp) and reverse polarity. Budget under 2 A at 12 V including sensors. |",
-      "text_sha256": "9b9863a4d82c997a18aa905d00eda2d49b66080dcfbfd490abcdfb0591f12a75"
+      "text": "| Power in | Switched 12 V from the main-relay output, spliced in the harness on the same circuit that feeds the ECU's J1-27 input, through the pod's own 2 A fuse; ground to chassis on the ECU's J1-34 (CHASSIS\\_ECU\\_GND) circuit. The pod never draws power from the ECU. Operate from 9 V to 16 V; survive 12 V automotive transients (ISO 7637-2 pulses, 40 V clamp) and reverse polarity. Budget under 2 A at 12 V including sensors. |",
+      "text_sha256": "aae28c7ce7bc738a29b267520ee9d378f05b4f9d11a556915668d0ba64028828"
     },
     {
       "cells": {
@@ -717,16 +717,16 @@
       "id": "POD-IF-SENSOR-SUPPLY",
       "kind": "table_row",
       "locator": {
-        "byte_end": 3730,
-        "byte_start": 3487,
+        "byte_end": 4154,
+        "byte_start": 3911,
         "cells": {
           "Interface": [
-            3489,
-            3502
+            3913,
+            3926
           ],
           "Requirement": [
-            3505,
-            3728
+            3929,
+            4152
           ]
         },
         "heading_path": [
@@ -750,16 +750,16 @@
       "id": "POD-IF-ANALOG-INPUTS",
       "kind": "table_row",
       "locator": {
-        "byte_end": 3861,
-        "byte_start": 3731,
+        "byte_end": 4285,
+        "byte_start": 4155,
         "cells": {
           "Interface": [
-            3733,
-            3746
+            4157,
+            4170
           ],
           "Requirement": [
-            3749,
-            3859
+            4173,
+            4283
           ]
         },
         "heading_path": [
@@ -783,16 +783,16 @@
       "id": "POD-IF-GNSS-ANTENNA",
       "kind": "table_row",
       "locator": {
-        "byte_end": 3987,
-        "byte_start": 3862,
+        "byte_end": 4411,
+        "byte_start": 4286,
         "cells": {
           "Interface": [
-            3864,
-            3876
+            4288,
+            4300
           ],
           "Requirement": [
-            3879,
-            3985
+            4303,
+            4409
           ]
         },
         "heading_path": [
@@ -816,16 +816,16 @@
       "id": "POD-IF-PROGRAMMING-AND-DEBUG",
       "kind": "table_row",
       "locator": {
-        "byte_end": 4259,
-        "byte_start": 3988,
+        "byte_end": 4683,
+        "byte_start": 4412,
         "cells": {
           "Interface": [
-            3990,
-            4011
+            4414,
+            4435
           ],
           "Requirement": [
-            4014,
-            4257
+            4438,
+            4681
           ]
         },
         "heading_path": [
@@ -844,21 +844,21 @@
     {
       "cells": {
         "Interface": "Harness connector",
-        "Requirement": "One TE AMPSEAL connector carrying CAN\\_H, CAN\\_L, +12 V, ground, and the four sensors (each with supply, signal and return): 16 signals in a 23-position housing, unused cavities plugged."
+        "Requirement": "One TE AMPSEAL 23-position header, TE 776228-1 (right-angle PCB header, black, the ECU J1 family), carrying CAN\\_H, CAN\\_L, +12 V, ground, and the four sensors (each with supply, signal and return): 16 signals in a 23-position housing, unused cavities plugged."
       },
       "id": "POD-IF-HARNESS-CONNECTOR",
       "kind": "table_row",
       "locator": {
-        "byte_end": 4470,
-        "byte_start": 4260,
+        "byte_end": 4968,
+        "byte_start": 4684,
         "cells": {
           "Interface": [
-            4262,
-            4279
+            4686,
+            4703
           ],
           "Requirement": [
-            4282,
-            4468
+            4706,
+            4966
           ]
         },
         "heading_path": [
@@ -871,8 +871,8 @@
         "table": 1
       },
       "section": "Interfaces",
-      "text": "| Harness connector | One TE AMPSEAL connector carrying CAN\\_H, CAN\\_L, +12 V, ground, and the four sensors (each with supply, signal and return): 16 signals in a 23-position housing, unused cavities plugged. |",
-      "text_sha256": "44e319eb51839eef11185877bb34474e0b5cda3072e484c27328a789b542c365"
+      "text": "| Harness connector | One TE AMPSEAL 23-position header, TE 776228-1 (right-angle PCB header, black, the ECU J1 family), carrying CAN\\_H, CAN\\_L, +12 V, ground, and the four sensors (each with supply, signal and return): 16 signals in a 23-position housing, unused cavities plugged. |",
+      "text_sha256": "96992454cb550fd5a0166a109e4af28edc4a639dfefb365cffd2808f446185d6"
     },
     {
       "cells": {
@@ -884,24 +884,24 @@
       "id": "POD-CD-MCU-AND-RADIO",
       "kind": "table_row",
       "locator": {
-        "byte_end": 5258,
-        "byte_start": 4876,
+        "byte_end": 5756,
+        "byte_start": 5374,
         "cells": {
           "Decision": [
-            4894,
-            4930
+            5392,
+            5428
           ],
           "Function": [
-            4878,
-            4891
+            5376,
+            5389
           ],
           "Not chosen": [
-            5139,
-            5256
+            5637,
+            5754
           ],
           "Why": [
-            4933,
-            5136
+            5431,
+            5634
           ]
         },
         "heading_path": [
@@ -919,32 +919,32 @@
     },
     {
       "cells": {
-        "Decision": "TJA1051T/3 (LCSC C38695) with PESD1CAN-UX (C907839) and a 120 \u03a9 termination",
+        "Decision": "TJA1051T/3 (LCSC C38695) with PESD1CAN-UX (C907839) and a 120 \u03a9 termination (C22787)",
         "Function": "CAN transceiver",
         "Not chosen": "MCP2562FD: equivalent, but a new part with no fome-mc precedent.",
-        "Why": "The same transceiver and ESD part fome-mc's wideband sheets use, 3.3 V logic supply, so the verified block carries over unchanged."
+        "Why": "The transceiver fome-mc's wideband sheets use, composed with the ESD part and termination from fome-mc's PSU sheet (which itself uses an MCP2551 at the ECU end); VCC on 5 V, VIO on 3.3 V logic. Composing from two sheets is a recorded deviation from \"block carried over unchanged\"."
       },
       "id": "POD-CD-CAN-TRANSCEIVER",
       "kind": "table_row",
       "locator": {
-        "byte_end": 5557,
-        "byte_start": 5259,
+        "byte_end": 6214,
+        "byte_start": 5757,
         "cells": {
           "Decision": [
-            5279,
-            5355
+            5777,
+            5862
           ],
           "Function": [
-            5261,
-            5276
+            5759,
+            5774
           ],
           "Not chosen": [
-            5491,
-            5555
+            6148,
+            6212
           ],
           "Why": [
-            5358,
-            5488
+            5865,
+            6145
           ]
         },
         "heading_path": [
@@ -957,8 +957,8 @@
         "table": 1
       },
       "section": "Component decisions",
-      "text": "| CAN transceiver | TJA1051T/3 (LCSC C38695) with PESD1CAN-UX (C907839) and a 120 \u03a9 termination | The same transceiver and ESD part fome-mc's wideband sheets use, 3.3 V logic supply, so the verified block carries over unchanged. | MCP2562FD: equivalent, but a new part with no fome-mc precedent. |",
-      "text_sha256": "9924bdc4d5c164a247eedf1bed9271e745778856a9b67cc5e6da8ccefc2976fe"
+      "text": "| CAN transceiver | TJA1051T/3 (LCSC C38695) with PESD1CAN-UX (C907839) and a 120 \u03a9 termination (C22787) | The transceiver fome-mc's wideband sheets use, composed with the ESD part and termination from fome-mc's PSU sheet (which itself uses an MCP2551 at the ECU end); VCC on 5 V, VIO on 3.3 V logic. Composing from two sheets is a recorded deviation from \"block carried over unchanged\". | MCP2562FD: equivalent, but a new part with no fome-mc precedent. |",
+      "text_sha256": "cfbe615d1ed50fa33d94fd41034b7f97cea3290b258651798adb5a5910f8465c"
     },
     {
       "cells": {
@@ -970,24 +970,24 @@
       "id": "POD-CD-IMU",
       "kind": "table_row",
       "locator": {
-        "byte_end": 5901,
-        "byte_start": 5558,
+        "byte_end": 6558,
+        "byte_start": 6215,
         "cells": {
           "Decision": [
-            5566,
-            5580
+            6223,
+            6237
           ],
           "Function": [
-            5560,
-            5563
+            6217,
+            6220
           ],
           "Not chosen": [
-            5744,
-            5899
+            6401,
+            6556
           ],
           "Why": [
-            5583,
-            5741
+            6240,
+            6398
           ]
         },
         "heading_path": [
@@ -1013,24 +1013,24 @@
       "id": "POD-CD-GNSS",
       "kind": "table_row",
       "locator": {
-        "byte_end": 6405,
-        "byte_start": 5902,
+        "byte_end": 7062,
+        "byte_start": 6559,
         "cells": {
           "Decision": [
-            5911,
-            5970
+            6568,
+            6627
           ],
           "Function": [
-            5904,
-            5908
+            6561,
+            6565
           ],
           "Not chosen": [
-            6340,
-            6403
+            6997,
+            7060
           ],
           "Why": [
-            5973,
-            6337
+            6630,
+            6994
           ]
         },
         "heading_path": [
@@ -1056,24 +1056,24 @@
       "id": "POD-CD-ANALOG-FRONT-END",
       "kind": "table_row",
       "locator": {
-        "byte_end": 6768,
-        "byte_start": 6406,
+        "byte_end": 7425,
+        "byte_start": 7063,
         "cells": {
           "Decision": [
-            6427,
-            6539
+            7084,
+            7196
           ],
           "Function": [
-            6408,
-            6424
+            7065,
+            7081
           ],
           "Not chosen": [
-            6665,
-            6766
+            7322,
+            7423
           ],
           "Why": [
-            6542,
-            6662
+            7199,
+            7319
           ]
         },
         "heading_path": [
@@ -1099,24 +1099,24 @@
       "id": "POD-CD-POWER",
       "kind": "table_row",
       "locator": {
-        "byte_end": 7212,
-        "byte_start": 6769,
+        "byte_end": 7869,
+        "byte_start": 7426,
         "cells": {
           "Decision": [
-            6779,
-            7009
+            7436,
+            7666
           ],
           "Function": [
-            6771,
-            6776
+            7428,
+            7433
           ],
           "Not chosen": [
-            7151,
-            7210
+            7808,
+            7867
           ],
           "Why": [
-            7012,
-            7148
+            7669,
+            7805
           ]
         },
         "heading_path": [
@@ -1134,7 +1134,7 @@
     },
     {
       "cells": {
-        "Decision": "TE AMPSEAL 23-position housing (the family comes in 8, 14, 23 and 35 positions), same family as the ECU's J1 and J2, 16 cavities used",
+        "Decision": "TE AMPSEAL 23-position header 776228-1 (right-angle, black) with the matching 23-position plug, cavity plugs 770678-1 and 770520-3 contacts (the family comes in 8, 14, 23 and 35 positions), same family as the ECU's J1 and J2, 16 cavities used",
         "Function": "Harness connector",
         "Not chosen": "A separate waterproof connector family: more tooling for no benefit.",
         "Why": "One crimp tool, one seal system and one set of cavity plugs across the bike."
@@ -1142,24 +1142,24 @@
       "id": "POD-CD-HARNESS-CONNECTOR",
       "kind": "table_row",
       "locator": {
-        "byte_end": 7520,
-        "byte_start": 7213,
+        "byte_end": 8286,
+        "byte_start": 7870,
         "cells": {
           "Decision": [
-            7235,
-            7368
+            7892,
+            8134
           ],
           "Function": [
-            7215,
-            7232
+            7872,
+            7889
           ],
           "Not chosen": [
-            7450,
-            7518
+            8216,
+            8284
           ],
           "Why": [
-            7371,
-            7447
+            8137,
+            8213
           ]
         },
         "heading_path": [
@@ -1172,8 +1172,8 @@
         "table": 1
       },
       "section": "Component decisions",
-      "text": "| Harness connector | TE AMPSEAL 23-position housing (the family comes in 8, 14, 23 and 35 positions), same family as the ECU's J1 and J2, 16 cavities used | One crimp tool, one seal system and one set of cavity plugs across the bike. | A separate waterproof connector family: more tooling for no benefit. |",
-      "text_sha256": "f03a35df496d6b85a20270b7d4f3017a82bc51246eee9ced9c6a173c832da489"
+      "text": "| Harness connector | TE AMPSEAL 23-position header 776228-1 (right-angle, black) with the matching 23-position plug, cavity plugs 770678-1 and 770520-3 contacts (the family comes in 8, 14, 23 and 35 positions), same family as the ECU's J1 and J2, 16 cavities used | One crimp tool, one seal system and one set of cavity plugs across the bike. | A separate waterproof connector family: more tooling for no benefit. |",
+      "text_sha256": "a2b1c553bd772a38240f4082750cfd3e63bd1c73774487bdb5f9deb21d161ce7"
     },
     {
       "cells": {
@@ -1185,24 +1185,24 @@
       "id": "POD-CD-BOARD",
       "kind": "table_row",
       "locator": {
-        "byte_end": 7870,
-        "byte_start": 7521,
+        "byte_end": 8636,
+        "byte_start": 8287,
         "cells": {
           "Decision": [
-            7531,
-            7648
+            8297,
+            8414
           ],
           "Function": [
-            7523,
-            7528
+            8289,
+            8294
           ],
           "Not chosen": [
-            7807,
-            7868
+            8573,
+            8634
           ],
           "Why": [
-            7651,
-            7804
+            8417,
+            8570
           ]
         },
         "heading_path": [
@@ -1223,8 +1223,8 @@
       "id": "POD-ME-1",
       "kind": "bullet",
       "locator": {
-        "byte_end": 8273,
-        "byte_start": 8089,
+        "byte_end": 9039,
+        "byte_start": 8855,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1244,8 +1244,8 @@
       "id": "POD-ME-2",
       "kind": "bullet",
       "locator": {
-        "byte_end": 8595,
-        "byte_start": 8276,
+        "byte_end": 9361,
+        "byte_start": 9042,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1265,8 +1265,8 @@
       "id": "POD-ME-3",
       "kind": "bullet",
       "locator": {
-        "byte_end": 8689,
-        "byte_start": 8598,
+        "byte_end": 9455,
+        "byte_start": 9364,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1286,8 +1286,8 @@
       "id": "POD-ME-4",
       "kind": "bullet",
       "locator": {
-        "byte_end": 8969,
-        "byte_start": 8692,
+        "byte_end": 9735,
+        "byte_start": 9458,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1307,8 +1307,8 @@
       "id": "POD-ME-5",
       "kind": "bullet",
       "locator": {
-        "byte_end": 9140,
-        "byte_start": 8972,
+        "byte_end": 9906,
+        "byte_start": 9738,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1328,8 +1328,8 @@
       "id": "POD-ME-6",
       "kind": "bullet",
       "locator": {
-        "byte_end": 9381,
-        "byte_start": 9143,
+        "byte_end": 10147,
+        "byte_start": 9909,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1349,8 +1349,8 @@
       "id": "POD-AC-1",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 9831,
-        "byte_start": 9593,
+        "byte_end": 10597,
+        "byte_start": 10359,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1370,8 +1370,8 @@
       "id": "POD-AC-2",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 9961,
-        "byte_start": 9835,
+        "byte_end": 10727,
+        "byte_start": 10601,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1391,8 +1391,8 @@
       "id": "POD-AC-3",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10057,
-        "byte_start": 9965,
+        "byte_end": 11023,
+        "byte_start": 10731,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1404,16 +1404,16 @@
         "table": null
       },
       "section": "Acceptance criteria",
-      "text": "ERC and DRC report zero errors and zero unwaived warnings under the fome-mc toolchain rules.",
-      "text_sha256": "8d80e7447566b170fff30137f0719756386d8e85dfdecae537e366a63e2ade67"
+      "text": "ERC and DRC report zero errors and zero unwaived warnings under the fome-mc toolchain rules. A warning is waived only by an owner-recorded disposition bound to the exact violation (rule, items, reason, location hash); a moved or new violation needs a new disposition, and agents do not waive.",
+      "text_sha256": "935ee4b1cf640f0fee856fab519f7e743985e85f487a46fb3834a45cca2d68a3"
     },
     {
       "cells": {},
       "id": "POD-AC-4",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10174,
-        "byte_start": 10061,
+        "byte_end": 11234,
+        "byte_start": 11027,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1425,16 +1425,16 @@
         "table": null
       },
       "section": "Acceptance criteria",
-      "text": "kicad-happy analyzers report no findings at error level; findings at warning level are listed with a disposition.",
-      "text_sha256": "14c8bcda43969857ba3a750fb7c58089d926f48b54c430b4ca014fdcefc00f40"
+      "text": "The kicad-happy schematic, PCB, cross-analysis and EMC analyzers, run offline, report no findings at error level; findings at warning level are listed with a disposition. SPICE is not part of this criterion.",
+      "text_sha256": "71ead770e06175276c3b19eb2b204a771b633f0bc76e770519b890799bbdbac8"
     },
     {
       "cells": {},
       "id": "POD-AC-5",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10327,
-        "byte_start": 10178,
+        "byte_end": 11688,
+        "byte_start": 11238,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1446,16 +1446,16 @@
         "table": null
       },
       "section": "Acceptance criteria",
-      "text": "Every BOM line has an LCSC part number that is in stock at JLCPCB on the day of generation, captured with the stock figure and timestamp as evidence.",
-      "text_sha256": "7a04284078e28a3fc3ecc2723a3f981dac30c1ac263cc77d94ded566b40f14db"
+      "text": "Every BOM line has an LCSC part number that is in stock at JLCPCB on the day of generation, captured from JLCPCB's public component search per LCSC id with the response hash and UTC timestamp as evidence. Parts JLCPCB does not stock or assemble (the 776228-1 header, and the NEO-M9N or SMA connector if unstocked) are hand-fitted after delivery: excluded from assembly with a not\\_assembled marker and a recorded deviation naming the purchase source.",
+      "text_sha256": "3609ddf2b3642de2a14416a73c8a099912f1e64c3bdf8acf6a08d6aa4647d5a6"
     },
     {
       "cells": {},
       "id": "POD-AC-6",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10456,
-        "byte_start": 10331,
+        "byte_end": 12214,
+        "byte_start": 11692,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1467,16 +1467,16 @@
         "table": null
       },
       "section": "Acceptance criteria",
-      "text": "The fab package contains Gerbers, drill files, BOM and CPL in JLCPCB's formats, and a JLCPCB DFM check on the Gerbers passes.",
-      "text_sha256": "1a27ed0efa15767c4167ece4aa590bdd159e5040f2e2e98a93e2ea024e665560"
+      "text": "The fab package contains Gerbers, drill files, BOM and CPL in JLCPCB's formats, and a JLCPCB DFM check on the Gerbers passes: the owner uploads the sealed Gerber package to JLCPCB once and the saved DFM report is bound to the package hash as evidence; geometry pre-checks against JLCPCB's captured capability limits run in the pipeline but do not replace it. CPL rotations the captured policy cannot verify are listed as PREVIEW\\_REQUIRED obligations for the owner to confirm in JLCPCB's placement preview before ordering.",
+      "text_sha256": "1de8406cc2bdb8f7d306b801b675427c5d00b1fe8f281b80548d4328fe637050"
     },
     {
       "cells": {},
       "id": "POD-AC-7",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10661,
-        "byte_start": 10460,
+        "byte_end": 12419,
+        "byte_start": 12218,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1496,8 +1496,8 @@
       "id": "POD-AC-8",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10877,
-        "byte_start": 10665,
+        "byte_end": 12635,
+        "byte_start": 12423,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1517,8 +1517,8 @@
       "id": "POD-AC-9",
       "kind": "acceptance",
       "locator": {
-        "byte_end": 10990,
-        "byte_start": 10881,
+        "byte_end": 12748,
+        "byte_start": 12639,
         "cells": {},
         "heading_path": [
           "Telemetry pod requirements",
@@ -1536,14 +1536,14 @@
   ],
   "schema": "agent-ee.spec-record/1",
   "spec": {
-    "bytes": 11241,
+    "bytes": 12999,
     "name": "spec.md",
-    "sha256": "c5128ef9391e2114e7a399b352a957472ad26b93ca76e3179cc04b2b51194572"
+    "sha256": "09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493"
   },
   "tables": [
     {
-      "byte_end": 1947,
-      "byte_start": 1138,
+      "byte_end": 2109,
+      "byte_start": 1300,
       "headers": [
         "Quantity",
         "Sensor on the pod",
@@ -1560,8 +1560,8 @@
       "table": 1
     },
     {
-      "byte_end": 4470,
-      "byte_start": 2717,
+      "byte_end": 4968,
+      "byte_start": 2958,
       "headers": [
         "Interface",
         "Requirement"
@@ -1575,8 +1575,8 @@
       "table": 1
     },
     {
-      "byte_end": 7870,
-      "byte_start": 4807,
+      "byte_end": 8636,
+      "byte_start": 5305,
       "headers": [
         "Function",
         "Decision",
