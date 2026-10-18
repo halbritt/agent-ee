@@ -5,13 +5,16 @@ entry. It also holds the original standalone board and the scope/2 review that
 grades the block. The source is `sheets/psu.kicad_sch` at fome-mc commit
 `df304f3321296f7e517e0d2e2aa52e1380d52993`, minus the CAN transceivers. This
 commit carries FOMEMC-17 (`5954c3a`, the last change to the sheet before the
-pin). The material is committed under the owner decision of 2026-10-18. Its
-rights and capture rules are in `fixtures/fome-mc/LICENSE-NOTICE.md`,
-which AGENTEE-105 adds, and its origin is `T16` in
-[`file-origins.json`](file-origins.json). `T16` is owner-confirmed, but the
-sheet derives from an upstream donor design (`T3`, unresolved), which `T16` lists in
-`embedded_origins`. The [origin check](third-party-origins.md) therefore reports
-every `T16` file as unresolved until the owner rules on that embedded content.
+pin). The material is committed under the owner decisions of 2026-10-18. Its
+rights, upstream licences and capture rules are in
+`fixtures/fome-mc/LICENSE-NOTICE.md`, which AGENTEE-105 adds, and its origin is
+`T16` in [`file-origins.json`](file-origins.json). `T16` is owner-confirmed and
+lists its upstream origins (`T3`, `T4`, `T6`, `T8`, `T9`, unresolved) in
+`embedded_origins`; under the second-batch owner decision of 2026-10-18
+("Admit with upstream licence recorded"), the [origin check](third-party-origins.md)
+folds every `T16` file's status to `derived` (never `owner-confirmed`) with the
+embedded upstream origin ids and licences named, and both `inventory.json` and
+`capture/psu/block.json` carry the block's upstream origin and licence.
 
 | Path | Content | Origin |
 | --- | --- | --- |
@@ -32,8 +35,9 @@ PYTHONPATH=src python3 -m agent_ee.block_inventory capture fixtures/fome-mc/psu/
 ```
 
 `source.repository` records the label `fome-mc`, not a local path.
-`capture/psu/block.json` records `source.commit` and, in `files`, the SHA-256 of
-every payload file. Its `source.paths` map each payload file to its fome-mc path.
+`capture/psu/block.json` records `source.commit`, `source.upstream_origin`,
+`source.upstream_license` and, in `files`, the SHA-256 of every payload file.
+Its `source.paths` map each payload file to its fome-mc path.
 
 | Payload | fome-mc path | SHA-256 |
 | --- | --- | --- |
@@ -161,10 +165,11 @@ PYTHONPATH=src python3 -m agent_ee.cli review fixtures/fome-mc/psu/review.scope.
 ## Runs
 
 The repair for the AGENTEE-106 review (no planning documents, a repository
-label, the `T16` origin) changed the block hash, the contract and the scope, so
+label, the `T16` origin) and the AGENTEE-152 `upstream_origin` and
+`upstream_license` fields changed the block hash, the contract and the scope, so
 the baseline changed. The current scope compiles baseline
-`9641a8758e9b44e7cec8e7737dae5345bff668267dae7865a7ed440d472929c9` with
-candidate `2513e113752149fbcfda45252fbad28b032e43c90bd814fa72ed722bdb31ad8a`.
+`985999e2ca757f18288362526bb83b16d54d049b1da312d9a1fceecc4cdb8c48` with
+candidate `5f8f54c3ed67490b08bc8228d173363e118bd445752597bc08484e352f9a51ca`.
 A checks-only run executes all 11 checks with the results in the table above.
 No reviewed run exists yet on this baseline.
 

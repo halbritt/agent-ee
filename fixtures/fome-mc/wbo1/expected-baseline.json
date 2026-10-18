@@ -1,5 +1,5 @@
 {
-  "baseline_id": "93376f233f301074cc40c14b19d9d2170e15288ee1f262183f816a60052eb240",
+  "baseline_id": "75f7d6eccce9627f0ce521306673149f0583b82b3e2ada3f4a949126ef068177",
   "coverage": {
     "checks": {
       "erc": {
@@ -271,8 +271,8 @@
   ],
   "files": {
     "COVERAGE.md": "7ad526d3d1c2b4f3c61758c7d41bb293f86cdb90409f96b4fa0d98521517601a",
-    "blocks/wbo1/block.json": "ca28cc050b501f4cd86bfb3cfd9ddebc12423bf6a0cb7083cafd5eac6e2386d0",
-    "blocks/wbo2/block.json": "ad6c34e7139a1fe90fda38c5966fa59470ef135a1db686702f26283ed99e153e",
+    "blocks/wbo1/block.json": "d6a6fc79239b3315d974b215eee426776c0d467ec3ff6cfc587e9ed7c654fda3",
+    "blocks/wbo2/block.json": "c95cc5aa1006340007cd1ff929f7139bf8b93613c508d2086a93cdbf1ae480cb",
     "interface.json": "382a375067f6c59acc420f2585a8fc0adbf59aaa8f11b4157cdae6830f0d7f84"
   },
   "reference_architectures": [

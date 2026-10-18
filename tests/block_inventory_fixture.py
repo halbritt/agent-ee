@@ -131,9 +131,11 @@ def inventory(commit):
                 design=dict(name='owned', commit=commit, root=ROOT_NAME, license='Owned test fixture', plan='plan'),
                 documents=dict(plan='docs/PLAN.md'),
                 unassigned=[dict(instance='/', references=['X1'], reason='Root connector')],
-                blocks=[dict(id='ch1', role='channel', title='Channel 1', origin='Owned', pending=pending,
+                blocks=[dict(id='ch1', role='channel', title='Channel 1', origin='Owned',
+                             upstream_license='Owned test fixture (MIT proposed)', pending=pending,
                              instances=[dict(path='/CH1/', references='all')],
                              boundary=dict(document='plan', locator='## Channel')),
-                        dict(id='ch2', role='channel', title='Channel 2', origin='Owned', pending=[],
+                        dict(id='ch2', role='channel', title='Channel 2', origin='Owned',
+                             upstream_license='Owned test fixture (MIT proposed)', pending=[],
                              instances=[dict(path='/CH2/', references=['C201', 'R201', 'R202', 'U201'])],
                              boundary=dict(document='plan', locator='## Channel'))])

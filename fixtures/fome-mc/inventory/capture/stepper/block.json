@@ -205,7 +205,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "13ce3fe0337cfca74e7fea5501b99c8b764f85bc12c161e228771c4801de6ac3",
+    "block-contract.json": "8e150fbe9ac6f10e772b6fc5b2b8e20837f0e842e2356b54da5ce06b2ef24b51",
     "connectivity.json": "435993041796add832f545482ee633e3c68084f215d43d1090d3f0f6087c101c",
     "interface.json": "5ccfc37e5b28c2a94b3eb3b91ab517f10e572bb7b1328b85e40f4a4292634dc5",
     "parts.json": "6f9a42c26d0a93756c55518af9788c657edeb6433c5c486bfd8ea0393b18b574",
@@ -363,11 +363,13 @@
   "sheet": "sheets/stepper_etb.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: fome-mc stepper_etb (FOMEMC-5 repair)",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: fome-mc stepper_etb (FOMEMC-5 repair; sheet embeds FOME-Tech Polygonus etb-9201 at b3176cb, T8, T4, T6)",
     "paths": {
       "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "fome-mc stepper_etb (FOMEMC-5 repair; sheet embeds FOME-Tech Polygonus etb-9201 at b3176cb, T8, T4, T6)"
   },
   "version": "draft-df304f332129"
 }

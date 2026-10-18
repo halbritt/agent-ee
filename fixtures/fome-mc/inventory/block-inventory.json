@@ -31,7 +31,8 @@
    "id": "psu",
    "role": "power",
    "title": "Power supply (psu.kicad_sch without CAN)",
-   "origin": "FOME-Tech Polygonus psu at b3176cb (docs/DESIGN.md section 2/3)",
+   "origin": "FOME-Tech Polygonus psu at b3176cb (T8, T4, T6; docs/DESIGN.md section 2/3)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/psu/",
@@ -119,7 +120,8 @@
    "id": "keep-alive",
    "role": "power",
    "title": "Keep-alive (Keep_Alive.kicad_sch)",
-   "origin": "Polygonus-Universal-112 Keep_Alive at ddcf0f7",
+   "origin": "Polygonus-Universal-112 Keep_Alive at ddcf0f7 (T3, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/Keep_Alive/",
@@ -145,7 +147,8 @@
    "id": "mcu",
    "role": "controller",
    "title": "MCU core (mcu.kicad_sch)",
-   "origin": "FOME-Tech Polygonus mcu at b3176cb with the fome-mc brain-module pin remap c43ad7b",
+   "origin": "FOME-Tech Polygonus mcu at b3176cb with the fome-mc brain-module pin remap c43ad7b (T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/mcu/",
@@ -179,7 +182,8 @@
    "id": "can",
    "role": "interface",
    "title": "CAN transceivers (inside psu.kicad_sch)",
-   "origin": "FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7",
+   "origin": "FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7 (T8, T3, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/psu/",
@@ -216,7 +220,8 @@
    "id": "wbo1",
    "role": "sensor-interface",
    "title": "Wideband channel 1 (wbo1.kicad_sch)",
-   "origin": "mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (MIT, Matthew Kennedy 2023)",
+   "origin": "mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (T9, T6; MIT, Matthew Kennedy 2023)",
+   "upstream_license": "MIT, Copyright (c) 2023 Matthew Kennedy (T9; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception.",
    "instances": [
     {
      "path": "/wbo1/",
@@ -252,7 +257,8 @@
    "id": "wbo2",
    "role": "sensor-interface",
    "title": "Wideband channel 2 (wbo2.kicad_sch)",
-   "origin": "mck1117 wideband Rev C at ca2adce (MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap",
+   "origin": "mck1117 wideband Rev C at ca2adce (T9, T6; MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap",
+   "upstream_license": "MIT, Copyright (c) 2023 Matthew Kennedy (T9; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception.",
    "instances": [
     {
      "path": "/wbo2/",
@@ -288,7 +294,8 @@
    "id": "ign-igbt",
    "role": "driver",
    "title": "Ignition IGBT (ign_igbt.kicad_sch with /ign1/)",
-   "origin": "Polygonus-Universal-112 IGBT outputs at ddcf0f7 and FOME-Tech Polygonus ign4 at b3176cb",
+   "origin": "Polygonus-Universal-112 IGBT outputs at ddcf0f7 and FOME-Tech Polygonus ign4 at b3176cb (T3, T8, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/ign_igbt/",
@@ -326,7 +333,8 @@
    "id": "ign-logic",
    "role": "driver",
    "title": "Logic ignition (/ign2/, ign4.kicad_sch)",
-   "origin": "FOME-Tech Polygonus ign4 at b3176cb",
+   "origin": "FOME-Tech Polygonus ign4 at b3176cb (T8, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/ign2/",
@@ -352,7 +360,8 @@
    "id": "lowside-quad",
    "role": "driver",
    "title": "Low-side quad (lowside_quad.kicad_sch, three instances)",
-   "origin": "FOME-Tech Polygonus lowside_quad at b3176cb",
+   "origin": "FOME-Tech Polygonus lowside_quad at b3176cb (T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/lowside_quad1/",
@@ -386,7 +395,8 @@
    "id": "highside-quad",
    "role": "driver",
    "title": "High-side quad (highside_quad.kicad_sch)",
-   "origin": "FOME-Tech Polygonus highside_quad at b3176cb",
+   "origin": "FOME-Tech Polygonus highside_quad at b3176cb (T8, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/highside_quad/",
@@ -412,7 +422,8 @@
    "id": "quad-analog",
    "role": "sensor-interface",
    "title": "Quad analog (quad_analog.kicad_sch, three instances)",
-   "origin": "FOME-Tech Polygonus quad_analog at b3176cb",
+   "origin": "FOME-Tech Polygonus quad_analog at b3176cb (T8, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/quad_analog1/",
@@ -446,7 +457,8 @@
    "id": "quad-analog-pullup",
    "role": "sensor-interface",
    "title": "Quad analog pull-up variant (quad_analog_pullup.kicad_sch)",
-   "origin": "FOME-Tech Polygonus quad_analog_pullup at b3176cb",
+   "origin": "FOME-Tech Polygonus quad_analog_pullup at b3176cb (T8, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/quad_analog_temp/",
@@ -472,7 +484,8 @@
    "id": "triggers",
    "role": "sensor-interface",
    "title": "Triggers (triggers.kicad_sch)",
-   "origin": "FOME-Tech Polygonus triggers at b3176cb",
+   "origin": "FOME-Tech Polygonus triggers at b3176cb (T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/triggers/",
@@ -500,7 +513,8 @@
    "id": "knock",
    "role": "sensor-interface",
    "title": "Knock (knock.kicad_sch)",
-   "origin": "FOME-Tech Polygonus knock at b3176cb",
+   "origin": "FOME-Tech Polygonus knock at b3176cb (T8, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/knock/",
@@ -526,7 +540,8 @@
    "id": "stepper",
    "role": "driver",
    "title": "Stepper driver (stepper_etb.kicad_sch reference set)",
-   "origin": "fome-mc stepper_etb (FOMEMC-5 repair)",
+   "origin": "fome-mc stepper_etb (FOMEMC-5 repair; sheet embeds FOME-Tech Polygonus etb-9201 at b3176cb, T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/stepper_etb/",
@@ -563,7 +578,8 @@
    "id": "etb2-hbridge",
    "role": "driver",
    "title": "Second H-bridge, inline TLE9201 (stepper_etb.kicad_sch reference set)",
-   "origin": "FOME-Tech Polygonus etb-9201 at b3176cb, drawn inline",
+   "origin": "FOME-Tech Polygonus etb-9201 at b3176cb, drawn inline (T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/stepper_etb/",
@@ -591,7 +607,8 @@
    "id": "lowside-clamps",
    "role": "protection",
    "title": "Low-side flyback clamps (stepper_etb.kicad_sch reference set)",
-   "origin": "fome-mc stepper_etb",
+   "origin": "fome-mc stepper_etb (sheet embeds FOME-Tech Polygonus etb-9201 at b3176cb, T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/stepper_etb/",
@@ -628,7 +645,8 @@
    "id": "dfu-entry",
    "role": "controller-support",
    "title": "DFU entry network (stepper_etb.kicad_sch reference set)",
-   "origin": "fome-mc stepper_etb",
+   "origin": "fome-mc stepper_etb (sheet embeds FOME-Tech Polygonus etb-9201 at b3176cb, T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/stepper_etb/",
@@ -660,7 +678,8 @@
    "id": "hbridge",
    "role": "driver",
    "title": "H-bridge (etb-9201.kicad_sch)",
-   "origin": "FOME-Tech Polygonus etb-9201 at b3176cb",
+   "origin": "FOME-Tech Polygonus etb-9201 at b3176cb (T8, T4, T6)",
+   "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
    "instances": [
     {
      "path": "/etb1/",

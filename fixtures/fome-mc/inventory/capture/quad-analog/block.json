@@ -79,7 +79,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "f52232fc0f74303a9d9b15e6fb606077936bb650d4cbfd34d7b004ffbf0a2046",
+    "block-contract.json": "cf94f22fc9dbf889a3593562e0733029af1c35dc30ef27336794613f18ceffd5",
     "connectivity.json": "2587fced98ff1a79fdde82520bff0e4d6767459145ad1be5d9d27e93ad679b75",
     "interface.json": "f205a9f74410b68c232423d47a45a7017de46eaeab65c134cf584c5377b9b9ce",
     "parts.json": "bf929362e159bd785f261b9c20ebff5641bf0ff4047809d1b52dafcd58513411",
@@ -325,11 +325,13 @@
   "sheet": "sheets/quad_analog.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus quad_analog at b3176cb",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus quad_analog at b3176cb (T8, T6)",
     "paths": {
       "sheets/quad_analog.kicad_sch": "sheets/quad_analog.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus quad_analog at b3176cb (T8, T6)"
   },
   "version": "draft-df304f332129"
 }

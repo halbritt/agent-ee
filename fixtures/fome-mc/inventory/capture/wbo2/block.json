@@ -93,7 +93,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "e2d4d919b4f1d68f3e2d12dc34f5da25e355f077eae91e8c782e90c3c2b390f3",
+    "block-contract.json": "1675aad80d82556eec0a502df4cb0310fb45a3600ea3c5a227fbdb2af98c7dc9",
     "connectivity.json": "7267ae5f6d6d95aaf710a72cbdd7024fa8fe3e0bfe7d86c883f165f4af1e7837",
     "interface.json": "1c70fa270cce982505f972ae2fd7480ee53cd7f9a064821cc612e03f30fa47bc",
     "parts.json": "7dfc0153ec07724fd4c25b8e8cd89553ab76e1e4d1184bf23ec1941f29d645f3",
@@ -420,11 +420,13 @@
   "sheet": "sheets/wbo2.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: mck1117 wideband Rev C at ca2adce (MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: mck1117 wideband Rev C at ca2adce (T9, T6; MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap",
     "paths": {
       "sheets/wbo2.kicad_sch": "sheets/wbo2.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "MIT, Copyright (c) 2023 Matthew Kennedy (T9; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception.",
+    "upstream_origin": "mck1117 wideband Rev C at ca2adce (T9, T6; MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap"
   },
   "version": "draft-df304f332129"
 }

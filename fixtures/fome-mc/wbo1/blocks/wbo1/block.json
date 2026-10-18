@@ -93,7 +93,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "19cf3f49d9d0c1b1cad1a1bd9c4c13885ca68cc2adb8d00efbd4471fea954ae5",
+    "block-contract.json": "35285288eebb0cea6946e438334e66ca1aac3d9e1d1ffbedbf24b7ffc117934c",
     "connectivity.json": "63f3f04579b2fa9bcd82b625d2bc3ecdcbcb52d70a8f2e596b93a0dcc462e81c",
     "interface.json": "fbc966ec23ba72cb2ec494ccfbdf4430d869415189d2ab20b1611c73585d4f6f",
     "parts.json": "c12be7320681b3bb0f1152044d3b951926decb719043977087577163b4c610bb",
@@ -424,7 +424,9 @@
     "paths": {
       "sheets/wbo1.kicad_sch": "sheets/wbo1.kicad_sch"
     },
-    "repository": "/home/halbritt/git/fome-mc"
+    "repository": "/home/halbritt/git/fome-mc",
+    "upstream_license": "MIT, Copyright (c) 2023 Matthew Kennedy (T9; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception.",
+    "upstream_origin": "mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (T9, T6; MIT, Matthew Kennedy 2023)"
   },
   "version": "draft-df304f332129"
 }

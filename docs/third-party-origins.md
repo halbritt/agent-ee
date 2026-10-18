@@ -16,13 +16,21 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   owner approval.
 - One origin is **owner-confirmed**: `T16`, the fome-mc reference block
   captures under `fixtures/fome-mc/`. On 2026-10-18 the owner decided they are
-  committed as fixtures and stated that the owner holds the rights to fome-mc
-  and agent-ee ([decision](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures),
+  committed as fixtures, stated that the owner holds the rights to fome-mc and
+  agent-ee, and answered that derived-from-Polygonus (and other derived) sheets
+  are admitted with their upstream origin and licence recorded in the block
+  record and notice ([decision](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures),
   [notice](../fixtures/fome-mc/LICENSE-NOTICE.md)). The decision chooses no
-  licence, so those files are not offered under MIT either.
-  fome-mc sheets embed upstream FOME-Tech Polygonus content (`T3`, `T4`,
-  `T6`, `T8`), which stays unresolved, so every `T16` file reports
-  **unresolved** until the owner rules on that embedded content.
+  repository licence for those files, so they are not offered under MIT either.
+  fome-mc sheets embed upstream content from FOME-Tech Polygonus-Universal-112
+  (`T3`, no licence file found), FOME-Tech `kicad-libraries` (`T4`, no licence
+  file found; SamacSys terms not reviewed), KiCad 10.0.7 stock libraries (`T6`,
+  CC-BY-SA-4.0 with the KiCad library exception), FOME-Tech Polygonus (`T8`, no
+  licence file found) and `mck1117/wideband` (`T9`, MIT, Copyright (c) 2023
+  Matthew Kennedy). Because those embedded upstream origins remain unresolved in
+  the origin table, `scripts/check_origins.py` folds every `T16` file's status
+  to **derived** (never `owner-confirmed`) and names each embedded upstream
+  origin id and `upstream_license`.
 - Every other origin is **unresolved**. Those files are not offered under MIT.
   Each origin needs an owner decision, recorded in the inventory, before its
   status changes. Ownership of this repository, or of the checkout a file was
@@ -57,7 +65,7 @@ Most unresolved files are retained evidence, which is classified by directory.
 | T13 | Seeded-benchmark source boards | CC-BY-SA-4.0, CERN-OHL-P/S-2.0 | Metadata and extracted identifiers in `benchmarks/seeded/`; no design files |
 | T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
 | T15 | FOME-MC seeded-benchmark records (`halbritt/fome-mc`, `5954c3a`) | No license found | None tracked: the AGENTEE-108 expectations manifest and run reports stay in a private store; the repository keeps only their SHA-256 hashes ([seeded benchmark](seeded-benchmark.md)). Publication is AGENTEE-118 |
-| T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file; owner holds the rights (owner-confirmed 2026-10-18); embeds unresolved Polygonus content | `fixtures/fome-mc/`: copied sheets and project libraries (wideband channels and the PSU block), and the block entries, contracts and inventories generated from them; planning documents are cited by pinned identity, not copied |
+| T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file in fome-mc; owner holds the rights and admitted derived sheets with upstream licences recorded (2026-10-18): `T3` and `T8` (FOME-Tech Polygonus-Universal-112 `ddcf0f7` and Polygonus `b3176cb`, no licence file found), `T4` (FOME-Tech `kicad-libraries` `ab9c5f8`, no licence file found; SamacSys terms not reviewed), `T6` (KiCad 10.0.7 stock libraries, CC-BY-SA-4.0 with the KiCad library exception), `T9` (`mck1117/wideband` Rev C `ca2adce`, MIT notice in `fixtures/fome-mc/LICENSE-NOTICE.md`); files report `derived` | `fixtures/fome-mc/`: copied sheets and project libraries (inventory, PSU block and wideband channels), and the block entries, contracts and inventories generated from them (each carrying `upstream_origin` and `upstream_license`); planning documents are cited by pinned identity, not copied |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and
@@ -106,12 +114,15 @@ recorded review.
 - a third-party origin is marked as proposed for MIT, or is marked
   `owner-confirmed` without an `owner_record`.
 
-A file is unresolved if any of its origins is unresolved. Otherwise it is
-owner-confirmed if any of its origins is. It is proposed for MIT only when all
-of its origins are agent-ee origins. A file's origins include, transitively,
-every origin its declared origins list in `embedded_origins`, so an owner
-decision on a derived design does not clear the upstream content it carries.
-An unknown or self-referencing embedded origin is an error.
+A file is unresolved if any of its declared origins is unresolved. Otherwise,
+if an `owner-confirmed` origin transitively lists an unresolved upstream origin
+in `embedded_origins`, the file's status folds to `derived` and its inventory
+entry names each embedded upstream origin `id` and `upstream_license` in
+`upstream_origins`, so an owner decision admitting a derived sheet records the
+upstream provenance without marking the file `owner-confirmed`. Otherwise a
+file is `owner-confirmed` if any of its origins is, or proposed for MIT only
+when all of its origins are agent-ee origins. An unknown or self-referencing
+embedded origin is an error.
 
 Without `.git`, as in the container image, the check walks the checkout with
 the `.gitignore` exclusions.

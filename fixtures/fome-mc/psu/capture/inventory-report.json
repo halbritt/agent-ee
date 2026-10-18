@@ -1,8 +1,8 @@
 {
   "blocks": [
     {
-      "block_sha256": "c2fb774e4494d43a520eb6412b426c0286a5b9322edb36f7bd219c6d994017c5",
-      "contract_sha256": "a7394cfbecf69e33047d4494b40ec3e6d959f09a9eb4afa08a3eb9fad509c730",
+      "block_sha256": "b3cfe9c37eb390fe5e00930423f91575fd4f9f70c1d0867704da8435da006e2e",
+      "contract_sha256": "4d7171833ded33c3adb335524d954d027f24910bf348c3e09c998befcf6152dd",
       "directory": "psu",
       "id": "fome-mc/psu",
       "pending_requirements": [
@@ -41,7 +41,7 @@
   "design": "fome-mc",
   "exporter": "kicad-cli 10.0.7",
   "exporter_console": "Warning: schematic has annotation errors, please use the schematic editor to fix them",
-  "inventory_sha256": "75838a5eed231c76af4d69f20cfe63cbafcefe85927619242debba0f0e7be3ca",
+  "inventory_sha256": "f37cad08998631399b8594d137e4e17a8426bf6e317b9f8abd90c209d0580516",
   "limitations": [
     "Draft entries: derived contracts restate the pinned design and need owner approval; no block is verified without a complete run and review.",
     "Captured design files are the pinned source blobs; publishing them follows the source design licence statement and the owner decision that covers it.",

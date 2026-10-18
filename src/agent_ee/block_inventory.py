@@ -80,8 +80,8 @@ def validate_inventory(document):
         raise ValueError('inventory needs blocks')
     ids = set()
     for block in document['blocks']:
-        _exact(block, ('id', 'role', 'title', 'origin', 'instances', 'boundary', 'pending'))
-        for key in ('id', 'role', 'title', 'origin'):
+        _exact(block, ('id', 'role', 'title', 'origin', 'upstream_license', 'instances', 'boundary', 'pending'))
+        for key in ('id', 'role', 'title', 'origin', 'upstream_license'):
             _text(block[key])
         if re.fullmatch('[a-z0-9][a-z0-9-]*', block['id']) is None or block['id'] in ids:
             raise ValueError('block ids are unique lowercase slugs')
@@ -391,7 +391,9 @@ def _block_request(inventory, block, context):
     record = dict(schema='agent-ee.block/1', id=inventory['design']['name'] + '/' + block['id'],
                   version='draft-' + commit[:12], role=block['role'],
                   source=dict(repository='', commit=commit, paths=paths,
-                              license=inventory['design']['license'] + ' Origin: ' + block['origin']),
+                              license=inventory['design']['license'] + ' Origin: ' + block['origin'],
+                              upstream_origin=block['origin'],
+                              upstream_license=block['upstream_license']),
                   sheet=primary['sheet'], parts_manifest='parts.json', boundary_ports=ports,
                   requirements=requirements, files={}, runs=[], instances=instances,
                   interface='interface.json', connectivity='connectivity.json',
