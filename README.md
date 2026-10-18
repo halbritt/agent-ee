@@ -160,7 +160,8 @@ intent and libraries or an explicit golden netlist. Resolved intent is rederived
 before comparison. Qualified virtual power symbols omitted by native XML are
 listed in the parity report; physical terminals remain exact. Exact instance
 connectivity catches exchanges that collapsed part labels can miss; ambiguous
-correspondence and search exhaustion remain unknown.
+correspondence and search exhaustion remain unknown. Missing, malformed or
+contradictory native connectivity artifacts leave parity coverage unknown.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs, and warn about same-name net islands. Island warnings
 are advisory. Neither check establishes electrical adequacy.
