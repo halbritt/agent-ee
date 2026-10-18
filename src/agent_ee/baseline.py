@@ -122,6 +122,9 @@ def compile_baseline(scope, files, inputs=None):
             from .dc_path import load_inputs
             _, dependencies = load_inputs(params, files, inputs)
             paths.update(dependencies)
+        if spec.get("kind") == "board_envelope":
+            from .envelope_check import parameters
+            paths.update(str(safe_relative(p)) for p in parameters(params))
         if spec.get("kind") == "placement":
             from .placement_check import parameters
             paths.update(str(safe_relative(p)) for p in parameters(params))

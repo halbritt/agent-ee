@@ -121,9 +121,11 @@ verified circuit.
 
 [Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
 and derived requirements into the captured baseline. A reference document becomes
-binding only when declared or consumed by the scope. Complete production envelope
-capture remains unavailable: outline, layer and stackup obligations still lack
-all required executable predicates, so capture refuses those gaps.
+binding only when declared or consumed by the scope. The registered native check
+compares exact outline and copper layers. Complete production envelope capture
+remains unavailable: stackup lacks qualified copper-weight authority, and holes,
+keepouts and multiple fixed connectors lack individual bindings. Capture refuses
+those gaps.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),

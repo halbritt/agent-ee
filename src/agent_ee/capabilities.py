@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'assembly_readiness'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -202,7 +202,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             raise ValueError(f'unknown capability kind: {kind}')
         if not isinstance(params, dict):
             raise ValueError('params must be an object')
-        if kind not in ('geometry', 'placement') and 'criterion' in params:
+        if kind not in ('geometry', 'placement', 'board_envelope') and 'criterion' in params:
             raise ValueError('unknown criterion for check kind')
         if not isinstance(params.get('calibration_inputs', []), list):
             raise ValueError('calibration_inputs must be a list')
@@ -231,6 +231,14 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = _geometry(params)
         elif kind == 'rc_transient':
             result['predicates'] = _rc_transient(params, prerequisite)
+        elif kind == 'board_envelope':
+            from .envelope_check import parameters, predicate_names
+            captured(scope.get('board'))
+            for path in parameters(params):
+                captured(path, immutable=True)
+            if params['criterion'] == 'stackup/1':
+                raise ValueError('stackup copper_weight_oz has no qualified captured manufacturing authority')
+            result['predicates'] = predicate_names(params)
         elif kind == 'placement':
             from .placement_check import parameters, predicate_names
             captured(scope.get('board'))

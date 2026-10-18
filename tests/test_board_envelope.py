@@ -884,6 +884,36 @@ class EnvelopeBaselineTests(unittest.TestCase):
             self.assertFalse((self.root / f'run{self.runs}' / 'baseline.json').exists())
             self.assertFalse((self.root / f'run{self.runs}' / 'candidate.json').exists())
 
+    def test_real_native_bindings_leave_only_stackup_uncovered_and_refuse_capture(self):
+        # No stand-ins: native outline/layers and the real profile/connector bind,
+        # while missing manufacturing authority still prevents a baseline.
+        criteria = {'outline': 'outline/1', 'layer-count': 'layers/1', 'stackup': 'stackup/1'}
+        scope = self.scope(mapping={f'R-envelope-rc-filter-{field}': field for field in criteria})
+        scope['checks'].extend({'id': field, 'kind': 'board_envelope',
+                                'params': {'criterion': criterion, 'envelope': ENVELOPE_PATH}}
+                               for field, criterion in criteria.items())
+        scope['baseline']['requirements'].append({
+            'id': 'R-drc', 'statement': 'DRC passes.', 'intent': 'acceptance', 'checks': ['drc'],
+            'source': {'path': 'requirements/targets.md', 'locator': 'drc'}})
+        files = {p.relative_to(self.root / 'source').as_posix(): digest(p)
+                 for p in (self.root / 'source').rglob('*') if p.is_file()}
+        artifacts = derive(self.envelope, source_path=ENVELOPE_PATH, profile=self.profile,
+                           captured=(files, self.root / 'source'))
+        record = json.loads(artifacts['envelope-validation.json'])
+        document = json.loads(artifacts['envelope-requirements.json'])
+        report = obligation_coverage(scope, document, record, files)
+        self.assertEqual({r['id']: r['status'] for r in report}, {
+            'R-envelope-rc-filter-outline': 'bound', 'R-envelope-rc-filter-layer-count': 'bound',
+            'R-envelope-rc-filter-stackup': 'unknown', PROFILE_ID: 'bound',
+            'R-envelope-rc-filter-fixed-J1': 'bound'})
+        with self.assertRaisesRegex(ValueError, 'refused, not dropped: R-envelope-rc-filter-stackup.*copper_weight_oz') as raised:
+            self.capture(scope)
+        for suffix in ('outline', 'layer-count', 'fixed-J1', 'fab-profile'):
+            self.assertNotIn('R-envelope-rc-filter-' + suffix, str(raised.exception))
+        run = self.root / f'run{self.runs}'
+        self.assertFalse((run / 'baseline.json').exists())
+        self.assertFalse((run / 'candidate.json').exists())
+
     def test_complete_bindings_freeze_envelope_profile_sources_and_dialog(self):
         from agent_ee.baseline import load_baseline
         from agent_ee.campaign import mutable_inputs
