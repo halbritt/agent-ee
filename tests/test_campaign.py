@@ -84,10 +84,186 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             "coverage": ["protocol"], "limitations": ["scripted test response"], "findings": []}
 
     @toolchain_test
+    def test_adjudicator_can_cite_verified_baseline(self):
+        def answer(*args, **kwargs):
+            record, value = self.agent(*args, **kwargs)
+            if args[1] == 'adjudicator':
+                value['decisions'][0]['evidence'].append({'path': 'baseline.json', 'locator': 'requirements/R1'})
+            return record, value
+        with patch('agent_ee.reviewers.dispatch', side_effect=answer), contextlib.redirect_stdout(io.StringIO()):
+            run_review(self.root / 'scope.json', self.root / 'run', 30)
+        result = verify(self.root / 'run')
+        self.assertTrue(result['adjudicated'])
+        self.assertEqual(result['findings'][0]['status'], 'accepted')
+        execution = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertEqual(execution['resubmissions']['used'], 0)
+
+    def malformed_adjudication(self, *, recover=False, limit=1, drift=False, failed=False, changed_packet=False, policy=False, cancel_second=False):
+        prompts, schemas = [], []
+        from agent_ee.cli import runtime_files
+        original_runtime = runtime_files()
+        runtime_patch = patch('agent_ee.cli.runtime_files', return_value={**original_runtime, 'drift': {}})
+        self.addCleanup(runtime_patch.stop)
+
+        def answer(*args, **kwargs):
+            record, value = self.agent(*args, **kwargs)
+            if args[1] == 'adjudicator':
+                prompts.append(args[3])
+                schemas.append(args[4])
+                if cancel_second and len(prompts) == 2:
+                    raise KeyboardInterrupt
+                if failed:
+                    return {'execution': 'failed', 'error': 'subscription authentication/quota failure'}, None
+                if not recover or len(prompts) == 1:
+                    # An existing run file outside the citation allowlist is still refused.
+                    write_json(Path(args[0]) / 'outside.json', {'unsealed': True})
+                    value['decisions'][0]['evidence'] = [{'path': 'outside.json', 'locator': 'unsealed'}]
+                    if drift:
+                        runtime_patch.start()
+                    if changed_packet:
+                        packet = read_json(Path(args[0]) / 'packet.json')
+                        packet['unexpected'] = 'changed evidence'
+                        write_json(Path(args[0]) / 'packet.json', packet)
+                if policy:
+                    value['decisions'][0].update(disposition='dismissed',
+                        evidence=[{'path': 'checks/response.json', 'locator': 'outcome'}])
+                # The scripted provider has real networkless execution artifacts.
+                from agent_ee.executor import execute
+                raw = execute(Path(args[0]) / 'inputs', Path(args[0]) / 'review-work/adjudicator',
+                    ['/usr/bin/python3', '-c', 'import sys; print(sys.stdin.read())'],
+                    stdin=json.dumps(value), timeout=5)
+                self.assertEqual(raw['execution'], 'ok')
+                record.update(raw)
+            return record, value
+        with patch('agent_ee.reviewers.dispatch', side_effect=answer), contextlib.redirect_stdout(io.StringIO()):
+            run_review(self.root / 'scope.json', self.root / 'run', 30, output_resubmissions=limit)
+        runtime_patch.stop()
+        return read_json(self.root / 'run/result.json'), prompts, schemas
+
+    @toolchain_test
+    def test_malformed_adjudication_resubmits_exact_error_and_retains_refusal(self):
+        result, prompts, schemas = self.malformed_adjudication(recover=True)
+        self.assertTrue(result['adjudicated'])
+        run = self.root / 'run'
+        execution = read_json(run / 'adjudicator-execution.json')
+        self.assertEqual(execution['resubmissions']['limit'], 1)
+        self.assertEqual(execution['resubmissions']['used'], 1)
+        first = read_json(run / 'review-executions/adjudicator-calls/0.json')
+        second = read_json(run / 'review-executions/adjudicator-calls/1.json')
+        self.assertEqual(first['execution_record']['execution'], 'malformed')
+        self.assertEqual(first['execution_record']['refusal_class'], 'output_format')
+        self.assertEqual(first['response']['decisions'][0]['evidence'][0]['path'], 'outside.json')
+        self.assertIn('baseline.json', first['execution_record']['error'])
+        self.assertEqual(prompts[1], prompts[0] + '\nVALIDATION ERROR:\n' + first['execution_record']['error'])
+        self.assertEqual(schemas[0], schemas[1])
+        receipts = [read_json(run / c['execution_record']['preflight']['path']) for c in (first, second)]
+        self.assertNotEqual(receipts[0]['invocation_id'], receipts[1]['invocation_id'])
+        self.assertEqual(receipts[0]['expectation_id'], receipts[1]['expectation_id'])
+        self.assertEqual(receipts[0]['observed']['runtime_files'], receipts[1]['observed']['runtime_files'])
+        self.assertEqual(read_json(run / 'review-work/.refused/adjudicator/0/stdout.log'), first['response'])
+        self.assertEqual(read_json(run / 'review-work/adjudicator/stdout.log'), second['response'])
+        from agent_ee.harnesses import evidence_mounts
+        self.assertFalse(any('.refused' in str(source) for source, _ in evidence_mounts(run, 'adjudicator')))
+        from agent_ee.findings import validate_citation_path
+        with self.assertRaises(ValueError):
+            validate_citation_path('review-work/.refused/adjudicator/0/stdout.log', run)
+        self.assertEqual(result, verify(run))
+        from agent_ee.review_run import recorded_calls
+        execution['resubmissions']['used'] = 0
+        with self.assertRaisesRegex(ValueError, 'inventory'):
+            recorded_calls(run, execution, 'adjudicator')
+        (run / second['prompt']).write_text(prompts[1] + '\nchanged input')
+        execution['resubmissions']['used'] = 1
+        with self.assertRaisesRegex(ValueError, 'changed prompt'):
+            recorded_calls(run, execution, 'adjudicator')
+        with self.assertRaisesRegex(ValueError, 'evidence changed'):
+            verify(run)
+
+    @toolchain_test
+    def test_outside_citations_stay_incomplete_after_second_refusal(self):
+        result, prompts, _ = self.malformed_adjudication()
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertFalse(result['adjudicated'])
+        self.assertFalse((self.root / 'run/events/0001-adjudication.json').exists())
+        execution = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertEqual(execution['execution'], 'malformed')
+        self.assertEqual(execution['resubmissions']['used'], 1)
+        self.assertEqual(result, verify(self.root / 'run'))
+
+    @toolchain_test
+    def test_disabled_resubmissions_and_provider_failure_do_not_retry(self):
+        result, prompts, _ = self.malformed_adjudication(limit=0)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertEqual(read_json(self.root / 'run/adjudicator-execution.json')['resubmissions']['used'], 0)
+        # A separate run tests a provider failure with the default bound.
+        (self.root / 'run').rename(self.root / 'disabled-run')
+        result, prompts, _ = self.malformed_adjudication(failed=True)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertEqual(read_json(self.root / 'run/adjudicator-execution.json')['execution'], 'failed')
+
+    @toolchain_test
+    def test_runtime_drift_blocks_resubmission_dispatch(self):
+        result, prompts, _ = self.malformed_adjudication(recover=True, drift=True)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertFalse(result['adjudicated'])
+        execution = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertEqual(execution['execution'], 'not_run')
+        self.assertIn('runtime_drift', execution['error'])
+        self.assertEqual(execution['resubmissions']['used'], 1)
+
+    @toolchain_test
+    def test_changed_packet_blocks_resubmission_and_retains_original_refusal(self):
+        result, prompts, _ = self.malformed_adjudication(recover=True, changed_packet=True)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        execution = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertEqual(execution['resubmissions']['used'], 0)
+        self.assertEqual(execution['resubmission_refusal'], 'resubmission packet changed')
+        self.assertIn('outside.json', execution['error'])
+
+    @toolchain_test
+    def test_unsupported_judgment_is_refused_without_resubmission(self):
+        result, prompts, _ = self.malformed_adjudication(policy=True)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        execution = read_json(self.root / 'run/adjudicator-execution.json')
+        self.assertEqual(execution['resubmissions']['used'], 0)
+        self.assertEqual(execution['refusal_class'], 'judgment_or_evidence')
+        self.assertIn('cannot be dismissed', execution['error'])
+
+    @toolchain_test
+    def test_interrupted_resubmission_retains_both_calls_and_count(self):
+        result, prompts, _ = self.malformed_adjudication(recover=True, cancel_second=True)
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(result['state'], 'interrupted')
+        self.assertFalse(result['adjudicated'])
+        run = self.root / 'run'
+        execution = read_json(run / 'adjudicator-execution.json')
+        self.assertEqual(execution['execution'], 'interrupted')
+        self.assertEqual(execution['resubmissions']['used'], 1)
+        self.assertEqual(read_json(run / 'review-executions/adjudicator-calls/0.json')['execution_record']['execution'], 'malformed')
+        self.assertEqual(result, verify(run))
+
+    def test_campaign_refuses_invalid_resubmission_bound_before_execution(self):
+        for limit in (True, -1, 2, '1', None):
+            with self.subTest(limit=limit):
+                config = read_json(self.root / 'campaign.json')
+                config['output_resubmissions'] = limit
+                write_json(self.root / 'campaign.json', config)
+                with self.assertRaisesRegex(ValueError, 'output_resubmissions'):
+                    run_campaign(self.root / 'campaign.json', self.root / 'invalid-campaign')
+        self.assertEqual(self.calls, [])
+
+    @toolchain_test
     def test_single_writer_repair_then_fresh_independent_reviews(self):
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(self.root / "campaign.json", self.root / "campaign")
         state = read_json(self.root / "campaign/state.json")
+        self.assertEqual(read_json(self.root / 'campaign/config.json')['output_resubmissions'], 1)
         self.assertEqual(status, 0, state)
         self.assertEqual(state["state"], "criteria_satisfied")
         self.assertCountEqual(self.calls[:2], ["circuit", "physical"])

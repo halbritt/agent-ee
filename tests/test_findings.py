@@ -10,6 +10,7 @@ from agent_ee.findings import (
     validate_check_result,
     validate_closure,
     validate_review,
+    validate_citation_path,
 )
 from agent_ee.storage import write_json
 
@@ -172,6 +173,11 @@ class FindingsTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "locator"):
             validate_review(empty_loc, self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+
+    def test_legacy_run_cannot_plant_a_citable_baseline(self):
+        write_json(self.run_dir / "baseline.json", {"requirements": []})
+        with self.assertRaisesRegex(ValueError, "requires an immutable"):
+            validate_citation_path("baseline.json", self.run_dir)
 
     def test_unsupported_defect_downgraded_to_concern_and_cannot_be_accepted_without_evidence(self):
         ungrounded = self._review(findings=[self._finding(fid="unbacked-claim", assessment="defect", evidence=[])])

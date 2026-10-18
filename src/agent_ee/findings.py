@@ -11,6 +11,10 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SEVERITIES = ("blocking", "major", "minor", "info")
 ASSESSMENTS = ("defect", "concern")
 DISPOSITIONS = ("accepted", "noted", "dismissed", "deferred", "duplicate", "closed")
+CITATION_PATH_RULE = (
+    "baseline.json (verified immutable baseline), inputs/, checks/, work/<check-id>/, "
+    "or review-work/<role>/experiments/"
+)
 CHECK_EXECUTIONS = (
     "ok",
     "failed",
@@ -35,15 +39,19 @@ DECISION_REQUIRED_KEYS = frozenset(("finding_id", "disposition", "reason", "evid
 DECISION_OPTIONAL_KEYS = frozenset(("duplicate_of", "checks", "previous_run"))
 
 
+class OutputFormatError(ValueError):
+    """A response shape or citation can be resubmitted without changing evidence."""
+
+
 def safe_id(value, label="id"):
     if not isinstance(value, str) or not SAFE_ID_RE.fullmatch(value) or ".." in value:
-        raise ValueError(f"invalid {label}: {value!r}")
+        raise OutputFormatError(f"invalid {label}: {value!r}")
     return value
 
 
 def _nonempty_str(value, label):
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{label} must be a non-empty string")
+        raise OutputFormatError(f"{label} must be a non-empty string")
     return value
 
 
@@ -55,45 +63,51 @@ def _str_list(value, label):
 
 def validate_citation_path(path_value, run_dir):
     if not isinstance(path_value, str) or not path_value.strip() or "\\" in path_value:
-        raise ValueError(f"invalid citation path: {path_value!r}")
+        raise OutputFormatError(f"invalid citation path: {path_value!r}")
     rel = PurePosixPath(path_value)
     if rel.is_absolute() or not rel.parts or any(part in ("", ".", "..") for part in rel.parts):
-        raise ValueError(f"unsafe citation path: {path_value!r}")
+        raise OutputFormatError(f"unsafe citation path: {path_value!r}")
     head = rel.parts[0]
-    if head in ("inputs", "checks"):
+    if path_value == "baseline.json":
+        pass  # Verify the coordinator baseline after the common file/link guards.
+    elif head in ("inputs", "checks"):
         if len(rel.parts) < 2:
-            raise ValueError(f"citation path must reference a file inside {head}/: {path_value!r}")
+            raise OutputFormatError(f"citation path must reference a file inside {head}/: {path_value!r}")
     elif head == "review-work":
         if len(rel.parts) < 4 or rel.parts[2] != "experiments":
-            raise ValueError("reviewer citations must name review-work/<role>/experiments/<file>")
+            raise OutputFormatError("reviewer citations must name review-work/<role>/experiments/<file>")
         safe_id(rel.parts[1], "review role")
     elif head == "work":
         if len(rel.parts) < 3:
-            raise ValueError(f"citation path under work/ must be work/<check-id>/<file>: {path_value!r}")
+            raise OutputFormatError(f"citation path under work/ must be work/<check-id>/<file>: {path_value!r}")
         safe_id(rel.parts[1], "work check id")
     else:
-        raise ValueError(
-            f"citation path must reside under inputs/, checks/, or work/<check-id>/: {path_value!r}"
+        raise OutputFormatError(
+            f"citation path must name {CITATION_PATH_RULE}: {path_value!r}"
         )
 
     root = Path(run_dir)
     if not root.is_dir():
-        raise ValueError(f"run directory does not exist: {root}")
+        raise OutputFormatError(f"run directory does not exist: {root}")
     cur = root
     for part in rel.parts:
         cur = cur / part
         if cur.is_symlink():
-            raise ValueError(f"citation path traverses symlink: {path_value!r}")
+            raise OutputFormatError(f"citation path traverses symlink: {path_value!r}")
     resolved_root = root.resolve()
     resolved_target = cur.resolve()
     if not resolved_target.is_relative_to(resolved_root) or not cur.is_file():
-        raise ValueError(f"cited artifact does not exist in run: {path_value!r}")
+        raise OutputFormatError(f"cited artifact does not exist in run: {path_value!r}")
+    if path_value == "baseline.json":
+        from .baseline import load_baseline
+        if load_baseline(root) is None:
+            raise ValueError("baseline.json citation requires an immutable scope/2 or scope/3 baseline")
     return rel.as_posix()
 
 
 def validate_citation(item, run_dir):
     if not isinstance(item, dict) or set(item.keys()) != {"path", "locator"}:
-        raise ValueError(f"malformed evidence citation: {item!r}")
+        raise OutputFormatError(f"malformed evidence citation: {item!r}")
     path_norm = validate_citation_path(item["path"], run_dir)
     locator = _nonempty_str(item["locator"], "evidence locator")
     return {"path": path_norm, "locator": locator}
@@ -526,26 +540,26 @@ def adjudicate(findings, decisions, run_dir):
     if not isinstance(findings, list):
         raise ValueError("findings must be a list")
     if not isinstance(decisions, dict):
-        raise ValueError("decisions must be a JSON object")
+        raise OutputFormatError("decisions must be a JSON object")
 
     unknown_top = set(decisions.keys()) - DECISIONS_TOP_KEYS
     missing_top = DECISIONS_TOP_KEYS - set(decisions.keys())
     if missing_top or unknown_top:
-        raise ValueError(f"decisions keys mismatch: missing={sorted(missing_top)}, extra={sorted(unknown_top)}")
+        raise OutputFormatError(f"decisions keys mismatch: missing={sorted(missing_top)}, extra={sorted(unknown_top)}")
     if decisions.get("schema") != "agent-ee.decisions/1":
-        raise ValueError(f"expected schema 'agent-ee.decisions/1', got {decisions.get('schema')!r}")
+        raise OutputFormatError(f"expected schema 'agent-ee.decisions/1', got {decisions.get('schema')!r}")
 
     cand_id = _nonempty_str(decisions.get("candidate_id"), "decisions candidate_id")
     run_id = _nonempty_str(decisions.get("run_id"), "decisions run_id")
     expected_cand, expected_run = _expected_run_identity(run_dir)
     if expected_cand is not None and cand_id != expected_cand:
-        raise ValueError("stale or mismatched decisions candidate_id")
+        raise OutputFormatError("stale or mismatched decisions candidate_id")
     if expected_run is not None and run_id != expected_run:
-        raise ValueError("stale or mismatched decisions run_id")
+        raise OutputFormatError("stale or mismatched decisions run_id")
 
     raw_list = decisions.get("decisions")
     if not isinstance(raw_list, list):
-        raise ValueError("decisions.decisions must be a list")
+        raise OutputFormatError("decisions.decisions must be a list")
 
     updated = copy.deepcopy(findings)
     by_id = {}
@@ -565,18 +579,18 @@ def adjudicate(findings, decisions, run_dir):
 
     for item in raw_list:
         if not isinstance(item, dict):
-            raise ValueError("decision item must be a JSON object")
+            raise OutputFormatError("decision item must be a JSON object")
         keys = set(item.keys())
         missing = DECISION_REQUIRED_KEYS - keys
         extra = keys - (DECISION_REQUIRED_KEYS | DECISION_OPTIONAL_KEYS)
         if missing or extra:
-            raise ValueError(f"decision item keys mismatch: missing={sorted(missing)}, extra={sorted(extra)}")
+            raise OutputFormatError(f"decision item keys mismatch: missing={sorted(missing)}, extra={sorted(extra)}")
 
         fid = _nonempty_str(item.get("finding_id"), "decision finding_id")
         if fid not in by_id:
-            raise ValueError(f"decision references unknown finding_id: {fid!r}")
+            raise OutputFormatError(f"decision references unknown finding_id: {fid!r}")
         if fid in seen_decision_ids:
-            raise ValueError(f"duplicate decision for finding_id: {fid!r}")
+            raise OutputFormatError(f"duplicate decision for finding_id: {fid!r}")
         seen_decision_ids.add(fid)
 
         target_finding = by_id[fid]
@@ -584,7 +598,7 @@ def adjudicate(findings, decisions, run_dir):
         frun = target_finding.get("run_id")
         disp = item.get("disposition")
         if disp not in DISPOSITIONS:
-            raise ValueError(f"finding {fid}: invalid disposition {disp!r}")
+            raise OutputFormatError(f"finding {fid}: invalid disposition {disp!r}")
 
         if disp != "closed":
             if fcand and fcand != cand_id:
@@ -595,7 +609,7 @@ def adjudicate(findings, decisions, run_dir):
         reason = _nonempty_str(item.get("reason"), f"decision {fid} reason")
         raw_ev = item.get("evidence")
         if not isinstance(raw_ev, list):
-            raise ValueError(f"decision {fid}: evidence must be a list")
+            raise OutputFormatError(f"decision {fid}: evidence must be a list")
         validated_ev = [validate_citation(c, run_dir) for c in raw_ev]
 
         dup_of = item.get("duplicate_of")

@@ -9,9 +9,10 @@ from pathlib import Path
 
 from .executor import Cancellation, execute
 from .storage import digest, identity, read_json, write_json
+from .findings import CITATION_PATH_RULE
 
 EVIDENCE_SCHEMA = {"type": "array", "items": {"type": "object", "required": ["path", "locator"],
-    "properties": {"path": {"type": "string"}, "locator": {"type": "string"}}, "additionalProperties": False}}
+    "properties": {"path": {"type": "string", "description": "Run-relative file: " + CITATION_PATH_RULE}, "locator": {"type": "string"}}, "additionalProperties": False}}
 REVIEW_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["schema", "candidate_id", "run_id", "packet_sha256", "role", "coverage", "limitations", "findings"],
     "properties": {**{k: {"type": "string"} for k in ("schema", "candidate_id", "run_id", "packet_sha256", "role")},
@@ -212,6 +213,7 @@ def dispatch(run_dir, label, definition, prompt, schema, timeout, *, cancellatio
 def workspace_instructions(role):
     return ("Native candidate files are read-only at /candidate (cite inputs/<relative path>). "
         "When supplied, /evidence/baseline.json is immutable ground truth, including targets and reference architectures. "
+        f"Allowed citation paths are {CITATION_PATH_RULE}. Cite the baseline as baseline.json, never /evidence/baseline.json. "
         "Read the complete baseline source files, not only packet excerpts. For a defect in a baseline-bound run, "
         "include witnesses [{requirement_id, check_id}] naming a failed declared check and cite checks/<check_id>.json. "
         "An unsupported hypothesis stays a concern until the coordinator reproduces it as a declared check. "
@@ -369,6 +371,16 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
     definition = read_json(Path(run_dir) / "candidate.json")["scope"]["review_profile"]["adjudicator"]
     definition = {**definition, "tool_mode": read_json(Path(run_dir) / "candidate.json")["scope"]["review_profile"].get("tool_mode", "investigate")}
     prompt = workspace_instructions("adjudicator") + prompt
-    return reviewer_call(run_dir, "adjudicator", definition, prompt, schema,
-                        min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
-                        launch_context={**(launch_context or {}), "boundary": "adjudicator", "deadline": deadline})
+    from .findings import adjudicate, OutputFormatError
+    from .review_run import structured_call
+
+    def validate(value):
+        if {d["finding_id"] for d in value.get("decisions", [])} != {f["id"] for f in findings}:
+            raise OutputFormatError("adjudicator did not disposition every finding")
+        adjudicate(findings, value, run_dir)
+
+    return structured_call(run_dir, "adjudicator", prompt, schema,
+        lambda current_prompt: reviewer_call(run_dir, "adjudicator", definition, current_prompt, schema,
+            min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
+            launch_context={**(launch_context or {}), "boundary": "adjudicator", "deadline": deadline}),
+        validate, limit=(launch_context or {}).get("output_resubmissions", 1), deadline=deadline)

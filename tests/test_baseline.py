@@ -5,7 +5,7 @@ from pathlib import Path
 
 from agent_ee.baseline import compile_baseline, freeze_evidence, load_baseline, validate_witnesses
 from agent_ee.candidate import capture, verify_snapshot
-from agent_ee.findings import adjudicate, collect_findings
+from agent_ee.findings import adjudicate, collect_findings, validate_citation_path
 from agent_ee.reviewers import build_packet
 from agent_ee.storage import write_json
 
@@ -45,6 +45,31 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(set(packet["baseline"]["files"]),
                          {"design/requirements", "design/targets", "design/reference"})
         self.assertIn("R1", str(packet["baseline"]))
+
+    def test_verified_baseline_is_citable_but_cannot_replace_failed_check_witness(self):
+        self.assertEqual(validate_citation_path("baseline.json", self.run), "baseline.json")
+        findings = collect_findings([], [self.check])
+        citation = {"path": "baseline.json", "locator": "requirements/R1"}
+        decisions = {"schema": "agent-ee.decisions/1", "candidate_id": self.manifest["candidate_id"],
+            "run_id": "run1", "decisions": [{"finding_id": "check/response", "disposition": "accepted",
+                "reason": "R1 violated", "evidence": [*self.evidence, citation]}]}
+        self.assertEqual(adjudicate(findings, decisions, self.run)[0]["status"], "accepted")
+        decisions["decisions"][0]["evidence"] = [citation]
+        with self.assertRaisesRegex(ValueError, "cited check"):
+            adjudicate(findings, decisions, self.run)
+
+    def test_baseline_citation_refuses_mutation_missing_file_and_links(self):
+        original = (self.run / "baseline.json").read_bytes()
+        write_json(self.run / "baseline.json", {})
+        with self.assertRaisesRegex(ValueError, "immutable baseline changed"):
+            validate_citation_path("baseline.json", self.run)
+        (self.run / "baseline.json").unlink()
+        with self.assertRaisesRegex(ValueError, "does not exist"):
+            validate_citation_path("baseline.json", self.run)
+        (self.run / "work/baseline-copy.json").write_bytes(original)
+        (self.run / "baseline.json").symlink_to("work/baseline-copy.json")
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            validate_citation_path("baseline.json", self.run)
 
     def test_navigation_cannot_substitute_for_a_sealed_check_witness(self):
         build_packet(self.run, [self.check], "run1")

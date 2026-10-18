@@ -166,12 +166,43 @@ paths, duplicate local IDs and malformed structures invalidate the review.
 Merely having citations does not prove the claim is true or that the reviewer
 received the entire cited document.
 
-Citations must name actual regular files under `inputs/`, `checks/` or
+Citations may name `baseline.json` when it matches the captured scope/2 or scope/3
+immutable baseline, or actual regular files under `inputs/`, `checks/` or
 `work/CHECK_ID/` or `review-work/ROLE/experiments/` inside this run. Absolute paths, backslashes, traversal and
 symlink traversal are refused. Citation objects contain exactly `path` and a
 nonempty `locator`; use a native UUID/pin/net, page/section, measurement name or
 specific report item rather than a vague file-level claim. Reviewer prose alone is not independent engineering evidence; experiment citations
 should identify the actual command, input, measurement or fetched source.
+The baseline citation establishes declared requirements or context; it cannot
+replace the sealed failed-check citation required for an accepted defect.
+
+Adjudicator output-format refusals permit one separate resubmission by default.
+The campaign's `output_resubmissions` field sets the bound to 0 or 1; the frozen
+campaign config and each run's result record retain it. `adjudicator-execution.json`
+records `resubmissions.limit`, `used` and the ordered call-record paths.
+`used` counts resubmission attempts, including a refused preflight; a `not_run`
+execution records that the harness was never dispatched.
+`refusal_class=output_format` permits resubmission; `judgment_or_evidence`
+refusals, such as trying to dismiss an authoritative failed check, stop immediately.
+`review-executions/adjudicator-calls/N.json` retains each response and its
+interpreted execution/error, alongside the exact prompt and response schema.
+When resubmitting, the first call's raw workspace moves to
+`review-work/.refused/adjudicator/0/`; the new call gets a fresh
+`review-work/adjudicator/` workspace and its own preflight receipt. The original
+receipt's invocation identity is preserved in the archived workspace. Refused
+workspaces are neither mounted into the next call nor valid citation paths.
+
+The new call receives the same prompt plus `VALIDATION ERROR:` and the exact
+validation message. Candidate, packet, sealed checks, finding set, schema,
+harness/model definition and pinned environment stay fixed. Historical verification
+checks the prompt/error chain, count, final projection and both preflight receipts.
+A second malformed output leaves the run incomplete. Failed provider calls are
+never resubmitted. A new preflight refuses changed runtime identities before
+dispatch. Changed candidate, packet or sealed evidence stops resubmission with
+the original refusal and a `resubmission_refusal` diagnostic retained; it consumes
+no further call. Checks are never resubmitted. This change connects adjudication to the
+shared helper. Other roles still need their own validation integration;
+reviewer-witness and runtime-drift work are tracked in AGENTEE-115 and AGENTEE-112.
 
 Adapter records identify the backend, requested model, subscription route,
 execution/diagnostics, harness binary digest and, on successful parsing,

@@ -206,6 +206,8 @@ def run_campaign(config_path, out):
     config = read_json(config_path)
     if config.get("schema") != "agent-ee.campaign/1":
         raise ValueError("expected agent-ee.campaign/1")
+    from .review_run import resubmission_limit
+    config['output_resubmissions'] = resubmission_limit(config.get('output_resubmissions', 1))
     iterations = config["max_iterations"]
     if isinstance(iterations, bool) or not isinstance(iterations, int) or not 1 <= iterations <= 100:
         raise ValueError("max_iterations must be between 1 and 100")
@@ -302,7 +304,7 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
                 if len(state["history"]) >= config["max_iterations"] or time.monotonic() >= deadline:
                     raise ValueError("campaign iteration or wall-clock budget exhausted")
                 run_review(scope_path, run, deadline - time.monotonic(), profile=root / "profile.json",
-                           expected_baseline=state.get("baseline"))
+                           expected_baseline=state.get("baseline"), output_resubmissions=config.get('output_resubmissions', 1))
             initial_run = None
             record_iteration(root, state, run, config)
             verify_campaign(root)
@@ -363,6 +365,9 @@ def verify_campaign_records(root):
                 digest(snapshot) != stored["result_sha256"]):
             raise ValueError("campaign history result link changed")
         current = verify(run, current_source=False)
+        if ('output_resubmissions' in config and
+                current.get('output_resubmissions') != config['output_resubmissions']):
+            raise ValueError('run resubmission bound differs from campaign')
         result = read_json(snapshot)
         if current != result:
             # Bench registration appends facts without rewriting the original

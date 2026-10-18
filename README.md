@@ -266,6 +266,11 @@ Before each reviewer, adjudicator or implementation call, a
 [preflight guard](docs/result-reference.md#pre-inference-environment-receipts)
 checks captured tool and policy identities and tests sandbox execution. Drift or
 an unavailable prerequisite stops the call with a retained diagnostic.
+Adjudicators may cite the verified immutable `baseline.json`. An output-format
+refusal permits one separately recorded adjudicator resubmission by default,
+using the same evidence and pinned environment plus the exact validation error.
+The [campaign configuration](docs/campaign-guide.md) can disable it; a second
+refusal leaves the run incomplete. Checks are never resubmitted.
 
 [Packet navigation](docs/result-reference.md#factual-packet-navigation) links
 native components, pins, nets and board primitives to declared checks and
