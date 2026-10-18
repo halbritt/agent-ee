@@ -1,4 +1,9 @@
-"""JLC assembly-readiness check: LCSC binding, 3-state stock freshness, Basic/Extended and BOM properties."""
+"""JLC assembly-readiness check: LCSC binding, 3-state stock freshness, Basic/Extended and BOM properties.
+
+Components come from the native ``kicad-cli sch export netlist --format kicadxml``
+of the captured schematic hierarchy, the same source the JLC BOM in
+``fab_export`` is built from; the catalog is a captured offline snapshot.
+"""
 
 from datetime import date, datetime, timezone
 import json
@@ -6,17 +11,24 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import sqlite3
+import xml.etree.ElementTree as ET
 
 from .candidate import safe_relative
+from .fab_export import natural_key
 from .hardware_interface import unique_object
 from .storage import digest, write_json
-from .symbol_library import LibraryError, children, parse_sexpr
+from .symbol_library import LibraryError, parse_sexpr
 
 
 LCSC_RE = re.compile(r"^C[1-9][0-9]*$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 REF_PREFIX_RE = re.compile(r"^([A-Za-z]+)[0-9]+$")
+
+NETLIST_TIMEOUT = 600
+NATIVE_FLAGS = frozenset(("dnp", "exclude_from_bom", "exclude_from_board"))
+NON_NATIVE_MARKER_FIELDS = frozenset(("dnp", "dnf", "exclude_from_bom", "exclude_from_board"))
+NON_NATIVE_MARKER_VALUES = frozenset(("DNP", "DNF", "DNI"))
 
 DEFAULT_REQUIRED_PROPERTIES = (
     "Footprint",
@@ -421,280 +433,184 @@ def _load_json_catalog_snapshot(catalog_rel, catalog_sha, doc):
     }
 
 
-def _extract_properties(node):
-    """Return {prop_name: prop_value} from (property "<name>" "<value>" ...) children."""
-    props = {}
-    for prop in children(node, "property"):
-        if len(prop) < 3 or not isinstance(prop[1], str) or not isinstance(prop[2], str):
-            raise AssemblyReadinessExecutionError("failed", f"malformed property node in schematic: {prop!r}")
-        props[prop[1]] = prop[2]
-    return props
+def _native_flags(comp):
+    """Native KiCad flags: valueless <property name="dnp|exclude_from_bom|exclude_from_board"/>.
+
+    A user field that happens to share one of these names is exported as a
+    property *with* a value attribute and is not a native flag.
+    """
+    return {
+        p.get("name")
+        for p in comp.findall("property")
+        if p.get("name") in NATIVE_FLAGS and "value" not in p.attrib
+    }
 
 
-def _bool_flag(node, key, default):
-    found = children(node, key)
-    if not found:
-        return default
-    item = found[-1]
-    if len(item) != 2 or item[1] not in ("yes", "no"):
-        raise AssemblyReadinessExecutionError("failed", f"malformed ({key} ...) flag in schematic: {item!r}")
-    return item[1] == "yes"
+def verify_schematic_files(inputs_root: Path, files) -> dict:
+    """Require every hierarchy file to be one complete ``(kicad_sch ...)``; return their hashes.
+
+    kicad-cli exports a netlist with exit 0 even when a child sheet is
+    truncated, silently dropping its components, so completeness is checked
+    on the captured bytes before the export is trusted.
+    """
+    hashes = {}
+    for rel in files:
+        path, norm_rel = _resolve_captured_file(inputs_root, rel, "schematic")
+        try:
+            tree = parse_sexpr(path.read_bytes())
+        except (OSError, LibraryError) as exc:
+            raise AssemblyReadinessExecutionError("failed", f"schematic {norm_rel!r} does not parse: {exc}") from exc
+        if not isinstance(tree, list) or not tree or tree[0] != "kicad_sch":
+            raise AssemblyReadinessExecutionError("failed", f"schematic {norm_rel!r} root must be (kicad_sch ...)")
+        hashes[norm_rel] = digest(path)
+    return hashes
 
 
-def _power_lib_symbols(root_sexpr):
-    """Return set of lib_id names in (lib_symbols ...) that declare (power) directly or via (extends ...)."""
-    lib_Filter = {}
-    extends_map = {}
-    for lib_syms in children(root_sexpr, "lib_symbols"):
-        for sym in children(lib_syms, "symbol"):
-            if len(sym) < 2 or not isinstance(sym[1], str):
-                raise AssemblyReadinessExecutionError("failed", "malformed symbol in lib_symbols")
-            name = sym[1]
-            is_power = bool(children(sym, "power"))
-            lib_Filter[name] = is_power
-            ext = children(sym, "extends")
-            if ext and len(ext[0]) >= 2 and isinstance(ext[0][1], str):
-                extends_map[name] = ext[0][1]
+def verify_netlist_coverage(inputs_root: Path, files, extracted) -> dict:
+    """Bind every placed symbol occurrence of the captured hierarchy to the netlist, and the reverse.
 
-    power_ids = {name for name, is_pwr in lib_Filter.items() if is_pwr}
-    for name in list(lib_Filter):
-        cur = name
-        seen = set()
-        while cur in extends_map and cur not in seen:
-            seen.add(cur)
-            parent = extends_map[cur]
-            if parent in power_ids or any( k.endswith(f":{parent}") and k in power_ids for k in lib_Filter ):
-                power_ids.add(name)
-                break
-            cur = parent
-    return power_ids
+    kicad-cli exports a hierarchy with exit 0 and the full sheet count even
+    when it cannot load a child sheet (an unknown token, a bad boolean), and
+    drops that sheet's components. An occurrence is one sheet instance path
+    plus symbol UUID, audited by ``native_binding.virtual_symbols``; only
+    ``#``-referenced occurrences may be absent from the export. ``files`` is
+    the ``sheet_instances`` list with the root first. Any gap fails.
+    """
+    from .footprint_library import FootprintError
+    from .native_binding import OCCURRENCE_PROBLEMS, virtual_symbols
+
+    schematics = {}
+    for rel in files:
+        path, norm_rel = _resolve_captured_file(inputs_root, rel, "schematic")
+        schematics[norm_rel] = path.read_bytes()
+    components = [
+        c for bucket in ("populated", "excluded_dnp", "excluded_from_bom", "ignored_non_assembly")
+        for c in extracted[bucket]
+    ]
+    graph = {
+        "sheets": extracted["sheet_paths"],
+        "components": {c["reference"]: {"sheet": c["sheet_path"], "uuid": c["uuid"]} for c in components},
+    }
+    try:
+        records = virtual_symbols(schematics, next(iter(schematics)), graph)
+    except FootprintError as exc:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"schematic hierarchy cannot be bound to the native netlist: {exc}") from exc
+    gaps = [r for r in records if "problem" in r]
+    if gaps:
+        named = sorted({ref for r in gaps for ref in r["references"]}, key=natural_key)
+        kinds = sorted({r["problem"] for r in gaps})
+        raise AssemblyReadinessExecutionError(
+            "failed",
+            "native netlist does not cover the captured hierarchy ("
+            + "; ".join(f"{k}: {OCCURRENCE_PROBLEMS[k]}" for k in kinds)
+            + f"); references: {named or 'unnamed'}; affected sheet files: "
+            + f"{sorted({r['file'] for r in gaps if r.get('file')})}",
+        )
+    return {
+        "bound_components": len(components),
+        "exporter_omitted": sorted((r["references"][0] for r in records), key=natural_key),
+    }
+
+
+def read_netlist_components(netlist_path: Path) -> dict:
+    """Classify components of a native ``kicad-cli sch export netlist --format kicadxml`` file.
+
+    KiCad has already resolved the hierarchy, per-instance references,
+    multi-unit symbols and the native DNP / in_bom / on_board attributes, and it
+    omits power symbols (PWR_FLAG included). Buckets are disjoint: off-board
+    (``exclude_from_board``) and ``#`` references are non-assembly, then native
+    ``dnp``, then native ``exclude_from_bom``; everything else is populated.
+    """
+    try:
+        root = ET.parse(netlist_path).getroot()
+    except (OSError, ET.ParseError) as exc:
+        raise AssemblyReadinessExecutionError("failed", f"native XML netlist does not parse: {exc}") from exc
+    components_node = root.find("components") if root.tag == "export" else None
+    if components_node is None:
+        raise AssemblyReadinessExecutionError("failed", "native XML netlist has no <export>/<components> section")
+
+    seen, identities = set(), set()
+    ignored_non_assembly, excluded_dnp, excluded_from_bom, populated = [], [], [], []
+    for comp in components_node.findall("comp"):
+        ref = (comp.get("ref") or "").strip()
+        if not ref:
+            raise AssemblyReadinessExecutionError("failed", "native XML netlist has a component without a reference")
+        if ref in seen:
+            raise AssemblyReadinessExecutionError("failed", f"native XML netlist repeats component {ref}")
+        seen.add(ref)
+        fields = {}
+        for field in comp.findall("./fields/field"):
+            name = field.get("name")
+            if not name:
+                raise AssemblyReadinessExecutionError("failed", f"{ref} has a field without a name")
+            fields[name] = (field.text or "").strip()
+        value = (comp.findtext("value") or "").strip()
+        footprint = (comp.findtext("footprint") or "").strip()
+        fields["Value"] = value
+        if footprint or "Footprint" not in fields:
+            fields["Footprint"] = footprint
+        libsource = comp.find("libsource")
+        lib_id = f"{libsource.get('lib', '')}:{libsource.get('part', '')}" if libsource is not None else ""
+        sheetpath = comp.find("sheetpath")
+        sheet_path = (sheetpath.get("tstamps") or "").strip() if sheetpath is not None else ""
+        uuids = (comp.findtext("tstamps") or "").split()
+        if not sheet_path or not uuids:
+            raise AssemblyReadinessExecutionError("failed", f"native XML netlist component {ref} has no sheet/UUID identity")
+        if any((sheet_path, uid) in identities for uid in uuids) or len(set(uuids)) != len(uuids):
+            raise AssemblyReadinessExecutionError("failed", f"native XML netlist repeats the identity of {ref}")
+        identities.update((sheet_path, uid) for uid in uuids)
+        flags = _native_flags(comp)
+        record = {
+            "reference": ref,
+            "lib_id": lib_id,
+            "sheet": sheetpath.get("names") if sheetpath is not None else None,
+            "sheet_path": sheet_path,
+            "uuid": " ".join(uuids),
+            "dnp": "dnp" in flags,
+            "in_bom": "exclude_from_bom" not in flags,
+            "on_board": "exclude_from_board" not in flags,
+            "properties": fields,
+        }
+        if ref.startswith("#"):
+            ignored_non_assembly.append({**record, "ignore_reason": "virtual_symbol"})
+        elif not record["on_board"]:
+            ignored_non_assembly.append({**record, "ignore_reason": "off_board"})
+        elif record["dnp"]:
+            excluded_dnp.append(record)
+        elif not record["in_bom"]:
+            excluded_from_bom.append(record)
+        else:
+            populated.append(record)
+
+    def ordered(items):
+        return sorted(items, key=lambda c: natural_key(c["reference"]))
+
+    sheet_paths = [(sheet.get("tstamps") or "").strip() for sheet in root.findall("./design/sheet")]
+    return {
+        "components": len(seen),
+        "sheets": len(sheet_paths),
+        "sheet_paths": sheet_paths,
+        "populated": ordered(populated),
+        "excluded_dnp": ordered(excluded_dnp),
+        "excluded_from_bom": ordered(excluded_from_bom),
+        "ignored_non_assembly": ordered(ignored_non_assembly),
+    }
+
+
+def _non_native_markers(props):
+    """Field-level DNP/exclusion conventions that native exports and JLC BOMs ignore."""
+    markers = [
+        name for name in props
+        if name.lower() in NON_NATIVE_MARKER_FIELDS and _truthy_prop(props[name])
+    ]
+    if props.get("Value", "").strip().upper() in NON_NATIVE_MARKER_VALUES:
+        markers.append(f"Value={props['Value'].strip()}")
+    return sorted(markers)
 
 
 def _truthy_prop(value):
-    return isinstance(value, str) and value.strip().lower() in ("yes", "true", "1")
-
-
-def extract_schematic_components(inputs_root: Path, root_sch_rel: str) -> dict:
-    """Parse root .kicad_sch and all child sheets via symbol_library.parse_sexpr and classify components."""
-    inputs_root = Path(inputs_root)
-    visited_files = []
-    parsed_sheets = {}
-    sheet_instances_count = 0
-
-    def load_sheet(rel_path):
-        if rel_path in parsed_sheets:
-            return parsed_sheets[rel_path]
-        path, norm_rel = _resolve_captured_file(inputs_root, rel_path, "schematic")
-        try:
-            raw = path.read_bytes()
-            sexpr = parse_sexpr(raw)
-        except (OSError, LibraryError) as exc:
-            raise AssemblyReadinessExecutionError(
-                "failed", f"schematic {norm_rel!r} could not be parsed: {exc}"
-            ) from exc
-        if not isinstance(sexpr, list) or not sexpr or sexpr[0] != "kicad_sch":
-            raise AssemblyReadinessExecutionError(
-                "failed", f"schematic {norm_rel!r} root must be (kicad_sch ...)"
-            )
-        root_uuid = None
-        uuid_nodes = children(sexpr, "uuid")
-        if uuid_nodes and len(uuid_nodes[0]) >= 2 and isinstance(uuid_nodes[0][1], str):
-            root_uuid = uuid_nodes[0][1]
-        parsed = {
-            "rel": norm_rel,
-            "path": path,
-            "sha256": digest(path),
-            "sexpr": sexpr,
-            "uuid": root_uuid,
-            "power_lib_ids": _power_lib_symbols(sexpr),
-        }
-        parsed_sheets[norm_rel] = parsed
-        visited_files.append(norm_rel)
-        return parsed
-
-    raw_placements = []
-
-    def walk_sheet(rel_path, instance_path, stack):
-        nonlocal sheet_instances_count
-        sheet_info = load_sheet(rel_path)
-        norm_rel = sheet_info["rel"]
-        if norm_rel in stack:
-            raise AssemblyReadinessExecutionError(
-                "failed", f"schematic sheet hierarchy cycle detected at {norm_rel!r}"
-            )
-        sheet_instances_count += 1
-        sexpr = sheet_info["sexpr"]
-        power_lib_ids = sheet_info["power_lib_ids"]
-
-        for sym in children(sexpr, "symbol"):
-            lib_id_nodes = children(sym, "lib_id")
-            if not lib_id_nodes or len(lib_id_nodes[0]) < 2 or not isinstance(lib_id_nodes[0][1], str):
-                raise AssemblyReadinessExecutionError(
-                    "failed", f"placed symbol in {norm_rel!r} is missing a valid (lib_id ...)"
-                )
-            lib_id = lib_id_nodes[0][1]
-            props = _extract_properties(sym)
-            in_bom = _bool_flag(sym, "in_bom", True)
-            on_board = _bool_flag(sym, "on_board", True)
-            dnp = _bool_flag(sym, "dnp", False)
-
-            unit = 1
-            unit_nodes = children(sym, "unit")
-            if unit_nodes and len(unit_nodes[0]) >= 2:
-                try:
-                    unit = int(unit_nodes[0][1])
-                except ValueError as exc:
-                    raise AssemblyReadinessExecutionError("failed", f"invalid symbol unit in {norm_rel!r}") from exc
-
-            sym_uuid = None
-            uuid_nodes = children(sym, "uuid")
-            if uuid_nodes and len(uuid_nodes[0]) >= 2 and isinstance(uuid_nodes[0][1], str):
-                sym_uuid = uuid_nodes[0][1]
-
-            ref = props.get("Reference", "").strip()
-            inst_dnp = None
-            inst_in_bom = None
-            inst_on_board = None
-            for inst_block in children(sym, "instances"):
-                for proj in children(inst_block, "project"):
-                    for path_node in children(proj, "path"):
-                        if len(path_node) >= 2 and isinstance(path_node[1], str):
-                            p_str = path_node[1]
-                            if p_str == instance_path or instance_path == "/":
-                                ref_nodes = children(path_node, "reference")
-                                if ref_nodes and len(ref_nodes[0]) >= 2 and isinstance(ref_nodes[0][1], str):
-                                    ref = ref_nodes[0][1].strip()
-                                u_nodes = children(path_node, "unit")
-                                if u_nodes and len(u_nodes[0]) >= 2:
-                                    try:
-                                        unit = int(u_nodes[0][1])
-                                    except ValueError:
-                                        pass
-                                if children(path_node, "dnp"):
-                                    inst_dnp = _bool_flag(path_node, "dnp", dnp)
-                                if children(path_node, "in_bom"):
-                                    inst_in_bom = _bool_flag(path_node, "in_bom", in_bom)
-                                if children(path_node, "on_board"):
-                                    inst_on_board = _bool_flag(path_node, "on_board", on_board)
-
-            if not ref:
-                raise AssemblyReadinessExecutionError(
-                    "failed", f"placed symbol ({lib_id}) in {norm_rel!r} has no Reference"
-                )
-
-            effective_dnp = inst_dnp if inst_dnp is not None else dnp
-            if _truthy_prop(props.get("dnp")) or _truthy_prop(props.get("DNP")):
-                effective_dnp = True
-
-            effective_in_bom = inst_in_bom if inst_in_bom is not None else in_bom
-            if _truthy_prop(props.get("exclude_from_bom")):
-                effective_in_bom = False
-
-            effective_on_board = inst_on_board if inst_on_board is not None else on_board
-
-            is_power_symbol = (
-                ref.startswith("#")
-                or ref == "PWR_FLAG"
-                or lib_id in power_lib_ids
-                or lib_id.startswith("power:")
-            )
-
-            raw_placements.append({
-                "reference": ref,
-                "lib_id": lib_id,
-                "unit": unit,
-                "uuid": sym_uuid,
-                "sheet": norm_rel,
-                "instance_path": instance_path,
-                "in_bom": effective_in_bom,
-                "on_board": effective_on_board,
-                "dnp": effective_dnp,
-                "is_power_symbol": is_power_symbol,
-                "properties": props,
-            })
-
-        for sheet_node in children(sexpr, "sheet"):
-            s_props = _extract_properties(sheet_node)
-            child_rel = s_props.get("Sheetfile") or s_props.get("Sheet file")
-            if not child_rel or not isinstance(child_rel, str):
-                raise AssemblyReadinessExecutionError(
-                    "failed", f"child (sheet ...) in {norm_rel!r} is missing Sheetfile property"
-                )
-            sheet_uuid = None
-            s_uuid_nodes = children(sheet_node, "uuid")
-            if s_uuid_nodes and len(s_uuid_nodes[0]) >= 2 and isinstance(s_uuid_nodes[0][1], str):
-                sheet_uuid = s_uuid_nodes[0][1]
-            parent_dir = PurePosixPath(norm_rel).parent
-            try:
-                resolved_child_rel = (parent_dir / safe_relative(child_rel)).as_posix()
-            except ValueError as exc:
-                raise AssemblyReadinessExecutionError(
-                    "failed", f"sheet {norm_rel!r} references unsafe child sheet {child_rel!r}: {exc}"
-                ) from exc
-            child_instance_path = (
-                f"{instance_path.rstrip('/')}/{sheet_uuid}" if sheet_uuid else f"{instance_path.rstrip('/')}/{child_rel}"
-            )
-            walk_sheet(resolved_child_rel, child_instance_path, stack | {norm_rel})
-
-    root_sheet = load_sheet(root_sch_rel)
-    root_instance_path = f"/{root_sheet['uuid']}" if root_sheet["uuid"] else "/"
-    walk_sheet(root_sheet["rel"], root_instance_path, frozenset())
-
-    # Merge multi-unit symbols by reference (for non-#PWR references; keep #PWR* distinct or merged by ref).
-    merged_by_ref = {}
-    for item in sorted(raw_placements, key=lambda x: (x["reference"], x["unit"], x["sheet"])):
-        ref = item["reference"]
-        if ref not in merged_by_ref:
-            merged_by_ref[ref] = {
-                "reference": ref,
-                "lib_id": item["lib_id"],
-                "units": [item["unit"]],
-                "uuid": item["uuid"],
-                "sheet": item["sheet"],
-                "in_bom": item["in_bom"],
-                "on_board": item["on_board"],
-                "dnp": item["dnp"],
-                "is_power_symbol": item["is_power_symbol"],
-                "properties": dict(item["properties"]),
-            }
-        else:
-            existing = merged_by_ref[ref]
-            if item["unit"] not in existing["units"]:
-                existing["units"].append(item["unit"])
-            existing["dnp"] = existing["dnp"] or item["dnp"]
-            existing["in_bom"] = existing["in_bom"] and item["in_bom"]
-            existing["on_board"] = existing["on_board"] and item["on_board"]
-            existing["is_power_symbol"] = existing["is_power_symbol"] or item["is_power_symbol"]
-            for k, v in item["properties"].items():
-                if v and not existing["properties"].get(k, "").strip():
-                    existing["properties"][k] = v
-
-    ignored_non_assembly = []
-    excluded_dnp = []
-    excluded_from_bom = []
-    populated = []
-
-    for ref in sorted(merged_by_ref):
-        comp = merged_by_ref[ref]
-        if comp["is_power_symbol"] or not comp["on_board"]:
-            reason = "power_symbol" if comp["is_power_symbol"] else "off_board"
-            ignored_non_assembly.append({**comp, "ignore_reason": reason})
-        elif comp["dnp"]:
-            excluded_dnp.append(comp)
-        elif not comp["in_bom"]:
-            excluded_from_bom.append(comp)
-        else:
-            populated.append(comp)
-
-    return {
-        "root_schematic": root_sheet["rel"],
-        "schematic_files": visited_files,
-        "sheet_instances": sheet_instances_count,
-        "populated": populated,
-        "excluded_dnp": excluded_dnp,
-        "excluded_from_bom": excluded_from_bom,
-        "ignored_non_assembly": ignored_non_assembly,
-    }
+    return isinstance(value, str) and value.strip().lower() in ("yes", "true", "1", "y")
 
 
 def _nonempty_prop_value(val):
@@ -902,8 +818,15 @@ def capability(params, files, inputs=None):
     }
 
 
-def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: dict) -> dict:
-    """Evaluate schematic components against BOM property policy and captured catalog snapshot."""
+def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: dict, *, expected_sheets=None,
+                                hierarchy_files=None) -> dict:
+    """Join native XML netlist components with the BOM property policy and captured catalog snapshot.
+
+    ``expected_sheets`` is the hierarchy instance count; a netlist covering a
+    different number of sheets is incomplete evidence and fails.
+    ``hierarchy_files`` (root first) binds every placed symbol occurrence to
+    a netlist component and the reverse; any gap fails.
+    """
     try:
         cfg = validate_params(params)
     except ValueError as exc:
@@ -914,7 +837,13 @@ def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: di
         cfg["catalog"],
         expected_sha256=cfg["catalog_sha256"],
     )
-    extracted = extract_schematic_components(inputs_root, root_sch_rel)
+    extracted = read_netlist_components(netlist_path)
+    if expected_sheets is not None and extracted["sheets"] != expected_sheets:
+        raise AssemblyReadinessExecutionError(
+            "failed",
+            f"native netlist covers {extracted['sheets']} sheet instance(s), hierarchy has {expected_sheets}",
+        )
+    coverage = verify_netlist_coverage(inputs_root, hierarchy_files, extracted) if hierarchy_files else None
 
     populated = extracted["populated"]
     excluded_dnp = extracted["excluded_dnp"]
@@ -937,8 +866,8 @@ def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: di
             "reference": ref,
             "sheet": comp["sheet"],
             "message": (
-                f"{ref} has in_bom=no without dnp=yes; excluded from BOM export "
-                "but not marked DNP on the assembly drawing"
+                f"{ref} is natively excluded from the BOM (in_bom no) without dnp; "
+                "omitted from the BOM but not marked DNP on the assembly drawing"
             ),
         })
 
@@ -950,6 +879,20 @@ def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: di
         ref = comp["reference"]
         props = comp["properties"]
         comp_missing_props = []
+
+        markers = _non_native_markers(props)
+        if markers:
+            findings.append({
+                "severity": "defect",
+                "code": "non_native_assembly_marker",
+                "reference": ref,
+                "markers": markers,
+                "sheet": comp["sheet"],
+                "message": (
+                    f"{ref} carries {', '.join(markers)} but no native DNP/exclude attribute; "
+                    "KiCad exports and the JLC BOM still place it"
+                ),
+            })
 
         for rule in cfg["required_properties"]:
             choices = rule["any_of"]
@@ -1061,6 +1004,9 @@ def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: di
     stock_floor = cfg["stock_floor"]
     max_stock_age_days = cfg["max_stock_age_days"]
     max_age_hours = cfg["max_age_hours"]
+    freshness_declared = (
+        stale_before_date is not None or max_stock_age_days is not None or max_age_hours is not None
+    )
 
     tier_counts = {
         "basic_unique": 0,
@@ -1132,11 +1078,20 @@ def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: di
             if last_seen is None:
                 is_stale = True
                 stale_reason = "missing last_seen timestamp"
+            elif not freshness_declared:
+                is_stale = True
+                stale_reason = (
+                    "no maximum stock age is declared (catalog or param stale_before, "
+                    "max_stock_age_days or max_age_hours)"
+                )
             else:
                 seen_date, seen_dt = _parse_iso_date_or_datetime(last_seen, f"{lcsc}.last_seen")
                 age_days = (as_of_date - seen_date).days
                 age_hours = (as_of_dt - seen_dt).total_seconds() / 3600.0
-                if stale_before_date is not None and seen_date < stale_before_date:
+                if seen_date > as_of_date:
+                    is_stale = True
+                    stale_reason = f"last_seen {last_seen} is after the evaluation date {as_of_raw}"
+                elif stale_before_date is not None and seen_date < stale_before_date:
                     is_stale = True
                     stale_reason = f"last_seen {last_seen} is older than stale_before {effective_stale_before_str}"
                 elif max_stock_age_days is not None and age_days > max_stock_age_days:
@@ -1299,14 +1254,18 @@ def evaluate_assembly_readiness(inputs_root: Path, root_sch_rel: str, params: di
         "parts": part_summaries,
         "components": component_reports,
         "findings": findings,
-        "schematic_files": extracted["schematic_files"],
-        "sheet_instances": extracted["sheet_instances"],
+        "netlist": {
+            "sha256": digest(netlist_path),
+            "components": extracted["components"],
+            "sheets": extracted["sheets"],
+            "hierarchy_coverage": coverage,
+        },
     }
 
 
 def check_assembly_readiness(ctx):
-    """Run check_assembly_readiness inside run_checks context."""
-    from .checks import CheckError
+    """Export the native XML netlist in the sandbox, then join it with the captured catalog."""
+    from .checks import CheckError, verified_hierarchy
 
     sch_rel = ctx.scope.get("schematic")
     if not isinstance(sch_rel, str) or not sch_rel.strip():
@@ -1317,12 +1276,33 @@ def check_assembly_readiness(ctx):
     except (ValueError, TypeError, KeyError) as exc:
         raise CheckError("unsupported", str(exc)) from exc
 
+    sch = ctx.candidate_path(sch_rel)
+    files, instances = verified_hierarchy(ctx)
     try:
-        report = evaluate_assembly_readiness(ctx.inputs, sch_rel, ctx.params)
+        schematic_hashes = verify_schematic_files(ctx.inputs, files)
+    except AssemblyReadinessExecutionError as exc:
+        raise CheckError(exc.execution, str(exc)) from exc
+    ctx.seed_kicad_config()
+    ctx.execute(["kicad-cli", "sch", "export", "netlist", "--format", "kicadxml",
+                 "-o", "/work/design.xml", sch], timeout=NETLIST_TIMEOUT)
+    ctx.evidence("design.xml")
+    netlist = ctx.work / "design.xml"
+    if not netlist.is_file() or netlist.stat().st_size == 0:
+        raise CheckError("failed", "native XML netlist was not written")
+
+    try:
+        report = evaluate_assembly_readiness(ctx.inputs, netlist, ctx.params, expected_sheets=instances,
+                                             hierarchy_files=files)
     except AssemblyReadinessExecutionError as exc:
         raise CheckError(exc.execution, str(exc)) from exc
 
     report["candidate_id"] = ctx.manifest["candidate_id"]
+    report["schematic"] = {
+        "root": sch_rel,
+        "sheet_instances": instances,
+        "files": schematic_hashes,
+    }
+    report["netlist"]["path"] = f"work/{ctx.cid}/design.xml"
     write_json(ctx.work / "assembly-readiness.json", report)
     ctx.evidence("assembly-readiness.json")
     ctx.result["details"].update(report)
