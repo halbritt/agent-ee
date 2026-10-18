@@ -289,6 +289,27 @@ class BindingTests(unittest.TestCase):
         defects = sorted(f['reference'] for f in report['findings'] if f['code'] == 'pad_pin_parity')
         self.assertEqual(defects, ['R1', 'R2'])
 
+    def test_owner_declarations_reach_native_parity_without_hiding_pins(self):
+        from agent_ee.native_binding import bind_native_assignments
+        graph = native_graph()
+        decl = declaration()
+        for ref in ('R1', 'R2'):
+            graph['components'][ref]['footprint'] = 'Owned:SOT3'
+            component(decl, ref)['footprint'] = 'Owned:SOT3'
+        owner = {'schema': 'agent-ee.footprint-declarations/1', 'pinless_symbols': [], 'footprints': [
+            {'footprint': 'Owned:SOT3', 'mechanical_pads': ['3'], 'thermal_via_pads': [], 'custom_pads': [],
+             'assembly': None, 'rationale': 'owned fixture: pad 3 declared mechanical'}]}
+        manifest, captured = captures()
+        report = bind_native_assignments(manifest, captured, decl, graph, audit(GEN.schematic('control'), graph),
+                                         declarations=owner)
+        self.assertEqual(report['outcome'], 'defect')
+        statuses = self.statuses(report)
+        self.assertEqual([statuses[r] for r in ('R1', 'R2', 'U1', 'U3')], ['pass', 'pass', 'defect', 'defect'])
+        missing = sorted((f['reference'], tuple(f['missing_pads'])) for f in report['findings']
+                         if f['code'] == 'pad_pin_parity')
+        self.assertEqual(missing, [('U1', ('3',)), ('U3', ('3',))])
+        self.assertEqual(len(report['assignments']['declarations_sha256']), 64)
+
     def test_embedded_library_metadata_disagreement_is_unknown(self):
         for mutate in [lambda pins: pins['3'].update(electrical_type='power_in'),
                        lambda pins: pins.update({'4': {'name': 'P4', 'electrical_type': 'passive'}}),
@@ -367,12 +388,14 @@ class NativeBindingPipelineTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.counter = 0
 
-    def scope(self, case, decl, checks=None, sheets=()):
+    def scope(self, case, decl, checks=None, sheets=(), owner=False):
         names = ['binding.kicad_sch', *sheets, 'Owned.kicad_sym', 'manifest.json', 'assignment.json',
-                 'requirements.md', *GEN.footprints()]
+                 'requirements.md', *GEN.footprints(), *(['declarations.json'] if owner else [])]
         params = {'manifest': 'manifest.json', 'declaration': 'assignment.json', 'netlist_check': 'netlist',
                   'assembly_intent': [{k: c[k] for k in ('reference', 'assembly', 'connector')}
                                       for c in decl['components']]}
+        if owner:
+            params['declarations'] = 'declarations.json'
         return {'schema': 'agent-ee.scope/3', 'name': 'binding', 'scope': 'Owned native binding fixture.',
                 'limitations': [], 'schematic': 'binding.kicad_sch',
                 'inputs': [{'path': n, 'at': n} for n in names], 'requirements': ['requirements.md'],
@@ -383,7 +406,7 @@ class NativeBindingPipelineTests(unittest.TestCase):
                     'intent': 'acceptance'}], 'targets': ['requirements.md'],
                     'reference_architectures': ['requirements.md']}}
 
-    def run_variant(self, variant='control', decl=None, case=None, schematic=None, sheets=None):
+    def run_variant(self, variant='control', decl=None, case=None, schematic=None, sheets=None, owner=None):
         import time
         from agent_ee.candidate import capture
         from agent_ee.checks import run_checks
@@ -404,8 +427,10 @@ class NativeBindingPipelineTests(unittest.TestCase):
             (case / path).parent.mkdir(parents=True, exist_ok=True)
             (case / path).write_text(text)
         write_json(case / 'assignment.json', decl)
+        if owner is not None:
+            write_json(case / 'declarations.json', owner)
         children = sorted(set(sheets) - {'binding.kicad_sch'})
-        write_json(case / 'scope.json', self.scope(case, decl, sheets=children))
+        write_json(case / 'scope.json', self.scope(case, decl, sheets=children, owner=owner is not None))
         run = case / f'run-{variant}-{len(list(case.glob("run-*")))}'
         run.mkdir()
         capture(case / 'scope.json', run)
@@ -422,6 +447,19 @@ class NativeBindingPipelineTests(unittest.TestCase):
         for tag in ('components', 'libparts', 'nets'):
             self.assertEqual(ET.tostring(fresh.find(tag)), ET.tostring(committed.find(tag)), tag)
         self.assertEqual(fresh.findtext('./design/tool'), committed.findtext('./design/tool'))
+
+    def test_owner_declarations_reach_sandboxed_native_binding(self):
+        owner = {'schema': 'agent-ee.footprint-declarations/1', 'pinless_symbols': [], 'footprints': [
+            {'footprint': 'Owned:SOT3', 'mechanical_pads': ['3'], 'thermal_via_pads': [], 'custom_pads': [],
+             'assembly': None, 'rationale': 'owned fixture: pad 3 declared mechanical'}]}
+        statuses = []
+        for declared in (None, owner):
+            run, checks = self.run_variant('shared-bad', owner=declared)
+            self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('ok', 'defect'), checks)
+            report = checks[1]['details']['report']
+            statuses.append({b['reference']: b['status'] for b in report['bindings'] if b['reference'] in ('R1', 'U1')})
+        self.assertEqual(statuses, [{'R1': 'defect', 'U1': 'pass'}, {'R1': 'pass', 'U1': 'defect'}])
+        self.assertEqual(len(report['assignments']['declarations_sha256']), 64)
 
     def assert_producer_refusal(self, checks, code):
         self.assertEqual((checks[0]['execution'], checks[0]['outcome']), ('failed', 'unknown'), checks)
@@ -660,3 +698,100 @@ class NativeBindingPipelineTests(unittest.TestCase):
         del params['netlist_check']
         self.assertEqual(capability(params, manifest['files'], run / 'inputs')['predicates'],
                          ['footprint:assignment-parity/1'])
+
+
+class PinlessNativeTests(unittest.TestCase):
+    """A real KiCad export of an owned pinless symbol through the native binding CLI."""
+
+    HOLE = ('(symbol "{prefix}Hole" (pin_names (offset 0)) (in_bom yes) (on_board yes) '
+            + GEN.prop('Reference', 'H') + GEN.prop('Value', 'Hole') +
+            '(symbol "Hole_0_1" (circle (center 0 0) (radius 1) (stroke (width 0.2) (type default)) '
+            '(fill (type none)))))')
+
+    def setUp(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import subprocess
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-pinless-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        root_uuid = GEN.uid('pinless-root')
+        symbol = (f'(symbol (lib_id "Owned:Hole") (at 20 50 0) (unit 1) (in_bom yes) (on_board yes) (dnp no) '
+                  f'(uuid "{GEN.uid("H1")}")' + GEN.prop('Reference', 'H1') + GEN.prop('Value', 'Hole') +
+                  GEN.prop('Footprint', 'Owned:MountingHole') +
+                  f'(instances (project "pinless" (path "/{root_uuid}" (reference "H1") (unit 1)))))')
+        (self.root / 'binding.kicad_sch').write_text(
+            f'(kicad_sch (version 20250114) (generator "eeschema") (uuid "{root_uuid}") (paper "A4") '
+            f'(lib_symbols {self.HOLE.format(prefix="Owned:")}) {symbol})\n')
+        library = ('(kicad_symbol_lib (version 20241209) (generator "owned") '
+                   + self.HOLE.format(prefix='') + ')\n').encode()
+        (self.root / 'Owned.kicad_sym').write_bytes(library)
+        self.files = {}
+        for name, pad in (
+                ('MountingHole', '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask"))'),
+                ('MountingPad', '(pad "1" thru_hole circle (at 0 0) (size 5 5) (drill 3) (layers "*.Cu" "*.Mask"))')):
+            data = (f'(footprint "{name}" (version 20241229) (generator "owned") (layer "F.Cu") '
+                    f'(attr exclude_from_pos_files exclude_from_bom) {pad})\n').encode()
+            self.files[f'Owned.pretty/{name}.kicad_mod'] = data
+            (self.root / 'Owned.pretty').mkdir(exist_ok=True)
+            (self.root / f'Owned.pretty/{name}.kicad_mod').write_bytes(data)
+        self.decl = {'schema': 'agent-ee.footprint-assignments-input/1',
+                     'libraries': [{'name': 'Owned', 'path': 'Owned.kicad_sym',
+                                    'sha256': hashlib.sha256(library).hexdigest()}],
+                     'components': [{'reference': 'H1', 'lib_id': 'Owned:Hole', 'footprint': 'Owned:MountingHole',
+                                     'assembly': 'through_hole', 'connector': None}]}
+        self.xml = self.root / 'design.xml'
+        completed = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                    '-o', str(self.xml), str(self.root / 'binding.kicad_sch')],
+                                   capture_output=True, text=True, timeout=60)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def bind(self, owner, decl=None):
+        from agent_ee.native_binding import main
+        from agent_ee.storage import read_json, write_json
+        self.counter = getattr(self, 'counter', 0) + 1
+        write_json(self.root / 'manifest.json', GEN.manifest(self.files))
+        write_json(self.root / 'assignment.json', decl or self.decl)
+        args = [str(self.root / 'manifest.json'), '--captures', str(self.root),
+                '--assignments', str(self.root / 'assignment.json'), '--native-xml', str(self.xml),
+                '--schematic', 'binding.kicad_sch', '--out', str(self.root / f'out{self.counter}.json')]
+        if owner is not None:
+            write_json(self.root / 'declarations.json', owner)
+            args[5:5] = ['--declarations', str(self.root / 'declarations.json')]
+        self.assertEqual(main(args), 0)
+        return read_json(self.root / f'out{self.counter}.json')
+
+    def owner(self, pinless=True):
+        return {'schema': 'agent-ee.footprint-declarations/1',
+                'pinless_symbols': [{'lib_id': 'Owned:Hole', 'rationale': 'owned mounting hole'}] if pinless else [],
+                'footprints': [{'footprint': f'Owned:{name}', 'mechanical_pads': [], 'thermal_via_pads': [],
+                                'custom_pads': [], 'assembly': 'through_hole', 'rationale': 'owned: no native attr'}
+                               for name in ('MountingHole', 'MountingPad')]}
+
+    def test_exported_pinless_part_is_strict_by_default_and_declared_in_binding(self):
+        from agent_ee.native_netlist import read_native_inventory
+        with self.assertRaisesRegex(ValueError, 'native'):
+            read_native_inventory(self.xml)
+        graph = read_native_inventory(self.xml, pinless=True)
+        self.assertEqual((graph['components']['H1']['pins'], graph['library_parts']['Owned:Hole']), ((), {}))
+        undeclared = self.bind(self.owner(pinless=False))
+        self.assertEqual((undeclared['execution'], undeclared['outcome']), ('failed', 'unknown'))
+        self.assertEqual(self.bind(None)['outcome'], 'unknown')
+        report = self.bind(self.owner())
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report['findings'])
+        self.assertEqual(report['assignments']['assignments'][0]['pinless']['lib_id'], 'Owned:Hole')
+
+    def test_declared_pinless_part_on_a_padded_footprint_is_a_defect(self):
+        import subprocess
+        schematic = self.root / 'binding.kicad_sch'
+        schematic.write_text(schematic.read_text().replace('Owned:MountingHole', 'Owned:MountingPad'))
+        self.xml.unlink()
+        completed = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                    '-o', str(self.xml), str(schematic)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        decl = copy.deepcopy(self.decl)
+        decl['components'][0]['footprint'] = 'Owned:MountingPad'
+        report = self.bind(self.owner(), decl)
+        self.assertEqual(report['outcome'], 'defect', report['findings'])
+        parity = [f for f in report['findings'] if f['code'] == 'pad_pin_parity']
+        self.assertEqual(parity[0]['extra_pads'], ['1'])
