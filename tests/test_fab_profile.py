@@ -313,7 +313,7 @@ class NativeFabTest(unittest.TestCase):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
 
-    def run_profile(self, specs, *, unsupported=False, builder=None, **board_options):
+    def run_profile(self, specs, *, unsupported=False, builder=None, profile=None, **board_options):
         import json
         import tempfile
         import time
@@ -326,7 +326,7 @@ class NativeFabTest(unittest.TestCase):
         self.addCleanup(__import__('shutil').rmtree, root)
         inputs = root / 'inputs'; inputs.mkdir()
         (builder or make_board)(inputs / 'test.kicad_pcb', **board_options)
-        document = owned_profile(inputs, specs)
+        document = profile(inputs) if profile else owned_profile(inputs, specs)
         if unsupported:
             document['limits'][0].pop('source')
         (inputs / 'profile.json').write_text(json.dumps(document))

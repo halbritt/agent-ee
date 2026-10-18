@@ -1945,7 +1945,8 @@
     },
     {
       "paths": [
-        "tests/test_fab_profile.py"
+        "tests/test_fab_profile.py",
+        "tests/test_fab_profile_conjunctive.py"
       ],
       "kind": "owned-source",
       "origins": [

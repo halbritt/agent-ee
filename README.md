@@ -239,7 +239,9 @@ semantics before adopting a proposal. Fresh checks determine acceptance.
 The [fab profile check](docs/fab-profile.md) runs captured, source-cited
 fabrication limits through the same native rules. It also compares layer count
 and outline size with the saved board and lists legal surcharged features
-separately. No real fabricator preset is supplied or qualified.
+separately. Its `/2` conjunctive rules charge a via only when the drill and the
+diameter are both under their bounds. No real fabricator preset is supplied or
+qualified.
 The [DFM geometry check](docs/dfm-geometry.md) applies seven deterministic rules
 with captured thresholds to exact pcbnew geometry from the saved board: annular
 ring, via aspect ratio, acid traps, SMD bridge gap, courtyard spacing,

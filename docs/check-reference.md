@@ -224,8 +224,11 @@ document whose limits each cite an exact quote in a captured UTF-8 source. It
 runs sourced physical minima as isolated native rules and compares layer count,
 fixed-axis outline extents and SMD presence with the saved board. Missing sources,
 missing profiles and unqualified outlines are unknown. Preferred-tier overruns
-are reported as extra charges, never defects. Out-of-range numeric profile bounds
-are unsupported in both descriptors and execution. No real fabricator preset exists.
+are reported as extra charges, never defects. A `fab-profile/2` conjunctive rule
+charges only vias whose drill and diameter are both under its bounds. Each term
+runs its own native DRC, and the rule charges the intersection of the cited via
+UUIDs. Out-of-range numeric profile bounds are unsupported in both descriptors
+and execution. No real fabricator preset exists.
 
 ## DFM geometry rules
 
