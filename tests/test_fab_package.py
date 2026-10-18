@@ -16,14 +16,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from agent_ee import cli, executor, fab_export
+from agent_ee import cli, executor, fab_export, fab_package
 from agent_ee import rung1_campaign as rc
 from agent_ee.baseline import compile_baseline, freeze_evidence, load_baseline, verify_evidence
 from agent_ee.campaign import fab_artifacts, run_campaign, verify_campaign
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import run_checks
-from agent_ee.fab_package import artifact_record
+from agent_ee.fab_package import artifact_record, rotation_blocker, rotation_record
 from agent_ee.storage import digest, read_json, write_json
 try:
     from toolchain import require_toolchain
@@ -32,7 +32,9 @@ except ImportError:  # run as tests.test_fab_package from the repository root
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / 'fixtures/fab-export'
+CPL_FIXTURE = REPO / 'fixtures/cpl-rotation'
 MARKER = {'schema': 'agent-ee.generation/1', 'done_check': 'fab'}
+PREVIEW = 'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)'
 
 
 def generation_scope(schema='agent-ee.scope/2'):
@@ -51,6 +53,25 @@ def generation_scope(schema='agent-ee.scope/2'):
     if schema == 'agent-ee.scope/3':
         req['intent'] = 'acceptance'
         native['intent'] = 'informational'
+    return scope
+
+
+def rotation_scope(schema='agent-ee.scope/2'):
+    """The owned CPL control as a generation scope: fab-export, cpl_rotation, then the done gate."""
+    scope = read_json(CPL_FIXTURE / 'control.scope.json')
+    scope['schema'] = schema
+    scope['inputs'][0]['path'] = str(CPL_FIXTURE)
+    for spec in scope['checks']:
+        if spec['id'] == 'fab':
+            spec['id'] = 'fab-export'
+        if spec['kind'] == 'cpl_rotation':
+            spec['params']['export_check'] = 'fab-export'
+    scope['checks'].append({'id': 'fab', 'kind': 'fab_package', 'params': {'netlist_check': 'netlist'}})
+    scope['generation'] = dict(MARKER)
+    req = scope['baseline']['requirements'][0]
+    req['checks'] = ['netlist', 'fab-export', 'geometry', 'cpl', 'fab']
+    if schema == 'agent-ee.scope/3':
+        req['intent'] = 'acceptance'
     return scope
 
 
@@ -147,8 +168,8 @@ class GenerationMarkerTests(unittest.TestCase):
                 self.assertEqual(describe(specs)['status'], 'unsupported')
 
 
-class NativeFabPackageTests(unittest.TestCase):
-    """The real export, gate and seal; fault injection between the producer and the gate."""
+class NativeRun(unittest.TestCase):
+    """Shared harness: the real export, gate and seal of one captured scope per case."""
 
     def setUp(self):
         require_toolchain(native=True)
@@ -184,6 +205,10 @@ class NativeFabPackageTests(unittest.TestCase):
         manifest['files'] = {rel: digest(stage / rel) for rel in manifest['files'] if (stage / rel).is_file()}
         write_json(stage / 'manifest.json', manifest)
 
+
+class NativeFabPackageTests(NativeRun):
+    """The real export, gate and seal; fault injection between the producer and the gate."""
+
     def test_passing_package_seals_and_records_its_artifacts(self):
         result = self.run_case()
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
@@ -202,6 +227,11 @@ class NativeFabPackageTests(unittest.TestCase):
         predicates = load_baseline(self.run_dir)['coverage']['checks']['fab']['predicates']
         self.assertIn('fab-package:done-gate', predicates)
         self.assertFalse(any(t.startswith('pass means the exports exist') for t in result['limitations']))
+
+        # Without a declared cpl_rotation check the native CPL is sealed and nothing blocks done.
+        self.assertEqual(artifacts['rotation'], {'status': 'not_declared'})
+        self.assertIn('work/fab/fab/cpl.csv', artifacts['files'])
+        self.assertIsNone(rotation_blocker(artifacts['rotation']['status']))
 
         bom = self.run_dir / 'work/fab/fab/bom.csv'
         bom.write_bytes(bom.read_bytes() + b'\n')
@@ -284,6 +314,78 @@ class NativeFabPackageTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
 
 
+class RotationCompositionTests(NativeRun):
+    """AGENTEE-126: the done gate consumes a declared cpl_rotation check on the owned CPL fixture."""
+
+    def test_done_gate_seals_the_corrected_cpl_and_records_preview_required(self):
+        result = self.run_case(scope=rotation_scope('agent-ee.scope/3'))
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        artifacts = result['details']['artifacts']
+        self.assertEqual(artifacts, artifact_record(self.run_dir, result))
+        self.assertIn('work/cpl/cpl/cpl.csv', artifacts['files'])
+        self.assertNotIn('work/fab/fab/cpl.csv', artifacts['files'])
+        rotation = artifacts['rotation']
+        self.assertEqual(result['details']['rotation'], rotation)
+        self.assertEqual((rotation['status'], rotation['check_id']), ('PREVIEW_REQUIRED', 'cpl'))
+        self.assertEqual(rotation['policy_sha256'], digest(CPL_FIXTURE / 'jlc-cpl-policy.json'))
+        self.assertEqual(rotation['native_cpl_sha256'], digest(self.run_dir / 'work/fab/fab/cpl.csv'))
+        self.assertEqual(digest(self.run_dir / 'work/fab-export/fab/cpl.csv'), rotation['native_cpl_sha256'])
+        self.assertNotEqual(rotation['cpl_sha256'], rotation['native_cpl_sha256'])
+        self.assertIn('cpl rotation PREVIEW_REQUIRED', result['summary'])
+        seal = read_json(self.run_dir / 'work/verification/evidence.json')['checks']['fab']['artifacts']
+        self.assertEqual(seal['work/cpl/cpl/cpl.csv'], rotation['cpl_sha256'])
+        self.assertIn('fab-package:done-gate', load_baseline(self.run_dir)['coverage']['checks']['fab']['predicates'])
+        self.assertEqual(rotation_blocker(rotation['status']), PREVIEW)
+        self.assertIsNone(rotation_blocker('ok'))
+        self.assertIn("'pass' is not a done status", rotation_blocker('pass'))
+        self.assertIn('None', rotation_blocker(None))
+
+        # The correction must be of exactly this package's native CPL, and remain as sealed.
+        scope = read_json(self.run_dir / 'candidate.json')['scope']
+        manifest = read_json(self.run_dir / 'work/fab/fab/manifest.json')
+        other = {**manifest, 'files': {**manifest['files'], 'cpl.csv': '0' * 64}}
+        with self.assertRaisesRegex(ValueError, "did not correct this package's native cpl.csv"):
+            rotation_record(self.run_dir, scope, result['candidate_id'], other)
+        with self.assertRaisesRegex(ValueError, "did not correct this package's native cpl.csv"):
+            rotation_record(self.run_dir, scope, result['candidate_id'], {**manifest, 'board_sha256': '0' * 64})
+        corrected = self.run_dir / 'work/cpl/cpl/cpl.csv'
+        original = corrected.read_bytes()
+        corrected.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'corrected CPL differs from its report'):
+            artifact_record(self.run_dir, result)
+        corrected.write_bytes(original)
+        report = self.run_dir / 'work/cpl/cpl-rotation.json'
+        data = read_json(report)
+        write_json(report, {**data, 'status': 'ok', 'physical_validation': True})
+        with self.assertRaisesRegex(ValueError, 'report differs from its check result'):
+            artifact_record(self.run_dir, result)
+
+    def test_a_declared_correction_without_a_pass_fails_the_done_gate(self):
+        scope = rotation_scope('agent-ee.scope/3')
+        cpl = next(c for c in scope['checks'] if c['kind'] == 'cpl_rotation')
+        cpl['params']['supplier_footprints'] = cpl['params']['supplier_footprints'][1:]
+        result = self.run_case(scope=scope)
+        prior = next(r for r in self.results if r['id'] == 'cpl')
+        self.assertEqual((prior['execution'], prior['outcome']), ('unsupported', 'unknown'), prior['summary'])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertIn("declared cpl_rotation 'cpl' has no passing result", result['summary'])
+        self.assertNotIn('artifacts', result['details'])
+
+    def test_capability_refuses_two_cpl_rotation_checks(self):
+        scope = rotation_scope('agent-ee.scope/3')
+        cpl = next(c for c in scope['checks'] if c['kind'] == 'cpl_rotation')
+        scope['checks'].insert(-1, {**copy.deepcopy(cpl), 'id': 'cpl-2'})
+        scope['baseline']['requirements'][0]['checks'].append('cpl-2')
+        files = {f"design/{name}": digest(CPL_FIXTURE / name) for name in scope['inputs'][0]['include']}
+        described = describe_check(scope['checks'][-1], check_specs=scope['checks'], files=files, scope=scope)
+        self.assertEqual(described['status'], 'unsupported', described)
+        self.assertIn('at most one cpl_rotation', json.dumps(described['unsupported_reasons']))
+        good = rotation_scope('agent-ee.scope/3')
+        described = describe_check(good['checks'][-1], check_specs=good['checks'], files=files, scope=good)
+        self.assertEqual(described['status'], 'supported', described)
+        self.assertIn({'check_id': 'cpl', 'kind': 'cpl_rotation'}, described['prerequisites'])
+
+
 class GenerationCampaignTests(unittest.TestCase):
     """A one-iteration generation campaign with scripted reviews; everything else is production code."""
 
@@ -296,17 +398,20 @@ class GenerationCampaignTests(unittest.TestCase):
         profile = {'schema': 'agent-ee.profile/1', 'name': 'protocol-test',
                    'reviewers': [{**definition, 'role': 'circuit'}, {**definition, 'role': 'physical'}],
                    'adjudicator': definition}
-        scope = generation_scope()
-        scope.update(review_profile=profile, mutable_inputs=['design/fab.kicad_pcb'])
-        write_json(self.root / 'scope.json', scope)
-        write_json(self.root / 'campaign.json', {
-            'schema': 'agent-ee.campaign/1', 'scope': 'scope.json', 'review_profile': profile,
-            'implementation': definition, 'max_iterations': 2, 'max_seconds': 600})
+        self.profile, self.definition = profile, definition
+        self.write_campaign(generation_scope(), ['design/fab.kicad_pcb'])
         self.addCleanup(mock.patch.stopall)
         mock.patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
         mock.patch('agent_ee.cli.runtime_files', return_value={
             name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
             for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli', 'pcbnew')}).start()
+
+    def write_campaign(self, scope, mutable):
+        scope.update(review_profile=self.profile, mutable_inputs=mutable)
+        write_json(self.root / 'scope.json', scope)
+        write_json(self.root / 'campaign.json', {
+            'schema': 'agent-ee.campaign/1', 'scope': 'scope.json', 'review_profile': self.profile,
+            'implementation': self.definition, 'max_iterations': 2, 'max_seconds': 600})
 
     def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
         packet = read_json(Path(run) / 'packet.json')
@@ -367,7 +472,9 @@ class GenerationCampaignTests(unittest.TestCase):
         self.assertEqual(record['fab_artifacts_recomputed_by_verify_campaign']['files'],
                          state['fab_artifacts']['files'])
         self.assertTrue(record['fab_artifacts_verified'])
+        self.assertEqual((record['fab_rotation'], record['fab_rotation_blocker']), ({'status': 'not_declared'}, None))
         self.assertTrue(record['done'])
+        self.assertIn('fab_rotation not_declared policy None\n', self.verify_cli(root)[1])
         # Verified fab hashes do not make the record done when the scaffold receipt is unbound.
         unbound = record_for(state, {'bound': False, 'differences': ['project/rung1_rc.kicad_dru']})
         self.assertTrue(unbound['fab_artifacts_verified'])
@@ -395,6 +502,65 @@ class GenerationCampaignTests(unittest.TestCase):
         self.assertEqual(record['verdict'], 'unverified:criteria_satisfied')
         self.assertFalse(record['fab_artifacts_verified'])
         self.assertFalse(record['done'])
+
+    def in_process(self, argv, log_dir, label, timeout, source=None):
+        log_dir.mkdir(parents=True, exist_ok=True)
+        code, out = self.verify_cli(argv[-1])
+        (log_dir / f'{label}.stdout.log').write_text(out)
+        return {'argv': [str(a) for a in argv], 'exit_code': code, 'stdout': f'{label}.stdout.log',
+                'stdout_tail': out[-2000:], 'stderr_tail': ''}
+
+    def test_declared_cpl_correction_is_sealed_and_preview_required_keeps_the_record_not_done(self):
+        self.write_campaign(rotation_scope(), ['design/cpl.kicad_pcb'])
+        root = self.root / 'campaign'
+        with contextlib.redirect_stdout(io.StringIO()):
+            status = run_campaign(self.root / 'campaign.json', root)
+        state = read_json(root / 'state.json')
+        self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state.get('error'))
+        final = Path(state['history'][-1]['run'])
+        artifacts = state['fab_artifacts']
+        self.assertEqual(artifacts, fab_artifacts(final))
+        self.assertEqual(artifacts['rotation']['status'], 'PREVIEW_REQUIRED')
+        self.assertEqual(artifacts['rotation']['policy_sha256'], digest(CPL_FIXTURE / 'jlc-cpl-policy.json'))
+        self.assertIn('work/cpl/cpl/cpl.csv', artifacts['files'])
+        self.assertNotIn('work/fab/fab/cpl.csv', artifacts['files'])
+
+        code, stdout = self.verify_cli(root)
+        self.assertEqual(code, 0)
+        self.assertIn(f"fab_rotation PREVIEW_REQUIRED policy {artifacts['rotation']['policy_sha256']}\n", stdout)
+        self.assertIn(PREVIEW + '\n', stdout)
+        self.assertTrue(rc.artifacts_agree(artifacts, rc.recomputed_artifacts(stdout, str(final))))
+
+        rundir = self.root / 'rung1'
+        rundir.mkdir()
+
+        def record_for(current):
+            with mock.patch.object(rc, 'run_logged', side_effect=self.in_process), \
+                    mock.patch.object(rc, 'campaign_summary', return_value=(current, [], [])), \
+                    mock.patch.object(rc, 'first_capture_binding', return_value={'bound': True, 'differences': []}), \
+                    mock.patch.object(rc, 'agent_ee_command', side_effect=lambda *a: ['agent-ee', str(root)]):
+                return rc.campaign_record(rundir, {}, None)
+        record = record_for(state)
+        self.assertTrue(record['fab_artifacts_verified'])
+        self.assertEqual(record['fab_rotation']['status'], 'PREVIEW_REQUIRED')
+        self.assertEqual(record['fab_rotation_blocker'], PREVIEW)
+        self.assertFalse(record['done'])
+        # The owner decision is one constant: admitting PREVIEW_REQUIRED would make this record done.
+        with mock.patch.object(fab_package, 'DONE_ROTATION_STATUSES', frozenset({'not_declared', 'ok', 'PREVIEW_REQUIRED'})):
+            self.assertTrue(record_for(state)['done'])
+
+        # The sealed corrected CPL is a done-gate artifact: changing it fails verify-campaign closed.
+        corrected = final / 'work/cpl/cpl/cpl.csv'
+        original = corrected.read_bytes()
+        corrected.write_bytes(original + b'\n')
+        with self.assertRaises(ValueError):
+            verify_campaign(root)
+        corrected.write_bytes(original)
+        forged = copy.deepcopy(state)
+        forged['fab_artifacts']['rotation']['status'] = 'ok'
+        write_json(root / 'state.json', forged)
+        with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
+            verify_campaign(root)
 
 
 if __name__ == '__main__':

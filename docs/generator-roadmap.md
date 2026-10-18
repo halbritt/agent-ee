@@ -359,3 +359,18 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 - Block evidence is provenance. A board's acceptance comes from the board's own
   checks, even for an unchanged block.
 - Nothing here confers hardware release authority or bench qualification.
+
+## Captured CPL correction in fab stages
+
+AGENTEE-126 wires `cpl_rotation` after `fab_export` in the generator and, when
+`--cpl-inputs` is given, in both rung-1 scopes, and uses the shared receipted fab
+step in the generator and rung implementations. Explicit `--cpl-inputs`
+captures freeze the policy, supplier provenance and raw geometry. In the rung-1
+campaign the `fab_package` done gate seals the corrected CPL and records the
+rotation status and policy digest. The corrected package records all applied
+corrections and retains `PREVIEW_REQUIRED`; done predicates are allow-lists over
+`fab_package.DONE_ROTATION_STATUSES`, so generation records cannot become done
+while that preview is pending. Missing inputs and incomplete rotation coverage
+fail closed.
+See [CPL integration](cpl-rotation.md#generator-fab-integration) for the input
+tree, evidence layout and the separate non-DNP header export limitation.

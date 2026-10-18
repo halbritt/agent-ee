@@ -6,6 +6,7 @@ scope with the real loaders.
 """
 import json
 import os
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -168,6 +169,14 @@ class StepsTest(unittest.TestCase):
         for name in ('emit.sh', 'annotate.sh'):
             self.assertTrue((q.STEPS_DIR / name).is_file())
 
+    def test_a_declared_cpl_correction_adds_the_receipted_fab_step(self):
+        from unittest import mock
+        mutable = [f'project/{q.NAME}.kicad_sch', f'project/{q.NAME}.kicad_pcb']
+        with mock.patch('agent_ee.routing_adapter.step', return_value=self.fake_route()):
+            steps = q.check_steps(q.step_specs(Path('/nonexistent'), fab=True), mutable)
+        self.assertEqual([(s['stage'], s['step']) for s in steps][-1], ('fab', 'export-fab'))
+        self.assertEqual(steps[-1]['writes'], {mutable[1]: f'design/{mutable[1]}'})
+
     def test_placement_steps_and_unadoptable_exits_are_refused(self):
         mutable = [f'project/{q.NAME}.kicad_sch', f'project/{q.NAME}.kicad_pcb']
         steps = self.schematic_steps()
@@ -208,7 +217,9 @@ class ScopeTest(unittest.TestCase):
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
         cls.rundir.mkdir()
-        cls.prep = q.prepare(SPEC, cls.rundir, catalog_checkout=catalog)
+        from tests.test_fab_stage import rotation_inputs
+        cls.prep = q.prepare(SPEC, cls.rundir, catalog_checkout=catalog,
+                             cpl_inputs=rotation_inputs(root / 'cpl-inputs'))
         cls.scaffold, cls.record = q.write_scaffold(cls.rundir, cls.prep)
         cls.scope = q.compile_staged_scope(cls.prep['params'], cls.rundir, cls.scaffold)
         cls.scope_path = cls.rundir / 'scope.json'
@@ -225,7 +236,7 @@ class ScopeTest(unittest.TestCase):
         traced = {c for r in self.scope['baseline']['requirements'] for c in r['checks']}
         self.assertEqual(traced, {c['id'] for c in self.scope['checks']})
         kinds = {c['id']: c['kind'] for c in self.scope['checks']}
-        for kind in ('netlist_parity', 'placement', 'part_binding', 'fab_export', 'fab_consistency'):
+        for kind in ('netlist_parity', 'placement', 'part_binding', 'fab_export', 'fab_consistency', 'cpl_rotation'):
             self.assertIn(kind, kinds.values())
         rc_step = next(c for c in self.scope['checks'] if c['id'] == 'rc-step')
         self.assertEqual((rc_step['params']['input_net'], rc_step['params']['ground_net']), ('/IN', 'GND'))
@@ -241,9 +252,36 @@ class ScopeTest(unittest.TestCase):
         self.assertIn('generation/golden/rc_control.xml', result['immutable_generation_inputs'])
         parity = next(c for c in self.scope['checks'] if c['id'] == 'parity')
         self.assertEqual(parity['params']['source'], {'kind': 'intent', 'path': 'generation/intent.json'})
+        # The declared CPL correction freezes its captured policy and supplier bytes.
+        self.assertIn('generation/cpl/jlc-cpl-policy.json', result['baseline_files'])
+        self.assertIn('generation/cpl/supplier/C910020.raweasy.json', result['baseline_files'])
         self.assertIn('generation/placement-policy.json', result['immutable_generation_inputs'])
         self.assertEqual(sorted(result['mutable_inputs']),
                          sorted([f'project/{q.NAME}.kicad_sch', f'project/{q.NAME}.kicad_pcb']))
+
+    def test_scaffold_without_a_cpl_capture_declares_no_cpl_rotation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scaffold = Path(tmp) / 'scaffold'
+            shutil.copytree(self.scaffold, scaffold)
+            shutil.rmtree(scaffold / 'generation' / 'cpl')
+            (scaffold / 'requirements' / 'qualified.md').write_text(q.QUALIFIED_REQUIREMENTS)
+            scope = q.compile_staged_scope(self.prep['params'], tmp, scaffold)
+            self.assertNotIn('cpl_rotation', [c['kind'] for c in scope['checks']])
+            self.assertNotIn('R-cpl', [r['id'] for r in scope['baseline']['requirements']])
+            self.assertEqual(scope['checks'][-1]['id'], 'fab-consistency')
+            path = Path(tmp) / 'scope.json'
+            path.write_text(json.dumps(scope))
+            result = q.validate_scope_file(path, Path(tmp) / 'validation-inputs')
+            self.assertFalse([f for f in result['baseline_files'] if f.startswith('generation/cpl/')])
+
+    def test_scope_without_captured_rotation_policy_is_refused(self):
+        scope = json.loads(json.dumps(self.scope))
+        generation = next(i for i in scope['inputs'] if i['at'] == 'generation')
+        generation['exclude'] = ['cpl/jlc-cpl-policy.json']
+        path = self.rundir / 'missing-policy.scope.json'
+        path.write_text(json.dumps(scope))
+        with self.assertRaisesRegex(ValueError, 'jlc-cpl-policy.json must be captured'):
+            q.validate_scope_file(path, self.rundir / 'missing-policy-inputs')
 
     def test_scaffold_board_matches_the_envelope_outline_and_lacks_the_fixed_connector(self):
         trip = {f['field']: f['status'] for f in self.record['envelope']['scaffold_round_trip']['fields']}

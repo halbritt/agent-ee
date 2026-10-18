@@ -110,7 +110,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
 | `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
-| `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD, and `sch export bom --variant NAME` on the schematic only with a declared `bom_variant`; see [fab export](fab-export.md) | 600 s per step |
 | `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 | `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
@@ -800,7 +800,11 @@ package. An optional declared `assembly_exclusion` rule
 (`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
 in both the netlist and the board out of the BOM and CPL. The manifest lists
 them in `designators.excluded`. A marked part without the rule, or with
-disagreeing sources, is `unsupported`. Launch preflight requires the native `kicad-cli` binary. Empty produced
+disagreeing sources, is `unsupported`. An optional declared `bom_variant`
+(the generator's `--bom-variant`) is validated against the captured
+`.kicad_pro` before any kicad-cli command and passed only to the native BOM
+export; the CPL stays the default variant, and a variant that changes the
+populated set is `unsupported` by name ([BOM variant](fab-export.md#bom-variant)). Launch preflight requires the native `kicad-cli` binary. Empty produced
 native files are `failed/unknown`; pre-existing staging or native output
 directories are refused before reuse.
 
@@ -829,7 +833,12 @@ the captured supplier footprint, which detects quarter-turn offsets,
 reflections and diode polarity. Each row appears in exactly one of
 `applied_corrections` or `unmatched_footprints`. Missing geometry or a
 duplicate designator never falls back to the anchor. The status stays
-`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
+`PREVIEW_REQUIRED`. The generator fab stage runs it after `fab_export`, and
+both rung-1 scopes declare it when `--cpl-inputs` captured a policy and supplier
+set; their derived package manifest records the corrections and policy digest.
+Missing policy or supplier coverage fails closed, and a status outside
+`fab_package.DONE_ROTATION_STATUSES` (today any `PREVIEW_REQUIRED`) prevents
+`done`. See [CPL rotation](cpl-rotation.md#generator-fab-integration).
 
 ## JLCPCB cost estimate
 
@@ -887,4 +896,12 @@ manifest.json by sha256, bound to the candidate id and board digest). A missing,
 empty or unparseable export file is `failed`, `malformed` or `unsupported` with
 outcome `unknown`, or a gate `defect`; never `pass`. A scope with a `generation`
 marker is refused at capture unless this check is last and an acceptance
-requirement maps to it.
+requirement maps to it. When the scope declares one `cpl_rotation` check
+(AGENTEE-126), the gate requires its passing, complete result bound to this
+candidate, board and native `cpl.csv`, seals the corrected `work/CPL/cpl/cpl.csv`
+in place of the native CPL, and records `rotation` (status `ok` or
+`PREVIEW_REQUIRED`, policy sha256, report digest) in `details` and the artifact
+record; a correction defect is a gate `defect`, any other non-pass is
+`unsupported`. Without one, `rotation` is `{status: not_declared}`. Done
+predicates admit only `fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`);
+see [CPL rotation in the done gate](fab-package.md#cpl-rotation).

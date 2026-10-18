@@ -3,7 +3,8 @@
 Run ``python3 -m agent_ee.generate SPEC.md --out RUNDIR`` (see docs/generate.md).
 Every stage writes ``RUNDIR/stages/N-NAME/receipt.json``; a stage never starts
 after an earlier failure. ``rung1-record.json`` says ``done: true`` only when the
-review verdict is ``criteria_satisfied`` and the fab exports exist and are nonempty.
+review verdict is ``criteria_satisfied``, the fab exports exist and are nonempty,
+and the CPL rotation status is in ``fab_package.DONE_ROTATION_STATUSES``.
 """
 import argparse
 import csv
@@ -20,7 +21,6 @@ import subprocess
 import sys
 import time
 import traceback
-import zipfile
 
 from . import executor
 from .storage import canonical, digest, write_json
@@ -32,12 +32,11 @@ RECEIPT_SCHEMA = 'agent-ee.rung1-stage-receipt/0-experimental'
 RECORD_SCHEMA = 'agent-ee.rung1-record/0-experimental'
 PARTS_SCHEMA = 'agent-ee.rung1-parts-manifest/0-experimental'
 PARAMETERS_SCHEMA = 'agent-ee.rung1-parameters/0-experimental'
-FAB_SCHEMA = 'agent-ee.rung1-fab-manifest/0-experimental'
 ENVELOPE_SCHEMA = 'agent-ee.rung1-envelope/0-experimental'
 STAGES = ((1, 'requirements'), (2, 'parts'), (3, 'schematic'), (4, 'placement'),
           (5, 'routing'), (6, 'review'), (7, 'fab'))
 STATUSES = ('ok', 'failed', 'not_reached', 'not_reached:review_skipped',
-            'not_reached:dependency_missing')
+            'not_reached:dependency_missing', 'PREVIEW_REQUIRED')
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 STOCK = Path('/usr/share/kicad')
@@ -56,7 +55,6 @@ FAMILIES = {
     'Device:R': {'pattern': r'Resistor_SMD:R_(\d{4,5})_\d{4,5}Metric', 'default': 'Resistor_SMD:R_0805_2012Metric'},
     'Device:C': {'pattern': r'Capacitor_SMD:C_(\d{4,5})_\d{4,5}Metric', 'default': 'Capacitor_SMD:C_0805_2012Metric'},
 }
-FAB_LAYERS = ('F.Mask', 'B.Mask', 'F.Paste', 'B.Paste', 'F.SilkS', 'B.SilkS', 'Edge.Cuts')
 NUMBER = r'(\d+(?:\.\d+)?)'
 NET = r'(/?[A-Za-z][A-Za-z0-9_]*)'
 # Each pattern must match exactly once in the spec; nothing is defaulted.
@@ -258,7 +256,7 @@ def validate_receipt(receipt):
     for command in receipt['commands']:
         if not isinstance(command.get('argv'), list) or 'exit_code' not in command:
             raise ValueError('command record requires argv and exit_code')
-    reached = receipt['status'] in ('ok', 'failed', 'not_reached:review_skipped')
+    reached = receipt['status'] in ('ok', 'failed', 'not_reached:review_skipped', 'PREVIEW_REQUIRED')
     if reached and not (receipt['started'] and receipt['finished']):
         raise ValueError('a reached stage needs started and finished timestamps')
     if receipt['status'] == 'failed' and not receipt['error']:
@@ -450,6 +448,17 @@ def stage_requirements(stage, state, options):
     template = json.loads(SCOPE_TEMPLATE.read_text())
     stage.input(SCOPE_TEMPLATE, 'scope/2 template')
     scope = compile_scope(template, params, PROJECT_NAME)
+    if options.get('cpl_inputs'):
+        from .fab_stage import copy_rotation_inputs, rotation_check
+        from .cpl_rotation import capability
+        captured = copy_rotation_inputs(options['cpl_inputs'], stage.rundir)
+        stage.input(options['cpl_inputs'], 'CPL policy and supplier source')
+        stage.output(captured, 'captured CPL policy and supplier footprints')
+        scope['inputs'].append({'path': '../generation', 'at': 'generation'})
+        files = {p.relative_to(stage.rundir).as_posix(): digest(p) for p in captured.rglob('*') if p.is_file()}
+        scope['baseline']['targets'] += capability(rotation_check(stage.rundir)['params'], files,
+                                                    stage.rundir)['immutable_inputs']
+        state['cpl_inputs'] = captured
     scope_path = stage.rundir / 'scope' / 'rung1.scope.json'
     write_json(scope_path, scope)
     stage.output(requirements, 'scope requirements')
@@ -1030,90 +1039,15 @@ def stage_review(stage, state, options):
 
 # ------------------------------------------------------------------ stage 7: fab package
 
-def copper_layers(board_text):
-    block = re.search(r'\n\t\(layers\n(.*?)\n\t\)', board_text, re.S)
-    if not block:
-        raise StageFailure('board has no layers block')
-    return re.findall(r'\(\d+ "([^"]+\.Cu)" (?:signal|power|mixed|jumper)', block[1])
-
-
-def jlcpcb_cpl(kicad_csv, excluded):
-    rows = list(csv.DictReader(io.StringIO(kicad_csv)))
-    if not rows or not {'Ref', 'PosX', 'PosY', 'Rot', 'Side'} <= set(rows[0]):
-        raise StageFailure('kicad-cli position file lacks Ref/PosX/PosY/Rot/Side columns')
-    out = io.StringIO()
-    writer = csv.writer(out, lineterminator='\n')
-    writer.writerow(['Designator', 'Mid X', 'Mid Y', 'Layer', 'Rotation'])
-    kept, dropped = [], []
-    for row in rows:
-        if row['Ref'] in excluded:
-            dropped.append(row['Ref'])
-            continue
-        side = {'top': 'Top', 'bottom': 'Bottom'}.get(row['Side'].strip().lower())
-        if side is None:
-            raise StageFailure('unknown side in position file: ' + row['Side'])
-        writer.writerow([row['Ref'], row['PosX'] + 'mm', row['PosY'] + 'mm', side, row['Rot']])
-        kept.append(row['Ref'])
-    return out.getvalue(), kept, dropped
-
-
-def jlcpcb_bom(kicad_csv, excluded):
-    rows = list(csv.reader(io.StringIO(kicad_csv)))
-    header = rows[0] if rows else []
-    if header != ['Comment', 'Designator', 'Footprint', 'LCSC Part #']:
-        raise StageFailure('kicad-cli BOM header differs: ' + repr(header))
-    out = io.StringIO()
-    writer = csv.writer(out, lineterminator='\n')
-    writer.writerow(header)
-    kept, dropped = [], []
-    for row in rows[1:]:
-        refs = [r.strip() for r in row[1].split(',') if r.strip()]
-        dropped += [r for r in refs if r in excluded]
-        refs = [r for r in refs if r not in excluded]
-        if refs:
-            if not re.fullmatch(r'C\d+', row[3]):
-                raise StageFailure(f'assembled BOM line {refs} has no LCSC part number')
-            writer.writerow([row[0], ','.join(refs), row[2], row[3]])
-            kept += refs
-    return out.getvalue(), kept, dropped
-
-
-def deterministic_zip(target, files):
-    with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for arcname, path in sorted(files.items()):
-            info = zipfile.ZipInfo(arcname, date_time=(2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, Path(path).read_bytes())
-
-
 def stage_fab(stage, state, options):
+    from .fab_stage import step
+    from .stage_receipts import run_step, validate_receipt as validate_stage_receipt
     name = state['name']
     source = Path(state['reviewed_inputs'])
     board, sch = source / 'project' / f'{name}.kicad_pcb', source / 'project' / f'{name}.kicad_sch'
-    if not board.is_file() or not sch.is_file():
-        raise StageFailure('reviewed candidate project is missing its board or schematic')
-    stage.input(board, 'reviewed board')
-    stage.input(sch, 'reviewed schematic')
-    stage.tool('kicad-cli')
-    stage.tool('bwrap')
-    layers = copper_layers(board.read_text()) + list(FAB_LAYERS)
-    manifest_parts = json.loads(Path(state['parts']).read_text())
-    excluded = {e['ref']: e for e in manifest_parts['assembly_exclusions']}
-    steps = {
-        'gerbers': ['kicad-cli', 'pcb', 'export', 'gerbers', '--layers', ','.join(layers),
-                    '-o', '/work/out/', f'/candidate/project/{name}.kicad_pcb'],
-        'drill': ['kicad-cli', 'pcb', 'export', 'drill', '--format', 'excellon', '--excellon-units', 'mm',
-                  '--excellon-separate-th', '-o', '/work/out/', f'/candidate/project/{name}.kicad_pcb'],
-        'pos': ['kicad-cli', 'pcb', 'export', 'pos', '--format', 'csv', '--units', 'mm', '--side', 'both',
-                '--exclude-dnp', '-o', '/work/out/positions.csv', f'/candidate/project/{name}.kicad_pcb'],
-        'bom': ['kicad-cli', 'sch', 'export', 'bom', '--fields', 'Value,Reference,Footprint,LCSC',
-                '--labels', 'Comment,Designator,Footprint,LCSC Part #', '--group-by', 'Value,Footprint,LCSC',
-                '--ref-delimiter', ',', '--ref-range-delimiter', '', '--exclude-dnp',
-                '-o', '/work/out/bom.csv', f'/candidate/project/{name}.kicad_sch'],
-    }
     variant = options.get('bom_variant')
     if variant is not None:
-        # kicad-cli silently exports the default for an undefined name (AGENTEE-66).
+        # AGENTEE-66 guard kept: kicad-cli silently exports the default for an undefined name.
         from .kicad_quirks import VariantError, validate_bom_variants
         pro = source / 'project' / f'{name}.kicad_pro'
         try:
@@ -1121,55 +1055,56 @@ def stage_fab(stage, state, options):
         except VariantError as exc:
             raise StageFailure(f'BOM variant {variant!r} refused before kicad-cli ran: {exc}') from exc
         stage.input(pro, 'reviewed project file (variant registry)')
-        steps['bom'][-1:-1] = ['--variant', variant]
-    package = stage.dir / 'package'
-    for sub in ('gerbers', 'drill'):
-        (package / sub).mkdir(parents=True)
-    for label, argv in steps.items():
-        work = stage.dir / 'steps' / label
-        (work / 'out').mkdir(parents=True)
-        seed_kicad_config(work, source)
-        result = stage.sandboxed(source, work, argv, timeout=600, label=label)
-        if result['exit_code'] != 0:
-            raise StageFailure(f'kicad-cli {label} export failed; see ' + stage.rel(work / 'console.log'))
-    gerbers = sorted((stage.dir / 'steps/gerbers/out').iterdir())
-    drills = sorted((stage.dir / 'steps/drill/out').iterdir())
-    for path in gerbers:
-        shutil.copyfile(path, package / 'gerbers' / path.name)
-    for path in drills:
-        shutil.copyfile(path, package / 'drill' / path.name)
-    cpl, cpl_kept, cpl_dropped = jlcpcb_cpl((stage.dir / 'steps/pos/out/positions.csv').read_text(), excluded)
-    bom, bom_kept, bom_dropped = jlcpcb_bom((stage.dir / 'steps/bom/out/bom.csv').read_text(), excluded)
-    (package / 'cpl.csv').write_text(cpl)
-    (package / 'bom.csv').write_text(bom)
-    deterministic_zip(package / f'{name}-gerbers.zip',
-                      {p.name: p for p in sorted((package / 'gerbers').iterdir()) + sorted((package / 'drill').iterdir())})
-    files = sorted(p for p in package.rglob('*') if p.is_file())
-    empty = [p.name for p in files if p.stat().st_size == 0]
-    manifest = {
-        'schema': FAB_SCHEMA, 'qualification': QUALIFICATION, 'producer': 'agent_ee.generate stage 7 (driver export)',
-        'qualified_check': 'AGENTEE-23 (fab_export check kind; patch attached there, not duplicated here)',
-        'board': {'path': stage.rel(board), 'sha256': digest(board)},
-        'schematic': {'path': stage.rel(sch), 'sha256': digest(sch)},
-        'kicad_cli': tool_identity('kicad-cli'), 'gerber_layers': layers,
-        'assembly_exclusions': list(excluded.values()),
-        'bom_designators': bom_kept, 'cpl_designators': cpl_kept,
-        'excluded_from_bom': bom_dropped, 'excluded_from_cpl': cpl_dropped,
-        'files': [{'path': str(p.relative_to(package)), 'bytes': p.stat().st_size, 'sha256': digest(p)} for p in files],
-        'limitations': ['Gerber and drill files embed creation timestamps; hashes bind these bytes only',
-                        'CPL rotations are KiCad-native; JLCPCB rotation correction is AGENTEE-72',
-                        'No DFM, layer reconciliation or Gerber re-parse (AGENTEE-73, AGENTEE-74, AGENTEE-76)']}
-    write_json(stage.dir / 'fab-manifest.json', manifest)
-    stage.output(package, 'fab package')
+    # The variant reaches the receipted step's fab_export check, which guards it again and passes
+    # it only to `kicad-cli sch export bom --variant`; the CPL stays the default variant.
+    spec = step(PACKAGE_ROOT, f'project/{name}.kicad_pcb', f'project/{name}.kicad_sch', variant)
+    receipt_dir = stage.dir / 'export-fab'
+    receipt = run_step(receipt_dir, source, spec, {'stage': 7, 'name': 'fab'})
+    validate_stage_receipt(receipt_dir)
+    stage.output(receipt_dir / 'receipt.json', 'fab stage receipt')
+    stage.receipt['details']['stage_receipt'] = stage.rel(receipt_dir / 'receipt.json')
+    record_step_commands(stage, receipt_dir, receipt)
+    if receipt['status'] != 'completed':
+        raise StageFailure(f"fab stage {receipt['status']} (exit {receipt['exit_code']}); see "
+                           + stage.rel(receipt_dir / 'run/console.log'))
+    out = receipt_dir / 'run/out'
+    manifest = json.loads((out / 'fab-manifest.json').read_text())
+    if (manifest.get('bom_variant') or {}).get('name') != variant:
+        raise StageFailure(f'fab stage did not honour the requested BOM variant {variant!r}')
+    if state.get('cpl_inputs'):
+        # The fab stage must consume exactly the policy stage 1 captured.
+        captured = digest(Path(state['cpl_inputs']) / 'jlc-cpl-policy.json')
+        if manifest['rotation']['policy']['sha256'] != captured:
+            raise StageFailure('fab stage consumed a CPL policy other than the one stage 1 captured')
+    copy_tree(out / 'fab', stage.dir / 'package')
+    shutil.copyfile(out / 'fab-manifest.json', stage.dir / 'fab-manifest.json')
+    stage.output(stage.dir / 'package', 'corrected fab package')
     stage.output(stage.dir / 'fab-manifest.json', 'fab manifest')
-    stage.receipt['details'].update(gerbers=len(gerbers), drills=len(drills), bom=bom_kept, cpl=cpl_kept,
-                                    excluded={'bom': bom_dropped, 'cpl': cpl_dropped})
-    stage.receipt['limitations'].append('This is the driver\'s export; the qualified check kind is AGENTEE-23.')
+    stage.receipt['details'].update(status=manifest['status'], physical_validation=False,
+                                    rotation=manifest['rotation'])
+    if variant is not None:
+        stage.receipt['details']['bom_variant_export'] = manifest['bom_variant']
     state['fab_manifest'] = stage.dir / 'fab-manifest.json'
-    if empty or len(gerbers) < len(layers) or not drills or not cpl_kept or not bom_kept:
-        raise StageFailure(f'fab package incomplete: empty={empty} gerbers={len(gerbers)} drills={len(drills)}')
-    if sorted(cpl_kept) != sorted(bom_kept):
-        raise StageFailure(f'BOM designators {bom_kept} differ from CPL designators {cpl_kept}')
+    state['fab_status'] = manifest['status']
+    return manifest['status']
+
+
+def record_step_commands(stage, receipt_dir, receipt):
+    """List the receipted step and the native fab_export commands it ran (records retained inside it)."""
+    stage.receipt['commands'].append({
+        'label': 'export-fab', 'argv': receipt['argv'], 'sandbox': 'bwrap', 'exit_code': receipt['exit_code'],
+        'execution': (receipt.get('execution') or {}).get('execution'), 'status': receipt['status'],
+        'stage_receipt': stage.rel(receipt_dir / 'receipt.json')})
+    result_path = receipt_dir / 'run/out/checks/checks/fab.json'
+    if not result_path.is_file():
+        return
+    steps = receipt_dir / 'run/out/checks/work/fab/steps'
+    for label, tool in json.loads(result_path.read_text()).get('details', {}).get('tools', {}).items():
+        stage.receipt['commands'].append({
+            'label': label, 'argv': tool['argv'], 'sandbox': 'bwrap', 'within': 'export-fab',
+            'exit_code': tool['exit_code'], 'duration_s': tool['duration_s'],
+            'console_sha256': tool['console_sha256'],
+            'execution_record': stage.rel(steps / label / 'execution.json')})
 
 
 STAGE_FUNCTIONS = {'requirements': stage_requirements, 'parts': stage_parts, 'schematic': stage_schematic,
@@ -1190,7 +1125,7 @@ def fab_exists(manifest_path):
 
 
 def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, max_seconds=2400, functions=None,
-             catalog_checkout=None, bom_variant=None):
+             catalog_checkout=None, bom_variant=None, cpl_inputs=None):
     """Run every stage in order; returns the rung-1 record."""
     rundir = Path(rundir)
     if rundir.exists():
@@ -1201,7 +1136,7 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
     functions = {**STAGE_FUNCTIONS, **(functions or {})}
     options = {'spec': str(Path(spec).absolute()), 'profile': str(Path(profile).absolute()) if profile else None,
                'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
-               'catalog_checkout': catalog_checkout, 'bom_variant': bom_variant}
+               'catalog_checkout': catalog_checkout, 'bom_variant': bom_variant, 'cpl_inputs': cpl_inputs}
     state, stages, blocked = {}, [], None
     for number, name in STAGES:
         stage = Stage(rundir, number, name)
@@ -1230,8 +1165,11 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
                        'receipt_sha256': digest(rundir / 'stages' / f'{number}-{name}' / 'receipt.json')})
     verdict = state.get('verdict')
     fab_ok = fab_exists(state.get('fab_manifest'))
-    # The gate is exactly the contract's: never relaxed, overridden or reinterpreted here.
-    done = verdict == 'criteria_satisfied' and fab_ok
+    # The gate is exactly the contract's: never relaxed, overridden or reinterpreted here. The
+    # rotation status is an allow-list (fab_package.DONE_ROTATION_STATUSES); unknown fails closed.
+    from .fab_package import rotation_blocker
+    blocker = rotation_blocker(state.get('fab_status')) if fab_ok else None
+    done = verdict == 'criteria_satisfied' and fab_ok and blocker is None
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, 'spec': {'path': options['spec'], 'sha256': digest(spec)},
               'options': {'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
                           'profile': options['profile'],
@@ -1240,12 +1178,14 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
               'generator': tool_identity('agent_ee'), 'stages': stages, 'verdict': verdict,
               'fab_manifest': ({'path': 'stages/7-fab/fab-manifest.json', 'sha256': digest(state['fab_manifest'])}
                                if state.get('fab_manifest') else None),
-              'fab_exports_exist': fab_ok, 'done': done,
+              'fab_exports_exist': fab_ok, 'fab_status': state.get('fab_status'),
+              'fab_rotation_blocker': blocker, 'done': done,
               # Every stage is an experimental driver step; placement in particular may be the
               # row stand-in rather than the landed placer (AGENTEE-109).
               'stage_qualification': {name: QUALIFICATION for _, name in STAGES},
               'placement': {'qualification': QUALIFICATION, 'placer': state.get('placer')},
-              'done_rule': 'campaign verdict criteria_satisfied AND fab exports exist and are nonempty'}
+              'done_rule': ('campaign verdict criteria_satisfied AND fab exports exist and are nonempty AND the '
+                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES')}
     write_json(rundir / 'rung1-record.json', record)
     return record
 
@@ -1255,6 +1195,7 @@ def main(argv=None):
     parser.add_argument('spec', type=Path)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path)
+    parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--skip-review', action='store_true')
     parser.add_argument('--stand-in-fixture', action='store_true',
                         help='use fixtures/rc/control when G1/G2 are absent (stages marked dependency_missing)')
@@ -1265,7 +1206,7 @@ def main(argv=None):
     try:
         record = generate(args.spec, args.out, profile=args.profile, skip_review=args.skip_review,
                           stand_in=args.stand_in_fixture, max_seconds=args.max_seconds,
-                          bom_variant=args.bom_variant)
+                          bom_variant=args.bom_variant, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, ValueError, OSError) as exc:
         parser.exit(2, f'generate refused: {exc}\n')
     for item in record['stages']:

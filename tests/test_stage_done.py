@@ -301,7 +301,10 @@ class DriverDoneTests(unittest.TestCase):
 
     def test_rung1_records_are_not_done_without_the_binding(self):
         from agent_ee import rung1_campaign as rc, rung1_qualified as rq
-        stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}}
+        # AGENTEE-126: fab artifacts carry the sealed CPL rotation status; a record without one is never done.
+        stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64},
+                  'rotation': {'status': 'not_declared'}}
+        native = {'rotation_status': 'not_declared'}
         unbound = {'required': True, 'stage_done': None, 'bound': False}
         bound = {'required': True, 'stage_done': {'schema': SCHEMA}, 'bound': True}
         with tempfile.TemporaryDirectory() as tmp:
@@ -313,11 +316,18 @@ class DriverDoneTests(unittest.TestCase):
                     # AGENTEE-95: the scaffold receipt binding remains a separate done term.
                     self.assertFalse(rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=stored,
                                                      recomputed=dict(stored), stage=stage, scaffold=None)['done'])
+                    # AGENTEE-126: the rotation status remains a separate done term.
+                    unstated = {k: v for k, v in stored.items() if k != 'rotation'}
+                    self.assertFalse(rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=unstated,
+                                                     recomputed=dict(unstated), stage=stage,
+                                                     scaffold={'bound': True})['done'])
                     self.assertIn('agent-ee.stage-done/1', record['done_rule'])
-                    record = rq.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0, stage=stage)
+                    record = rq.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0, fab=native, stage=stage)
                     self.assertEqual((record['done'], record['stage_receipts_done']), (done, stage))
+                    self.assertFalse(rq.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0, stage=stage)['done'])
                     self.assertIn('agent-ee.stage-done/1', record['done_rule'])
-            self.assertFalse(rq.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=1, stage=bound)['done'])
+            self.assertFalse(rq.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=1, fab=native,
+                                             stage=bound)['done'])
 
 
 class StageDoneCampaignTests(unittest.TestCase):

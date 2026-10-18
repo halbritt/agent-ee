@@ -48,6 +48,7 @@ One run of the check does three things in order, in its own workspace
     "work/fab/fab/gerbers.zip": "<sha256>",
     "work/fab/fab/manifest.json": "<sha256>"
   },
+  "rotation": {"status": "not_declared"},
   "artifacts_id": "<sha256 of the canonical record above>"
 }
 ```
@@ -70,7 +71,54 @@ baseline, and `verify` refuses the run if any of them changes.
 A missing, empty or unparseable export file is therefore always `unknown` or a
 `defect`, never `pass`. Outcome `pass` establishes that the package exists, is
 internally consistent with the captured design and is hash-bound. It does not
-establish DFM, CPL rotation correction (AGENTEE-72), stock or orderability.
+establish DFM, stock or orderability, nor, without a declared `cpl_rotation`
+check, CPL rotation correction.
+
+## CPL rotation
+
+When the scope declares a [`cpl_rotation`](cpl-rotation.md) check (AGENTEE-126),
+the done gate consumes its sealed result instead of sealing the native CPL. At
+most one may be declared; it precedes the gate (which is last) and needs its own
+earlier `fab_export` check, for example
+`netlist, geometry, fab-export (fab_export), cpl (cpl_rotation, export_check fab-export), fab (fab_package)`.
+Scope/3 coverage lists it as a prerequisite of the gate.
+
+After the export and the consistency gate pass, the gate requires that:
+
+- the `cpl_rotation` result is `ok`/`pass` for this candidate, and its report
+  has complete coverage;
+- the report digest equals the check's `details.report_sha256`;
+- the report's board digest and its native `cpl.csv` digest equal this gate's
+  own manifest (both exports are byte-identical on the same captured board);
+- the corrected `work/CPL/cpl/cpl.csv` equals the report's digest;
+- the status is `ok` or `PREVIEW_REQUIRED`, with `physical_validation` true
+  only for `ok`.
+
+The corrected `work/CPL/cpl/cpl.csv` then replaces `work/ID/fab/cpl.csv` in
+`files` (the native file stays in the package and its manifest), and the gate
+adds the corrected CPL and the report to its own evidence. `rotation` records
+the status, the check id, the policy id and sha256, the report path and
+digest, the corrected and native CPL digests and the applied/unmatched counts;
+the same record is `details.rotation`. Without a declared check `rotation` is
+`{"status": "not_declared"}`.
+
+| Condition | Result |
+| --- | --- |
+| Two `cpl_rotation` checks declared | `unsupported` (capability) |
+| The declared correction is a `defect` | `ok`, `defect`, summary `fab package done gate failed: cpl_rotation 'cpl' found a defect: ...` |
+| The declared correction did not pass (`unsupported`, `malformed`, ...) | `unsupported`, `unknown` |
+| Report, corrected CPL, board or native CPL binding disagrees | `malformed`, `unknown` |
+| Everything binds | `ok`, `pass`; summary ends `cpl rotation PREVIEW_REQUIRED` |
+
+The gate never upgrades a status. Whether a status may mark a generation
+done is `fab_package.DONE_ROTATION_STATUSES`, currently
+`{not_declared, ok}`, applied through `rotation_blocker` by the generator, the
+rung-1 campaign record and the qualified record. `PREVIEW_REQUIRED`, the only
+status `cpl_rotation` emits, therefore keeps `done` false with the reason
+`fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`. Any
+other or missing status also keeps it false. Accepting the unvalidated
+bottom-side transform is an owner decision; it is made by adding
+`PREVIEW_REQUIRED` to that one constant.
 
 ## Generation scopes
 
@@ -99,7 +147,8 @@ fab_package` on scope/3).
 
 The [rung-1 campaign](rung1-campaign.md) scaffold writes the marker, the
 `fab` check in its `verification` stage and requirement `R-fab`, sourced from
-`requirements/fab-package.md`.
+`requirements/fab-package.md`. With `--cpl-inputs` the scope instead ends with a
+`fab` stage holding `fab-export`, `cpl` and the `fab` done gate.
 
 ## Campaign state
 
@@ -116,14 +165,24 @@ state:
 
 ```text
 criteria_satisfied
+fab_rotation PREVIEW_REQUIRED policy <policy sha256>
+fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)
 fab_artifacts <artifacts_id> candidate <candidate_id>
 <sha256>  <run>/work/fab/fab/bom.csv
 ...
 ```
 
+The `fab_rotation` line is always printed (`fab_rotation not_declared policy
+None` without a declared check); the reason line follows only for a status
+outside `DONE_ROTATION_STATUSES`. The rotation record is part of the
+`artifacts_id`, so a forged status in the state is refused like a forged hash.
+
 The rung-1 record (`rung1-campaign-record.json`) copies `fab_artifacts` from
 the state and the hashes parsed from that verify-campaign output; `done`
-requires the `criteria_satisfied` verdict and the two to agree.
+requires the `criteria_satisfied` verdict, the two to agree, and the rotation
+status to be allowed (`fab_rotation`, `fab_rotation_blocker`). A record rebuilt
+from a state written before AGENTEE-126 has no rotation record and is never
+`done`.
 
 ## Tests
 
@@ -132,4 +191,11 @@ requires the `criteria_satisfied` verdict and the two to agree.
 (missing, empty and unparseable files, a dropped CPL row), refuses generation
 scopes without the done gate at capture, and runs a one-iteration generation
 campaign with scripted reviewer responses whose final state verify-campaign
-recomputes and whose tampering it refuses.
+recomputes and whose tampering it refuses. `RotationCompositionTests` run
+`fab-export`, `cpl_rotation` and the gate on the owned `fixtures/cpl-rotation`
+board: the corrected CPL is sealed with `PREVIEW_REQUIRED` and the policy
+digest, native/board/report/corrected-CPL disagreements are refused, a
+correction without a pass fails the gate, and two declared corrections are
+unsupported. A second generation campaign on that scope shows the named reason
+in verify-campaign output, keeps the rung-1 record not done, and becomes done
+only when the constant is patched to admit `PREVIEW_REQUIRED`.

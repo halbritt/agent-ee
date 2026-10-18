@@ -12,12 +12,13 @@ price queries, and it does not place an order.
 
 Parameters are `{"netlist_check": "<id>"}` plus an optional
 `"assembly_exclusion": "JLCPCB_Assembly=not_assembled"` (see
-[assembly exclusions](#assembly-exclusions)). The named check must be an
+[assembly exclusions](#assembly-exclusions)) and an optional
+`"bom_variant": "<name>"` (see [BOM variant](#bom-variant)). The named check must be an
 earlier `netlist` check in the same scope. Its result must be `execution=ok` for
 the same candidate, and its retained `design.xml` must match its
 `connectivity.json`. Otherwise the check is `not_run`. v1 refuses any other key,
-for example a layer or output override, and any other exclusion rule text, as
-`unsupported`. In scope/3 the check
+for example a layer or output override, any other exclusion rule text and an
+empty or padded variant name, as `unsupported`. In scope/3 the check
 declares the predicate `fab-export:jlcpcb-package/1`, so it must be mapped to an
 acceptance requirement. The board stays mutable candidate input. A captured
 `.kicad_pro` next to the board becomes an immutable dependency.
@@ -35,6 +36,7 @@ timestamp normalisation) as evidence:
 | `gerbers` | `pcb export gerbers -o /work/out/ --layers <copper>,F.Mask,B.Mask,F.Paste,B.Paste,F.SilkS,B.SilkS,Edge.Cuts BOARD` |
 | `drill` | `pcb export drill -o /work/out/ --format excellon --excellon-units mm --excellon-separate-th --generate-map --map-format gerberx2 BOARD` |
 | `pos` | `pcb export pos -o /work/out/pos.csv --side both --format csv --units mm --exclude-dnp BOARD` |
+| `bom` (only with `bom_variant`) | `sch export bom --fields Reference,Value,Footprint,LCSC,Manufacturer,Partnumber,PartNumber --labels <same> --ref-range-delimiter '' --exclude-dnp -o /work/out/bom.csv --variant NAME SCHEMATIC` |
 
 The copper list follows the board's layer table: `F.Cu`, `In1.Cu`…`In(n-2).Cu`,
 `B.Cu`. The count comes from the layer table, and the native Gerber job file
@@ -156,6 +158,32 @@ A declared rule that matches no part is recorded in the manifest
 (`exclusion_rule`) with an empty `excluded` list, and the package is otherwise
 unchanged.
 
+#### BOM variant
+
+A declared `"bom_variant": "NAME"` (the generator's `--bom-variant`,
+AGENTEE-66) exports the BOM of one design variant. Before any kicad-cli command
+the check runs `kicad_quirks.validate_bom_variants` on the captured project file
+(the scope schematic with `.kicad_pro`) and every netlist schematic. An
+unregistered name, an uncaptured or unreadable project file, or an unloadable
+variant clause is `unsupported` ("refused before kicad-cli ran"), because
+kicad-cli would silently export the default
+([quirk guards](kicad-quirks.md#bom-variant-names)). With the parameter,
+schematic variant clauses are allowed; without it they are refused.
+
+The name reaches only the `bom` step. `bom.csv` is built from that ungrouped
+native export with the same grouping, ASCII and binding rules as the default
+BOM, so variant field overrides (for example a part number) are honoured. Rule
+exclusions are still decided on the default netlist and board. Positions stay
+the default variant, so `cpl.csv` is the default CPL. A variant whose assembled
+designators differ from the default assembled set is refused as `unsupported`
+by name: `BOM variant 'NAME' changes the populated set (adds [...], removes
+[...])`, with `details.bom_variant.populated_set_change`. A schematic/board DNP
+disagreement also reads as a populated-set change, because the native BOM
+follows the schematic flags. The manifest gains `bom_variant` (name, project
+path and sha256, registered names, native BOM sha256 and the designators whose
+binding the variant changed). The raw native BOM stays step evidence. A run
+without the parameter writes no `bom_variant` key.
+
 ### CPL
 
 The native position file is rewritten: `Ref`→`Designator`, `PosX`→`Mid X`,
@@ -222,7 +250,8 @@ evidence, for example the BOM with flagged rows.
 Unsupported in v1: copper counts other than an even 2–32 with contiguous inner
 layers; a missing mask, paste, silkscreen or `Edge.Cuts` layer; blind, buried or
 micro vias; drill spans other than `F.Cu..B.Cu`; castellated or press-fit pads;
-a missing board outline; assembly variants on the board or schematic; duplicate
+a missing board outline; assembly variants on the board, or on the schematic
+without a declared `bom_variant`; duplicate
 or non-plain references; and populated footprints or symbols marked `board_only`,
 `exclude_from_bom`, `exclude_from_pos_files` or `exclude_from_board` (the
 declared `JLCPCB_Assembly` rule is the supported way to keep a populated part
@@ -265,6 +294,10 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
   outputs;
 - a real `kicad-cli` nonzero exit;
 - a blind via and a non-DNP exclusion;
+- a declared `bom_variant`: the name reaches only the native BOM export, a field
+  override reaches `bom.csv`, the CPL equals the unvaried export, the manifest
+  records the variant; a variant that drops a part is refused by name; an
+  unregistered name or an uncaptured project file is refused before kicad-cli;
 - prerequisite and parameter boundaries, and manifest tampering.
 
 The native tests need Bubblewrap and `kicad-cli` in the sandbox. They skip when

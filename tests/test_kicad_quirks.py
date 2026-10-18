@@ -322,6 +322,20 @@ class GeneratorBomVariantTest(unittest.TestCase):
         parts.write_text(json.dumps({'assembly_exclusions': []}))
         self.state = {'name': 'fab', 'reviewed_inputs': source, 'parts': parts}
 
+    def capture_cpl_inputs(self):
+        """Stage 7 fails closed without a captured CPL policy (AGENTEE-126); for a run that must
+        reach the exports, swap in the owned CPL fixture design under the same names, with its
+        policy and supplier captures as stage 1 copies them."""
+        from agent_ee import fab_stage
+        try:
+            from test_fab_stage import FIXTURE, rotation_inputs
+        except ImportError:  # run as tests.test_kicad_quirks from the repository root
+            from tests.test_fab_stage import FIXTURE, rotation_inputs
+        source = self.state['reviewed_inputs']
+        for suffix in ('kicad_pcb', 'kicad_sch'):
+            shutil.copyfile(FIXTURE / f'cpl.{suffix}', source / f'project/fab.{suffix}')
+        self.state['cpl_inputs'] = fab_stage.copy_rotation_inputs(rotation_inputs(self.root / 'cpl-source'), source)
+
     def stage_fab(self, variant):
         stage = g.Stage(self.root / 'run', 7, 'fab')
         stage.start()
@@ -347,6 +361,7 @@ class GeneratorBomVariantTest(unittest.TestCase):
 
     def test_registered_variant_reaches_the_native_bom_export(self):
         require_toolchain(native=True)
+        self.capture_cpl_inputs()
         stage, error = self.stage_fab('FULL')
         self.assertIsNone(error)
         self.assertEqual(stage.receipt['details']['bom_variant']['registered'], ['FULL'])

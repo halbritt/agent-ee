@@ -10,8 +10,9 @@ experimental stand-in with the owned module now on main:
 - placement: the campaign ``placement_adapter`` (AGENTEE-91) with the pinned placer helper
   ``placer_runner`` (AGENTEE-54); no row fallback;
 - routing: ``routing_adapter.step`` (AGENTEE-93) on the pinned kicad-route checkout;
-- fab: the ``fab_export`` (AGENTEE-23) and ``fab_consistency`` (AGENTEE-73) checks, so "done"
-  is the campaign verdict alone.
+- fab: the ``fab_export`` (AGENTEE-23) and ``fab_consistency`` (AGENTEE-73) checks and, with a
+  ``--cpl-inputs`` capture, ``cpl_rotation`` with a receipted export step (AGENTEE-126); a
+  rotation status outside ``fab_package.DONE_ROTATION_STATUSES`` keeps "done" false.
 
 The driver's own records are ``qualification: experimental-unqualified``; checks and receipts
 are the owned ones. Where an owned module cannot do its job headlessly, the exact refusal is
@@ -62,7 +63,7 @@ OWNED = {
                'AGENTEE-41, AGENTEE-102'),
     'placement_checks': ('placement check kind (courtyard-overlap/1, outline-containment/1)', 'AGENTEE-92'),
     'part_binding': ('part_binding check', 'AGENTEE-32'),
-    'fab': ('fab_export + fab_consistency checks', 'AGENTEE-23, AGENTEE-73'),
+    'fab': ('fab_export + fab_consistency + cpl_rotation checks', 'AGENTEE-23, AGENTEE-73, AGENTEE-126'),
     'staging': ('stages.py staged scope + stage_receipts + campaign step plan', 'AGENTEE-48/88, AGENTEE-95'),
 }
 FOOTPRINT_LIBRARIES = ('Resistor_SMD', 'Capacitor_SMD', 'Connector_PinHeader_2.54mm')
@@ -90,6 +91,9 @@ R-assembly: Populated parts must resolve to the captured catalog with complete B
 
 R-packages: Assigned footprints must agree with catalog packages through the captured package map. Unmapped names remain missing coverage.
 """
+# Appended to qualified.md, and the cpl_rotation check declared, only for a --cpl-inputs capture (AGENTEE-126).
+CPL_REQUIREMENT_TEXT = ('\nR-cpl: The exported CPL must carry rotations and midpoints checked against captured '
+                        'policy and supplier footprints. Physical JLCPCB preview remains required.\n')
 
 
 class PrepareFailure(Exception):
@@ -387,7 +391,8 @@ def write_scaffold(rundir, prep):
     # Requirements.
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(rc.REVIEW_CONVENTIONS)
-    (scaffold / 'requirements' / 'qualified.md').write_text(QUALIFIED_REQUIREMENTS)
+    (scaffold / 'requirements' / 'qualified.md').write_text(
+        QUALIFIED_REQUIREMENTS + (CPL_REQUIREMENT_TEXT if prep.get('cpl_inputs') else ''))
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
     footprints = footprint_manifest(prep['parts']['parts'])
@@ -402,6 +407,8 @@ def write_scaffold(rundir, prep):
     resolved = resolve_intent(intent, intent_captures(intent))
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
         raise PrepareFailure('qualified intent did not resolve: ' + json.dumps(resolved['findings'])[:2000])
+    if prep.get('cpl_inputs'):
+        shutil.copytree(prep['cpl_inputs'], generation / 'cpl')
     write_json(generation / 'intent.json', intent)
     write_json(generation / 'layout.json', layout())
     shutil.copyfile(prep['parts_path'], generation / 'parts-manifest.json')
@@ -443,6 +450,7 @@ def write_scaffold(rundir, prep):
 
 def compile_staged_scope(params, scope_dir, scaffold):
     """scope/2 from the closed-loop control template plus the owned check kinds and stages/1."""
+    from .fab_stage import CPL_ROOT, rotation_check
     template = json.loads(g.SCOPE_TEMPLATE.read_text())
     scope = g.compile_scope(template, params, NAME)
     base = Path(scope_dir)
@@ -496,6 +504,13 @@ def compile_staged_scope(params, scope_dir, scaffold):
              ('R-binding', ['binding'], 'R1 and C1 carry a valid, consistent LCSC binding'),
              ('R-fab', ['fab'], 'A JLCPCB fab package is exported from the captured board'),
              ('R-fab-consistency', ['fab-consistency'], 'The fab package describes the captured board')]
+    if (scaffold / CPL_ROOT).is_dir():
+        # Decision C: the correction, and its captured inputs, are required only when declared.
+        scope['checks'].append({**rotation_check(scaffold), 'stage': 'fab'})
+        scope['scope'] += (' The CPL is corrected by cpl_rotation from the captured policy and supplier '
+                           'footprints; physical preview remains required.')
+        extra.append(('R-cpl', ['cpl'], 'The CPL carries policy- and supplier-frame-checked rotations; '
+                                        'preview required'))
     requirements = scope['baseline']['requirements']
     for requirement in requirements:
         if requirement['id'] == 'R-native':
@@ -625,13 +640,17 @@ def schematic_step_specs(*, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
     ]
 
 
-def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
-    """Coordinator steps: the schematic turn and the routing adapter."""
+def step_specs(kicad_route, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR, fab=False):
+    """Coordinator steps: the schematic turn, the routing adapter and, with a declared cpl_rotation
+    check (`fab`), the receipted fab export and CPL correction."""
     from .routing_adapter import step as routing_step
-    return schematic_step_specs(source_root=source_root, steps_dir=steps_dir) + [
+    from .fab_stage import step as fab_step
+    steps = schematic_step_specs(source_root=source_root, steps_dir=steps_dir) + [
         routing_step(project='project', board=f'{NAME}.kicad_pcb', schematic=f'{NAME}.kicad_sch', name=NAME,
-                     label='krt', checkout=kicad_route, budget=300),
-    ]
+                     label='krt', checkout=kicad_route, budget=300)]
+    if fab:
+        steps.append(fab_step(source_root, f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'))
+    return steps
 
 
 def placement_declaration():
@@ -726,8 +745,8 @@ def registration_probes(rundir, scope):
 
 # ------------------------------------------------------------------ preparation
 
-def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None):
-    prep = rc.prepare(spec, rundir, catalog_checkout, parts_manifest)
+def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs=None):
+    prep = rc.prepare(spec, rundir, catalog_checkout, parts_manifest, cpl_inputs)
     dialog = Path(rundir) / 'prep' / 'stages' / '1-requirements' / 'dialog' / 'requirements.json'
     if not dialog.is_file():
         found = sorted((Path(rundir) / 'prep').rglob('dialog/requirements.json'))
@@ -738,9 +757,10 @@ def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None):
     return prep
 
 
-def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, parts_manifest=None):
+def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, parts_manifest=None,
+          cpl_inputs=None):
     rundir = Path(rundir).absolute()
-    prep = prepare(spec, rundir, parts_manifest=parts_manifest)
+    prep = prepare(spec, rundir, parts_manifest=parts_manifest, cpl_inputs=cpl_inputs)
     catalog = ({'status': 'captured', 'catalog': prep['parts']['catalog']}
                if 'approved_bundle' in prep['parts'] else catalog_attempt(prep, rundir / 'parts-catalog'))
     scaffold, scaffold_record = write_scaffold(rundir, prep)
@@ -754,7 +774,8 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
     probes = registration_probes(rundir, scope)
     write_json(rundir / 'probes.json', probes)
     profile = read_json(profile_path)
-    steps = check_steps(step_specs(kicad_route), scope['mutable_inputs'])
+    steps = check_steps(step_specs(kicad_route, fab=any(c['kind'] == 'cpl_rotation' for c in scope['checks'])),
+                        scope['mutable_inputs'])
     config = campaign_config(scope_path, profile, steps, max_seconds=max_seconds, max_iterations=max_iterations)
     from .profiles import validate_profile
     validate_profile(config['review_profile'])
@@ -934,16 +955,55 @@ def dry_run(rundir, scope_path, config_path):
 # ------------------------------------------------------------------ records
 
 def fab_outcome(run):
-    """The fab_export check's manifest in one review run, verified with the owned verify_manifest."""
+    """The fab outcome of one review run.
+
+    Without a declared cpl_rotation check: the fab_export check's manifest, verified with the owned
+    verify_manifest, and rotation status `not_declared`. With one: the sealed CPL report, and a
+    corrected package derived only from complete passing coverage.
+    """
     run = Path(run)
+    scope = read_json(run / 'candidate.json')['scope']
+    if not any(c.get('kind') == 'cpl_rotation' for c in scope['checks']):
+        return native_fab_outcome(run)
+    from .fab_stage import package
+    report_path = run / 'work/cpl/cpl-rotation.json'
+    if not report_path.is_file():
+        return {'manifest': None, 'rotation_status': 'unknown', 'error': 'CPL rotation evidence is missing'}
+    report = read_json(report_path)
+    entry = {'manifest': None, 'rotation_status': report['status'],
+             'physical_validation': report['physical_validation'],
+             'execution': report['execution'], 'outcome': report['outcome']}
+    if (report['execution'], report['outcome'], report['coverage']) != ('ok', 'pass', 'complete'):
+        return entry
+    out = run.parent.parent.parent / 'fab-packages' / run.name
+    out.mkdir(parents=True, exist_ok=True)
+    manifest_path = out / 'fab-manifest.json'
+    if not manifest_path.is_file():
+        package(run, out / 'fab', manifest_path)
+    data = read_json(manifest_path)
+    files = [{'path': p.relative_to(out / 'fab').as_posix(), 'bytes': p.stat().st_size, 'sha256': digest(p)}
+             for p in sorted((out / 'fab').rglob('*')) if p.is_file()]
+    if (data['files'] != files or data['rotation']['report_sha256'] != digest(report_path)
+            or data['status'] != report['status']
+            or data['physical_validation'] is not report['physical_validation']):
+        raise ValueError('derived fab package differs from its checked rotation evidence')
+    entry.update(manifest=str(manifest_path), sha256=digest(manifest_path), files=len(data['files']),
+                 board_sha256=data['board']['sha256'], rotation=data['rotation'])
+    return entry
+
+
+def native_fab_outcome(run):
+    """The fab_export check's manifest in one review run, verified with the owned verify_manifest."""
     manifest = run / 'work' / 'fab' / 'fab' / 'manifest.json'
     if not manifest.is_file():
         incomplete = run / 'work' / 'fab' / 'fab.incomplete'
-        return {'manifest': None, 'incomplete_staging': incomplete.is_dir() and sorted(
-            p.relative_to(incomplete).as_posix() for p in incomplete.rglob('*') if p.is_file())}
+        return {'manifest': None, 'rotation_status': 'not_declared',
+                'incomplete_staging': incomplete.is_dir() and sorted(
+                    p.relative_to(incomplete).as_posix() for p in incomplete.rglob('*') if p.is_file())}
     data = read_json(manifest)
     entry = {'manifest': str(manifest), 'sha256': digest(manifest), 'files': len(data.get('files', {})),
-             'board_sha256': data.get('board_sha256'), 'designators': data.get('designators')}
+             'board_sha256': data.get('board_sha256'), 'designators': data.get('designators'),
+             'rotation_status': 'not_declared'}
     try:
         from .fab_export import verify_manifest
         verify_manifest(manifest.parent)
@@ -982,19 +1042,29 @@ def campaign_record(rundir, base, command):
 
 
 def write_record(rundir, base, *, verdict=None, verify_exit=None, fab=None, stage=None):
-    done = verdict == 'criteria_satisfied' and verify_exit == 0 and (stage is None or stage['bound'])
+    from .fab_package import rotation_blocker
+    blocker = None
+    if verdict == 'criteria_satisfied' and verify_exit == 0:
+        status = (fab or {}).get('rotation_status')
+        blocker = rotation_blocker(status)
+        if blocker is None and status != 'not_declared' and fab.get('manifest') is None:
+            blocker = 'fab: the corrected fab package was not derived'
+    done = (verdict == 'criteria_satisfied' and verify_exit == 0 and blocker is None
+            and (stage is None or stage['bound']))
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
-              'fab_manifest': fab, 'stage_receipts_done': stage, 'done': done,
+              'fab_manifest': fab, 'fab_rotation_blocker': blocker, 'stage_receipts_done': stage, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied and verify-campaign exit 0; the fab package is '
-                            'graded inside the check set by fab_export and fab_consistency; with declared stage '
-                            'steps, the final state lists the agent-ee.stage-done/1 binding verify-campaign '
-                            "recomputed: each declared stage's graded content is its step receipt output "
-                            '(decision 1 amendment)')}
+                            'graded inside the check set by fab_export and fab_consistency, and by cpl_rotation '
+                            'when declared; the rotation status must be in fab_package.DONE_ROTATION_STATUSES; '
+                            'with declared stage steps, the final state lists the agent-ee.stage-done/1 binding '
+                            "verify-campaign recomputed: each declared stage's graded content is its step "
+                            'receipt output (decision 1 amendment)')}
     write_json(Path(rundir) / 'rung1-qualified-record.json', record)
     return record
 
 
-def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, max_iterations, parts_manifest=None):
+def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, max_iterations, parts_manifest=None,
+        cpl_inputs=None):
     rundir = Path(rundir).absolute()
     if rundir.exists():
         raise FileExistsError(f'{rundir} exists; choose a fresh run directory')
@@ -1002,7 +1072,7 @@ def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, m
     try:
         base, scope_path, config_path = build(spec, rundir, profile_path=profile_path, kicad_route=kicad_route,
                                               max_seconds=max_seconds, max_iterations=max_iterations,
-                                              parts_manifest=parts_manifest)
+                                              parts_manifest=parts_manifest, cpl_inputs=cpl_inputs)
     except (PrepareFailure, rc.PrepareFailure, ValueError, OSError) as exc:
         return write_record(rundir, {'mode': 'dry_run' if dry_run_only else 'campaign',
                                      'error': f'{type(exc).__name__}: {exc}'})
@@ -1023,6 +1093,7 @@ def main(argv=None):
     parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
                         help='kicad-route checkout at the adapter pin 08179cd with vendor/krt and .venv-krt '
                              '(default: $AGENT_EE_KICAD_ROUTE_CHECKOUT, else /opt/kicad-route)')
+    parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',
                         help='scaffold, scope, config and registration probes; checks-only reviews and a step '
                              'rehearsal; no inference')
@@ -1034,7 +1105,7 @@ def main(argv=None):
     try:
         record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
                      dry_run_only=args.dry_run, max_seconds=args.max_seconds, max_iterations=args.max_iterations,
-                     parts_manifest=args.parts_manifest)
+                     parts_manifest=args.parts_manifest, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_qualified refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'done')}))

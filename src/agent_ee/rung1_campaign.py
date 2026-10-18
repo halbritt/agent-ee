@@ -48,6 +48,12 @@ FAB_PACKAGE_TEXT = ('# Fab package requirement\n\nR-fab: The accepted candidate 
                     'kicad-cli from the captured board and schematic, with no fab consistency defect or coverage gap. '
                     'This establishes package existence and internal consistency, not DFM, CPL rotation policy, '
                     'stock or orderability.\n')
+# Declared only when --cpl-inputs captured a rotation policy and supplier set (AGENTEE-126).
+CPL_REQUIREMENT = {'id': 'R-cpl', 'statement': 'Export the board and correct its CPL from captured policy and '
+                   'supplier frames', 'source': {'path': 'requirements/fab.md', 'locator': 'R-cpl'},
+                   'checks': ['fab-export', 'cpl']}
+CPL_REQUIREMENT_TEXT = ('R-cpl: Export the captured board with policy- and supplier-checked CPL rotations. '
+                        'Physical preview remains required.\n')
 # kicad-route: 0 complete and valid; 2 valid but incomplete; 3 fails validation (never adoptable).
 NEVER_ADOPTABLE = {'routing': {1, 2, 3, 4}}
 MOUNT_STEPS, MOUNT_SOURCE, MOUNT_ROUTE = '/tool/steps', '/tool/agent-ee', '/tool/kicad-route'
@@ -63,12 +69,12 @@ class PrepareFailure(Exception):
 
 # ------------------------------------------------------------------ preparation (immutable inputs)
 
-def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None):
+def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs=None):
     """Stage 1 and 2 of agent_ee.generate, then intent, resolved record, envelope and request."""
     from .connectivity_ir import canonical_resolved, resolve_intent, validate_resolved
     prep = Path(rundir) / 'prep'
     state, options = {}, {'spec': str(Path(spec).absolute()), 'catalog_checkout': catalog_checkout,
-                         'parts_manifest': parts_manifest}
+                         'parts_manifest': parts_manifest, 'cpl_inputs': cpl_inputs}
     receipts = []
     for number, name, function in ((1, 'requirements', g.stage_requirements), (2, 'parts', g.stage_parts)):
         stage = g.Stage(prep, number, name)
@@ -100,7 +106,7 @@ def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None):
             'requirements': prep / 'requirements', 'intent': intent,
             'resolved_bytes': canonical_resolved(resolved) + b'\n', 'resolved': resolved,
             'envelope': g.envelope(params), 'request': request, 'prep_receipts': receipts,
-            'catalog': parts['catalog']}
+            'catalog': parts['catalog'], 'cpl_inputs': state.get('cpl_inputs')}
 
 
 def rel(path, root):
@@ -285,7 +291,11 @@ def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DI
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(REVIEW_CONVENTIONS)
     (scaffold / 'requirements' / 'fab-package.md').write_text(FAB_PACKAGE_TEXT)
+    if prep.get('cpl_inputs'):
+        (scaffold / 'requirements' / 'fab.md').write_text(CPL_REQUIREMENT_TEXT)
     generation.mkdir()
+    if prep.get('cpl_inputs'):
+        shutil.copytree(prep['cpl_inputs'], generation / 'cpl')
     write_json(generation / 'intent.json', prep['intent'])
     (generation / 'resolved.json').write_bytes(prep['resolved_bytes'])
     shutil.copyfile(prep['parts_path'], generation / 'parts-manifest.json')
@@ -397,6 +407,7 @@ def scaffold_load_checks(rundir, scaffold):
 
 def compile_staged_scope(params, scope_dir, scaffold):
     """scope/2 from the closed-loop control template with an agent-ee.stages/1 declaration."""
+    from .fab_stage import CPL_ROOT, rotation_check
     template = json.loads(g.SCOPE_TEMPLATE.read_text())
     scope = g.compile_scope(template, params, NAME)
     base = Path(scope_dir)
@@ -424,11 +435,25 @@ def compile_staged_scope(params, scope_dir, scaffold):
     if set(by_id) != set(CHECK_STAGES):
         raise PrepareFailure(f'scope template checks {sorted(by_id)} differ from {sorted(CHECK_STAGES)}')
     scope['checks'] = [{**by_id[cid], 'stage': stage} for cid, stage in CHECK_STAGES.items()]
-    scope['checks'].append(json.loads(json.dumps(DONE_CHECK)))
+    done_check = json.loads(json.dumps(DONE_CHECK))
+    order = list(STAGE_ORDER)
+    if (scaffold / CPL_ROOT).is_dir():
+        # A --cpl-inputs capture declares the correction (AGENTEE-126): export, correct, then the done
+        # gate, which seals the corrected CPL; all three are the final `fab` stage.
+        cpl = rotation_check(scaffold)
+        cpl['params']['export_check'] = 'fab-export'
+        scope['checks'] += [
+            {'id': 'fab-export', 'kind': 'fab_export', 'stage': 'fab', 'params': {'netlist_check': 'netlist'}},
+            {**cpl, 'stage': 'fab'}]
+        scope['baseline']['requirements'].append(json.loads(json.dumps(CPL_REQUIREMENT)))
+        scope['requirements'].append('requirements/fab.md')
+        done_check['stage'] = 'fab'
+        order.append('fab')
+    scope['checks'].append(done_check)
     scope['baseline']['requirements'].append(json.loads(json.dumps(FAB_REQUIREMENT)))
     scope['generation'] = {'schema': 'agent-ee.generation/1', 'done_check': DONE_CHECK['id']}
     scope['stages'] = {
-        'schema': 'agent-ee.stages/1', 'order': list(STAGE_ORDER),
+        'schema': 'agent-ee.stages/1', 'order': order,
         'subjects': {
             'schematic': {'path': scope['schematic'], 'kind': 'symbols',
                           'references': [params['resistor']['ref'], params['capacitor']['ref'],
@@ -469,6 +494,7 @@ def validate_scope_file(scope_path):
 
 def step_specs(source_root, steps_dir, kicad_route):
     """agent-ee.stage-step/1 declarations; mounts are read-only and outside reserved sandbox paths."""
+    from .fab_stage import step as fab_step
     source = {'source': str(Path(source_root)), 'at': MOUNT_SOURCE}
     steps = {'source': str(Path(steps_dir)), 'at': MOUNT_STEPS}
     route = {'source': str(Path(kicad_route)), 'at': MOUNT_ROUTE}
@@ -501,15 +527,7 @@ def step_specs(source_root, steps_dir, kicad_route):
          'writes': {board: f'out/candidate/{NAME}.kicad_pcb'},
          'artifacts': ['out/result.json', 'out/route'],
          'adoptable_exits': [0], 'timeout_s': 1500},
-        {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'export-fab',
-         'argv': ['/usr/bin/python3', '-B', '-P', f'{MOUNT_STEPS}/fab.py', NAME],
-         'mounts': [steps, source], 'source': MOUNT_SOURCE,
-         'version_argv': ['/usr/bin/kicad-cli', 'version'],
-         # validate_step requires a write; the fab step rewrites nothing, so it declares the
-         # board in place and the receipt shows it unchanged.
-         'writes': {board: f'design/{board}'},
-         'artifacts': ['out/fab-manifest.json', 'out/fab', 'out/raw'],
-         'adoptable_exits': [0], 'timeout_s': 600},
+        fab_step(source_root, board, sch),
     ]
 
 
@@ -634,7 +652,9 @@ def fab_package(receipt_dir):
     ok = bool(files) and all((run / 'fab' / f['path']).is_file() and (run / 'fab' / f['path']).stat().st_size > 0
                              and digest(run / 'fab' / f['path']) == f['sha256'] for f in files)
     return {'path': str(manifest_path), 'sha256': digest(manifest_path), 'files': len(files),
-            'exports_exist': ok, 'board_sha256': manifest.get('board', {}).get('sha256'),
+            'exports_exist': ok, 'status': manifest.get('status'),
+            'physical_validation': manifest.get('physical_validation'),
+            'board_sha256': manifest.get('board', {}).get('sha256'),
             'schematic_sha256': manifest.get('schematic', {}).get('sha256'),
             'bom_designators': manifest.get('bom_designators'), 'cpl_designators': manifest.get('cpl_designators'),
             'assembly_exclusions': manifest.get('assembly_exclusions')}
@@ -696,18 +716,24 @@ def artifacts_agree(stored, recomputed):
 
 
 def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None, scaffold=None, stage=None):
+    from .fab_package import rotation_blocker
     exists = bool(fab and fab['exports_exist'])
     verified = artifacts_agree(fab_artifacts, recomputed)
     scaffold_bound = bool(scaffold and scaffold.get('bound'))
-    done = verdict == 'criteria_satisfied' and verified and scaffold_bound and (stage is None or stage['bound'])
+    rotation = (fab_artifacts or {}).get('rotation') or {}
+    blocker = rotation_blocker(rotation.get('status')) if verified else None
+    done = (verdict == 'criteria_satisfied' and verified and scaffold_bound and blocker is None
+            and (stage is None or stage['bound']))
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
               'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_artifacts': fab_artifacts,
               'fab_artifacts_recomputed_by_verify_campaign': recomputed, 'fab_artifacts_verified': verified,
+              'fab_rotation': rotation or None, 'fab_rotation_blocker': blocker,
               'scaffold_receipt_binding': scaffold, 'stage_receipts_done': stage, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied AND the final campaign state lists the fab '
                             'artifact hashes of the passing fab_package done check AND verify-campaign recomputed '
                             'the same hashes from the retained run AND the scaffold receipt\'s after-tree is exactly the '
-                            'first captured candidate on project/, generation/ and requirements/ AND, with declared '
+                            'first captured candidate on project/, generation/ and requirements/ AND the sealed '
+                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES AND, with declared '
                             'stage steps, the final state lists the agent-ee.stage-done/1 binding verify-campaign '
                             "recomputed: each declared stage's graded content is its step receipt output "
                             '(decision 1 amendment)')}
@@ -717,9 +743,9 @@ def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, re
 
 # ------------------------------------------------------------------ driver
 
-def build(spec, rundir, *, profile_path, kicad_route, catalog_checkout=None, max_seconds=3600):
+def build(spec, rundir, *, profile_path, kicad_route, catalog_checkout=None, max_seconds=3600, cpl_inputs=None):
     rundir = Path(rundir).absolute()
-    prep = prepare(spec, rundir, catalog_checkout)
+    prep = prepare(spec, rundir, catalog_checkout, cpl_inputs=cpl_inputs)
     scaffold, scaffold_record = write_scaffold(rundir, prep)
     loads = scaffold_load_checks(rundir, scaffold)
     if not all(entry['loaded'] for entry in loads.values()):
@@ -793,14 +819,16 @@ def rehearse(rundir, scope_path, config_path, review_run):
     return receipts, rehearsal_scope, fab
 
 
-def run(spec, rundir, *, profile_path, kicad_route, dry_run, catalog_checkout=None, max_seconds=3600):
+def run(spec, rundir, *, profile_path, kicad_route, dry_run, catalog_checkout=None, max_seconds=3600,
+        cpl_inputs=None):
     rundir = Path(rundir).absolute()
     if rundir.exists():
         raise FileExistsError(f'{rundir} exists; choose a fresh run directory')
     rundir.mkdir(parents=True)
     try:
         base, scope_path, config_path = build(spec, rundir, profile_path=profile_path, kicad_route=kicad_route,
-                                              catalog_checkout=catalog_checkout, max_seconds=max_seconds)
+                                              catalog_checkout=catalog_checkout, max_seconds=max_seconds,
+                                              cpl_inputs=cpl_inputs)
     except (PrepareFailure, ValueError, OSError) as exc:
         failed = {'mode': 'dry_run' if dry_run else 'campaign', 'error': f'{type(exc).__name__}: {exc}'}
         if (rundir / 'scaffold-receipt' / 'receipt.json').is_file():
@@ -895,6 +923,7 @@ def main(argv=None):
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
     parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
                         help='kicad-route checkout or snapshot holding vendor/krt and .venv-krt')
+    parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',
                         help='scaffold, scope and config validation, checks-only review of the empty candidate '
                              'and a step rehearsal; no inference')
@@ -908,7 +937,7 @@ def main(argv=None):
             print(json.dumps({k: record.get(k) for k in ('mode', 'verdict', 'done')}))
             return 0 if record['done'] else 1
         record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
-                     dry_run=args.dry_run, max_seconds=args.max_seconds)
+                     dry_run=args.dry_run, max_seconds=args.max_seconds, cpl_inputs=args.cpl_inputs)
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_campaign refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'fab_exports_exist',
