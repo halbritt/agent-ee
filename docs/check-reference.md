@@ -33,7 +33,14 @@ tracks produces `ok/defect` with reason `stage_not_reached`. Earlier defects
 block later handlers with `ok/defect`, reason `stage_blocked`; an earlier unknown
 leaves later checks `not_run/unknown`. Once the stage opens, missing simulation
 nets remain unknown coverage. Scopes without stage declarations keep their
-ordinary handler results and convergence rules.
+ordinary handler results and progress rules.
+
+Campaign regression protection includes prior `execution=ok` checks with either
+`outcome=pass` or `outcome=info`. A later defect in either yields `regression`;
+unknown coverage still stops as `incomplete`. Staged campaign configuration
+loading refuses `finding_retry_limit` below 2 before checks or agents run; the
+first finding appearance counts toward that limit. See the
+[staged contract](staged-campaign.md#progress-and-repair).
 
 For [staged campaign implementations](stage-receipts.md#campaign-integration), declared coordinator
 steps own their scheduled outputs. A writer byte change to one of those candidate paths stops the

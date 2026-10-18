@@ -173,14 +173,17 @@ existing check scheduler and convergence reducer:
    open. Tool crashes and missing output remain unknown coverage and stop the
    campaign as `execution_incomplete`.
 3. Progress comes from shrinking the failed set of the earliest failing stage.
-   Previously passing checks remain protected against regression.
+   Checks previously evaluated as `ok/pass` or `ok/info` remain protected against
+   regression. Configuration loading refuses a `finding_retry_limit` below 2;
+   its count includes the first finding appearance.
 
-Scopes without stage declarations keep their current behavior. The declaration
+Scopes without stage declarations keep their unstaged progress rules. The declaration
 and expected subjects are part of the immutable baseline; history records retain
-`earliest_failing_stage` and the per-stage failed sets. Independent review and
-owner convergence-contract acceptance remain outstanding; executable behavior
-does not establish those approvals. A complete native generation rung has the
-additional limits recorded in the [qualified RC campaign](rung1-qualified.md).
+`earliest_failing_stage` and the per-stage failed sets. The owner
+[signed off the convergence contract with two guards](decisions.md#convergence-contract-signed-off-with-two-guards);
+executable behavior does not establish independent review. A complete native
+generation rung has the additional limits recorded in the
+[qualified RC campaign](rung1-qualified.md).
 Hierarchical presence is still unsupported; an empty flat subject needs a
 successful native probe.
 

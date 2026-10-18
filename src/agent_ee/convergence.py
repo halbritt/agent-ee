@@ -6,13 +6,13 @@ from .storage import identity
 def advance(history, result, manifest, max_iterations):
     """Return a durable iteration record and a terminal/continuation diagnostic.
 
-    Previously passing criteria and metric bounds are protected. Repairs must
+    Previously pass/info criteria and metric bounds are protected. Repairs must
     reduce failures or improve negative margins without worsening another one.
     Repeated designs and exhausted budgets escalate rather than oscillate.
     """
     failed = sorted(c["id"] for c in result["checks"] if c["outcome"] == "defect")
     passing = sorted(c["id"] for c in result["checks"]
-                     if c["execution"] == "ok" and c["outcome"] == "pass")
+                     if c["execution"] == "ok" and c["outcome"] in ("pass", "info"))
     record = {"candidate_id": manifest["candidate_id"], "design_id": identity(manifest["files"]),
               "run_id": result["run_id"], "failed": failed, "passing": passing,
               "outcome": result["outcome"], "margins": {

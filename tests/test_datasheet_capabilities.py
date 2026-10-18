@@ -271,7 +271,7 @@ class EnvelopeCapabilityTests(unittest.TestCase):
             staged = copy.deepcopy(scope)
             staged['schematic'] = path
             staged['mutable_inputs'] = [path]
-            staged['stages'] = dict(schema='agent-ee.stages/1', order=['schematic'], finding_retry_limit=1,
+            staged['stages'] = dict(schema='agent-ee.stages/1', order=['schematic'], finding_retry_limit=2,
                 subjects={'schematic': dict(path=path, kind='symbols', references=['U1'])})
             for check in staged['checks']:
                 check['stage'] = 'schematic'

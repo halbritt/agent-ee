@@ -285,6 +285,10 @@ def run_campaign(config_path, out):
     scope = read_json(scope_path)
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
         raise ValueError("campaign requires an immutable scope/2 or scope/3 baseline")
+    from .stages import finding_retry_limit
+    stages = scope.get('stages')
+    if isinstance(stages, dict) and 'finding_retry_limit' in stages:
+        finding_retry_limit(stages['finding_retry_limit'])
     profile = validate_profile(config["review_profile"])
     steps = config.get("implementation_steps", [])
     if not isinstance(steps, list):

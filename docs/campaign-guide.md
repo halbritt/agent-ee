@@ -166,7 +166,8 @@ The convergence reducer in [convergence.py](../src/agent_ee/convergence.py)
 compares iterations within the same calibration epoch, in this order:
 
 1. An incomplete review stops as `incomplete` with `execution_incomplete`.
-2. A previously passing check that now fails yields `regression`.
+2. A check previously evaluated as `ok/pass` or `ok/info` that now reports a
+   defect yields `regression`.
 3. Repeating any earlier captured file inventory/hash identity yields
    `repeated_design`. This design identity excludes scope/profile metadata.
 4. Any previously nonnegative metric bound becoming negative or disappearing

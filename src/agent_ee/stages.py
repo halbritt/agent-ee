@@ -7,6 +7,12 @@ PRESENCE_VERSIONS = {'kicad_sch': {'20250114', '20260306'},
                      'kicad_pcb': {'20250114', '20260101', '20260206'}}
 
 
+def finding_retry_limit(value):
+    if isinstance(value, bool) or not isinstance(value, int) or not 2 <= value <= 100:
+        raise ValueError('finding_retry_limit must be between 2 and 100')
+    return value
+
+
 def declaration(scope, files=None):
     value = scope.get('stages')
     if value is None:
@@ -22,9 +28,7 @@ def declaration(scope, files=None):
             any(s not in STAGE_ORDER for s in order) or
             order != [s for s in STAGE_ORDER if s in order]):
         raise ValueError('stages must be a unique ordered generation-stage subsequence')
-    limit = value['finding_retry_limit']
-    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
-        raise ValueError('finding_retry_limit must be between 1 and 100')
+    finding_retry_limit(value['finding_retry_limit'])
     specs = scope['checks']
     if any(c.get('stage') not in order for c in specs):
         raise ValueError('every staged check must name a declared stage')

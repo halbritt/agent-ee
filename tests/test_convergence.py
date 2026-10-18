@@ -10,6 +10,36 @@ def observation(failed, candidate, passing=(), outcome="defects_or_unresolved"):
 
 
 class ConvergenceTests(unittest.TestCase):
+    def test_info_check_stays_protected_across_repairs(self):
+        history = []
+        for failed, number, passing in [(['A', 'B'], 'one', ['C']),
+                                         (['B'], 'two', ['A', 'C'])]:
+            result, manifest = observation(failed, number, passing)
+            result['checks'].append({'id': 'inventory', 'execution': 'ok', 'outcome': 'info'})
+            record, state = advance(history, result, manifest, 10)
+            self.assertEqual(state['state'], 'repair')
+            history.append(record)
+        _, state = advance(history, *observation(['inventory'], 'three', ['A', 'B', 'C']), 10)
+        self.assertEqual(state['reason'], 'regression')
+        self.assertIn('inventory', state['protected_criteria'])
+        self.assertEqual(len(state['history']), 3)
+
+    def test_info_check_success_and_missing_coverage(self):
+        result, manifest = observation(['A'], 'one', ['inventory'])
+        result['checks'][-1]['outcome'] = 'info'
+        first, _ = advance([], result, manifest, 10)
+        self.assertIn('inventory', first['passing'])
+        for execution, outcome in [('ok', 'info'), ('failed', 'unknown')]:
+            with self.subTest(execution=execution, outcome=outcome):
+                result, manifest = observation([], 'two', ['A', 'inventory'],
+                    'criteria_satisfied' if execution == 'ok' else 'incomplete')
+                result['checks'][-1].update(execution=execution, outcome=outcome)
+                record, state = advance([first], result, manifest, 10)
+                self.assertEqual(state['state'], result['outcome'])
+                if execution != 'ok':
+                    self.assertEqual(state['reason'], 'execution_incomplete')
+                    self.assertNotIn('inventory', record['passing'])
+
     def test_fix_a_reintroduces_b_escalates_without_third_repair(self):
         first, state = advance([], *observation(["A"], "one", ["B"]), 10)
         self.assertEqual(state["state"], "repair")

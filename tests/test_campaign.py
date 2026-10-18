@@ -106,6 +106,23 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "history result link"):
             verify_campaign(self.root / "campaign")
 
+    def test_finding_retry_limit_below_two_refused_before_campaign_creation(self):
+        self.scope['checks'][0]['stage'] = 'schematic'
+        self.scope['stages'] = {'schema': 'agent-ee.stages/1', 'order': ['schematic'],
+            'subjects': {'schematic': {'path': 'design/schematic', 'kind': 'symbols',
+                                      'references': ['R1']}}, 'finding_retry_limit': 1}
+        for schema in ('agent-ee.scope/2', 'agent-ee.scope/3'):
+            for limit in (-1, 0, 1):
+                with self.subTest(schema=schema, limit=limit):
+                    self.scope['schema'] = schema
+                    self.scope['stages']['finding_retry_limit'] = limit
+                    write_json(self.root / 'scope.json', self.scope)
+                    out = self.root / f'refused-{schema[-1]}-{limit}'
+                    with self.assertRaisesRegex(ValueError, 'finding_retry_limit'):
+                        run_campaign(self.root / 'campaign.json', out)
+                    self.assertFalse(out.exists())
+                    self.assertEqual(self.calls, [])
+
     @toolchain_test
     def test_campaign_bench_epoch_repairs_without_erasing_original_history(self):
         self.scope['checks'][0]['params']['limits']['aux'] = {'unit': 'V', 'condition': 'load', 'min': 0, 'max': 10}

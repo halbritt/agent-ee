@@ -89,7 +89,7 @@ and owner review are outstanding.
 
 | Capability | What it is for |
 | --- | --- |
-| [Bounded repair campaigns](docs/campaign-guide.md) | Turn established defects into implementation work, protect previously passing criteria, detect repeated designs and regressions, and stop on stalled progress or exhausted budgets. A stop diagnostic preserves the competing constraints for an engineering decision. |
+| [Bounded repair campaigns](docs/campaign-guide.md) | Turn established defects into implementation work, protect prior successful `pass` and `info` checks, detect repeated designs and regressions, and stop on stalled progress or exhausted budgets. A stop diagnostic preserves the competing constraints for an engineering decision. |
 | [Measurement adapters](docs/measurement-adapters.md) | Connect an installed analysis tool and a captured parser to the same requirement and evidence contracts. The coordinator records the tool identity and raw outputs, then evaluates declared bounds. |
 | [Concern evidence requests](docs/evidence-requests.md) | Export an unresolved concern and reproduce a bounded Python experiment against captured inputs in a separate networkless sandbox. Replay assertions remain unverified concerns; a proposed check must still qualify through the normal evidence path. |
 | [Cross-domain checks](docs/measurement-adapters.md#cross-domain-coupling) | Evaluate electrical, thermal, parasitic or manufacturing margins together at the same operating condition so a local improvement cannot hide a failed coupled limit. The supplied tools must calculate the relevant physics. |
@@ -122,7 +122,9 @@ An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it
 cannot pass merely because an empty design produces no rule violations. Progress
 is measured in the earliest failing stage, with regression and retry limits.
-Existing unstaged campaigns keep their convergence rules. Coordinator steps
+Configuration loading refuses a `finding_retry_limit` below 2 so that the first
+finding appearance leaves room for at least one repair attempt.
+Unstaged campaigns keep their progress rules. Coordinator steps
 follow the earliest failing stage. The retained writer prompt lists declared steps
 and their outputs; staged campaigns refuse writer edits to outputs owned by a
 scheduled step. Arbitrary writer commands have no stage-specific OS allowlist.

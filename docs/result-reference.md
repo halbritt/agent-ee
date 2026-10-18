@@ -318,6 +318,10 @@ paths, lifecycle, verification and recovery.
 | `agent-ee.tradeoff/1` | `state=escalated`, reason, failed/protected criteria, history and required engineering action |
 | Implementation response | Object containing only a string `summary`; actual permitted file changes establish the proposal |
 
+History's `passing` field contains check IDs with successful execution and either
+`pass` or `info` outcomes. Both remain protected against later defects; an `info`
+outcome still supplies no acceptance evidence for an unmapped requirement.
+
 `calibration_id` is the hash of the captured empirical bundle, or null without a
 bundle. `design_id` hashes the entire captured file inventory, not only mutable
 native design files. It intentionally distinguishes file changes from candidate
