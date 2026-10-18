@@ -2,7 +2,11 @@
 
 `python -m agent_ee.reference_blocks capture REQUEST --repo LOCAL --commit COMMIT --out NEW_DIRECTORY`
 captures explicit files from a local Git object tree, without checkout updates or
-network access. `python -m agent_ee.reference_blocks validate DIRECTORY` validates
+network access. Local Git replacement refs are ignored: the recorded commit
+identifies the original committed blobs. Missing objects in a partial clone are
+refused without contacting its promisor remote; supply a complete local object
+tree before capture. Git transports are disabled during capture.
+`python -m agent_ee.reference_blocks validate DIRECTORY` validates
 structure, file inventory, native hierarchical labels and referenced sealed runs.
 Exit 0 means verified; exit 1 means structurally valid but unverified; exit 2
 means refused. Capture may return 1 and still produce a private capture.
@@ -80,3 +84,18 @@ binding here and therefore remain unverified, even when their runs pass. Missing
 coverage is not inferred from hashes, check names, or author-written subject
 lists. This validator consumes existing sealed coordinator evidence; it does not
 execute another engine or grant board acceptance.
+
+The owned controls in `tests/test_reference_blocks.py` exercise pinned capture
+with a dirty checkout and replacement refs, a partial clone whose missing blob
+must not be fetched, native port refusals, and sealed run qualification. Native
+tests use actual KiCad exports and the public verifier; reviewer transport is
+scripted and establishes no model-review quality claim. Run them on the host:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_reference_blocks -v
+```
+
+No FOME-MC sheet is distributed with this library. The proposed `psu` and `wbo1`
+entries still need authorized source acquisition, explicit electrical
+declarations, parts qualification and complete passing sealed runs. Owned
+controls establish capture behavior, not qualification of those actual blocks.
