@@ -5,6 +5,7 @@ kicad-cli; components reach the check only through the native XML netlist,
 exported inside the same sandbox the check uses.
 """
 
+from datetime import datetime, timedelta
 import re
 import shutil
 import sqlite3
@@ -29,7 +30,9 @@ from agent_ee.assembly_readiness import (
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import run_checks, sheet_instances
+from agent_ee.jlc_stock_capture import capture_jlc_stock, ids_from_netlist
 from agent_ee.storage import digest, read_json, write_json
+from test_jlc_stock_capture import JlcStub, row, search
 from toolchain import require_toolchain
 
 
@@ -598,6 +601,128 @@ class AssemblyReadinessTests(unittest.TestCase):
         (run_dir / "inputs/design/stage.kicad_sch").write_text(truncated, encoding="utf-8")
         no_catalog = run_checks(run_dir, time.monotonic() + 300.0)[0]
         self.assertEqual((no_catalog["execution"], no_catalog["outcome"]), ("failed", "unknown"))
+
+
+    # ------------------------------------------------------------------ AGENTEE-155 producer capture
+    def jlc_capture(self, parent, routes, ids):
+        """Run the owner producer against an owned loopback stub (never JLCPCB)."""
+        server = JlcStub(routes)
+        self.addCleanup(server.close)
+        doc = capture_jlc_stock(ids, parent / "jlc", allow_network=True, endpoint=server.url, min_interval=1.0)
+        self.assertEqual(len(server.requests), len(ids))
+        return doc
+
+    @staticmethod
+    def shifted(stamp, hours):
+        return (datetime.fromisoformat(stamp) + timedelta(hours=hours)).isoformat()
+
+    def test_jlc_capture_bound_to_run_refuses_stale_or_uncovered_and_rederives_bytes(self):
+        doc = self.jlc_capture(self.root, {
+            "C25804": (200, search(row("C25804", 1000))),
+            "C17024": (200, search(row("C17024", 40, library="expand", preferred=True))),
+            "C90001": (200, search()),
+            "C90002": (503, b'{"code":503}'),
+        }, ["C25804", "C17024", "C90001", "C90002"])
+        cat = "jlc/catalog.json"
+        netlist = self.export("design.kicad_sch", schematic("design", [
+            part("R1"), part("C1", "C", lcsc="C17024", rating=("Voltage", "50V"))]))
+        self.assertEqual(ids_from_netlist(netlist), ["C17024", "C25804"])
+        run = self.shifted(doc["as_of"], 2)
+        params = {"catalog": cat, "as_of": run, "max_age_hours": 24, "boards": 20}
+
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report["execution"], report["outcome"]), ("ok", "pass"), report["summary"])
+        self.assertEqual(report["catalog"]["schema"], "agent-ee.jlc-catalog/1")
+        self.assertEqual(report["catalog"]["as_of"], run)
+        self.assertEqual(report["catalog"]["capture"], {
+            "as_of": doc["as_of"], "completed_at": doc["completed_at"],
+            "requested": ["C17024", "C25804", "C90001", "C90002"], "not_found": ["C90001"], "failed": ["C90002"]})
+        self.assertEqual(report["parts"]["C17024"]["tier"], "Preferred")
+        self.assertEqual(report["parts"]["C25804"]["last_seen"],
+                         next(r["fetched_at"] for r in doc["requests"] if r["lcsc"] == "C25804"))
+        short = self.evaluate(netlist, {**params, "boards": 41})
+        self.assertEqual([f["code"] for f in short["findings"] if f["severity"] == "defect"], ["insufficient_stock"])
+
+        def refused(execution, needle, check_params, design=netlist):
+            with self.assertRaises(AssemblyReadinessExecutionError) as caught:
+                self.evaluate(design, check_params)
+            self.assertEqual(caught.exception.execution, execution)
+            self.assertIn(needle, str(caught.exception))
+
+        # as_of must be bound to the run and a staleness declared; the capture's own as_of is not used.
+        refused("unsupported", "params.as_of", {"catalog": cat, "max_age_hours": 24})
+        refused("unsupported", "declared staleness", {"catalog": cat, "as_of": run})
+        refused("failed", "stale", {**params, "as_of": self.shifted(doc["as_of"], 25)})
+        refused("failed", "stale", {"catalog": cat, "as_of": self.shifted(doc["as_of"], 49), "max_stock_age_days": 1})
+        refused("failed", "stale", {"catalog": cat, "as_of": self.shifted(doc["as_of"], 49),
+                                    "stale_before": self.shifted(doc["as_of"], 48)[:10]})
+        refused("failed", "after the run", {**params, "as_of": self.shifted(doc["as_of"], -1)})
+
+        # An observed not-found is evidence of absence; an unrequested or failed id is not.
+        not_found = self.export("nf.kicad_sch", schematic("nf", [part("R1"), part("R2", lcsc="C90001")]))
+        report = self.evaluate(not_found, params)
+        self.assertEqual((report["outcome"], report["unknown_lcsc_in_catalog"]), ("defect", {"R2": "C90001"}))
+        failed = self.export("failed.kicad_sch", schematic("failed", [part("R1"), part("R2", lcsc="C90002")]))
+        refused("failed", "C90002': 'HTTP 503'", params, failed)
+        unrequested = self.export("unreq.kicad_sch", schematic("unreq", [part("R1"), part("R2", lcsc="C12345")]))
+        refused("failed", "requested LCSC id(s) ['C12345']", params, unrequested)
+
+        # The check re-derives every observation from the captured raw bytes.
+        response = self.root / "jlc/responses/C25804.json"
+        original = response.read_bytes()
+        response.write_bytes(search(row("C25804", 999999)))
+        refused("failed", "size/sha256", params)
+        summary = self.root / "jlc/catalog.json"
+        forged = read_json(summary)
+        forged["parts"]["C25804"]["stock"] = 999999
+        response.write_bytes(original)
+        write_json(summary, forged)
+        refused("failed", "re-derived", params)
+        response.unlink()
+        refused("failed", "missing captured JLC response", params)
+
+    def test_jlc_capture_responses_are_immutable_inputs_through_run_checks(self):
+        source = self.root / "src_tree"
+        source.mkdir()
+        doc = self.jlc_capture(source, {"C25804": (200, search(row("C25804", 500))),
+                                        "C17024": (200, search(row("C17024", 500, library="expand")))},
+                               ["C25804", "C17024"])
+        top = schematic("top", [part("R1"), part("C1", "C", lcsc="C17024", rating=("Voltage", "50V"))])
+        (source / "top.kicad_sch").write_text(top, encoding="utf-8")
+        (source / "top.kicad_pcb").write_text("(kicad_pcb (version 20221018))", encoding="utf-8")
+        (source / "req.md").write_text("# Requirements\nR-ASM: JLC assembly readiness\n", encoding="utf-8")
+        scope = {
+            "schema": "agent-ee.scope/3", "name": "jlc-capture", "scope": "assembly readiness from a JLC capture",
+            "inputs": [{"path": str(source), "at": "design"}],
+            "schematic": "design/top.kicad_sch", "board": "design/top.kicad_pcb", "packet_max_bytes": 16384,
+            "checks": [{"id": "jlc_assembly", "kind": "assembly_readiness",
+                        "params": {"catalog": "design/jlc/catalog.json", "boards": 10,
+                                   "as_of": self.shifted(doc["as_of"], 1), "max_age_hours": 12}}],
+            "baseline": {
+                "requirements": [{
+                    "id": "R-ASM", "intent": "acceptance", "statement": "All populated parts are stocked",
+                    "source": {"path": "design/req.md", "locator": "R-ASM"}, "checks": ["jlc_assembly"]}],
+                "targets": ["design/req.md"], "reference_architectures": ["design/req.md"],
+            },
+        }
+        write_json(self.root / "scope.json", scope)
+        run_dir = self.root / "run"
+        run_dir.mkdir()
+        manifest = capture(self.root / "scope.json", run_dir)
+        baseline = read_json(run_dir / "baseline.json")
+        for rel in ("design/jlc/catalog.json", "design/jlc/responses/C25804.json", "design/jlc/responses/C17024.json"):
+            self.assertIn(rel, baseline["files"])
+        desc = describe_check(scope["checks"][0], check_specs=scope["checks"], files=manifest["files"],
+                              scope=scope, inputs=run_dir / "inputs")
+        self.assertEqual(desc["status"], "supported")
+        res = run_checks(run_dir, time.monotonic() + 300.0)[0]
+        self.assertEqual((res["execution"], res["outcome"]), ("ok", "pass"), res["summary"])
+        self.assertEqual(res["details"]["catalog"]["capture"]["requested"], ["C17024", "C25804"])
+
+        (run_dir / "inputs/design/jlc/responses/C17024.json").unlink()
+        missing = run_checks(run_dir, time.monotonic() + 300.0)[0]
+        self.assertEqual((missing["execution"], missing["outcome"]), ("failed", "unknown"), missing["summary"])
+        self.assertIn("C17024", missing["summary"])
 
 
 if __name__ == "__main__":

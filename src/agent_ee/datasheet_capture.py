@@ -71,11 +71,13 @@ def _process_identity(pid):
     return starttime, cwd
 
 
-def _bounded_fetch(url, seconds, max_bytes):
-    # A socket timeout alone cannot bound DNS, redirects or a trickling response.
-    # This owned child has no tool/check sandbox and runs only the capture fetch.
-    command = [sys.executable, '-m', 'agent_ee.datasheet_capture', '--fetch',
-               url, str(seconds), str(max_bytes)]
+def run_owned_child(command, seconds):
+    """Run one owned capture child under a hard elapsed-time deadline.
+
+    Returns its stdout, or None when the deadline expired (the child is then
+    killed and reaped). A nonzero exit raises. The child has no tool/check
+    sandbox; only host-side capture producers call this.
+    """
     with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
         owner = None
         try:
@@ -84,18 +86,28 @@ def _bounded_fetch(url, seconds, max_bytes):
                 stdout, stderr = child.communicate(timeout=seconds)
             except subprocess.TimeoutExpired:
                 _stop_fetch(child, owner)
-                return {'record': {'url': url, 'final_url': None,
-                        'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
-                        'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None}
+                return None
             if child.returncode:
                 raise RuntimeError(f'capture fetch worker failed ({child.returncode}): {stderr.decode(errors="replace")}')
-            return json.loads(stdout)
+            return stdout
         except BaseException as exc:
             try:
                 _stop_fetch(child, owner)
             except BaseException as cleanup_error:
                 exc.add_note(f'capture child cleanup failed: {cleanup_error!r}')
             raise
+
+
+def _bounded_fetch(url, seconds, max_bytes):
+    # A socket timeout alone cannot bound DNS, redirects or a trickling response.
+    command = [sys.executable, '-m', 'agent_ee.datasheet_capture', '--fetch',
+               url, str(seconds), str(max_bytes)]
+    stdout = run_owned_child(command, seconds)
+    if stdout is None:
+        return {'record': {'url': url, 'final_url': None,
+                'fetched_at': datetime.now(timezone.utc).isoformat(), 'sha256': None,
+                'path': None, 'missing': True, 'reason': 'fetch deadline exceeded'}, 'pdf': None}
+    return json.loads(stdout)
 
 
 def _stop_fetch(child, owner):

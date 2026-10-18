@@ -759,6 +759,11 @@ LCSC binding, three-state stock (zero is a defect; missing, stale or
 undeclared freshness is unknown), stock for quantity per board times boards,
 and Basic/Preferred/Extended counts. DNP, `exclude_from_bom` and off-board
 symbols stay distinct, and an empty schematic is `info`, not `pass`.
+A [JLCPCB stock capture](jlc-stock-capture.md) comes from the owner-run
+host-side producer, one rate-limited request per LCSC id. When it is the
+catalog, the check re-derives every part from the captured raw responses. It
+requires the run's `as_of` and a declared staleness, and it fails a capture
+that is stale or lacks an observation for a populated id.
 
 ## Schematic readability lint
 

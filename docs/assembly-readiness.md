@@ -8,6 +8,8 @@ That snapshot must show fresh stock for the declared board quantity, and the
 design must stay within any declared Extended-part budget.
 
 The check does not pick replacements, query live stock or price the board.
+Live JLCPCB stock reaches it only through an owner-run
+[stock capture](jlc-stock-capture.md) made before candidate capture.
 
 ## Inputs and evidence
 
@@ -43,6 +45,15 @@ The check does not pick replacements, query live stock or price the board.
   decimal-text prices are decoded with the catalog decimal reader. A null
   `stale_before` is accepted as an absent policy; stock remains unknown unless
   the check supplies an explicit maximum age or cutoff.
+- **JLCPCB stock capture**: an `agent-ee.jlc-catalog/1` file that carries a
+  `requests` list comes from the owner-run
+  [JLCPCB stock producer](jlc-stock-capture.md). The check re-derives every
+  part from the retained raw responses, which are immutable baseline inputs.
+  It requires `as_of` bound to the run and a declared staleness
+  (`unsupported` otherwise). It fails a capture that is older than that
+  staleness, dated after the run, or lacking an observation for a populated
+  LCSC id (never requested, or a failed request). Only an observed not-found
+  gives `unknown_lcsc_in_catalog`. The report carries `catalog.capture`.
 - **Retained evidence**: `work/<id>/design.xml`, the executor record and
   `work/<id>/assembly-readiness.json`. The report carries the hashes of each
   schematic file (`schematic.files`), of the netlist (`netlist.sha256`) and
@@ -60,7 +71,8 @@ The check does not pick replacements, query live stock or price the board.
   - `assembly:extended-parts-limit` (when `max_extended_parts` is set)
 - **Captured inputs:** `scope.schematic`.
 - **Immutable baseline inputs:** `params["catalog"]`, plus `database.path` for
-  an `agent-ee.catalog/1` manifest.
+  an `agent-ee.catalog/1` manifest, or every retained `responses/*.json` file
+  for a JLCPCB stock capture.
 
 ## Parameters (`params`)
 
@@ -75,7 +87,7 @@ The check does not pick replacements, query live stock or price the board.
 | `max_stock_age_days` | `number >= 0 \| None` | `None` | Maximum age in days of a part's `last_seen` relative to `as_of`. |
 | `max_age_hours` | `number >= 0 \| None` | `None` | Maximum age in hours of a part's `last_seen` relative to `as_of`. |
 | `stale_before` | `str \| None` | catalog `stale_before` | ISO date; earlier `last_seen` observations are stale. |
-| `as_of` | `str \| None` | catalog `snapshot_date` | Evaluation date or ISO-8601 timestamp for stock age. |
+| `as_of` | `str \| None` | catalog `snapshot_date` | Evaluation date or ISO-8601 timestamp for stock age. Required for a JLCPCB stock capture, where it binds the evaluation to the run. |
 | `stock_floor` | `int >= 0` | `0` | Minimum stock per LCSC ID: `threshold = max(quantity_per_board * boards, stock_floor)`. |
 
 `property` lookups for `Footprint`, `LCSC` and `Manufacturer` also accept the
