@@ -379,7 +379,7 @@
         "repository": "https://github.com/halbritt/fome-mc",
         "local_path": "/home/halbritt/git/fome-mc (object store only; the working tree is never read)",
         "revisions": {
-          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory (AGENTEE-105, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files."
+          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory (AGENTEE-105, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files. Capture commit of fixtures/fome-mc/rules (AGENTEE-189): ERC and DRC rule_severities of fome-mc.kicad_pro, blob 8f749a35326790337ca3fb7ef1b2e3126bf9a8c7, SHA-256 in rules/severities.json source."
         },
         "license_file": null
       },
@@ -398,7 +398,8 @@
       "evidence": [
         "docs/decisions.md",
         "fixtures/fome-mc/LICENSE-NOTICE.md",
-        "fixtures/fome-mc/inventory/capture/inventory-report.json"
+        "fixtures/fome-mc/inventory/capture/inventory-report.json",
+        "fixtures/fome-mc/rules/severities.json"
       ]
     }
   },
@@ -2538,6 +2539,18 @@
         "T16"
       ],
       "note": "PSU-only block inventory written for agent-ee (AGENTEE-106). It names fome-mc sheet paths, references, the pinned commit and requirement paraphrases with their source sections."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/rules/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "AE",
+        "T16"
+      ],
+      "note": "agent_ee.rule_severities output (AGENTEE-189): severities.json records the ERC and DRC rule_severities maps of fome-mc.kicad_pro at df304f3321296f7e517e0d2e2aa52e1380d52993 with its pinned identity; pod.kicad_pro is the owned fixtures/netclass-completeness/native.kicad_pro with exactly those two maps added. No other fome-mc project setting is copied."
     },
     {
       "paths": [

@@ -124,6 +124,53 @@ receipt. Net classes other than Default wait on AGENTEE-47 net constraints.
 KiCad rule settings outside the six keys keep the template values. The producer
 derives no `fab_package` done gate and no scope/3 envelope acceptance.
 
+## fome-mc severity template
+
+[`fixtures/fome-mc/rules/pod.kicad_pro`](../fixtures/fome-mc/rules/pod.kicad_pro) is
+the telemetry-pod producer template (AGENTEE-189). It is the owned
+[native project](../fixtures/netclass-completeness/native.kicad_pro) with fome-mc's
+ERC and DRC `rule_severities` maps added, and nothing else from fome-mc. Pod
+criterion 3 grades ERC and DRC "under the fome-mc toolchain rules".
+[`severities.json`](../fixtures/fome-mc/rules/severities.json) is the
+`agent-ee.rule-severities/1` record of both maps. Its pinned-external source is
+`fome-mc.kicad_pro` at fome-mc `df304f3321296f7e517e0d2e2aa52e1380d52993`, with
+blob `8f749a3` and SHA-256 `17a1d6b8…`. `agent_ee.rule_severities` writes both
+files:
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.rule_severities --repo ~/git/fome-mc \
+  --commit df304f3321296f7e517e0d2e2aa52e1380d52993 --path fome-mc.kicad_pro \
+  --repository-label fome-mc --base fixtures/netclass-completeness/native.kicad_pro \
+  --out build/rules --name pod
+```
+
+Capture reads one committed blob from the object store; it never reads the working
+tree or fetches. It refuses an abbreviated commit, an uncommitted path, a severity
+other than `error`, `warning` or `ignore`, and nonempty `erc_exclusions` or
+`drc_exclusions`. An exclusion silences a single violation instance, which makes it
+a waiver rather than a severity. The template step refuses a base that already
+has severities or exclusions, so the record is the template's only severity
+source.
+
+None of the six derived rule types is `ignore` in fome-mc, so the producer
+accepts the template. Its existing refusal still applies: editing the template
+to silence a derived rule is refused. The derived `.kicad_pro` has fome-mc's
+severities and the fab-profile rules. fome-mc's own rule values, net classes,
+ERC pin map and other settings are not carried. The receipt's
+`derivation.template` names the template bytes, which bind to the record through
+`test_rule_severities`. With KiCad 10.0.7 defaults as the baseline, fome-mc
+ignores four more ERC rules (`endpoint_off_grid`, `footprint_link_issues`,
+`lib_symbol_issues`, `lib_symbol_mismatch`) and three more DRC rules
+(`npth_inside_courtyard`, `pth_inside_courtyard`, `solder_mask_bridge`). It
+raises `footprint_type_mismatch` from ignored to error. KiCad already ignores
+`missing_courtyard` and `footprint_filters_mismatch` by default. Rules that
+fome-mc leaves unset keep KiCad's defaults, as they do in fome-mc itself.
+
+A severity map waives no violation. Every item kicad-cli still reports, warning
+or error, is a [check](check-reference.md#drc-and-schematic-parity) defect. The
+optional `agent-ee.violation-waivers/1` record is not implemented, because
+admitting waivers awaits an owner decision.
+
 ## Output and evidence
 
 `DIR/inputs/` contains the complete selected inventory; `DIR/scope.json` uses
@@ -166,10 +213,14 @@ gaps and producer migrations resolved before the envelope can become binding.
 
 [test_scaffold_producer.py](../tests/test_scaffold_producer.py) covers the
 producer on owned synthetic envelope, profile and parts fixtures: byte-identical
-outputs, the derived mappings, rules and stages, every refusal above, and a
-native run. In that run pcbnew loads the derived rules and Default class from the
+outputs, the derived mappings, rules and stages, every refusal above, the
+fome-mc severity template, and a native run. In that run pcbnew loads the derived rules and Default class from the
 produced project, and each of the five checks reports `stage_not_reached` on the
-empty candidate.
+empty candidate. A second native run gives kicad-cli ERC and DRC the derived
+fome-mc project, and their `ignored_checks` match the record.
+[test_rule_severities.py](../tests/test_rule_severities.py) recaptures the
+committed record from the local fome-mc object store, rebuilds the template from
+it byte for byte, and covers the capture refusals.
 
 The original synthetic tests in [test_scaffold.py](../tests/test_scaffold.py)
 exercise byte identity and capture hashes, native ERC/DRC, local library tables,
