@@ -123,21 +123,25 @@ A proposed layout for the scaffold's scope fragment:
 }
 ```
 
-No tool writes this candidate today; AGENTEE-87 adds a deterministic scaffold
-command. Two properties of the current reducer also stop a generation campaign
-early, and AGENTEE-88 addresses them:
+The [RC campaign scaffold](rung1-campaign.md) now creates an empty candidate.
+Opt-in [staged campaigns](staged-campaign.md) implement AGENTEE-48/88 in the
+existing check scheduler and convergence reducer:
 
-1. On an empty design ERC and DRC pass vacuously. The first proposal that adds
-   footprints fails DRC with unconnected items, and convergence step 2
-   classifies that as `regression`.
-2. A simulation whose nets do not exist yet is unknown coverage, so the campaign
-   stops as `execution_incomplete`.
+1. A successful native probe that confirms missing expected content returns
+   `ok/defect`, reason `stage_not_reached`. Empty ERC and DRC subjects cannot
+   earn passing results before components exist.
+2. Earlier defects block later checks, including simulation, until their gates
+   open. Tool crashes and missing output remain unknown coverage and stop the
+   campaign as `execution_incomplete`.
+3. Progress comes from shrinking the failed set of the earliest failing stage.
+   Previously passing checks remain protected against regression.
 
-AGENTEE-88 proposes that a check over an empty subject fails with
-`stage_not_reached` when the baseline declares expected content, and that
-scopes declaring check stages count progress by the earliest failing stage.
-Scopes without stage fields keep their current behavior. This changes the
-convergence contract and needs owner review before it ships.
+Scopes without stage declarations keep their current behavior. The declaration
+and expected subjects are part of the immutable baseline; history records retain
+`earliest_failing_stage` and the per-stage failed sets. Independent review and
+owner convergence-contract acceptance remain outstanding; executable behavior
+does not establish those approvals. A complete native generation rung has the
+additional limits recorded in the [qualified RC campaign](rung1-qualified.md).
 
 ## Stages, epics and work
 
