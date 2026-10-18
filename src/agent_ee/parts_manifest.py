@@ -74,8 +74,11 @@ def validate_manifest(document):
         raise ValueError('nonempty bounded parts required')
     ids, selectors, selection_ids = set(), set(), set()
     for part in parts:
-        exact_fields(part, ('id', 'role', 'required', 'instances', 'selection_id', *IDENTITY_FIELDS,
-                            'stock', 'datasheet'))
+        fields = ('id', 'role', 'required', 'instances', 'selection_id', *IDENTITY_FIELDS,
+                  'stock', 'datasheet')
+        exact_fields(part, (*fields, 'pin_contract') if isinstance(part, dict) and 'pin_contract' in part else fields)
+        if 'pin_contract' in part:
+            _blob(part['pin_contract'])
         for field in ('id', 'role', 'selection_id', *IDENTITY_FIELDS):
             nonempty(part[field])
         if part['id'] in ids or part['selection_id'] in selection_ids:
@@ -159,6 +162,8 @@ def dependency_closure(document, root):
         raise ValueError('CAD member closure identity mismatch')
     blobs += cad_blobs
     for part in document['parts']:
+        if 'pin_contract' in part:
+            blobs.append(part['pin_contract'])
         if part['datasheet']['status'] == 'captured':
             blobs += [part['datasheet']['artifact'], part['datasheet']['provenance']]
     closure = {}

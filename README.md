@@ -88,6 +88,10 @@ Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository; dependency closure and
 owner review are outstanding.
 
+The optional [pin-contract check](docs/pin-contracts.md) checks page-cited voltage,
+connection and capacitor/pull-up obligations against native connectivity. Missing
+contracts, unverified citations and ambiguous identities remain unknown coverage.
+
 ## Beyond a single review
 
 | Capability | What it is for |
