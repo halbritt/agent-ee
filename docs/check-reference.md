@@ -404,6 +404,22 @@ probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
 authority and unknown boundaries.
 
+## Board envelope predicates
+
+`board_envelope` takes exactly `criterion` and a captured immutable `envelope`
+path. `outline/1` compares the exact declared Edge.Cuts polygon against saved
+geometry and a native closed-contour probe. `layers/1` compares the exact ordered
+copper layer set against saved and native enabled layers. Each check binds one
+field and one requirement, with predicates `envelope:outline/1` or
+`envelope:layers/1`.
+
+`stackup/1` is refused as executable acceptance coverage: KiCad thickness does
+not establish nominal copper ounces. Direct execution retains diagnostic facts
+and returns unknown. Complete scope/3 envelope capture still requires that
+manufacturing authority; holes, keepouts and multiple fixed connectors also
+remain unsupported for acceptance. See the [native envelope contract](board-envelope.md#native-envelope-check)
+for evidence, binding and failure boundaries.
+
 ## Qualified passive tolerance endpoints
 
 See [passive corners](passive-corners.md) for the optional `passive_corners`

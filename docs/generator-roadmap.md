@@ -88,6 +88,12 @@ candidate is an ordinary captured project:
 - the block library entries selected for the board (AGENTEE-89), captured as
   read-only inputs.
 
+The [board envelope check](board-envelope.md#native-envelope-check) now owns exact
+native outline and copper-layer comparisons. A complete envelope baseline still
+refuses stackup acceptance pending qualified nominal copper-weight authority
+from AGENTEE-94. Holes, keepouts and individual checks for multiple fixed
+connectors also remain gaps; the diagnostic round trip does not satisfy them.
+
 The scope/2 fields that carry it:
 
 | Field | Content in a generation scope |
