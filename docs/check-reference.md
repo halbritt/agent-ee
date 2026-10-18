@@ -45,6 +45,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
+| `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
@@ -517,3 +518,14 @@ or a missing sealed log is unknown coverage; broken hashes or malformed CSV
 are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
 through a sealed requirement/check witness. Rotation correction and DFM are
 outside this check.
+
+## Captured block adaptation
+
+`block_provenance` takes `instance` (a captured `agent-ee.block-instance/1` file)
+and `netlist_check` (an earlier board-native netlist check). Scope/2 and scope/3
+freeze the record and all source-block files. The copied child stays mutable.
+A native semantic report lists component and net changes as information, while
+missing or rebound boundary ports produce defects. Source run results never
+qualify the board. See [block adaptation](block-adaptation.md) for scaffold
+inputs, requirement mapping, boundary probes, retained evidence and coverage
+limits.

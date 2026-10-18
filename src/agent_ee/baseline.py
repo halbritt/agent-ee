@@ -83,6 +83,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "footprint_assignment":
             from .library_checks import capability
             paths.update(capability(params, files, inputs, scope, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "block_provenance":
+            from .block_adaptation import capability
+            paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
         if spec.get("kind") == "netlist_extra":
             from .netlist_extra import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])

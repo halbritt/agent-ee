@@ -123,9 +123,11 @@ A proposed layout for the scaffold's scope fragment:
 }
 ```
 
-No tool writes this candidate today; AGENTEE-87 adds a deterministic scaffold
-command. Two properties of the current reducer also stop a generation campaign
-early, and AGENTEE-88 addresses them:
+The [block adapter](block-adaptation.md) can now fill pre-created child sheets
+from captured flat blocks, freeze instance records and map block requirements
+to fresh board checks. It is a standalone scaffold seam; AGENTEE-87 still owns
+the command that creates the complete empty candidate. Two properties of the
+current reducer also stop a generation campaign early, and AGENTEE-88 addresses them:
 
 1. On an empty design ERC and DRC pass vacuously. The first proposal that adds
    footprints fails DRC with unconnected items, and convergence step 2

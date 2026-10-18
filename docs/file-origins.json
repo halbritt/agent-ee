@@ -2009,6 +2009,17 @@
         "AE"
       ],
       "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "src/agent_ee/block_adaptation.py",
+        "tests/test_block_adaptation.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original block adapter, native passive boundary probes and synthetic fixture tests authored for AGENTEE-90. KiCad format literals and probe symbols are original; no third-party designs or symbol libraries are copied into these files."
     }
   ]
 }

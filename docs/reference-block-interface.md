@@ -80,3 +80,9 @@ binding here and therefore remain unverified, even when their runs pass. Missing
 coverage is not inferred from hashes, check names, or author-written subject
 lists. This validator consumes existing sealed coordinator evidence; it does not
 execute another engine or grant board acceptance.
+
+[Block adaptation](block-adaptation.md) instantiates a captured flat block into a
+pre-created child sheet and maps its requirements to fresh board checks. The
+instance and source remain immutable; the ordinary repair writer edits the child.
+`block_provenance` reports semantic changes and checks native boundary bindings.
+Source qualification never supplies board check results.
