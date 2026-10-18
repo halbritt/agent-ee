@@ -169,7 +169,8 @@ class NativeReferenceBlockTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
-    def prepare_run(self, *, checks_only=False, undeclared=False, shadow=False, hierarchy=False, layout=False):
+    def prepare_run(self, *, checks_only=False, undeclared=False, shadow=False, hierarchy=False, layout=False,
+                    pending=False):
         import contextlib
         import importlib.util
         import io
@@ -209,6 +210,10 @@ class NativeReferenceBlockTests(unittest.TestCase):
             record['source']['paths']['layout.kicad_pcb'] = 'layout.kicad_pcb'
             record['files']['layout.kicad_pcb'] = digest(payload / 'layout.kicad_pcb')
         record['requirements'] = [dict(id='interface', statement='Preserve declared interface invariants.', checks=['interface'])]
+        if pending:
+            record['pending_requirements'] = [dict(id='bench', statement='Bench behaviour holds.',
+                source=dict(path='sheet.kicad_sch', locator='whole sheet'), conditions=[],
+                blocked_by='No applicable check family')]
         write_json(payload / 'block-contract.json', block_contract(record))
         record['files']['block-contract.json'] = digest(payload / 'block-contract.json')
         write_json(payload / 'block.json', record)
@@ -435,6 +440,13 @@ class NativeReferenceBlockTests(unittest.TestCase):
         record['runs'].append(missing)
         write_json(payload / 'block.json', record)
         self.assertEqual(validate_block(payload, {result['run_id']: run})['status'], 'unverified')
+
+    def test_pending_requirement_keeps_passing_covered_block_unverified(self):
+        payload, record, run, result = self.prepare_run(pending=True)
+        report = validate_block(payload, {result['run_id']: run})
+        self.assertEqual(report['covered_requirements'], ['interface'])
+        self.assertEqual(report['pending_requirements'], ['bench'])
+        self.assertEqual(report['status'], 'unverified')
 
     def test_unknown_electrical_declarations_are_not_qualified_by_run(self):
         payload, record, run, result = self.prepare_run(undeclared=True)

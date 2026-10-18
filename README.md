@@ -266,6 +266,11 @@ a pre-created child, freezes its provenance and maps its requirements to fresh b
 Its native provenance check lists value/connectivity edits and grades boundary
 bindings. Parts subsets and layouts still need qualification;
 a passing run on a separate schematic cannot qualify the block.
+[Block inventory capture](docs/block-inventory.md) writes one draft entry per
+planned block from a pinned design commit, all unverified, each with its
+reference set, a derived interface contract, library hashes and sourced pending
+requirements. It also replays block adaptation fixtures. The owner's fome-mc
+inventory and captures stay private until the owner decides on publication.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes

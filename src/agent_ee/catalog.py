@@ -1,13 +1,11 @@
 """Pinned local catalog capture and offline, content-bound snapshot reads."""
 import csv
-import ctypes
 from contextlib import closing
 from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
 import io
 import json
-import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -15,7 +13,7 @@ import sqlite3
 import tempfile
 import zipfile
 
-from .storage import canonical, digest, identity, write_json
+from .storage import canonical, digest, identity, rename_noreplace, write_json
 
 COLUMNS = ('lcsc', 'mfr', 'mpn', 'package', 'category', 'stock', 'price1',
            'is_basic', 'is_preferred', 'last_seen', 'attributes')
@@ -342,13 +340,7 @@ def write_database(path, rows):
 
 def publish_directory(stage, destination):
     """Publish one complete capture directory without replacing another writer."""
-    libc = ctypes.CDLL(None, use_errno=True)
-    rename = libc.renameat2
-    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    rename.restype = ctypes.c_int
-    if rename(-100, os.fsencode(stage), -100, os.fsencode(destination), 1):
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), str(destination))
+    rename_noreplace(stage, destination)
 
 
 def capture_catalog(source_manifest, source_root, destination):

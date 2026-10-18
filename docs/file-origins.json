@@ -468,6 +468,7 @@
     },
     {
       "paths": [
+        "docs/block-inventory.md",
         "docs/argon-assessment.md",
         "docs/fable-assessment.md",
         "docs/integration-review-argon.md",
@@ -2030,6 +2031,17 @@
         "AE"
       ],
       "reviewed": "Original regression-test code containing synthetic format literals and parser/mutation examples; referenced external fixture paths do not copy those files into this source."
+    },
+    {
+      "paths": [
+        "tests/block_inventory_fixture.py",
+        "tests/test_block_inventory.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original generator and regression tests writing synthetic two-channel KiCad text; no owner or third-party design is read or committed."
     },
     {
       "paths": [

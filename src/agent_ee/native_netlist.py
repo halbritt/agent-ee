@@ -161,6 +161,13 @@ def _footprint(comp):
     return value
 
 
+def read_components(path):
+    """Component identities and properties only, without the parity graph bounds."""
+    root = _parse(path)
+    sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
+    return _components(root, _parts(root), sheets)
+
+
 def _sheets(root):
     sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
     if ('/' not in sheets or len(sheets) != len(set(sheets)) or
