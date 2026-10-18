@@ -9,7 +9,8 @@ adapted from fome-mc `toolchain/eda.py` (read at fome-mc commit c43ad7b).
 
 Check kinds and parameters:
 
-- `erc`, `netlist`: no parameters; `drc`: optional `projection`. ERC
+- `erc`, `drc`: optional captured owner-approved `waivers`; `netlist`: no
+  parameters; `drc`: optional `projection`. ERC
   validates sheet-instance coverage against the hierarchy and scales or
   withholds violation locations by the sealed kicad-cli version
   (`agent_ee.kicad_quirks`); DRC runs with
@@ -287,6 +288,9 @@ def check_erc(ctx):
     if len(sheets) != expected:
         raise CheckError("malformed",
                          f"ERC covered {len(sheets)} sheet instances, hierarchy has {expected}")
+    if any(not isinstance(s, dict) or not isinstance(s.get('violations'), list) or
+           any(not isinstance(v, dict) for v in s['violations']) for s in sheets):
+        raise CheckError('malformed', 'ERC sheets require complete native violation lists')
     violations = [v for s in sheets for v in s.get("violations", [])]
     ctx.result["details"].update({
         "sheets_checked": len(sheets), "schematic_files": files,
@@ -302,17 +306,24 @@ def check_erc(ctx):
     elif "limitation" in coordinates:
         ctx.result["limitations"].append("ERC coordinates corrected x100 for kicad-cli "
                                          f"{coordinates['version']}; " + coordinates["limitation"])
+    from .violation_waivers import classify
+    unwaived = classify(ctx, report, locations_trusted=coordinates['status'] == 'trusted')
     ctx.result["execution"] = "ok"
-    if violations:
-        findings = erc_findings(ctx.cid, sheets)
+    if unwaived:
+        remaining = {v['raw_locator'] for v in unwaived}
+        unwaived_sheets = [dict(s, violations=[v for j, v in enumerate(s.get('violations', []))
+                            if f'/sheets/{i}/violations/{j}' in remaining]) for i, s in enumerate(sheets)]
+        findings = erc_findings(ctx.cid, unwaived_sheets)
         if findings:
             ctx.result["details"]["gate_findings"] = findings
         ctx.result["outcome"] = "defect"
         ctx.result["summary"] = (f"ERC ran on {len(sheets)} sheet instance(s) and reported "
                                  f"{len(violations)} violation(s): {ctx.result['details']['by_severity']}")
+        ctx.result['summary'] += f"; {len(unwaived)} unwaived, {len(violations) - len(unwaived)} waived"
     else:
         ctx.result["outcome"] = "pass"
-        ctx.result["summary"] = f"ERC ran on {len(sheets)} sheet instance(s) with zero violations"
+        ctx.result["summary"] = (f"ERC ran on {len(sheets)} sheet instance(s) with zero unwaived violations; "
+                                 f"{len(violations)} waived")
 
 
 def erc_findings(cid, sheets):
@@ -364,12 +375,15 @@ def check_drc(ctx):
                 timeout=900)
     ctx.evidence("drc.json")
     report = ctx.load_json("drc.json", "DRC")
+    if not isinstance(report, dict):
+        raise CheckError('malformed', 'DRC report is not a JSON object')
     ctx.result["details"]["kicad_version"] = report.get("kicad_version")
     ctx.result["details"]["board_sha256"] = ctx.manifest["files"].get(ctx.scope["board"])
     ctx.result["limitations"].append(
         "zone fill evaluated as saved; the read-only candidate forbids a refill pass")
     for key in ("violations", "unconnected_items", "schematic_parity"):
-        if not isinstance(report.get(key), list):
+        if (not isinstance(report.get(key), list) or
+                any(not isinstance(v, dict) for v in report[key])):
             raise CheckError("malformed", f"DRC report is missing {key}")
     skip = PARITY_SKIP_RE.search(ctx.console())
     if skip:
@@ -382,6 +396,8 @@ def check_drc(ctx):
         "by_type": count_by(v + u + p, "type"),
         "ignored_checks": [c.get("key") for c in report.get("ignored_checks", [])],
     })
+    from .violation_waivers import classify
+    unwaived = classify(ctx, report)
     ctx.result["execution"] = "ok"
     if projection:
         ctx.result["details"].update(projection=projection, graded=list(DRC_PROJECTIONS[projection]),
@@ -389,9 +405,9 @@ def check_drc(ctx):
         ctx.result["limitations"].append(
             f"{projection}: unconnected items are retained in drc.json but not graded; "
             "a later full DRC with connectivity remains required")
-        failing = v or p
+        failing = any(not i['raw_locator'].startswith('/unconnected_items/') for i in unwaived)
     else:
-        failing = v or u or p
+        failing = unwaived
     if failing:
         ctx.result["outcome"] = "defect"
         ctx.result["summary"] = (f"DRC with schematic parity reported {len(v)} violation(s), "
@@ -399,11 +415,12 @@ def check_drc(ctx):
                                  + (f"; {projection} grades violations and parity only" if projection else ""))
     elif projection:
         ctx.result["outcome"] = "pass"
-        ctx.result["summary"] = (f"{projection} DRC with schematic parity reported zero violations and "
-                                 f"parity issues; {len(u)} unconnected item(s) retained ungraded")
+        ctx.result["summary"] = (f"{projection} DRC with schematic parity reported zero unwaived violations and "
+                                 f"unwaived parity issues; {len(u)} unconnected item(s) retained ungraded")
     else:
         ctx.result["outcome"] = "pass"
-        ctx.result["summary"] = "DRC with schematic parity reported zero issues on the saved board"
+        ctx.result["summary"] = "DRC with schematic parity reported zero unwaived issues on the saved board"
+    ctx.result['summary'] += f"; {len(ctx.result['details']['waived'])} waived"
 
 
 def parse_xml_netlist(path):

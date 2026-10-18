@@ -215,10 +215,11 @@ kind or acceptance credit. See [emitter cost and benchmark](schematic-emitter.md
 
 ## ERC
 
-No check parameters are currently interpreted. The JSON report must contain a
+Optional `params.waivers` names a captured, owner-approved
+[exact violation disposition list](violation-waivers.md). The JSON report must contain a
 `sheets` list covering the expected number of instances. Violations are counted
 across sheets, grouped by severity/type, and retained in `erc.json`; ignored
-check keys are reported. Any returned violation makes the check `defect`.
+check keys are reported. Any unwaived violation makes the check `defect`.
 A defect also carries [`details.gate_findings`](staged-campaign.md#progress-and-repair):
 one identity per distinct violation, with `entity` the sheet path plus the sorted
 native item descriptions and `kind` the native violation type. No `suggested_fix`
@@ -274,10 +275,13 @@ The severities in force are the immutable project file's. ERC and DRC both recor
 `details.by_severity`, `details.by_type` and `details.ignored_checks`, the keys
 kicad-cli reports at severity `ignore`. A warning is graded like an error. The
 [fome-mc severity template](scaffold.md#fome-mc-severity-template) (AGENTEE-189)
-carries fome-mc's pinned ERC and DRC severity maps. There is no waiver record:
-a reported item cannot be dispositioned as waived, and the capture refuses a
-source with ERC or DRC exclusions. Admitting violation-bound waivers is an
-owner decision that has not been made.
+carries fome-mc's pinned ERC and DRC severity maps. Optional
+[owner-approved exact waivers](violation-waivers.md) (owner decision 2026-10-18)
+report `details.waived` with reasons and original native severities, plus
+`waived_by_severity` and `unwaived_by_severity`. Unmatched errors and warnings
+still fail; without a waiver file every native item is unwaived. Native project
+exclusions remain refused by severity capture; dispositions use the separate
+captured immutable waiver record.
 
 Those project settings remain immutable during a campaign. A writer's
 `pcbnew.SaveBoard` may rewrite sibling `.kicad_pro`/`.kicad_prl` files and trip

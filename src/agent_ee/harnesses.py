@@ -169,6 +169,9 @@ def evidence_mounts(run_dir, label):
     mounts = [(run / name, '/evidence/' + name) for name in ('checks', 'work') if (run / name).is_dir()]
     if (run / 'baseline.json').is_file():
         mounts.append((run / 'baseline.json', '/evidence/baseline.json'))
+        if label == 'implementation':
+            from .violation_waivers import writer_mounts
+            mounts += writer_mounts(run)
     if label == 'adjudicator':
         mounts += [(p, '/experiments/' + p.parent.name) for p in (run / 'review-work').glob('*/experiments')]
     return mounts

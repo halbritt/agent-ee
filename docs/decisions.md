@@ -441,7 +441,7 @@ The pod's AMPSEAL 23-position header is TE 776228-1 (right-angle, black), the EC
 Such parts (the header, NEO-M9N and SMA if unstocked) are excluded from JLCPCB assembly with a `not_assembled` marker and a recorded deviation naming the purchase source; every other BOM line must be in stock on the day of generation. Excludes silent substitution and failing criterion 5 on hand-fitted parts.
 
 **ERC/DRC waivers.** > Owner-recorded dispositions bound to the exact violation
-Each waiver names the rule, the items and a reason and is bound to the violation's location hash; a moved or new violation needs a new disposition; the owner approves the list before done. Excludes agent-issued waivers and blanket severity downgrades beyond fome-mc's project file.
+Each waiver names the rule, the items and a reason and is bound to the violation's location hash; a moved or new violation needs a new disposition; the owner approves the list before done. Excludes agent-issued waivers and blanket severity downgrades beyond fome-mc's project file. [The implementation](violation-waivers.md) (AGENTEE-189) captures the owner record as an immutable input, verifies list approval against its digest and matches ERC/DRC items exactly; every unmatched error or warning still fails, and each actual waiver list still needs its own owner approval.
 
 **Pod power and travel ranges.** > Harness splice on the relay circuit, own 2 A fuse; 130 and 70 mm
 The pod taps the switched 12 V relay output in the harness (the circuit that also feeds the ECU's J1-27 input) through its own 2 A fuse and grounds to chassis with the ECU; it never draws from the ECU. Fork travel 130 mm and shock travel 70 mm stand; fome-mc's telemetry document is corrected (FOMEMC-31).

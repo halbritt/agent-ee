@@ -215,6 +215,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             if kind == 'drc':
                 captured(scope.get('board'))
             if kind != 'netlist':
+                from .violation_waivers import input_path
+                waiver = input_path(params, scope, files, inputs)
+                if waiver:
+                    captured(waiver, immutable=True)
                 native_files = [scope['schematic']] + ([scope['board']] if kind == 'drc' else [])
                 for native in native_files:
                     for suffix in ('.kicad_pro', '.kicad_dru'):
