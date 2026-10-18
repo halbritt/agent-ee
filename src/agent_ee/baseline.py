@@ -101,6 +101,9 @@ def compile_baseline(scope, files, inputs=None):
             from .fab_profile import capability
             descriptor = capability(params, scope, files, inputs, spec["id"])
             paths.update(descriptor["immutable_inputs"])
+        if spec.get("kind") == "dfm_geometry":
+            from .dfm_geometry import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "assembly_readiness":
             from .assembly_readiness import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])

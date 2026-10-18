@@ -866,6 +866,7 @@ from .netclass_completeness import check_netclass_completeness
 from .netlist_extra import check_netlist_extra
 from .placement_check import check_placement
 from .assembly_readiness import check_assembly_readiness
+from .dfm_geometry import check_dfm_geometry
 
 
 from .catalog_checks import check_catalog
@@ -887,7 +888,8 @@ CHECK_FUNCS = {'fab_consistency': check_fab_consistency, 'fab_export': check_fab
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
                "passive_corners": check_passive_corners, "dc_path": check_dc_path,
-               "placement": check_placement, "assembly_readiness": check_assembly_readiness}
+               "placement": check_placement, "assembly_readiness": check_assembly_readiness,
+               "dfm_geometry": check_dfm_geometry}
 
 
 # ------------------------------------------------------------------ entry point

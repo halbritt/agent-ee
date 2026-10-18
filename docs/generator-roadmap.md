@@ -59,6 +59,7 @@ yet (AGENTEE-86, AGENTEE-92, AGENTEE-90, AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
 [consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
 CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
+The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
