@@ -42,7 +42,10 @@ NAME = g.PROJECT_NAME
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
 STEPS_DIR = REPO_ROOT / 'fixtures' / 'rung1' / 'qualified' / 'steps'
-DEFAULT_KICAD_ROUTE = Path.home() / 'git' / 'agent-ee' / 'build' / 'kicad-route-pin-08179cd'
+IMAGE_KICAD_ROUTE = Path('/opt/kicad-route')
+# The pinned kicad-route checkout: AGENT_EE_KICAD_ROUTE_CHECKOUT when set, else the
+# standard image path. routing_adapter.preflight still qualifies whatever is named.
+DEFAULT_KICAD_ROUTE = Path(os.environ.get('AGENT_EE_KICAD_ROUTE_CHECKOUT') or IMAGE_KICAD_ROUTE)
 LAYOUT_NAMESPACE = str(uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/rung1-qualified/1'))
 STAGE_ORDER = ['schematic', 'placement', 'routing', 'verification', 'fab']
 MOUNT_STEPS, MOUNT_SOURCE = '/tool/steps', '/tool/agent-ee'
@@ -858,7 +861,8 @@ def main(argv=None):
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
     parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
-                        help='kicad-route checkout at the adapter pin 08179cd with vendor/krt and .venv-krt')
+                        help='kicad-route checkout at the adapter pin 08179cd with vendor/krt and .venv-krt '
+                             '(default: $AGENT_EE_KICAD_ROUTE_CHECKOUT, else /opt/kicad-route)')
     parser.add_argument('--dry-run', action='store_true',
                         help='scaffold, scope, config and registration probes; checks-only reviews and a step '
                              'rehearsal; no inference')

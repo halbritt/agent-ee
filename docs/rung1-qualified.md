@@ -25,7 +25,10 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_qual
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
 `--kicad-route` must name a kicad-route checkout at the routing adapter's pin
 (`08179cd`) with `vendor/krt` and `.venv-krt` installed; the default is
-`~/git/agent-ee/build/kicad-route-pin-08179cd` (see [Routing pin](#routing-pin)).
+`$AGENT_EE_KICAD_ROUTE_CHECKOUT`, else the standard image path `/opt/kicad-route`
+(see [Routing pin](#routing-pin)). The test module gates on the same variable through
+`tests/toolchain.py`'s `require_kicad_route()`: unset is a skip, or a failure under
+`AGENT_EE_REQUIRE_TOOLCHAIN=1`; a configured checkout that does not qualify always fails.
 `--max-iterations` defaults to 4 and `--max-seconds` to 3600 (see
 [Iteration budget](#iteration-budget)). The exit status is 0 only when the
 record says `done: true`.
@@ -130,7 +133,9 @@ campaign budget stays at 3600 s, as the integrator set it.
 the pinned blobs. `~/git/kicad-route` has moved past the pin, and
 `build/kicad-route-snapshot` has no `.git`. The run therefore uses a clone of
 `~/git/kicad-route` checked out at the pin, with `vendor/` and `.venv-krt`
-copied from the snapshot. Nothing in either source tree was changed.
+copied from the snapshot, named through `AGENT_EE_KICAD_ROUTE_CHECKOUT`
+(`~/git/agent-ee/build/kicad-route-pin-08179cd` on the run host). Nothing in
+either source tree was changed.
 
 ## Records
 

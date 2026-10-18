@@ -16,10 +16,10 @@ from agent_ee import rung1_campaign as rc
 from agent_ee import rung1_qualified as q
 from agent_ee.storage import canonical
 try:
-    from toolchain import require_toolchain
+    from toolchain import require_kicad_route, require_toolchain
     from test_generate import HEADER, ROWS, git_catalog
 except ImportError:  # run as tests.test_rung1_qualified from the repository root
-    from tests.toolchain import require_toolchain
+    from tests.toolchain import require_kicad_route, require_toolchain
     from tests.test_generate import HEADER, ROWS, git_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -144,12 +144,13 @@ class StepsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'outside mutable_inputs'):
             q.check_steps([{**steps[0], 'writes': {'generation/intent.json': 'out/x'}}], mutable)
 
-    def test_routing_step_is_the_owned_adapter_declaration_when_the_pin_is_installed(self):
-        from agent_ee.routing_adapter import preflight, ARTIFACTS
-        if preflight(q.DEFAULT_KICAD_ROUTE)['problems']:
-            self.skipTest('toolchain prerequisite: pinned kicad-route 08179cd checkout not installed at '
-                          + str(q.DEFAULT_KICAD_ROUTE))
-        route = q.step_specs(q.DEFAULT_KICAD_ROUTE)[2]
+    def test_routing_step_is_the_owned_adapter_declaration(self):
+        from agent_ee.routing_adapter import ARTIFACTS
+        # Gated like every other kicad-route test: AGENT_EE_KICAD_ROUTE_CHECKOUT unset is a
+        # skip, or a failure under AGENT_EE_REQUIRE_TOOLCHAIN=1; a configured checkout that
+        # does not qualify always fails. No per-host default path.
+        checkout = require_kicad_route()
+        route = q.step_specs(checkout)[2]
         self.assertEqual(route['adoptable_exits'], [0, 2])
         self.assertEqual(route['artifacts'], list(ARTIFACTS))
         self.assertEqual(route['writes'], {f'project/{q.NAME}.kicad_pcb': f'routing/candidate/project/{q.NAME}.kicad_pcb'})
