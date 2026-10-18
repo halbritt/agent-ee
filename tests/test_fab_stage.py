@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from agent_ee import fab_stage, generate as g, rung1_campaign as rc, rung1_qualified as q
+from agent_ee.fab_package import PREVIEW_ACTION
 from agent_ee.stage_receipts import run_step, validate_receipt
 from agent_ee.storage import digest, read_json, write_json
 try:
@@ -72,23 +73,42 @@ class InputTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'provenance size/sha256'):
                 fab_stage.copy_rotation_inputs(source, root / 'tampered')
 
-    def test_preview_required_cannot_mark_any_driver_done(self):
-        reason = 'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)'
+    def test_preview_required_is_done_only_with_its_obligations_in_every_driver(self):
+        missing = 'fab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded'
+        policy = '2' * 64
+        obligations = {'status': 'PREVIEW_REQUIRED', 'policy_sha256': policy, 'action': PREVIEW_ACTION,
+                       'designators': [{'designator': 'C1', 'side': 'Top'}, {'designator': 'R1', 'side': 'Bottom'}]}
         with tempfile.TemporaryDirectory() as tmp:
             artifacts = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/cpl/cpl/cpl.csv': '1' * 64},
-                         'rotation': {'status': 'PREVIEW_REQUIRED'}}
+                         'rotation': {'status': 'PREVIEW_REQUIRED', 'policy_sha256': policy}}
             record = rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=artifacts,
-                                     recomputed=dict(artifacts), scaffold={'bound': True})
-            self.assertEqual((record['done'], record['fab_rotation_blocker']), (False, reason))
-            fab = {'rotation_status': 'PREVIEW_REQUIRED', 'manifest': 'x'}
+                                     recomputed={**artifacts, 'preview_obligations': None}, scaffold={'bound': True})
+            self.assertEqual((record['done'], record['fab_rotation_blocker']), (False, missing))
+            listed = {**artifacts, 'rotation': {**artifacts['rotation'], 'preview_obligations': obligations}}
+            record = rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=listed,
+                                     recomputed={**listed, 'preview_obligations': obligations},
+                                     scaffold={'bound': True})
+            self.assertEqual((record['done'], record['preview_obligations']), (True, obligations))
+            self.assertEqual(record['fab_rotation']['status'], 'PREVIEW_REQUIRED')
+            fab = {'rotation_status': 'PREVIEW_REQUIRED', 'manifest': 'x', 'policy_sha256': policy}
             record = q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0, fab=fab)
-            self.assertEqual((record['done'], record['fab_rotation_blocker']), (False, reason))
+            self.assertEqual((record['done'], record['fab_rotation_blocker']), (False, missing))
+            record = q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
+                                    fab={**fab, 'preview_obligations': obligations})
+            self.assertEqual((record['done'], record['preview_obligations']), (True, obligations))
+            # Obligations bound to another policy, or an unverified review, never mark done.
+            self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
+                                            fab={**fab, 'preview_obligations': obligations,
+                                                 'policy_sha256': '3' * 64})['done'])
+            self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=1,
+                                            fab={**fab, 'preview_obligations': obligations})['done'])
             # An allowed status still needs the derived package; an unknown or missing status never passes.
             self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
                                             fab={'rotation_status': 'ok', 'manifest': None})['done'])
             self.assertTrue(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
                                            fab={'rotation_status': 'ok', 'manifest': 'x'})['done'])
-            for fab in (None, {'manifest': 'x'}, {'rotation_status': 'unknown', 'manifest': 'x'}):
+            for fab in (None, {'manifest': 'x'}, {'rotation_status': 'unknown', 'manifest': 'x'},
+                        {'rotation_status': 'pass', 'manifest': 'x', 'preview_obligations': obligations}):
                 self.assertFalse(q.write_record(tmp, {}, verdict='criteria_satisfied', verify_exit=0,
                                                 fab=fab)['done'], fab)
             # Decision C: a qualified scope without cpl_rotation keeps main's done rule.
@@ -147,6 +167,24 @@ class NativeFabStageTests(unittest.TestCase):
         result = q.fab_outcome(self.check_run)
         self.assertEqual(result['rotation_status'], 'PREVIEW_REQUIRED')
         manifest = read_json(result['manifest'])
+        # AGENTEE-151: the qualified fab outcome recomputes the obligations from the sealed run.
+        with (self.check_run / 'work/cpl/cpl/cpl.csv').open() as stream:
+            sides = sorted((r['Designator'], r['Layer']) for r in csv.DictReader(stream))
+        self.assertEqual(sorted((e['designator'], e['side']) for e in result['preview_obligations']['designators']),
+                         sides)
+        self.assertEqual(result['preview_obligations'], manifest['preview_obligations'])
+        self.assertEqual(result['policy_sha256'], manifest['rotation']['policy']['sha256'])
+        (self.root / 'qualified-record').mkdir()
+        record = q.write_record(self.root / 'qualified-record', {}, verdict='criteria_satisfied', verify_exit=0,
+                                fab=result)
+        self.assertEqual((record['done'], record['preview_obligations']), (True, result['preview_obligations']))
+        forged = {**manifest, 'preview_obligations': {**manifest['preview_obligations'], 'designators': []}}
+        write_json(Path(result['manifest']), forged)
+        try:
+            with self.assertRaisesRegex(ValueError, 'preview obligations differ'):
+                q.fab_outcome(self.check_run)
+        finally:
+            write_json(Path(result['manifest']), manifest)
         self.assertEqual(manifest['rotation']['report_sha256'], digest(self.check_run / 'work/cpl/cpl-rotation.json'))
         target = Path(result['manifest']).parent / 'fab/cpl.csv'
         self.assertEqual(digest(target), digest(self.check_run / 'work/cpl/cpl/cpl.csv'))
@@ -161,9 +199,30 @@ class NativeFabStageTests(unittest.TestCase):
         self.assertEqual(record['stages'][-1]['status'], 'PREVIEW_REQUIRED', record['stages'][-1])
         self.assertTrue(record['fab_exports_exist'])
         self.assertEqual(record['verdict'], 'criteria_satisfied')
-        self.assertFalse(record['done'])
-        self.assertEqual(record['fab_rotation_blocker'],
-                         'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)')
+        # AGENTEE-151: done with the obligations listed; the stage status stays PREVIEW_REQUIRED.
+        self.assertTrue(record['done'])
+        self.assertIsNone(record['fab_rotation_blocker'])
+        self.assertEqual(record['preview_obligations'],
+                         read_json(self.root / 'done-gate/stages/7-fab/fab-manifest.json')['preview_obligations'])
+
+    def test_generator_recomputes_the_stage_obligations_and_refuses_tampering(self):
+        package = self.stage.dir / 'package'
+        manifest = read_json(self.stage.dir / 'fab-manifest.json')
+        obligations = g.stage_obligations(package, manifest)
+        self.assertEqual(obligations, manifest['preview_obligations'])
+        self.assertEqual(self.state['preview_obligations'], obligations)
+        self.assertIn({'designator': 'JB0', 'side': 'Bottom'}, obligations['designators'])
+        forged = {**manifest, 'preview_obligations': {**obligations, 'designators': obligations['designators'][1:]}}
+        with self.assertRaisesRegex(g.StageFailure, 'preview obligations differ'):
+            g.stage_obligations(package, forged)
+        with self.assertRaisesRegex(g.StageFailure, 'preview obligations differ'):
+            g.stage_obligations(package, {k: v for k, v in manifest.items() if k != 'preview_obligations'})
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / 'package'
+            shutil.copytree(package, copy)
+            (copy / 'cpl.csv').write_text((copy / 'cpl.csv').read_text() + 'Z9,0,0,Top,0\n')
+            with self.assertRaisesRegex(g.StageFailure, 'not the corrected CPL'):
+                g.stage_obligations(copy, manifest)
 
     def test_missing_policy_is_a_failed_stage_receipt(self):
         broken = self.root / 'missing-policy'

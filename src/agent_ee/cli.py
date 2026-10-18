@@ -812,7 +812,14 @@ def main(argv=None):
                 run = state["history"][-1]["run"]
                 rotation = artifacts.get("rotation") or {}
                 print(f"fab_rotation {rotation.get('status')} policy {rotation.get('policy_sha256')}")
-                blocker = rotation_blocker(rotation.get("status"))
+                obligations = rotation.get("preview_obligations")
+                if obligations:
+                    # AGENTEE-151: recomputed operator obligations, before the artifact hash lines.
+                    print(f"fab_preview_obligations {len(obligations['designators'])} policy "
+                          f"{obligations['policy_sha256']}: {obligations['action']}")
+                    for entry in obligations["designators"]:
+                        print(f"fab_preview_obligation {entry['designator']} {entry['side']}")
+                blocker = rotation_blocker(rotation.get("status"), obligations, rotation.get("policy_sha256"))
                 if blocker:
                     print(blocker)
                 print(f"fab_artifacts {artifacts['artifacts_id']} candidate {artifacts['candidate_id']}")

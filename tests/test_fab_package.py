@@ -8,6 +8,7 @@ evidence seal, convergence and verify-campaign are production code.
 """
 import contextlib
 import copy
+import csv
 import io
 import json
 import tempfile
@@ -23,7 +24,8 @@ from agent_ee.campaign import fab_artifacts, run_campaign, verify_campaign
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import run_checks
-from agent_ee.fab_package import artifact_record, rotation_blocker, rotation_record
+from agent_ee.fab_package import (PREVIEW_ACTION, artifact_record, preview_obligations, rotation_blocker,
+                                   rotation_record)
 from agent_ee.storage import digest, read_json, write_json
 try:
     from toolchain import require_toolchain
@@ -34,7 +36,15 @@ REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / 'fixtures/fab-export'
 CPL_FIXTURE = REPO / 'fixtures/cpl-rotation'
 MARKER = {'schema': 'agent-ee.generation/1', 'done_check': 'fab'}
-PREVIEW = 'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)'
+NO_OBLIGATIONS = 'fab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded'
+
+
+def cpl_obligations(path):
+    """Every row of a corrected CPL file as a (designator, side) obligation, naturally sorted."""
+    with Path(path).open() as stream:
+        rows = list(csv.DictReader(stream))
+    return [{'designator': r['Designator'], 'side': r['Layer']}
+            for r in sorted(rows, key=lambda r: fab_export.natural_key(r['Designator']))]
 
 
 def generation_scope(schema='agent-ee.scope/2'):
@@ -335,10 +345,53 @@ class RotationCompositionTests(NativeRun):
         seal = read_json(self.run_dir / 'work/verification/evidence.json')['checks']['fab']['artifacts']
         self.assertEqual(seal['work/cpl/cpl/cpl.csv'], rotation['cpl_sha256'])
         self.assertIn('fab-package:done-gate', load_baseline(self.run_dir)['coverage']['checks']['fab']['predicates'])
-        self.assertEqual(rotation_blocker(rotation['status']), PREVIEW)
+        # AGENTEE-151: PREVIEW_REQUIRED is done only as the recorded operator obligation, every corrected
+        # CPL designator with its side, bound to the policy; the status itself is never upgraded.
+        obligations = rotation['preview_obligations']
+        self.assertEqual(obligations, {'status': 'PREVIEW_REQUIRED', 'policy_sha256': rotation['policy_sha256'],
+                                       'action': PREVIEW_ACTION,
+                                       'designators': cpl_obligations(self.run_dir / 'work/cpl/cpl/cpl.csv')})
+        self.assertIn({'designator': 'JB0', 'side': 'Bottom'}, obligations['designators'])
+        self.assertIn({'designator': 'U1', 'side': 'Top'}, obligations['designators'])
+        self.assertIsNone(rotation_blocker(rotation['status'], obligations, rotation['policy_sha256']))
+        self.assertIn(f"{len(obligations['designators'])} preview obligations", result['summary'])
+        notice = next(t for t in result['limitations'] if t.startswith('operator obligation before ordering'))
+        self.assertIn('JB0 (Bottom)', notice)
+        self.assertEqual(rotation_blocker(rotation['status']), NO_OBLIGATIONS)
         self.assertIsNone(rotation_blocker('ok'))
+        self.assertIsNone(rotation_blocker('not_declared'))
         self.assertIn("'pass' is not a done status", rotation_blocker('pass'))
         self.assertIn('None', rotation_blocker(None))
+        self.assertIn('carries no preview obligations', rotation_blocker('ok', obligations, rotation['policy_sha256']))
+        designators = obligations['designators']
+        malformed = {
+            'not bound to the sealed rotation policy': {**obligations, 'policy_sha256': '0' * 64},
+            'list no designator': {**obligations, 'designators': []},
+            'not a designator with its side': {**obligations, 'designators': [
+                {**designators[0], 'side': 'Middle'}, *designators[1:]]},
+            'not unique and sorted': {**obligations, 'designators': designators[::-1]},
+            'another status or action': {**obligations, 'action': 'none'},
+            'no preview obligations recorded': {**obligations, 'extra': 1}}
+        for reason, bad in malformed.items():
+            self.assertIn(reason, rotation_blocker('PREVIEW_REQUIRED', bad, rotation['policy_sha256']), reason)
+        self.assertIn('not bound', rotation_blocker('PREVIEW_REQUIRED', obligations, None))
+
+        # The obligations are recomputed from the sealed report and the corrected CPL; they must agree.
+        report_data = read_json(self.run_dir / 'work/cpl/cpl-rotation.json')
+        cpl_text = (self.run_dir / 'work/cpl/cpl/cpl.csv').read_text()
+        self.assertEqual(preview_obligations('PREVIEW_REQUIRED', rotation['policy_sha256'], report_data, cpl_text),
+                         obligations)
+        self.assertIsNone(preview_obligations('ok', rotation['policy_sha256'], report_data, cpl_text))
+        dropped = {**report_data, 'designators': report_data['designators'][1:]}
+        flipped = {**report_data, 'designators': [{**report_data['designators'][0], 'layer': 'Other'},
+                                                  *report_data['designators'][1:]]}
+        lines = cpl_text.splitlines(keepends=True)
+        for report_bad, text in ((dropped, cpl_text), (flipped, cpl_text), (report_data, ''.join(lines[:-1])),
+                                 (report_data, cpl_text + lines[-1])):
+            with self.assertRaises(ValueError):
+                preview_obligations('PREVIEW_REQUIRED', rotation['policy_sha256'], report_bad, text)
+        with self.assertRaisesRegex(ValueError, 'policy sha256'):
+            preview_obligations('PREVIEW_REQUIRED', None, report_data, cpl_text)
 
         # The correction must be of exactly this package's native CPL, and remain as sealed.
         scope = read_json(self.run_dir / 'candidate.json')['scope']
@@ -510,7 +563,7 @@ class GenerationCampaignTests(unittest.TestCase):
         return {'argv': [str(a) for a in argv], 'exit_code': code, 'stdout': f'{label}.stdout.log',
                 'stdout_tail': out[-2000:], 'stderr_tail': ''}
 
-    def test_declared_cpl_correction_is_sealed_and_preview_required_keeps_the_record_not_done(self):
+    def test_declared_cpl_correction_is_sealed_and_preview_required_is_done_with_obligations(self):
         self.write_campaign(rotation_scope(), ['design/cpl.kicad_pcb'])
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
@@ -524,12 +577,23 @@ class GenerationCampaignTests(unittest.TestCase):
         self.assertEqual(artifacts['rotation']['policy_sha256'], digest(CPL_FIXTURE / 'jlc-cpl-policy.json'))
         self.assertIn('work/cpl/cpl/cpl.csv', artifacts['files'])
         self.assertNotIn('work/fab/fab/cpl.csv', artifacts['files'])
+        obligations = artifacts['rotation']['preview_obligations']
+        self.assertEqual(obligations['designators'], cpl_obligations(final / 'work/cpl/cpl/cpl.csv'))
 
         code, stdout = self.verify_cli(root)
         self.assertEqual(code, 0)
         self.assertIn(f"fab_rotation PREVIEW_REQUIRED policy {artifacts['rotation']['policy_sha256']}\n", stdout)
-        self.assertIn(PREVIEW + '\n', stdout)
-        self.assertTrue(rc.artifacts_agree(artifacts, rc.recomputed_artifacts(stdout, str(final))))
+        self.assertIn(f"fab_preview_obligations {len(obligations['designators'])} policy "
+                      f"{obligations['policy_sha256']}: {PREVIEW_ACTION}\n", stdout)
+        self.assertIn('fab_preview_obligation JB0 Bottom\n', stdout)
+        self.assertNotIn('fab: cpl rotation', stdout)
+        recomputed = rc.recomputed_artifacts(stdout, str(final))
+        self.assertEqual(recomputed['preview_obligations'], obligations)
+        self.assertTrue(rc.artifacts_agree(artifacts, recomputed))
+        # Obligations verify-campaign did not print (or printed differently) are not verified.
+        self.assertFalse(rc.artifacts_agree(artifacts, {**recomputed, 'preview_obligations': None}))
+        shorter = stdout.replace('fab_preview_obligation JB0 Bottom\n', '')
+        self.assertIsNone(rc.recomputed_artifacts(shorter, str(final)))
 
         rundir = self.root / 'rung1'
         rundir.mkdir()
@@ -543,11 +607,25 @@ class GenerationCampaignTests(unittest.TestCase):
         record = record_for(state)
         self.assertTrue(record['fab_artifacts_verified'])
         self.assertEqual(record['fab_rotation']['status'], 'PREVIEW_REQUIRED')
-        self.assertEqual(record['fab_rotation_blocker'], PREVIEW)
-        self.assertFalse(record['done'])
-        # The owner decision is one constant: admitting PREVIEW_REQUIRED would make this record done.
-        with mock.patch.object(fab_package, 'DONE_ROTATION_STATUSES', frozenset({'not_declared', 'ok', 'PREVIEW_REQUIRED'})):
-            self.assertTrue(record_for(state)['done'])
+        self.assertIsNone(record['fab_rotation_blocker'])
+        self.assertEqual(record['preview_obligations'], obligations)
+        self.assertTrue(record['done'])
+        self.assertIn('preview_obligations verify-campaign recomputed', record['done_rule'])
+        # The owner decision is one constant: without PREVIEW_REQUIRED in it this record is not done.
+        with mock.patch.object(fab_package, 'DONE_ROTATION_STATUSES', frozenset({'not_declared', 'ok'})):
+            self.assertFalse(record_for(state)['done'])
+
+        # Tampered obligations in the campaign state fail verify-campaign closed and are never done.
+        tampered = copy.deepcopy(state)
+        tampered['fab_artifacts']['rotation']['preview_obligations']['designators'].pop()
+        write_json(root / 'state.json', tampered)
+        with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
+            verify_campaign(root)
+        record = record_for(tampered)
+        self.assertEqual((record['verdict'], record['done']), ('unverified:criteria_satisfied', False))
+        self.assertIsNone(record['preview_obligations'])
+        write_json(root / 'state.json', state)
+        verify_campaign(root)
 
         # The sealed corrected CPL is a done-gate artifact: changing it fails verify-campaign closed.
         corrected = final / 'work/cpl/cpl/cpl.csv'

@@ -261,8 +261,10 @@ and both rung-1 scopes apply this check from `--cpl-inputs` captures and retain
 the corrected package with its policy and correction manifest; in the rung-1
 campaign the done gate seals the corrected CPL. A missing capture fails closed
 in the generator. Done predicates admit only the rotation statuses in
-`fab_package.DONE_ROTATION_STATUSES`, so a pending preview keeps the generation
-record incomplete with a named reason.
+`fab_package.DONE_ROTATION_STATUSES`; a pending preview reaches done only as an
+operator obligation, with every corrected CPL designator and its side listed as
+`preview_obligations` to confirm in the JLCPCB placement preview before
+ordering ([preview obligations](docs/fab-package.md#preview-obligations-agentee-151)).
 The [JLCPCB cost estimate](docs/jlc-cost-estimate.md) is informational and
 never grades a design. It prices the sealed package from a captured, versioned
 pricing table and the catalog snapshot, and every number cites its table entry.

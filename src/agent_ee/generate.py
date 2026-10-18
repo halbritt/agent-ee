@@ -4,7 +4,8 @@ Run ``python3 -m agent_ee.generate SPEC.md --out RUNDIR`` (see docs/generate.md)
 Every stage writes ``RUNDIR/stages/N-NAME/receipt.json``; a stage never starts
 after an earlier failure. ``rung1-record.json`` says ``done: true`` only when the
 review verdict is ``criteria_satisfied``, the fab exports exist and are nonempty,
-and the CPL rotation status is in ``fab_package.DONE_ROTATION_STATUSES``.
+and the CPL rotation status is in ``fab_package.DONE_ROTATION_STATUSES`` (a
+PREVIEW_REQUIRED status with its recomputed ``preview_obligations``, AGENTEE-151).
 """
 import argparse
 import csv
@@ -1077,16 +1078,38 @@ def stage_fab(stage, state, options):
         if manifest['rotation']['policy']['sha256'] != captured:
             raise StageFailure('fab stage consumed a CPL policy other than the one stage 1 captured')
     copy_tree(out / 'fab', stage.dir / 'package')
+    obligations = stage_obligations(stage.dir / 'package', manifest)
     shutil.copyfile(out / 'fab-manifest.json', stage.dir / 'fab-manifest.json')
     stage.output(stage.dir / 'package', 'corrected fab package')
     stage.output(stage.dir / 'fab-manifest.json', 'fab manifest')
     stage.receipt['details'].update(status=manifest['status'], physical_validation=False,
-                                    rotation=manifest['rotation'])
+                                    rotation=manifest['rotation'], preview_obligations=obligations)
     if variant is not None:
         stage.receipt['details']['bom_variant_export'] = manifest['bom_variant']
     state['fab_manifest'] = stage.dir / 'fab-manifest.json'
     state['fab_status'] = manifest['status']
+    state['fab_policy_sha256'] = manifest['rotation']['policy']['sha256']
+    state['preview_obligations'] = obligations
     return manifest['status']
+
+
+def stage_obligations(package, manifest):
+    """The fab step's preview obligations, recomputed from its copied report and corrected CPL (AGENTEE-151)."""
+    from .fab_package import preview_obligations
+    report_path = package / 'cpl-rotation.json'
+    if digest(report_path) != manifest['rotation']['report_sha256']:
+        raise StageFailure('fab stage CPL rotation report differs from its manifest digest')
+    report = json.loads(report_path.read_text())
+    if digest(package / 'cpl.csv') != (report.get('cpl') or {}).get('sha256'):
+        raise StageFailure('fab stage package cpl.csv is not the corrected CPL its rotation report names')
+    try:
+        obligations = preview_obligations(manifest['status'], manifest['rotation']['policy']['sha256'], report,
+                                          (package / 'cpl.csv').read_text(encoding='utf-8'))
+    except ValueError as exc:
+        raise StageFailure(f'fab stage preview obligations do not recompute: {exc}') from exc
+    if manifest.get('preview_obligations') != obligations:
+        raise StageFailure('fab stage preview obligations differ from its corrected CPL and rotation report')
+    return obligations
 
 
 def record_step_commands(stage, receipt_dir, receipt):
@@ -1168,7 +1191,9 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
     # The gate is exactly the contract's: never relaxed, overridden or reinterpreted here. The
     # rotation status is an allow-list (fab_package.DONE_ROTATION_STATUSES); unknown fails closed.
     from .fab_package import rotation_blocker
-    blocker = rotation_blocker(state.get('fab_status')) if fab_ok else None
+    obligations = state.get('preview_obligations') if fab_ok else None
+    blocker = (rotation_blocker(state.get('fab_status'), obligations, state.get('fab_policy_sha256'))
+               if fab_ok else None)
     done = verdict == 'criteria_satisfied' and fab_ok and blocker is None
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, 'spec': {'path': options['spec'], 'sha256': digest(spec)},
               'options': {'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
@@ -1179,13 +1204,18 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
               'fab_manifest': ({'path': 'stages/7-fab/fab-manifest.json', 'sha256': digest(state['fab_manifest'])}
                                if state.get('fab_manifest') else None),
               'fab_exports_exist': fab_ok, 'fab_status': state.get('fab_status'),
-              'fab_rotation_blocker': blocker, 'done': done,
+              'fab_rotation_blocker': blocker,
+              # AGENTEE-151: each designator the operator confirms in the JLCPCB placement preview
+              # before ordering; a PREVIEW_REQUIRED stage status is recorded, never upgraded.
+              'preview_obligations': obligations, 'done': done,
               # Every stage is an experimental driver step; placement in particular may be the
               # row stand-in rather than the landed placer (AGENTEE-109).
               'stage_qualification': {name: QUALIFICATION for _, name in STAGES},
               'placement': {'qualification': QUALIFICATION, 'placer': state.get('placer')},
               'done_rule': ('campaign verdict criteria_satisfied AND fab exports exist and are nonempty AND the '
-                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES')}
+                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES, a PREVIEW_REQUIRED '
+                            'status only with preview_obligations recomputed from the stage 7 report and '
+                            'corrected CPL (AGENTEE-151)')}
     write_json(rundir / 'rung1-record.json', record)
     return record
 

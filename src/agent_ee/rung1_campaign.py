@@ -692,11 +692,32 @@ def campaign_summary(root):
     return state, iterations, implementations
 
 
+def recomputed_obligations(lines):
+    """The preview obligations verify-campaign printed before the artifact hashes; False when malformed."""
+    from .fab_package import PREVIEW_ACTION
+    start = [i for i, line in enumerate(lines) if line.startswith('fab_preview_obligations ')]
+    listed = [line for line in lines if line.startswith('fab_preview_obligation ')]
+    if not start:
+        return False if listed else None
+    rotation = [line.split() for line in lines if line.startswith('fab_rotation ')]
+    head = re.fullmatch(r'fab_preview_obligations ([1-9][0-9]*) policy ([0-9a-f]{64}): (.*)', lines[start[0]])
+    if len(start) != 1 or not head or head[3] != PREVIEW_ACTION or len(rotation) != 1 or len(rotation[0]) != 4:
+        return False
+    entries = lines[start[0] + 1:start[0] + 1 + int(head[1])]
+    if entries != listed or len(listed) != int(head[1]) or not all(len(e.split()) == 3 for e in entries):
+        return False
+    return {'status': rotation[0][1], 'policy_sha256': head[2], 'action': head[3],
+            'designators': [{'designator': e.split()[1], 'side': e.split()[2]} for e in entries]}
+
+
 def recomputed_artifacts(stdout, run):
-    """The fab artifact hashes verify-campaign printed for the final run, or None."""
+    """The fab artifact hashes and preview obligations verify-campaign printed for the final run, or None."""
     lines = stdout.splitlines()
     header = next((i for i, line in enumerate(lines) if line.startswith('fab_artifacts ')), None)
     if header is None:
+        return None
+    obligations = recomputed_obligations(lines[:header])
+    if obligations is False:
         return None
     fields = lines[header].split()
     if len(fields) != 4 or fields[2] != 'candidate':
@@ -707,12 +728,15 @@ def recomputed_artifacts(stdout, run):
         if not sep or not path.startswith(prefix) or not re.fullmatch(r'[0-9a-f]{64}', sha):
             return None
         files[path[len(prefix):]] = sha
-    return {'artifacts_id': fields[1], 'candidate_id': fields[3], 'files': files}
+    return {'artifacts_id': fields[1], 'candidate_id': fields[3], 'files': files,
+            'preview_obligations': obligations}
 
 
 def artifacts_agree(stored, recomputed):
-    return bool(stored and recomputed) and all(stored.get(k) == recomputed[k]
-                                               for k in ('artifacts_id', 'candidate_id', 'files'))
+    return (bool(stored and recomputed)
+            and all(stored.get(k) == recomputed[k] for k in ('artifacts_id', 'candidate_id', 'files'))
+            and ((stored.get('rotation') or {}).get('preview_obligations')
+                 == recomputed.get('preview_obligations')))
 
 
 def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None, scaffold=None, stage=None):
@@ -721,19 +745,26 @@ def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, re
     verified = artifacts_agree(fab_artifacts, recomputed)
     scaffold_bound = bool(scaffold and scaffold.get('bound'))
     rotation = (fab_artifacts or {}).get('rotation') or {}
-    blocker = rotation_blocker(rotation.get('status')) if verified else None
+    obligations = rotation.get('preview_obligations') if verified else None
+    blocker = (rotation_blocker(rotation.get('status'), obligations, rotation.get('policy_sha256'))
+               if verified else None)
     done = (verdict == 'criteria_satisfied' and verified and scaffold_bound and blocker is None
             and (stage is None or stage['bound']))
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
               'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_artifacts': fab_artifacts,
               'fab_artifacts_recomputed_by_verify_campaign': recomputed, 'fab_artifacts_verified': verified,
               'fab_rotation': rotation or None, 'fab_rotation_blocker': blocker,
+              # AGENTEE-151: what the operator must confirm in the JLCPCB placement preview before
+              # ordering, as verify-campaign recomputed it; the rotation status is not upgraded.
+              'preview_obligations': obligations,
               'scaffold_receipt_binding': scaffold, 'stage_receipts_done': stage, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied AND the final campaign state lists the fab '
                             'artifact hashes of the passing fab_package done check AND verify-campaign recomputed '
                             'the same hashes from the retained run AND the scaffold receipt\'s after-tree is exactly the '
                             'first captured candidate on project/, generation/ and requirements/ AND the sealed '
-                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES AND, with declared '
+                            'CPL rotation status is in fab_package.DONE_ROTATION_STATUSES, a PREVIEW_REQUIRED '
+                            'status only with the preview_obligations verify-campaign recomputed (AGENTEE-151) '
+                            'AND, with declared '
                             'stage steps, the final state lists the agent-ee.stage-done/1 binding verify-campaign '
                             "recomputed: each declared stage's graded content is its step receipt output "
                             '(decision 1 amendment)')}

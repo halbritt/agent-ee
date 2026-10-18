@@ -98,9 +98,9 @@ The corrected `work/CPL/cpl/cpl.csv` then replaces `work/ID/fab/cpl.csv` in
 `files` (the native file stays in the package and its manifest), and the gate
 adds the corrected CPL and the report to its own evidence. `rotation` records
 the status, the check id, the policy id and sha256, the report path and
-digest, the corrected and native CPL digests and the applied/unmatched counts;
-the same record is `details.rotation`. Without a declared check `rotation` is
-`{"status": "not_declared"}`.
+digest, the corrected and native CPL digests, the applied/unmatched counts and
+`preview_obligations` (below); the same record is `details.rotation`. Without a
+declared check `rotation` is `{"status": "not_declared"}`.
 
 | Condition | Result |
 | --- | --- |
@@ -111,14 +111,40 @@ the same record is `details.rotation`. Without a declared check `rotation` is
 | Everything binds | `ok`, `pass`; summary ends `cpl rotation PREVIEW_REQUIRED` |
 
 The gate never upgrades a status. Whether a status may mark a generation
-done is `fab_package.DONE_ROTATION_STATUSES`, currently
-`{not_declared, ok}`, applied through `rotation_blocker` by the generator, the
-rung-1 campaign record and the qualified record. `PREVIEW_REQUIRED`, the only
-status `cpl_rotation` emits, therefore keeps `done` false with the reason
-`fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`. Any
-other or missing status also keeps it false. Accepting the unvalidated
-bottom-side transform is an owner decision; it is made by adding
-`PREVIEW_REQUIRED` to that one constant.
+done is `fab_package.DONE_ROTATION_STATUSES`, `{not_declared, ok,
+PREVIEW_REQUIRED}`, applied through `rotation_blocker` by the generator, the
+rung-1 campaign record and the qualified record. Any other or missing status
+keeps `done` false with the reason
+`fab: cpl rotation status '<status>' is not a done status`.
+
+### Preview obligations (AGENTEE-151)
+
+The owner decided on 2026-10-18 that `PREVIEW_REQUIRED` is an operator
+obligation recorded at done ([decisions](decisions.md), "Telemetry pod questions
+(second batch, 2026-10-18)", PREVIEW_REQUIRED rotations). A status in
+`fab_package.OBLIGATION_STATUSES` (`PREVIEW_REQUIRED`, the only status
+`cpl_rotation` emits) is done only with its `preview_obligations` record:
+
+```json
+{"status": "PREVIEW_REQUIRED", "policy_sha256": "<policy sha256>",
+ "action": "confirm each designator in the JLCPCB placement preview before ordering",
+ "designators": [{"designator": "C1", "side": "Top"}, {"designator": "JB0", "side": "Bottom"}]}
+```
+
+`fab_package.preview_obligations` computes it from the sealed corrected CPL:
+every row, with its `Layer` as `side`, naturally sorted, bound to the policy
+sha256. The report's designator records must list the same designators on the
+same sides, or the record is refused. Every driver recomputes it from sealed
+evidence rather than trusting a stored copy, and `rotation_blocker(status,
+obligations, policy_sha256)` blocks done unless it is well formed: exact keys,
+the same status and action, the sealed policy digest, a nonempty, unique,
+sorted designator list with `Top`/`Bottom` sides. Missing obligations give
+`fab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded`. A
+status that carries no obligation (`ok`, `not_declared`) is blocked if
+obligations are attached. The status stays `PREVIEW_REQUIRED` in every
+receipt and record; it is never upgraded to a pass. The passing gate adds a
+limitation naming each designator and side, and its summary ends
+`cpl rotation PREVIEW_REQUIRED; N preview obligations`.
 
 ## Generation scopes
 
@@ -166,23 +192,31 @@ state:
 ```text
 criteria_satisfied
 fab_rotation PREVIEW_REQUIRED policy <policy sha256>
-fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)
+fab_preview_obligations 2 policy <policy sha256>: confirm each designator in the JLCPCB placement preview before ordering
+fab_preview_obligation C1 Top
+fab_preview_obligation JB0 Bottom
 fab_artifacts <artifacts_id> candidate <candidate_id>
 <sha256>  <run>/work/fab/fab/bom.csv
 ...
 ```
 
 The `fab_rotation` line is always printed (`fab_rotation not_declared policy
-None` without a declared check); the reason line follows only for a status
-outside `DONE_ROTATION_STATUSES`. The rotation record is part of the
-`artifacts_id`, so a forged status in the state is refused like a forged hash.
+None` without a declared check). The obligation lines, recomputed from the
+final run's sealed report and corrected CPL, follow for a status with
+obligations; a `fab: cpl rotation ...` reason line follows when
+`rotation_blocker` refuses the status. The rotation record, obligations
+included, is part of the `artifacts_id`, so a forged status or obligation list
+in the state is refused like a forged hash.
 
 The rung-1 record (`rung1-campaign-record.json`) copies `fab_artifacts` from
-the state and the hashes parsed from that verify-campaign output; `done`
-requires the `criteria_satisfied` verdict, the two to agree, and the rotation
-status to be allowed (`fab_rotation`, `fab_rotation_blocker`). A record rebuilt
-from a state written before AGENTEE-126 has no rotation record and is never
-`done`.
+the state and the hashes and obligations parsed from that verify-campaign
+output; `done` requires the `criteria_satisfied` verdict, the two to agree
+(obligations included; any malformed or inconsistent obligation line refuses
+the parse), and the rotation status to be allowed with its obligations
+(`fab_rotation`, `fab_rotation_blocker`, `preview_obligations`). A record
+rebuilt from a state written before AGENTEE-126 has no rotation record and is
+never `done`; one written before AGENTEE-151 has a `PREVIEW_REQUIRED` rotation
+without obligations and is not `done` either.
 
 ## Tests
 
@@ -196,6 +230,10 @@ recomputes and whose tampering it refuses. `RotationCompositionTests` run
 board: the corrected CPL is sealed with `PREVIEW_REQUIRED` and the policy
 digest, native/board/report/corrected-CPL disagreements are refused, a
 correction without a pass fails the gate, and two declared corrections are
-unsupported. A second generation campaign on that scope shows the named reason
-in verify-campaign output, keeps the rung-1 record not done, and becomes done
-only when the constant is patched to admit `PREVIEW_REQUIRED`.
+unsupported. The obligations equal the corrected CPL's rows and sides,
+malformed obligation records are refused by `rotation_blocker`, and a report
+or CPL that disagree are refused by `preview_obligations`. A second generation
+campaign on that scope prints the obligations in verify-campaign output, makes
+the rung-1 record done with `preview_obligations` listed, is not done when the
+constant is patched to drop `PREVIEW_REQUIRED`, and refuses a state whose
+obligation list was tampered with.

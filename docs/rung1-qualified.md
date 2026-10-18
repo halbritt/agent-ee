@@ -245,14 +245,20 @@ The fab package is graded by checks inside the scope.
 
 `done` needs the campaign verdict `criteria_satisfied`, `verify-campaign`
 exit 0 and a rotation status in `fab_package.DONE_ROTATION_STATUSES`
-(`not_declared`, `ok`). Without `--cpl-inputs` the scope declares no
+(`not_declared`, `ok`, `PREVIEW_REQUIRED`). Without `--cpl-inputs` the scope declares no
 `cpl_rotation`, the fab package is graded by checks inside the scope as before,
 and the status is `not_declared`. With `--cpl-inputs DIRECTORY` (the immutable
 [policy and supplier tree](cpl-rotation.md#generator-fab-integration)) the scope
 declares `cpl`, the record also needs the derived corrected package, and the
-current CPL report's `PREVIEW_REQUIRED` keeps `done: false` with
-`fab_rotation_blocker: "fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform
-unvalidated)"`. A declared correction whose captured policy is excluded from the
+current CPL report's `PREVIEW_REQUIRED` is done only as an operator obligation
+(AGENTEE-151, owner decision 2026-10-18): `fab_outcome` recomputes
+`preview_obligations` from the final run's sealed report and corrected CPL,
+refuses a derived package whose copy differs, and the record lists them as
+`preview_obligations` for the operator to confirm in the JLCPCB placement
+preview before ordering
+([preview obligations](fab-package.md#preview-obligations-agentee-151)).
+Without them `done` stays false with `fab_rotation_blocker: "fab: cpl rotation
+PREVIEW_REQUIRED: no preview obligations recorded"`. A declared correction whose captured policy is excluded from the
 scope is refused at capture. The qualified record points to the derived
 corrected package; the sealed native export and check evidence stay unchanged.
 

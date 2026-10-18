@@ -12,7 +12,8 @@ experimental stand-in with the owned module now on main:
 - routing: ``routing_adapter.step`` (AGENTEE-93) on the pinned kicad-route checkout;
 - fab: the ``fab_export`` (AGENTEE-23) and ``fab_consistency`` (AGENTEE-73) checks and, with a
   ``--cpl-inputs`` capture, ``cpl_rotation`` with a receipted export step (AGENTEE-126); a
-  rotation status outside ``fab_package.DONE_ROTATION_STATUSES`` keeps "done" false.
+  rotation status outside ``fab_package.DONE_ROTATION_STATUSES`` keeps "done" false; a
+  PREVIEW_REQUIRED status is done only with its recomputed ``preview_obligations`` (AGENTEE-151).
 
 The driver's own records are ``qualification: experimental-unqualified``; checks and receipts
 are the owned ones. Where an owned module cannot do its job headlessly, the exact refusal is
@@ -987,8 +988,17 @@ def fab_outcome(run):
             or data['status'] != report['status']
             or data['physical_validation'] is not report['physical_validation']):
         raise ValueError('derived fab package differs from its checked rotation evidence')
+    # AGENTEE-151: the obligations are recomputed from the run's sealed report and corrected CPL.
+    from .fab_package import preview_obligations
+    policy_sha256, corrected = report['policy']['sha256'], run / 'work/cpl/cpl/cpl.csv'
+    if digest(corrected) != report['cpl']['sha256']:
+        raise ValueError('corrected CPL differs from its checked rotation report')
+    obligations = preview_obligations(report['status'], policy_sha256, report, corrected.read_text(encoding='utf-8'))
+    if data.get('preview_obligations') != obligations:
+        raise ValueError('derived fab package preview obligations differ from its checked rotation evidence')
     entry.update(manifest=str(manifest_path), sha256=digest(manifest_path), files=len(data['files']),
-                 board_sha256=data['board']['sha256'], rotation=data['rotation'])
+                 board_sha256=data['board']['sha256'], rotation=data['rotation'],
+                 policy_sha256=policy_sha256, preview_obligations=obligations)
     return entry
 
 
@@ -1043,19 +1053,24 @@ def campaign_record(rundir, base, command):
 
 def write_record(rundir, base, *, verdict=None, verify_exit=None, fab=None, stage=None):
     from .fab_package import rotation_blocker
-    blocker = None
+    blocker = obligations = None
     if verdict == 'criteria_satisfied' and verify_exit == 0:
         status = (fab or {}).get('rotation_status')
-        blocker = rotation_blocker(status)
+        obligations = (fab or {}).get('preview_obligations')
+        blocker = rotation_blocker(status, obligations, (fab or {}).get('policy_sha256'))
         if blocker is None and status != 'not_declared' and fab.get('manifest') is None:
             blocker = 'fab: the corrected fab package was not derived'
     done = (verdict == 'criteria_satisfied' and verify_exit == 0 and blocker is None
             and (stage is None or stage['bound']))
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
-              'fab_manifest': fab, 'fab_rotation_blocker': blocker, 'stage_receipts_done': stage, 'done': done,
+              'fab_manifest': fab, 'fab_rotation_blocker': blocker,
+              # AGENTEE-151: confirmed by the operator in the JLCPCB placement preview before ordering.
+              'preview_obligations': obligations, 'stage_receipts_done': stage, 'done': done,
               'done_rule': ('campaign verdict criteria_satisfied and verify-campaign exit 0; the fab package is '
                             'graded inside the check set by fab_export and fab_consistency, and by cpl_rotation '
-                            'when declared; the rotation status must be in fab_package.DONE_ROTATION_STATUSES; '
+                            'when declared; the rotation status must be in fab_package.DONE_ROTATION_STATUSES, '
+                            'a PREVIEW_REQUIRED status only with preview_obligations recomputed from the sealed '
+                            'rotation report and corrected CPL (AGENTEE-151); '
                             'with declared stage steps, the final state lists the agent-ee.stage-done/1 binding '
                             "verify-campaign recomputed: each declared stage's graded content is its step "
                             'receipt output (decision 1 amendment)')}

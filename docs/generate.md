@@ -111,10 +111,18 @@ stage with its status, error and receipt hash, the campaign verdict, the fab
 manifest hash and the placer used. `done` is true only when the campaign
 verdict is `criteria_satisfied` **and** the fab exports exist, are nonempty and
 match their manifest hashes **and** the fab status is in the allow-list
-`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`). The corrected
-package retains `PREVIEW_REQUIRED`, so it cannot make the record done; the
-record's `fab_rotation_blocker` names the reason,
-`fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`.
+`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`, `PREVIEW_REQUIRED`).
+The corrected package retains `PREVIEW_REQUIRED`, which is done only as an
+operator obligation (AGENTEE-151, owner decision 2026-10-18): stage 7
+recomputes `preview_obligations` (every corrected CPL designator with its side
+and the policy sha256) from the package's rotation report and corrected CPL,
+refuses the stage when the fab manifest's copy differs, and records it in the
+stage receipt and the record. The operator confirms each designator in the
+JLCPCB placement preview before ordering
+([preview obligations](fab-package.md#preview-obligations-agentee-151)).
+Without obligations the record's `fab_rotation_blocker` names the reason,
+`fab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded`; the
+stage status stays `PREVIEW_REQUIRED`.
 Supply `--cpl-inputs DIRECTORY` with the
 [captured policy and supplier tree](cpl-rotation.md#generator-fab-integration).
 Stage 7 refuses a package whose consumed policy digest differs from the one
