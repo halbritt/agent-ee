@@ -1,0 +1,55 @@
+{
+  "components": {
+    "C1": {
+      "dnp": false,
+      "footprint": "OwnedFP:CAP_2PAD",
+      "libsource": {
+        "lib": "OwnedGen",
+        "part": "CAP"
+      },
+      "sheet": "/",
+      "sheet_uuid": "/",
+      "uuid": "0f41da28-dee2-52cf-ad96-5101c587c021",
+      "value": "100n"
+    },
+    "J1": {
+      "dnp": false,
+      "footprint": "OwnedFP:CONN_1x3",
+      "libsource": {
+        "lib": "OwnedGen",
+        "part": "CONN3"
+      },
+      "sheet": "/",
+      "sheet_uuid": "/",
+      "uuid": "557416f4-b256-5961-80b5-8ecb80db1e58",
+      "value": "RC port"
+    },
+    "R1": {
+      "dnp": false,
+      "footprint": "OwnedFP:CAP_2PAD",
+      "libsource": {
+        "lib": "StageRC",
+        "part": "R"
+      },
+      "sheet": "/",
+      "sheet_uuid": "/",
+      "uuid": "91466eca-f380-546c-a784-8ebee76040b2",
+      "value": "10k"
+    }
+  },
+  "nets": {
+    "/GND": [
+      "C1.2",
+      "J1.3"
+    ],
+    "/IN": [
+      "J1.1",
+      "R1.1"
+    ],
+    "/OUT": [
+      "C1.1",
+      "J1.2",
+      "R1.2"
+    ]
+  }
+}

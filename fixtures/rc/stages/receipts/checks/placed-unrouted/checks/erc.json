@@ -1,0 +1,50 @@
+{
+  "candidate_id": "ba2a6d691277a395e1bea76f6cc8a1d18739f789f62f479cca83399ff8c60028",
+  "details": {
+    "by_severity": {},
+    "by_type": {},
+    "ignored_checks": [
+      "single_global_label",
+      "four_way_junction",
+      "simulation_model_issue",
+      "footprint_filter"
+    ],
+    "kicad_version": "10.0.7",
+    "schematic_files": [
+      "project/rc_stage.kicad_sch"
+    ],
+    "sheets_checked": 1,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/erc.json",
+        "/candidate/project/rc_stage.kicad_sch"
+      ],
+      "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+      "duration_s": 4.173,
+      "exit_code": 0
+    },
+    "violations": 0
+  },
+  "evidence": [
+    "work/erc/execution.json",
+    "work/erc/console.log",
+    "work/erc/erc.json"
+  ],
+  "execution": "ok",
+  "id": "erc",
+  "kind": "erc",
+  "limitations": [
+    "stock template tables not captured: sym-lib-table, fp-lib-table"
+  ],
+  "outcome": "pass",
+  "summary": "ERC ran on 1 sheet instance(s) with zero violations"
+}

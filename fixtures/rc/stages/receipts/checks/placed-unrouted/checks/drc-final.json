@@ -1,0 +1,56 @@
+{
+  "candidate_id": "ba2a6d691277a395e1bea76f6cc8a1d18739f789f62f479cca83399ff8c60028",
+  "details": {
+    "board_sha256": "c373729f51f9efbe5e56dfe9bb6df691394e0f9623305ee000c50e5cebb5a795",
+    "by_severity": {
+      "error": 4
+    },
+    "by_type": {
+      "unconnected_items": 4
+    },
+    "ignored_checks": [
+      "missing_courtyard",
+      "track_not_centered_on_via",
+      "tuning_profile_track_geometries",
+      "footprint_filters_mismatch",
+      "footprint_type_mismatch"
+    ],
+    "kicad_version": "10.0.7",
+    "schematic_parity": 0,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--schematic-parity",
+        "--units",
+        "mm",
+        "-o",
+        "/work/drc.json",
+        "/candidate/project/rc_stage.kicad_pcb"
+      ],
+      "console_sha256": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
+      "duration_s": 6.167,
+      "exit_code": 0
+    },
+    "unconnected_items": 4,
+    "violations": 0
+  },
+  "evidence": [
+    "work/drc-final/execution.json",
+    "work/drc-final/console.log",
+    "work/drc-final/drc.json"
+  ],
+  "execution": "ok",
+  "id": "drc-final",
+  "kind": "drc",
+  "limitations": [
+    "stock template tables not captured: sym-lib-table, fp-lib-table",
+    "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
+  ],
+  "outcome": "defect",
+  "summary": "DRC with schematic parity reported 0 violation(s), 4 unconnected item(s), 0 parity issue(s)"
+}

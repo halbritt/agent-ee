@@ -106,6 +106,11 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+Original [RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
+placed-unrouted and seeded placement defects with native checks and a KRT
+input receipt. The exact FOME-MC control derivatives requested by AGENTEE-103
+remain blocked by unresolved third-party rights.
+
 The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
 projects from captured envelope and parts records plus an explicit stage-one
 scope. It preserves project rules, checks and baseline sources, pre-creates child

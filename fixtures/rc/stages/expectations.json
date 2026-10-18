@@ -1,0 +1,26 @@
+{
+  "unplaced": {
+    "erc": "pass",
+    "netlist": "info",
+    "drc-placement": "pass",
+    "courtyard": "pass",
+    "containment": "defect",
+    "drc-final": "defect"
+  },
+  "placed-unrouted": {
+    "erc": "pass",
+    "netlist": "info",
+    "drc-placement": "pass",
+    "courtyard": "pass",
+    "containment": "pass",
+    "drc-final": "defect"
+  },
+  "seeded-placement": {
+    "erc": "pass",
+    "netlist": "info",
+    "drc-placement": "defect",
+    "courtyard": "defect",
+    "containment": "defect",
+    "drc-final": "defect"
+  }
+}

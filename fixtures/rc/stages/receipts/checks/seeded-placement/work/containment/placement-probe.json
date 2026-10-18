@@ -1,0 +1,520 @@
+{
+  "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
+  "footprints": [
+    {
+      "courtyards": {
+        "F": {
+          "polygons": [
+            [
+              [
+                18300000,
+                15600000
+              ],
+              [
+                21700000,
+                15600000
+              ],
+              [
+                21700000,
+                17400000
+              ],
+              [
+                18300000,
+                17400000
+              ]
+            ]
+          ],
+          "primitives": [
+            {
+              "kind": "polygon",
+              "native_class": "PCB_SHAPE",
+              "points": [
+                [
+                  18300000,
+                  15600000
+                ],
+                [
+                  21700000,
+                  15600000
+                ],
+                [
+                  21700000,
+                  17400000
+                ],
+                [
+                  18300000,
+                  17400000
+                ]
+              ],
+              "uuid": "daa40972-40ff-4931-9ff8-a50c039a4921"
+            }
+          ],
+          "status": "proven"
+        }
+      },
+      "fpid": "OwnedFP:CAP_2PAD",
+      "locked": false,
+      "pads": [
+        {
+          "attribute": "SMD",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ],
+          "net": "/OUT",
+          "number": "1",
+          "position_nm": [
+            19050000,
+            16500000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 1,
+          "size_nm": [
+            900000,
+            1000000
+          ],
+          "uuid": "eadefbc3-04f8-4a90-86c6-8458e9db9e11"
+        },
+        {
+          "attribute": "SMD",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ],
+          "net": "/GND",
+          "number": "2",
+          "position_nm": [
+            20950000,
+            16500000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 1,
+          "size_nm": [
+            900000,
+            1000000
+          ],
+          "uuid": "b8054c9a-4f8e-4257-9241-0d368faba0f0"
+        }
+      ],
+      "position_nm": [
+        20000000,
+        16500000
+      ],
+      "ref": "C1",
+      "rotation_deg": 0.0,
+      "side": "F",
+      "uuid": "e7acaf41-5a52-4e41-9b7f-cd68111d3ceb",
+      "value": "100n"
+    },
+    {
+      "courtyards": {
+        "F": {
+          "polygons": [
+            [
+              [
+                -1750000,
+                8750000
+              ],
+              [
+                750000,
+                8750000
+              ],
+              [
+                750000,
+                16330000
+              ],
+              [
+                -1750000,
+                16330000
+              ]
+            ]
+          ],
+          "primitives": [
+            {
+              "kind": "polygon",
+              "native_class": "PCB_SHAPE",
+              "points": [
+                [
+                  -1750000,
+                  8750000
+                ],
+                [
+                  750000,
+                  8750000
+                ],
+                [
+                  750000,
+                  16330000
+                ],
+                [
+                  -1750000,
+                  16330000
+                ]
+              ],
+              "uuid": "b25f5264-2e16-445e-aa92-a82471c5c953"
+            }
+          ],
+          "status": "proven"
+        }
+      },
+      "fpid": "OwnedFP:CONN_1x3",
+      "locked": false,
+      "pads": [
+        {
+          "attribute": "PTH",
+          "layers": [
+            "B.Cu",
+            "B.Mask",
+            "F.Cu",
+            "F.Mask",
+            "In1.Cu",
+            "In10.Cu",
+            "In11.Cu",
+            "In12.Cu",
+            "In13.Cu",
+            "In14.Cu",
+            "In15.Cu",
+            "In16.Cu",
+            "In17.Cu",
+            "In18.Cu",
+            "In19.Cu",
+            "In2.Cu",
+            "In20.Cu",
+            "In21.Cu",
+            "In22.Cu",
+            "In23.Cu",
+            "In24.Cu",
+            "In25.Cu",
+            "In26.Cu",
+            "In27.Cu",
+            "In28.Cu",
+            "In29.Cu",
+            "In3.Cu",
+            "In30.Cu",
+            "In4.Cu",
+            "In5.Cu",
+            "In6.Cu",
+            "In7.Cu",
+            "In8.Cu",
+            "In9.Cu"
+          ],
+          "net": "/IN",
+          "number": "1",
+          "position_nm": [
+            -500000,
+            10000000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 1,
+          "size_nm": [
+            1700000,
+            1700000
+          ],
+          "uuid": "02c3921a-f203-4b54-a495-916d5ef3eb88"
+        },
+        {
+          "attribute": "PTH",
+          "layers": [
+            "B.Cu",
+            "B.Mask",
+            "F.Cu",
+            "F.Mask",
+            "In1.Cu",
+            "In10.Cu",
+            "In11.Cu",
+            "In12.Cu",
+            "In13.Cu",
+            "In14.Cu",
+            "In15.Cu",
+            "In16.Cu",
+            "In17.Cu",
+            "In18.Cu",
+            "In19.Cu",
+            "In2.Cu",
+            "In20.Cu",
+            "In21.Cu",
+            "In22.Cu",
+            "In23.Cu",
+            "In24.Cu",
+            "In25.Cu",
+            "In26.Cu",
+            "In27.Cu",
+            "In28.Cu",
+            "In29.Cu",
+            "In3.Cu",
+            "In30.Cu",
+            "In4.Cu",
+            "In5.Cu",
+            "In6.Cu",
+            "In7.Cu",
+            "In8.Cu",
+            "In9.Cu"
+          ],
+          "net": "/OUT",
+          "number": "2",
+          "position_nm": [
+            -500000,
+            12540000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 0,
+          "size_nm": [
+            1700000,
+            1700000
+          ],
+          "uuid": "fac7f27e-b1f4-4cf9-9a80-9f8647b5d52d"
+        },
+        {
+          "attribute": "PTH",
+          "layers": [
+            "B.Cu",
+            "B.Mask",
+            "F.Cu",
+            "F.Mask",
+            "In1.Cu",
+            "In10.Cu",
+            "In11.Cu",
+            "In12.Cu",
+            "In13.Cu",
+            "In14.Cu",
+            "In15.Cu",
+            "In16.Cu",
+            "In17.Cu",
+            "In18.Cu",
+            "In19.Cu",
+            "In2.Cu",
+            "In20.Cu",
+            "In21.Cu",
+            "In22.Cu",
+            "In23.Cu",
+            "In24.Cu",
+            "In25.Cu",
+            "In26.Cu",
+            "In27.Cu",
+            "In28.Cu",
+            "In29.Cu",
+            "In3.Cu",
+            "In30.Cu",
+            "In4.Cu",
+            "In5.Cu",
+            "In6.Cu",
+            "In7.Cu",
+            "In8.Cu",
+            "In9.Cu"
+          ],
+          "net": "/GND",
+          "number": "3",
+          "position_nm": [
+            -500000,
+            15080000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 0,
+          "size_nm": [
+            1700000,
+            1700000
+          ],
+          "uuid": "ed81a85f-9bb3-4440-b659-2844d3b7b738"
+        }
+      ],
+      "position_nm": [
+        -500000,
+        10000000
+      ],
+      "ref": "J1",
+      "rotation_deg": 0.0,
+      "side": "F",
+      "uuid": "71c0fb15-a860-4264-a90c-57098967f244",
+      "value": "RC port"
+    },
+    {
+      "courtyards": {
+        "F": {
+          "polygons": [
+            [
+              [
+                18300000,
+                14100000
+              ],
+              [
+                21700000,
+                14100000
+              ],
+              [
+                21700000,
+                15900000
+              ],
+              [
+                18300000,
+                15900000
+              ]
+            ]
+          ],
+          "primitives": [
+            {
+              "kind": "polygon",
+              "native_class": "PCB_SHAPE",
+              "points": [
+                [
+                  18300000,
+                  14100000
+                ],
+                [
+                  21700000,
+                  14100000
+                ],
+                [
+                  21700000,
+                  15900000
+                ],
+                [
+                  18300000,
+                  15900000
+                ]
+              ],
+              "uuid": "2d3f637a-2010-437e-9b1c-91e72fb40b48"
+            }
+          ],
+          "status": "proven"
+        }
+      },
+      "fpid": "OwnedFP:CAP_2PAD",
+      "locked": false,
+      "pads": [
+        {
+          "attribute": "SMD",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ],
+          "net": "/IN",
+          "number": "1",
+          "position_nm": [
+            19050000,
+            15000000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 1,
+          "size_nm": [
+            900000,
+            1000000
+          ],
+          "uuid": "792f1dca-497f-4ad3-8c3f-240a57d6e6a1"
+        },
+        {
+          "attribute": "SMD",
+          "layers": [
+            "F.Cu",
+            "F.Mask",
+            "F.Paste"
+          ],
+          "net": "/OUT",
+          "number": "2",
+          "position_nm": [
+            20950000,
+            15000000
+          ],
+          "rotation_deg": 0.0,
+          "shape": 1,
+          "size_nm": [
+            900000,
+            1000000
+          ],
+          "uuid": "632acda5-31e2-4302-87ca-b2022775c5bc"
+        }
+      ],
+      "position_nm": [
+        20000000,
+        15000000
+      ],
+      "ref": "R1",
+      "rotation_deg": 0.0,
+      "side": "F",
+      "uuid": "98df07b6-9f7f-4cc5-bb29-9cf181b4daa0",
+      "value": "10k"
+    }
+  ],
+  "outline": {
+    "polygons": [
+      [
+        [
+          0,
+          0
+        ],
+        [
+          50000000,
+          0
+        ],
+        [
+          50000000,
+          30000000
+        ],
+        [
+          0,
+          30000000
+        ]
+      ]
+    ],
+    "primitives": [
+      {
+        "end": [
+          50000000,
+          0
+        ],
+        "kind": "segment",
+        "native_class": "PCB_SHAPE",
+        "start": [
+          0,
+          0
+        ],
+        "uuid": "1958602c-b6b1-4926-95d5-c1abfdf18b9d"
+      },
+      {
+        "end": [
+          0,
+          0
+        ],
+        "kind": "segment",
+        "native_class": "PCB_SHAPE",
+        "start": [
+          0,
+          30000000
+        ],
+        "uuid": "5fe4416b-4515-45f9-8850-17a1ff6c25c8"
+      },
+      {
+        "end": [
+          50000000,
+          30000000
+        ],
+        "kind": "segment",
+        "native_class": "PCB_SHAPE",
+        "start": [
+          50000000,
+          0
+        ],
+        "uuid": "88d3504d-c7e4-4b85-b996-e6876dc5c861"
+      },
+      {
+        "end": [
+          0,
+          30000000
+        ],
+        "kind": "segment",
+        "native_class": "PCB_SHAPE",
+        "start": [
+          50000000,
+          30000000
+        ],
+        "uuid": "a3e41d78-baa7-48f7-9365-625d10b45028"
+      }
+    ],
+    "status": "proven"
+  },
+  "pcbnew_version": "10.0.7",
+  "rule_areas": [],
+  "schema": "agent-ee.placement-probe/1"
+}

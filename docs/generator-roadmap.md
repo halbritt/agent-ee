@@ -70,6 +70,12 @@ CPL rotation policy remains AGENTEE-72.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
+The [original RC stage fixtures](rc-stage-fixtures.md) provide unplaced,
+placed-unrouted and seeded placement inputs with native checks and a recorded
+KRT attempt. They are independent alternatives to the FOME-MC reference;
+AGENTEE-103's exact control-derived variants remain blocked by unresolved
+third-party rights. These fixtures do not qualify the complete rung.
+
 ## Starting a campaign from an empty candidate
 
 The existing [campaign](campaign-guide.md) takes an `agent-ee.campaign/1`

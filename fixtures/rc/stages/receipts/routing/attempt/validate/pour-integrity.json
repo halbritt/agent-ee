@@ -1,0 +1,70 @@
+{
+  "check": "pour_integrity",
+  "status": "PASS",
+  "min_spokes": 2,
+  "project_min_resolved_spokes": 2,
+  "area_loss_limit_pct": null,
+  "reference_islands_off_main": 0,
+  "layers": [
+    {
+      "net_layer": "/GND@B.Cu",
+      "area_mm2": [
+        1336.1254,
+        1336.1254
+      ],
+      "area_delta_pct": 0.0,
+      "polygons": [
+        1,
+        1
+      ],
+      "islands_off_main": [
+        0,
+        0
+      ],
+      "area_off_main_mm2": [
+        0,
+        0
+      ]
+    }
+  ],
+  "failures": [],
+  "informational": [],
+  "pads": [
+    {
+      "pad": "J1.3@B.Cu",
+      "connection": "solid",
+      "position_mm": [
+        5.0,
+        15.08
+      ],
+      "touches_fill": [
+        true,
+        true
+      ],
+      "spokes": [
+        1,
+        1
+      ],
+      "solid": [
+        true,
+        true
+      ],
+      "track_spokes": [
+        0,
+        0
+      ],
+      "in_main": [
+        true,
+        true
+      ],
+      "polygons": [
+        "/GND@B.Cu/zone0#0"
+      ],
+      "other_path": true
+    }
+  ],
+  "reference_source": {
+    "source": "/work/routing/out/runs/rc_stage/ee103/20261018T051928.197323Z/../../../../.cache/baseline/44d73353a4c471eaf1935e9a5abdf23361dabfebb9f98ebfedef7849e9878a69/baseline-pour.json",
+    "cached": true
+  }
+}

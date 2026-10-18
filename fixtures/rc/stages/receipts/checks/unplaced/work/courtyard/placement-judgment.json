@@ -1,0 +1,22 @@
+{
+  "advisory": null,
+  "board_sha256": "d7eb1474c3001c20d9fc2748be8809dd41b17f8da746ea79b75240cd202fabcc",
+  "candidate_id": "0073fbeacb9e6412e80bb301c07028f66898f6c33bceb4dfc5b2bbf4b59bf5d0",
+  "criterion": "courtyard-overlap/1",
+  "defects": [],
+  "drc": {
+    "check_id": "drc-placement",
+    "drc_json": "work/drc-placement/drc.json",
+    "drc_sha256": "405ca9eca80abf3bd1fe96a392777adf47608dd0df7e16090ab171d9dfe27a85",
+    "kicad_version": "10.0.7",
+    "outcome": "pass",
+    "projection": "placement-stage/1",
+    "result_sha256": "2eeea1aa610e8098940fc345889bc03af5072fa39ab67594af1608d2e1a97b9d"
+  },
+  "notes": [],
+  "pcbnew_version": "10.0.7",
+  "routing_feedback": null,
+  "schema": "agent-ee.placement-predicate/1",
+  "status": "pass",
+  "unknown": []
+}

@@ -1,0 +1,28 @@
+{
+  "note": "Provenance excerpts, not a portable complete stage receipt. Full replayable receipt/candidate remain at source_run. Routing never grades agent-ee acceptance. This attempt used the final pruned KRT runtime.",
+  "source_run": "/tmp/agent-ee-burndown-20261017/workers/ee103-rung1-stage-fixtures/scratch/routing-evidence-pruned",
+  "retained_sha256": {
+    "adapter-report.json": "617bf5465adab9510b145f10ff97b34e13f8ad0873f97a66d87a7e321ee3c5e4",
+    "attempt/RESULT.md": "d286690d36db1228d7a6962d37169d2e104de6a8b370d1bb7c39f315646a5e18",
+    "attempt/attempt.json": "6da9835dc5795219ecf94faceeaa13606616c991bae88e635327ae7cf0b562fa",
+    "attempt/facts/reference-facts.json": "434ab304ef946d10493730b7f0ac07ec31052a30f9916101b9b2cf6ad5ebc9c1",
+    "attempt/facts/reference-facts.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/result.json": "be32c85c43924a7f077b5dc574ff393ffe17d304114c019ea6e6cac0fb43e0e2",
+    "attempt/snapshot.json": "c987d67cea3894b30bb6ded97abe8eb053a0645dc3bbad2ebdfda5fbd41c8a10",
+    "attempt/validate/candidate-drc.json": "a72d0a45059b1aa3525f6a6cb469e0936871859eaa05d71d149b0838e36f5260",
+    "attempt/validate/candidate-drc.log": "687161651d311b5e51d6e89fc6029699416a638b965aa9207749633512af4751",
+    "attempt/validate/candidate-facts.json": "b686cfd8978527e4f261354a16212f1884cb165f693598c64fe1b7650be8f680",
+    "attempt/validate/candidate-facts.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/candidate-pour.json": "8a391404e5fae9b038da5efb73dbf55bd1bc1a16d9569731f69773e476b41452",
+    "attempt/validate/candidate-pour.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "attempt/validate/candidate-refill.json": "50b00fceb4bc505004997ccd2e1b9f0a39e9ac5c22b6179e0ddfaef1f407b5d1",
+    "attempt/validate/candidate-refill.log": "e4d1eae39b3f1fc3c1ec20b040e45e16407353c4bb018ee7454ddbc84f64a7dd",
+    "attempt/validate/new-findings.json": "5ff88c9f28b8acc5f2c72b470a49c028151205a12102b200c793d6ef1aeebbbd",
+    "attempt/validate/pour-integrity.json": "31bd79f5417cda0e5376849c0b76f7199706f5c7dd2bf8dc89e10d465d70f045",
+    "attempt/validate/preservation.json": "913f86a9f154a8c74533c51df80f1fe46952e07c75b22ec1aedc21eb3e40854c",
+    "kicad-route.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kicad-route.stdout": "ce8f99c2833fe011b0d4b9244fc858626a05ce4f2c44ec177e8a232724c11263",
+    "receipt.json": "fa1222d8149bfb74a5d6bf2fb8ebab85329b48cf2233583ae5d7247abbca8251",
+    "summary.json": "56cc72596fdecb7b9981b22f2ccbb490f15ad663a6b3f5f569799a11cab89dea"
+  }
+}
