@@ -188,6 +188,9 @@ and expected subjects are part of the immutable baseline; history records retain
 owner convergence-contract acceptance remain outstanding; executable behavior
 does not establish those approvals. A complete native generation rung has the
 additional limits recorded in the [qualified RC campaign](rung1-qualified.md).
+The [stage-ordered driver](rung1-stages.md) (AGENTEE-104) runs one RC candidate
+through the fixed stage order without inference. It records each stage as passed
+from sealed checks, completed by a receipt, or not reached with its owning item.
 Hierarchical presence is still unsupported; an empty flat subject needs a
 successful native probe.
 
