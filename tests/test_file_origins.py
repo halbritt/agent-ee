@@ -139,6 +139,21 @@ class RepositoryInventoryTests(unittest.TestCase):
             if key not in origins.OWNED and key not in confirmed:
                 self.assertEqual(value['permission_status'], UNRESOLVED, key)
 
+    def test_fome_mc_psu_capture_reports_its_unresolved_upstream(self):
+        # T16 is the owner decision of 2026-10-18; the PSU sheet still embeds Polygonus (T3, unresolved).
+        t16 = REAL['origins']['T16']
+        self.assertEqual(t16['permission_status'], CONFIRMED)
+        self.assertIn('T3', t16['embedded_origins'])
+        self.assertEqual(REAL['origins']['T3']['permission_status'], UNRESOLVED)
+        sheet = self.files['fixtures/fome-mc/psu/capture/psu/sheets/psu.kicad_sch']
+        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
+                         ('copied-design', ['T16'], UNRESOLVED))
+        for path in ('fixtures/fome-mc/psu/capture/psu/block.json', 'fixtures/fome-mc/psu/inventory.json',
+                     'fixtures/fome-mc/psu/board/interface.json'):
+            self.assertIn('T16', self.files[path]['origins'], path)
+            self.assertEqual(self.files[path]['permission_status'], UNRESOLVED, path)
+        self.assertFalse([p for p in self.files if p.startswith('fixtures/fome-mc/psu/capture/psu/sources/')])
+
     def test_fome_mc_fixtures_follow_the_recorded_owner_decision(self):
         t16 = REAL['origins']['T16']
         self.assertIn('fome-mc reference sheets are committed as fixtures', t16['owner_record'])
@@ -147,12 +162,12 @@ class RepositoryInventoryTests(unittest.TestCase):
         self.assertIn('df304f3321296f7e517e0d2e2aa52e1380d52993', t16['upstream']['revisions'])
         sheet = self.files['fixtures/fome-mc/inventory/capture/wbo1/sheets/wbo1.kicad_sch']
         self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
-                         ('copied-design', ['T16'], CONFIRMED))
+                         ('copied-design', ['T16'], UNRESOLVED))  # T16 embeds unresolved Polygonus (T3)
         entry = self.files['fixtures/fome-mc/inventory/capture/wbo1/block.json']
-        self.assertEqual((entry['kind'], entry['permission_status']), ('retained-output', CONFIRMED))
+        self.assertEqual((entry['kind'], entry['permission_status']), ('retained-output', UNRESOLVED))
         self.assertEqual(self.files['fixtures/fome-mc/LICENSE-NOTICE.md']['permission_status'], PROPOSED)
         inventory_file = self.files['fixtures/fome-mc/inventory/block-inventory.json']
-        self.assertEqual((inventory_file['origins'], inventory_file['permission_status']), (['AE', 'T16'], CONFIRMED))
+        self.assertEqual((inventory_file['origins'], inventory_file['permission_status']), (['AE', 'T16'], UNRESOLVED))
 
     def test_walk_exclusions_mirror_gitignore(self):
         lines = {line.strip() for line in (ROOT / '.gitignore').read_text().splitlines()
@@ -231,6 +246,34 @@ class InventoryBoundaryTests(unittest.TestCase):
             errors, summary = tree.check(inventory(rules, T1=record))
             self.assertEqual(errors, [])
             self.assertEqual(summary['inventory'][0]['permission_status'], 'owner-confirmed')
+            # A generated record mixing agent-ee output with confirmed material is not MIT-proposed.
+            mixed = [rule(['fixture/'], ['AE-RUN', 'T1'], 'retained-output')]
+            errors, summary = tree.check(inventory(mixed, T1=record))
+            self.assertEqual((errors, summary['inventory'][0]['permission_status']), ([], 'owner-confirmed'))
+
+    def test_embedded_upstream_keeps_its_own_status(self):
+        record = dict(owner_record='2026-10-18 owner decision in docs/decisions.md')
+        files = {'fixture/a.kicad_sch': 'x', 'fixture/b.kicad_sch': 'y', 'fixture/c.json': 'z'}
+        with SyntheticTree(files) as tree:
+            rules = [rule(['fixture/a.kicad_sch'], ['T2'], 'copied-design'),
+                     rule(['fixture/b.kicad_sch'], ['T4'], 'copied-design'),
+                     rule(['fixture/c.json'], ['AE', 'T5'], 'owned-metadata')]
+            # T2 embeds unresolved T1; T4 embeds T5, which is confirmed and embeds nothing.
+            data = inventory(rules, T2=origin(CONFIRMED, embedded_origins=['T1'], **record),
+                             T4=origin(CONFIRMED, embedded_origins=['T5'], **record), T5=origin(CONFIRMED, **record))
+            errors, summary = tree.check(data)
+            self.assertEqual(errors, [])
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [UNRESOLVED, CONFIRMED, CONFIRMED])
+            self.assertEqual([f['origins'] for f in summary['inventory']], [['T2'], ['T4'], ['AE', 'T5']])
+            # Embedding is transitive: T5 embedding T1 makes every file reaching it unresolved.
+            data['origins']['T5']['embedded_origins'] = ['T1']
+            errors, summary = tree.check(data)
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [UNRESOLVED] * 3)
+            for embedded, expected in ((['T99'], "origin T2: unknown embedded origin 'T99'"),
+                                       (['T2'], 'origin T2: embeds itself'),
+                                       ('T1', 'origin T2: embedded_origins must be a list')):
+                data['origins']['T2']['embedded_origins'] = embedded
+                self.assertEqual(tree.check(data)[0], [expected])
 
     def test_confirmed_origin_mixed_with_agent_ee_is_not_proposed_for_mit(self):
         with SyntheticTree({'fixture/a.json': 'x', 'fixture/b.json': 'y', 'fixture/c.json': 'z'}) as tree:

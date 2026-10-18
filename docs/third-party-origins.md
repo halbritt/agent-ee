@@ -20,6 +20,9 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   and agent-ee ([decision](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures),
   [notice](../fixtures/fome-mc/LICENSE-NOTICE.md)). The decision chooses no
   licence, so those files are not offered under MIT either.
+  fome-mc sheets embed upstream FOME-Tech Polygonus content (`T3`, `T4`,
+  `T6`, `T8`), which stays unresolved, so every `T16` file reports
+  **unresolved** until the owner rules on that embedded content.
 - Every other origin is **unresolved**. Those files are not offered under MIT.
   Each origin needs an owner decision, recorded in the inventory, before its
   status changes. Ownership of this repository, or of the checkout a file was
@@ -54,7 +57,7 @@ Most unresolved files are retained evidence, which is classified by directory.
 | T13 | Seeded-benchmark source boards | CC-BY-SA-4.0, CERN-OHL-P/S-2.0 | Metadata and extracted identifiers in `benchmarks/seeded/`; no design files |
 | T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
 | T15 | FOME-MC seeded-benchmark records (`halbritt/fome-mc`, `5954c3a`) | No license found | None tracked: the AGENTEE-108 expectations manifest and run reports stay in a private store; the repository keeps only their SHA-256 hashes ([seeded benchmark](seeded-benchmark.md)). Publication is AGENTEE-118 |
-| T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file; owner holds the rights (owner-confirmed 2026-10-18) | `fixtures/fome-mc/`: copied sheets and project libraries, and the block entries generated from them; planning documents are cited by pinned identity, not copied |
+| T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file; owner holds the rights (owner-confirmed 2026-10-18); embeds unresolved Polygonus content | `fixtures/fome-mc/`: copied sheets and project libraries (wideband channels and the PSU block), and the block entries, contracts and inventories generated from them; planning documents are cited by pinned identity, not copied |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and
@@ -105,7 +108,10 @@ recorded review.
 
 A file is unresolved if any of its origins is unresolved. Otherwise it is
 owner-confirmed if any of its origins is. It is proposed for MIT only when all
-of its origins are agent-ee origins.
+of its origins are agent-ee origins. A file's origins include, transitively,
+every origin its declared origins list in `embedded_origins`, so an owner
+decision on a derived design does not clear the upstream content it carries.
+An unknown or self-referencing embedded origin is an error.
 
 Without `.git`, as in the container image, the check walks the checkout with
 the `.gitignore` exclusions.

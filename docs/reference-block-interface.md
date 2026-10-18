@@ -128,6 +128,12 @@ channel sheets. They still need explicit electrical declarations, parts
 qualification and complete passing sealed runs. Owned controls establish
 capture behavior, not qualification of those actual blocks.
 
+The fome-mc `psu` block is committed under `fixtures/fome-mc/psu/`, following the
+owner decision of 2026-10-18 ([PSU block](fome-psu-block.md)). It is unverified
+and still needs explicit electrical declarations, parts qualification and
+complete passing sealed runs. Owned controls establish capture behavior, not
+qualification of the actual blocks.
+
 [Block adaptation](block-adaptation.md) instantiates a captured flat block into a
 pre-created child sheet and maps its requirements to fresh board checks. The
 instance and source remain immutable; the ordinary repair writer edits the child.

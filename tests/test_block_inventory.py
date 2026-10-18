@@ -1,5 +1,6 @@
 """Block inventory capture and its private qualification over an owned hierarchical design."""
 import copy
+import hashlib
 import json
 import os
 import subprocess

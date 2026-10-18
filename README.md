@@ -325,6 +325,9 @@ a pre-created child, freezes its provenance and maps its requirements to fresh b
 Its native provenance check lists value/connectivity edits and grades boundary
 bindings. Optional layouts still need qualification;
 a passing run on a separate schematic cannot qualify the block.
+The [fome-mc PSU block](docs/fome-psu-block.md) is the rung-2 power reference: a
+pinned capture with its contract, sourced requirements and a scope/2 review on an
+original standalone board.
 [Block inventory capture](docs/block-inventory.md) writes one draft entry per
 planned block from a pinned design commit, all unverified, each with its
 reference set, a derived interface contract, library hashes and sourced pending
