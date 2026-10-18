@@ -1379,6 +1379,26 @@
     },
     {
       "paths": [
+        "fixtures/schematic-lint/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "Original test inputs and generators; see the local provenance record or generator module docstring."
+    },
+    {
+      "paths": [
+        "fixtures/schematic-lint/Lint.kicad_sym"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original symbols described in fixtures/schematic-lint/PROVENANCE.md; no stock library content copied."
+    },
+    {
+      "paths": [
         "fixtures/rung1/"
       ],
       "kind": "owned-fixture",

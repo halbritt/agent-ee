@@ -148,6 +148,10 @@ its node limit, such as `MCU_ST_STM32H7`, are first copied into a
 that would short distinct local nets are rejected. Repeated sheet files and
 multi-sheet global power remain unsupported. The [native emitter](docs/schematic-emitter.md)
 produces flat and supported hierarchical schematics from that captured intent.
+A [schematic readability lint](docs/schematic-lint.md) reports overlaps, wires
+through pins, rail and divider orientation, rail labels, grid and title-block
+findings that ERC does not produce. They are style findings unless a profile
+raises a rule to defect.
 [Forward annotation](docs/forward-annotation.md) plans and applies native-netlist
 changes to a board with protected placement and routing. Full campaign generation
 and hierarchical annotation application remain unqualified.

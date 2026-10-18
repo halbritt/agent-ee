@@ -106,6 +106,7 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Native-bound footprint assignment](native-binding.md) — exact native board inventory, selection and library-pin binding.
 - [Land-pattern geometry](land-geometry.md) and [validation](land-geometry-validation.md) — bounded pad-shape comparison used by the supplier/native check.
 - [Netlist parity](netlist-parity.md) — exact intent or golden netlist parity against full native XML.
+- [Schematic readability lint](schematic-lint.md) — deterministic presentation findings over captured sheets and native nets; style only unless a profile raises a rule to defect.
 - [Native schematic emission](schematic-emitter.md) and [forward annotation](forward-annotation.md) — captured-intent generation and native-netlist board updates; full campaign integration remains pending.
 - [kicad-route routing adapter](routing-adapter.md) — pinned read-only routing attempts, exit semantics and retained reports; campaign integration with AGENTEE-95 remains pending.
 - [Placement campaign adapter](placement-adapter.md) — placement turns of a staged campaign: writer context, coordinator-run placer step, placement-only structural write scope with qualified side flips, and retained verification.
