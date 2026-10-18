@@ -270,8 +270,10 @@ stock-model receipt that the scope declares. Gerber geometry,
 DFM and assembly rotation corrections stay outside its coverage.
 The [fab round-trip check](docs/fab-roundtrip.md) re-parses native Gerber and
 Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill
-histograms, copper pad/via flash counts and outline bounds within 1 µm. Its
-narrow parser fails closed on unsupported constructs; artwork is not compared.
+histograms, copper pad/via flash counts and extents, track/arc and zone-region
+counts, and outline bounds within 1 µm. Its owned parser covers KiCad 10's
+aperture macros, G75 arcs and regions and fails closed on anything else;
+artwork is not rendered.
 The [CPL rotation check](docs/cpl-rotation.md) rewrites the exported CPL to
 native pad-box midpoints. It applies a captured, versioned rotation policy and
 requires every rotation to agree with the pin-1 frame of the captured supplier

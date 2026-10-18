@@ -3,7 +3,9 @@
 Judgment-free: emits what the saved .kicad_pcb actually contains (footprints
 with DNP/BOM/position/board-only attributes, lib id, orientation and exact nm
 anchor; pads with size/drill/position/net and their native board-space bounding
-box in integer nm; track segments, vias, zones, nets, unconnected count).
+box in integer nm, overall and per flashed copper layer; track segments, vias,
+zones, per-layer zone fill outline and netted copper shape counts, nets,
+unconnected count).
 agent_ee.checks applies declared criteria.
 UUIDs use KIID.AsString() (str(KIID) is only a SWIG proxy repr).
 `--dfm` adds a `dfm` section of exact native facts for agent_ee.dfm_geometry:
@@ -91,6 +93,8 @@ def extract(board_path):
                 "drill_nm": [int(drill.x), int(drill.y)],
                 "flash_layers": [board.GetLayerName(layer) for layer in copper if pad.FlashLayer(layer)],
                 "bbox_nm": box_nm(pad.GetBoundingBox()),
+                "flash_bbox_nm": {board.GetLayerName(layer): box_nm(pad.GetBoundingBox(layer))
+                                  for layer in copper if pad.FlashLayer(layer)},
                 "uuid": pad.m_Uuid.AsString(),
             }
             if net:
@@ -140,6 +144,17 @@ def extract(board_path):
         if z.GetNetname():
             nets.setdefault(z.GetNetname(), 0)
     report["zones"] = zones
+    # Plotted copper beyond tracks and pads, for fab_roundtrip: every saved
+    # filled-polygon outline of board and footprint zones (one Gerber region
+    # each) and netted board/footprint shapes (plotted as Conductor artwork).
+    report["zone_fill_outlines"] = {board.GetLayerName(layer): sum(
+        z.GetFilledPolysList(layer).OutlineCount()
+        for z in (*board.Zones(), *(z for fp in board.GetFootprints() for z in fp.Zones()))
+        if z.IsOnLayer(layer)) for layer in copper}
+    shapes = [*board.GetDrawings(), *(g for fp in board.GetFootprints() for g in fp.GraphicalItems())]
+    report["copper_conductor_shapes"] = {board.GetLayerName(layer): sum(
+        1 for s in shapes if s.GetClass() == "PCB_SHAPE" and s.GetLayer() == layer and s.GetNetCode() > 0)
+        for layer in copper}
     report["nets"] = dict(sorted(nets.items()))
 
     try:

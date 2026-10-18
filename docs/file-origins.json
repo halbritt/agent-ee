@@ -1626,6 +1626,16 @@
     },
     {
       "paths": [
+        "fixtures/fab-export/pod4.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic 4-layer pod probe board output from fixtures/fab-export/generate.py (AGENTEE-195); its module docstring records the invented pad shapes, arc tracks and zones."
+    },
+    {
+      "paths": [
         "fixtures/fab-export/fab4.kicad_pcb"
       ],
       "kind": "owned-fixture",

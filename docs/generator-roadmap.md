@@ -69,8 +69,10 @@ AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
 [consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
 CPL coordinate and export-log checks. The separate
-[Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74) compares
-layer presence, drill histograms, copper pad/via flashes and outline bounds.
+[Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74, AGENTEE-195)
+compares layer presence, drill histograms, copper pad/via flashes and extents,
+track/arc and zone-region counts and outline bounds, through KiCad 10's
+aperture macros, arcs and regions.
 CPL rotation policy remains AGENTEE-72.
 
 CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
