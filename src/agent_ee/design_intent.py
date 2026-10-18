@@ -86,7 +86,7 @@ def voltage_targets(value):
             raise ValueError('unparseable voltage') from exc
         if not number.is_finite() or number == 0:
             raise ValueError('zero or non-finite voltage')
-        normalized = str(number)
+        normalized = str(number).upper()
         if '.' in normalized and 'E' not in normalized:
             normalized = normalized.rstrip('0').rstrip('.')
         values.append(normalized)

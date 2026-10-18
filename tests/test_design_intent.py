@@ -157,6 +157,26 @@ class DesignIntentTests(unittest.TestCase):
                                  string['operating_targets']['input_voltage']['volts'])
                 self.assertEqual(str(numeric['operating_targets']['input_voltage']['raw']), token)
 
+    def test_decimal_context_cannot_change_targets_or_artifact_bytes(self):
+        from decimal import Decimal, localcontext
+        for token, expected in [('1.0e400', '1.0E+400'), ('1.0e-400', '1.0E-400'),
+                                ('-1.0e400', '-1.0E+400'), ('1e-400', '1E-400'),
+                                ('3.30', '3.3')]:
+            for raw in (numeric_record(token), record(input_voltage=token)):
+                with localcontext() as context:
+                    context.capitals = 1
+                    baseline = import_record(raw)
+                for capitals in (0, 1):
+                    with self.subTest(token=token, raw=raw, capitals=capitals), localcontext() as context:
+                        context.capitals = capitals
+                        artifacts = import_record(raw)
+                        report = json.loads(artifacts['intent.json'], parse_float=Decimal)
+                        self.assertEqual(report['outcome'], 'pass')
+                        volts = report['operating_targets']['input_voltage']['volts']
+                        self.assertEqual(volts, [expected])
+                        self.assertEqual(Decimal(volts[0]), Decimal(token))
+                        self.assertEqual(artifacts, baseline)
+
     def test_numeric_zero_and_out_of_range_exponents_never_pass(self):
         for token in ['0', '-0.0', '0E-7', '1e9999999999999999999', '-1e-9999999999999999999']:
             with self.subTest(token=token):
