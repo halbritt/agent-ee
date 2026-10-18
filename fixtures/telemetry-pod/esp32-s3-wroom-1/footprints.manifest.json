@@ -1,0 +1,15 @@
+{
+  "schema": "agent-ee.footprint-libraries/1",
+  "complete": true,
+  "libraries": [
+    {
+      "name": "RF_Module",
+      "members": [
+        {
+          "path": "RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod",
+          "sha256": "d0cfbb31fef0c47396c0d061ec5a3bff60f0567d8d4ea8dd4769c84f52bd656f"
+        }
+      ]
+    }
+  ]
+}

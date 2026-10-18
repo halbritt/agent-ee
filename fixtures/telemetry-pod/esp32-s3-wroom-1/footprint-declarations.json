@@ -1,0 +1,16 @@
+{
+  "schema": "agent-ee.footprint-declarations/1",
+  "footprints": [
+    {
+      "footprint": "RF_Module:ESP32-S3-WROOM-1",
+      "mechanical_pads": [],
+      "thermal_via_pads": [
+        "41"
+      ],
+      "custom_pads": [],
+      "assembly": null,
+      "rationale": "ESP32-S3-WROOM-1 exposed ground pad 41 has one F.Cu SMD pad and twelve 0.2 mm thru-hole thermal vias sharing pad number 41; nine unnumbered F.Paste apertures are paste-only."
+    }
+  ],
+  "pinless_symbols": []
+}

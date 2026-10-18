@@ -147,6 +147,74 @@ def _apply_declaration(pads, attributes, entry):
     if entry['assembly'] is not None and set(attributes) & {'smd', 'through_hole'}:
         raise FootprintError('declared assembly contradicts or duplicates a native assembly attribute')
 
+RULE_AREA_COPPER_LAYERS = ('F.Cu', 'B.Cu') + tuple(f'In{i}.Cu' for i in range(1, 31))
+KEEPOUT_KEYS = ('tracks', 'vias', 'pads', 'copperpour', 'footprints')
+FORBID_MAP = (
+    ('footprints', 'footprints'),
+    ('tracks', 'tracks'),
+    ('vias', 'vias'),
+    ('pads', 'pads'),
+    ('copper_pours', 'copperpour'),
+)
+
+
+def _rule_area(zone):
+    """Parse and qualify a footprint-owned keepout rule area ``(zone ...)`` node."""
+    from .board_envelope import mm, simple_polygon
+    from .symbol_library import LibraryError, children, field, nanometres
+    if children(zone, 'net') or children(zone, 'net_name'):
+        raise LibraryError('footprint copper zone unsupported; expected keepout rule area')
+    layers_nodes = children(zone, 'layers')
+    layer_nodes = children(zone, 'layer')
+    if len(layers_nodes) + len(layer_nodes) != 1:
+        raise LibraryError('footprint rule area requires explicit layers')
+    raw_layers = (layers_nodes[0] if layers_nodes else layer_nodes[0])[1:]
+    if not raw_layers or any(not isinstance(x, str) for x in raw_layers):
+        raise LibraryError('footprint rule area requires explicit layers')
+    if any(layer not in RULE_AREA_COPPER_LAYERS for layer in raw_layers) or len(set(raw_layers)) != len(raw_layers):
+        raise LibraryError('unsupported/duplicate rule-area layer')
+    keepouts = children(zone, 'keepout')
+    if len(keepouts) != 1:
+        raise LibraryError('footprint zone requires keepout rules')
+    if any(not isinstance(c, list) or not c or c[0] not in KEEPOUT_KEYS for c in keepouts[0][1:]):
+        raise LibraryError('unsupported keepout rule')
+    keepout_map = {}
+    for key in KEEPOUT_KEYS:
+        val = field(keepouts[0], key, 1)[0]
+        if val not in ('allowed', 'not_allowed'):
+            raise LibraryError('invalid keepout rule value')
+        keepout_map[key] = val
+    forbid = [label for label, native_key in FORBID_MAP if keepout_map[native_key] == 'not_allowed']
+    if not forbid:
+        raise LibraryError('keepout rule area forbids nothing')
+    polygons = children(zone, 'polygon')
+    if len(polygons) != 1:
+        raise LibraryError('footprint rule area requires exactly one polygon')
+    pts = children(polygons[0], 'pts')
+    if len(pts) != 1 or len(pts[0]) < 4:
+        raise LibraryError('footprint rule area polygon requires at least 3 vertices')
+    points_nm = []
+    for item in pts[0][1:]:
+        if not isinstance(item, list) or len(item) != 3 or item[0] != 'xy' or any(not isinstance(v, str) for v in item[1:]):
+            raise LibraryError('unsupported rule-area polygon vertex')
+        points_nm.append((nanometres(item[1]), nanometres(item[2])))
+    try:
+        simple_polygon(points_nm, 'footprint rule area')
+    except ValueError as exc:
+        raise LibraryError(str(exc)) from exc
+    xs = [x for x, _ in points_nm]
+    ys = [y for _, y in points_nm]
+    return dict(
+        uuid=field(zone, 'uuid', 1)[0] if children(zone, 'uuid') else '',
+        name=field(zone, 'name', 1)[0] if children(zone, 'name') else '',
+        layers=list(raw_layers),
+        forbid=forbid,
+        keepout=keepout_map,
+        polygon_nm=[[x, y] for x, y in points_nm],
+        polygon_mm=[[mm(x), mm(y)] for x, y in points_nm],
+        bounds_mm=dict(min=[mm(min(xs)), mm(min(ys))], max=[mm(max(xs)), mm(max(ys))]),
+    )
+
 
 def _footprint(data, library, source, declared=None):
     # Shared reader owned by AGENTEE-39; no competing S-expression parser.
@@ -242,11 +310,14 @@ def _footprint(data, library, source, declared=None):
                              size_nm=size, drill=drill[0][1:] if drill else None, role=role, native=pad, **extra))
         if not pads:
             raise LibraryError('footprint contains no pads')
+        rule_areas = [_rule_area(zone) for zone in children(node, 'zone')]
         _apply_declaration(pads, attr, entry)
         result = dict(lib_id=library + ':' + node[1], name=node[1], description=metadata['descr'],
                       tags=metadata['tags'], attributes=sorted(attr), pads=sorted(pads, key=canonical),
                       electrical_numbers=sorted({p['number'] for p in pads if p['role'] == 'electrical'}),
                       source=dict(source))
+        if rule_areas:
+            result['rule_areas'] = rule_areas
         if entry is not None:
             result['declaration'] = entry
         return result
@@ -446,6 +517,8 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
             else:
                 fp = footprints[comp['footprint']]
                 assignment['footprint_source'] = fp['source']
+                if 'rule_areas' in fp:
+                    assignment['rule_areas'] = fp['rule_areas']
                 if 'declaration' in fp:
                     assignment['footprint_declaration'] = fp['declaration']
                     assignment['mechanical_pads'] = sorted({p['number'] for p in fp['pads'] if p.get('declared')})
@@ -485,6 +558,265 @@ def check_assignments(manifest, captured_files, declaration, native_membership=F
     if result['coverage'] == 'complete' and all(a['status'] == 'excluded' for a in result['assignments']):
         result['outcome'] = 'info'
     return _seal(result)
+
+
+ESP32_FOOTPRINT_ID = 'RF_Module:ESP32-S3-WROOM-1'
+ESP32_FOOTPRINT_PATH = 'RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod'
+ESP32_FOOTPRINT_SHA256 = 'd0cfbb31fef0c47396c0d061ec5a3bff60f0567d8d4ea8dd4769c84f52bd656f'
+RF_MODULE_SYMBOL_LIB_SHA256 = '5caaa848e888e9f5491edc765fef0e2eee53c4fe5aa4fe1520c01e4b0f840f2b'
+ESP32_SYMBOL_SUBSET_SHA256 = 'ad427c46f8d046f47595edd16128520b75d9b386cc36a14e4d8f75ae036ab23d'
+ESP32_DATASHEET_URL = 'https://www.espressif.com/sites/default/files/documentation/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf'
+ESP32_DATASHEET_PATH = 'datasheets/dbdfd4ddc180acc1e28909cf69518d22af59605031728a9765a38ff746a1d9b8.pdf'
+ESP32_DATASHEET_SHA256 = '27d71971da07c280c6068d08c74720d1a25b8f20cf8494dc1765bdd28d40d435'
+ESP32_KEEPOUT_FACT_IDS = (
+    'esp32_s3_wroom_1_body_width_mm',
+    'esp32_s3_wroom_1_body_length_mm',
+    'esp32_s3_wroom_1_antenna_depth_mm',
+    'esp32_s3_wroom_1_keepout_clearance_mm',
+)
+
+
+def probe_rule_areas(data, *, library='RF_Module', path=ESP32_FOOTPRINT_PATH, declared=None):
+    """List footprint-owned rule area polygons, bounds, forbid flags and layers from captured bytes."""
+    if not isinstance(data, bytes):
+        raise FootprintError('captured footprint bytes required')
+    lib_name = _text(library)
+    rel_path = PurePosixPath(_text(path))
+    if rel_path.is_absolute() or '..' in rel_path.parts or str(rel_path) != path or '\\' in path or rel_path.suffix != '.kicad_mod':
+        raise FootprintError('unsafe footprint path')
+    source = dict(path=path, sha256=hashlib.sha256(data).hexdigest())
+    fp = _footprint(data, lib_name, source, declared)
+    return _seal(dict(
+        schema='agent-ee.footprint-rule-areas/1',
+        lib_id=fp['lib_id'],
+        name=fp['name'],
+        source=fp['source'],
+        rule_areas=list(fp.get('rule_areas', [])),
+    ))
+
+
+def esp32_s3_wroom_1_manifest():
+    return dict(
+        schema='agent-ee.footprint-libraries/1',
+        complete=True,
+        libraries=[dict(
+            name='RF_Module',
+            members=[dict(path=ESP32_FOOTPRINT_PATH, sha256=ESP32_FOOTPRINT_SHA256)],
+        )],
+    )
+
+
+def esp32_s3_wroom_1_declarations():
+    return dict(
+        schema=DECLARATIONS_SCHEMA,
+        footprints=[dict(
+            footprint=ESP32_FOOTPRINT_ID,
+            mechanical_pads=[],
+            thermal_via_pads=['41'],
+            custom_pads=[],
+            assembly=None,
+            rationale=('ESP32-S3-WROOM-1 exposed ground pad 41 has one F.Cu SMD pad and twelve 0.2 mm '
+                       'thru-hole thermal vias sharing pad number 41; nine unnumbered F.Paste apertures '
+                       'are paste-only.'),
+        )],
+        pinless_symbols=[],
+    )
+
+
+def esp32_s3_wroom_1_assignments(reference='U1', symbol_path='symbols/RF_Module.kicad_sym',
+                                 symbol_sha256=ESP32_SYMBOL_SUBSET_SHA256):
+    return dict(
+        schema='agent-ee.footprint-assignments-input/1',
+        libraries=[dict(name='RF_Module', path=symbol_path, sha256=symbol_sha256)],
+        components=[dict(
+            reference=reference,
+            lib_id=ESP32_FOOTPRINT_ID,
+            footprint=ESP32_FOOTPRINT_ID,
+            assembly='smd',
+            connector=None,
+        )],
+    )
+
+
+def esp32_s3_wroom_1_datasheet_facts(*, pdf_path=ESP32_DATASHEET_PATH, pdf_sha256=ESP32_DATASHEET_SHA256):
+    """Datasheet facts record naming page 45 and Figure 11-1 for the antenna keepout dimensions."""
+    figure = 'Section 11.1 PCB Land Pattern, Figure 11-1. ESP32-S3-WROOM-1 Recommended PCB Land Pattern'
+    return dict(
+        schema='agent-ee.datasheet-facts/1',
+        facts=[
+            dict(
+                id='esp32_s3_wroom_1_body_width_mm',
+                part_number='ESP32-S3-WROOM-1',
+                kind='keepout_dimension',
+                value='18',
+                unit='mm',
+                conditions=f'{figure}: module body width 18 mm (x -9..9 mm relative to footprint origin)',
+                source=dict(path=pdf_path, sha256=pdf_sha256, page=45,
+                            locator=f'{figure} (module body width)', quote='18'),
+            ),
+            dict(
+                id='esp32_s3_wroom_1_body_length_mm',
+                part_number='ESP32-S3-WROOM-1',
+                kind='keepout_dimension',
+                value='25.5',
+                unit='mm',
+                conditions=f'{figure}: module body length 25.5 mm (y -12.75..12.75 mm relative to footprint origin)',
+                source=dict(path=pdf_path, sha256=pdf_sha256, page=45,
+                            locator=f'{figure} (module body length)', quote='25.5'),
+            ),
+            dict(
+                id='esp32_s3_wroom_1_antenna_depth_mm',
+                part_number='ESP32-S3-WROOM-1',
+                kind='keepout_dimension',
+                value='6',
+                unit='mm',
+                conditions=f'{figure}: on-board PCB Antenna Area depth 6 mm from top module edge (y -12.75..-6.75 mm)',
+                source=dict(path=pdf_path, sha256=pdf_sha256, page=45,
+                            locator=f'{figure} (Antenna Area depth)', quote='6'),
+            ),
+            dict(
+                id='esp32_s3_wroom_1_keepout_clearance_mm',
+                part_number='ESP32-S3-WROOM-1',
+                kind='keepout_dimension',
+                value='15',
+                unit='mm',
+                conditions=(f'{figure}: base-board keepout clearance 15 mm on left, right and top of '
+                            'antenna area (polygon x -24..24 mm, y -6.75..-27.75 mm)'),
+                source=dict(path=pdf_path, sha256=pdf_sha256, page=45,
+                            locator=f'{figure} (antenna keepout clearance)', quote='15'),
+            ),
+        ],
+    )
+
+
+def derive_antenna_keepout(facts, *, part_number='ESP32-S3-WROOM-1'):
+    """Derive the module-origin antenna keepout polygon from the Figure 11-1 datasheet facts."""
+    from .board_envelope import mm, simple_polygon
+    from .symbol_library import LibraryError, nanometres
+    if isinstance(facts, dict):
+        facts = facts.get('facts')
+    if not isinstance(facts, list):
+        raise FootprintError('datasheet facts list required')
+    by_id = {}
+    for entry in facts:
+        if not isinstance(entry, dict):
+            raise FootprintError('invalid datasheet fact entry')
+        if 'fact' in entry and 'status' in entry:
+            if entry.get('status') != 'verified':
+                raise FootprintError(f"datasheet fact {entry.get('id')!r} is not verified")
+            fact = entry['fact']
+        else:
+            fact = entry
+        fid = fact.get('id')
+        if fid in ESP32_KEEPOUT_FACT_IDS:
+            if fid in by_id:
+                raise FootprintError(f'duplicate keepout fact {fid!r}')
+            by_id[fid] = fact
+    missing = [fid for fid in ESP32_KEEPOUT_FACT_IDS if fid not in by_id]
+    if missing:
+        raise FootprintError('missing ESP32 antenna keepout facts: ' + ', '.join(missing))
+    values_nm = {}
+    pages, sha256s, locators = set(), set(), []
+    for fid in ESP32_KEEPOUT_FACT_IDS:
+        fact = by_id[fid]
+        if fact.get('part_number') != part_number or fact.get('kind') != 'keepout_dimension' or fact.get('unit') != 'mm':
+            raise FootprintError(f'inapplicable keepout fact {fid!r}')
+        source = fact.get('source')
+        if (not isinstance(source, dict) or type(source.get('page')) is not int or source['page'] < 1
+                or not isinstance(source.get('locator'), str) or 'Figure 11-1' not in source['locator']
+                or not isinstance(source.get('sha256'), str) or len(source['sha256']) != 64):
+            raise FootprintError(f'keepout fact {fid!r} lacks Figure 11-1 page/locator/sha256 citation')
+        try:
+            nm = nanometres(fact.get('value'))
+        except LibraryError as exc:
+            raise FootprintError(f'invalid keepout dimension {fid!r}: {exc}') from exc
+        if nm <= 0:
+            raise FootprintError(f'keepout dimension {fid!r} must be positive')
+        values_nm[fid] = nm
+        pages.add(source['page'])
+        sha256s.add(source['sha256'])
+        locators.append(source['locator'])
+    if len(pages) != 1 or len(sha256s) != 1:
+        raise FootprintError('keepout dimension facts must cite one datasheet page and sha256')
+    width_nm = values_nm['esp32_s3_wroom_1_body_width_mm']
+    length_nm = values_nm['esp32_s3_wroom_1_body_length_mm']
+    depth_nm = values_nm['esp32_s3_wroom_1_antenna_depth_mm']
+    clearance_nm = values_nm['esp32_s3_wroom_1_keepout_clearance_mm']
+    if width_nm % 2 or length_nm % 2 or depth_nm >= length_nm:
+        raise FootprintError('keepout dimensions do not form a valid module-centered antenna zone')
+    half_w, half_l = width_nm // 2, length_nm // 2
+    x_min, x_max = -half_w - clearance_nm, half_w + clearance_nm
+    y_max, y_min = -half_l + depth_nm, -half_l - clearance_nm
+    points_nm = [(x_min, y_max), (x_max, y_max), (x_max, y_min), (x_min, y_min)]
+    simple_polygon(points_nm, 'derived antenna keepout')
+    return _seal(dict(
+        schema='agent-ee.antenna-keepout-derivation/1',
+        part_number=part_number,
+        page=next(iter(pages)),
+        figure='Figure 11-1',
+        source_sha256=next(iter(sha256s)),
+        dimensions_mm=dict(
+            body_width=mm(width_nm),
+            body_length=mm(length_nm),
+            antenna_depth=mm(depth_nm),
+            keepout_clearance=mm(clearance_nm),
+        ),
+        polygon_nm=[[x, y] for x, y in points_nm],
+        polygon_mm=[[mm(x), mm(y)] for x, y in points_nm],
+        bounds_mm=dict(min=[mm(x_min), mm(y_min)], max=[mm(x_max), mm(y_max)]),
+    ))
+
+
+def capture_esp32_s3_wroom_1(out_dir=None, *, stock_root='/usr/share/kicad', reference='U1'):
+    """Capture the pinned KiCad 10.0.7 ESP32-S3-WROOM-1 footprint and symbol subset at runtime."""
+    from pathlib import Path
+    from .symbol_capture import capture_symbols
+    root = Path(stock_root)
+    fp_file = root / 'footprints' / ESP32_FOOTPRINT_PATH
+    sym_file = root / 'symbols/RF_Module.kicad_sym'
+    if not fp_file.is_file() or not sym_file.is_file():
+        raise FootprintError(f'stock KiCad 10.0.7 RF_Module library files missing under {root}')
+    fp_bytes = fp_file.read_bytes()
+    if hashlib.sha256(fp_bytes).hexdigest() != ESP32_FOOTPRINT_SHA256:
+        raise FootprintError('stock ESP32-S3-WROOM-1.kicad_mod sha256 differs from pinned KiCad 10.0.7')
+    sym_source = sym_file.read_bytes()
+    if hashlib.sha256(sym_source).hexdigest() != RF_MODULE_SYMBOL_LIB_SHA256:
+        raise FootprintError('stock RF_Module.kicad_sym sha256 differs from pinned KiCad 10.0.7')
+    sym_subset, sym_receipt = capture_symbols(
+        sym_source, ['ESP32-S3-WROOM-1'], library='RF_Module', source_file='RF_Module.kicad_sym')
+    if sym_receipt['output']['sha256'] != ESP32_SYMBOL_SUBSET_SHA256:
+        raise FootprintError('captured RF_Module symbol subset sha256 differs from pinned KiCad 10.0.7')
+    manifest = esp32_s3_wroom_1_manifest()
+    declarations = esp32_s3_wroom_1_declarations()
+    assignments = esp32_s3_wroom_1_assignments(reference=reference)
+    captured_files = {
+        ESP32_FOOTPRINT_PATH: fp_bytes,
+        'symbols/RF_Module.kicad_sym': sym_subset,
+    }
+    if out_dir is not None:
+        target = Path(out_dir)
+        if target.exists():
+            raise FootprintError(f'capture output directory already exists: {target}')
+        (target / 'RF_Module.pretty').mkdir(parents=True)
+        (target / 'symbols').mkdir(parents=True)
+        (target / ESP32_FOOTPRINT_PATH).write_bytes(fp_bytes)
+        (target / 'symbols/RF_Module.kicad_sym').write_bytes(sym_subset)
+        (target / 'symbols/capture.json').write_bytes(canonical(sym_receipt) + b'\n')
+        (target / 'footprints.manifest.json').write_bytes(canonical(manifest) + b'\n')
+        (target / 'footprint-declarations.json').write_bytes(canonical(declarations) + b'\n')
+        (target / 'assignments.json').write_bytes(canonical(assignments) + b'\n')
+        (target / 'datasheet-facts.json').write_bytes(canonical(esp32_s3_wroom_1_datasheet_facts()) + b'\n')
+        (target / 'rule-area.json').write_bytes(
+            canonical(probe_rule_areas(fp_bytes, declared=validate_declarations(declarations)[0])) + b'\n')
+    return dict(
+        manifest=manifest,
+        declarations=declarations,
+        assignments=assignments,
+        datasheet_facts=esp32_s3_wroom_1_datasheet_facts(),
+        rule_area_probe=probe_rule_areas(fp_bytes, declared=validate_declarations(declarations)[0]),
+        captured_files=captured_files,
+        symbol_receipt=sym_receipt,
+    )
 
 
 def resolve_package(table, family, package, manifest, captured_files):
