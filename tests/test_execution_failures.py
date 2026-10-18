@@ -24,6 +24,7 @@ class ToolFailureTests(unittest.TestCase):
             capture(root / "scope.json", run)
 
             def fake_native(inputs, work, argv, **kwargs):
+                work.mkdir(parents=True, exist_ok=True)  # as executor.execute does
                 (work / "erc.json").write_text('{"sheets": "not a list"}')
                 (work / "console.log").write_text("tool exited successfully\n")
                 return {"execution": "ok", "argv": argv, "exit_code": 0, "duration_s": 0,
