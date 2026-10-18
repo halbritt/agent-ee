@@ -30,10 +30,11 @@ The roadmap parent is **AGENTEE-1**. Plane tracks implementation, validation and
 owner review separately; the original backlog snapshot below is historical.
 Implemented parts include RC defaults, explicit copper-width coverage,
 acceptance-coverage auditing, calibration applicability, campaign diagnostics,
-pre-inference guards, hardware-interface contracts and bounded RC tolerance
-corners. Evidence replay, interrupted bench recovery, packet indexing and PCB
-DC-resistance extraction remain under implementation or review. A source change
-and passing tests do not replace the owner's acceptance review.
+pre-inference guards, hardware-interface contracts, bounded RC tolerance
+corners, evidence replay, interrupted bench recovery, packet indexing and PCB
+DC-resistance extraction (AGENTEE-9, 11, 12, 13 audited and integrated on
+2026-10-18; the packet-index live A/B comparison stays owner-gated). A source
+change and passing tests do not replace the owner's acceptance review.
 
 The next direction, generating boards from an empty candidate through the same
 campaign loop, is planned in the [generator roadmap](generator-roadmap.md).
