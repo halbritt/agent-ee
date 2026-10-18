@@ -6,17 +6,130 @@ qualification of the synthetic measurement fixture as a physical simulator.
 import contextlib
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_ee.campaign import run_campaign, verify_campaign, campaign_feedback
+from agent_ee.campaign import run_campaign, verify_campaign, campaign_feedback, check_proposal
 from agent_ee.cli import run_review, verify
 from agent_ee.empirical import bench_review
 from agent_ee.storage import digest, read_json, write_json
 
-from toolchain import toolchain_test
+from toolchain import require_toolchain, toolchain_test
+
+
+class ImmutableInputGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-saveboard-guard-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        project = self.source / 'project'
+        project.mkdir(parents=True)
+        # Original minimal project: no external symbols, footprints or libraries.
+        (project / 'owned.kicad_pcb').write_text('''(kicad_pcb
+ (version 20260206) (generator "pcbnew") (generator_version "10.0")
+ (general (thickness 1.6))
+ (layers (0 "F.Cu" signal) (2 "B.Cu" signal) (25 "Edge.Cuts" user))
+ (setup (pad_to_mask_clearance 0))
+)
+''')
+        for suffix in ('.kicad_pro', '.kicad_prl'):
+            (project / ('owned' + suffix)).write_text('{}\n')
+        (project / 'other.kicad_pro').write_text('{}\n')
+        self.manifest = {'files': {p.relative_to(self.source).as_posix(): digest(p)
+                                   for p in sorted(self.source.rglob('*')) if p.is_file()},
+                         'scope': {'board': 'project/owned.kicad_pcb', 'checks': []}}
+        self.state = {'mutable_inputs': ['project/owned.kicad_pcb'], 'baseline': {'files': {}}}
+        self.design = self.root / 'design'
+        shutil.copytree(self.source, self.design)
+
+    def test_unchanged_project_and_board_only_edit_are_allowed(self):
+        check_proposal(self.design, self.manifest, self.state)
+        board = self.design / 'project/owned.kicad_pcb'
+        board.write_text(board.read_text().replace('1.6', '1.7'))
+        check_proposal(self.design, self.manifest, self.state)
+
+    def test_sibling_hint_requires_same_stem_directory_and_changed_board(self):
+        cases = [('project/owned.kicad_pro', False), ('project/owned.kicad_prl', False),
+                 ('project/other.kicad_pro', True), ('elsewhere/owned.kicad_pro', True),
+                 ('project/owned.kicad_sch', True)]
+        for index, (rel, board_changed) in enumerate(cases):
+            with self.subTest(rel=rel, board_changed=board_changed):
+                manifest = {**self.manifest, 'files': dict(self.manifest['files'])}
+                design = self.root / f'case-{index}'
+                shutil.copytree(self.source, design)
+                path = design / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    path.write_text('original')
+                    manifest['files'][rel] = digest(path)
+                path.write_text('changed')
+                if board_changed:
+                    (design / 'project/owned.kicad_pcb').write_text('changed board')
+                with self.assertRaises(ValueError) as caught:
+                    check_proposal(design, manifest, self.state)
+                self.assertEqual(str(caught.exception),
+                                 f'implementation changed immutable verification input: {rel}')
+
+    def test_new_siblings_and_links_still_refuse(self):
+        added = self.design / 'project/new.kicad_prl'
+        added.write_text('{}\n')
+        with self.assertRaisesRegex(ValueError, 'captured file inventory'):
+            check_proposal(self.design, self.manifest, self.state)
+        added.unlink()
+        sibling = self.design / 'project/owned.kicad_pro'
+        sibling.unlink()
+        sibling.symlink_to(self.source / 'project/owned.kicad_pro')
+        with self.assertRaisesRegex(ValueError, 'live link'):
+            check_proposal(self.design, self.manifest, self.state)
+
+    def test_native_saveboard_sibling_rewrites_are_refused_with_writer_rule(self):
+        require_toolchain(native=True)
+        from agent_ee.executor import execute
+        work = self.root / 'saveboard'
+        program = '''import shutil
+import pcbnew
+shutil.copytree('/candidate', '/work/design')
+path = '/work/design/project/owned.kicad_pcb'
+board = pcbnew.LoadBoard(path)
+board.GetDesignSettings().SetBoardThickness(1700000)
+assert pcbnew.SaveBoard(path, board)
+'''
+        record = execute(self.source, work, ['/usr/bin/python3', '-c', program], timeout=60)
+        self.assertEqual(record['execution'], 'ok', (work / 'console.log').read_text())
+        self.assertEqual(record['exit_code'], 0)
+        self.assertIn('--unshare-net', record['sandbox_argv'])
+        design = work / 'design'
+        self.assertNotEqual(digest(design / 'project/owned.kicad_pcb'),
+                            self.manifest['files']['project/owned.kicad_pcb'])
+        with self.assertRaisesRegex(ValueError, 'likely pcbnew.SaveBoard side effect'):
+            check_proposal(design, self.manifest, self.state)
+        for suffix in ('.kicad_pro', '.kicad_prl'):
+            rel = 'project/owned' + suffix
+            with self.subTest(suffix=suffix):
+                self.assertNotEqual(digest(design / rel), self.manifest['files'][rel])
+                # Isolate each real native rewrite so both refusal paths are exercised.
+                isolated = self.root / suffix[1:]
+                shutil.copytree(self.source, isolated)
+                for changed in ('project/owned.kicad_pcb', rel):
+                    shutil.copyfile(design / changed, isolated / changed)
+                with self.assertRaises(ValueError) as caught:
+                    check_proposal(isolated, self.manifest, self.state)
+                message = str(caught.exception)
+                self.assertIn(f'implementation changed immutable verification input: {rel}', message)
+                self.assertIn('pcbnew.SaveBoard', message)
+                self.assertIn('likely', message)
+                self.assertIn('sandboxed step runner', message)
+                self.assertIn('staging copy', message)
+                self.assertIn('immutable', message)
+        # Adopt only the saved board from staging; the delivered project's siblings stay exact.
+        shutil.copyfile(design / 'project/owned.kicad_pcb', self.design / 'project/owned.kicad_pcb')
+        check_proposal(self.design, self.manifest, self.state)
+        self.assertEqual({p.relative_to(self.source).as_posix(): digest(p)
+                          for p in self.source.rglob('*') if p.is_file()}, self.manifest['files'])
 
 
 class CampaignIntegrationTests(unittest.TestCase):

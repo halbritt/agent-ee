@@ -206,6 +206,15 @@ Every other change is refused with a specific violation:
 bytes and inventory. File-level `mutable_inputs` is therefore not enough: a
 schematic listed as mutable is still refused in a placement iteration.
 
+`pcbnew.SaveBoard` can rewrite same-stem `.kicad_pro` and `.kicad_prl`
+siblings as well as the board. A native save is no exception to the exact-byte
+non-board scope above. Follow the
+[campaign writer rule](campaign-guide.md#saving-boards-without-changing-project-siblings):
+restore or exclude generated siblings in the sandboxed step, or save to a
+staging copy and copy back only the board. The adapter's records and receipts
+remain provenance only; they cannot authorize sibling changes or make a check
+pass.
+
 ### Side flips
 
 A side flip is accepted only in the exact form that KiCad 10.0.7
