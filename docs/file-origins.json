@@ -2074,7 +2074,8 @@
     },
     {
       "paths": [
-        "tests/test_reference_blocks.py"
+        "tests/test_reference_blocks.py",
+        "tests/block_parts_fixture.py"
       ],
       "kind": "owned-source",
       "origins": [

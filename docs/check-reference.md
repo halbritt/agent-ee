@@ -558,10 +558,16 @@ Missing, incomplete or escalated runs leave the block unverified.
 
 Only passing `hardware_interface` requirements bound to the actual native block
 occurrences can currently contribute coverage. A checked shadow sheet cannot
-qualify an unused captured block. Optional layouts and other check families
-remain unverified. Parts payload bytes and the schema identifier are retained;
-this command does not qualify parts membership or selection. Adapted blocks
-require fresh checks on the new board candidate.
+qualify an unused captured block. Optional layouts and other requirement check
+families remain unverified. The complete parts manifest must pass the shared
+`parts_manifest.validate_manifest` validator. Verification additionally requires
+sealed passing `parts_subset` evidence for that exact mapped manifest and the
+block's actual native sheet occurrences; the report records these bindings in
+`parts_membership`. Missing evidence keeps the block unverified. Malformed run
+records are refused (exit 2), distinct from valid unverified records (exit 1)
+and unexpected internal errors (exit 3, with a diagnostic traceback).
+Run provenance does not establish a containing campaign's current state.
+Adapted blocks require fresh checks on the new board candidate.
 
 ## Footprint assignment
 
