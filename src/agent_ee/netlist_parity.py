@@ -116,17 +116,22 @@ def _number_colors(signatures):
     return [{cid: labels[s] for cid, s in graph.items()} for graph in signatures]
 
 
-def _refined_colors(expected, actual):
-    """Joint refinement; IDs, references, UUIDs and net names never color vertices."""
+def _refined_colors(expected, actual, component_anchors, net_anchors):
+    """Joint refinement with only explicitly declared identity constraints."""
     graphs = (expected, actual)
+    component_tags = ({cid: cid for cid in component_anchors},
+                      {nid: cid for cid, nid in component_anchors.items()})
+    net_tags = ({eid: eid for eid in net_anchors},
+                {nid: eid for eid, nid in net_anchors.items()})
     colors = _number_colors([{cid: comparison_key(comp) + (comp['pins'],)
-               for cid, comp in graph['components'].items()} for graph in graphs])
+               + (tags.get(cid),) for cid, comp in graph['components'].items()}
+               for graph, tags in zip(graphs, component_tags)])
     for _ in range(len(expected['components']) + len(actual['components'])):
         # Intern a net signature once, rather than allocating its full neighbour
         # tuple once per terminal (quadratic space on a high-fanout conductor).
-        net_colors = _number_colors([{nid: tuple(sorted((palette[cid], pin)
-            for cid, pin in net['terminals'])) for nid, net in graph['nets'].items()}
-            for graph, palette in zip(graphs, colors)])
+        net_colors = _number_colors([{nid: (tags.get(nid), tuple(sorted((palette[cid], pin)
+            for cid, pin in net['terminals']))) for nid, net in graph['nets'].items()}
+            for graph, palette, tags in zip(graphs, colors, net_tags)])
         signatures = [{cid: (palette[cid], tuple((pin, nets[graph['memberships'][cid, pin]]
             if (cid, pin) in graph['memberships'] else -1) for pin in comp['pins']))
             for cid, comp in graph['components'].items()}
@@ -220,7 +225,54 @@ def _normalize_no_connects(expected, actual):
     return {**actual, **terminal_inventory(actual['components'], nets)}, eligible
 
 
-def compare(expected, actual, policy):
+def _resolve_anchors(expected, actual, policy, name_policy, report):
+    components, nets = {}, {}
+    for cid, anchor in sorted(policy.get('anchors', {}).items()):
+        if cid not in expected['components']:
+            raise Unsupported('unknown anchored intent component')
+        matches = [nid for nid, comp in actual['components'].items()
+                   if all(comp.get(k) == v for k, v in anchor.items())]
+        entry = {'expected': cid, 'identity': anchor, 'native': matches}
+        report['anchors']['components'].append(entry)
+        if len(matches) != 1:
+            if 'uuid' in anchor:
+                raise Unsupported('unresolvable sheet/UUID anchor')
+            report['anchor_mismatches'].append({**entry, 'kind': 'component_identity_mismatch'})
+            continue
+        nid = matches[0]
+        comp, native = expected['components'][cid], actual['components'][nid]
+        if (comparison_key(comp), comp['pins']) != (comparison_key(native), native['pins']):
+            report['anchor_mismatches'].append({**entry, 'kind': 'component_inventory_mismatch'})
+        if nid in components.values():
+            report['anchor_mismatches'].append({**entry, 'kind': 'component_anchor_conflict'})
+        components[cid] = nid
+    if name_policy is not None:
+        from .net_names import basename, evaluate, validate_policy as validate_names
+        validate_names(name_policy)
+        required = {entry['name'] for entry in name_policy['required']}
+        records = evaluate(name_policy, dict.fromkeys(required, 'required'), actual)['records']
+        for record in records:
+            if not record['owner_required']:
+                continue
+            name = record['name']
+            wanted = [nid for nid, net in expected['nets'].items() if basename(net['name']) == name]
+            if len(wanted) != 1:
+                raise Unsupported('required net anchor absent or ambiguous in source: ' + name)
+            native = [n['net_id'] for n in record['native_nets']]
+            entry = {'name': name, 'expected': wanted[0], 'native': native,
+                     'terminals': record['anchors']}
+            report['anchors']['nets'].append(entry)
+            if record['violations']:
+                report['anchor_mismatches'].append({**entry, 'kind': 'required_name_mismatch',
+                                                   'violations': record['violations']})
+            elif record['unresolved']:
+                raise Unsupported('required net terminal anchor unresolved: ' + name)
+            else:
+                nets[wanted[0]] = native[0]
+    return components, nets
+
+
+def compare(expected, actual, policy, *, name_policy=None):
     """Borrow inventories. Exhaustion/ambiguity is unknown, never an approximate pass."""
     predicate = policy['predicate']
     wanted = Counter(comparison_key(c) for c in expected['components'].values())
@@ -230,7 +282,8 @@ def compare(expected, actual, policy):
         'missing_components': [{'key': list(k), 'count': v} for k, v in sorted(missing.items())],
         'extra_components': [{'key': list(k), 'count': v} for k, v in sorted(extra.items())],
         'expected_components': expected['components'], 'native_components': actual['components'],
-        'component_matches': {}, 'correspondence_evaluated': False, 'search_steps': 0}
+        'component_matches': {}, 'correspondence_evaluated': False, 'search_steps': 0,
+        'anchors': {'components': [], 'nets': []}, 'anchor_mismatches': []}
     if expected.get('normalized_power_symbols'):
         report['normalized_power_symbols'] = expected['normalized_power_symbols']
     if set(policy.get('instance_components', ())) - expected['components'].keys():
@@ -248,26 +301,41 @@ def compare(expected, actual, policy):
                   for cid, comp in expected['components'].items()}
     budget = {'steps': 0, 'limit': policy.get('max_search', MAX_SEARCH)}
     try:
-        for cid, anchor in policy['anchors'].items():
-            if cid not in candidates:
-                raise Unsupported('unknown anchored intent component')
-            candidates[cid] = [nid for nid in candidates[cid]
-                if all(actual['components'][nid].get(k) == v for k, v in anchor.items())]
+        component_anchors, net_anchors = _resolve_anchors(expected, actual, policy, name_policy, report)
+        if report['anchor_mismatches']:
+            report['outcome'] = 'defect'
+            return report
+        for cid, nid in component_anchors.items():
+            candidates[cid] = [nid]
         if any(not matches for matches in candidates.values()):
             raise Unsupported('unresolvable component key, physical pin inventory or anchor')
-        expected_colors, native_colors = _refined_colors(expected, actual)
+        expected_colors, native_colors = _refined_colors(expected, actual, component_anchors, net_anchors)
         refined = {cid: [nid for nid in matches if expected_colors[cid] == native_colors[nid]]
                    for cid, matches in candidates.items()}
-        observed_nets = set(_net_sets(actual).values())
+        anchored = bool(component_anchors or net_anchors)
+        if anchored and Counter(expected_colors.values()) != Counter(native_colors.values()):
+            # Joint refinement is a necessary condition for exact anchored isomorphism.
+            # A contradicted constraint is a defect, without factorial diagnostic search.
+            report.update(outcome='defect', anchor_mismatches=[{'kind': 'anchored_incidence_mismatch',
+                'components': sorted(cid for cid, matches in refined.items() if not matches)}])
+            return report
+        observed_by_id = _net_sets(actual)
+        observed_nets = set(observed_by_id.values())
         matches, best = {cid: set() for cid in candidates}, None
         for mapping in _assignments(refined, budget):
-            if set(_net_sets(expected, mapping).values()) == observed_nets:
+            mapped_nets = _net_sets(expected, mapping)
+            if (set(mapped_nets.values()) == observed_nets and all(
+                    mapped_nets[eid] == observed_by_id[nid] for eid, nid in net_anchors.items())):
                 best = mapping
                 for cid, nid in mapping.items():
                     matches[cid].add(nid)
                 if predicate == 'topology':
                     break
         if best is None:
+            if anchored:
+                report.update(outcome='defect', search_steps=budget['steps'],
+                    anchor_mismatches=[{'kind': 'anchored_bijection_mismatch'}])
+                return report
             best_score = -1
             for mapping in _assignments(candidates, budget):
                 score = len(set(_net_sets(expected, mapping).values()) & observed_nets)
@@ -307,7 +375,7 @@ def read_json_source(path):
 def validate_policy(params):
     required = {'source', 'netlist_check', 'predicate', 'multiset'}
     if not isinstance(params, dict) or not required <= params.keys() or params.keys() - required - {
-            'anchors', 'instance_components', 'max_search'}:
+            'anchors', 'instance_components', 'max_search', 'net_name_policy'}:
         raise ValueError('expected source, netlist_check, predicate and multiset policy')
     source = params['source']
     if not isinstance(source, dict) or source.get('kind') not in ('resolved', 'intent', 'golden_xml'):
@@ -326,16 +394,18 @@ def validate_policy(params):
         raise ValueError('at_least is supported only for component multiset predicates')
     anchors = params.get('anchors', {})
     if not isinstance(anchors, dict):
-        raise ValueError('anchors must map logical IDs to immutable sheet/UUID identities')
+        raise ValueError('anchors must map logical IDs to explicit native identities')
     for cid, anchor in anchors.items():
         text(cid)
-        if not isinstance(anchor, dict) or set(anchor) != {'sheet', 'uuid'}:
-            raise ValueError('anchors require sheet and UUID; reference names are not anchors')
-        text(anchor['sheet'])
-        text(anchor['uuid'])
-    if anchors and params['predicate'] == 'components':
+        if not isinstance(anchor, dict) or set(anchor) not in ({'sheet', 'uuid'}, {'reference'}):
+            raise ValueError('anchors require sheet/UUID or an explicitly fixed reference')
+        for value in anchor.values():
+            text(value)
+    if 'net_name_policy' in params:
+        text(params['net_name_policy'])
+    if (anchors or 'net_name_policy' in params) and params['predicate'] == 'components':
         raise ValueError('component multiset predicate does not evaluate instance anchors')
-    if len({(a['sheet'], a['uuid']) for a in anchors.values()}) != len(anchors):
+    if len({tuple(sorted(a.items())) for a in anchors.values()}) != len(anchors):
         raise ValueError('duplicate native anchor')
     instances = params.get('instance_components', [])
     if not isinstance(instances, list) or any(not isinstance(c, str) or not c for c in instances) or len(
@@ -373,7 +443,20 @@ def capability(params, scope, files, inputs, check_id):
     requirements = [r for r in scope.get('baseline', {}).get('requirements', []) if check_id in r['checks']]
     if len(requirements) != 1:
         raise ValueError('netlist_parity requires exactly one requirement per check')
-    return {'policy': policy, 'immutable_inputs': sorted(set(immutable)),
+    name_policy = None
+    if 'net_name_policy' in policy:
+        from .net_names import validate_policy as validate_names
+        rel = str(safe_relative(policy['net_name_policy']))
+        if rel not in files:
+            raise ValueError('net-name anchor policy must be captured')
+        name_policy = validate_names(read_json_source(Path(inputs) / rel))
+        requirement = name_policy['requirement']
+        if (requirement['source']['path'] not in files or not any(
+                r['id'] == requirement['id'] and r['source'] == requirement['source']
+                for r in scope['baseline']['requirements'])):
+            raise ValueError('net-name anchor policy requires its captured baseline requirement source')
+        immutable.extend([rel, requirement['source']['path']])
+    return {'policy': policy, 'name_policy': name_policy, 'immutable_inputs': sorted(set(immutable)),
             'predicates': ['netlist-parity:' + policy['predicate']]}
 
 
@@ -448,7 +531,9 @@ def check_netlist_parity(ctx):
         missing_ids = set(descriptor['policy']['instance_components']) - expected['components'].keys()
         if missing_ids:
             raise Unsupported(f'unresolved instance predicate: {sorted(missing_ids)}')
-        report = compare(expected, actual, descriptor['policy'])
+        report = compare(expected, actual, descriptor['policy'], name_policy=descriptor['name_policy'])
+        if descriptor['name_policy'] is not None:
+            report['net_name_policy_sha256'] = digest(ctx.inputs / ctx.params['net_name_policy'])
         report.update(schema='agent-ee.netlist-parity-result/1', candidate_id=ctx.manifest['candidate_id'],
             source_sha256=digest(ctx.inputs / ctx.params['source']['path']), native_xml_sha256=digest(xml),
             connectivity_sha256=digest(connectivity),
