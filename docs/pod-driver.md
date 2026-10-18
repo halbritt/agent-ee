@@ -90,11 +90,21 @@ verification. AGENTEE-146 already supplies declared fab-output grading on the
 current base; adding that stage here requires its complete producer contract
 and inputs, rather than assuming a write-free or unchanged-board representation.
 
-`mutable_inputs` is the engine's coordinator write authority, which must include
-native outputs. It is not a grant to hand-edit every generated file. Scheduled
-step outputs retain the engine's `writer_step_output_edit` guard. A routing turn
-requires the writer to leave the whole captured tree unchanged before any plane
-or router producer. Immutable verification inputs remain protected throughout.
+`mutable_inputs` is the engine's coordinator write authority, which includes
+native outputs. The generated campaign separately freezes `writer_editable` to
+exactly the captured intent and deviation files. Every writer attempt is checked
+against that allowlist before any producer runs, including placement turns and
+verification turns with no scheduled steps. Scheduled step outputs also retain
+the engine's `writer_step_output_edit` guard. A routing turn additionally requires
+the writer to leave the whole captured tree unchanged before any plane or router
+producer. Immutable verification inputs remain protected throughout.
+
+Retained verification checks the writer boundary against the first producer's
+recorded input tree, or the anchored delivered tree when no producer ran. Every
+ordinary successor must be captured from that implementation's proposal; explicit
+bench transitions retain their separate verification. Missing receipt indexes
+cannot conceal a successful or nonterminal writer turn. Campaigns without the
+optional `writer_editable` declaration keep their prior behavior.
 
 ## Scaffold and validation
 

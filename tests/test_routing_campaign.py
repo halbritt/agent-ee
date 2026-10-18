@@ -328,6 +328,13 @@ class RoutingPredecessorTests(unittest.TestCase):
         self.assertEqual(routing.verify_campaign_receipt(work/'receipts/2-kicad-route-krt')['classification'],'complete')
         self.assertIn('plane fixture',(work/'receipts/2-kicad-route-krt/inputs/design/rc.kicad_pcb').read_text())
 
+    def test_owned_routing_composes_with_empty_writer_allowlist(self):
+        self.lane.config['writer_editable'] = []
+        status,state,work = self.lane.run_campaign(self.lane.spec())
+        self.assertEqual((status,state['state']),(0,'criteria_satisfied'))
+        self.assertTrue((work/'receipts/1-add-planes/receipt.json').is_file())
+        self.assertTrue((work/'receipts/2-kicad-route-krt/receipt.json').is_file())
+
     def test_failed_plane_producer_never_launches_router(self):
         self.step['argv']=['/usr/bin/false']
         status,state,work=self.lane.run_campaign(self.lane.spec())

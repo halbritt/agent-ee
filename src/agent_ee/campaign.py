@@ -17,6 +17,72 @@ IMPLEMENTATION_SCHEMA = {"type": "object", "additionalProperties": False,
 STEP_PLAN = "agent-ee.step-plan/1"
 
 
+def writer_editable(config, mutable, files=None):
+    """Optional writer subset; coordinator output authority remains mutable_inputs."""
+    from .candidate import safe_relative
+    if 'writer_editable' not in config:
+        return None
+    value = config['writer_editable']
+    if (not isinstance(value, list) or any(not isinstance(p, str) for p in value) or
+            len(set(value)) != len(value)):
+        raise ValueError('writer_editable must be a unique list of captured mutable paths')
+    try:
+        canonical = all(str(safe_relative(p)) == p for p in value)
+    except ValueError as exc:
+        raise ValueError('writer_editable contains an unsafe candidate path') from exc
+    if not canonical or not set(value) <= set(mutable):
+        raise ValueError('writer_editable must contain canonical paths within mutable_inputs')
+    if files is not None and not set(value) <= set(files):
+        raise ValueError('writer_editable names uncaptured paths')
+    return value
+
+
+def check_writer_files(actual, manifest, editable):
+    if editable is None:
+        return
+    if actual.keys() != manifest['files'].keys():
+        raise ValueError('writer_editable inventory differs from captured source')
+    changed = sorted(p for p, sha in manifest['files'].items() if actual[p] != sha and p not in editable)
+    if changed:
+        raise ValueError('writer_editable forbids edits outside the writer allowlist: ' + ', '.join(changed))
+
+
+def check_writer_proposal(design, manifest, state, editable):
+    check_proposal(design, manifest, state)
+    if editable is not None:
+        from .stage_receipts import file_tree
+        actual, other = file_tree(design)
+        if other:
+            raise ValueError('writer_editable tree contains non-files')
+        check_writer_files(actual, manifest, editable)
+
+
+def verify_writer_records(root, state, config):
+    """Verify writer boundaries from ordinary receipt indexes, including no-step turns."""
+    if 'writer_editable' not in config:
+        return
+    anchors = state.get('stage_receipts')
+    if not isinstance(anchors, dict):
+        raise ValueError('writer_editable requires anchored stage receipt indexes')
+    for work in (root / 'implementations').glob('*'):
+        number = int(work.name)
+        source = read_json(Path(state['history'][number - 1]['run']) / 'candidate.json')
+        editable = writer_editable(config, state['mutable_inputs'], source['files'])
+        if work.name not in anchors:
+            if (number != len(state['history']) or state['state'] != 'incomplete' or
+                    (work / 'proposal.scope.json').exists()):
+                raise ValueError('writer_editable implementation lacks its anchored receipt index')
+            continue
+        index = read_json(work / 'stage-receipts.json')
+        actual = (read_json(work / index['receipts'][0]['path'])['inputs']
+                  if index['receipts'] else index['delivered'])
+        check_writer_files(actual, source, editable)
+        if number < len(state['history']) and not state['history'][number].get('bench_transaction'):
+            following = read_json(Path(state['history'][number]['run']) / 'candidate.json')
+            if following.get('scope_path') != str(work / 'proposal.scope.json'):
+                raise ValueError('writer_editable successor was not captured from the verified proposal')
+
+
 def step_plan(config, manifest, record, version):
     """Ordered coordinator steps of one implementation, with receipt indexes from one allocator.
 
@@ -113,6 +179,11 @@ def implement(root, previous, definition, state, deadline):
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
     plan = step_plan(config, manifest, state["history"][-1], state.get("step_plan"))
+    editable = writer_editable(config, state['mutable_inputs'], manifest['files'])
+    if editable is not None:
+        prompt += ("\nOnly the following writer_editable files may change during your turn. "
+                   "Every other captured file remains protected in every stage, including verification.\n" +
+                   json.dumps({'writer_editable': editable}))
     if any(entry['kind'] == 'routing' for entry in plan):
         prompt += ("\nThis is a coordinator routing turn. Leave /work/design byte-for-byte unchanged. "
                    "The coordinator alone runs declared plane preparation then the pinned routing adapter; "
@@ -170,7 +241,7 @@ def implement(root, previous, definition, state, deadline):
                 supplied, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
                 launch_context={'expected': expected, 'boundary': 'implementation', 'deadline': deadline}),
             validate, limit=config.get('max_schema_resubmissions', 1),
-            invariant=lambda: check_proposal(design, manifest, state))
+            invariant=lambda: check_writer_proposal(design, manifest, state, editable))
     finally:
         execution_path = work / 'implementation-execution.json'
         if execution_path.is_file():
@@ -181,7 +252,7 @@ def implement(root, previous, definition, state, deadline):
                      limit=config.get('max_schema_resubmissions', 1))
     if record["execution"] != "ok" or response is None:
         raise ValueError("implementation execution failed; no provider fallback: " + record.get('error', record['execution']))
-    check_proposal(design, manifest, state)
+    check_writer_proposal(design, manifest, state, editable)
     if manifest['scope'].get('stages') is not None:
         for entry in plan:
             if entry['kind'] == 'step':
@@ -357,6 +428,12 @@ def run_campaign(config_path, out):
     scope = read_json(scope_path)
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
         raise ValueError("campaign requires an immutable scope/2 or scope/3 baseline")
+    if 'writer_editable' in config:
+        from .candidate import source_manifest
+        mutable = scope['mutable_inputs'] if 'mutable_inputs' in scope else [scope['board'], scope['schematic']]
+        writer_editable(config, mutable)
+        files, _, _ = source_manifest(scope, scope_path.parent)
+        writer_editable(config, mutable, files)
     from .stages import finding_retry_limit
     stages = scope.get('stages')
     if isinstance(stages, dict) and 'finding_retry_limit' in stages:
@@ -425,6 +502,7 @@ def record_iteration(root, state, run, config):
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
+        writer_editable(config, state['mutable_inputs'], manifest['files'])
         if "placement_adapter" in config:
             # Bound once to the first captured candidate; later candidates must keep these exact bytes.
             state["placement_binding"] = placement_binding(config, manifest, run / "inputs",
@@ -609,6 +687,7 @@ def verify_campaign_records(root, *, observations=None):
         if not history:
             if state["mutable_inputs"] != mutable_inputs(manifest, state["baseline"]):
                 raise ValueError("campaign mutable_inputs differ from captured write authority")
+            writer_editable(config, state['mutable_inputs'], manifest['files'])
             if stored["epoch"] != 0:
                 raise ValueError("campaign must begin at epoch zero")
         elif stored["epoch"] != history[-1]["epoch"]:
@@ -642,6 +721,7 @@ def verify_campaign_records(root, *, observations=None):
     plans = verify_campaign_plans(root, state, config)
     from .stage_receipts import verify_campaign_receipts
     verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []), plans=plans)
+    verify_writer_records(root, state, config)
     from .routing_adapter import verify_campaign_receipt, validate_binding
     routing_binding = state.get('routing_binding')
     if 'routing_adapter' in config and state['history']:

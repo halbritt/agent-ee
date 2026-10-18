@@ -78,6 +78,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
             receipt=self.build()
         config=read_json(self.root/'run/campaign.json')
+        self.assertEqual(config['writer_editable'],['deviations.json','intent.json'])
         self.assertEqual(config['max_iterations'],10)
         self.assertEqual(config['max_schema_resubmissions'],1)
         self.assertEqual(config['max_seconds'],6000)

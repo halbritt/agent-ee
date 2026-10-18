@@ -260,6 +260,7 @@ def build(plan_path, out, *, dry_run=False):
     stage_receipts.validate_pre_receipt(out, link)
     config = dict(schema='agent-ee.campaign/1', scope='scope.json',
                   review_profile=plan['review_profile'], implementation=plan['implementation'],
+                  writer_editable=validation['writer_inputs'],
                   implementation_steps=validation['implementation_steps'], pre_receipts=[link],
                   routing_adapter=plan['routing_adapter'],
                   max_iterations=validation['max_iterations'], max_seconds=validation['max_seconds'],
