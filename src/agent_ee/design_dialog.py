@@ -96,6 +96,9 @@ def resolve_answers(raw, hashes, questions):
             else:
                 findings.append({'code': 'answer_invalid', 'question_id': qid})
         return answers, findings
+    except RecursionError:
+        return {}, [{'code': 'answers_too_deep',
+                     'reason': 'answers JSON nesting exceeds decoder recursion limit'}]
     except (ValueError, UnicodeError) as exc:
         return {}, [{'code': 'answers_invalid', 'reason': str(exc)}]
 

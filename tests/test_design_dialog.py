@@ -82,6 +82,38 @@ class DesignDialogTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 capture_dialog(idea, encoded(questions), answers, baseline)
 
+    def test_deeply_nested_answers_are_recorded_unknown_without_derivation(self):
+        idea, questions, answers, baseline = inputs()
+        nested_array = b'[' * 100000 + b'0' + b']' * 100000
+        nested_object = b'{"nested":' * 100000 + b'0' + b'}' * 100000
+        for raw in [nested_array, nested_object,
+                    answers.replace(b'"digital"', nested_array)]:
+            with self.subTest(size=len(raw)):
+                artifacts = capture_dialog(idea, questions, raw, baseline)
+                report = json.loads(artifacts['dialog.json'])
+                self.assertEqual(report['outcome'], 'unknown')
+                self.assertFalse(report['acceptance_ready'])
+                self.assertEqual(report['findings'], [{'code': 'answers_too_deep',
+                    'reason': 'answers JSON nesting exceeds decoder recursion limit'}])
+                self.assertEqual(report['answers'], {})
+                self.assertEqual(report['ready_question_ids'], ['supply'])
+                self.assertEqual(report['answers_sha256'], hashlib.sha256(raw).hexdigest())
+                self.assertEqual(artifacts['answers.json'], raw)
+                self.assertEqual(artifacts['original-requirements.json'], baseline)
+                self.assertNotIn('requirements.json', artifacts)
+                self.assertNotIn('requirements.md', artifacts)
+                self.assertEqual(capture_dialog(idea, questions, raw, baseline), artifacts)
+
+    def test_nested_answer_within_decoder_limit_is_invalid_without_flattening(self):
+        idea, questions, answers, baseline = inputs()
+        raw = answers.replace(b'"digital"', b'[' * 20 + b'"digital"' + b']' * 20)
+        artifacts = capture_dialog(idea, questions, raw, baseline)
+        report = json.loads(artifacts['dialog.json'])
+        self.assertEqual(report['outcome'], 'unknown')
+        self.assertEqual(report['findings'], [{'code': 'answer_invalid', 'question_id': 'sensor'}])
+        self.assertNotIn('sensor', report['answers'])
+        self.assertNotIn('requirements.json', artifacts)
+
     def test_stale_hash_extra_answer_and_implicit_defaults_block_capture(self):
         idea, questions, raw, baseline = inputs()
         for change in ['stale', 'extra', 'empty', 'false', 'wrong_value', 'null', 'duplicate_key']:
@@ -151,6 +183,36 @@ class DesignDialogTests(unittest.TestCase):
             result = subprocess.run(argv[:-1] + [str(root / 'ready')], capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((root / 'ready/requirements.json').exists())
+
+    def test_cli_deeply_nested_answers_writes_unknown_and_preserves_inputs(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            idea, questions, answers, baseline = inputs()
+            raw = answers.replace(b'"digital"', b'[' * 100000 + b'0' + b']' * 100000)
+            for name, content in [('idea', idea), ('questions', questions),
+                                  ('baseline', baseline), ('answers', raw)]:
+                (root / name).write_bytes(content)
+            result = subprocess.run([sys.executable, '-m', 'agent_ee.design_dialog',
+                '--idea', str(root / 'idea'), '--questions', str(root / 'questions'),
+                '--requirements', str(root / 'baseline'), '--answers', str(root / 'answers'),
+                '--out', str(root / 'output')], capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(result.stderr, b'')
+            output = root / 'output'
+            report = json.loads((output / 'dialog.json').read_bytes())
+            self.assertEqual(report['outcome'], 'unknown')
+            self.assertEqual(report['findings'], [{'code': 'answers_too_deep',
+                'reason': 'answers JSON nesting exceeds decoder recursion limit'}])
+            self.assertEqual(report['answers'], {})
+            self.assertFalse(report['acceptance_ready'])
+            self.assertEqual(report['answers_sha256'], hashlib.sha256(raw).hexdigest())
+            for name, content in [('idea.md', idea), ('questions.json', questions),
+                                  ('original-requirements.json', baseline), ('answers.json', raw)]:
+                self.assertEqual((output / name).read_bytes(), content)
+            self.assertFalse((output / 'requirements.json').exists())
+            self.assertFalse((output / 'requirements.md').exists())
 
     def test_ready_frontier_requires_all_ancestors_answered(self):
         idea, raw, ar, baseline = inputs()
