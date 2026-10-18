@@ -51,12 +51,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "80dfab3d56c1f11574a01d353beb2211ef9f6f0a4153021f1d76bb8584699dd4",
+    "block-contract.json": "6bdf6ddddbaf63133f98e415a6880a97cee770a30b55461020218b11486b1c93",
     "connectivity.json": "6bb7b1ea8f82a48f831ef92b79b1e79230d425cf36c445304fc7cd316954c7ee",
-    "interface.json": "3699d505186e4a0f313b66098a78fc1890a634ac67afe8de931ce27f2546fd28",
+    "interface.json": "7833495305157fbe6fa4bfc790fc2bc20492d82bf26dbb868f4a0f9cac0114ea",
     "parts.json": "17518a2881ade5dc5b39a6fb29270fe7975b6ad0fd54881375632285eaedf720",
-    "sheets/knock.kicad_sch": "274722ceadadc2298502d7ef952c34ef2ec2762093047bbd99959961752ddf04",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/knock.kicad_sch": "274722ceadadc2298502d7ef952c34ef2ec2762093047bbd99959961752ddf04"
   },
   "id": "fome-mc/knock",
   "instances": [
@@ -182,8 +181,13 @@
       "conditions": [],
       "id": "knock-band",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Knock (knock.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The band-pass gain and pass band suit ADC3 sampling."
     }
@@ -199,8 +203,13 @@
       ],
       "id": "knock-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -213,8 +222,13 @@
       ],
       "id": "knock-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Knock (knock.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -227,8 +241,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus knock at b3176cb",
     "paths": {
-      "sheets/knock.kicad_sch": "sheets/knock.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/knock.kicad_sch": "sheets/knock.kicad_sch"
     },
     "repository": "fome-mc"
   },

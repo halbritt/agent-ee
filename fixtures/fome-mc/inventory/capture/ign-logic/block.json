@@ -79,12 +79,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "8148249d0ebb30349f886f2d47ad1fb7906e7fd668b8ecabac50dab4de5c7aeb",
+    "block-contract.json": "72356f18644ea1afa0e9e553f9da344dc09c2e4527ddb6606e52502d215d9d7e",
     "connectivity.json": "e459ac514bcb55ae5707c642acdaa121639f1e955c3b5926d2c11450ee5d2e17",
-    "interface.json": "de2b34e0a82b05614cedfe5357760310ce96945eb93c6cae9dc2b0150284ea85",
+    "interface.json": "21aa6df357b1c7cf84c9577fef6f0c835ecf547b23358b493ddefaecfacd3223",
     "parts.json": "4d24118eb43bec970cf8eb9e8abf7369532ba406a54447b5939920cc3667ad12",
-    "sheets/ign4.kicad_sch": "0e4dddd1ea5188bc911985c9be8edf30b7f77eaa675f2486a9c46186b719d6e9",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/ign4.kicad_sch": "0e4dddd1ea5188bc911985c9be8edf30b7f77eaa675f2486a9c46186b719d6e9"
   },
   "id": "fome-mc/ign-logic",
   "instances": [
@@ -186,8 +185,13 @@
       "conditions": [],
       "id": "ign-logic-drive",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Logic ignition (/ign2/, ign4.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "IGN5..8 are driven by MIC4427 through 100 ohm series resistors."
     }
@@ -203,8 +207,13 @@
       ],
       "id": "ign-logic-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -217,8 +226,13 @@
       ],
       "id": "ign-logic-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Logic ignition (/ign2/, ign4.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -231,8 +245,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus ign4 at b3176cb",
     "paths": {
-      "sheets/ign4.kicad_sch": "sheets/ign4.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/ign4.kicad_sch": "sheets/ign4.kicad_sch"
     },
     "repository": "fome-mc"
   },

@@ -134,25 +134,25 @@ class RepositoryInventoryTests(unittest.TestCase):
                 self.assertLessEqual(set(item['origins']), origins.OWNED, item['path'])
         # The one confirmed third-party origin is the owner decision of 2026-10-18 on fome-mc fixtures.
         confirmed = {key for key, value in REAL['origins'].items() if value['permission_status'] == CONFIRMED}
-        self.assertEqual(confirmed, {'T15'})
+        self.assertEqual(confirmed, {'T16'})
         for key, value in REAL['origins'].items():
             if key not in origins.OWNED and key not in confirmed:
                 self.assertEqual(value['permission_status'], UNRESOLVED, key)
 
     def test_fome_mc_fixtures_follow_the_recorded_owner_decision(self):
-        t15 = REAL['origins']['T15']
-        self.assertIn('fome-mc reference sheets are committed as fixtures', t15['owner_record'])
+        t16 = REAL['origins']['T16']
+        self.assertIn('fome-mc reference sheets are committed as fixtures', t16['owner_record'])
         self.assertIn('### fome-mc reference sheets are committed as fixtures',
                       (ROOT / 'docs/decisions.md').read_text())
-        self.assertIn('df304f3321296f7e517e0d2e2aa52e1380d52993', t15['upstream']['revisions'])
+        self.assertIn('df304f3321296f7e517e0d2e2aa52e1380d52993', t16['upstream']['revisions'])
         sheet = self.files['fixtures/fome-mc/inventory/capture/wbo1/sheets/wbo1.kicad_sch']
         self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
-                         ('copied-design', ['T15'], CONFIRMED))
+                         ('copied-design', ['T16'], CONFIRMED))
         entry = self.files['fixtures/fome-mc/inventory/capture/wbo1/block.json']
         self.assertEqual((entry['kind'], entry['permission_status']), ('retained-output', CONFIRMED))
         self.assertEqual(self.files['fixtures/fome-mc/LICENSE-NOTICE.md']['permission_status'], PROPOSED)
         inventory_file = self.files['fixtures/fome-mc/inventory/block-inventory.json']
-        self.assertEqual((inventory_file['origins'], inventory_file['permission_status']), (['AE', 'T15'], CONFIRMED))
+        self.assertEqual((inventory_file['origins'], inventory_file['permission_status']), (['AE', 'T16'], CONFIRMED))
 
     def test_walk_exclusions_mirror_gitignore(self):
         lines = {line.strip() for line in (ROOT / '.gitignore').read_text().splitlines()

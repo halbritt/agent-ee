@@ -128,16 +128,14 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "7249280665337e79c29f0c09603b3d39d322f49eabb45a23ba161548d527aac9",
+    "block-contract.json": "7738e6de0e45b88326e9285be14f323a64aeec5dad04fa1f40855b59d009193c",
     "connectivity.json": "049d90194a0593d171aafa7089c316be0cba7595c7035289359765c0b832d7e2",
-    "interface.json": "cd3a0f51e1fea70645112815144c1e3a182ec2913a37b2c7bce80f7dc01528e3",
+    "interface.json": "3b669a4dd35d10db8b469769d03c65ae815752dc202bab5218aac41179453351",
     "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73",
     "libs/symbols/infineon_psu.lib": "a28de6754df60efe6f201f81de74ee43fed69b987cec45992541bfea590df6f4",
     "libs/symbols/lmr14020.lib": "e38cf910613cec6f8c14146ef3765ade941e6c1df73713debdcdc6a0e6d960c0",
     "parts.json": "4c0b7743b49dbfe7e95565af1a0b452e94acfbaf4f485454a1531c7d0cc32a31",
-    "sheets/psu.kicad_sch": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
-    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    "sheets/psu.kicad_sch": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb"
   },
   "id": "fome-mc/psu",
   "instances": [
@@ -416,8 +414,13 @@
       ],
       "id": "psu-load-dump",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "6.3 Power Supply, Keep-Alive, Cranking Brownout Margin",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "The input survives load dump with the SMCJ24A TVS clamp at 38.9 V and blocks reverse battery without a series diode drop."
     },
@@ -428,8 +431,13 @@
       ],
       "id": "psu-rails",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "3. Circuit-Reuse, Adaptation & Upstream Bug Resolution Table; 6.3",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "+5V is 5.00 V within 2 % above 5.5 V input; 5V_SENSOR_1/2 are 5.00 V within 1 %; +3V3 is 3.30 V within 1 %."
     },
@@ -440,8 +448,13 @@
       ],
       "id": "psu-brownout",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "6.3 Power Supply, Keep-Alive, Cranking Brownout Margin",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "Regulation holds down to the connector brownout floor; the guaranteed loaded floor is 4.65 to 4.8 V (typical UVLO 4.0 to 4.2 V)."
     },
@@ -450,8 +463,13 @@
       "conditions": [],
       "id": "psu-derating",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Capacitor voltage ratings carry derating margin on the 12 V rails."
     }
@@ -467,8 +485,13 @@
       ],
       "id": "psu-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -481,8 +504,13 @@
       ],
       "id": "psu-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -498,9 +526,7 @@
       "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod",
       "libs/symbols/infineon_psu.lib": "libs/symbols/infineon_psu.lib",
       "libs/symbols/lmr14020.lib": "libs/symbols/lmr14020.lib",
-      "sheets/psu.kicad_sch": "sheets/psu.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
-      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+      "sheets/psu.kicad_sch": "sheets/psu.kicad_sch"
     },
     "repository": "fome-mc"
   },

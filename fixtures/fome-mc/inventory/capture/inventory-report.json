@@ -1,8 +1,8 @@
 {
   "blocks": [
     {
-      "block_sha256": "e0a6b40c4f875e04f175b59c4b4e7e128f6d41e44e662b287b21d57bf74c1c99",
-      "contract_sha256": "7249280665337e79c29f0c09603b3d39d322f49eabb45a23ba161548d527aac9",
+      "block_sha256": "58f1ced33496e9d903f0bf83f2478a56c44909dd66b0f486918f92ef7fc0c7ed",
+      "contract_sha256": "7738e6de0e45b88326e9285be14f323a64aeec5dad04fa1f40855b59d009193c",
       "directory": "psu",
       "id": "fome-mc/psu",
       "pending_requirements": [
@@ -32,8 +32,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "a2effb7de8aa87f34b72c2bd3c71b0722403fda011c6b8a531f0f0fcf9c3603e",
-      "contract_sha256": "34857dd7ad9eeb1f58ce5aae86054f58a0f62f7d280e6295c94fc16bb13ecf95",
+      "block_sha256": "ae8325a82cc38ff4397c7fc2d1a8b9a101ca16645b912907e1860156f14ef895",
+      "contract_sha256": "4596491b4100cd2cce29a7abbe7abff77eadb1ea736070d55004eba0a82a0246",
       "directory": "keep-alive",
       "id": "fome-mc/keep-alive",
       "pending_requirements": [
@@ -50,8 +50,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "b94ae96d6006101f6df508faa0fb568b8f9082878f722cd44cc093e5f122b8ec",
-      "contract_sha256": "814a47d062bf176e0cd68a685e9cec3cfc9b4bf8e836a35bb97fdd2a556218ca",
+      "block_sha256": "54903aa4dd47bf7cc467af6cd5031b2fc42482e42aa78a8b6298f2afc43b02d2",
+      "contract_sha256": "3d4bfb387a66687d2bbc45214bbd470443e24a3dd58bb6b9185370ab389f7664",
       "directory": "mcu",
       "id": "fome-mc/mcu",
       "pending_requirements": [
@@ -141,8 +141,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "a69e1e2515c7d2971c3a43e8aa83576e019309321d6d5d7235082decd244cb18",
-      "contract_sha256": "9b43a58c6718f9b432a5b477859befe35b28d3f9c384bf610a4eb14ef3af40e2",
+      "block_sha256": "e62edbc48edf9a04ffdebc7c8a67254db8d1018f29c0bb457714d03e9444a32a",
+      "contract_sha256": "48d2f1f3adf24c5b2301c46ed3fc41accd45204d2f147549b0cf915c0360b5b8",
       "directory": "can",
       "id": "fome-mc/can",
       "pending_requirements": [
@@ -169,8 +169,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "caa589a70664f870cca81a7837f76ae24b08d458bd80a6bca17eacd8c23db741",
-      "contract_sha256": "06cfb1efd5b18190b124f0b429ef3769e3fd1b2445706164c7926ad479808ec6",
+      "block_sha256": "924cdc907b5035bf7b2b234ea59989ab51a684ca9565e909c3ce0b035c82d0db",
+      "contract_sha256": "b52d2a0f0f6c60a8247bbd9cbbe077acf556bff550b9bd78a40fe42b73e5d8c6",
       "directory": "wbo1",
       "id": "fome-mc/wbo1",
       "pending_requirements": [
@@ -193,8 +193,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "dfc62bc830d515d3f67ce9f2023cfe975a42a56d1903cf8619f2e6fb61c13beb",
-      "contract_sha256": "ee3256d783eedb48937d4c47e0af2fad4766aa5eeaaa6ff69f528582c11f55a8",
+      "block_sha256": "4c5e831e9f87dd7e4d233f548525d561acde0039f40f404d495b14f7a31cdb8e",
+      "contract_sha256": "e2d4d919b4f1d68f3e2d12dc34f5da25e355f077eae91e8c782e90c3c2b390f3",
       "directory": "wbo2",
       "id": "fome-mc/wbo2",
       "pending_requirements": [
@@ -217,8 +217,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "e866740e9d27a4ee87e572ab9cd8b1844a53002258b5e779bc00955a09439f77",
-      "contract_sha256": "4e32da28f6a1283b9843de82b9b4661f2ffa6a1d9b23b19de3cd117b5c8f0b77",
+      "block_sha256": "7100e87ebb0a18687c81af83b7e3b6d3106f73028c6f321a2c82767f81104a86",
+      "contract_sha256": "4f5ead6db657006bc8c3546043f35de525c30b6cf1c85264f1d6050986a5537a",
       "directory": "ign-igbt",
       "id": "fome-mc/ign-igbt",
       "pending_requirements": [
@@ -239,8 +239,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "4d31babc1637c44046f5ada0f462bc4ea244128fbf368df9039ad35abbc47d5e",
-      "contract_sha256": "8148249d0ebb30349f886f2d47ad1fb7906e7fd668b8ecabac50dab4de5c7aeb",
+      "block_sha256": "3aa6460afe7cfe5ab85d74a11f82785266894375562e24edd9e77b581c5f0565",
+      "contract_sha256": "72356f18644ea1afa0e9e553f9da344dc09c2e4527ddb6606e52502d215d9d7e",
       "directory": "ign-logic",
       "id": "fome-mc/ign-logic",
       "pending_requirements": [
@@ -260,8 +260,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "392ce9ebffc1b8fe459fbfd8b66b7bf62f9374e31cfe1e263f3aab203984780e",
-      "contract_sha256": "51b5e0c350b9957ab66b700eca061563f724b84e4ef011cea02782338cf3321d",
+      "block_sha256": "3e2a38f245c9af5f523c592e3505f024507e5f29b295f7cd0262f961fccc465b",
+      "contract_sha256": "b0f92da24cfbed92b403239cd93e2da1faa8cf405e0c06eedaa2797d1e52bdbc",
       "directory": "lowside-quad",
       "id": "fome-mc/lowside-quad",
       "pending_requirements": [
@@ -281,8 +281,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "bfaac438b8272a0c7b7ce9049d4188ac0eecdd3eae20c6b2602a4f0b00212343",
-      "contract_sha256": "454657e18e302b5d4f1e757afef6437a1d137581e6f5af1e8f58e215423442ef",
+      "block_sha256": "73cf5ec3d9cfa305b0b7e45502c8f36af8296ff520c11c01f2ec310c4acb1339",
+      "contract_sha256": "0081f60e375db80b28e1d434518eb6e55bab4dc7fe92c8eb9056d52c57a90702",
       "directory": "highside-quad",
       "id": "fome-mc/highside-quad",
       "pending_requirements": [
@@ -303,8 +303,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "a7cd8610f4fc65d5ea9dc1b7b1e8fc508318a2d8070b9b829aa85bf8a083b3ad",
-      "contract_sha256": "dcaddf72628c009fc2b3ac8a2aa021cafb8b3e885939355da83fe7cc25924144",
+      "block_sha256": "0ef33688623b73f4330c5847625cc95801a48f041d752e2eedcf7f9fdf34fd2e",
+      "contract_sha256": "f52232fc0f74303a9d9b15e6fb606077936bb650d4cbfd34d7b004ffbf0a2046",
       "directory": "quad-analog",
       "id": "fome-mc/quad-analog",
       "pending_requirements": [
@@ -324,8 +324,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "542dd90a1b17e1b91a470c4e0e0c4595900418c6663d071521fcb88a6ccd4d01",
-      "contract_sha256": "06212b9e5509a251aa9dbb22006f58962772ec9e17519e01892e91a52ed1d387",
+      "block_sha256": "383a887793d2448ecfeddd45290e84b2c8625f1873ec1401756b2d24a7b3db15",
+      "contract_sha256": "0c17b7c711bfd3d87bff18447b01651edfaeed214d3404158cda3fb37ded35dd",
       "directory": "quad-analog-pullup",
       "id": "fome-mc/quad-analog-pullup",
       "pending_requirements": [
@@ -346,8 +346,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "dc08054b7c12a0b67203c7af8c4eb99839aed92a17af0a302449aaa268262e7c",
-      "contract_sha256": "c9efc88160659d597134478cafcee8c97612c9ba7ab8cdc6833f8bc30f975afd",
+      "block_sha256": "72043a4049a7abe08cc99af0324119249e971d2ccf3db187f1c678add205f743",
+      "contract_sha256": "3fab994d66ceff393c46b50060c09fc50ae6633a42f6cb302e8a3235436c4fd4",
       "directory": "triggers",
       "id": "fome-mc/triggers",
       "pending_requirements": [
@@ -378,8 +378,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "bfaa6321ccd0adc6976e79533ff60c4f7516d3fbac3bd0ce145319ed926dd816",
-      "contract_sha256": "80dfab3d56c1f11574a01d353beb2211ef9f6f0a4153021f1d76bb8584699dd4",
+      "block_sha256": "db54662d3cf902750e44f9b5494240a2a7efeb3a57734dadbdf8328dff435239",
+      "contract_sha256": "6bdf6ddddbaf63133f98e415a6880a97cee770a30b55461020218b11486b1c93",
       "directory": "knock",
       "id": "fome-mc/knock",
       "pending_requirements": [
@@ -395,8 +395,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "c03e6494d83ffc808a8477f1f97f9563eb5222e418331c702f792d165e7e4f8e",
-      "contract_sha256": "8a4e5de4cceb136a1879f29555a3f3f68e94212c4d31173c74f2b2082783ae74",
+      "block_sha256": "c33a11b38bcec14f189caaaeaa3fda5bae4fc9971ec98df1737589b1988adba0",
+      "contract_sha256": "13ce3fe0337cfca74e7fea5501b99c8b764f85bc12c161e228771c4801de6ac3",
       "directory": "stepper",
       "id": "fome-mc/stepper",
       "pending_requirements": [
@@ -436,8 +436,8 @@
       ]
     },
     {
-      "block_sha256": "8e42f0d272b00d9d7e825c08859a84b65c95d0d7163bcba9ade9dff19e18e709",
-      "contract_sha256": "de8167a93c6c750aaf15f86464363535247fab9f4cda226a2b195bb0a7f089ab",
+      "block_sha256": "19bf313c28044dbee0ebc4e3f6033c40f6e3e320449d626368effad73e5af0c7",
+      "contract_sha256": "65bd553af1702d762fcd2fd5b153f24e38cf05ffbbaea84c643d65fc56fdb515",
       "directory": "etb2-hbridge",
       "id": "fome-mc/etb2-hbridge",
       "pending_requirements": [
@@ -475,8 +475,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "50ae5c9a1d736cf281be3e0ec627dd533f8d74a213b01142b957cc4a8438cf3f",
-      "contract_sha256": "00953d9557e27a235bf4760e366e6a6696f0827dfcea22360afc4bfd6635e7fb",
+      "block_sha256": "50c8cd296e1d8f06adea778c63df763c4d7ddda90b3f2beefc98bece027b84e1",
+      "contract_sha256": "0add84727cab699917488d52a2704f0caec4423ae749a343bcd629134870d8d9",
       "directory": "lowside-clamps",
       "id": "fome-mc/lowside-clamps",
       "pending_requirements": [
@@ -514,8 +514,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "1ed0a86fe97f8c75d713d72227a6b0a06b075793b76d187c661a5dee8e4e0bf6",
-      "contract_sha256": "edf211d8a2bbadd7f63cabc5d847043f31f1731cbe4515a4220cb7fcd504b901",
+      "block_sha256": "6c9654ae85f1c76a7ee9e367a4c562ccbe173fc8bd111a002167532f0c59925d",
+      "contract_sha256": "cb2af271933d8d346a683aaa00a9f96bd0b859bbaa735d16a1af756e457f9c35",
       "directory": "dfu-entry",
       "id": "fome-mc/dfu-entry",
       "pending_requirements": [
@@ -553,8 +553,8 @@
       "unresolved_libraries": []
     },
     {
-      "block_sha256": "cf2d539e02252361e45d58c4e7b33f6d5188e0622fffc60b473d1f12fd2f7133",
-      "contract_sha256": "7d9409d4c9803926caccbf92c248e5d1cd8f8c3674c072a8418e8c64e80c0468",
+      "block_sha256": "d3ec77e6b62d2ea78cf3457cab904a1c511f0a18347fd93e3a63b7e95ba7dfae",
+      "contract_sha256": "e31ae70f6ba6f4fb3e7d1261a3991cdf18380b98c4181845db8750a1cbbedb51",
       "directory": "hbridge",
       "id": "fome-mc/hbridge",
       "pending_requirements": [
@@ -580,17 +580,18 @@
   "inventory_sha256": "eaf26a94a9c05cc6c347728cc1e0f10d4094853627c9a91143e4a801e1c1ab08",
   "limitations": [
     "Draft entries: derived contracts restate the pinned design and need owner approval; no block is verified without a complete run and review.",
-    "Captured design files are the pinned source blobs; publishing them follows the source design licence statement and the owner decision that covers it."
+    "Captured design files are the pinned source blobs; publishing them follows the source design licence statement and the owner decision that covers it.",
+    "Planning documents are cited by pinned commit, path, Git blob and SHA-256 (source_files captured: false) and are never copied into a block."
   ],
   "schema": "agent-ee.block-inventory-report/1",
   "source_files": {
     "docs/BLOCK_LIBRARY.md": {
-      "captured": true,
+      "captured": false,
       "git_blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
       "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
     },
     "docs/DESIGN.md": {
-      "captured": true,
+      "captured": false,
       "git_blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
       "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
     },

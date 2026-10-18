@@ -282,7 +282,8 @@ planned block from a pinned design commit, all unverified, each with its
 reference set, a derived interface contract, library hashes and sourced pending
 requirements. It also replays block adaptation fixtures. The fome-mc inventory
 and its capture at a pinned commit are committed under `fixtures/fome-mc/`
-(owner decision of 2026-10-18, [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md)).
+(owner decision of 2026-10-18, [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md));
+planning documents are cited by pinned identity, not copied.
 
 The owner decision of 2026-10-18 permits the [pinned wideband reference](docs/fome-wbo1.md)
 under `fixtures/fome-mc/wbo1/`. Its native wbo1-to-wbo2 adaptation fixture uses

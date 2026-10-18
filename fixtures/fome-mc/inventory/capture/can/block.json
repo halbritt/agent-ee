@@ -128,13 +128,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "9b43a58c6718f9b432a5b477859befe35b28d3f9c384bf610a4eb14ef3af40e2",
+    "block-contract.json": "48d2f1f3adf24c5b2301c46ed3fc41accd45204d2f147549b0cf915c0360b5b8",
     "connectivity.json": "64b6a4d11271c0d728ee61b58607be949ad76f94d6a799ae327b6e01ec204a7b",
-    "interface.json": "c09a3bd03a4ff8af6d7fa65f9e0717e3f8b92d32daa8cb31197aad45f9592981",
+    "interface.json": "8cdc7f3f7174985e0fe788ac5ecb7ae0aea7bf7dcafff3d8377a7ecd48ff495e",
     "parts.json": "8a662396dabcd97ea25f40646fe4e522980baf226d60eb8d25c32ddd4f1d294f",
-    "sheets/psu.kicad_sch": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
-    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    "sheets/psu.kicad_sch": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb"
   },
   "id": "fome-mc/can",
   "instances": [
@@ -214,8 +212,13 @@
       ],
       "id": "can-bus",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "3. Circuit-Reuse, Adaptation & Upstream Bug Resolution Table, row 1",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "Both buses run at 500 kbps with one 120 ohm termination per bus end (60 to 120 ohm bus resistance) and transceiver Vref pin 5 open."
     }
@@ -231,8 +234,13 @@
       ],
       "id": "can-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -245,8 +253,13 @@
       ],
       "id": "can-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / CAN (inside psu.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -259,9 +272,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7",
     "paths": {
-      "sheets/psu.kicad_sch": "sheets/psu.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
-      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+      "sheets/psu.kicad_sch": "sheets/psu.kicad_sch"
     },
     "repository": "fome-mc"
   },

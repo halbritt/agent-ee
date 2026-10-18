@@ -21,7 +21,8 @@ owner decision of 2026-10-18); each is overridable:
 
 This is a manual step, not part of the discovered test suite: it needs the
 source repository and the host's KiCad. Exit 0 when qualified, 1 when a
-qualification check fails, 2 when refused.
+qualification check fails, 2 when refused (any error before a result exists,
+including a missing inventory, source repository or expected capture).
 """
 import argparse
 import json
@@ -117,11 +118,16 @@ def qualify(inventory, repository, out, adaptations, library_repos, expect=None,
     if sorted(b['directory'] for b in first['blocks']) != planned:
         failures.append('captured blocks differ from the inventory blocks')
     statuses = {}
+    label = str(Path(repository).resolve()) if repository_label is None else repository_label
     for block in first['blocks']:
-        report = validate_block(out / 'first' / block['directory'])
+        report = validate_block(out / 'first' / block['directory'], repository_locations={label: str(repository)})
         statuses[block['directory']] = report['status']
         if report['status'] != 'unverified' or report['runs']:
             failures.append(f'{block["directory"]} is not an unverified entry without runs')
+        # Every cited planning document must resolve to its pinned blob in the source repository.
+        unverified = sorted({c['source']['path'] for c in report['external_sources'] if c['status'] != 'verified'})
+        if unverified:
+            failures.append(f'{block["directory"]} cites unverified sources: {", ".join(unverified)}')
     replayed = []
     for path, document in documents:
         projections = []
@@ -191,8 +197,10 @@ def main(argv=None):
             expect = Path(args.inventory).parent / 'capture'
         result = qualify(inventory, args.repo, out, adaptations, repos, expect=expect,
                          repository_label=args.repository_label or inventory['design']['name'])
-    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as exc:
-        print(json.dumps(dict(schema='agent-ee.block-inventory-qualification/1', status='refused', error=str(exc))))
+    except Exception as exc:
+        # Anything that prevents a qualification result is a refusal, never a pass or a check failure.
+        print(json.dumps(dict(schema='agent-ee.block-inventory-qualification/1', status='refused',
+                              error=f'{type(exc).__name__}: {exc}')))
         return 2
     print(json.dumps(dict(result, out=str(out)), sort_keys=True))
     return 0 if result['status'] == 'qualified' else 1

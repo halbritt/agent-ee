@@ -11,7 +11,7 @@ from pathlib import Path
 import block_inventory_fixture as fixture
 from agent_ee.block_inventory import (adapt_connectivity, capture_inventory, compare_connectivity,
                                       validate_inventory)
-from agent_ee.reference_blocks import block_contract, hierarchy_ports, validate_block
+from agent_ee.reference_blocks import block_contract, hierarchy_ports, validate_block, verify_external_source
 from agent_ee.storage import digest, read_json, write_json
 
 REPO = Path(__file__).resolve().parents[1]
@@ -125,10 +125,33 @@ class InventoryCaptureTests(unittest.TestCase):
                                          'owned.kicad_sch', 'sheets/chan1.kicad_sch', 'sheets/chan2.kicad_sch'])
         for local, source in record['source']['paths'].items():
             self.assertEqual(record['files'][local], files[source]['sha256'], local)
+        # The plan is cited by pinned identity, never copied into a block.
+        self.assertFalse(files['docs/PLAN.md']['captured'])
+        self.assertNotIn('docs/PLAN.md', record['source']['paths'].values())
+        self.assertFalse((self.root / 'capture/ch1/sources').exists())
+        cited = dict(kind='pinned-external', repository='owned-design', commit=self.commit, path='docs/PLAN.md',
+                     blob=files['docs/PLAN.md']['git_blob'], sha256=files['docs/PLAN.md']['sha256'])
+        sources = [r['source'] for r in record['requirements'] + record['pending_requirements']]
+        sources += [i['source'] for i in read_json(self.root / 'capture/ch1/interface.json')['invariants']]
+        for source in sources:
+            self.assertEqual({k: v for k, v in source.items() if k != 'locator'}, cited)
+        # A relative identity verifies only through an explicit local mapping.
+        unmapped = validate_block(self.root / 'capture/ch1')['external_sources']
+        self.assertEqual({c['status'] for c in unmapped}, {'unverified'})
+        mapped = validate_block(self.root / 'capture/ch1',
+                                repository_locations={'owned-design': str(self.root / 'design')})
+        self.assertEqual({c['status'] for c in mapped['external_sources']}, {'verified'})
+        self.assertEqual(len(mapped['external_sources']), 3)
+        with self.assertRaisesRegex(ValueError, 'SHA-256 differs'):
+            verify_external_source(dict(cited, sha256='0' * 64), str(self.root / 'design'))
+        with self.assertRaisesRegex(ValueError, 'blob differs'):
+            verify_external_source(dict(cited, blob=files['owned.kicad_sch']['git_blob']), str(self.root / 'design'))
         default = self.capture('unlabelled')
         self.assertEqual(read_json(self.root / 'unlabelled/ch1/block.json')['source']['repository'],
                          str((self.root / 'design').resolve()))
         self.assertEqual(default['source_files'], files)
+        unlabelled = read_json(self.root / 'unlabelled/ch1/block.json')['requirements'][0]['source']
+        self.assertEqual(unlabelled['repository'], str((self.root / 'design').resolve()))
 
     def test_adaptation_reproduces_second_channel_except_straps(self):
         self.capture()
@@ -211,7 +234,10 @@ class InventoryCaptureTests(unittest.TestCase):
             ('untraced check', lambda r: r['check_set'].append(dict(id='extra', kind='erc', params={}))),
             ('interface not named', lambda r: r['check_set'][2]['params'].update(contract='parts.json')),
             ('pending duplicate', lambda r: r['pending_requirements'][0].update(id='ch1-native')),
-            ('pending source outside files', lambda r: r['pending_requirements'][0]['source'].update(path='absent.md')),
+            ('pending citation outside the commit', lambda r: r['pending_requirements'][0]['source'].update(path='absent.md')),
+            ('pending citation of another blob', lambda r: r['pending_requirements'][0]['source'].update(sha256='0' * 64)),
+            ('pending source outside files', lambda r: r['pending_requirements'][0].update(
+                source=dict(path='sources/docs/PLAN.md', locator='## Channel'))),
             ('requirement source differs from interface', lambda r: r['requirements'][1]['source'].update(locator='other')),
             ('instances removed', lambda r: r.pop('instances')),
         ]
@@ -303,7 +329,15 @@ class FomeMcInventoryFixtureTests(unittest.TestCase):
 
     def test_every_catalogue_block_of_the_plan_has_an_entry(self):
         plan = self.inventory['documents'][self.inventory['design']['plan']]
-        text = (self.capture / self.ids[0] / 'sources' / plan).read_text()
+        entry = self.report['source_files'][plan]
+        repository = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(Path.home() / 'git/fome-mc')))
+        source = dict(kind='pinned-external', repository='fome-mc', commit=self.COMMIT, path=plan,
+                      blob=entry['git_blob'], sha256=entry['sha256'])
+        # The plan is cited, not committed; only the pinned blob of a local object store supplies its text.
+        if verify_external_source(source, str(repository) if repository.is_dir() else None)['status'] != 'verified':
+            self.skipTest(f'fome-mc object store with {self.COMMIT[:12]} not available at {repository}')
+        text = subprocess.run(['git', '-C', str(repository), 'cat-file', 'blob', entry['git_blob']],
+                              capture_output=True, text=True, check=True).stdout
         catalogue = text.split('\n## Block catalogue\n', 1)[1].split('\n## ', 1)[0]
         headings = {line[4:].replace('`', '') for line in catalogue.splitlines() if line.startswith('### ')}
         self.assertEqual(len(headings), 14)
@@ -328,6 +362,37 @@ class FomeMcInventoryFixtureTests(unittest.TestCase):
         self.assertEqual(copied, {path for path, entry in files.items() if entry['captured']})
         self.assertIn('sheets/psu.kicad_sch', copied)
         self.assertIn('sheets/wbo1.kicad_sch', copied)
+
+    def test_planning_documents_are_cited_by_pinned_identity_and_never_copied(self):
+        import hashlib
+        files = self.report['source_files']
+        documents = set(self.inventory['documents'].values())
+        self.assertEqual(documents, {'docs/BLOCK_LIBRARY.md', 'docs/DESIGN.md'})
+        cited = set()
+        for block_id in self.ids:
+            directory = self.capture / block_id
+            record = read_json(directory / 'block.json')
+            self.assertFalse(documents & set(record['source']['paths'].values()), block_id)
+            self.assertFalse((directory / 'sources').exists(), block_id)
+            sources = [r['source'] for r in record['requirements'] + record['pending_requirements']]
+            sources += [i['source'] for i in read_json(directory / 'interface.json')['invariants']]
+            for source in sources:
+                with self.subTest(block=block_id, path=source['path']):
+                    self.assertEqual((source['kind'], source['repository'], source['commit']),
+                                     ('pinned-external', 'fome-mc', self.COMMIT))
+                    self.assertIn(source['path'], documents)
+                    self.assertEqual((source['blob'], source['sha256']),
+                                     (files[source['path']]['git_blob'], files[source['path']]['sha256']))
+                    cited.add(source['path'])
+            # Without a mapped local object store a citation stays unverified, never verified.
+            report = validate_block(directory)
+            self.assertEqual({c['status'] for c in report['external_sources']}, {'unverified'})
+        self.assertEqual(cited, documents)
+        self.assertEqual({p for p in documents if files[p]['captured']}, set())
+        hashes = {files[p]['sha256'] for p in documents}
+        copies = [p for p in (REPO / 'fixtures/fome-mc').rglob('*')
+                  if p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest() in hashes]
+        self.assertEqual(copies, [])
 
     def test_wbo1_adaptation_reproduces_wbo2_except_u402_straps(self):
         from agent_ee.block_inventory import validate_adaptation_fixture
@@ -385,8 +450,8 @@ class QualificationScriptTests(unittest.TestCase):
                                expected_without_straps=OWNED_EXPECTED)
         write_json(self.private / 'ch1-to-ch2.json', self.adaptation)
 
-    def run_script(self, *args):
-        env = dict(os.environ, PYTHONPATH=str(REPO / 'src'), AGENT_EE_FOME_MC_CAPTURE=str(self.private),
+    def run_script(self, *args, private=None):
+        env = dict(os.environ, PYTHONPATH=str(REPO / 'src'), AGENT_EE_FOME_MC_CAPTURE=str(private or self.private),
                    AGENT_EE_FOME_MC_CHECKOUT=str(self.root / 'design'))
         result = subprocess.run([sys.executable, str(REPO / 'scripts/qualify_block_inventory.py'), *args],
                                 capture_output=True, text=True, env=env, timeout=1800)
@@ -405,6 +470,20 @@ class QualificationScriptTests(unittest.TestCase):
         self.assertEqual(read_json(out / 'qualification.json')['status'], 'qualified')
         code, again = self.run_script()
         self.assertEqual((code, Path(again['out']).name), (0, self.commit[:12] + '-2'))
+
+    def test_refused_runs_exit_2_and_write_nothing(self):
+        code, report = self.run_script(private=self.root / 'absent')
+        self.assertEqual((code, report['status']), (2, 'refused'))
+        self.assertIn('block-inventory.json', report['error'])
+        self.assertFalse((self.root / 'absent').exists())
+        malformed = self.root / 'malformed'
+        malformed.mkdir()
+        (malformed / 'block-inventory.json').write_text('[]')
+        code, report = self.run_script('--out', str(self.root / 'none'), private=malformed)
+        self.assertEqual((code, report['status']), (2, 'refused'))
+        code, report = self.run_script('--out', str(self.root / 'none'), '--repo', str(self.root / 'no-repo'))
+        self.assertEqual((code, report['status']), (2, 'refused'))
+        self.assertFalse((self.root / 'none').exists())
 
     def test_wrong_expectation_fails_and_tracked_output_is_refused(self):
         wrong = dict(self.adaptation, expected_without_straps=OWNED_EXPECTED[:1])

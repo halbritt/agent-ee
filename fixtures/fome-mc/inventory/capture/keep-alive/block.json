@@ -58,12 +58,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "34857dd7ad9eeb1f58ce5aae86054f58a0f62f7d280e6295c94fc16bb13ecf95",
+    "block-contract.json": "4596491b4100cd2cce29a7abbe7abff77eadb1ea736070d55004eba0a82a0246",
     "connectivity.json": "c091bbaad781d62f8f43f77d61bec62dc1395a345e534c32cc6aad367aca8d15",
-    "interface.json": "db63c5a529da286c095742fb4d3b5b8c24c7f8b546c0657f87340460237fa6a2",
+    "interface.json": "7515a8628cab64face33e8f51d34711152726f7b168139c30acc712eab9cd185",
     "parts.json": "3011293c2f7120774a4066e98bfb23c38a662e15105321d738e39e8cac80f00a",
-    "sheets/Keep_Alive.kicad_sch": "008f3b70dc25d6d109041a8c7691377820e319a1124f3371c3e61d42adf867c8",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/Keep_Alive.kicad_sch": "008f3b70dc25d6d109041a8c7691377820e319a1124f3371c3e61d42adf867c8"
   },
   "id": "fome-mc/keep-alive",
   "instances": [
@@ -207,8 +206,13 @@
       "conditions": [],
       "id": "keep-alive-behaviour",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Keep-alive (Keep_Alive.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Key-off is detected while /12V_MR holds /12V_RAW, and VBAT backup comes from Perm_Live; the main-relay hold spans lowside_quad4 (U1202) and the MCU (PE0)."
     }
@@ -224,8 +228,13 @@
       ],
       "id": "keep-alive-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -238,8 +247,13 @@
       ],
       "id": "keep-alive-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Keep-alive (Keep_Alive.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -252,8 +266,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: Polygonus-Universal-112 Keep_Alive at ddcf0f7",
     "paths": {
-      "sheets/Keep_Alive.kicad_sch": "sheets/Keep_Alive.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/Keep_Alive.kicad_sch": "sheets/Keep_Alive.kicad_sch"
     },
     "repository": "fome-mc"
   },

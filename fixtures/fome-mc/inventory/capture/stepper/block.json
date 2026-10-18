@@ -205,12 +205,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "8a4e5de4cceb136a1879f29555a3f3f68e94212c4d31173c74f2b2082783ae74",
+    "block-contract.json": "13ce3fe0337cfca74e7fea5501b99c8b764f85bc12c161e228771c4801de6ac3",
     "connectivity.json": "435993041796add832f545482ee633e3c68084f215d43d1090d3f0f6087c101c",
-    "interface.json": "60081ec18cd941f7b8290a1846d7cde678a67fcb89d98e506a21f80b59dd8637",
+    "interface.json": "5ccfc37e5b28c2a94b3eb3b91ab517f10e572bb7b1328b85e40f4a4292634dc5",
     "parts.json": "6f9a42c26d0a93756c55518af9788c657edeb6433c5c486bfd8ea0393b18b574",
-    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5"
   },
   "id": "fome-mc/stepper",
   "instances": [
@@ -306,8 +305,13 @@
       "conditions": [],
       "id": "stepper-current",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "R215/R216 set VREF = 0.767 V; with R213/R214 = 0.20 ohm the DRV8825 current limit is 0.77 A against the 0.75 A target."
     }
@@ -323,8 +327,13 @@
       ],
       "id": "stepper-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -337,8 +346,13 @@
       ],
       "id": "stepper-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -351,8 +365,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: fome-mc stepper_etb (FOMEMC-5 repair)",
     "paths": {
-      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch"
     },
     "repository": "fome-mc"
   },

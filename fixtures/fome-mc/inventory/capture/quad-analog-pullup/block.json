@@ -86,12 +86,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "06212b9e5509a251aa9dbb22006f58962772ec9e17519e01892e91a52ed1d387",
+    "block-contract.json": "0c17b7c711bfd3d87bff18447b01651edfaeed214d3404158cda3fb37ded35dd",
     "connectivity.json": "c475b63aa9799f7516f148b55272f8107bb904b33b0f0fec9091620f33c45fae",
-    "interface.json": "348aa366e4359cbcbe2fcbcb8b65c6d7477fa4d2c78e15279cd53731544f1df9",
+    "interface.json": "4a6b871efd664b014be88535797127ea4e7e23c6725e629ce933415fc1bb9faa",
     "parts.json": "949402607eaaedc6de6c9ab4c7c8a31558bfdbe62257e6d0619e5db3dbdd07c3",
-    "sheets/quad_analog_pullup.kicad_sch": "c5e624d711b8aa313e24db935e2ebb7656fd1cf95d86569250941296b6d7b97d",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/quad_analog_pullup.kicad_sch": "c5e624d711b8aa313e24db935e2ebb7656fd1cf95d86569250941296b6d7b97d"
   },
   "id": "fome-mc/quad-analog-pullup",
   "instances": [
@@ -230,8 +229,13 @@
       "conditions": [],
       "id": "quad-analog-pullup-range",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Quad analog (quad_analog.kicad_sch, three instances) and pull-up variant (quad_analog_pullup.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "CLT and IAT inputs use 2.7 kohm pull-ups to 5V_SENSOR_1 and scale to the 3.30 V ADC."
     }
@@ -247,8 +251,13 @@
       ],
       "id": "quad-analog-pullup-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -261,8 +270,13 @@
       ],
       "id": "quad-analog-pullup-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Quad analog (quad_analog.kicad_sch, three instances) and pull-up variant (quad_analog_pullup.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -275,8 +289,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus quad_analog_pullup at b3176cb",
     "paths": {
-      "sheets/quad_analog_pullup.kicad_sch": "sheets/quad_analog_pullup.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/quad_analog_pullup.kicad_sch": "sheets/quad_analog_pullup.kicad_sch"
     },
     "repository": "fome-mc"
   },

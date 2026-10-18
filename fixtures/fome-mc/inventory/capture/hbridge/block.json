@@ -65,13 +65,12 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "7d9409d4c9803926caccbf92c248e5d1cd8f8c3674c072a8418e8c64e80c0468",
+    "block-contract.json": "e31ae70f6ba6f4fb3e7d1261a3991cdf18380b98c4181845db8750a1cbbedb51",
     "connectivity.json": "28956a4233d3557d501e2b6a2839b610a89bd381b324580c7b7d4277e0b546a6",
-    "interface.json": "dbb8bfc2cd757e49677e043c03c85fd127164b5345939c8ef69aef19847a1ce0",
+    "interface.json": "e638ca07ef7c1224ee63ed4bb0e89f6bdd3c8e088839114260b49d6384aebb6a",
     "libs/symbols/tle9201_2.lib": "8c36dea1659c4c5e1bc7987f045a4e596c57309185d887aeef8ca8b40173b56d",
     "parts.json": "1f455a2fda15352eca924ab5447cc258ad3d04514d93f1cc5a6c30644db21395",
-    "sheets/etb-9201.kicad_sch": "b759aedcc581426c5b17d5e25f259e18b3722561dd28b4449df848147d4bbce2",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/etb-9201.kicad_sch": "b759aedcc581426c5b17d5e25f259e18b3722561dd28b4449df848147d4bbce2"
   },
   "id": "fome-mc/hbridge",
   "instances": [
@@ -162,8 +161,13 @@
       "conditions": [],
       "id": "hbridge-drive",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / H-bridge (etb-9201.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "TLE9201SG drives ETB1_OUT+/- from 12V_MR under PWM, DIR and DIS control."
     }
@@ -179,8 +183,13 @@
       ],
       "id": "hbridge-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -193,8 +202,13 @@
       ],
       "id": "hbridge-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / H-bridge (etb-9201.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -208,8 +222,7 @@
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus etb-9201 at b3176cb",
     "paths": {
       "libs/symbols/tle9201_2.lib": "libs/symbols/tle9201_2.lib",
-      "sheets/etb-9201.kicad_sch": "sheets/etb-9201.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/etb-9201.kicad_sch": "sheets/etb-9201.kicad_sch"
     },
     "repository": "fome-mc"
   },

@@ -562,16 +562,14 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "814a47d062bf176e0cd68a685e9cec3cfc9b4bf8e836a35bb97fdd2a556218ca",
+    "block-contract.json": "3d4bfb387a66687d2bbc45214bbd470443e24a3dd58bb6b9185370ab389f7664",
     "connectivity.json": "847dde40e8fa347e12a77eaaae831132548be6d02aa541c67554ea23c074cd14",
-    "interface.json": "5d584be1a7845dcbda0106676e15754491954f1e89200e477a31302f2ce9fcda",
+    "interface.json": "8f73e9d308434561add22539ed60215f9a435ab6700cda8e94921a84dbb61550",
     "libs/footprints/ampseal.pretty/ATWINC1500-MR210UB.kicad_mod": "62d4270a3fed5122980b2d8c3373b0837d81d9163564ffd4fde88dd83353ee57",
     "libs/footprints/ampseal.pretty/LGA-8_6x8mm_P1.25mm.kicad_mod": "301fd58175fae4ddb92100f4b5ec84be12f24e136830aeeae0a5e1d536b3c2e4",
     "libs/footprints/conn_5_2.5mm.pretty/conn_5_2.5mm.kicad_mod": "1deeea10d6cdc6117fa8384a59aafbd463e739df35884d7bfeeaa7cc1f7e9f3c",
     "parts.json": "79351a6619c97a277e8b8e4843bba5fc5f2450e45ff7d88c1b46b6beaaf4234c",
-    "sheets/mcu.kicad_sch": "1aad3f7e37ca440aed221ac51310705b4a48bbef25803d2e88084c46624cca6f",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
-    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    "sheets/mcu.kicad_sch": "1aad3f7e37ca440aed221ac51310705b4a48bbef25803d2e88084c46624cca6f"
   },
   "id": "fome-mc/mcu",
   "instances": [
@@ -1039,8 +1037,13 @@
       "conditions": [],
       "id": "mcu-vref",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "6.3 Non-Ratiometric VREF+ Architecture",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "VREF+ is a fixed 3.30 V reference (REF3333) and the ADC is non-ratiometric."
     },
@@ -1049,8 +1052,13 @@
       "conditions": [],
       "id": "mcu-sdmmc-dfu",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / MCU core (mcu.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "SDMMC1 bus termination and DFU entry through BOOT0 are present."
     }
@@ -1066,8 +1074,13 @@
       ],
       "id": "mcu-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -1080,8 +1093,13 @@
       ],
       "id": "mcu-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / MCU core (mcu.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -1097,9 +1115,7 @@
       "libs/footprints/ampseal.pretty/ATWINC1500-MR210UB.kicad_mod": "libs/footprints/ampseal.pretty/ATWINC1500-MR210UB.kicad_mod",
       "libs/footprints/ampseal.pretty/LGA-8_6x8mm_P1.25mm.kicad_mod": "libs/footprints/ampseal.pretty/LGA-8_6x8mm_P1.25mm.kicad_mod",
       "libs/footprints/conn_5_2.5mm.pretty/conn_5_2.5mm.kicad_mod": "libs/footprints/conn_5_2.5mm.pretty/conn_5_2.5mm.kicad_mod",
-      "sheets/mcu.kicad_sch": "sheets/mcu.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
-      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+      "sheets/mcu.kicad_sch": "sheets/mcu.kicad_sch"
     },
     "repository": "fome-mc"
   },

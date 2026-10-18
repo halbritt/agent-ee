@@ -156,13 +156,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "c9efc88160659d597134478cafcee8c97612c9ba7ab8cdc6833f8bc30f975afd",
+    "block-contract.json": "3fab994d66ceff393c46b50060c09fc50ae6633a42f6cb302e8a3235436c4fd4",
     "connectivity.json": "e342e44dbf50d5ca44f21fefa8caba70fd52efa722d7b1a95c5bfcacce7c6357",
-    "interface.json": "e29c54d60d05c99968b6cf34e83b27f9401333842e6129e054026f17570a0095",
+    "interface.json": "d0361f810904c41fb943c95b125168f091084ecc318f3997634931aa8fdecfa2",
     "parts.json": "57bcd3b6016db2c47bbb76b97b103099e29db07d8e40f0cebd2145ff37e4ce68",
-    "sheets/triggers.kicad_sch": "e53c9841565acceee340490f8da5247357bbd4ec540c060b316b9e0085a95e1a",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
-    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    "sheets/triggers.kicad_sch": "e53c9841565acceee340490f8da5247357bbd4ec540c060b316b9e0085a95e1a"
   },
   "id": "fome-mc/triggers",
   "instances": [
@@ -317,8 +315,13 @@
       ],
       "id": "triggers-vr",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "3. Circuit-Reuse, Adaptation & Upstream Bug Resolution Table, row 6",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "MAX9924 Mode A1 adaptive threshold with differential input over 50 mVpp to 100 Vpp."
     }
@@ -334,8 +337,13 @@
       ],
       "id": "triggers-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -348,8 +356,13 @@
       ],
       "id": "triggers-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Triggers (triggers.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -362,9 +375,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus triggers at b3176cb",
     "paths": {
-      "sheets/triggers.kicad_sch": "sheets/triggers.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
-      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+      "sheets/triggers.kicad_sch": "sheets/triggers.kicad_sch"
     },
     "repository": "fome-mc"
   },

@@ -14,7 +14,7 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   agent-ee runs on such material). The proposal is now included on main; the
   owner has not approved it. MIT was the owner's stated default; another license needs explicit
   owner approval.
-- One origin is **owner-confirmed**: `T15`, the fome-mc reference block
+- One origin is **owner-confirmed**: `T16`, the fome-mc reference block
   captures under `fixtures/fome-mc/`. On 2026-10-18 the owner decided they are
   committed as fixtures and stated that the owner holds the rights to fome-mc
   and agent-ee ([decision](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures),
@@ -53,7 +53,8 @@ Most unresolved files are retained evidence, which is classified by directory.
 | T12 | KiCad 10.0 PPA signing public key | No license stated | `docker/kicad-10.0-releases.asc` |
 | T13 | Seeded-benchmark source boards | CC-BY-SA-4.0, CERN-OHL-P/S-2.0 | Metadata and extracted identifiers in `benchmarks/seeded/`; no design files |
 | T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
-| T15 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file; owner holds the rights (owner-confirmed 2026-10-18) | `fixtures/fome-mc/inventory/`: copied sheets, project libraries and plan documents, and the block entries generated from them |
+| T15 | FOME-MC seeded-benchmark records (`halbritt/fome-mc`, `5954c3a`) | No license found | None tracked: the AGENTEE-108 expectations manifest and run reports stay in a private store; the repository keeps only their SHA-256 hashes ([seeded benchmark](seeded-benchmark.md)). Publication is AGENTEE-118 |
+| T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file; owner holds the rights (owner-confirmed 2026-10-18) | `fixtures/fome-mc/`: copied sheets and project libraries, and the block entries generated from them; planning documents are cited by pinned identity, not copied |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and

@@ -205,13 +205,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "edf211d8a2bbadd7f63cabc5d847043f31f1731cbe4515a4220cb7fcd504b901",
+    "block-contract.json": "cb2af271933d8d346a683aaa00a9f96bd0b859bbaa735d16a1af756e457f9c35",
     "connectivity.json": "eabe9c0fe8e80ab643eec52f37c24345ad95b6070f33e7f3c13e235eb794d7cd",
-    "interface.json": "eb93f4f9feb205db927a884e351d2f874a96706f084fbcb6693bab71b791b05f",
+    "interface.json": "fbb69024e618cb9429ea43c218513ea310dc6a64af8b60e10a60f2348062e31f",
     "parts.json": "a5639fd7fdc13c357582159b4cb59d0e9f3f7b11f7a84e97f27a789af40f4ee0",
-    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
-    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5"
   },
   "id": "fome-mc/dfu-entry",
   "instances": [
@@ -278,8 +276,13 @@
       "conditions": [],
       "id": "dfu-entry-function",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "7.5 Log Retrieval, Single-Owner Filesystem Handoff & Post-Potting Firmware Recovery",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "J1-35 USB VBUS raises BOOT0 for DFU entry through D210, R209, R217, R218 and D211."
     }
@@ -295,8 +298,13 @@
       ],
       "id": "dfu-entry-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -309,8 +317,13 @@
       ],
       "id": "dfu-entry-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Stepper/ETB (stepper_etb.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -323,9 +336,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: fome-mc stepper_etb",
     "paths": {
-      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
-      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch"
     },
     "repository": "fome-mc"
   },

@@ -205,12 +205,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "00953d9557e27a235bf4760e366e6a6696f0827dfcea22360afc4bfd6635e7fb",
+    "block-contract.json": "0add84727cab699917488d52a2704f0caec4423ae749a343bcd629134870d8d9",
     "connectivity.json": "15aeacd9f85eac02a2ef9135bd2f9b616ca8d09b84a15e5718d5c2f2850ac183",
-    "interface.json": "5f7999772d5d02ae4a80a6ce279d00e58328460f889e21c3ae6b5b688a9c5719",
+    "interface.json": "66006cc1096a4d9572ba41bbe2feea5ea290980a5607a05009034ef3b49762f5",
     "parts.json": "297656e6e2662cba714cc43d9dd32753c3d795ae3abb126747fc8e1562d4cc1a",
-    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+    "sheets/stepper_etb.kicad_sch": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5"
   },
   "id": "fome-mc/lowside-clamps",
   "instances": [
@@ -274,8 +273,13 @@
       "conditions": [],
       "id": "lowside-clamps-scope",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Low-side quad (lowside_quad.kicad_sch, three instances)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Clamp diodes D201..D209 and the /LS8 pull-up R212 serve the low-side channels from another sheet; the contract must name those cross-block nets."
     }
@@ -291,8 +295,13 @@
       ],
       "id": "lowside-clamps-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -305,8 +314,13 @@
       ],
       "id": "lowside-clamps-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Low-side quad (lowside_quad.kicad_sch, three instances)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -319,8 +333,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: fome-mc stepper_etb",
     "paths": {
-      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md"
+      "sheets/stepper_etb.kicad_sch": "sheets/stepper_etb.kicad_sch"
     },
     "repository": "fome-mc"
   },

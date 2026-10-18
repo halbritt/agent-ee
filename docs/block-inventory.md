@@ -20,7 +20,8 @@ PYTHONPATH=src python3 -m agent_ee.block_inventory capture INVENTORY.json \
 
 `source.repository` in each entry is the resolved local repository path, or
 `NAME` with `--repository-label`. A committed capture uses the label so that its
-bytes do not depend on where the source was cloned.
+bytes do not depend on where the source was cloned. The same identity is the
+`repository` of every planning-document citation.
 
 ## Inventory document
 
@@ -30,8 +31,10 @@ bytes do not depend on where the source was cloned.
 - `design`: `name`, full 40-hex `commit`, `root` schematic, `license` statement,
   `plan` (a `documents` key) and optional `external_libraries` (sibling directory
   name to full commit, for `${KIPRJMOD}/../NAME/` library-table URIs).
-- `documents`: names mapped to repository paths. Each block captures the ones its
-  requirements cite under `sources/`, so requirement sources are captured files.
+- `documents`: names mapped to repository paths. Requirements cite them in the
+  [pinned-external form](reference-block-interface.md#external-source-citations)
+  (`kind`, `repository`, `commit`, `path`, `blob`, `sha256`, `locator`), taken
+  from the pinned commit. Planning documents are never copied into a block.
 - `unassigned`: `{instance, references, reason}` for native components that
   belong to no block, for example root-sheet connectors.
 - `blocks`: `id` (lowercase slug), `role`, `title`, `origin`, `instances`
@@ -95,8 +98,8 @@ yet, and they keep the block unverified.
 `inventory-report.json` records the commit, the inventory identity, the
 exporter version and console, and each block's status, `block.json` and
 `block-contract.json` SHA-256 values. Its `source_files` maps every pinned
-source path that was exported or copied to its SHA-256, its Git blob id and
-`captured` (whether a block copies it). A blob id can be checked with
+source path that was exported, copied or cited to its SHA-256, its Git blob id
+and `captured` (whether a block copies it; cited documents are `false`). A blob id can be checked with
 `git rev-parse COMMIT:PATH` in any clone. Two captures of the same commit with
 the same KiCad, stock libraries and repository label produce byte-identical
 directories.
@@ -149,12 +152,15 @@ and `expected_without_straps` (the exact difference list).
 of the discovered test suite, because it needs the source repository and the
 host's KiCad. It captures the inventory's pinned commit twice into a new output
 directory and requires both captures to be byte-identical. Every inventory block
-must be an unverified entry with no runs. Each adaptation fixture must give
+must be an unverified entry with no runs, and every pinned-external citation
+must verify offline against `--repo` (`validate_block` with the repository label
+mapped to it). Each adaptation fixture must give
 exactly its expected differences without straps and none with them. With an
 expected capture, the first capture must also equal it byte for byte; the
 differing paths are reported. It writes `qualification.json` beside the two
 captures. Exit status is 0 when qualified, 1 when a check fails and 2 when
-refused.
+refused. Any error before a result exists is a refusal, for example a missing
+inventory, override directory, source repository or expected capture.
 
 The output directory must lie outside any Git work tree or be ignored by it.
 Otherwise the script refuses before writing, because captures copy design files.
@@ -180,7 +186,7 @@ The owner decided on 2026-10-18 that captured fome-mc reference sheets are
 committed as fixtures ([decisions](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures)).
 [`fixtures/fome-mc/LICENSE-NOTICE.md`](../fixtures/fome-mc/LICENSE-NOTICE.md)
 states the rights, the capture rules and the provenance.
-[`file-origins.json`](file-origins.json) classifies the files under origin `T15`.
+[`file-origins.json`](file-origins.json) classifies the files under origin `T16`.
 
 | Path | Content |
 | --- | --- |
@@ -204,8 +210,14 @@ so it needs neither fome-mc nor KiCad. It checks the following:
 - the inventory pins the commit and names the licence notice;
 - the report binds the inventory identity and every entry's hashes;
 - every planned block validates as unverified with no runs;
-- every catalogue heading of the captured plan has an entry;
+- every catalogue heading of the plan has an entry (the plan is read from the
+  pinned blob in `AGENT_EE_FOME_MC_CHECKOUT` or `~/git/fome-mc`; this one test
+  skips when that object store lacks the commit);
 - every copied file equals its recorded SHA-256 and Git blob id;
+- every requirement, pending requirement and interface invariant cites a
+  planning document by its pinned identity, the identity equals the report's
+  `source_files` entry with `captured: false`, and no file under
+  `fixtures/fome-mc/` has a cited document's SHA-256;
 - the wbo1-to-wbo2 adaptation gives exactly the U402 pin 15 and pin 18
   differences without straps and none with them, through both the API and the
   `adapt` command;
