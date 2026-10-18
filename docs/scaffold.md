@@ -120,10 +120,11 @@ The receipt's `derivation.netclasses` gives each class value its tier, limit and
 limit for the four class keys, with the class setting it was applied to, or `null`,
 and its `consumer`.
 A preferred value below its minimum is still refused, including clearance.
-`NativeProducerTests` checks this in KiCad: two tracks 0.175 mm apart, between the
-0.15 mm minimum and the 0.2 mm preferred clearance, pass DRC on the produced
-project. The same board fails when the class clearance is set to the preferred
-value, and a 0.1 mm gap still fails.
+`NativeProducerTests` checks this in KiCad. On the produced project, two 0.15 mm
+tracks 0.175 mm apart pass DRC. That gap is between the 0.15 mm minimum and the
+0.2 mm preferred clearance. A 0.45/0.25 mm via on the same board, smaller than
+the preferred Default via, also passes. The same board fails when the class
+clearance is set to the preferred value, and a 0.1 mm gap still fails.
 
 The template supplies every other project setting. It must be a complete
 `kicad-10.0.7-net-settings-5` project, such as the owned

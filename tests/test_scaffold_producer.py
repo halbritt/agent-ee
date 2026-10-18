@@ -388,13 +388,16 @@ class NativeProducerTests(ProducerFixture, unittest.TestCase):
         from agent_ee.executor import execute
         self.build()
         produced = self.root / 'produced/inputs'
-        # Two tracks on different nets; KiCad reports the edge-to-edge gap it measures.
+        # Two 0.15 mm tracks on different nets at an edge-to-edge gap, and a 0.45/0.25 mm via:
+        # all at or above the board minimums, below the preferred Default track and via.
         script = ('import sys, pcbnew as k; mm=lambda v: int(round(v*1e6)); '
                   'b=k.LoadBoard("/candidate/project/design.kicad_pcb"); gap=float(sys.argv[1])\n'
-                  'for name, y in (("A", 10.0), ("B", 10.0 + 0.2 + gap)):\n'
+                  'for name, y in (("A", 10.0), ("B", 10.0 + 0.15 + gap)):\n'
                   ' n=k.NETINFO_ITEM(b, name); b.Add(n); t=k.PCB_TRACK(b); t.SetNet(n); t.SetLayer(k.F_Cu)\n'
                   ' t.SetStart(k.VECTOR2I(mm(4), mm(y))); t.SetEnd(k.VECTOR2I(mm(12), mm(y))); '
-                  't.SetWidth(mm(0.2)); b.Add(t)\n'
+                  't.SetWidth(mm(0.15)); b.Add(t)\n'
+                  'v=k.PCB_VIA(b); v.SetPosition(k.VECTOR2I(mm(8), mm(5))); v.SetWidth(mm(0.45)); '
+                  'v.SetDrill(mm(0.25)); v.SetNet(n); b.Add(v)\n'
                   'k.SaveBoard("/work/design.kicad_pcb", b)')
 
         def drc(label, gap, clearance=None):
@@ -417,7 +420,8 @@ class NativeProducerTests(ProducerFixture, unittest.TestCase):
         # 0.175 mm lies between the fab minimum (0.15) and the preferred clearance (0.2).
         produced_codes = drc('between', 0.175)
         self.assertNotIn('clearance', produced_codes)
-        self.assertEqual(set(produced_codes), {'track_dangling'})
+        # The preferred Default track width and via size are routing defaults, not DRC floors.
+        self.assertEqual(set(produced_codes), {'track_dangling', 'via_dangling'})
         # Control: the preferred clearance as the class value would fail the same board.
         self.assertEqual(drc('preferred-class', 0.175, clearance=0.2).count('clearance'), 1)
         # The fab minimum remains a hard floor.
