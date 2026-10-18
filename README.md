@@ -221,7 +221,9 @@ BOM and CPL and lists them in the manifest.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor
-coordinates within 0.01 mm and sealed export logs for warnings. Gerber geometry,
+coordinates within 0.01 mm and sealed export logs for warnings. Stock
+`${KICAD10_3DMODEL_DIR}` models resolve only against a captured, pinned
+stock-model receipt that the scope declares. Gerber geometry,
 DFM and assembly rotation corrections stay outside its coverage.
 The [fab round-trip check](docs/fab-roundtrip.md) re-parses native Gerber and
 Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill

@@ -14,6 +14,12 @@ properties. Structural package faults and disagreeing sealed
 sources are malformed; established cross-file disagreements are defects; inputs
 this gate cannot see (uncaptured 3D-model libraries, unattributed plots, an
 unrecorded tool version) are unknown coverage, never a pass.
+
+Stock-library model paths (`${KICAD10_3DMODEL_DIR}/...`) resolve only through the
+optional `model_libraries` parameter (AGENTEE-124), which maps each stock variable
+to a captured, baseline-frozen `agent-ee.stock-models/1` receipt from `models3d`.
+A model resolves when the receipt pins the file to an upstream revision and the
+captured member's bytes match the receipt hash; anything else stays unknown.
 """
 
 import csv
@@ -29,7 +35,7 @@ import xml.etree.ElementTree as ET
 from decimal import Decimal, DecimalException
 from pathlib import PurePosixPath
 
-from . import kicad_embedded
+from . import kicad_embedded, models3d
 from .executor import SANDBOX_PATH
 from .fab_export import ASSEMBLY_RULES, RULE_FIELDS, assembly_exclusions
 from .storage import digest, read_json, write_json
@@ -68,10 +74,28 @@ PREDICATES = ['fab-package:inventory', 'fab-package:designator-parity', 'fab-pac
               'fab-package:build-log']
 
 
+def model_libraries(params):
+    """Validated `{stock variable: captured receipt path}`; empty when the scope declares none."""
+    if 'model_libraries' not in params:
+        return {}
+    roots = params['model_libraries']
+    if not isinstance(roots, dict) or not roots:
+        raise ValueError('fab_consistency model_libraries must be a nonempty {variable: receipt} object')
+    for variable, receipt in roots.items():
+        if not models3d.STOCK_VARIABLE.fullmatch(variable):
+            raise ValueError(f'model library variable {variable!r} is not a KiCad stock 3D-model variable')
+        if (not isinstance(receipt, str) or PurePosixPath(receipt).name != models3d.STOCK_RECEIPT
+                or PurePosixPath(receipt).is_absolute() or '..' in PurePosixPath(receipt).parts):
+            raise ValueError(f'model library {variable} must name a captured {models3d.STOCK_RECEIPT} receipt')
+    return dict(roots)
+
+
 def capability(params, scope, prerequisite, captured):
     """Static scope/3 contract: exact params, earlier export, its earlier netlist and an earlier geometry."""
-    if not isinstance(params, dict) or set(params) != {'export_check'}:
-        raise ValueError('fab_consistency params must be exactly {export_check}')
+    if not isinstance(params, dict) or not {'export_check'} <= set(params) <= {'export_check', 'model_libraries'}:
+        raise ValueError('fab_consistency params must be {export_check} with optional model_libraries')
+    for receipt in model_libraries(params).values():
+        captured(receipt, immutable=True)
     export = prerequisite(params['export_check'], ('fab_export',))
     export_params = export.get('params', {})
     prerequisite(export_params.get('netlist_check') if isinstance(export_params, dict) else None,
@@ -109,8 +133,14 @@ def export_prerequisite(ctx):
     """The earlier same-candidate `fab_export` result and its staging directory."""
     from .checks import CheckError, SAFE_ID
     eid = ctx.params.get('export_check')
-    if set(ctx.params) != {'export_check'} or not isinstance(eid, str) or not SAFE_ID.fullmatch(eid):
-        raise CheckError('unsupported', 'fab_consistency params must be exactly {export_check: <safe id>}')
+    if (not {'export_check'} <= set(ctx.params) <= {'export_check', 'model_libraries'}
+            or not isinstance(eid, str) or not SAFE_ID.fullmatch(eid)):
+        raise CheckError('unsupported', 'fab_consistency params must be {export_check: <safe id>} '
+                         'with optional model_libraries')
+    try:
+        model_libraries(ctx.params)
+    except ValueError as exc:
+        raise CheckError('unsupported', str(exc)) from exc
     specs = ctx.scope['checks']
     position = next(i for i, s in enumerate(specs) if s is ctx.spec or s.get('id') == ctx.cid)
     spec = next((s for s in specs[:position] if s.get('id') == eid), None)
@@ -748,37 +778,85 @@ def check_coordinates(cpl, geometry, by_ref, defects):
 
 # ------------------------------------------------------------------------ models
 
-def resolve_model(ctx, path, footprint, board):
-    """('resolved'|'unresolved'|'uncovered', reason) for one footprint model path."""
+def load_model_libraries(ctx):
+    """Each declared stock variable's captured receipt, or the reason it cannot be used."""
+    loaded = {}
+    for variable, rel in sorted(model_libraries(ctx.params).items()):
+        record = {'receipt': rel, 'receipt_sha256': ctx.manifest['files'].get(rel)}
+        path = ctx.inputs / rel
+        if (record['receipt_sha256'] is None or path.is_symlink() or not path.is_file()
+                or digest(path) != record['receipt_sha256']):
+            record['error'] = 'receipt is not the captured input'
+        else:
+            try:
+                record['files'] = models3d.parse_stock_receipt(path.read_bytes(), rel)['files']
+            except models3d.ModelFetchError as exc:
+                record['error'] = str(exc)
+        loaded[variable] = record
+    return loaded
+
+
+def resolve_stock(ctx, path, names, libraries):
+    """Resolve a stock-variable path against its declared captured, pinned library receipt."""
+    try:
+        reference = models3d.stock_reference(path)
+    except models3d.ModelFetchError as exc:
+        return 'uncovered', str(exc), {}
+    if reference is None or reference[0] not in libraries:
+        return 'uncovered', f'library variable(s) {names} not mapped to a captured pinned model library', {}
+    variable, relative = reference
+    library = libraries[variable]
+    where = f'{variable} library {library["receipt"]}'
+    if 'error' in library:
+        return 'uncovered', f'{where}: {library["error"]}', {}
+    entry = library['files'].get(relative)
+    if entry is None:
+        return 'uncovered', f'{relative} is not in the captured {where}', {}
+    if 'commit' not in entry:
+        return 'uncovered', f'{relative} in {where} has no pinned upstream revision', {}
+    member = str(PurePosixPath(library['receipt']).parent / relative)
+    captured = ctx.manifest['files'].get(member)
+    if captured is None or (ctx.inputs / member).is_symlink() or not (ctx.inputs / member).is_file():
+        return 'uncovered', f'{member} listed by {where} is not a captured input', {}
+    actual = digest(ctx.inputs / member)
+    if actual != captured or actual != entry['sha256']:
+        return 'uncovered', f'{member} differs from its pinned hash in {where}', {}
+    return 'resolved', f'pinned {variable} model captured as {member}', {
+        'sha256': actual, 'library': {'variable': variable, 'receipt': library['receipt'],
+                                      'member': member, 'commit': entry['commit']}}
+
+
+def resolve_model(ctx, path, footprint, board, libraries):
+    """('resolved'|'unresolved'|'uncovered', reason, extra record fields) for one footprint model path."""
     if path.startswith(EMBED):
         # KiCad resolves the footprint's own embedded files before the board's.
         name = path[len(EMBED):]
         scope = footprint['embedded'] if name in footprint['embedded'] else board['embedded']
-        return kicad_embedded.verify(scope.get(name, []), name)
+        return (*kicad_embedded.verify(scope.get(name, []), name), {})
     board_dir = PurePosixPath(ctx.scope['board']).parent
     variables = [a or b for a, b in VARIABLE.findall(path)]
     if any(name != 'KIPRJMOD' for name in variables):
-        names = sorted(set(variables) - {'KIPRJMOD'})
-        return 'uncovered', f'library variable(s) {names} not mapped to captured inputs'
+        return resolve_stock(ctx, path, sorted(set(variables) - {'KIPRJMOD'}), libraries)
     if '\\' in path:
-        return 'uncovered', 'non-POSIX model path'
+        return 'uncovered', 'non-POSIX model path', {}
     expanded = path
     if variables:
         leading = VARIABLE.match(path)
         if leading is None or len(variables) != 1:
-            return 'uncovered', 'KIPRJMOD must lead the model path'
+            return 'uncovered', 'KIPRJMOD must lead the model path', {}
         expanded = path[leading.end():].lstrip('/')
     elif PurePosixPath(path).is_absolute():
         originals = {src: rel for rel, src in ctx.manifest.get('sources', {}).items()}
         if os.path.normpath(path) in originals:
-            return 'resolved', f'captured as {originals[os.path.normpath(path)]}'
-        return 'uncovered', 'absolute model path outside captured inputs'
+            rel = originals[os.path.normpath(path)]
+            return 'resolved', f'captured as {rel}', {'sha256': ctx.manifest['files'][rel]}
+        return 'uncovered', 'absolute model path outside captured inputs', {}
     rel = os.path.normpath((board_dir / expanded).as_posix()).replace(os.sep, '/')
     if rel == '..' or rel.startswith('../') or PurePosixPath(rel).is_absolute():
-        return 'uncovered', 'model path escapes the captured inputs'
+        return 'uncovered', 'model path escapes the captured inputs', {}
     if rel in ctx.manifest['files'] and (ctx.inputs / rel).is_file():
-        return 'resolved', f'captured as {rel}'
-    return 'unresolved', f'{rel} is not a captured input'
+        return 'resolved', f'captured as {rel}', {'sha256': ctx.manifest['files'][rel]}
+    return 'unresolved', f'{rel} is not a captured input', {}
 
 
 # ------------------------------------------------------------------------- check
@@ -903,10 +981,11 @@ def gate(ctx, eid, export_spec, export_result, stage):
     details['coordinates'] = check_coordinates(cpl, geometry, by_ref, defects)
 
     models = []
+    libraries = load_model_libraries(ctx)
     for fp in footprints:
         for path in fp['models']:
-            status, reason = resolve_model(ctx, path, fp, board)
-            models.append({'ref': fp['ref'], 'path': path, 'status': status, 'reason': reason})
+            status, reason, extra = resolve_model(ctx, path, fp, board, libraries)
+            models.append({'ref': fp['ref'], 'path': path, 'status': status, 'reason': reason, **extra})
             if status == 'unresolved':
                 defects.append({'code': 'model_unresolved',
                                 'locator': f'footprint {fp["ref"]} model {path!r}: {reason}'})
@@ -914,6 +993,8 @@ def gate(ctx, eid, export_spec, export_result, stage):
                 gaps.append({'code': 'model_coverage', 'detail': f'footprint {fp["ref"]} model {path!r}: {reason}'})
     details['models'] = {'checked': len(models),
                          'footprints_without_model': sorted(fp['ref'] for fp in footprints if not fp['models']),
+                         'libraries': {variable: {key: value for key, value in library.items() if key != 'files'}
+                                       for variable, library in libraries.items()},
                          'records': models}
 
     report = {'schema': 'agent-ee.fab-consistency/1', 'candidate_id': ctx.manifest['candidate_id'],
@@ -927,7 +1008,8 @@ def gate(ctx, eid, export_spec, export_result, stage):
         'assembly centroid corrections and rotation policy belong to the rotation lane.',
         'No Gerber geometry or DFM; plot identity comes from FileFunction attributes.',
         '3D model resolution establishes captured-file presence only: embedded models are decoded '
-        'and checksum-verified like a native load, but model content and fit are not assessed.',
+        'and checksum-verified like a native load, stock-library models match their captured pinned '
+        'receipt hash, but model content and fit are not assessed.',
         'The board inventory is the sealed pcbnew geometry; board-only parts that would be assembled '
         'have no package policy and stay unknown.']
     sealed = set(export_result.get('evidence', []))

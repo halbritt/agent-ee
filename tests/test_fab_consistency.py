@@ -21,8 +21,9 @@ import tempfile
 import time
 import unittest
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
+from urllib.parse import quote
 
 from agent_ee import checks, executor, fab_consistency
 from agent_ee.baseline import freeze_evidence, load_baseline, validate_witnesses, verify_evidence
@@ -32,6 +33,7 @@ from agent_ee.checks import parse_xml_netlist, run_checks
 from agent_ee.executor import SANDBOX_PATH, execute
 from agent_ee.findings import adjudicate, collect_findings
 from agent_ee.kicad_embedded import decompress, kicad_checksum, records, verify
+from agent_ee.models3d import STOCK_REPOSITORY, STOCK_REVISIONS
 from agent_ee.storage import digest, read_json, write_json
 from agent_ee.symbol_library import parse_sexpr
 from toolchain import require_toolchain
@@ -69,6 +71,8 @@ RC_CPL = CPL_HEAD + 'C1,110,-100,Top,0\nJ1,100,-100,Top,0\nR1,105,-100,Top,0\n'
 RC_MODELS = {'Capacitor_SMD.3dshapes/C_0805_2012Metric.step': 'c1.step',
              'Resistor_SMD.3dshapes/R_0805_2012Metric.step': 'r1.step',
              'Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x03_P2.54mm_Vertical.step': 'j1.step'}
+STOCK_RECEIPT = 'lib3d/.agent-ee-models.json'
+STOCK_ROOTS = {'KICAD10_3DMODEL_DIR': STOCK_RECEIPT}
 RESAVE = 'import pcbnew, sys\nboard = pcbnew.LoadBoard(sys.argv[1])\npcbnew.SaveBoard(sys.argv[2], board)\n'
 
 
@@ -79,6 +83,31 @@ def owned_step(name):
     return (f"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('agent-ee owned placeholder solid {name}'),'2;1');\n"
             f"FILE_NAME('{name}','2026-10-17T00:00:00',('agent-ee'),('agent-ee'),'','','');\n"
             f"FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n{points}ENDSEC;\nEND-ISO-10303-21;\n").encode()
+
+
+def stock_library(paths, *, root='lib3d', listed=None, captured=None, provenance='pinned', content=None):
+    """Captured stock 3D-model library: a `models3d` receipt plus member files (AGENTEE-124).
+
+    Members are owned placeholder STEP bytes, not KiCad library content. Pinned
+    entries carry the receipt fields `fetch_stock_models` writes for a download at
+    a pinned kicad-packages3D revision; the gate checks only the captured bytes
+    against that hash. `listed`, `captured` and `content` inject faults.
+    """
+    data = {rel: (content or {}).get(rel, owned_step(PurePosixPath(rel).name)) for rel in paths}
+    entries = {}
+    for rel in (paths if listed is None else listed):
+        entry = {'sha256': hashlib.sha256(owned_step(PurePosixPath(rel).name)).hexdigest(),
+                 'size_bytes': len(owned_step(PurePosixPath(rel).name))}
+        if provenance == 'pinned':
+            entry.update(commit=STOCK_REVISIONS[0],
+                         source_url=f'{STOCK_REPOSITORY}/-/raw/{STOCK_REVISIONS[0]}/{quote(rel, safe="/")}')
+        else:
+            entry['source'] = 'existing-local'
+        entries[rel] = entry
+    receipt = {'schema': 'agent-ee.stock-models/1', 'repository': STOCK_REPOSITORY, 'files': entries}
+    files = {f'{root}/.agent-ee-models.json': json.dumps(receipt, indent=2, sort_keys=True).encode()}
+    files.update({f'{root}/{rel}': data[rel] for rel in (paths if captured is None else captured)})
+    return files
 
 
 def raw_frame(payload):
@@ -373,7 +402,10 @@ class FabConsistencyTests(FabCase):
         self.assertStatus(self.run_case(consistency_params={'export_check': 'netlist'}), 'unsupported', 'unknown',
                           'fab_export prerequisite missing')
         self.assertStatus(self.run_case(consistency_params={'export_check': 'export', 'regenerate': True}),
-                          'unsupported', 'unknown', 'params must be exactly')
+                          'unsupported', 'unknown', 'with optional model_libraries')
+        # A scope/2 baseline freezes the declared receipts, so capture refuses an invalid map.
+        with self.assertRaisesRegex(ValueError, 'not a KiCad stock 3D-model variable'):
+            self.run_case(consistency_params={'export_check': 'export', 'model_libraries': {'KIPRJMOD': STOCK_RECEIPT}})
         self.assertStatus(self.run_case(export_params={}), 'unsupported', 'unknown', 'netlist')
 
     def test_geometry_evidence_is_required_and_must_precede_the_gate(self):
@@ -798,6 +830,90 @@ class FabConsistencyTests(FabCase):
         self.assertStatus(result, 'ok', 'defect')
         self.assertEqual(result['details']['coverage_gaps'][0]['code'], 'model_coverage')
 
+    # ------------------------------------------- stock model libraries (AGENTEE-124)
+
+    def test_stock_footprints_resolve_against_the_captured_pinned_library(self):
+        # The owned RC control board places real stock KiCad 10 footprints whose
+        # models are ${KICAD10_3DMODEL_DIR} paths; no KiCad 3D models are captured.
+        project = rc_project((RC_CONTROL / 'rc_filter.kicad_pcb').read_bytes())
+        paths = sorted(RC_MODELS)
+
+        def run(**kwargs):
+            return self.run_case(project=project, native_netlist=True, files=package(RC_BOM, RC_CPL),
+                                 non_dnp=['C1', 'J1', 'R1'], **kwargs)
+        missing_root = run()
+        self.assertStatus(missing_root, 'unsupported', 'unknown', 'KICAD10_3DMODEL_DIR')
+        self.assertEqual({m['status'] for m in missing_root['details']['models']['records']}, {'uncovered'})
+        self.assertEqual(missing_root['details']['models']['libraries'], {})
+
+        result = run(consistency_params={'export_check': 'export', 'model_libraries': STOCK_ROOTS},
+                     extra_inputs=stock_library(paths))
+        self.assertStatus(result, 'ok', 'pass', '3 3D model path(s) resolved')
+        records_by_ref = {m['ref']: m for m in result['details']['models']['records']}
+        self.assertEqual(set(records_by_ref), {'C1', 'J1', 'R1'})
+        for ref, record in records_by_ref.items():
+            relative = record['path'][len('${KICAD10_3DMODEL_DIR}/'):]
+            self.assertIn(relative, RC_MODELS)
+            self.assertEqual(record['status'], 'resolved', record)
+            self.assertEqual(record['sha256'], hashlib.sha256(owned_step(PurePosixPath(relative).name)).hexdigest())
+            self.assertEqual(record['library'], {'variable': 'KICAD10_3DMODEL_DIR', 'receipt': STOCK_RECEIPT,
+                                                 'member': f'lib3d/{relative}', 'commit': STOCK_REVISIONS[0]})
+        library = result['details']['models']['libraries']['KICAD10_3DMODEL_DIR']
+        self.assertEqual(library, {'receipt': STOCK_RECEIPT, 'receipt_sha256': self.manifest['files'][STOCK_RECEIPT]})
+        # The receipt is an immutable baseline dependency; members are bound by its hashes.
+        self.assertIn(STOCK_RECEIPT, load_baseline(self.run_dir)['files'])
+        freeze_evidence(self.run_dir, self.results)
+        verify_evidence(self.run_dir, self.results, required=True)
+
+    def test_unmapped_unpinned_or_mismatched_stock_models_stay_unknown(self):
+        model = 'Synth.3dshapes/C_0603.step'
+        native = [list(fp) for fp in FOOTPRINTS]
+        native[2][4] = [f'${{KICAD10_3DMODEL_DIR}}/{model}']
+        board = board_text([tuple(fp) for fp in native])
+        cases = {
+            'other root only': ({'KICAD9_3DMODEL_DIR': STOCK_RECEIPT}, stock_library([model]),
+                                "['KICAD10_3DMODEL_DIR'] not mapped to a captured pinned model library"),
+            'not in receipt': (STOCK_ROOTS, stock_library([model], listed=[]),
+                               f'{model} is not in the captured KICAD10_3DMODEL_DIR library'),
+            'member not captured': (STOCK_ROOTS, stock_library([model], captured=[]),
+                                    f'lib3d/{model} listed by KICAD10_3DMODEL_DIR library'),
+            'hash mismatch': (STOCK_ROOTS, stock_library([model], content={model: b'ISO-10303-21; other\n'}),
+                              f'lib3d/{model} differs from its pinned hash'),
+            'unpinned': (STOCK_ROOTS, stock_library([model], provenance='existing-local'),
+                         'has no pinned upstream revision'),
+            'malformed receipt': (STOCK_ROOTS, {**stock_library([model]), STOCK_RECEIPT: b'{"schema": "x"}'},
+                                  'unsupported model cache receipt'),
+        }
+        for name, (roots, library, reason) in cases.items():
+            with self.subTest(name):
+                result = self.run_case(board=board, extra_inputs=library,
+                                       consistency_params={'export_check': 'export', 'model_libraries': roots})
+                self.assertStatus(result, 'unsupported', 'unknown')
+                record = next(m for m in result['details']['models']['records'] if m['ref'] == 'C1')
+                self.assertEqual(record['status'], 'uncovered')
+                self.assertNotIn('sha256', record)
+                self.assertIn(reason, record['reason'])
+                self.assertEqual(result['details']['coverage_gaps'][0]['code'], 'model_coverage')
+
+    def test_legacy_stock_variable_resolves_only_through_its_own_declared_root(self):
+        model = 'Synth.3dshapes/C_0603.wrl'
+        native = [list(fp) for fp in FOOTPRINTS]
+        native[2][4] = [f'${{KICAD9_3DMODEL_DIR}}/{model}']
+        library = stock_library([model], root='lib9')
+        params = {'export_check': 'export', 'model_libraries': {'KICAD9_3DMODEL_DIR': 'lib9/.agent-ee-models.json'}}
+        result = self.run_case(board=board_text([tuple(fp) for fp in native]), extra_inputs=library,
+                               consistency_params=params)
+        self.assertStatus(result, 'ok', 'pass')
+        record = next(m for m in result['details']['models']['records'] if m['ref'] == 'C1')
+        self.assertEqual(record['library']['member'], f'lib9/{model}')
+        # A stock model that is absent from its pinned library does not hide another model's defect.
+        native[2][4] = ['models/missing.step', f'${{KICAD9_3DMODEL_DIR}}/Synth.3dshapes/absent.step']
+        result = self.run_case(board=board_text([tuple(fp) for fp in native]), extra_inputs=library,
+                               consistency_params=params)
+        self.assertStatus(result, 'ok', 'defect')
+        self.assertEqual(self.codes(result), {'model_unresolved'})
+        self.assertEqual([g['code'] for g in result['details']['coverage_gaps']], ['model_coverage'])
+
     # ---------------------------------------------------------------- capability
 
     def test_capability_requires_ordered_export_netlist_and_geometry(self):
@@ -824,6 +940,20 @@ class FabConsistencyTests(FabCase):
         self.assertEqual(describe(no_netlist)['status'], 'unsupported')
         self.assertEqual(describe([specs[0], specs[2], specs[3]])['status'], 'unsupported')
         self.assertEqual(describe([specs[0], specs[2], specs[3], specs[1]])['status'], 'unsupported')
+
+        files[STOCK_RECEIPT] = 'c' * 64
+        stock = copy.deepcopy(specs)
+        stock[3]['params']['model_libraries'] = dict(STOCK_ROOTS)
+        declared = describe(stock)
+        self.assertEqual(declared['status'], 'supported', declared)
+        self.assertEqual(declared['immutable_inputs'], [STOCK_RECEIPT])
+        self.assertEqual(good['immutable_inputs'], [])
+        for roots in ({}, [STOCK_RECEIPT], {'KIPRJMOD': STOCK_RECEIPT}, {'MY_MODELS': STOCK_RECEIPT},
+                      {'KICAD10_3DMODEL_DIR': 'lib3d/receipt.json'}, {'KICAD10_3DMODEL_DIR': 'other/.agent-ee-models.json'},
+                      {'KICAD10_3DMODEL_DIR': '/abs/.agent-ee-models.json'}):
+            with self.subTest(roots=roots):
+                stock[3]['params']['model_libraries'] = roots
+                self.assertEqual(describe(stock)['status'], 'unsupported')
 
 
 class CoordinatePrecisionTests(unittest.TestCase):
@@ -858,16 +988,17 @@ class NativeFabPipelineTests(unittest.TestCase):
                 '(attr smd)', '(attr smd)\n\t\t(model "${KIPRJMOD}/owned.step")', 1))
         self.runs = 0
 
-    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None, rule=None):
+    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None, rule=None, model_libraries=None):
         scope = read_json(REPO / 'fixtures/fab-export/control.scope.json')
         scope.update(schema='agent-ee.scope/3', board='design/' + board)
         if rule:
             scope['checks'][1]['params']['assembly_exclusion'] = rule
         scope['inputs'][0]['path'] = str(self.source)
-        scope['inputs'][0]['include'].append('owned.step')
+        scope['inputs'][0]['include'] += ['owned.step', 'lib3d/*']
         scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
         scope['checks'].append({'id': 'consistency', 'kind': 'fab_consistency',
-                                'params': {'export_check': 'fab'}})
+                                'params': {'export_check': 'fab', **(
+                                    {'model_libraries': model_libraries} if model_libraries else {})}})
         req = scope['baseline']['requirements'][0]
         req.update(intent='acceptance', checks=['fab', 'consistency'])
         scope['baseline']['requirements'].append({**req, 'id': 'I-native', 'intent': 'informational',
@@ -946,6 +1077,25 @@ class NativeFabPipelineTests(unittest.TestCase):
                 self.assertIn('fab-package:cpl-coordinates', predicates)
                 self.assertIn('fab-package:build-log', predicates)
                 self.assert_witness(result, accepted=False)
+
+    def test_native_scope3_stock_model_resolves_through_frozen_library_receipt(self):
+        model = 'Synth.3dshapes/owned.step'
+        board = self.source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('${KIPRJMOD}/owned.step', f'${{KICAD10_3DMODEL_DIR}}/{model}'))
+        for rel, data in stock_library([model]).items():
+            (self.source / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.source / rel).write_bytes(data)
+        receipt = 'design/' + STOCK_RECEIPT
+        self.assertEqual(self.run_case()['execution'], 'unsupported')
+        result = self.run_case(model_libraries={'KICAD10_3DMODEL_DIR': receipt})
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        record = result['details']['models']['records'][0]
+        self.assertEqual((record['status'], record['library']['member'], record['sha256']),
+                         ('resolved', f'design/lib3d/{model}', hashlib.sha256(owned_step('owned.step')).hexdigest()))
+        baseline = load_baseline(self.run_dir)
+        self.assertIn(receipt, baseline['files'])
+        self.assertEqual(baseline['coverage']['checks']['consistency']['immutable_inputs'], [receipt])
+        self.assert_witness(result, accepted=False)
 
     def test_native_package_subpredicate_defects_qualify_sealed_witnesses(self):
         def csv_mutation(name, edit):

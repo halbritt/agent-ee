@@ -68,7 +68,9 @@ For a new cache, explicitly request downloads:
 Fetching requests only referenced stock-model paths from pinned official KiCad
 sources. It does not upload the PCB. The cache retains download provenance and
 file hashes. Local project models continue to resolve from the source project.
-Ordinary renders make no model downloads.
+Ordinary renders make no model downloads. A captured copy of such a cache can
+also resolve stock model paths in the
+[fab-package consistency gate](fab-consistency.md#stock-model-libraries).
 
 Missing model files and footprints without model references are reported in the
 manifest. They do not prevent KiCad from rendering the remaining board. The tool

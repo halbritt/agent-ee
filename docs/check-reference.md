@@ -719,7 +719,9 @@ and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,
 BOM/CPL/assembled-board reference parity (re-deriving rule exclusions from the
 sealed netlist and the captured board), schematic/board DNP disagreement
 (`designator_parity`), LCSC/footprint conflicts, CPL side,
-captured/embedded 3D models and recorded export-log diagnostics. CPL anchors
+captured/embedded 3D models, stock-library models through the optional
+`model_libraries` map of captured pinned receipts, and recorded export-log
+diagnostics. CPL anchors
 must agree with exact native `position_nm` within 0.01 mm per axis, using
 absolute board X and negative board Y on either side. Missing exact positions
 or a missing sealed log is unknown coverage; broken hashes or malformed CSV
