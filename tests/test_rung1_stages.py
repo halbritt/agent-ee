@@ -300,6 +300,7 @@ class ReferenceBoardTest(unittest.TestCase):
             problems = st.verify_record(copy)['problems']
             self.assertTrue(any('bound file changed' in p and p.endswith('rc-step.json') for p in problems))
             self.assertTrue(any(p.startswith('stage verification: review does not verify') for p in problems))
+            self.assertTrue(any(p.startswith('stage fab: review does not verify') for p in problems))
 
     def test_removing_the_verification_step_leaves_fab_not_reached(self):
         with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-ref-omit-') as tmp:
@@ -365,6 +366,63 @@ class GenerationTest(unittest.TestCase):
         self.assertNotIn('fab_consistency', {c['kind'] for c in scope['checks']})
 
     def test_record_verifies(self):
+        self.assertEqual(st.verify_record(self.rundir)['problems'], [])
+
+    def test_later_adoptions_and_live_design_edits_leave_retained_reviews_valid(self):
+        schematic, placement = self.record['stages'][2:4]
+        self.assertEqual(placement['status'], 'pass', placement['reason'])
+        before = read_json(self.rundir / schematic['review']['run'] / 'candidate.json')
+        after = read_json(self.rundir / placement['review']['run'] / 'candidate.json')
+        board = before['scope']['board']
+        self.assertNotEqual(before['files'][board], after['files'][board])
+        self.assertNotEqual(before['sources'][board], after['sources'][board])
+        live = self.rundir / 'design' / board
+        original = live.read_bytes()
+        try:
+            live.write_bytes(original + b'\n; later working design edit\n')
+            self.assertEqual(st.verify_record(self.rundir)['problems'], [])
+        finally:
+            live.write_bytes(original)
+
+    def test_tampered_later_source_does_not_invalidate_earlier_review(self):
+        schematic, placement = self.record['stages'][2:4]
+        earlier = self.rundir / schematic['review']['run']
+        later = self.rundir / placement['review']['run']
+        manifest = read_json(later / 'candidate.json')
+        source = Path(manifest['sources'][manifest['scope']['board']])
+        original = source.read_bytes()
+        try:
+            source.write_bytes(original + b'\n; tampered later source\n')
+            self.assertIsNone(st.sealed(earlier))
+            problems = st.verify_record(self.rundir)['problems']
+            self.assertTrue(any(p.startswith('stage placement: review does not verify') for p in problems), problems)
+            self.assertFalse(any(p.startswith('stage schematic:') for p in problems), problems)
+        finally:
+            source.write_bytes(original)
+
+    def test_every_retained_review_rejects_changed_or_missing_inputs(self):
+        reviews = {s['review']['run']: s for s in self.record['stages']
+                   if s['review'] and s['review']['seal_error'] is None}
+        self.assertGreaterEqual(len(reviews), 2)
+        for review, stage in reviews.items():
+            run = self.rundir / review
+            manifest = read_json(run / 'candidate.json')
+            board = manifest['scope']['board']
+            # Cover both declared sources and the review's independent captured copy.
+            for path in (Path(manifest['sources'][board]), run / 'inputs' / board):
+                original = path.read_bytes()
+                for mutation in ('edit', 'remove'):
+                    with self.subTest(stage=stage['stage'], path=path, mutation=mutation):
+                        try:
+                            if mutation == 'edit':
+                                path.write_bytes(original + b'\n; tampered capture\n')
+                            else:
+                                path.unlink()
+                            problems = st.verify_record(self.rundir)['problems']
+                            prefix = f"stage {stage['stage']}: review does not verify"
+                            self.assertTrue(any(p.startswith(prefix) for p in problems), problems)
+                        finally:
+                            path.write_bytes(original)
         self.assertEqual(st.verify_record(self.rundir)['problems'], [])
 
     def test_removing_the_schematic_step_makes_every_later_stage_not_reached(self):

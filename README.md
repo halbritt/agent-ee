@@ -339,7 +339,8 @@ with an explicitly assembled J1 and runs the existing assembly and package check
 The [rung-1 stage-ordered driver](docs/rung1-stages.md) runs one RC candidate
 through requirements, parts, schematic, placement, routing, verification and
 fab. It records stages that were not reached rather than passed, and writes a
-record that `verify` recomputes against the same agent-ee commit.
+record that `verify` recomputes against the same agent-ee commit and each
+review's retained source inputs, independently of later design adoptions.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
 are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap
