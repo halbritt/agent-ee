@@ -360,11 +360,17 @@ def transact(run, report, out, max_seconds, *, operation_id, review_out=None):
                     raise TransactionError('conflict', 'operation ID has a different request', out=out)
                 request = existing
                 if not (out / 'request.json').is_file():
-                    raise TransactionError('ambiguous', 'reserved operation has incomplete preparation', out=out)
+                    raise TransactionError('ambiguous', 'reserved operation has incomplete preparation', out=out,
+                                           actions=['preserve partial preparation; start a separately identified operation after inspection'])
                 retained = load(out)[1]
                 if 'review_started' in retained and latest_attempt(out, retained)['out'] != str(prior_target):
                     raise TransactionError('conflict', 'attempt changed while acquiring leases; retry diagnosis', out=out)
                 return settle(out, request, retained)
+            if equivalent and not (Path(existing['out']) / 'prepared.json').is_file():
+                # Only prepare() writes this receipt, under the source lease held
+                # here. Without it the reservation can never publish; retain it
+                # and let a separately identified operation proceed.
+                continue
             if equivalent:
                 return {'schema': 'agent-ee.bench-recovery/1', 'disposition': 'existing_operation',
                         'operation_id': existing['operation_id'], 'transaction': existing['out']}

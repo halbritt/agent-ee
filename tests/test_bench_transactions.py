@@ -327,6 +327,166 @@ class BenchTransactionTests(unittest.TestCase):
         self.assertEqual(tx.recover(self.root / 'feedback')['disposition'], 'uncertain_execution')
         self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
 
+    def contend(self, count, action):
+        """Start `count` processes together; the first launch holds its lease
+        until every other contender has returned, so all contend with it."""
+        import multiprocessing
+        from unittest.mock import patch
+        context = multiprocessing.get_context('fork')
+        barrier, release, results = context.Barrier(count), context.Event(), context.Queue()
+        marker = self.root / 'review-launches'
+        def launched(scope, target, *args, **kwargs):
+            with marker.open('a') as stream:
+                stream.write(str(target) + '\n')
+            if not release.wait(30):
+                raise RuntimeError('test barrier timed out')
+            raise KeyboardInterrupt()
+        def contender(index):
+            with patch('agent_ee.cli.run_review', side_effect=launched):
+                barrier.wait(15)
+                try:
+                    value = action(index)
+                    results.put('returned: ' + str(value.get('disposition')))
+                except KeyboardInterrupt:
+                    results.put('started')
+                except ValueError as exc:
+                    results.put('refused: ' + str(exc))
+        processes = [context.Process(target=contender, args=(index,)) for index in range(count)]
+        for process in processes:
+            process.start()
+        try:
+            outcomes = [results.get(timeout=30) for _ in range(count - 1)]
+            release.set()
+            outcomes.append(results.get(timeout=30))
+        finally:
+            release.set()
+            for process in processes:
+                process.join(30)
+                if process.is_alive():
+                    process.kill(); process.join()
+        self.assertEqual([p.exitcode for p in processes], [0] * count)
+        launches = marker.read_text().splitlines() if marker.exists() else []
+        marker.unlink(missing_ok=True)
+        return outcomes, launches
+
+    @toolchain_test
+    def test_contending_processes_commit_one_supersession_and_one_review_start(self):
+        from agent_ee import bench_transactions as tx
+        self.initial()
+        count = 3
+        for index in range(count):
+            report = read_json(self.root / 'bench.json')
+            report['procedure'] = f'contender {index}'
+            write_json(self.root / f'bench-{index}.json', report)
+        outcomes, launches = self.contend(count, lambda index: tx.transact(
+            self.root / 'initial', self.root / f'bench-{index}.json', self.root / f'feedback-{index}',
+            60, operation_id=f'contender-{index}'))
+        self.assertEqual(outcomes.count('started'), 1, outcomes)
+        self.assertEqual(sum('another writer' in o for o in outcomes), count - 1, outcomes)
+        self.assertEqual(len(launches), 1)
+        source = self.root / 'initial'
+        self.assertEqual(len(list((source / 'bench-publications').glob('*.json'))), 1)
+        self.assertEqual(len(list((source / 'bench-operations').glob('*.json'))), 1)
+        self.assertEqual(len(list(self.root.glob('feedback-*/review_started.json'))), 1)
+        self.assertEqual(len(verify(source, current_source=False)['empirical_feedback']), 1)
+        winner = next(self.root.glob('feedback-*/review_started.json')).parent
+        self.assertEqual(tx.recover(winner)['disposition'], 'uncertain_execution')
+        self.assertEqual(self.calls, [])
+
+    @toolchain_test
+    def test_contending_launches_record_one_review_start_and_one_replacement_attempt(self):
+        from unittest.mock import patch
+        from agent_ee import bench_transactions as tx
+        self.initial()
+        out = self.root / 'feedback'
+        real_put = tx.put
+        def interrupt(path, value):
+            real_put(path, value)
+            if Path(path).parent.name == 'bench-publications':
+                raise KeyboardInterrupt()
+        with patch.object(tx, 'put', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
+            tx.transact(self.root / 'initial', self.root / 'bench.json', out, 60, operation_id='launch-race')
+        self.assertEqual(tx.recover(out)['disposition'], 'ready_for_explicit_review')
+        count = 3
+        outcomes, launches = self.contend(count, lambda index: tx.recover(out, launch_review=True))
+        self.assertEqual(outcomes.count('started'), 1, outcomes)
+        self.assertEqual(sum('another writer' in o for o in outcomes), count - 1, outcomes)
+        self.assertEqual(launches, [str(out / 'review')])
+        self.assertTrue((out / 'review_started.json').is_file())
+        self.assertFalse((out / 'attempts').exists())
+        outcomes, launches = self.contend(count, lambda index: tx.new_attempt(
+            out, f'operator-{index}', self.root / f'attempt-{index}'))
+        self.assertEqual(outcomes.count('started'), 1, outcomes)
+        self.assertEqual(sum('another writer' in o for o in outcomes), count - 1, outcomes)
+        self.assertEqual(len(launches), 1)
+        self.assertEqual(len(list((out / 'attempts').glob('*.json'))), 1)
+        self.assertEqual(tx.latest_attempt(out, tx.load(out)[1])['out'], launches[0])
+        self.assertEqual(tx.recover(out)['disposition'], 'uncertain_execution')
+        self.assertEqual(len(verify(self.root / 'initial', current_source=False)['empirical_feedback']), 1)
+        self.assertEqual(self.calls, [])
+
+    @toolchain_test
+    def test_abandoned_preparation_lets_a_separately_identified_operation_proceed(self):
+        from unittest.mock import patch
+        from agent_ee import bench_transactions as tx
+        self.initial()
+        source, abandoned = self.root / 'initial', self.root / 'abandoned'
+        real_receipt = tx.receipt
+        def interrupt(out, phase, payload):
+            if phase == 'prepared':
+                raise KeyboardInterrupt()
+            return real_receipt(out, phase, payload)
+        with patch.object(tx, 'receipt', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
+            tx.transact(source, self.root / 'bench.json', abandoned, 60, operation_id='abandoned')
+        before = tx.inventory(abandoned)
+        self.assertEqual(tx.status(abandoned)['disposition'], 'ambiguous')
+        with self.assertRaisesRegex(tx.TransactionError, 'no complete durable receipt'):
+            tx.transact(source, self.root / 'bench.json', abandoned, 60, operation_id='abandoned')
+        self.assertEqual(verify(source, current_source=False)['outcome'], 'criteria_satisfied')
+        with contextlib.redirect_stdout(io.StringIO()):
+            value = tx.transact(source, self.root / 'bench.json', self.root / 'feedback',
+                                60, operation_id='separate')
+        self.assertEqual(value['phase'], 'completed')
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len(verify(source, current_source=False)['empirical_feedback']), 1)
+        again = tx.transact(source, self.root / 'bench.json', self.root / 'third', 60, operation_id='third')
+        self.assertEqual((again['disposition'], again['operation_id']), ('existing_operation', 'separate'))
+        self.assertEqual(tx.inventory(abandoned), before)
+        self.assertEqual(tx.status(abandoned)['disposition'], 'ambiguous')
+        self.assertEqual(len(self.calls), 3)
+
+    @toolchain_test
+    def test_recovery_and_explicit_attempt_never_reread_the_bench_report(self):
+        from unittest.mock import patch
+        from agent_ee import bench_transactions as tx
+        self.initial()
+        source, out = self.root / 'initial', self.root / 'feedback'
+        real_put = tx.put
+        def interrupt(path, value):
+            real_put(path, value)
+            if Path(path).parent.name == 'bench-publications':
+                raise KeyboardInterrupt()
+        with patch.object(tx, 'put', side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
+            tx.transact(source, self.root / 'bench.json', out, 60, operation_id='no-reacquire')
+        # Acquired observations are gone; only captured preparation remains.
+        (self.root / 'bench.json').unlink()
+        (self.root / 'raw.json').unlink()
+        with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            tx.recover(out, launch_review=True)
+        self.assertEqual(tx.recover(out)['disposition'], 'uncertain_execution')
+        with contextlib.redirect_stdout(io.StringIO()):
+            value = tx.new_attempt(out, 'operator-2', self.root / 'fresh-review')
+        self.assertEqual(value['phase'], 'completed')
+        self.assertEqual(len(self.calls), 3)
+        request = read_json(out / 'request.json')
+        self.assertEqual(digest(out / 'prepared/report-original.json'), request['report_sha256'])
+        self.assertEqual(digest(source / 'candidate.json'), request['manifest_sha256'])
+        events = verify(source, current_source=False)['empirical_feedback']
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]['bundle'], str(out / 'prepared/empirical'))
+        self.assertEqual(tx.status(out)['disposition'], 'completed')
+        self.assertFalse((self.root / 'bench.json').exists())
+
     @toolchain_test
     def test_process_death_before_and_after_each_prelaunch_fsync_and_rename(self):
         import multiprocessing
@@ -335,7 +495,7 @@ class BenchTransactionTests(unittest.TestCase):
         from unittest.mock import patch
         from agent_ee import bench_transactions as tx
         self.initial()
-        source, out = self.root / 'initial', self.root / 'feedback'
+        source, out, fresh = self.root / 'initial', self.root / 'feedback', self.root / 'fresh-operation'
         template = self.root / 'original-run'
         shutil.copytree(source, template)
         trace = []
@@ -382,29 +542,48 @@ class BenchTransactionTests(unittest.TestCase):
                     if worker.is_alive():
                         worker.kill(); worker.join()
                     self.assertEqual(worker.exitcode, 77)
+                    if fresh.exists():
+                        shutil.rmtree(fresh)
                     parent, child = context.Pipe(False)
                     def recovery_worker():
                         with patch('agent_ee.cli.run_review', side_effect=AssertionError('recovery repeated inference')):
                             try:
                                 result = tx.recover(out)
                             except (ValueError, OSError, KeyError) as exc:
-                                result = {'disposition': 'refused', 'reason': str(exc)}
+                                result = {'disposition': 'refused', 'reason': str(exc),
+                                          'refusal': getattr(exc, 'diagnostic', {}).get('disposition')}
                             try:
                                 original = verify(source, current_source=False)
                                 result['source_outcome'] = original['outcome']
                             except (ValueError, OSError, KeyError) as exc:
                                 result['source_outcome'] = 'unverified'
                                 result['source_error'] = str(exc)
-                            child.send(result)
+                        result['published'] = (source / 'bench-publications').exists()
+                        if result['disposition'] == 'refused':
+                            # The advised operator action must be able to proceed.
+                            with patch('agent_ee.cli.run_review', side_effect=KeyboardInterrupt):
+                                try:
+                                    tx.transact(source, self.root / 'bench.json', fresh, 60,
+                                                operation_id='fault-matrix-fresh')
+                                except KeyboardInterrupt:
+                                    pass
+                            result['fresh'] = tx.status(fresh)['disposition']
+                            result['fresh_events'] = len(verify(source, current_source=False)['empirical_feedback'])
+                        child.send(result)
                     recovery = context.Process(target=recovery_worker)
                     recovery.start(); recovery.join(15)
                     if recovery.is_alive():
                         recovery.kill(); recovery.join()
                     self.assertEqual(recovery.exitcode, 0)
                     result = parent.recv()
-                    if (source / 'bench-publications').exists():
+                    if result['published']:
                         self.assertNotEqual(result['source_outcome'], 'criteria_satisfied', result)
-                    if result['disposition'] not in ('refused', 'uncertain_execution'):
+                    if result['disposition'] == 'refused':
+                        # Refusal is an explicit ambiguity before any publication.
+                        self.assertEqual(result['refusal'], 'ambiguous', result)
+                        self.assertEqual(result['source_outcome'], 'criteria_satisfied', result)
+                        self.assertEqual((result['fresh'], result['fresh_events']), ('uncertain_execution', 1), result)
+                    elif result['disposition'] != 'uncertain_execution':
                         self.assertEqual(result['disposition'], 'ready_for_explicit_review', result)
                         self.assertEqual(result['source_outcome'], 'incomplete')
                     parent.close(); child.close()

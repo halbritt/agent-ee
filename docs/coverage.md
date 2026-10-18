@@ -367,8 +367,12 @@ source supersession, explicit replacement attempts, full external-target leases,
 coherent reader refusal, completed-result adoption and exactly-once campaign
 history projection. A process exits immediately before and after every fsync
 and rename in the prelaunch transaction; recovery runs in another process and
-must reconcile deterministically or refuse with retained evidence. Recovery
-has a provider boundary assertion. These tests model process interruption,
+must reconcile deterministically or refuse with an explicit ambiguity on an
+unsuperseded source, after which a separately identified operation proceeds.
+Three processes released together contend for supersession, review start and
+replacement attempts; each commits exactly once. Recovery after the bench
+report and raw files are deleted proves no reacquisition. Recovery has a
+provider boundary assertion. These tests model process interruption,
 not physical power loss, instrument authenticity or live-provider reliability.
 
 ## Packet-navigation measurement attempt

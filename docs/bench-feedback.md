@@ -324,7 +324,10 @@ The initial `bench-review` authorizes one fresh review. Repeating the same
 operation returns or reconciles its retained transaction; it does not authorize
 another provider call. Changing the report, raw bytes, source, output, review
 configuration or budget under the same ID conflicts. An equivalent report for
-the same source under another ID returns the existing operation identity.
+the same source under another ID returns the existing operation identity. The
+exception is an operation that never recorded its `prepared` receipt: it can
+never publish, so it stays retained as an `ambiguous` diagnostic and a
+separately identified operation for the same report may proceed.
 Recovery uses captured preparation, so the original report directory need not
 remain available for `bench-recover`.
 
@@ -385,6 +388,9 @@ local filesystem, with staged copies verified before publication. This is
 trusted local storage consistency. It does not qualify network filesystems,
 provide a hostile-host signature or prove physical measurement authenticity.
 The crash matrix interrupts every prelaunch fsync/rename in fresh processes;
+each refusal must be an explicit ambiguity on an unsuperseded source that a
+fresh operation can then supersede. Contending processes released together
+commit one supersession, one review start and one replacement attempt;
 scripted review and native sandbox tests establish orchestration behavior,
 not live-provider reliability or hardware validation.
 
