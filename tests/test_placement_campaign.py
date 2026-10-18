@@ -775,7 +775,14 @@ class StagedStepPlanTest(unittest.TestCase):
         # The routing step would fail if it ran during the schematic turn.
         write_json(fixture.root / 'campaign.json', {**config, 'implementation_steps': [step('routing', 3),
                                                                                        step('schematic', 0)]})
-        with contextlib.redirect_stdout(io.StringIO()):
+
+        def writer_leaves_step_outputs(run, label, *args, **kwargs):
+            if label == 'implementation':
+                return {'execution': 'ok'}, {'summary': 'No edits; declared steps own this repair'}
+            return fixture.agent(run, label, *args, **kwargs)
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=writer_leaves_step_outputs), \
+                contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
         root = fixture.root / 'campaign'
         state = verify_campaign(root)

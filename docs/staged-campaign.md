@@ -158,7 +158,11 @@ and routing writer constraints remain separate lanes. The writer prompt limits w
 failing stage; arbitrary writer investigative commands are not a stage-specific
 OS allowlist. Coordinator-run steps honor the same gate: a staged campaign's step plan holds
 only the earliest failing stage's [implementation steps](stage-receipts.md#campaign-integration),
-and the [placement adapter](placement-adapter.md) runs only on placement turns. Owner convergence-contract acceptance remains outstanding.
+and the [placement adapter](placement-adapter.md) runs only on placement turns. When steps are declared,
+the retained writer prompt lists all steps and their write paths, identifies the scheduled steps, and
+reserves their stages for coordinator execution. A writer change to a scheduled step's output is
+refused as `writer_step_output_edit` before any step runs. The writer can prepare other mutable inputs
+or return a no-op summary. Owner convergence-contract acceptance remains outstanding.
 
 The ordered scheduler changes the identity of `checks.py`, which the existing
 passive-corner contract pins as its parser module. Requalification compared the
