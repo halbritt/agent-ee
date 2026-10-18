@@ -85,6 +85,10 @@ R-binding: R1 and C1 are JLCPCB-assembled SMD parts, so each must carry a valid 
 R-fab: A JLCPCB fab package (Gerbers, drill, BOM, CPL, manifest) must be exported from the captured board.
 
 R-fab-consistency: The fab package must describe the captured board: inventory, designator parity, LCSC-footprint uniqueness, CPL side and 3D model resolution.
+
+R-assembly: Populated parts must resolve to the captured catalog with complete BOM properties, passive ratings and stock coverage. The assembled-header spec explicitly includes J1.
+
+R-packages: Assigned footprints must agree with catalog packages through the captured package map. Unmapped names remain missing coverage.
 """
 
 
@@ -386,13 +390,31 @@ def write_scaffold(rundir, prep):
     (scaffold / 'requirements' / 'qualified.md').write_text(QUALIFIED_REQUIREMENTS)
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
+    footprints = footprint_manifest(prep['parts']['parts'])
+    if 'approved_bundle' in prep['parts']:
+        from .parts_manifest import load_manifest, qualify_manifest
+        from .rung1_parts import MANIFEST, check_cad_inputs
+        stock = {f'{lib}.kicad_sym': (g.STOCK / 'symbols' / f'{lib}.kicad_sym').read_bytes()
+                 for lib in g.SYMBOL_LIBRARIES}
+        bundle = prep['parts_path'].parent / 'approved'
+        declared = load_manifest(bundle, MANIFEST)
+        check_cad_inputs(qualify_manifest(declared, bundle), bundle, stock, footprints)
     resolved = resolve_intent(intent, intent_captures(intent))
     if (resolved['execution'], resolved['outcome'], resolved['coverage']) != ('ok', 'pass', 'complete'):
         raise PrepareFailure('qualified intent did not resolve: ' + json.dumps(resolved['findings'])[:2000])
     write_json(generation / 'intent.json', intent)
     write_json(generation / 'layout.json', layout())
     shutil.copyfile(prep['parts_path'], generation / 'parts-manifest.json')
-    write_json(generation / 'footprints.json', footprint_manifest(prep['parts']['parts']))
+    if 'approved_bundle' in prep['parts']:
+        bundle = prep['parts_path'].parent / 'approved'
+        for path in sorted(p for p in bundle.rglob('*') if p.is_file()):
+            relative = path.relative_to(bundle)
+            target = scaffold / relative
+            if relative.parts[0] in {'project', 'requirements', 'generation', 'stock'} or target.exists():
+                raise PrepareFailure('parts bundle collides with scaffold input: ' + str(relative))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target)
+    write_json(generation / 'footprints.json', footprints)
     write_json(generation / 'placement-policy.json', packing_policy(prep['params'], outline))
     golden, golden_record = golden_netlist(rundir / 'golden-export')
     (generation / 'golden').mkdir()
@@ -493,7 +515,52 @@ def compile_staged_scope(params, scope_dir, scaffold):
         'The board envelope (outline, layer count, stackup, fixed J1 on the left edge) is captured under '
         'generation/envelope but not consumed by any check: capture refuses an envelope scope until every '
         'obligation has an executable binding.']
+    if (scaffold / 'approved-parts.json').is_file():
+        add_parts_checks(scope, scaffold, base)
+    else:
+        scope['limitations'].append('Missing assembly_readiness and package_consistency coverage: '
+                                   'no captured supplier parts/1 bundle was supplied.')
     return scope
+
+
+def add_parts_checks(scope, scaffold, base):
+    """Bind canonical parts, assembly and package coverage to the captured bundle."""
+    from .parts_manifest import load_manifest, qualify_manifest
+    manifest = load_manifest(scaffold, 'approved-parts.json')
+    qualified = qualify_manifest(manifest, scaffold)
+    for path in ['approved-parts.json', *qualified['dependencies']]:
+        scope['inputs'].append({'path': os.path.relpath(scaffold / path, base), 'at': path})
+    mapping = scaffold / 'rung1-package-map.json'
+    if mapping.exists():
+        raise PrepareFailure('parts bundle uses reserved package-map path')
+    shutil.copyfile(REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json', mapping)
+    scope['inputs'].append({'path': os.path.relpath(mapping, base), 'at': mapping.name})
+    catalog = manifest['catalog']
+    additions = [
+        {'id': 'parts-membership', 'kind': 'parts_subset', 'stage': 'fab',
+         'params': {'manifest': 'approved-parts.json', 'netlist_check': 'netlist',
+                    'requirement_id': 'R-parts-membership'}},
+        {'id': 'assembly', 'kind': 'assembly_readiness', 'stage': 'fab',
+         'params': {'catalog': catalog['snapshot'] + '/manifest.json',
+                    'catalog_sha256': catalog['manifest_sha256'],
+                    'boards': qualified['selection']['build_quantity'],
+                    'stock_floor': qualified['selection']['stock_floor']}},
+        {'id': 'packages', 'kind': 'package_consistency', 'stage': 'fab',
+         'params': {'netlist_check': 'netlist', 'catalog': catalog['snapshot'],
+                    'catalog_manifest_sha256': catalog['manifest_sha256'], 'mapping': mapping.name,
+                    'lcsc_field': 'LCSC', 'class_mismatch': 'defect'}},
+    ]
+    scope['checks'].extend(additions)
+    declaration = manifest['declaration_source']
+    for check in additions:
+        rid = 'R-parts-membership' if check['id'] == 'parts-membership' else 'R-' + check['id']
+        source = ({'path': declaration['path'], 'locator': declaration['locator']}
+                  if check['id'] == 'parts-membership' else {'path': 'requirements/qualified.md', 'locator': rid})
+        scope['baseline']['requirements'].append({'id': rid, 'statement': {
+            'parts-membership': 'Physical parts match the captured catalog selection and CAD declaration',
+            'assembly': 'Populated parts satisfy the assembly-readiness policy',
+            'packages': 'Footprints agree with the catalog package under the captured package map',
+        }[check['id']], 'checks': [check['id']], 'source': source})
 
 
 def materialize_inputs(scope_path, inputs_dir):
@@ -659,8 +726,8 @@ def registration_probes(rundir, scope):
 
 # ------------------------------------------------------------------ preparation
 
-def prepare(spec, rundir, catalog_checkout=None):
-    prep = rc.prepare(spec, rundir, catalog_checkout)
+def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None):
+    prep = rc.prepare(spec, rundir, catalog_checkout, parts_manifest)
     dialog = Path(rundir) / 'prep' / 'stages' / '1-requirements' / 'dialog' / 'requirements.json'
     if not dialog.is_file():
         found = sorted((Path(rundir) / 'prep').rglob('dialog/requirements.json'))
@@ -671,10 +738,11 @@ def prepare(spec, rundir, catalog_checkout=None):
     return prep
 
 
-def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations):
+def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, parts_manifest=None):
     rundir = Path(rundir).absolute()
-    prep = prepare(spec, rundir)
-    catalog = catalog_attempt(prep, rundir / 'parts-catalog')
+    prep = prepare(spec, rundir, parts_manifest=parts_manifest)
+    catalog = ({'status': 'captured', 'catalog': prep['parts']['catalog']}
+               if 'approved_bundle' in prep['parts'] else catalog_attempt(prep, rundir / 'parts-catalog'))
     scaffold, scaffold_record = write_scaffold(rundir, prep)
     loads = rc.scaffold_load_checks(rundir, scaffold)
     if not all(entry['loaded'] for entry in loads.values()):
@@ -704,8 +772,11 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
                                      '/opt/kicad-route as checkout and state by routing_adapter.step')},
             'prep_receipts': prep['prep_receipts'],
             'parts': {'manifest': 'scaffold/generation/parts-manifest.json',
-                      'selection': 'agent_ee.generate stage 2 (experimental; owned catalog capture refused)',
-                      'catalog_capture': catalog},
+                      'selection': ('canonical parts/1 replay' if 'approved_bundle' in prep['parts']
+                                    else 'agent_ee.generate stage 2 (experimental; owned catalog capture refused)'),
+                      'catalog_capture': catalog,
+                      'missing_coverage': ([] if 'approved_bundle' in prep['parts'] else
+                                           ['assembly_readiness', 'package_consistency', 'parts_subset'])},
             'scaffold': {'path': 'scaffold.json', 'sha256': digest(rundir / 'scaffold.json'),
                          'root_sheet_uuid': scaffold_record['root_sheet_uuid'], 'load_checks': loads,
                          'envelope': scaffold_record['envelope']},
@@ -918,14 +989,15 @@ def write_record(rundir, base, *, verdict=None, verify_exit=None, fab=None):
     return record
 
 
-def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, max_iterations):
+def run(spec, rundir, *, profile_path, kicad_route, dry_run_only, max_seconds, max_iterations, parts_manifest=None):
     rundir = Path(rundir).absolute()
     if rundir.exists():
         raise FileExistsError(f'{rundir} exists; choose a fresh run directory')
     rundir.mkdir(parents=True)
     try:
         base, scope_path, config_path = build(spec, rundir, profile_path=profile_path, kicad_route=kicad_route,
-                                              max_seconds=max_seconds, max_iterations=max_iterations)
+                                              max_seconds=max_seconds, max_iterations=max_iterations,
+                                              parts_manifest=parts_manifest)
     except (PrepareFailure, rc.PrepareFailure, ValueError, OSError) as exc:
         return write_record(rundir, {'mode': 'dry_run' if dry_run_only else 'campaign',
                                      'error': f'{type(exc).__name__}: {exc}'})
@@ -951,10 +1023,13 @@ def main(argv=None):
                              'rehearsal; no inference')
     parser.add_argument('--max-seconds', type=float, default=3600)
     parser.add_argument('--max-iterations', type=int, default=4)
+    parser.add_argument('--parts-manifest', type=Path,
+                        help='captured parts/1 manifest at the root of its dependency bundle; requires assembled J1')
     args = parser.parse_args(argv)
     try:
         record = run(args.spec, args.out, profile_path=args.profile, kicad_route=args.kicad_route.absolute(),
-                     dry_run_only=args.dry_run, max_seconds=args.max_seconds, max_iterations=args.max_iterations)
+                     dry_run_only=args.dry_run, max_seconds=args.max_seconds, max_iterations=args.max_iterations,
+                     parts_manifest=args.parts_manifest)
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_qualified refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'done')}))

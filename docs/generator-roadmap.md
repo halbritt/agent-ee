@@ -55,8 +55,11 @@ The checks that constitute "done" for each rung:
 | 4 | Rung 3 set at FOME-MC scale, plus FOME-MC's own rules (for example HV clearance) | `fab_package` passes |
 
 The [`parts_subset`](approved-parts.md) check and immutable manifest are
-registered for scope/2 and scope/3 (AGENTEE-86); real rung inputs and migration
-from the experimental generator's parts record remain pending.
+registered for scope/2 and scope/3 (AGENTEE-86). The optional
+[Rung-1 captured-parts route](rung1-parts.md) consumes that bundle and binds its
+RC/header fields and records a real reference-board parts run. Complete
+empty-candidate campaign qualification remains pending; the default generator
+still uses its experimental parts record.
 `placement` is also registered ([details](placement.md#placement-check-kind));
 its native qualification does not establish a complete generation campaign
 (AGENTEE-92). `block_provenance` and `fab_package` remain pending (AGENTEE-90,

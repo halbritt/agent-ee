@@ -674,7 +674,11 @@ reference. Copper-layer pads keep a footprint bindable even with `virtual`,
 bare NPTH holes qualified by the existing native geometry reader.
 Unparseable `PARAM_*` JSON, ambiguous pad layers and an uncaptured child sheet
 are `malformed`. See [part binding](part-binding.md) for the schema, markers and
-per-reference outcomes.
+per-reference outcomes. The [Rung-1 parts adapter](rung1-parts.md) projects
+replayed `parts/1` catalog identities and normalized ratings into the owned
+emitter; native export and forward annotation carry them onto footprints.
+Its captured-parts scope declares `parts_subset`, `assembly_readiness` and
+`package_consistency`. Unknown stock, ratings or unmapped packages stay unknown.
 
 ## JLCPCB fab package
 

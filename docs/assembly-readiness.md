@@ -39,7 +39,10 @@ The check does not pick replacements, query live stock or price the board.
   `netlist.hierarchy_coverage` (`bound_components`, `exporter_omitted`).
 - **Catalog**: `params["catalog"]`, either an `agent-ee.catalog/1` manifest
   (whose SQLite `database.path` is size- and SHA-256-pinned) or a JSON snapshot
-  (`agent-ee.catalog-snapshot/1` or `agent-ee.jlc-catalog/1`).
+  (`agent-ee.catalog-snapshot/1` or `agent-ee.jlc-catalog/1`). Canonical SQLite
+  decimal-text prices are decoded with the catalog decimal reader. A null
+  `stale_before` is accepted as an absent policy; stock remains unknown unless
+  the check supplies an explicit maximum age or cutoff.
 - **Retained evidence**: `work/<id>/design.xml`, the executor record and
   `work/<id>/assembly-readiness.json`. The report carries the hashes of each
   schematic file (`schematic.files`), of the netlist (`netlist.sha256`) and

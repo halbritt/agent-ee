@@ -70,7 +70,7 @@ SPEC_PATTERNS = {
     'response': NET + r' at ' + NUMBER + r' ms must be between ' + NUMBER + r' V and ' + NUMBER + r' V inclusive',
     'track_width': r'at least ' + NUMBER + r' mm wide',
     'board': r'(\d+)-layer ' + NUMBER + r' mm x ' + NUMBER + r' mm rectangle with (J\d+) on the left edge',
-    'hand_soldered': r'through-hole header (J\d+) is hand-soldered',
+    'hand_soldered': r'through-hole header (J\d+) is (hand-soldered|JLCPCB-assembled)',
 }
 SI = {'': 1, 'k': 1e3, 'M': 1e6, 'p': 1e-12, 'n': 1e-9, 'u': 1e-6}
 
@@ -295,7 +295,8 @@ def parse_spec(text):
         raise StageFailure('response bounds must be increasing')
     params = {
         'header': {'ref': header[2], 'pins': count, 'nets': {p: header_nets[p] for p in sorted(header_nets)},
-                   'assembly': 'not_assembled', 'assembly_reason': 'through-hole header, hand-soldered'},
+                   'assembly': 'not_assembled' if found['hand_soldered'][2] == 'hand-soldered' else 'assembled',
+                   'assembly_reason': 'through-hole header, ' + found['hand_soldered'][2]},
         'resistor': {'ref': res[3], 'value': res[1] + res[2], 'ohms': float(res[1]) * SI[res[2]],
                      'nets': [net_in, net_out]},
         'capacitor': {'ref': cap[3], 'value': cap[1] + cap[2], 'farads': float(cap[1]) * SI[cap[2]],
@@ -538,7 +539,12 @@ def footprint_file(footprint):
 
 
 def stage_parts(stage, state, options):
+    if options.get('parts_manifest'):
+        from .rung1_parts import stage_parts as captured_parts
+        return captured_parts(stage, state, options['parts_manifest'])
     params = state['params']
+    if params['header']['assembly'] == 'assembled':
+        raise StageFailure('assembled header requires a captured parts/1 manifest')
     path, raw, source = capture_catalog(options.get('catalog_checkout'))
     rows = read_catalog(raw)
     (stage.dir / 'catalog').mkdir()
