@@ -121,17 +121,25 @@ def schematic(items, file_uuid=ROOT_UUID, title=None, lib_names=None, extra_libs
     return ('\n'.join(_dump(root)) + '\n').encode()
 
 
-def hole():
-    """Owned pinless body (a mounting-hole outline), embedded only in the ``pinless`` variant."""
+def hole(declared_pins=False, unplaced_unit_pin=False):
+    """Owned mounting-hole outline; optional declared pins test malformed exports."""
     props = [['property', Q(k), Q(v), ['at', '0', y, '0'], *([['hide', 'yes']] if hide else []),
               ['effects', ['font', ['size', '1.27', '1.27']]]]
              for k, v, y, hide in (('Reference', 'H', '2.54', False), ('Value', 'Hole', '-2.54', False),
                                    ('Footprint', '', '0', True), ('Datasheet', '', '0', True),
                                    ('Description', 'Owned pinless mounting hole', '0', True))]
+    if declared_pins:
+        return ['symbol', Q('Lint:Hole'), ['extends', Q('Lint:R')], *props]
     body = ['symbol', Q('Hole_0_1'), ['circle', ['center', '0', '0'], ['radius', '1.27'],
             ['stroke', ['width', '0.254'], ['type', 'default']], ['fill', ['type', 'none']]]]
+    extra = [body]
+    if unplaced_unit_pin:
+        eff = ['effects', ['font', ['size', '1.27', '1.27']]]
+        extra.append(['symbol', Q('Hole_2_1'),
+                      ['pin', 'passive', 'line', ['at', '0', '0', '0'], ['length', '1.27'],
+                       ['name', Q('P'), eff], ['number', Q('1'), eff]]])
     return ['symbol', Q('Lint:Hole'), ['pin_names', ['offset', '0']], ['exclude_from_sim', 'no'],
-            ['in_bom', 'yes'], ['on_board', 'yes'], *props, body]
+            ['in_bom', 'yes'], ['on_board', 'yes'], *props, *extra]
 
 
 def child_path(name):
@@ -245,7 +253,7 @@ def child(rail_label=False, title=None):
 def design(variant='control'):
     """``{filename: bytes}`` for the control design or one named mutation."""
     items = divider(inverted=variant == 'divider-inverted') + regulator(swapped=variant == 'caps-swapped')
-    items += leds(('D1', 'D3', 'D2') if variant == 'led-order' else ('D1', 'D2', 'D3'))
+    items += leds(('D1', 'D3', 'D2') if variant in ('led-order', 'pinless-led-order') else ('D1', 'D2', 'D3'))
     items += usb('USB_DM' if variant == 'unpaired' else 'USB_DN')
     sheet_at = (152.5, 101.6) if variant == 'off-grid-sheet' else SHEET_AT
     pins = [('VCC_3V3', RAIL_PIN[0], RAIL_PIN[1], 180)] if variant == 'rail-label' else []
@@ -262,15 +270,19 @@ def design(variant='control'):
                   label('label', 'SENSE_R', 127, 105.41, 'sense-r8')]
     if variant == 'wire-overlap':
         items.append(wire((50.8, 55.88), (50.8, 60.96), 'mid-overlap'))
-    if variant == 'pinless':
-        # KiCad exports H1 with a <libpart> that has no <pins>: the netlist
-        # producer admits it, the lint's strict native inventory does not.
-        items.append(symbol('H1', 'Lint:Hole', 25.4, 25.4, value='Hole', pins=()))
+    hole_variants = ('pinless', 'pinless-led-order', 'missing-native-pins', 'unplaced-unit-pin')
+    if variant in hole_variants:
+        # H1 has no <pins> in the native XML; pinless variants are admitted and
+        # recorded out of net-rule scope, while declared-pin variants are refused.
+        hole_pins = ('1', '2') if variant == 'missing-native-pins' else ()
+        items.append(symbol('H1', 'Lint:Hole', 25.4, 25.4, value='Hole', pins=hole_pins))
     title = {'title': 'Lint fixture', 'date': '2026-10-17', 'rev': ''} if variant == 'no-revision' else None
     names = None
     if variant == 'unresolved':
         names = [n for n in ('R', 'C', 'LDO', 'ASYM', '+3V3', 'VCC_3V3', 'GND')]
-    extra = [hole()] if variant == 'pinless' else []
+    extra = ([hole(declared_pins=variant == 'missing-native-pins',
+                   unplaced_unit_pin=variant == 'unplaced-unit-pin')]
+             if variant in hole_variants else [])
     return {'lint.kicad_sch': schematic(items, title=title, lib_names=names, extra_libs=extra),
             'power.kicad_sch': child(rail_label=variant == 'rail-label')}
 

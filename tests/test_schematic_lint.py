@@ -121,6 +121,10 @@ class OfflineRuleTests(unittest.TestCase):
     def test_control_has_no_geometry_or_presentation_findings(self):
         report = self.run_offline('control')
         self.assertEqual((report['outcome'], report['findings'], report['coverage']), ('pass', [], []), report)
+        self.assertEqual((report['pinless_components'], report['out_of_scope']), ([], {'net_rules': []}))
+        pinless = self.run_offline('pinless')
+        self.assertEqual((pinless['outcome'], pinless['findings'], pinless['coverage']), ('pass', [], []), pinless)
+        self.assertEqual((pinless['pinless_components'], pinless['out_of_scope']), (['H1'], {'net_rules': ['H1']}))
 
     def test_off_grid_sheet_is_flagged_with_its_uuid(self):
         report = self.run_offline('off-grid-sheet')
@@ -215,6 +219,8 @@ class NativeLintTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
         self.assertEqual((result['details']['findings'], result['details']['coverage']), ([], []))
         self.assertEqual(result['details']['native_inventory'], 'complete')
+        self.assertEqual(result['details']['pinless_components'], [])
+        self.assertEqual(result['details']['out_of_scope'], {'net_rules': []})
         self.assertEqual([s['names'] for s in result['details']['sheets']], ['/', '/power/'])
         self.assertIn('work/lint/lint.json', result['evidence'])
         self.assertIn('work/netlist/design.xml', result['evidence'])
@@ -286,22 +292,57 @@ class NativeLintTests(unittest.TestCase):
         self.assertEqual((result['evidence'], result['details']), ([], {}))
         self.assertFalse((run / 'work/lint/lint.json').exists())
 
-    def test_refused_native_inventory_is_missing_coverage_not_pass(self):
-        # A pinless H1 passes the netlist producer's identity audit, but the
-        # lint's strict inventory refuses its <pins>-less libpart.
+    def test_pinless_component_is_out_of_net_rule_scope_and_keeps_net_rule_coverage(self):
         params = dict(PARAMS, rules=dict(RULES, **{'led-chain-order/1': 'defect'}))
         run, results = self.run_variant('pinless', params)
-        netlist, result = results['netlist'], results['lint']
+        netlist, clean = results['netlist'], results['lint']
         self.assertEqual((netlist['execution'], netlist['outcome']), ('ok', 'info'), netlist)
         self.assertIn('H1', netlist['details']['refs'])
-        self.assertEqual((result['execution'], result['outcome']), ('ok', 'unknown'), result)
-        self.assertEqual(result['details']['native_inventory'], 'refused')
-        self.assertEqual(result['details']['findings'], [])
-        self.assertEqual(result['details']['coverage'], [dict(
-            sheet='/', sheet_path='/', file='lint.kicad_sch', rules=sorted(NATIVE_RULES),
-            reason='native netlist inventory unusable: expected one native pins')])
-        self.assertEqual(read_json(run / 'work/lint/lint.json')['native_inventory'], 'refused')
-        self.assertIn('work/lint/lint.json', result['evidence'])
+        self.assertEqual((clean['execution'], clean['outcome']), ('ok', 'pass'), clean)
+        self.assertEqual(clean['details']['native_inventory'], 'complete')
+        self.assertEqual((clean['details']['findings'], clean['details']['coverage']), ([], []))
+        self.assertEqual(clean['details']['pinless_components'], ['H1'])
+        self.assertEqual(clean['details']['out_of_scope'], {'net_rules': ['H1']})
+        sealed = read_json(run / 'work/lint/lint.json')
+        self.assertEqual((sealed['native_inventory'], sealed['pinless_components'], sealed['out_of_scope']),
+                         ('complete', ['H1'], {'net_rules': ['H1']}))
+        defect = self.lint_result('pinless-led-order', params)
+        self.assertEqual((defect['execution'], defect['outcome']), ('ok', 'defect'), defect)
+        self.assertEqual(defect['details']['native_inventory'], 'complete')
+        self.assertEqual(defect['details']['coverage'], [])
+        self.assertEqual(defect['details']['pinless_components'], ['H1'])
+        self.assertEqual(defect['details']['out_of_scope'], {'net_rules': ['H1']})
+        self.assertEqual([(f['rule'], f['severity'], [i['reference'] for i in f['items']])
+                          for f in defect['details']['findings']],
+                         [('led-chain-order/1', 'defect', ['D1', 'D2', 'D3'])])
+
+    def test_refused_native_inventory_is_missing_coverage_not_pass(self):
+        # A symbol that declares pins in the schematic but has no native pins in
+        # the XML export (either from unflattened extends or an unplaced pinned
+        # unit) is still refused with a design-level coverage gap on NATIVE_RULES.
+        from agent_ee.native_netlist import read_native_inventory
+        params = dict(PARAMS, rules=dict(RULES, **{'led-chain-order/1': 'defect'}))
+        for variant, reason in (
+            ('missing-native-pins', 'native netlist inventory unusable: missing native pins for H1 (Lint:Hole)'),
+            ('unplaced-unit-pin', 'native netlist inventory unusable: ambiguous native selected unit inventory'),
+        ):
+            with self.subTest(variant=variant):
+                run, results = self.run_variant(variant, params)
+                netlist, result = results['netlist'], results['lint']
+                self.assertEqual((netlist['execution'], netlist['outcome']), ('ok', 'info'), netlist)
+                self.assertIn('H1', netlist['details']['refs'])
+                if variant == 'missing-native-pins':
+                    raw = read_native_inventory(run / 'work/netlist/design.xml', pinless=True)
+                    self.assertEqual(raw['components']['H1']['pins'], ())
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'unknown'), result)
+                self.assertEqual(result['details']['native_inventory'], 'refused')
+                self.assertEqual(result['details']['findings'], [])
+                self.assertEqual(result['details']['pinless_components'], [])
+                self.assertEqual(result['details']['out_of_scope'], {'net_rules': []})
+                self.assertEqual(result['details']['coverage'], [dict(
+                    sheet='/', sheet_path='/', file='lint.kicad_sch', rules=sorted(NATIVE_RULES), reason=reason)])
+                self.assertEqual(read_json(run / 'work/lint/lint.json')['native_inventory'], 'refused')
+                self.assertIn('work/lint/lint.json', result['evidence'])
 
     def test_unknown_rule_never_passes(self):
         unknown = self.lint_result('control', dict(PARAMS, rules={'no-such-rule/1': 'warning'}))
