@@ -187,12 +187,12 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         if label == "adjudicator":
             checks = [read_json(p) for p in (run / "checks").glob('*.json')]
             decisions = [{"finding_id": "check/" + c["id"], "disposition": "accepted", "reason": "R1 failed",
-                "evidence": [{"path": "checks/" + c["id"] + ".json", "locator": "outcome"}]}
+                "evidence": [{"path": "checks/" + c["id"] + ".json", "locator": "outcome", "pointer": "/outcome"}]}
                 for c in checks if c["outcome"] == "defect"]
-            return {"execution": "ok"}, {"schema": "agent-ee.decisions/1", **identity, "decisions": decisions}
+            return {"execution": "ok"}, {"schema": "agent-ee.decisions/2", **identity, "decisions": decisions}
         self.assertNotIn('"initial_reviews"', prompt)
         self.assertIn('baseline', prompt)
-        return {"execution": "ok"}, {"schema": "agent-ee.review/1", **identity,
+        return {"execution": "ok"}, {"schema": "agent-ee.review/2", **identity,
             "packet_sha256": packet["packet_sha256"], "role": label,
             "coverage": ["protocol"], "limitations": ["scripted test response"], "findings": []}
 
@@ -201,7 +201,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         def answer(*args, **kwargs):
             record, value = self.agent(*args, **kwargs)
             if args[1] == 'adjudicator':
-                value['decisions'][0]['evidence'].append({'path': 'baseline.json', 'locator': 'requirements/R1'})
+                value['decisions'][0]['evidence'].append({'path': 'baseline.json', 'locator': 'requirements/R1', 'pointer': '/requirements/0'})
             return record, value
         with patch('agent_ee.reviewers.dispatch', side_effect=answer), contextlib.redirect_stdout(io.StringIO()):
             run_review(self.root / 'scope.json', self.root / 'run', 30)
@@ -765,7 +765,8 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                     'severity': 'major', 'assessment': 'defect', 'reasoning': '15 V exceeds 10 V',
                     'witnesses': [{'requirement_id': 'R1', 'check_id': 'response'}],
                     'evidence': [{'path': 'checks/response.json' if valid else 'inputs/design/board',
-                                  'locator': 'outcome' if valid else 'board'}]}]
+                                  'locator': 'outcome' if valid else 'board',
+                                  **({'pointer': '/outcome'} if valid else {'lines': [1, 1]})}]}]
                 if counts[key] > 1 and drop_finding:
                     response['findings'] = []
             if label == 'adjudicator':
@@ -775,7 +776,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
                         response['decisions'].append({
                             'finding_id': review['role'] + '/' + finding['id'], 'disposition': 'duplicate',
                             'duplicate_of': 'check/response', 'reason': 'Same executable R1 violation',
-                            'evidence': [{'path': 'checks/response.json', 'locator': 'outcome'}]})
+                            'evidence': [{'path': 'checks/response.json', 'locator': 'outcome', 'pointer': '/outcome'}]})
             if label == 'physical':
                 from agent_ee.executor import execute
                 work = Path(run) / 'review-work' / label

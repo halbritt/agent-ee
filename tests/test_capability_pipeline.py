@@ -116,15 +116,15 @@ pcbnew.SaveBoard(p, b)
             checks = [read_json(p) for p in sorted((run / 'checks').glob('*.json'))]
             decisions = [{'finding_id': 'check/' + c['id'], 'disposition': 'accepted',
                 'reason': 'Sealed coordinator criterion violation',
-                'evidence': [{'path': 'checks/' + c['id'] + '.json', 'locator': 'outcome'}]}
+                'evidence': [{'path': 'checks/' + c['id'] + '.json', 'locator': 'outcome', 'pointer': '/outcome'}]}
                 for c in checks if c['execution'] == 'ok' and c['outcome'] == 'defect']
-            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/1', **identity, 'decisions': decisions}
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2', **identity, 'decisions': decisions}
         self.assertIn(label, ('circuit', 'physical'))
         self.assertNotIn('"initial_reviews"', prompt)
         self.assertNotIn('"history"', prompt)
         self.assertEqual(packet['baseline']['schema'], 'agent-ee.baseline/2')
         self.assertEqual(packet['baseline'], load_baseline(run))
-        return {'execution': 'ok'}, {'schema': 'agent-ee.review/1', **identity,
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/2', **identity,
             'packet_sha256': packet['packet_sha256'], 'role': label,
             'coverage': ['Scripted independent initial review fixture'],
             'limitations': ['No model inference; native coordinator contract test only'], 'findings': []}
@@ -163,7 +163,7 @@ pcbnew.SaveBoard(p, b)
                 if name == 'unsupported_value':
                     with self.assertRaisesRegex(ValueError, 'failed criterion'):
                         validate_witnesses(root / 'run', [{'requirement_id': 'R-response', 'check_id': 'rc-step'}],
-                            [{'path': 'checks/rc-step.json', 'locator': 'outcome'}])
+                            [{'path': 'checks/rc-step.json', 'locator': 'outcome', 'pointer': '/outcome'}])
                 self.assertEqual(digest(ORACLE), self.oracle_hash)
 
     def test_native_rc_calibration_refuses_changed_component_and_keeps_fresh_prediction(self):

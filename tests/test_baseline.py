@@ -91,16 +91,16 @@ class BaselineTests(unittest.TestCase):
                 validate_citation({"path": "baseline.json", "locator": "/criteria"}, self.run)
 
         (self.run / "baseline.json").write_bytes(original)
-        for valid_loc in ("/criteria", "/requirements/0/id", "requirements/R1", "/files"):
+        for valid_loc in ("/criteria", "/requirements/0/id", "/requirements/0", "/files"):
             self.assertEqual(
-                validate_citation({"path": "baseline.json", "locator": valid_loc}, self.run),
-                {"path": "baseline.json", "locator": valid_loc},
+                validate_citation({"path": "baseline.json", "locator": valid_loc, "pointer": valid_loc}, self.run),
+                {"path": "baseline.json", "locator": valid_loc, "pointer": valid_loc},
             )
 
-        for bad_loc in ("/no_such_field", "/no_such_field/x", "requirements/R999", "/criteria/99"):
+        for bad_loc in ("/no_such_field", "/no_such_field/x", "/requirements/999", "/criteria/99"):
             with self.subTest(bad_locator=bad_loc):
                 with self.assertRaisesRegex(ValueError, "does not resolve"):
-                    validate_citation({"path": "baseline.json", "locator": bad_loc}, self.run)
+                    validate_citation({"path": "baseline.json", "locator": bad_loc, "pointer": bad_loc}, self.run)
                 with self.assertRaisesRegex(ValueError, "does not resolve"):
                     adjudicate(
                         findings,
@@ -113,7 +113,7 @@ class BaselineTests(unittest.TestCase):
                                     "finding_id": "check/response",
                                     "disposition": "accepted",
                                     "reason": "Citing nonexistent baseline field",
-                                    "evidence": [*self.evidence, {"path": "baseline.json", "locator": bad_loc}],
+                                    "evidence": [*self.evidence, {"path": "baseline.json", "locator": bad_loc, "pointer": bad_loc}],
                                 }
                             ],
                         },

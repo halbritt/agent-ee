@@ -332,11 +332,11 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
             if label == 'adjudicator':
                 result = read_json(run / 'result.json')
                 decisions = [dict(finding_id=f['id'], disposition='accepted', reason='Sealed expected content absent.',
-                    evidence=[dict(path='checks/' + f['local_id'] + '.json', locator='outcome')])
+                    evidence=[dict(path='checks/' + f['local_id'] + '.json', locator='outcome', pointer='/outcome')])
                     for f in result['findings']]
-                return dict(execution='ok'), dict(schema='agent-ee.decisions/1', **binding, decisions=decisions)
+                return dict(execution='ok'), dict(schema='agent-ee.decisions/2', **binding, decisions=decisions)
             self.assertNotIn('"initial_reviews"', prompt)
-            return dict(execution='ok'), dict(schema='agent-ee.review/1', **binding,
+            return dict(execution='ok'), dict(schema='agent-ee.review/2', **binding,
                 packet_sha256=packet['packet_sha256'], role=label, coverage=['native presence'],
                 limitations=['scripted test response'], findings=[])
         # Only inference is scripted; runtime fingerprints, native checks,
@@ -348,7 +348,8 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
         self.assertEqual(status, 1, state)
         self.assertIn('implementation', calls, dict(state=state['state'], history=state['history'],
             adjudication=read_json(self.root / 'campaign/runs/1/adjudicator-execution.json')))
-        self.assertEqual(state['error'], 'ValueError: implementation changed the captured file inventory')
+        self.assertEqual(state['error'],
+            'ValueError: implementation execution failed; no provider fallback: implementation changed the captured file inventory')
         self.assertEqual([c['execution'] for c in result['checks']], ['ok', 'ok'])
         self.assertEqual([c['details']['reason'] for c in result['checks']], ['stage_not_reached', 'stage_not_reached'])
         self.assertTrue(result['adjudicated'])

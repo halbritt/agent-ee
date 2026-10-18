@@ -41,7 +41,7 @@ time.sleep(request["sleep"])
 if request["fail"]:
     print("subscription authentication/quota failure", file=sys.stderr, flush=True)
     sys.exit(1)
-response = {"schema": "agent-ee.review/1", **request["identity"], "role": role,
+response = {"schema": "agent-ee.review/2", **request["identity"], "role": role,
     "coverage": ["scripted scheduling only"], "limitations": [], "findings": []}
 Path("experiments/finish.json").write_text(json.dumps({"time": time.monotonic()}))
 print(json.dumps(response), flush=True)
@@ -96,7 +96,7 @@ class ConcurrentReviewTests(unittest.TestCase):
                 self.assertLess(read_json(Path(run) / f"review-work/{initial}/experiments/finish.json")["time"], now)
                 self.assertTrue((Path(run) / f"reviews/{initial}.json").is_file())
             packet = read_json(Path(run) / "packet.json")
-            return {"execution": "ok"}, {"schema": "agent-ee.decisions/1",
+            return {"execution": "ok"}, {"schema": "agent-ee.decisions/2",
                 "candidate_id": packet["candidate_id"], "run_id": packet["run_id"], "decisions": []}
         packet = read_json(Path(run) / "packet.json")
         identity = {key: packet[key] for key in ("candidate_id", "run_id", "packet_sha256")}

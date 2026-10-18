@@ -30,7 +30,7 @@ class ReviewerIdentityTests(unittest.TestCase):
                 self.assertEqual(schema["properties"]["role"]["enum"], [role])
                 for key in ("candidate_id", "run_id", "packet_sha256"):
                     self.assertEqual(schema["properties"][key]["enum"], [packet[key]])
-                response = {"schema": "agent-ee.review/1", **packet,
+                response = {"schema": "agent-ee.review/2", **packet,
                     "role": role if role == "circuit" else "descriptive physical reviewer role",
                     "coverage": ["identity protocol"], "limitations": [], "findings": []}
                 return {"execution": "ok"}, response
