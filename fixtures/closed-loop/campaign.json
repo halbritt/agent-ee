@@ -35,5 +35,6 @@
     "timeout_s": 300
   },
   "max_iterations": 3,
+  "max_schema_resubmissions": 1,
   "max_seconds": 1800
 }

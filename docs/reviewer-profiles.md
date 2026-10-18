@@ -95,6 +95,9 @@ Cancellation is checked during launch and at 50 ms intervals while waiting;
 output draining and worker cleanup have one- and two-second bounds respectively.
 A cleanup overrun is retained explicitly rather than reported as a clean review.
 A malformed initial response stays invalid while the other role may still run.
+Campaigns can request a separately recorded [bounded resubmission](campaign-guide.md#bounded-output-resubmission)
+with the same profile and exact validation error; standalone CLI reviews keep a
+single call.
 Returned reviews and execution records follow profile role order, regardless of
 completion order. Every call is bounded by its profile timeout and the remaining
 shared deadline at admission. Adjudication begins only after all initial roles

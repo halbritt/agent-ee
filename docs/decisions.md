@@ -82,7 +82,9 @@ retained so failures can be assessed rather than hidden.
 The default wall-clock work budget is 1,200 seconds; individual reviewer limits
 come from the explicit profile (300 seconds in small evaluation profiles, 900 in
 donor profiles). The run deadline further bounds every call. A run has a finite declared check/reviewer list, no
-automatic provider fallback/retry and no autonomous source repair. Completed
+automatic provider fallback and no autonomous source repair. The later
+[bounded output decision](#bounded-resubmission-after-an-output-format-refusal-2026-10-17)
+permits one separately recorded schema resubmission in campaigns. Completed
 records are saved immediately. A crash, interruption, invalid output or exhausted
 budget leaves incomplete coverage.
 

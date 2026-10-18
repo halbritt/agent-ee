@@ -83,7 +83,10 @@ sourced from the scaffold's `requirements/fab-package.md`. The scope carries the
 `generation` marker `{schema: agent-ee.generation/1, done_check: fab}`, so capture
 refuses it if the done gate or R-fab is removed. The stage subjects are the
 symbols R1, C1 and J1, the footprints R1, C1 and J1, and at least one track.
-The retry limit is 3.
+The retry limit is 3. The generated campaign also declares
+`max_schema_resubmissions: 1` for separately recorded model output resubmissions;
+this is independent of the stage retry limit. See the
+[campaign output rule](campaign-guide.md#bounded-output-resubmission).
 
 `mutable_inputs` is exactly the schematic and the board. Everything under
 `generation/` and `requirements/` is immutable. The driver validates the

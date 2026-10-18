@@ -36,6 +36,7 @@ The configuration schema is `agent-ee.campaign/1`:
 | `implementation` | One harness/model/effort/timeout definition using the profile adjudicator fields |
 | `max_iterations` | Integer 1–100, excluding booleans; counts reviewed candidates, including the initial candidate |
 | `max_seconds` | Finite number 1–86400; monotonic campaign work budget |
+| `max_schema_resubmissions` | Integer 0 or 1, excluding booleans; defaults to 1 per role per iteration and is stored explicitly in captured `config.json`; 0 preserves a single call |
 | `implementation_steps` | Optional list of `agent-ee.stage-step/1` declarations, run by the coordinator after each writer session; in a staged campaign only the earliest failing stage's steps run; see [stage receipts](stage-receipts.md) |
 | `placement_adapter` | Optional `agent-ee.placement-adapter/1` declaration for staged scopes with a placement stage; see [placement adapter](placement-adapter.md) |
 
@@ -52,6 +53,51 @@ immutable baseline file set. The implementation must preserve the complete file
 inventory: adding files, deleting files, introducing symlinks or changing any
 other input is refused. A repair that legitimately needs a new model, library,
 file or criterion requires a deliberately revised scope and a new campaign.
+
+## Bounded output resubmission
+
+A successful reviewer, adjudicator or writer call whose structured output fails
+validation may make one separately recorded resubmission. The new call uses the
+same captured inputs, profile, schema and prompt, with the exact validation error
+appended. The original output remains refused. Witness and citation validators
+apply unchanged; the coordinator never repairs or drops a finding. When the
+first output has identifiable findings, a resubmission must preserve their IDs.
+The adjudicator always receives the same supplied finding set.
+
+Each call has a new preflight receipt against the original pinned environment.
+Runtime or policy drift stops the resubmission before dispatch. Authentication,
+quota, process failure, timeout, cancellation and incomplete harness streams
+are terminal; they never select another provider or account. A second invalid
+output leaves the role malformed and the review incomplete. Native checks never
+use this mechanism. The existing campaign deadline bounds both calls. If file inputs change between
+archival and the next launch, the original refusal stays terminal and its
+execution projection records `resubmission_blocked`; no new model call runs.
+
+For the sole writer, the second call can reissue its summary, but its delivered
+design must remain byte-identical to the first call's output. Inventory and
+immutable-input violations stop immediately without resubmission. Normal repair
+iterations still require a fresh candidate, fresh checks and independent review.
+
+`review-attempts/ROLE/N/` retains `response.json`, `execution.json`, `schema.json`,
+`prompt.txt` and a copy of that call's `review-work/ROLE/`, including its preflight
+receipt, logs and experiments. `N` starts at zero. The role execution projection
+records `max_schema_resubmissions`, `resubmissions_used`, `input_identity` and an
+ordered `attempts` list with archive paths, execution states, errors and hashes.
+Input, finding-set and writer-design changes use the adapter diagnostic
+`execution=refused` and cannot be resubmitted. The last call's active workspace
+remains at `review-work/ROLE/`; earlier calls'
+original bytes remain in their archives. Historical verification checks every
+attempt's receipt and archive hashes. Writer archives are inside their
+`implementations/N/` directory and are checked by `verify-campaign`;
+`state.json` also hashes each writer execution projection in
+`implementation_records`.
+
+Bench-feedback reviews and explicit replacement review attempts inherit the
+source run's recorded bound. Ordinary standalone CLI reviews keep a zero
+resubmission bound. Campaign review
+runs record the configured bound in `result.json`; their reviewer execution
+records contain the count used. Adjudicator and writer counts are retained in
+`adjudicator-execution.json` and `implementation-execution.json` respectively.
 
 ## Execution sequence
 

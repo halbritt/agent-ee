@@ -290,7 +290,9 @@ a `witnesses` field for every scope/2 finding; an empty array is appropriate for
 a concern without a reproduced requirement violation.
 
 A scope/2 defect without a valid witness is refused, rather than receiving the
-legacy no-evidence downgrade. The whole malformed review remains invalid.
+legacy no-evidence downgrade. The malformed response remains invalid. A campaign may request a separately
+recorded [bounded resubmission](campaign-guide.md#bounded-output-resubmission);
+that new output must pass the same validator.
 An accepted scope/2 decision must target `check/CHECK_ID` and cite its failed
 check JSON; arbitrary reviewer prose cannot become a separate accepted defect
 by borrowing that check's witness. Reviewer analysis may be retained as a
@@ -309,7 +311,7 @@ paths, lifecycle, verification and recovery.
 
 | Schema or record | Required meaning |
 | --- | --- |
-| `agent-ee.campaign/1` | Operator configuration: scope, review profile, implementation definition and iteration/time limits |
+| `agent-ee.campaign/1` | Operator configuration: scope, review profile, implementation definition, iteration/time limits and `max_schema_resubmissions` (0 or 1, default 1) |
 | `agent-ee.campaign-state/1` | Coordinator state, `config_sha256`, `history`; after the first retained review also `baseline`, `mutable_inputs`, `diagnostic`; `epoch` defaults to zero and is stored when feedback advances it |
 | History entry | `candidate_id`, `design_id`, `run_id`, `failed`, `passing`, `outcome`, `margins`, `run`, `result_sha256`, `result_snapshot`, `epoch`, `calibration_id` |
 | `history/N.json` | Exact original `agent-ee.result/1` bytes copied when the coordinator records that iteration |

@@ -6,6 +6,14 @@ from pathlib import Path
 
 from .executor import execute
 from .storage import digest, write_json
+from .review_run import OutputFormatRefusal
+
+
+def structured_payload(text):
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError) as exc:
+        raise OutputFormatRefusal(str(exc)) from exc
 
 
 def executable_for(harness):
@@ -47,7 +55,7 @@ def parse_stream(harness, text, model, tools=True):
                     answers.append(item['text'])
         if not answers or not start.get('thread_id') or not isinstance(end.get('usage'), dict):
             raise ValueError('incomplete Codex response')
-        return json.loads(answers[-1]), {'harness_session': start['thread_id'], 'usage': end['usage'],
+        return structured_payload(answers[-1]), {'harness_session': start['thread_id'], 'usage': end['usage'],
             'model_observed': None, 'identity_limitation': 'Codex JSONL does not attest the server model; requested model recorded.'}
     start = unique('event', 'init')
     end = unique('event', 'result')['result']
@@ -58,7 +66,7 @@ def parse_stream(harness, text, model, tools=True):
     for e in events:
         if not tools and e.get('event') == 'step_update' and e['step_update'].get('step_type') not in ('user_input', 'agent_response'):
             raise ValueError('unexpected harness tool activity')
-    value = end['structured_output'] if 'structured_output' in end else json.loads(end['response'])
+    value = end['structured_output'] if 'structured_output' in end else structured_payload(end['response'])
     return value, {'harness_session': start['conversation_id'],
         'model_observed': start['init']['model'], 'usage': end.get('usage', {})}
 
@@ -70,7 +78,7 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
     work = Path(run_dir) / 'review-work' / label
     home = work / 'home'
     home.mkdir(parents=True)
-    (work / 'experiments').mkdir()
+    (work / 'experiments').mkdir(exist_ok=True)
     record = {'backend': harness, 'model_requested': model, 'effort': effort,
         'billing_route': 'subscription', 'execution': 'unavailable', 'limitations': []}
     try:
@@ -137,13 +145,15 @@ def native_call(run_dir, label, definition, prompt, schema, timeout, *, cancella
         try:
             value, observed = parse_stream(harness, (work / 'stdout.log').read_text(), model, tools)
             if not isinstance(value, dict):
-                raise ValueError('review response must be an object')
+                raise OutputFormatRefusal('review response must be an object')
             if harness == 'codex' and isinstance(value.get('decisions'), list):
                 for decision in value['decisions']:
                     if decision.get('duplicate_of') is None:
                         decision.pop('duplicate_of', None)
             record.update(observed)
             return record, value
+        except OutputFormatRefusal as exc:
+            record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
         except RuntimeError as exc:
             record.update(execution='failed', error=str(exc))
         except (ValueError, KeyError, TypeError) as exc:

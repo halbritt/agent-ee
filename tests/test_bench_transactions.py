@@ -259,6 +259,7 @@ class BenchTransactionTests(unittest.TestCase):
         self.assertEqual(value['phase'], 'completed')
         state = verify_campaign(self.root / 'campaign')
         self.assertEqual(state['epoch'], 1)
+        self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False)['max_schema_resubmissions'], 1)
         self.assertEqual(len(state['history']), 2)
         self.assertEqual(len(self.calls), count)
         self.assertEqual(digest(self.root / 'campaign/history/1.json'), original_snapshot)
@@ -472,6 +473,7 @@ class BenchTransactionTests(unittest.TestCase):
         self.assertTrue((self.root / 'campaign/runs/2/partial-provider-output').is_file())
         state = verify_campaign(self.root / 'campaign')
         self.assertEqual(state['epoch'], 1)
+        self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False)['max_schema_resubmissions'], 1)
         self.assertEqual(len(state['history']), 2)
         self.assertEqual(state['history'][-1]['bench_attempt_id'], 'replacement')
 
@@ -556,6 +558,7 @@ class BenchTransactionTests(unittest.TestCase):
                     state = verify_campaign(self.root / 'campaign')
                     self.assertEqual(len(state['history']), 2)
                     self.assertEqual(state['epoch'], 1)
+                    self.assertEqual(verify(Path(state['history'][-1]['run']), current_source=False)['max_schema_resubmissions'], 1)
                     self.assertEqual(digest(self.root / 'campaign/history/1.json'), original_hash)
         self.assertEqual(len(self.calls), count)
 

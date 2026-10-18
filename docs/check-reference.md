@@ -23,6 +23,10 @@ and report a design violation: `execution=ok`, `outcome=defect`. A crash, missin
 output, unsupported component or absent measurement means unknown coverage,
 not a confirmed electrical defect and not a passing check.
 
+Checks are executed once for each captured candidate; failed or malformed check
+output is never schema-resubmitted. Campaigns may resubmit only model records
+under the [bounded output rule](campaign-guide.md#bounded-output-resubmission).
+
 Opt-in [staged scopes](staged-campaign.md) first check declared native content.
 A successful native probe that confirms missing expected symbols, footprints or
 tracks produces `ok/defect` with reason `stage_not_reached`. Earlier defects
