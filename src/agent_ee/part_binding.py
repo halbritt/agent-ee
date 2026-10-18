@@ -616,6 +616,31 @@ def _extract_attr_tokens(fp_node) -> list[str]:
     return tokens
 
 
+def _has_copper_pads(fp_node) -> bool:
+    has_copper = False
+    for pad in children(fp_node, "pad"):
+        layers = children(pad, "layers")
+        if (len(layers) != 1 or len(layers[0]) < 2
+                or any(not isinstance(layer, str) or not layer for layer in layers[0][1:])):
+            raise PartBindingMalformedError("footprint pad layers must be explicit atoms")
+        pad_has_copper = any(layer.endswith(".Cu") for layer in layers[0][1:])
+        if pad_has_copper and len(pad) > 2 and pad[2] == "np_thru_hole":
+            from .land_pattern import PatternError, extract_footprint
+
+            # The shared qualifier proves bare holes have no annulus. An
+            # unqualified hole keeps its copper claim and must carry bindings.
+            try:
+                extract_footprint(["footprint", fp_node[1], pad], side="F.Cu",
+                                  frame_angle=0, label="part-binding NPTH")
+            except PatternError as exc:
+                if exc.mode == "empty_copper":
+                    pad_has_copper = False
+                elif exc.execution == "malformed":
+                    raise PartBindingMalformedError(str(exc)) from exc
+        has_copper |= pad_has_copper
+    return has_copper
+
+
 def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
     """Parse footprint part bindings from captured .kicad_pcb bytes."""
     try:
@@ -660,7 +685,8 @@ def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
         dnp = ("dnp" in attrs) or _is_dnp(dnp_node, lcsc, props)
         in_bom = ("exclude_from_bom" not in attrs) and in_bom_node
         board_only = "board_only" in attrs
-        virtual = (
+        has_copper_pads = _has_copper_pads(fp)
+        virtual = not has_copper_pads and (
             ("virtual" in attrs)
             or board_only
             or ref.startswith("#")
@@ -692,6 +718,7 @@ def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
             "in_bom": in_bom,
             "on_board": on_board_node,
             "board_only": board_only,
+            "has_copper_pads": has_copper_pads,
             "virtual": virtual,
             "unannotated": ref.endswith("?"),
             "no_lcsc": no_lcsc,
@@ -924,7 +951,7 @@ def validate_part_bindings(
                 continue
 
             if pcb_comp is not None and sch_comp is None:
-                if not pcb_comp["virtual"] and not pcb_comp.get("board_only", False):
+                if not pcb_comp["virtual"]:
                     disagreements.append({
                         "reference": ref,
                         "field": "presence",
@@ -939,7 +966,7 @@ def validate_part_bindings(
             if sch_comp["virtual"] and pcb_comp["virtual"]:
                 continue
             if sch_comp["virtual"] != pcb_comp["virtual"]:
-                if not pcb_comp.get("board_only", False):
+                if pcb_comp["has_copper_pads"] or not pcb_comp.get("board_only", False):
                     disagreements.append({
                         "reference": ref,
                         "field": "virtual",

@@ -108,6 +108,7 @@ def build_synthetic_pcb(footprints: list[dict]) -> bytes:
             lines.append(f"    (property {_quote_sexpr(k)} {_quote_sexpr(v)} (at 0 0 0))")
         for kind, text_val in fp.get("fp_texts", []):
             lines.append(f"    (fp_text {kind} {_quote_sexpr(text_val)} (at 0 0 0))")
+        lines.extend("    " + pad for pad in fp.get("pads", []))
         lines.append("  )")
         fp_blocks.append("\n".join(lines))
 
@@ -378,6 +379,113 @@ class PartBindingTests(unittest.TestCase):
         info_report = validate_part_bindings(sch_virtual_only, pcb_virtual_only)
         self.assertEqual((info_report["execution"], info_report["outcome"]), ("ok", "info"))
 
+    def test_copper_pads_override_virtual_markers(self):
+        # AGENTEE-132: copper pads must not inherit a marker-only exemption.
+        markers = {
+            "board_only": {"attrs": ["board_only"]},
+            "virtual": {"attrs": ["virtual"]},
+            "REF**": {},
+            "hash_reference": {},
+            "on_board_no": {"on_board": False},
+        }
+        pads = {
+            "front": '(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask"))',
+            "back": '(pad "1" smd rect (at 0 0) (size 1 1) (layers "B.Cu" "B.Mask"))',
+            "inner": '(pad "1" smd rect (at 0 0) (size 1 1) (layers "In1.Cu"))',
+            "through": '(pad "1" thru_hole circle (at 0 0) (size 2 2) (drill 1) (layers "*.Cu" "*.Mask"))',
+            "npth_annulus": '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 1) (layers "*.Cu" "*.Mask"))',
+        }
+        for marker, flags in markers.items():
+            ref = {"REF**": "REF**", "hash_reference": "#R1"}.get(marker, "R1")
+            for surface, pad in pads.items():
+                with self.subTest(marker=marker, surface=surface):
+                    footprint = {**flags, "properties": {"Reference": ref}, "pads": [pad,
+                        '(pad "" np_thru_hole circle (at 4 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask"))']}
+                    pcb = build_synthetic_pcb([
+                        footprint,
+                        {"properties": valid_r1_props(Reference="R2")},
+                    ])
+                    report = validate_part_bindings(pcb_bytes=pcb)
+                    self.assertEqual((report["execution"], report["outcome"]), ("ok", "unknown"))
+                    self.assertEqual(report["reference_outcomes"], {ref: "unknown", "R2": "pass"})
+                    self.assertNotIn(ref, report["virtual_references"])
+                    self.assertEqual({m["property"] for m in report["missing_bindings"]},
+                                     {"LCSC", "Manufacturer", "Partnumber"})
+                    comp = report["board_components"][ref]
+                    self.assertTrue(comp["has_copper_pads"])
+                    self.assertEqual(comp["attrs"], flags.get("attrs", ["smd"]))
+                    self.assertEqual(comp["on_board"], flags.get("on_board", True))
+                    self.assertEqual(comp["reference"], ref)
+
+                    # A marker cannot suppress an invalid binding or presence parity.
+                    bad = build_synthetic_pcb([{**footprint, "properties": valid_r1_props(Reference=ref, LCSC="bad")}])
+                    invalid = validate_part_bindings(pcb_bytes=bad)
+                    self.assertEqual(invalid["reference_outcomes"], {ref: "defect"})
+                    self.assertEqual(invalid["invalid_bindings"][0]["property"], "LCSC")
+                    absent = validate_part_bindings(build_synthetic_sch([]), pcb)
+                    self.assertEqual(absent["reference_outcomes"][ref], "defect")
+                    self.assertIn(ref, [d["reference"] for d in absent["disagreements"] if d["field"] == "presence"])
+
+    def test_copper_markers_preserve_paired_binding_parity(self):
+        props = valid_r1_props()
+        sch = build_synthetic_sch([{"lib_id": "Device:R", "properties": props}])
+        pad = '(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))'
+        for attrs in (["board_only"], ["virtual"]):
+            with self.subTest(attrs=attrs):
+                footprint = {"attrs": attrs, "properties": props, "pads": [pad]}
+                report = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+                self.assertEqual((report["execution"], report["outcome"]), ("ok", "pass"))
+                footprint["properties"] = {**props, "Partnumber": "OTHER"}
+                mismatch = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+                self.assertEqual(mismatch["reference_outcomes"], {"R1": "defect"})
+                self.assertEqual([d["field"] for d in mismatch["disagreements"]], ["Partnumber"])
+
+    def test_copper_board_only_cannot_hide_virtual_status_disagreement(self):
+        props = valid_r1_props()
+        sch = build_synthetic_sch([{"lib_id": "Device:R", "properties": props, "on_board": False}])
+        footprint = {"attrs": ["board_only"], "properties": props}
+        mechanical = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+        self.assertEqual(mechanical["outcome"], "info")
+        footprint["pads"] = ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))']
+        copper = validate_part_bindings(sch, build_synthetic_pcb([footprint]))
+        self.assertEqual(copper["reference_outcomes"], {"R1": "defect"})
+        self.assertEqual([d["field"] for d in copper["disagreements"]], ["virtual"])
+
+    def test_non_copper_marked_mechanical_footprints_stay_virtual(self):
+        for marker in ({"attrs": ["board_only"]}, {"attrs": ["virtual"]}, {}):
+            for pads in ([], ['(pad "" smd rect (at 0 0) (size 1 1) (layers "F.Paste"))'],
+                         ['(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 3) (layers "*.Cu" "*.Mask"))'],
+                         ['(pad "" np_thru_hole oval (at 0 0) (size 3 5) (drill oval 3 5) (layers "*.Cu" "*.Mask"))']):
+                with self.subTest(marker=marker, pads=pads):
+                    ref = "M1" if marker else "REF**"
+                    pcb = build_synthetic_pcb([{**marker, "properties": {"Reference": ref}, "pads": pads}])
+                    report = validate_part_bindings(build_synthetic_sch([]), pcb)
+                    self.assertEqual((report["execution"], report["outcome"]), ("ok", "info"))
+                    self.assertEqual(report["virtual_references"], [ref])
+                    self.assertEqual(report["evaluated_references"], [])
+                    self.assertFalse(report["board_components"][ref]["has_copper_pads"])
+
+    def test_malformed_npth_geometry_is_unknown_not_virtual(self):
+        for preceding in ([], ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))']):
+            with self.subTest(preceding=preceding):
+                pcb = build_synthetic_pcb([{
+                    "attrs": ["board_only"], "properties": valid_r1_props(),
+                    "pads": [*preceding, '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (layers "*.Cu"))'],
+                }])
+                report = validate_part_bindings(pcb_bytes=pcb)
+                self.assertEqual((report["execution"], report["outcome"]), ("malformed", "unknown"))
+                self.assertIn("drill", report["errors"][0])
+
+    def test_ambiguous_pad_layers_are_malformed_not_virtual(self):
+        for pad in ('(pad "1" smd rect)', '(pad "1" smd rect (layers))',
+                    '(pad "1" smd rect (layers (unknown)))',
+                    '(pad "1" smd rect (layers "F.Cu") (layers "B.Cu"))'):
+            with self.subTest(pad=pad):
+                pcb = build_synthetic_pcb([{"attrs": ["virtual"], "properties": {"Reference": "R1"}, "pads": [pad]}])
+                report = validate_part_bindings(pcb_bytes=pcb)
+                self.assertEqual((report["execution"], report["outcome"]), ("malformed", "unknown"))
+                self.assertIn("pad layers", report["errors"][0])
+
     def test_3_malformed_param_values_and_sexpr(self):
         bad_param_cases = [
             ("unparseable_json", "{not_json"),
@@ -608,6 +716,32 @@ class PartBindingTests(unittest.TestCase):
             [{"requirement_id": "REQ_BINDING", "check_id": "bindings"}],
             [{"path": "checks/bindings.json", "locator": "disagreements"}],
         )
+
+        # Marked copper footprints remain visible in captured and sealed evidence.
+        for marker, flags in (("board_only", {"attrs": ["board_only"]}),
+                              ("virtual", {"attrs": ["virtual"]}), ("REF**", {})):
+            with self.subTest(marker=marker):
+                ref = "REF**" if marker == "REF**" else "R1"
+                pcb = build_synthetic_pcb([{
+                    **flags, "properties": {"Reference": ref},
+                    "pads": ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))'],
+                }])
+                run, result = run_candidate(build_synthetic_sch([]), pcb)
+                self.assertEqual((result["execution"], result["outcome"]), ("ok", "defect"))
+                report = read_json(run / "work/bindings/part_binding.json")
+                comp = report["board_components"][ref]
+                self.assertTrue(comp["has_copper_pads"])
+                self.assertFalse(comp["virtual"])
+                self.assertEqual(comp["attrs"], flags.get("attrs", ["smd"]))
+                self.assertEqual(comp["reference"], ref)
+                self.assertIn("LCSC", [m["property"] for m in report["missing_bindings"]])
+                self.assertIn("presence", [d["field"] for d in report["disagreements"]])
+                freeze_evidence(run, [result])
+                verify_evidence(run, [result], required=True)
+                validate_witnesses(
+                    run, [{"requirement_id": "REQ_BINDING", "check_id": "bindings"}],
+                    [{"path": "checks/bindings.json", "locator": "disagreements"}],
+                )
 
     def test_8_footprint_missing_properties_is_unknown_for_that_reference(self):
         props = valid_r1_props()
