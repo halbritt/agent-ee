@@ -1,0 +1,110 @@
+{
+  "schema": "agent-ee.footprint-rule-areas/1",
+  "lib_id": "RF_Module:ESP32-S3-WROOM-1",
+  "name": "ESP32-S3-WROOM-1",
+  "source": {
+    "path": "RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod",
+    "sha256": "d0cfbb31fef0c47396c0d061ec5a3bff60f0567d8d4ea8dd4769c84f52bd656f"
+  },
+  "rule_areas": [
+    {
+      "uuid": "18bbecf2-2977-41e2-b949-929efe1bdbf7",
+      "name": "",
+      "layers": [
+        "F.Cu",
+        "B.Cu",
+        "In1.Cu",
+        "In2.Cu",
+        "In3.Cu",
+        "In4.Cu",
+        "In5.Cu",
+        "In6.Cu",
+        "In7.Cu",
+        "In8.Cu",
+        "In9.Cu",
+        "In10.Cu",
+        "In11.Cu",
+        "In12.Cu",
+        "In13.Cu",
+        "In14.Cu",
+        "In15.Cu",
+        "In16.Cu",
+        "In17.Cu",
+        "In18.Cu",
+        "In19.Cu",
+        "In20.Cu",
+        "In21.Cu",
+        "In22.Cu",
+        "In23.Cu",
+        "In24.Cu",
+        "In25.Cu",
+        "In26.Cu",
+        "In27.Cu",
+        "In28.Cu",
+        "In29.Cu",
+        "In30.Cu"
+      ],
+      "forbid": [
+        "footprints",
+        "tracks",
+        "vias",
+        "pads",
+        "copper_pours"
+      ],
+      "keepout": {
+        "tracks": "not_allowed",
+        "vias": "not_allowed",
+        "pads": "not_allowed",
+        "copperpour": "not_allowed",
+        "footprints": "not_allowed"
+      },
+      "polygon_nm": [
+        [
+          -24000000,
+          -6750000
+        ],
+        [
+          24000000,
+          -6750000
+        ],
+        [
+          24000000,
+          -27750000
+        ],
+        [
+          -24000000,
+          -27750000
+        ]
+      ],
+      "polygon_mm": [
+        [
+          "-24",
+          "-6.75"
+        ],
+        [
+          "24",
+          "-6.75"
+        ],
+        [
+          "24",
+          "-27.75"
+        ],
+        [
+          "-24",
+          "-27.75"
+        ]
+      ],
+      "bounds_mm": {
+        "min": [
+          "-24",
+          "-27.75"
+        ],
+        "max": [
+          "24",
+          "-6.75"
+        ]
+      }
+    }
+  ],
+  "canonical_sha256": "071bb335dcd3ee0b4c0ec7e8aa0c00d34a1afc6b3909931367a66e40ea10b51a"
+}

@@ -491,6 +491,7 @@
         "tests/test_checks.py",
         "tests/test_connectivity_ir.py",
         "tests/test_cpl_rotation.py",
+        "tests/test_esp32_footprint_keepout.py",
         "tests/test_execution_failures.py",
         "tests/test_findings.py",
         "tests/test_footprint_library.py",
@@ -573,6 +574,20 @@
         "AE"
       ],
       "reviewed": "Names donor input paths and file names and states review limits written for agent-ee; copies no donor content."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/esp32-s3-wroom-1/assignments.json",
+        "fixtures/telemetry-pod/esp32-s3-wroom-1/datasheet-facts.json",
+        "fixtures/telemetry-pod/esp32-s3-wroom-1/footprint-declarations.json",
+        "fixtures/telemetry-pod/esp32-s3-wroom-1/footprints.manifest.json",
+        "fixtures/telemetry-pod/esp32-s3-wroom-1/rule-area.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Owned manifest, thermal-via declaration, numerical keepout dimension facts (18, 25.5, 6, 15 mm from Espressif ESP32-S3-WROOM-1 datasheet v1.8 page 45 Figure 11-1), and rule-area polygon metadata; no stock KiCad library or vendor datasheet text is copied."
     },
     {
       "paths": [

@@ -163,6 +163,42 @@ class AssignmentTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'pass')
         self.assertEqual(len(result['index']['footprints'][0]['pads']), 4)
 
+    def test_footprint_owned_keepout_rule_area_and_failure_boundaries(self):
+        from agent_ee.footprint_library import FootprintError, check_assignments, probe_rule_areas
+        zone = (
+            '(zone (layers "F.Cu" "B.Cu" "In1.Cu") (uuid "u1") '
+            '(hatch edge 0.5) (connect_pads (clearance 0)) (min_thickness 0.25) '
+            '(filled_areas_thickness no) '
+            '(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) '
+            '(copperpour not_allowed) (footprints not_allowed)) '
+            '(fill (thermal_gap 0.5) (thermal_bridge_width 0.5)) '
+            '(polygon (pts (xy -24 -6.75) (xy 24 -6.75) (xy 24 -27.75) (xy -24 -27.75))))'
+        )
+        text = SOT3[:-1] + zone + ')'
+        manifest, files = capture(text)
+        lib, data = symbol_capture(('1', '2', '3'))
+        files[lib['path']] = data
+        result = check_assignments(manifest, files, declarations(lib))
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'))
+        areas = result['assignments'][0]['rule_areas']
+        self.assertEqual(len(areas), 1)
+        self.assertEqual(areas[0]['layers'], ['F.Cu', 'B.Cu', 'In1.Cu'])
+        self.assertEqual(areas[0]['forbid'], ['footprints', 'tracks', 'vias', 'pads', 'copper_pours'])
+        self.assertEqual(areas[0]['polygon_mm'], [['-24', '-6.75'], ['24', '-6.75'], ['24', '-27.75'], ['-24', '-27.75']])
+        probe = probe_rule_areas(text.encode(), library='Owned', path='owned.pretty/SOT3.kicad_mod')
+        self.assertEqual(probe['rule_areas'], areas)
+        for bad_zone in (
+            zone.replace('(zone ', '(zone (net 0) ', 1),
+            zone.replace('(keepout', '(not_keepout', 1),
+            zone.replace('"In1.Cu"', '"F.SilkS"', 1),
+            zone.replace('not_allowed', 'allowed'),
+            zone.replace('(xy 24 -27.75) (xy -24 -27.75)', '(xy -24 -27.75) (xy 24 -27.75)', 1),
+        ):
+            bad_manifest, bad_files = capture(SOT3[:-1] + bad_zone + ')')
+            self.assertEqual(index_footprints(bad_manifest, bad_files)['outcome'], 'unknown')
+            with self.assertRaises(FootprintError):
+                probe_rule_areas((SOT3[:-1] + bad_zone + ')').encode(), library='Owned', path='owned.pretty/SOT3.kicad_mod')
+
     def test_one_by_four_connector_assigned_five_numbered_pads(self):
         from agent_ee.footprint_library import check_assignments
         extra = ''.join(f'(pad "{n}" smd rect (at {n} 0) (size 1 1) (layers "F.Cu"))' for n in (4, 5))

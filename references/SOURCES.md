@@ -24,6 +24,17 @@ requirements or replace native design evidence.
   C7593 and C1340704, read 2026-10-17. Only their package strings are recorded,
   in the [package map](package-map/kicad-10.0.7-lcsc-1.json) observations. They
   qualify those examples, not a full catalog feed.
+- [Espressif ESP32-S3-WROOM-1 & ESP32-S3-WROOM-1U Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf),
+  version 1.8, captured via `agent_ee.datasheet_capture` as
+  `dbdfd4ddc180acc1e28909cf69518d22af59605031728a9765a38ff746a1d9b8.pdf`.
+  SHA-256: `27d71971da07c280c6068d08c74720d1a25b8f20cf8494dc1765bdd28d40d435`.
+  PDF page 45, Section 11.1 PCB Land Pattern, Figure 11-1 (`ESP32-S3-WROOM-1
+  Recommended PCB Land Pattern`), specifies a `18 mm` × `25.5 mm` module body,
+  a `6 mm` on-board PCB antenna depth at the top edge, and a `15 mm` base-board
+  keepout clearance on the left, right and top of the antenna area (`x: -24..24 mm`,
+  `y: -6.75..-27.75 mm` in module-centered coordinates). Only numerical dimension
+  tokens are recorded in `fixtures/telemetry-pod/esp32-s3-wroom-1/datasheet-facts.json`;
+  the PDF bytes are not distributed in the repository.
 
 For the carrier baseline, fitted state must be checked against native `dnp`
 properties and the saved board. A resistor's nominal value and connectivity

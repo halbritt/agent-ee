@@ -1,0 +1,19 @@
+{
+  "schema": "agent-ee.footprint-assignments-input/1",
+  "libraries": [
+    {
+      "name": "RF_Module",
+      "path": "symbols/RF_Module.kicad_sym",
+      "sha256": "ad427c46f8d046f47595edd16128520b75d9b386cc36a14e4d8f75ae036ab23d"
+    }
+  ],
+  "components": [
+    {
+      "reference": "U1",
+      "lib_id": "RF_Module:ESP32-S3-WROOM-1",
+      "footprint": "RF_Module:ESP32-S3-WROOM-1",
+      "assembly": "smd",
+      "connector": null
+    }
+  ]
+}
