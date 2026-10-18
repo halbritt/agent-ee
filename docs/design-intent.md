@@ -9,8 +9,9 @@ leave a partial staging directory; discard it and use a new destination.
 Required fields are `id` (nonempty string or nonnegative integer), `task`,
 `input_nodes`, `output_nodes`, `input_voltage`, `output_voltage`, `components`,
 and `sub_module_name`. Optional benchmark metadata fields are `level`, `type`,
-`n_gt_components` and `gt_component_types`. Unknown fields and duplicate JSON
-keys are refused. Nodes are comma-separated names or name lists. Components
+`n_gt_components` and `gt_component_types`; optional `decimal_locale` may be
+`"dot"` or `"comma"`. Unknown fields and duplicate JSON keys are refused. Nodes
+are comma-separated names or name lists. Components
 are positive integer name/count objects, lists of bare part names (repetition
 counts), or comma-and-whitespace separated names with optional `Nx ` counts.
 A comma without following whitespace stays inside a name. No parts are selected.
@@ -34,7 +35,15 @@ Lint checks duplicate names within each interface, generic placeholder names,
 explicit lexical part counts against exact component names, optional component
 metadata counts, and nonzero signed numeric voltage syntax. Multiple voltages
 remain unassigned targets: the importer does not guess rail-to-net mappings.
-Zero, prose annotations, currents, adjustable rails and unparseable voltages yield
+A comma decimal in a single voltage token (such as `3,3V` or `3,3`) is never
+split into two rails or silently reinterpreted as `33` or `3.3`: without
+`decimal_locale: "comma"` it yields `unknown_voltage` with reason
+`malformed voltage: comma decimal in single voltage token`. With
+`decimal_locale: "comma"`, a single comma-decimal token normalizes to exact
+dot-decimal text in `volts` while preserving the original string in `raw`.
+Dot-decimal tokens (`3.3V`), per-rail unit lists (`3V,5V`) and comma-and-space
+or dot-decimal rail lists (`15.0,-9.0`, `3.3, 5`) continue to parse as rail
+lists. Zero, prose annotations, currents, adjustable rails and unparseable voltages yield
 unknown. A voltage may be a JSON string or a JSON number with the same
 meaning: a fraction or exponent number is never decoded as a binary float. Its
 exact source token is the target text, so `1.0000000000000001`, `1e-400` and

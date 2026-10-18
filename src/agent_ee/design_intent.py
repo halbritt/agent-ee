@@ -67,16 +67,34 @@ def component_counts(value):
     return dict(sorted(counts.items()))
 
 
-def voltage_targets(value):
+def voltage_targets(value, *, decimal_locale=None):
     """Only explicit signed numeric voltages; annotations remain unsupported.
 
     A JSON number is read from its exact source token, exactly as the same text
     in a JSON string, so no binary rounding, underflow or overflow occurs.
+    A comma decimal in a single voltage token requires decimal_locale='comma';
+    otherwise it is refused as a named malformed comma decimal, never split into
+    two rails or silently reinterpreted.
     """
+    if decimal_locale not in (None, 'dot', 'comma'):
+        raise ValueError('invalid decimal_locale')
     if isinstance(value, bool) or not isinstance(value, (str, int, float, JsonNumber)):
         raise ValueError('voltage must be numeric text or a number')
+    raw_text = (value.token if isinstance(value, JsonNumber) else str(value)).strip()
+    comma_single = r'[+-]?(?:\d+,\d+|,\d+)(?:[eE][+-]?\d+)?\s*V?'
+    if re.fullmatch(comma_single, raw_text):
+        if decimal_locale != 'comma':
+            raise ValueError('malformed voltage: comma decimal in single voltage token')
+        tokens = [raw_text.replace(',', '.', 1)]
+    elif re.search(r'(?:^|[,\s])[+-]?(?:\d+,\d+|,\d+)(?:[eE][+-]?\d+)?\s*V(?=$|\s*,)', raw_text):
+        raise ValueError('malformed voltage: comma decimal in single voltage token')
+    else:
+        raw_tokens = [t.strip() for t in raw_text.split(',')]
+        if decimal_locale == 'comma' and len(raw_tokens) > 1 and not all(t.endswith('V') for t in raw_tokens):
+            raise ValueError('malformed voltage: comma decimal in single voltage token')
+        tokens = raw_tokens
     values = []
-    for token in (value.token if isinstance(value, JsonNumber) else str(value)).split(','):
+    for token in tokens:
         token = token.strip()
         if not re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*V?', token):
             raise ValueError('unparseable voltage')
@@ -102,9 +120,12 @@ def import_record(raw, *, out_justification=None):
     record = load_json(raw)
     required = {'id', 'task', 'input_nodes', 'output_nodes', 'input_voltage',
                 'output_voltage', 'components', 'sub_module_name'}
-    optional = {'level', 'type', 'n_gt_components', 'gt_component_types'}
+    optional = {'level', 'type', 'n_gt_components', 'gt_component_types', 'decimal_locale'}
     if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - optional:
         raise ValueError('invalid intent fields')
+    decimal_locale = record.get('decimal_locale')
+    if decimal_locale is not None and (not isinstance(decimal_locale, str) or decimal_locale not in {'dot', 'comma'}):
+        raise ValueError('invalid decimal_locale')
     rid = record['id']
     if not ((type(rid) is int and rid >= 0) or (isinstance(rid, str) and rid.strip())):
         raise ValueError('invalid record id')
@@ -131,7 +152,8 @@ def import_record(raw, *, out_justification=None):
                     findings.append({'code': 'placeholder_interface_net', 'field': field, 'net': name})
     for field in ('input_voltage', 'output_voltage'):
         try:
-            targets[field] = {'volts': voltage_targets(record[field]), 'raw': record[field]}
+            targets[field] = {'volts': voltage_targets(record[field], decimal_locale=decimal_locale),
+                              'raw': record[field]}
         except ValueError as exc:
             findings.append({'code': 'unknown_voltage', 'field': field, 'reason': str(exc)})
             targets[field] = {'volts': None, 'raw': record[field]}

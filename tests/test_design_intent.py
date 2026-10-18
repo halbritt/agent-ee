@@ -229,3 +229,55 @@ class DesignIntentTests(unittest.TestCase):
                 self.assertIsNone(report['operating_targets']['input_voltage']['volts'])
                 self.assertIn(b'"raw":' + token.replace(', ', ',').replace(': ', ':').encode(),
                               artifacts['intent.json'])
+
+    def test_comma_decimal_and_declared_locale_voltage_tokens(self):
+        from agent_ee.design_intent import voltage_targets
+        # Dot decimal and per-rail unit lists pass without a declared locale.
+        for token, expected in [('3.3V', ['3.3']), ('3V,5V', ['3', '5']), ('3V, 5V', ['3', '5']),
+                                ('15.0,-9.0', ['15', '-9']), ('3.3, 5', ['3.3', '5'])]:
+            with self.subTest(token=token):
+                self.assertEqual(voltage_targets(token), expected)
+                report = json.loads(import_record(record(input_voltage=token))['intent.json'])
+                self.assertEqual(report['outcome'], 'pass')
+                self.assertEqual(report['operating_targets']['input_voltage']['volts'], expected)
+        # Undeclared or dot-locale comma decimal in a single voltage token is a named malformed refusal,
+        # never silently 33 V, 3.3 V or a two-rail ['3', '3'] pass.
+        for token in ['3,3V', '+3,3V', '-3,3V', '3,3 V', '3,3e0V', '3,3', '0,5V', ',5V', '5V, 3,3V', '3,3V, 5V']:
+            for locale in (None, 'dot'):
+                with self.subTest(token=token, locale=locale):
+                    with self.assertRaisesRegex(ValueError, 'malformed voltage: comma decimal in single voltage token'):
+                        voltage_targets(token, decimal_locale=locale)
+                    changes = {'input_voltage': token}
+                    if locale is not None:
+                        changes['decimal_locale'] = locale
+                    report = json.loads(import_record(record(**changes))['intent.json'])
+                    self.assertEqual(report['outcome'], 'unknown')
+                    self.assertIsNone(report['operating_targets']['input_voltage']['volts'])
+                    self.assertEqual(report['findings'], [{
+                        'code': 'unknown_voltage',
+                        'field': 'input_voltage',
+                        'reason': 'malformed voltage: comma decimal in single voltage token',
+                    }])
+        # Declared comma locale parses a single comma-decimal token as exact decimal text and keeps raw unchanged.
+        for token, expected in [('3,3V', ['3.3']), ('3,30V', ['3.3']), ('-1,5E-3V', ['-0.0015']),
+                                ('3,3', ['3.3']), (',5V', ['0.5']), ('3.3V', ['3.3']), ('3V,5V', ['3', '5'])]:
+            with self.subTest(token=token, locale='comma'):
+                self.assertEqual(voltage_targets(token, decimal_locale='comma'), expected)
+                report = json.loads(import_record(record(input_voltage=token, decimal_locale='comma'))['intent.json'])
+                self.assertEqual(report['outcome'], 'pass')
+                self.assertEqual(report['operating_targets']['input_voltage'], {'raw': token, 'volts': expected})
+        for ambiguous in ['3,3V, 5V', '5V, 3,3V', '3,3,5']:
+            with self.subTest(ambiguous=ambiguous):
+                with self.assertRaisesRegex(ValueError, 'malformed voltage: comma decimal in single voltage token'):
+                    voltage_targets(ambiguous, decimal_locale='comma')
+        # Zero comma decimal still fails under declared comma locale.
+        report = json.loads(import_record(record(input_voltage='0,0V', decimal_locale='comma'))['intent.json'])
+        self.assertEqual(report['outcome'], 'unknown')
+        self.assertEqual(report['findings'][0]['reason'], 'zero or non-finite voltage')
+        # Invalid decimal_locale values are refused.
+        for bad_locale in ['', 'de_DE', 'en_US', 1, True, ['comma']]:
+            with self.subTest(bad_locale=bad_locale):
+                with self.assertRaisesRegex(ValueError, 'invalid decimal_locale'):
+                    voltage_targets('3.3V', decimal_locale=bad_locale)
+                with self.assertRaisesRegex(ValueError, 'invalid decimal_locale'):
+                    import_record(record(decimal_locale=bad_locale))
