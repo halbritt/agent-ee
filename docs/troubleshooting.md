@@ -103,7 +103,7 @@ context may be included in the stored exception.
 
 | Diagnostic or state | Meaning | Supported response |
 | --- | --- | --- |
-| `KeyError: 'step_v'` after RC simulation | Current metric builder needs an explicit amplitude when measurements exist | Set `step_v` explicitly; see the native check limitation |
+| `KeyError: 'step_v'` after RC simulation | Historical runtime before the AGENTEE-2 default-path fix | Preserve the historical run and capture a new candidate with the current implementation; omitted `step_v` now defaults to 1.0 V through measured-result generation ([reference](check-reference.md#ideal-passive-transient)) |
 | Fresh standalone bench review has no reviewer profile | External source-run profiles are not currently forwarded | Prepare the source scope with an embedded profile; preserve already registered feedback and diagnose the incomplete follow-up |
 | `scope/2 requires baseline requirements, targets and reference_architectures` | Required baseline shape missing or wrong | Supply the exact baseline fields and capture their source files |
 | `every check must trace to a baseline requirement` | Requirement mappings do not cover all checks | Correct the engineering mapping, including informational prerequisites |
