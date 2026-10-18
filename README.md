@@ -281,6 +281,11 @@ reference set, a derived interface contract, library hashes and sourced pending
 requirements. It also replays block adaptation fixtures. The owner's fome-mc
 inventory and captures stay private until the owner decides on publication.
 
+The owner decision of 2026-10-18 permits the [pinned wideband reference](docs/fome-wbo1.md)
+under `fixtures/fome-mc/wbo1/`. Its native wbo1-to-wbo2 adaptation fixture uses
+fresh checks; upstream parity, functional behavior, heater geometry and independent
+review remain pending, and both source blocks remain unverified.
+
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references. The [native-bound mode](docs/native-binding.md)

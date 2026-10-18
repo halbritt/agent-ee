@@ -1,5 +1,10 @@
 # Native and engineering checks
 
+The [pinned fome-mc wideband fixture](fome-wbo1.md) exercises native ERC,
+netlist export, `hardware_interface` and fresh `block_provenance`. Its coverage
+ledger keeps upstream parity, active behavior, parts and heater geometry unknown;
+its captured blocks remain unverified.
+
 For version-2 requirements, measurement/coupling interfaces, campaigns and bench
 feedback, see the [closed-loop contract and command reference](closed-loop.md).
 

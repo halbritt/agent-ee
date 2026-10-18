@@ -1,0 +1,414 @@
+{
+  "boundary_ports": [
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "12V_SENSE",
+      "net_name": "/12V_MR",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "CANH2",
+      "net_name": "/CAN2+",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "CANL2",
+      "net_name": "/CAN2-",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "output",
+      "name": "LSU_H-",
+      "net_name": "/WBO1_H-",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "LSU_IP",
+      "net_name": "/WBO1_IP",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "LSU_RTRIM",
+      "net_name": "/WBO1_RTRIM",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "LSU_UN",
+      "net_name": "/WBO1_UN",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "bidirectional",
+      "name": "LSU_VM",
+      "net_name": "/WBO1_VM",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "WBO_BOOT0",
+      "net_name": "/WBO1_BOOT0",
+      "voltage_domain": null
+    },
+    {
+      "current_a": null,
+      "direction": "input",
+      "name": "WBO_NRST",
+      "net_name": "/WBO1_NRST",
+      "voltage_domain": null
+    }
+  ],
+  "check_set": [
+    {
+      "id": "erc",
+      "kind": "erc",
+      "params": {}
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist",
+      "params": {}
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "connectivity": "connectivity.json",
+  "files": {
+    "block-contract.json": "b34cfc31487b5403bcf936fd9fcaafb73646cc3aba7c5c34a0ae49b887243ddb",
+    "connectivity.json": "63f3f04579b2fa9bcd82b625d2bc3ecdcbcb52d70a8f2e596b93a0dcc462e81c",
+    "interface.json": "5e412a9f58b74f526d8638df5c5193d4315645e88aec82f2e21256f2644f5e7b",
+    "parts.json": "c12be7320681b3bb0f1152044d3b951926decb719043977087577163b4c610bb",
+    "sheets/wbo1.kicad_sch": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73",
+    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
+    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+  },
+  "id": "fome-mc/wbo1",
+  "instances": [
+    {
+      "path": "/wbo1/",
+      "references": [
+        "C301",
+        "C302",
+        "C303",
+        "C304",
+        "C305",
+        "C306",
+        "C307",
+        "C308",
+        "C309",
+        "C310",
+        "C311",
+        "C312",
+        "C313",
+        "C314",
+        "C316",
+        "C317",
+        "D301",
+        "D302",
+        "D303",
+        "D304",
+        "Q301",
+        "R301",
+        "R302",
+        "R303",
+        "R304",
+        "R305",
+        "R306",
+        "R307",
+        "R308",
+        "R309",
+        "R310",
+        "R311",
+        "R312",
+        "R313",
+        "R314",
+        "R315",
+        "R316",
+        "R317",
+        "R318",
+        "R319",
+        "R320",
+        "R321",
+        "R324",
+        "R325",
+        "R326",
+        "R327",
+        "R329",
+        "R330",
+        "R331",
+        "R332",
+        "R333",
+        "R334",
+        "U301",
+        "U302",
+        "U303",
+        "U305",
+        "U307",
+        "U309"
+      ],
+      "sheet": "sheets/wbo1.kicad_sch",
+      "uuid_path": "/a1000000-0000-4000-8000-000000000004/"
+    }
+  ],
+  "interface": "interface.json",
+  "libraries": [
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_0402_1005Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
+      "sha256": "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Capacitor_SMD:C_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod",
+      "sha256": "fe0dbfefbb181a0466f93a8de52d84ba7b00fcd9acdbb69575f4128a0af4e405"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "LED_SMD:LED_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/LED_SMD.pretty/LED_0603_1608Metric.kicad_mod",
+      "sha256": "7931ed1efba34cb13c8d74a60eb1dca4b0be57d950c38e08c3e7f007db500a1c"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_QFP:LQFP-32_7x7mm_P0.8mm",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_QFP.pretty/LQFP-32_7x7mm_P0.8mm.kicad_mod",
+      "sha256": "d3a8db080529cbea610fd0d7edae6f7eaa790861e547ad583bf037edbe0f5214"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod",
+      "sha256": "074ecb2092b24fa4b4b9cdd7c926fc587b0d7d6d21e7341e57935fd42d36894f"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod",
+      "sha256": "e4bf82cea6d3b3259ddf42469b1407628ad1181a28ae6f3f340190c0cca31ccd"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_TO_SOT_SMD:SOT-23",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_TO_SOT_SMD.pretty/SOT-23.kicad_mod",
+      "sha256": "0d88c86c1b6d8c1aae4aa8c09386264c089d4451a128b6ccd63ed253f4300b15"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_TO_SOT_SMD:TO-252-2",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_TO_SOT_SMD.pretty/TO-252-2.kicad_mod",
+      "sha256": "18c28e5e147d5e9b17a8ccf47f4992abde94d1436cc611e6f7e395af6edc4969"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Package_TO_SOT_SMD:TSOT-23-5",
+      "origin": "kicad-stock",
+      "path": "footprints/Package_TO_SOT_SMD.pretty/TSOT-23-5.kicad_mod",
+      "sha256": "43c503ea3a61599610b5ac1a4c4f06f43b96a28c82b424fc34ff6bbd601cc0b7"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0402_1005Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0402_1005Metric.kicad_mod",
+      "sha256": "e05c7605248c220836f642ed1f526133edf0374acdfd5bb2631e58b4e377acfb"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "footprint",
+      "lib_id": "Resistor_SMD:R_0603_1608Metric",
+      "origin": "kicad-stock",
+      "path": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+      "sha256": "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Amplifier_Operational:AD8603",
+      "origin": "kicad-stock",
+      "path": "symbols/Amplifier_Operational.kicad_sym",
+      "sha256": "09d6cbe5fb43aa8b497e88cd766c11968ad1e91407d6d1c77e6752d87d8812b7"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Amplifier_Operational:MCP6004",
+      "origin": "kicad-stock",
+      "path": "symbols/Amplifier_Operational.kicad_sym",
+      "sha256": "09d6cbe5fb43aa8b497e88cd766c11968ad1e91407d6d1c77e6752d87d8812b7"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:C",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:LED",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:Q_NMOS_GDS",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Device:R",
+      "origin": "kicad-stock",
+      "path": "symbols/Device.kicad_sym",
+      "sha256": "d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Interface_CAN_LIN:TJA1051T-3",
+      "origin": "kicad-stock",
+      "path": "symbols/Interface_CAN_LIN.kicad_sym",
+      "sha256": "64bf9bafa1dbbe4818d3ecc6e064403ca79c87ef5bbea2f191d30a975bee598d"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "MCU_ST_STM32F0:STM32F042K6Tx",
+      "origin": "kicad-stock",
+      "path": "symbols/MCU_ST_STM32F0.kicad_sym",
+      "sha256": "a51e2fcff072d188836c7545ae078cbc1f0f2a5f369489e16fe840f18838e68b"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Reference_Voltage:REF3033",
+      "origin": "kicad-stock",
+      "path": "symbols/Reference_Voltage.kicad_sym",
+      "sha256": "ce5bc81611adc471c71534ca00cf6807486795aeda596a62ea44d1820928cc36"
+    },
+    {
+      "detail": "KiCad stock library at /usr/share/kicad, kicad-cli 10.0.7",
+      "kind": "symbol",
+      "lib_id": "Regulator_Linear:XC6206PxxxMR",
+      "origin": "kicad-stock",
+      "path": "symbols/Regulator_Linear.kicad_sym",
+      "sha256": "09d0d95dbe5040452c683015077fcdff881b87112c1610008347f5be0df1eaea"
+    }
+  ],
+  "parts_manifest": "parts.json",
+  "pending_requirements": [
+    {
+      "blocked_by": "AGENTEE-19 active simulation of the pump-current loop; LSU 4.9 datasheet facts",
+      "conditions": [],
+      "id": "wbo1-function",
+      "source": {
+        "locator": "5. Dual Integrated Wideband Controller Architecture",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "1.65 V virtual ground, Nernst ESR injection, heater PWM under CAN control and a separate VDDA per channel."
+    },
+    {
+      "blocked_by": "Strap decode source (wideband firmware port.cpp) captured as a requirement source",
+      "conditions": [
+        "500 kbps"
+      ],
+      "id": "wbo1-can-id",
+      "source": {
+        "locator": "5. Dual Integrated Wideband Controller Architecture",
+        "path": "sources/docs/DESIGN.md"
+      },
+      "statement": "The PB1 strap to GND selects CAN IDs 0x190/0x191 at 500 kbps."
+    }
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc",
+        "netlist"
+      ],
+      "conditions": [
+        "KiCad 10.0.7 native schematic reader"
+      ],
+      "id": "wbo1-native",
+      "source": {
+        "locator": "What \"verified block\" means, items 1 and 4",
+        "path": "sources/docs/BLOCK_LIBRARY.md"
+      },
+      "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
+    },
+    {
+      "checks": [
+        "interface"
+      ],
+      "conditions": [
+        "Pinned source commit df304f3321296f7e517e0d2e2aa52e1380d52993"
+      ],
+      "id": "wbo1-interface",
+      "source": {
+        "locator": "Block catalogue / Wideband channel (wbo1.kicad_sch, wbo2.kicad_sch)",
+        "path": "sources/docs/BLOCK_LIBRARY.md"
+      },
+      "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
+    }
+  ],
+  "role": "sensor-interface",
+  "runs": [],
+  "schema": "agent-ee.block/1",
+  "sheet": "sheets/wbo1.kicad_sch",
+  "source": {
+    "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+    "license": "Owner-held fome-mc reference block; see fixtures/fome-mc/LICENSE-NOTICE.md and docs/decisions.md, 2026-10-18. Wideband origin: mck1117 wideband Rev C (MIT). Origin: mck1117 wideband board_module/wideband_controller.kicad_sch Rev C at ca2adce (MIT, Matthew Kennedy 2023)",
+    "paths": {
+      "sheets/wbo1.kicad_sch": "sheets/wbo1.kicad_sch",
+      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
+      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+    },
+    "repository": "/home/halbritt/git/fome-mc"
+  },
+  "version": "draft-df304f332129"
+}

@@ -1,0 +1,1441 @@
+{
+  "compared_fields": [
+    "symbol",
+    "value",
+    "footprint",
+    "populated",
+    "physical pins and conductors"
+  ],
+  "correspondence": "Upstream physical reference number +300; no net or library aliases suppressed.",
+  "differences": [
+    {
+      "adapted": "named:/LSU_Un",
+      "captured": "named:/WBO1_UN",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_UN"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C302",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Un"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Vm",
+      "captured": "named:/WBO1_VM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_VM"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C304",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Vm"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C305",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:VDDA",
+      "captured": "named:VDDA_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "VDDA_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C307",
+      "upstream_conductor": [
+        "named",
+        "VDDA"
+      ]
+    },
+    {
+      "adapted": "named:VDDA",
+      "captured": "named:VDDA_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "VDDA_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C309",
+      "upstream_conductor": [
+        "named",
+        "VDDA"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C310",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/Ip_sense",
+      "captured": "named:/wbo1/Ip_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Ip_sense"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C311",
+      "upstream_conductor": [
+        "named",
+        "/Ip_sense"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C312",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C313",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C314",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/nRESET",
+      "captured": "named:/WBO1_NRST",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_NRST"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "C316",
+      "upstream_conductor": [
+        "named",
+        "/nRESET"
+      ]
+    },
+    {
+      "adapted": "named:/LED_GREEN",
+      "captured": "named:/wbo1/LED_GREEN",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LED_GREEN"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "D302",
+      "upstream_conductor": [
+        "named",
+        "/LED_GREEN"
+      ]
+    },
+    {
+      "adapted": "named:/LED_BLUE",
+      "captured": "named:/wbo1/LED_BLUE",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LED_BLUE"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "D303",
+      "upstream_conductor": [
+        "named",
+        "/LED_BLUE"
+      ]
+    },
+    {
+      "adapted": true,
+      "captured": false,
+      "disposition": "unexplained",
+      "field": "component",
+      "fome_component": null,
+      "reason": null,
+      "reference": "J301",
+      "upstream_component": {
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical",
+        "instance": "/",
+        "pins": {
+          "1": "anonymous:J1.1",
+          "2": "anonymous:J1.1",
+          "3": "anonymous:J1.3",
+          "4": "anonymous:J1.3",
+          "5": "/LSU_Ip",
+          "6": "/LSU_Vm",
+          "7": "/LSU_Rtrim",
+          "8": "/LSU_Un"
+        },
+        "populated": true,
+        "symbol": "Connector_Generic:Conn_01x08",
+        "value": "Conn_01x08"
+      }
+    },
+    {
+      "adapted": true,
+      "captured": false,
+      "disposition": "unexplained",
+      "field": "component",
+      "fome_component": null,
+      "reason": null,
+      "reference": "J302",
+      "upstream_component": {
+        "footprint": "Connector:Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical",
+        "instance": "/",
+        "pins": {
+          "1": "+3V3",
+          "2": "/SWDIO",
+          "3": "/nRESET",
+          "4": "/SWCLK",
+          "5": "GND",
+          "6": null
+        },
+        "populated": true,
+        "symbol": "Connector:Conn_ARM_SWD_TagConnect_TC2030",
+        "value": "Conn_ARM_SWD_TagConnect_TC2030"
+      }
+    },
+    {
+      "adapted": true,
+      "captured": false,
+      "disposition": "unexplained",
+      "field": "component",
+      "fome_component": null,
+      "reason": null,
+      "reference": "J303",
+      "upstream_component": {
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical",
+        "instance": "/",
+        "pins": {
+          "1": "+5V",
+          "2": "GND",
+          "3": "/SEL_1",
+          "4": "/SEL_2",
+          "5": "/CAN_RX",
+          "6": "/CAN_TX",
+          "7": "/VBatt_Sense",
+          "8": "/Boot0"
+        },
+        "populated": true,
+        "symbol": "Connector_Generic:Conn_01x08",
+        "value": "Conn_01x08"
+      }
+    },
+    {
+      "adapted": "anonymous",
+      "captured": "named:/WBO1_H-",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_H-"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "Q301",
+      "upstream_conductor": [
+        [
+          "J301",
+          "3"
+        ],
+        [
+          "J301",
+          "4"
+        ],
+        [
+          "Q301",
+          "2"
+        ]
+      ]
+    },
+    {
+      "adapted": "anonymous",
+      "captured": "named:GND",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "GND"
+      ],
+      "pin": "3",
+      "reason": null,
+      "reference": "Q301",
+      "upstream_conductor": [
+        [
+          "J301",
+          "1"
+        ],
+        [
+          "J301",
+          "2"
+        ],
+        [
+          "Q301",
+          "3"
+        ]
+      ]
+    },
+    {
+      "adapted": "named:VDDA",
+      "captured": "named:VDDA_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "VDDA_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R301",
+      "upstream_conductor": [
+        "named",
+        "VDDA"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Vm",
+      "captured": "named:/WBO1_VM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_VM"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R303",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Vm"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Un_sense",
+      "captured": "named:/wbo1/LSU_Un_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LSU_Un_sense"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R304",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Un_sense"
+      ]
+    },
+    {
+      "adapted": "named:/Nernst_esr_drive_49",
+      "captured": "named:/wbo1/Nernst_esr_drive_49",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Nernst_esr_drive_49"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R306",
+      "upstream_conductor": [
+        "named",
+        "/Nernst_esr_drive_49"
+      ]
+    },
+    {
+      "adapted": "named:/Un_sense",
+      "captured": "named:/wbo1/Un_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Un_sense"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R307",
+      "upstream_conductor": [
+        "named",
+        "/Un_sense"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Rtrim",
+      "captured": "named:/WBO1_RTRIM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_RTRIM"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R308",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Rtrim"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Vm",
+      "captured": "named:/WBO1_VM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_VM"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R309",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Vm"
+      ]
+    },
+    {
+      "adapted": "named:/Vm",
+      "captured": "named:/wbo1/Vm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Vm"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R309",
+      "upstream_conductor": [
+        "named",
+        "/Vm"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Rtrim",
+      "captured": "named:/WBO1_RTRIM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_RTRIM"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R310",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Rtrim"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Ip",
+      "captured": "named:/WBO1_IP",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_IP"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R310",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Ip"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Rtrim",
+      "captured": "named:/WBO1_RTRIM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_RTRIM"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R311",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Rtrim"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Ip",
+      "captured": "named:/WBO1_IP",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_IP"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R312",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Ip"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R314",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Un",
+      "captured": "named:/WBO1_UN",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_UN"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R314",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Un"
+      ]
+    },
+    {
+      "adapted": "named:/Vm",
+      "captured": "named:/wbo1/Vm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Vm"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R315",
+      "upstream_conductor": [
+        "named",
+        "/Vm"
+      ]
+    },
+    {
+      "adapted": "named:/Nernst_esr_drive_42",
+      "captured": "named:/wbo1/Nernst_esr_drive_42",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Nernst_esr_drive_42"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R316",
+      "upstream_conductor": [
+        "named",
+        "/Nernst_esr_drive_42"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R318",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/Nernst_esr_drive_adv",
+      "captured": "named:/wbo1/Nernst_esr_drive_adv",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Nernst_esr_drive_adv"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R319",
+      "upstream_conductor": [
+        "named",
+        "/Nernst_esr_drive_adv"
+      ]
+    },
+    {
+      "adapted": "named:/VBatt_Sense",
+      "captured": "named:/12V_MR",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/12V_MR"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R320",
+      "upstream_conductor": [
+        "named",
+        "/VBatt_Sense"
+      ]
+    },
+    {
+      "adapted": "named:/Ip_sense",
+      "captured": "named:/wbo1/Ip_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Ip_sense"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R324",
+      "upstream_conductor": [
+        "named",
+        "/Ip_sense"
+      ]
+    },
+    {
+      "adapted": "named:/heater_pwm",
+      "captured": "named:/wbo1/heater_pwm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/heater_pwm"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R325",
+      "upstream_conductor": [
+        "named",
+        "/heater_pwm"
+      ]
+    },
+    {
+      "adapted": "named:/heater_pwm",
+      "captured": "named:/wbo1/heater_pwm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/heater_pwm"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R326",
+      "upstream_conductor": [
+        "named",
+        "/heater_pwm"
+      ]
+    },
+    {
+      "adapted": "named:/heater_pwm",
+      "captured": "named:/wbo1/heater_pwm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/heater_pwm"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R327",
+      "upstream_conductor": [
+        "named",
+        "/heater_pwm"
+      ]
+    },
+    {
+      "adapted": "named:/Boot0",
+      "captured": "named:/WBO1_BOOT0",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_BOOT0"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R329",
+      "upstream_conductor": [
+        "named",
+        "/Boot0"
+      ]
+    },
+    {
+      "adapted": "named:/Ip_dac",
+      "captured": "named:/wbo1/Ip_dac",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Ip_dac"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R331",
+      "upstream_conductor": [
+        "named",
+        "/Ip_dac"
+      ]
+    },
+    {
+      "adapted": "named:/Vm",
+      "captured": "named:/wbo1/Vm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Vm"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "R332",
+      "upstream_conductor": [
+        "named",
+        "/Vm"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Rtrim",
+      "captured": "named:/WBO1_RTRIM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_RTRIM"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "R334",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Rtrim"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "4",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/Un_sense",
+      "captured": "named:/wbo1/Un_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Un_sense"
+      ],
+      "pin": "7",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "/Un_sense"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Un_sense",
+      "captured": "named:/wbo1/LSU_Un_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LSU_Un_sense"
+      ],
+      "pin": "8",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Un_sense"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Un_sense",
+      "captured": "named:/wbo1/LSU_Un_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LSU_Un_sense"
+      ],
+      "pin": "9",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Un_sense"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Un",
+      "captured": "named:/WBO1_UN",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_UN"
+      ],
+      "pin": "10",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Un"
+      ]
+    },
+    {
+      "adapted": "named:/Vm",
+      "captured": "named:/wbo1/Vm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Vm"
+      ],
+      "pin": "13",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "/Vm"
+      ]
+    },
+    {
+      "adapted": "named:/Vm",
+      "captured": "named:/wbo1/Vm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Vm"
+      ],
+      "pin": "14",
+      "reason": null,
+      "reference": "U301",
+      "upstream_conductor": [
+        "named",
+        "/Vm"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "1",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/nRESET",
+      "captured": "named:/WBO1_NRST",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_NRST"
+      ],
+      "pin": "4",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/nRESET"
+      ]
+    },
+    {
+      "adapted": "named:VDDA",
+      "captured": "named:VDDA_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "VDDA_WBO1"
+      ],
+      "pin": "5",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "VDDA"
+      ]
+    },
+    {
+      "adapted": "named:/Un_sense",
+      "captured": "named:/wbo1/Un_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Un_sense"
+      ],
+      "pin": "6",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Un_sense"
+      ]
+    },
+    {
+      "adapted": "named:/LSU_Vm",
+      "captured": "named:/WBO1_VM",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_VM"
+      ],
+      "pin": "7",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/LSU_Vm"
+      ]
+    },
+    {
+      "adapted": "named:/Ip_sense",
+      "captured": "named:/wbo1/Ip_sense",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Ip_sense"
+      ],
+      "pin": "8",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Ip_sense"
+      ]
+    },
+    {
+      "adapted": "named:/Vm",
+      "captured": "named:/wbo1/Vm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Vm"
+      ],
+      "pin": "9",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Vm"
+      ]
+    },
+    {
+      "adapted": "named:/Ip_dac",
+      "captured": "named:/wbo1/Ip_dac",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Ip_dac"
+      ],
+      "pin": "12",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Ip_dac"
+      ]
+    },
+    {
+      "adapted": "named:/heater_pwm",
+      "captured": "named:/wbo1/heater_pwm",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/heater_pwm"
+      ],
+      "pin": "13",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/heater_pwm"
+      ]
+    },
+    {
+      "adapted": "named:/SEL_1",
+      "captured": "named:GND",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "GND"
+      ],
+      "pin": "15",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/SEL_1"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "17",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": "named:/SEL_2",
+      "captured": "disconnected",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "disconnected"
+      ],
+      "pin": "18",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/SEL_2"
+      ]
+    },
+    {
+      "adapted": "named:/CAN_RX",
+      "captured": "named:/wbo1/CAN_RX",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/CAN_RX"
+      ],
+      "pin": "21",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/CAN_RX"
+      ]
+    },
+    {
+      "adapted": "named:/CAN_TX",
+      "captured": "named:/wbo1/CAN_TX",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/CAN_TX"
+      ],
+      "pin": "22",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/CAN_TX"
+      ]
+    },
+    {
+      "adapted": "named:/SWDIO",
+      "captured": "disconnected",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "disconnected"
+      ],
+      "pin": "23",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/SWDIO"
+      ]
+    },
+    {
+      "adapted": "named:/SWCLK",
+      "captured": "disconnected",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "disconnected"
+      ],
+      "pin": "24",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/SWCLK"
+      ]
+    },
+    {
+      "adapted": "named:/Nernst_esr_drive_42",
+      "captured": "named:/wbo1/Nernst_esr_drive_42",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Nernst_esr_drive_42"
+      ],
+      "pin": "26",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Nernst_esr_drive_42"
+      ]
+    },
+    {
+      "adapted": "named:/Nernst_esr_drive_adv",
+      "captured": "named:/wbo1/Nernst_esr_drive_adv",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Nernst_esr_drive_adv"
+      ],
+      "pin": "27",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Nernst_esr_drive_adv"
+      ]
+    },
+    {
+      "adapted": "named:/LED_BLUE",
+      "captured": "named:/wbo1/LED_BLUE",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LED_BLUE"
+      ],
+      "pin": "28",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/LED_BLUE"
+      ]
+    },
+    {
+      "adapted": "named:/LED_GREEN",
+      "captured": "named:/wbo1/LED_GREEN",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/LED_GREEN"
+      ],
+      "pin": "29",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/LED_GREEN"
+      ]
+    },
+    {
+      "adapted": "named:/Nernst_esr_drive_49",
+      "captured": "named:/wbo1/Nernst_esr_drive_49",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/wbo1/Nernst_esr_drive_49"
+      ],
+      "pin": "30",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Nernst_esr_drive_49"
+      ]
+    },
+    {
+      "adapted": "named:/Boot0",
+      "captured": "named:/WBO1_BOOT0",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "/WBO1_BOOT0"
+      ],
+      "pin": "31",
+      "reason": null,
+      "reference": "U302",
+      "upstream_conductor": [
+        "named",
+        "/Boot0"
+      ]
+    },
+    {
+      "adapted": "named:VDDA",
+      "captured": "named:VDDA_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "VDDA_WBO1"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "U303",
+      "upstream_conductor": [
+        "named",
+        "VDDA"
+      ]
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "5",
+      "reason": null,
+      "reference": "U305",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    },
+    {
+      "adapted": false,
+      "captured": true,
+      "disposition": "unexplained",
+      "field": "component",
+      "fome_component": {
+        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+        "instance": "/a1000000-0000-4000-8000-000000000004/",
+        "pins": {
+          "1": "/wbo1/CAN_TX",
+          "2": "GND",
+          "3": "+5V",
+          "4": "/wbo1/CAN_RX",
+          "5": "+3V3_WBO1",
+          "6": "/CAN2-",
+          "7": "/CAN2+",
+          "8": "GND"
+        },
+        "populated": true,
+        "symbol": "Interface_CAN_LIN:TJA1051T-3",
+        "value": "TJA1051T-3"
+      },
+      "reason": null,
+      "reference": "U307",
+      "upstream_component": null
+    },
+    {
+      "adapted": "named:+3V3",
+      "captured": "named:+3V3_WBO1",
+      "disposition": "unexplained",
+      "field": "pin",
+      "fome_conductor": [
+        "named",
+        "+3V3_WBO1"
+      ],
+      "pin": "2",
+      "reason": null,
+      "reference": "U309",
+      "upstream_conductor": [
+        "named",
+        "+3V3"
+      ]
+    }
+  ],
+  "exports": {
+    "current": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/native.xml",
+        "/candidate/project/reference.kicad_sch"
+      ],
+      "execution": "ok",
+      "xml_sha256": "a82b21fc3fb7a73ad049211dc6ef42b964492d84fe7e3786e5d65444c093caf8"
+    },
+    "upstream": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "-o",
+        "/work/native.xml",
+        "/candidate/wideband_hardware_board_module_wideband_controller.kicad_sch"
+      ],
+      "execution": "ok",
+      "xml_sha256": "5455f4c592ee70f451349d6e879484f6f3b06bf2873c049e5696d4a9ed3e0b51"
+    }
+  },
+  "fome": {
+    "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+    "sheet_sha256": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73"
+  },
+  "fome_components": 58,
+  "limitations": [
+    "Every difference is unexplained; DESIGN.md sections 3/5 are context, not inferred reasons.",
+    "No functional, geometry, parts-selection or upstream-equivalence acceptance is claimed.",
+    "Power/flag symbols and terminals outside the wbo1 reference set are not physical block components."
+  ],
+  "source_components": 60,
+  "unexplained": 78,
+  "upstream": {
+    "commit": "ca2adce4aaea1deee66e459cc8949296763a0ad0",
+    "git_blob": "a7701fc25373e1bcd28ace718cecb35d3b2b5d0e",
+    "identity_source": "https://api.github.com/repos/mck1117/wideband/git/trees/ca2adce4aaea1deee66e459cc8949296763a0ad0?recursive=1",
+    "path": "hardware/board_module/wideband_controller.kicad_sch",
+    "repository": "mck1117/wideband",
+    "sha256": "e54843a1e6ef92a79153d8a7bb491ea1cd8ce8216adbdcd9b8f9d665338a1508"
+  }
+}

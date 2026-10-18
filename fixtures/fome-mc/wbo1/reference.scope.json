@@ -1,0 +1,99 @@
+{
+  "baseline": {
+    "reference_architectures": [
+      "blocks/wbo1/block.json",
+      "blocks/wbo2/block.json"
+    ],
+    "requirements": [
+      {
+        "checks": [
+          "erc",
+          "netlist"
+        ],
+        "id": "native",
+        "intent": "acceptance",
+        "source": {
+          "locator": "Native checks",
+          "path": "COVERAGE.md"
+        },
+        "statement": "The captured two-channel reference loads natively, passes ERC and exports its physical components."
+      },
+      {
+        "checks": [
+          "interface"
+        ],
+        "id": "wideband-interface",
+        "intent": "acceptance",
+        "source": {
+          "locator": "Captured native interface",
+          "path": "COVERAGE.md"
+        },
+        "statement": "Retain captured wbo1 component values, external nets, PB1 ground, channel 2 PA8 high, and separate VDDA rails."
+      }
+    ],
+    "targets": [
+      "COVERAGE.md"
+    ]
+  },
+  "board": "project/reference.kicad_pcb",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "interface.json",
+        "netlist_check": "netlist"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "at": "blocks",
+      "path": "blocks"
+    },
+    {
+      "at": "project/reference.kicad_sch",
+      "path": "reference.kicad_sch"
+    },
+    {
+      "at": "project/reference.kicad_pcb",
+      "path": "reference.kicad_pcb"
+    },
+    {
+      "at": "project/wbo1.kicad_sch",
+      "path": "blocks/wbo1/sheets/wbo1.kicad_sch"
+    },
+    {
+      "at": "project/wbo2.kicad_sch",
+      "path": "blocks/wbo2/sheets/wbo2.kicad_sch"
+    },
+    {
+      "at": "interface.json",
+      "path": "interface.json"
+    },
+    {
+      "at": "COVERAGE.md",
+      "path": "COVERAGE.md"
+    }
+  ],
+  "limitations": [
+    "No fabrication or physical-board qualification. Empty original board supplies the required schematic-review container only.",
+    "Upstream Rev C parity, functional models, parts qualification, heater geometry and independent reviews are pending."
+  ],
+  "mutable_inputs": [],
+  "name": "Pinned fome-mc wbo1 reference audit",
+  "requirements": [
+    "COVERAGE.md"
+  ],
+  "schema": "agent-ee.scope/3",
+  "schematic": "project/reference.kicad_sch",
+  "scope": "Native acquisition evidence for the rung-2 wideband reference. Incomplete engineering coverage; see COVERAGE.md."
+}
