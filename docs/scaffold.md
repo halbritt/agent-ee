@@ -104,8 +104,39 @@ Derived from the inputs:
 | Requirements | The plan's native requirement maps `erc` and `drc`. `parts-membership` maps `netlist` and `parts` at the manifest's `declaration_source`. The profile's single limit requirement maps `fab` at `PROFILE /limits` |
 | Stages | `schematic` (erc, netlist, parts), `placement` (drc), `routing` (fab). Symbol and footprint subjects are the manifest's required selectors; the routing subject is one saved track, because the `fab_profile` check's native rule-loading witness needs a track |
 | Project rules | `board.design_settings.rules` `min_clearance`, `min_track_width`, `min_via_diameter`, `min_through_hole_diameter`, `min_copper_edge_clearance` and `min_hole_to_hole` from the profile's minimum limits, through `fab_profile.compile_profile` |
-| Default net class | `clearance`, `track_width`, `via_diameter`, `via_drill` from the preferred limit when present, otherwise the minimum |
+| Default net class | `clearance` from the minimum limit, because KiCad DRC enforces it as a hard floor. `track_width`, `via_diameter` and `via_drill` from the preferred limit when present, otherwise the minimum: they are routing defaults, and DRC grades the board minimum rules instead. See [Default class clearance](#default-class-clearance) |
 | Board | Outline, layer count and stackup from the envelope, as in stage one |
+
+### Default class clearance
+
+The owner decided on 2026-10-18 that the Default clearance is the fab minimum, and
+that the router targets preferred values where it can
+([decisions](decisions.md), "Default net class clearance"). A native probe found
+that KiCad 10 DRC enforces the Default class `clearance` as a hard floor, but not
+the class track width, via diameter or via drill. Those three are graded only
+against the board minimum rules. A preferred clearance in the class would fail
+boards that meet the fab minimum, so every DRC floor the producer writes is a fab
+minimum:
+
+- the six project rules and the Default `clearance` always use the minimum tier;
+- the Default `track_width`, `via_diameter` and `via_drill` use the preferred tier
+  when the profile has one. They are what KiCad routing uses by default, and
+  avoiding the surcharge is the router target;
+- a preferred clearance is never written to the project. The receipt records it as
+  a router target that is not applied. The pinned
+  [kicad-route adapter](routing-adapter.md#router-targets-from-the-scaffold-producer)
+  passes no clearance target, so no router consumes it yet.
+
+The receipt's `derivation.netclasses` gives each class value its tier, limit and a
+`basis` that cites the decision. `derivation.router_targets` lists every preferred
+limit for the four class keys, with the class setting it was applied to, or `null`,
+and its `consumer`.
+A preferred value below its minimum is still refused, including clearance.
+`NativeProducerTests` checks this in KiCad. On the produced project, two 0.15 mm
+tracks 0.175 mm apart pass DRC. That gap is between the 0.15 mm minimum and the
+0.2 mm preferred clearance. A 0.45/0.25 mm via on the same board, smaller than
+the preferred Default via, also passes. The same board fails when the class
+clearance is set to the preferred value, and a 0.1 mm gap still fails.
 
 The template supplies every other project setting. It must be a complete
 `kicad-10.0.7-net-settings-5` project, such as the owned
@@ -119,8 +150,9 @@ The producer refuses, naming the cause, and publishes nothing when:
   reference, or any envelope predicate stays unresolved against the capture
   (for example no minimum `max_layers` limit, or an unverified source);
 - any profile limit is not source-verified, one of the six rule keys has no
-  minimum limit, a preferred value is below its minimum, the Default via pad
-  does not exceed its drill, or the limits name more than one requirement;
+  minimum limit, a preferred value of a class key is below its minimum, the
+  Default via pad does not exceed its drill, or the limits name more than one
+  requirement;
 - the parts manifest lacks required datasheet provenance, or an envelope fixed
   footprint is not a declared parts instance;
 - a `.kicad_pro` or `.kicad_dru` is captured at the project path, or the template
@@ -191,8 +223,8 @@ hashes, candidate and baseline identities, root/sheet identities, Python version
 and hashes of the agent-ee policy modules. With `--plan` the receipt is
 `agent-ee.scaffold-receipt/2`: it records `plan_sha256` in place of
 `scope_sha256`, and a `derivation` naming the envelope, profile, template and
-manifest hashes and each derived rule's setting, value, limit ID, tier and
-`/limits/N` locator. It has no timestamp or absolute
+manifest hashes, each derived rule's setting, value, limit ID, tier and
+`/limits/N` locator, each Default class value's `basis`, and the `router_targets`. It has no timestamp or absolute
 output path. Identical planning bytes and tool versions produce byte-identical
 outputs and the same candidate hash at different output paths.
 
@@ -225,11 +257,12 @@ gaps and producer migrations resolved before the envelope can become binding.
 
 [test_scaffold_producer.py](../tests/test_scaffold_producer.py) covers the
 producer on owned synthetic envelope, profile and parts fixtures: byte-identical
-outputs, the derived mappings, rules and stages, every refusal above, the
-fome-mc severity template, and a native run. In that run pcbnew loads the derived rules and Default class from the
-produced project, and each of the five checks reports `stage_not_reached` on the
-empty candidate. A second native run gives kicad-cli ERC and DRC the derived
-fome-mc project, and their `ignored_checks` match the record.
+outputs, the derived mappings, rules, class tiers, router targets and stages,
+every refusal above, the fome-mc severity template, and three native runs. In the
+first, pcbnew loads the derived rules and Default class from the produced project,
+and each of the five checks reports `stage_not_reached` on the empty candidate.
+The second is the clearance DRC run described above. In the third, kicad-cli ERC
+and DRC get the derived fome-mc project, and their `ignored_checks` match the record.
 [test_rule_severities.py](../tests/test_rule_severities.py) recaptures the
 committed record from the local fome-mc object store, rebuilds the template from
 it byte for byte, and covers the capture refusals.
