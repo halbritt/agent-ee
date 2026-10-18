@@ -495,6 +495,10 @@ def _violations(spec, inputs, receipt_dir, tool, tool_after, executions):
     writes = _writes(spec, run)
     violations += ['missing_output:' + rel for rel, (state, _) in writes.items() if state == 'missing']
     violations += ['unsafe_output:' + rel for rel, (state, _) in writes.items() if state == 'unsafe']
+    if not spec['writes']:
+        # Artifacts are the only promised output of a write-free step. Write-bearing
+        # steps retain the existing allowance for unhashable artifact links (e.g. latest).
+        violations += ['missing_artifact:' + rel for rel, sha in _artifacts(spec, run).items() if sha is None]
     # A tool can plant an entry where the executor later writes its own records, which the
     # executor moves aside and reports, or leave /work unwritable so that it cannot write them.
     for name in ('version', 'run'):

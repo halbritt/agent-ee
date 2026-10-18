@@ -121,6 +121,7 @@ Existing unstaged campaigns keep their convergence rules. Coordinator steps
 follow the earliest failing stage; arbitrary writer commands have no stage-specific
 OS allowlist. [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
 such as fab export, with an empty write scope and retained artifact hashes.
+An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
 A complete generation rung with live model review and fabrication
 acceptance remains pending.
 

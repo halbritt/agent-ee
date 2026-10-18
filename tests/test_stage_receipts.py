@@ -258,6 +258,41 @@ class StepExecutionTests(StepFixture):
                          'not_applicable')
 
     @toolchain_test
+    def test_artifact_only_step_refuses_unhashed_declared_artifacts(self):
+        cases = (
+            ('missing', {'files': {'out/other.json': '{}'}}, 'out/result.json'),
+            ('partly produced', {'files': {'out/kept.json': '{}'}}, 'out/result.json'),
+            ('empty directory', None, 'out/result/'),
+            ('link', {'links': {'out/result.json': '/candidate/project/board.txt'}}, 'out/result.json'),
+            ('special', {'fifos': ['out/result.json']}, 'out/result.json'),
+            ('nested link', {'files': {'out/result/kept.json': '{}'},
+                             'links': {'out/result/link': '/candidate/project/board.txt'}}, 'out/result/link'),
+        )
+        before = stage_receipts.file_tree(self.design)
+        for label, plan, missing in cases:
+            with self.subTest(label=label):
+                artifacts = ['out/result'] if label in ('empty directory', 'nested link') else ['out/result.json']
+                if label == 'partly produced':
+                    artifacts.append('out/kept.json')
+                if label == 'empty directory':
+                    argv = ['/usr/bin/python3', '-c',
+                            'from pathlib import Path; Path("out/result").mkdir(parents=True)']
+                else:
+                    argv = ['/usr/bin/python3', '/tool/step.py', 'plant', json.dumps(plan)]
+                path, receipt = self.run_step(self.spec(argv=argv, stage='fab', writes={}, artifacts=artifacts))
+                self.assertEqual((receipt['status'], receipt['exit_code']), ('refused', 0))
+                self.assertEqual(receipt['violations'], ['missing_artifact:' + missing])
+                self.assertIsNone(receipt['artifacts'][missing])
+                self.assertEqual(receipt['outputs'], {})
+                self.assertEqual(receipt['changed'], [])
+                self.assertEqual(validate_receipt(path), receipt)
+                with self.assertRaisesRegex(ValueError, 'no output adopted'):
+                    adopt(path, receipt, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), before)
+                self.assertEqual(build_index(self.root / 'work', self.design, 1, 'c' * 64)['receipts'][-1]
+                                 ['applicability'], 'not_applicable')
+
+    @toolchain_test
     def test_artifact_only_receipt_refuses_changed_or_missing_artifacts(self):
         path, receipt = self.run_step(self.spec('plant', json.dumps({'files': {'out/result.json': '{}'}}),
                                                 writes={}, artifacts=['out/result.json']))

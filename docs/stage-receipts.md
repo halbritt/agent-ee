@@ -50,6 +50,9 @@ a fab export, declares `"writes": {}` and lists its retained work paths in
 `"outputs": {}` and `"changed": []`. Adoption still validates the receipt and
 requires the design to match its inputs, then leaves the design untouched.
 Any added, deleted or changed design file is refused under the empty write scope.
+Every recorded artifact entry must have a hash: a missing artifact, empty declared
+directory, link or special entry adds `missing_artifact:<path>`. An otherwise
+adoptable exit is then `refused`, adoption fails and the receipt is not applicable.
 
 ## Receipt fields and status
 
@@ -70,7 +73,8 @@ writable `design/` copy and declared outputs) and `version/`.
   64, or an integer beyond the interpreter limit. No backend is guessed, and the process receipt
   is still written. A malformed report alone does not change the step status: the backend is provenance.
 - `inputs` and `outputs`: sha256 by candidate path. `changed` lists outputs whose bytes differ.
-- `violations`: `inventory_changed`, `write_outside_scope`, `missing_output`, `unsafe_output`
+- `violations`: `inventory_changed`, `write_outside_scope`, `missing_output`,
+  `missing_artifact:<path>` (a null artifact entry when `writes` is empty), `unsafe_output`
   (the write source is behind a link or special entry), `executor_record_unsafe:<dir>/<file>` (an
   executor record in `run/` or `version/` is a link or special file), `executor_record_missing:<dir>`
   (the executor was entered but no trusted record exists), `tool_changed`, `mount_changed` and `source_changed`.
@@ -97,7 +101,9 @@ a path below the run directory by name.
   A link or special entry at any component is reported, and its target is never read or hashed.
 - A write source behind a link is `unsafe_output`, so the step is `refused`. A declared artifact, or an entry
   inside a declared artifact directory, behind a link or special entry is recorded as `null`. Artifact
-  links are allowed, for example kicad-route's `latest` link, so they are not violations.
+  links are allowed for write-bearing steps, for example kicad-route's `latest` link.
+  In artifact-only steps every null entry is a `missing_artifact` violation, including
+  the trailing-slash entry recorded for an empty declared directory.
 - The design copy, the retained inputs and artifact directories are walked through directory
   descriptors, iteratively. Directories deeper than 128 levels are recorded as special entries rather
   than entered. A link or special entry in the design copy is an `inventory_changed` violation.
@@ -175,6 +181,6 @@ Campaigns created before this change have no anchors and no index, and they veri
   scaffold and routing steps.
 - Whether kicad-route exits 1 and 4 should leave the writer's unrouted board as the proposal, rather than
   stopping the repair, is a decision for AGENTEE-93 and AGENTEE-88.
-- A completed receipt with all writes present but missing declared artifacts or an unknown backend is still
+- A completed write-bearing receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.

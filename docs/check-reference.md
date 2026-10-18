@@ -13,6 +13,8 @@ board facts through pcbnew.
 [Coordinator stage receipts](stage-receipts.md) can record artifact-only steps
 with `writes: {}` and nonempty `artifacts`. They retain artifact hashes without
 design outputs; they remain provenance and cannot satisfy an acceptance check.
+An artifact-only step with a null artifact entry is refused with
+`missing_artifact:<path>` and cannot be adopted.
 
 [Stage-one intent import](design-intent.md) prepares source-bound requirements
 and incomplete interface stubs for later capture. Its lint outcome covers only
