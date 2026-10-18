@@ -191,8 +191,11 @@ def generation_setup(rundir, spec, *, kicad_route, catalog_checkout=None, parts_
 # ------------------------------------------------------------------ stage execution
 
 def review(rundir, setup, label):
-    """A checks-only review of the current design; checks only, no reviewer or adjudicator."""
+    """A checks-only review with retained sources that later adoptions cannot mutate."""
     scope_path = rq.rehearsal_scope(setup['scope_path'], setup['design'], rundir / 'reviews' / f'{label}.scope.json')
+    source = rundir / 'reviews' / f'{label}-source'
+    rq.materialize_inputs(scope_path, source)
+    scope_path = rq.rehearsal_scope(setup['scope_path'], source, scope_path)
     out = rundir / 'reviews' / label
     command = rc.run_logged(rc.agent_ee_command('review', scope_path, '--out', out, '--checks-only'),
                             rundir / 'logs', f'review-{label}', 3600)
@@ -466,15 +469,19 @@ def verify_record(rundir):
         if stage['status'] == 'completed' and (not stage['receipts'] or any(
                 r['status'] not in ('completed', 'partial') for r in stage['receipts'])):
             problems.append(f"stage {stage['stage']}: completed without adoptable receipts")
-        if stage['status'] == 'pass':
-            if not stage['review'] or not stage['checks']:
-                problems.append(f"stage {stage['stage']}: pass without a sealed result")
-                continue
+        if stage['review'] and stage['review']['seal_error'] is None:
             run_dir = rundir / stage['review']['run']
             if run_dir not in runs:
                 runs[run_dir] = sealed(run_dir)
             if runs[run_dir]:
                 problems.append(f"stage {stage['stage']}: review does not verify: {runs[run_dir]}")
+        if stage['status'] == 'pass':
+            if not stage['review'] or not stage['checks']:
+                problems.append(f"stage {stage['stage']}: pass without a sealed result")
+                continue
+            run_dir = rundir / stage['review']['run']
+            if stage['review']['seal_error'] is not None:
+                problems.append(f"stage {stage['stage']}: pass with an unsealed review")
             status, _, checks = grade(run_dir, list(stage['checks']))
             if status != 'pass' or checks != stage['checks']:
                 problems.append(f"stage {stage['stage']}: sealed results do not grade pass")

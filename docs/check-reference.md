@@ -906,6 +906,10 @@ hashes. See [JLCPCB cost estimate](jlc-cost-estimate.md).
 
 ## Scaffold preparation
 
+The [stage-ordered driver](rung1-stages.md) grades each stage against retained
+review sources. Later design adoptions leave earlier reviews verifiable;
+changed or missing retained inputs still fail ordinary `agent-ee verify`.
+
 [Empty-candidate scaffolding](scaffold.md) prepares inputs for these checks; its
 receipt is provenance and cannot satisfy a requirement. `scaffold --scope`
 preserves the explicit planning scope's checks and baseline. `scaffold --plan`

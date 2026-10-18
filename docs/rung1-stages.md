@@ -63,7 +63,9 @@ From the entry on, each stage does the following:
    verification or a refused adoption makes the stage `failed`. Nothing is
    adopted or substituted.
 2. Checks. If the stage has checks, the driver runs `agent-ee review --checks-only`
-   on the current design. A review that follows no new adoption is reused, so
+   on a retained copy of the current design in `reviews/LABEL-source/`. Its
+   scope names that copy, so later placement or routing adoptions in `design/`
+   cannot change an earlier review's declared inputs. A review that follows no new adoption is reused, so
    verification and fab are graded from the routing-stage review. The run must
    pass `agent-ee verify`. The stage's checks are read from the sealed
    `checks/ID.json` files:
@@ -131,12 +133,17 @@ and holds the following:
   follows from the stages;
 - that the current agent-ee commit and tracked changes equal the recorded ones;
 - each receipt, through `stage_receipts.validate_receipt`;
-- each passing stage's review, through `agent-ee verify`, regraded from its
-  sealed results;
+- every review recorded as sealed, through `agent-ee verify`, including reviews
+  whose checks failed or left missing coverage; this recomputes both retained
+  source and captured input hashes. Passing stages are regraded from sealed results;
 - the stop rule and the `done` flag.
 
 A forged `pass` without a review, a stage reached after a stop, an edited
 sealed check, a changed receipt or another commit is reported as a problem.
+Edited or missing files in either `reviews/LABEL-source/` or the review's
+`inputs/` invalidate that review. Changes to the working `design/` alone do
+not invalidate earlier stage evidence. Keep the run at its recorded absolute
+path: the retained scopes use absolute source paths.
 
 ## Recorded runs (2026-10-18, base b3a6eb5)
 
