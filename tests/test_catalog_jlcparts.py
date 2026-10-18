@@ -200,6 +200,19 @@ class NativeCatalogTests(unittest.TestCase):
             'output_voltage': dict(min='1.2', max='12', unit='V'),
             'dropout': dict(min='0.3', max='0.3', unit='V')})
 
+    def test_captured_capacitor_and_header_voltage_rating_aliases(self):
+        from agent_ee.catalog import normalized_attributes
+        for category, name, text in (('capacitor', 'Voltage Rating', '50V'),
+                                     ('connector', 'Voltage Rating (Max)', '250V')):
+            with self.subTest(category=category):
+                raw = json.loads(attributes(json.dumps({name: text}), category))
+                self.assertEqual(raw['upstream:' + name], text)
+                self.assertEqual(normalized_attributes(raw)['voltage'],
+                                 dict(min=text[:-1], max=text[:-1], unit='V'))
+        raw = json.loads(attributes(json.dumps({'Voltage Rating': '50V',
+                                                'Voltage Rating (Max)': '250V'}), 'capacitor'))
+        self.assertNotIn('voltage', normalized_attributes(raw))
+
     def test_committed_source_manifest_has_exact_commit_urls_and_all_volume_pins(self):
         path = Path(__file__).resolve().parents[1] / 'catalog-sources/jlcparts-2026-09-14.json'
         source = json.loads(path.read_text())

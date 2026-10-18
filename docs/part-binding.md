@@ -149,6 +149,17 @@ otherwise one with any missing binding is `unknown`; otherwise it is `pass`.
 The run outcome follows the table above, so a defect elsewhere never hides
 an `unknown` reference.
 
+## Native generation
+
+The owned `schematic_emitter` writes string-valued `part_binding` fields from
+resolved intent. A field replaces the matching library default, or becomes a
+new hidden native property. Reference, Value, Footprint and population flags
+cannot be overridden by binding data. Unsupported names or non-string values
+refuse emission. Forward annotation carries exported fields onto footprints;
+this check still grades the resulting parity. The [Rung-1 adapter](rung1-parts.md)
+gets its fields by replaying a captured `parts/1` declaration and catalog
+selection, without creating approval authority.
+
 ## Related checks
 
 [`assembly_readiness`](assembly-readiness.md) and

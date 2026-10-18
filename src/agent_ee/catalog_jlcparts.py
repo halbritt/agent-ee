@@ -123,6 +123,7 @@ def attributes(text, category):
         mapped[nominal[1]] = original[nominal[0]] + ' +/-' + tolerance
     for source, target in (('Power(Watts)', 'power'), ('Voltage Rated', 'voltage'),
                            ('Voltage - Rated', 'voltage'), ('Voltage-Supply(Max)', 'voltage'),
+                           ('Voltage Rating', 'voltage'), ('Voltage Rating (Max)', 'voltage'),
                            ('Operating Temperature', 'temperature'),
                            ('Voltage Dropout (Max)', 'dropout'), ('Current - Quiescent (Iq)', 'quiescent_current')):
         if source in original:

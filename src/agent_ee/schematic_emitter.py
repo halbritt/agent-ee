@@ -335,6 +335,13 @@ def _plan(resolved, captured, intent_libraries, transforms):
             raise EmissionError('malformed_reference',
                                 'reference must be annotated; # prefix exactly for power symbols', location)
         _field_text(comp['value'], 'malformed_value', location)
+        for name, value in comp.get('part_binding', {}).items():
+            if (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_ ]{0,127}', name)
+                    or name in {'Reference', 'Value', 'Footprint', 'dnp', 'in_bom', 'on_board',
+                                'exclude_from_board', 'exclude_from_bom', 'exclude_from_sim', 'in_pos_files'}
+                    or name.startswith('ki_')):
+                raise EmissionError('malformed_part_binding', 'binding cannot override native identity or flags', location)
+            _field_text(value, 'malformed_part_binding', location + '/part_binding/' + name)
         if comp['footprint'] and not FOOTPRINT.fullmatch(comp['footprint']):
             raise EmissionError('malformed_footprint', 'footprint must be empty or exact library:name', location)
         if comp['power']:
@@ -477,11 +484,18 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets)
     instance += [['unit', str(unit)], ['body_style', '1']]
     instance += [[k, item['flags'][k]] for k, _ in INSTANCE_FLAGS]
     instance += [['dnp', 'no'], ['uuid', Q(_uuid(namespace, 'symbol', *key, unit))]]
-    values = {'Reference': comp['reference'], 'Value': comp['value'], 'Footprint': comp['footprint']}
+    values = {**comp.get('part_binding', {}), 'Reference': comp['reference'],
+              'Value': comp['value'], 'Footprint': comp['footprint']}
+    written = set()
     for prop in item['properties']:
         if prop[1].startswith('ki_'):
             continue
         instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation']))
+        written.add(prop[1])
+    for name, value in sorted(comp.get('part_binding', {}).items()):
+        if name not in written:
+            instance.append(_property(['property', Q(name), Q(value), ['hide', 'yes']],
+                                      value, anchor, item['matrix'], item['rotation']))
     instance += [['pin', Q(n), ['uuid', Q(_uuid(namespace, 'pin', *key, unit, n))]] for n in item['pin_numbers']]
     instance.append(['instances', ['project', Q(project), ['path', Q(path), ['reference', Q(comp['reference'])],
                                                            ['unit', str(unit)]]]])

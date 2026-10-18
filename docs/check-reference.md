@@ -574,7 +574,11 @@ disagreement between two non-empty schematic and board values, or a malformed
 `LCSC` value, is a defect. A missing or one-sided property is `unknown` for that
 reference. Unparseable `PARAM_*` JSON and an uncaptured child sheet are
 `malformed`. See [part binding](part-binding.md) for the schema, markers and
-per-reference outcomes.
+per-reference outcomes. The [Rung-1 parts adapter](rung1-parts.md) projects
+replayed `parts/1` catalog identities and normalized ratings into the owned
+emitter; native export and forward annotation carry them onto footprints.
+Its captured-parts scope declares `parts_subset`, `assembly_readiness` and
+`package_consistency`. Unknown stock, ratings or unmapped packages stay unknown.
 
 ## JLCPCB fab package
 

@@ -212,7 +212,12 @@ that one piece can be ordered. Invalid prices or flags fail the build.
 Original attribute strings remain under `upstream:` names; source category,
 package, MPN, manufacturer and datasheet URL are retained. Passive intervals
 require an explicit source tolerance. Recognized ratings feed the existing SI
-normalizer; absent, ambiguous or unparseable attributes stay unknown. This
+normalizer, including the captured `Voltage Rating` (capacitors) and
+`Voltage Rating (Max)` (headers) spellings; conflicting aliases remain unknown.
+Existing snapshots keep their captured attributes: the importer does not add a
+newly recognized rating to an old snapshot silently. Re-capture source bytes or
+record an explicit derived capture with its source hashes and importer identity.
+Absent, ambiguous or unparseable attributes stay unknown. This
 initial regulator mapping requires both input/output range endpoints; it does
 not infer omitted endpoints from a maximum or fixed nominal rating. Unknown limits cannot support selection constraints.
 
@@ -221,8 +226,8 @@ tables and atomic publication path. Its manifest retains every archive pin;
 row provenance names the complete archive's final piece and the row's one-based
 LCSC-ordered source position, with a hash of the native record. It does not claim
 that a record lives entirely in that piece. The format name pins the import
-profile policy. Repeat capture uses the same manifest and volumes; byte identity
-is qualified within the same SQLite version. Offline reads and checks retain
+profile. Repeat capture needs the same importer policy, manifest and volumes;
+byte identity is qualified within the same SQLite version. Offline reads and checks retain
 the existing manifest/DB/date identity and evidence-authority rules.
 
 

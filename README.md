@@ -221,6 +221,8 @@ An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.
 The `parts_subset` check compares native symbol/footprint/supplier identities
 and required instances; absent native evidence leaves coverage unknown.
+The [Rung-1 captured-parts route](docs/rung1-parts.md) consumes that bundle
+with an explicitly assembled J1 and runs the existing assembly and package checks.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
 are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap

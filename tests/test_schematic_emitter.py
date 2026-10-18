@@ -149,6 +149,22 @@ class TransformTests(unittest.TestCase):
 
 
 class DeterminismTests(unittest.TestCase):
+    def test_part_binding_fields_are_hidden_and_override_library_defaults(self):
+        intent = load('regulator.intent.json')
+        binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',
+                   'Datasheet': 'captured/owned.pdf', 'PARAM_voltage': '{"min":"25","max":"25","unit":"V"}'}
+        intent['components'][0]['part_binding'] = binding
+        result, files = emit(intent=intent)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        symbols = children(parse_sexpr(files['regulator.kicad_sch']), 'symbol')
+        symbol = next(s for s in symbols if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+        props = {p[1]: p for p in children(symbol, 'property')}
+        for key, value in binding.items():
+            self.assertEqual(props[key][2], value)
+        self.assertEqual(len([p for p in children(symbol, 'property') if p[1] == 'Datasheet']), 1)
+        self.assertIn(['hide', 'yes'], props['LCSC'])
+        self.assertEqual(files, emit(intent=intent)[1])
+
     def test_repeat_and_input_order_give_identical_bytes(self):
         first = emit(**tables())[1]
         self.assertEqual(first, emit(**tables())[1])
@@ -192,6 +208,14 @@ class DeterminismTests(unittest.TestCase):
 
 
 class RefusalTests(unittest.TestCase):
+    def test_opaque_binding_cannot_override_identity_flags_or_emit_nontext_values(self):
+        for binding in ({'Footprint': 'Other:Part'}, {'Reference': 'J9'}, {'dnp': 'yes'},
+                        {'in_bom': 'no'}, {'LCSC': None}, {'LCSC': 123}, {'ki_description': 'hidden'}):
+            intent = load('regulator.intent.json')
+            intent['components'][0]['part_binding'] = binding
+            with self.subTest(binding=binding):
+                self.assertRefused('malformed_part_binding', intent)
+
     def assertRefused(self, code, intent=None, layout=None, name='regulator', **kwargs):
         result, files = emit(name, intent=intent, layout=layout, **kwargs)
         self.assertIsNone(files and sorted(files))
@@ -390,6 +414,24 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_bindings_survive_real_native_export_and_forced_resave(self):
+        intent = load('regulator.intent.json')
+        binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',
+                   'Datasheet': 'captured/owned.pdf'}
+        intent['components'][0]['part_binding'] = binding
+        result, files = emit(intent=intent, **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project, work, erc, graph = self.native_run('regulator', files, 'binding')
+        native = ET.parse(work / 'netlist/design.xml').getroot()
+        comp = native.find('./components/comp[@ref="J1"]')
+        fields = {n.get('name'): n.text for n in comp.findall('./fields/field')}
+        for name, value in binding.items():
+            if name == 'Datasheet':
+                self.assertEqual(comp.findtext('datasheet'), value)
+            else:
+                self.assertEqual(fields[name], value)
+        self.assertNativeResave(project, work, 'regulator', files)
+
     def setUp(self):
         require_toolchain(native=True)
         self.tmp = tempfile.mkdtemp(prefix='agent-ee-emitter-native-')

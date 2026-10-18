@@ -51,11 +51,12 @@ class PrepareFailure(Exception):
 
 # ------------------------------------------------------------------ preparation (immutable inputs)
 
-def prepare(spec, rundir, catalog_checkout=None):
+def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None):
     """Stage 1 and 2 of agent_ee.generate, then intent, resolved record, envelope and request."""
     from .connectivity_ir import canonical_resolved, resolve_intent, validate_resolved
     prep = Path(rundir) / 'prep'
-    state, options = {}, {'spec': str(Path(spec).absolute()), 'catalog_checkout': catalog_checkout}
+    state, options = {}, {'spec': str(Path(spec).absolute()), 'catalog_checkout': catalog_checkout,
+                         'parts_manifest': parts_manifest}
     receipts = []
     for number, name, function in ((1, 'requirements', g.stage_requirements), (2, 'parts', g.stage_parts)):
         stage = g.Stage(prep, number, name)

@@ -22,6 +22,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_qual
   fixtures/rung1/spec.md --out RUNDIR
 ```
 
+For catalog-bound R1/C1/J1, add `--parts-manifest PRIVATE_BUNDLE/parts.json`
+and use `fixtures/rung1/spec-assembled.md`. The [captured-parts route](rung1-parts.md)
+replays the owned `parts/1` bundle, captures its closure and adds membership,
+assembly-readiness and package-consistency checks. It requires the explicit
+assembled-header decision; the original hand-soldered spec is refused on this
+route.
+
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
 `--kicad-route` must name a kicad-route checkout at the routing adapter's pin
 (`08179cd`) with `vendor/krt` and `.venv-krt` installed; the default is
@@ -51,7 +58,7 @@ reviewer or writer call is recorded as it happened and never retried.
 | --- | --- | --- |
 | requirements | `design_dialog`, `design_intent` (AGENTEE-25, AGENTEE-26) | through `agent_ee.generate` stage 1 |
 | envelope | `board_envelope` (AGENTEE-85) | `derive`, `stage_one_requirements` and `round_trip`; the scaffold outline is read back from the validation record |
-| parts | `catalog` (AGENTEE-27), `part_selection` (AGENTEE-28) | capture attempted on the fome-mc BOM; selection stays `agent_ee.generate` stage 2 (see [Gaps](#gaps)) |
+| parts | `parts_manifest`, `catalog`, `part_selection` (AGENTEE-86/27/28) | `--parts-manifest` replays and freezes the canonical bundle; without it the experimental BOM route remains (see [Gaps](#gaps)) |
 | schematic | `schematic_emitter` (AGENTEE-40) | step `emit-schematic`: intent, layout and captured symbols |
 | board population | `forward_annotation` (AGENTEE-52) | step `forward-annotate`: native XML netlist, plan, apply to a new board |
 | placement | `placement_adapter` with helper `agent-ee.placer/1` (AGENTEE-91, AGENTEE-54) | campaign `placement_adapter` declaration; no row fallback |
@@ -189,7 +196,9 @@ J1, R1`), so `fab-consistency` is `unsupported/unknown`.
 
 ## Gaps
 
-These are recorded in every run with the owned module's exact refusal:
+The recorded default run has the following limits. Supplying a captured-parts
+bundle closes its sourcing/binding gaps as described below; the other limits
+remain.
 
 - **Writer on generation turns.** On the routing turn the writer routed the
   board with pcbnew instead of leaving the board to the routing step. pcbnew's
@@ -206,19 +215,23 @@ These are recorded in every run with the owned module's exact refusal:
   `board_envelope` kind is also absent from `capabilities.KINDS` and
   `checks.CHECK_FUNCS`. So J1 is not fixed on the left edge: the placer may put
   it anywhere on the board, and connector-on-edge is not graded.
-- **Part binding.** The emitter writes only library properties (Reference,
-  Value, Footprint, Datasheet, Description); the intent's `part_binding` is
-  preserved by the resolver but not emitted. No owned module writes `LCSC`,
-  `Manufacturer` or `Partnumber`, and the fome-mc BOM has no manufacturer or
-  MPN. `part_binding` and `fab_export` therefore cannot pass on the generated
-  design.
+- **Part binding.** The owned emitter now writes `part_binding` string fields. The
+  default fome-mc BOM path still supplies no manufacturer or MPN, so its
+  `part_binding` and `fab_export` checks remain incomplete. The optional
+  [captured-parts route](rung1-parts.md) supplies catalog identities and ratings;
+  a real supplier-bound reference run is recorded there. Complete staged
+  campaign qualification remains outstanding.
 - **J1 not assembled.** `fab_export` excludes only DNP parts.
   `forward_annotation` refuses DNP (`dnp_unsupported`) and the parity source
-  compares population state, so J1 stays populated and is flagged.
+  compares population state, so J1 stays populated and is flagged on the
+  original hand-soldered route. The optional captured-parts route requires an
+  explicitly assembled J1 with its own catalog selection.
 - **Parts catalog (AGENTEE-27/28).** The owned capture needs `mfr`, `mpn` and
   0/1 `is_basic`/`is_preferred` values that the BOM does not have, and the
   selector needs stock and tolerance. The capture refusal is recorded; parts
-  stay with the experimental `generate` selection.
+  stay with the experimental `generate` selection unless a complete captured
+  `parts/1` bundle is supplied. Without that bundle, membership, assembly and
+  package checks are listed as missing coverage.
 - **Power symbols (AGENTEE-40 with AGENTEE-48/88).** The emitter copies
   `in_bom`/`on_board` from the library definition, so a declared `power:GND` or
   `power:PWR_FLAG` is written with `in_bom yes` and `on_board yes`. The staged

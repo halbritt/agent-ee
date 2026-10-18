@@ -14,6 +14,7 @@ import sqlite3
 import xml.etree.ElementTree as ET
 
 from .candidate import safe_relative
+from .catalog import decimal_number
 from .fab_export import natural_key
 from .hardware_interface import unique_object
 from .storage import digest, write_json
@@ -265,10 +266,12 @@ def _load_sqlite_catalog_manifest(inputs_root, manifest_path, manifest_rel, mani
         snapshot_date_str = doc["snapshot_date"]
         stale_before_str = doc["stale_before"]
         snap_date, _ = _parse_iso_date_or_datetime(snapshot_date_str, "snapshot_date")
-        stale_date, _ = _parse_iso_date_or_datetime(stale_before_str, "stale_before")
-        if not ISO_DATE_RE.fullmatch(snapshot_date_str) or not ISO_DATE_RE.fullmatch(stale_before_str):
+        stale_date = None
+        if stale_before_str is not None:
+            stale_date, _ = _parse_iso_date_or_datetime(stale_before_str, "stale_before")
+        if not ISO_DATE_RE.fullmatch(snapshot_date_str) or (stale_before_str is not None and not ISO_DATE_RE.fullmatch(stale_before_str)):
             raise ValueError("snapshot_date and stale_before must be YYYY-MM-DD")
-        if stale_date > snap_date:
+        if stale_date is not None and stale_date > snap_date:
             raise ValueError("stale_before cannot be after snapshot_date")
         db_meta = doc["database"]
         if not isinstance(db_meta, dict):
@@ -357,7 +360,7 @@ def _load_sqlite_catalog_manifest(inputs_root, manifest_path, manifest_rel, mani
                         "package": package,
                         "category": category,
                         "stock": stock,
-                        "price1": price1,
+                        "price1": float(decimal_number(price1)) if isinstance(price1, str) else price1,
                         "is_basic": is_basic,
                         "is_preferred": is_preferred,
                         "last_seen": last_seen,
