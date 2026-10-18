@@ -76,6 +76,18 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(probes["pcbnew"]["binary"], str(self.binaries["_pcbnew.so"]))
         self.assertEqual(probes["pcbnew"]["sha256"], self.sha("_pcbnew.so"))
         self.assertNotIn("skipped", report)
+        self.assertEqual(probes["kicad-cli"]["erc_json_coordinates"],
+                         {"version": "10.0.7", "regime": "native", "scale": 1})
+
+    def test_kicad_cli_records_the_erc_coordinate_regime(self):
+        for version, regime in (("10.0.6", "scale_x100"), ("10.0.7", "native"),
+                                ("10.0.6-45-g0123abcd", "withheld"), ("9.0.4", "withheld")):
+            self.versions["kicad-cli"] = version
+            code, report = self.doctor("--checks-only")
+            self.assertEqual(code, 0)
+            record = report["prerequisites"]["kicad-cli"]["erc_json_coordinates"]
+            self.assertEqual((record["version"], record["regime"]), (version, regime))
+            self.assertEqual("reason" in record, regime == "withheld")
 
     def test_optional_pdf_extractor_is_identified_when_installed(self):
         tool = self.root / "pdftotext"

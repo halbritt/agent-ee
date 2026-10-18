@@ -120,6 +120,9 @@ The JSON object has `prerequisites` and `note`. Each normal probe records `path`
 failure or 15-second probe timeout records `error` instead. The probes are
 kicad-cli, ngspice, bwrap, system Python (`/usr/bin/python3 --version`), pcbnew
 through system Python, and Claude. No design check or inference occurs.
+The kicad-cli record adds `erc_json_coordinates`: the ERC JSON coordinate regime
+(`scale_x100`, `native` or `withheld` with `reason`) the `erc` check applies to
+that version ([quirk guards](kicad-quirks.md)).
 
 `binary` is the file whose SHA-256 is reported. For executables it is the
 `path` found on `PATH`. For pcbnew, `path` remains `/usr/bin/python3` and `binary` is

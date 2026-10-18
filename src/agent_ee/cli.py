@@ -124,6 +124,11 @@ def doctor(checks_only=False):
         except (OSError, subprocess.TimeoutExpired) as exc:
             record.update(sha256=None, hash_error=str(exc))
         record.setdefault("binary", None)
+        if name == "kicad-cli":
+            # Which ERC JSON coordinate correction the erc check will apply (AGENTEE-66).
+            from .kicad_quirks import erc_coordinate_regime
+            record["erc_json_coordinates"] = erc_coordinate_regime(
+                record["version_output"] if p.returncode == 0 else None)
         checks[name] = record
     # Optional installed analyzers are tools, not core package dependencies.
     analyzer = os.environ.get("AGENT_EE_KICAD_HAPPY")

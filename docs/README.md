@@ -37,6 +37,7 @@ product's hardware qualification.
 | Verify sealed fabrication outputs against captured design evidence | [Fab-package consistency](fab-consistency.md) |
 | Compare Gerber/Excellon counts and outline with native geometry | [Fab round-trip conservation](fab-roundtrip.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
+| See how ERC coordinates and BOM variant names are guarded across KiCad 10.0.x | [KiCad report-format quirk guards](kicad-quirks.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
 | Understand capture, isolation and orchestration | [Architecture](architecture.md) |
