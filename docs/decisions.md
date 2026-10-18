@@ -245,3 +245,39 @@ for three reasons:
 kicad-route contributes routability evidence: its blocked-by receipts and
 `kicad-route blocked` output are inputs the placement stage consumes as check
 evidence. It does not move footprints.
+
+### Bounded resubmission after an output-format refusal (2026-10-17)
+
+> bounded resubmission is allowable
+
+The owner gave this answer to the coordinator's note that three of the first
+four rung-1 campaigns completed the whole design loop and were then refused for
+reasons unrelated to the board: a reviewer witness that failed validation
+(AGENTEE-115), an adjudication that cited `baseline.json`, a path the citation
+validator refuses (AGENTEE-111), and a runtime-drift refusal after an unused
+harness binary updated itself mid-review (AGENTEE-112). Each refusal was
+correct under the evidence model; together they discarded roughly three
+quarters of the day's inference spend.
+
+Preserves every refusal as recorded evidence. A refused reviewer, adjudicator
+or writer output stays in the run directory with its validation error; the
+resubmission is a new, separately recorded call with the same inputs, the same
+pinned harness identity and the same prompt plus the exact validation error.
+The bound is declared in the campaign configuration, defaults to one
+resubmission per role per iteration, and is recorded in the run record with the
+count used. A resubmission that still fails validation ends the run as before.
+Checks are never resubmitted: a check's execution failure remains missing
+coverage (decision 5 and the [campaign guide](campaign-guide.md)).
+
+Excludes any resubmission that changes the inputs, the candidate, the pinned
+tool identity or the finding set; silently dropping or repairing a malformed
+witness or citation on the reviewer's behalf; and any retry that could make a
+refused output look accepted. Runtime drift (AGENTEE-112) is a changed
+environment, not a malformed output: a resubmission is permitted only if the
+harness identity still matches the run's pinned hashes when re-checked;
+otherwise the run stays refused and the drift is the finding.
+
+AGENTEE-111, AGENTEE-112 and AGENTEE-115 implement this decision; their
+acceptance criteria name the bound, the recorded count and the retained refused
+output. The coordinator (`agent-423`) recorded this entry; the owner's answer
+is the authority.
