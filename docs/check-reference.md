@@ -8,6 +8,9 @@ its captured blocks remain unverified.
 For version-2 requirements, measurement/coupling interfaces, campaigns and bench
 feedback, see the [closed-loop contract and command reference](closed-loop.md).
 
+The [pod evidence index](evidence-index.md) maps captured criteria to existing
+check results, receipt history and outstanding obligations without running checks.
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.

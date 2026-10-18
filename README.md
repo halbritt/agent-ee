@@ -33,6 +33,9 @@ The purpose is to make agent-assisted electronics work inspectable and repeatabl
 The engineer still defines the requirements, supplies applicable models, and owns
 physical validation.
 
+The [telemetry-pod evidence index](docs/evidence-index.md) maps sealed checks to
+the pod's nine criteria while retaining bench and operator obligations.
+
 ## A concrete example
 
 The repository includes a small RC low-pass filter with a declared requirement:

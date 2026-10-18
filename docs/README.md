@@ -16,6 +16,7 @@ product's hardware qualification.
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
 | Request missing concern evidence or export a proposed check | [Evidence requests](evidence-requests.md) |
 | Ingest bench samples and calibrate subsequent verification | [Bench feedback](bench-feedback.md) |
+| Map telemetry-pod criteria to sealed checks and outstanding obligations | [Pod evidence index](evidence-index.md) |
 | Install, authenticate, upgrade or remove links | [Installation](installation.md) |
 | Build the pinned image, run checks in CI or use the GitHub Action | [Container image and CI action](container.md) |
 | Run a review, investigate findings and verify a repair | [Operator guide](operator-guide.md) |
