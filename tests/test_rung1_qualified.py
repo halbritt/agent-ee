@@ -148,6 +148,22 @@ class IntentAndLayoutTest(unittest.TestCase):
         self.assertEqual(policy['obstacles'][0]['polygons'][0][0], [100_000_000, 100_000_000])
         self.assertEqual(validate_declaration(q.placement_declaration())['helper'], 'agent-ee.placer/1')
 
+    def test_prep_against_fome_mc_head_passes_stage_two_and_records_header_schema(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-fome-head-') as tmp:
+            rundir = Path(tmp) / 'run'
+            rundir.mkdir()
+            prep = q.prepare(SPEC, rundir)
+            stage2_receipt = json.loads((rundir / 'prep/stages/2-parts/receipt.json').read_text())
+            self.assertEqual(stage2_receipt['status'], 'ok')
+            self.assertEqual(stage2_receipt['details']['catalog']['header_schema'], 'four_column')
+            self.assertEqual(stage2_receipt['details']['catalog']['columns'], g.CATALOG_COLUMNS_4)
+            capture = q.catalog_attempt(prep, rundir / 'parts-catalog')
+            self.assertEqual(capture['header_schema'], 'four_column')
+            self.assertEqual(capture['columns'], g.CATALOG_COLUMNS_4)
+            self.assertGreater(capture['catalog_rows'], 0)
+            self.assertEqual(prep['parts']['parts']['R1']['Footprint'], 'Resistor_SMD:R_0402_1005Metric')
+            self.assertEqual(prep['parts']['parts']['C1']['Footprint'], 'Capacitor_SMD:C_0603_1608Metric')
+
 
 class StepsTest(unittest.TestCase):
     def fake_route(self):

@@ -13,6 +13,7 @@ from .storage import identity
 SCHEMA = 'agent-ee.datasheet-bindings/1'
 RUNG1 = 'agent-ee.rung1-parts-manifest/0-experimental'
 COLUMNS = ['Comment', 'Designator', 'Footprint', 'LCSC Part #', 'Quantity']
+COLUMNS_4 = ['Comment', 'Designator', 'Footprint', 'LCSC']
 
 
 def captured_path(root, rel):
@@ -153,7 +154,7 @@ def bindings_from_rung1(manifest, source_root):
         raise ValueError('unsupported experimental manifest')
     catalog = manifest['catalog']
     exact_fields(catalog, ('path', 'sha256', 'source', 'columns'))
-    if catalog['columns'] != COLUMNS:
+    if catalog['columns'] not in (COLUMNS, COLUMNS_4):
         raise ValueError('unsupported experimental catalog columns')
     raw = captured_path(source_root, catalog['path']).read_bytes()
     if hashlib.sha256(raw).hexdigest() != _hash(catalog['sha256']):
@@ -173,9 +174,19 @@ def bindings_from_rung1(manifest, source_root):
     if source['working_tree_sha256'] is not None:
         _hash(source['working_tree_sha256'])
     reader = csv.DictReader(io.StringIO(raw.decode('utf-8')))
-    rows = list(reader)
-    if reader.fieldnames != COLUMNS or not rows or any(set(r) != set(COLUMNS) or None in r.values() for r in rows):
+    raw_rows = list(reader)
+    expected_cols = catalog['columns']
+    if (reader.fieldnames != expected_cols or not raw_rows or
+            any(set(r) != set(expected_cols) or None in r.values() for r in raw_rows)):
         raise ValueError('malformed experimental catalog rows')
+    if expected_cols == COLUMNS_4:
+        from .generate import StageFailure, read_catalog
+        try:
+            rows = read_catalog(raw)
+        except StageFailure as exc:
+            raise ValueError(str(exc)) from exc
+    else:
+        rows = raw_rows
     policy = manifest['policy']
     exact_fields(policy, ('value_match', 'families', 'rank', 'not_assembled'))
     # Retain policy as provenance only; this adapter does not qualify its ranking or stock semantics.

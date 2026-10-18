@@ -308,16 +308,20 @@ def catalog_attempt(prep, work):
     if len(copies) != 1:
         raise PrepareFailure('expected one catalog copy beside the parts manifest')
     raw = copies[0].read_bytes()
-    rows = list(csv.DictReader(io.StringIO(raw.decode('utf-8'))))
+    try:
+        rows, header_schema, columns = g.read_catalog_with_schema(raw)
+    except g.StageFailure as exc:
+        raise PrepareFailure(str(exc)) from exc
     out_rows, seen = [], set()
     for row in rows:
         library, _, footprint = row['Footprint'].partition(':')
-        if library not in CATALOG_CATEGORIES or not row['LCSC Part #'] or row['LCSC Part #'] in seen:
+        lcsc = g.catalog_lcsc(row)
+        if library not in CATALOG_CATEGORIES or not lcsc or lcsc in seen:
             continue
-        seen.add(row['LCSC Part #'])
+        seen.add(lcsc)
         category, attribute, unit = CATALOG_CATEGORIES[library]
         package = next((size for size in g.CHIP_SIZES if f'_{size}_' in footprint), footprint)
-        out_rows.append({'lcsc': row['LCSC Part #'], 'mfr': '', 'mpn': '', 'package': package,
+        out_rows.append({'lcsc': lcsc, 'mfr': '', 'mpn': '', 'package': package,
                          'category': category, 'stock': '', 'price1': '', 'is_basic': '', 'is_preferred': '',
                          'last_seen': '', 'attributes': json.dumps({attribute: row['Comment']})})
     work.mkdir(parents=True)
@@ -339,6 +343,7 @@ def catalog_attempt(prep, work):
                              'format': 'csv'}]}
     write_json(work / 'catalog-source.json', manifest)
     result = {'module': 'agent_ee.catalog.capture_catalog', 'plane': 'AGENTEE-27',
+              'header_schema': header_schema, 'columns': columns,
               'source_rows': len(rows), 'catalog_rows': len(out_rows),
               'derivation': ('fome-mc BOM rows of Resistor_SMD/Capacitor_SMD with an LCSC number; lcsc, package '
                              '(from the footprint name), category and the Comment value copied; mfr, mpn, stock, '
@@ -770,9 +775,10 @@ def prepare(spec, rundir, catalog_checkout=None, parts_manifest=None, cpl_inputs
 
 
 def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iterations, parts_manifest=None,
-          cpl_inputs=None):
+          cpl_inputs=None, catalog_checkout=None):
     rundir = Path(rundir).absolute()
-    prep = prepare(spec, rundir, parts_manifest=parts_manifest, cpl_inputs=cpl_inputs)
+    prep = prepare(spec, rundir, catalog_checkout=catalog_checkout, parts_manifest=parts_manifest,
+                   cpl_inputs=cpl_inputs)
     catalog = ({'status': 'captured', 'catalog': prep['parts']['catalog']}
                if 'approved_bundle' in prep['parts'] else catalog_attempt(prep, rundir / 'parts-catalog'))
     scaffold, scaffold_record = write_scaffold(rundir, prep)

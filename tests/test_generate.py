@@ -4,6 +4,7 @@ The integration test runs stages 1-5 and 7 with --skip-review on the real toolch
 stage 6 (subscription inference) is never run here.
 """
 import csv
+import io
 import json
 import os
 from pathlib import Path
@@ -285,6 +286,83 @@ class PartsTest(unittest.TestCase):
             with self.assertRaises(g.StageFailure):
                 g.stage_parts(stage, {'params': state['params']}, {'catalog_checkout': checkout})
 
+    def test_read_catalog_four_column(self):
+        _, raw_e7, source_e7 = g.capture_catalog(rev='e7f5ae3')
+        _, raw_c5, source_c5 = g.capture_catalog(rev='c582b29')
+        self.assertTrue(source_e7['checkout_head'].startswith('e7f5ae3'))
+        self.assertTrue(source_c5['checkout_head'].startswith('c582b29'))
+        rows_e7, schema_e7, cols_e7 = g.read_catalog_with_schema(raw_e7)
+        rows_c5, schema_c5, cols_c5 = g.read_catalog_with_schema(raw_c5)
+        self.assertEqual((schema_e7, cols_e7), ('four_column', g.CATALOG_COLUMNS_4))
+        self.assertEqual((schema_c5, cols_c5), ('five_column', g.CATALOG_COLUMNS))
+        self.assertEqual(g.read_catalog(raw_e7), rows_e7)
+        for row in rows_e7:
+            self.assertIn(':', row['Footprint'])
+            self.assertEqual(row['Quantity'], str(len([d.strip() for d in row['Designator'].split(',') if d.strip()])))
+            self.assertEqual(g.catalog_lcsc(row), row['LCSC'])
+            self.assertEqual(row['LCSC Part #'], row['LCSC'])
+        for value in ('10k', '1', '12k', '68k', '100k', '470k', '2.7k'):
+            chosen_e7, _, default_e7 = g.select_part(rows_e7, 'Device:R', value)
+            chosen_c5, _, default_c5 = g.select_part(rows_c5, 'Device:R', value)
+            self.assertEqual(default_e7, default_c5)
+            for key in ('footprint', 'lcsc', 'quantity', 'package', 'rank_key'):
+                self.assertEqual(chosen_e7[key], chosen_c5[key], (value, key))
+        for value in ('4.7u', '10u', '1n', '2.2u', '3.3n', '330p', '33n', '33p', '470n', '47p', '680p'):
+            chosen_e7, _, default_e7 = g.select_part(rows_e7, 'Device:C', value)
+            chosen_c5, _, default_c5 = g.select_part(rows_c5, 'Device:C', value)
+            self.assertEqual(default_e7, default_c5)
+            for key in ('footprint', 'lcsc', 'quantity', 'package', 'rank_key'):
+                self.assertEqual(chosen_e7[key], chosen_c5[key], (value, key))
+        chosen_c_e7, rejected_c_e7, default_c_e7 = g.select_part(rows_e7, 'Device:C', '100n')
+        chosen_c_c5, rejected_c_c5, default_c_c5 = g.select_part(rows_c5, 'Device:C', '100n')
+        self.assertEqual((chosen_c_e7['footprint'], chosen_c_e7['package'], default_c_e7),
+                         (chosen_c_c5['footprint'], chosen_c_c5['package'], default_c_c5))
+        # Converting c582b29 rows to 4-column library-less format yields identical R and C selections.
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=g.CATALOG_COLUMNS_4, lineterminator='\n')
+        writer.writeheader()
+        for row in csv.DictReader(io.StringIO(raw_c5.decode('utf-8'))):
+            writer.writerow({
+                'Comment': row['Comment'],
+                'Designator': row['Designator'],
+                'Footprint': row['Footprint'].partition(':')[2],
+                'LCSC': row['LCSC Part #'],
+            })
+        rows_c5_as_4 = g.read_catalog(buf.getvalue().encode('utf-8'))
+        self.assertEqual(g.select_part(rows_c5_as_4, 'Device:R', '10k'),
+                         g.select_part(rows_c5, 'Device:R', '10k'))
+        self.assertEqual(g.select_part(rows_c5_as_4, 'Device:C', '100n'),
+                         g.select_part(rows_c5, 'Device:C', '100n'))
+        if (g.STOCK / 'footprints/Resistor_SMD.pretty').is_dir():
+            with tempfile.TemporaryDirectory() as tmp:
+                stage = g.Stage(Path(tmp) / 'run', 2, 'parts')
+                stage.start()
+                state = {'params': g.parse_spec(SPEC.read_text())}
+                g.stage_parts(stage, state, {'catalog_checkout': g.CATALOG_CHECKOUT})
+                self.assertEqual(stage.receipt['details']['catalog']['header_schema'], 'four_column')
+                self.assertEqual(stage.receipt['details']['catalog']['columns'], g.CATALOG_COLUMNS_4)
+
+    def test_read_catalog_unknown_header_refused(self):
+        for bad_header in (
+            'Comment,Designator,Footprint,MPN',
+            'Comment,Designator,Footprint,LCSC,Quantity',
+            'Reference,Value,Footprint,LCSC',
+        ):
+            raw = (bad_header + '\n10k,R1,R_0402_1005Metric,C25744\n').encode('utf-8')
+            with self.subTest(header=bad_header), self.assertRaises(g.StageFailure) as ctx:
+                g.read_catalog(raw)
+            self.assertIn(bad_header, str(ctx.exception))
+
+    def test_library_less_footprint_unmapped_refused(self):
+        header_4 = ','.join(g.CATALOG_COLUMNS_4) + '\n'
+        raw = (header_4 + '10k,R1,R_0402_UnmappedCustomMetric,C25744\n').encode('utf-8')
+        with self.assertRaises(g.StageFailure) as ctx:
+            g.read_catalog(raw)
+        self.assertIn('R_0402_UnmappedCustomMetric', str(ctx.exception))
+        raw_known = (header_4 + '10k,R1,R_0402_1005Metric,C25744\n').encode('utf-8')
+        with self.assertRaises(g.StageFailure) as ctx2:
+            g.read_catalog(raw_known, footprint_map={})
+        self.assertIn('R_0402_1005Metric', str(ctx2.exception))
 
 
 class ScopeTest(unittest.TestCase):

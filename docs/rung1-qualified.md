@@ -227,7 +227,7 @@ historical and do not qualify as runs of the current adapter.
 | Path | Content |
 | --- | --- |
 | `prep/` | `agent_ee.generate` stage-1 and stage-2 receipts |
-| `parts-catalog/` | the catalog source manifest and volume built from the BOM, and the capture result |
+| `parts-catalog/` | the catalog source manifest and volume built from the BOM through `generate.read_catalog_with_schema` and `generate.catalog_lcsc`, and the capture result (`header_schema` and `columns` recorded under `/parts/catalog_capture`) |
 | `scaffold/` | empty project, requirements, generation inputs (intent, layout, parts manifest, footprint manifest, placement policy, envelope records, golden netlist) |
 | `scaffold-checks/` | kicad-cli loads of the empty files |
 | `probes/`, `probes.json` | scope/3 variants that consume the envelope, with the loaders' exact refusals |

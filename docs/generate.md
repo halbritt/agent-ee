@@ -61,7 +61,7 @@ never starts after an earlier failure; it is recorded as `not_reached`.
 | Stage | What it does | Fails when |
 | --- | --- | --- |
 | 1 requirements | Extracts the RC parameters from the spec with fixed patterns (each must match exactly once), imports an intent record with `design_intent.import_record`, captures an empty-question dialog with `design_dialog.capture_dialog`, writes `requirements/{spec,system,targets,reference}.md` and compiles `scope/rung1.scope.json` from `fixtures/closed-loop/control.scope.json` | A parameter is missing or ambiguous, the topology is not the RC template, or the lint/dialog does not pass |
-| 2 parts | Reads the owner's fome-mc BOM `export/BOM-fome-mc.csv` as committed at `~/git/fome-mc` HEAD (working-tree edits by other sessions are recorded, not read), copies it into the run, writes `parts-manifest.json` and captures each part's Datasheet into `datasheets/` | No exact-value row of the symbol's chip family has an LCSC number, a footprint is missing from the stock library, or pads differ from pins |
+| 2 parts | Reads the owner's fome-mc BOM `export/BOM-fome-mc.csv` as committed at `~/git/fome-mc` HEAD (working-tree edits by other sessions are recorded, not read), copies it into the run, writes `parts-manifest.json` and captures each part's Datasheet into `datasheets/` | The BOM header is not one of the two declared schemas (`Comment,Designator,Footprint,LCSC Part #,Quantity` or `Comment,Designator,Footprint,LCSC`), a library-less footprint has no entry in the captured footprint map, no exact-value row of the symbol's chip family has an LCSC number, a footprint is missing from the stock library, or pads differ from pins |
 | 3 schematic | Writes the connectivity intent over captured `Device`, `power` and `Connector_Generic` libraries, resolves it with `connectivity_ir`, runs `agent_ee.schematic_emit` in the sandbox, then native ERC and XML netlist export | The intent does not resolve, the emitter refuses, ERC reports any violation, or the netlist nets or components differ from the intent |
 | 4 placement | Writes the envelope (50 x 30 mm outline at 100,100 mm; J1 fixed 2.54 mm inside the left edge) and packing policy, then runs `agent_ee.board_build` in the sandbox | `board_build` exits non-zero (its exit meanings are kept in the error) |
 | 5 routing | Runs `kicad-route --out stages/5-routing/out run --backend krt --budget 300` in a copy of the placed project and copies the candidate to `RUNDIR/design/` | kicad-route exits non-zero (0 is complete and valid) |
@@ -74,6 +74,17 @@ and passed, and `failed` otherwise. Stage 7 still runs, but the record cannot
 be done: there is no review verdict.
 
 ## Parts rule
+
+`read_catalog` accepts only the two declared BOM header schemas, selected by
+exact header match and recorded in `details.catalog` (`header_schema` and
+`columns`) of the stage-2 receipt: the 5-column pre-`11f03c8` header
+`Comment,Designator,Footprint,LCSC Part #,Quantity` (`five_column`) and the
+4-column `11f03c8` header `Comment,Designator,Footprint,LCSC` (`four_column`).
+Any other header is refused naming the header. For the 4-column form,
+`Quantity` is derived from the comma-separated designator count in `Designator`
+and library-less footprint names (`R_0402_1005Metric`) are resolved only through
+the captured footprint map; an unmapped library-less footprint is refused,
+never guessed.
 
 Selection is deterministic: the catalog `Comment` must equal the intent value
 exactly, the footprint must be a two-terminal chip of the symbol's family
