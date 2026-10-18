@@ -225,6 +225,14 @@ historical and do not qualify as runs of the current adapter.
 
 ### Empty scaffold
 
+Selected symbol subsets live under `scaffold/generation/symbols/`; the scope
+also maps that directory to `stock/symbols`. Stock footprints and templates
+are captured separately. This keeps the scaffold pre-receipt's after-tree
+bound to its own inputs without claiming the separately captured stock tree.
+With `--parts-manifest`, the driver copies `rung1-package-map.json` before
+the scaffold step runs, so both the pre-receipt and `scaffold.json` bind it.
+Compiling the scope only reads the scaffold; it does not add files to it.
+
 The driver writes `requirements/` and the generation inputs. The empty
 schematic, board and project come from `agent_ee.scaffold.native_files`, the one
 empty-scaffold builder on main, through the same sandboxed `write-scaffold` step

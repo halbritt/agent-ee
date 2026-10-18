@@ -210,12 +210,35 @@ class RungPartsTests(unittest.TestCase):
             parts.check_cad_inputs(qualified, self.source, symbols, footprints)
 
     def test_owned_scaffold_captures_bundle_and_registers_existing_assembly_package_checks(self):
+        from agent_ee import rung1_campaign as rc
+        from agent_ee.candidate import capture
+        from agent_ee.stage_receipts import file_tree, import_pre_receipts, validate_receipt, verify_pre_receipts
         run = self.root / 'run'
         run.mkdir()
         prep = q.prepare(SPEC, run, parts_manifest=self.source / 'parts.json')
         scaffold, record = q.write_scaffold(run, prep)
+        before = file_tree(scaffold)
         scope = q.compile_staged_scope(prep['params'], run, scaffold)
+        self.assertEqual(file_tree(scaffold), before)
+        self.assertEqual(q.compile_staged_scope(prep['params'], run, scaffold), scope)
+        mapping = 'rung1-package-map.json'
+        receipt = validate_receipt(run / 'scaffold-receipt', binding={'pre_receipt': 1})
+        self.assertEqual(receipt['inputs'][mapping], record['files'][mapping])
+        self.assertEqual(record['files'][mapping], digest(scaffold / mapping))
         write_json(run / 'scope.json', scope)
+        campaign = run / 'campaign'
+        links = import_pre_receipts(campaign, [rc.scaffold_pre_receipt(record)], run)
+        first = campaign / 'runs/1'
+        first.mkdir(parents=True)
+        capture(run / 'scope.json', first)
+        state = {'history': [{'run': str(first)}],
+                 'pre_receipts': {links[0]['path']: links[0]['sha256']}}
+        verify_pre_receipts(campaign, state, links)
+        captured = read_json(first / 'candidate.json')
+        captured['files'][mapping] = '0' * 64
+        write_json(first / 'candidate.json', captured)
+        with self.assertRaisesRegex(ValueError, 'pre_receipt output differs from first capture: ' + mapping):
+            verify_pre_receipts(campaign, state, links)
         validation = q.validate_scope_file(run / 'scope.json', run / 'validation')
         self.assertTrue({'parts_subset', 'assembly_readiness', 'package_consistency'} <=
                         {c['kind'] for c in scope['checks']})
@@ -223,6 +246,15 @@ class RungPartsTests(unittest.TestCase):
                          'snapshot/catalog.sqlite3'} <= set(validation['baseline_files']))
         self.assertEqual(prep['parts']['parts']['J1']['LCSC'], 'C3')
         self.native_fab_evidence(run, prep, scaffold, scope)
+
+    def test_parts_bundle_cannot_supply_the_reserved_package_map(self):
+        run = self.root / 'collision'
+        run.mkdir()
+        prep = q.prepare(SPEC, run, parts_manifest=self.source / 'parts.json')
+        (prep['parts_path'].parent / 'approved/rung1-package-map.json').write_text('{}')
+        with self.assertRaisesRegex(q.PrepareFailure, 'parts bundle uses reserved package-map path'):
+            q.write_scaffold(run, prep)
+        self.assertFalse((run / 'scaffold-receipt').exists())
 
     def native_fab_evidence(self, run, prep, scaffold, scope):
         """Real emitter → native XML → annotation → sealed checks; no campaign claim."""

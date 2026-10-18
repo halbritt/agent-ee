@@ -377,8 +377,8 @@ def write_scaffold(rundir, prep):
     # Generation inputs (immutable in the scope).
     intent = qualified_intent(prep)
     captured = {lib['path']: prep['symbol_libraries'][Path(lib['path']).name] for lib in intent['libraries']}
-    for path, data in captured.items():
-        target = scaffold / path
+    for name, data in prep['symbol_libraries'].items():
+        target = generation / 'symbols' / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     write_json(generation / 'symbol-captures.json', prep['symbol_captures'])
@@ -407,6 +407,10 @@ def write_scaffold(rundir, prep):
                 raise PrepareFailure('parts bundle collides with scaffold input: ' + str(relative))
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
+        mapping = scaffold / 'rung1-package-map.json'
+        if mapping.exists():
+            raise PrepareFailure('parts bundle uses reserved package-map path')
+        shutil.copyfile(REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json', mapping)
     write_json(generation / 'footprints.json', footprints)
     write_json(generation / 'placement-policy.json', packing_policy(prep['params'], outline))
     golden, golden_record = golden_netlist(rundir / 'golden-export')
@@ -452,7 +456,7 @@ def compile_staged_scope(params, scope_dir, scaffold):
         elif item['at'] == 'requirements':
             item = {'path': os.path.relpath(scaffold / 'requirements', base), 'at': 'requirements'}
         elif item['at'] == 'stock/symbols':
-            item = {'path': os.path.relpath(scaffold / 'stock/symbols', base), 'at': 'stock/symbols'}
+            item = {'path': os.path.relpath(scaffold / 'generation/symbols', base), 'at': 'stock/symbols'}
         inputs.append(item)
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs
@@ -539,9 +543,6 @@ def add_parts_checks(scope, scaffold, base):
     for path in ['approved-parts.json', *qualified['dependencies']]:
         scope['inputs'].append({'path': os.path.relpath(scaffold / path, base), 'at': path})
     mapping = scaffold / 'rung1-package-map.json'
-    if mapping.exists():
-        raise PrepareFailure('parts bundle uses reserved package-map path')
-    shutil.copyfile(REPO_ROOT / 'references/package-map/kicad-10.0.7-lcsc-1.json', mapping)
     scope['inputs'].append({'path': os.path.relpath(mapping, base), 'at': mapping.name})
     catalog = manifest['catalog']
     additions = [

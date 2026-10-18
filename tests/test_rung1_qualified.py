@@ -343,7 +343,8 @@ class ScopeTest(unittest.TestCase):
             verify_pre_receipts(root, state, links)
             manifest = json.loads((run / 'candidate.json').read_text())
             original = json.loads(json.dumps(manifest))
-            for planted, value in ((f'project/{q.NAME}.kicad_pcb', '0' * 64), ('generation/extra.json', '1' * 64)):
+            for planted, value in ((f'project/{q.NAME}.kicad_pcb', '0' * 64), ('generation/extra.json', '1' * 64),
+                                   ('generation/symbols/Device.kicad_sym', '2' * 64)):
                 manifest['files'] = dict(original['files'], **{planted: value})
                 (run / 'candidate.json').write_text(json.dumps(manifest))
                 with self.assertRaisesRegex(ValueError, 'pre_receipt output differs from first capture: ' + planted):
@@ -353,15 +354,12 @@ class ScopeTest(unittest.TestCase):
                 verify_pre_receipts(root, {**state, 'pre_receipts': {}}, links)
 
     def test_build_declares_scaffold_only_as_a_pre_receipt(self):
-        from unittest import mock
         route = Path(require_kicad_route())
         built = self.rundir.parent / 'built'
         built.mkdir()
-        real = q.prepare
-        # The owned synthetic catalog in place of the default fome-mc checkout; everything else is real.
-        with mock.patch.object(q, 'prepare', lambda spec, rundir, **kw: real(spec, rundir, catalog_checkout=self.catalog, **kw)):
-            base, scope_path, config_path = q.build(SPEC, built, profile_path=ROOT / 'profiles/claude-baseline.json',
-                                                    kicad_route=route, max_seconds=3600, max_iterations=4)
+        base, scope_path, config_path = q.build(SPEC, built, profile_path=ROOT / 'profiles/claude-baseline.json',
+                                                kicad_route=route, max_seconds=3600, max_iterations=4,
+                                                catalog_checkout=self.catalog)
         config = json.loads(config_path.read_text())
         summary = base['scaffold']['stage_receipt']
         self.assertEqual(config['pre_receipts'], [{'path': 'scaffold-receipt/receipt.json',
