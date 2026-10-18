@@ -127,3 +127,6 @@ references, so reannotation that moves a reference moves the anchor. Only
 `_P`/`_N` pair suffixes are recognized. Physical connectivity against the intent
 is [netlist parity](netlist-parity.md). Owner-declared terminals and loads are
 [hardware interfaces](hardware-interface.md).
+Parity can also capture this same required-name policy through `net_name_policy`
+to anchor its bounded exact search. Suggested level annotations do not select
+parity anchors.

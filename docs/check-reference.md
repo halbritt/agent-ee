@@ -438,9 +438,16 @@ Required parameters are `source`, `netlist_check`, `predicate` (`topology`,
 so the coordinator can rederive it. One check maps to one baseline requirement.
 
 Exact physical-pin incidence preserves identical component instances and ignores
-reference and net names. Missing or extra parts, changed bindings and merged or
-split nets are defects. Ambiguous required instance correspondence, unresolvable
-match keys and bounded-search exhaustion are unknown. Scores describe a match;
+reference and net names by default. Optional `anchors` declare fixed references
+or sheet/UUID identities; `net_name_policy` reuses a captured AGENTEE-44 required-name
+policy bound to a baseline requirement. Resolved anchors seed color refinement
+and constrain the exact search. Reports retain the anchor set, policy hash,
+contradictions and assignment step count. A contradicted anchor is a defect;
+unresolved sheet/UUID identities and incomplete terminal evidence remain unknown.
+Both anchor forms are refused for the component-only predicate. Missing or extra
+parts, changed bindings and merged or split nets are defects. Ambiguous required
+instance correspondence, unresolvable match keys and bounded-search exhaustion
+are unknown. Scores describe a match;
 they do not decide acceptance. Electrical adequacy and footprint suitability are
 outside this check.
 

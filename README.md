@@ -218,6 +218,8 @@ listed in the parity report; physical terminals remain exact. Exact instance
 connectivity catches exchanges that collapsed part labels can miss; ambiguous
 correspondence and search exhaustion remain unknown. Missing, malformed or
 contradictory native connectivity artifacts leave parity coverage unknown.
+Explicit fixed-reference anchors and captured required-name policies seed the
+exact search for repeated channels; the report records anchors and search steps.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs, and warn about same-name net islands. Island warnings
 are advisory. Neither check establishes electrical adequacy.
