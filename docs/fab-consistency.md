@@ -32,8 +32,13 @@ The manifest is a claim to verify, never an authority:
   netlist, and every netlist component must be on the board unless the netlist
   excludes it from the board. `designators.board_non_dnp` must equal the
   geometry's non-DNP references. Schematic DNP flags do not change this
-  board-derived manifest field; a disagreement with the assembled board is
-  reported separately as an assembly/parity defect.
+  board-derived manifest field. The producer takes DNP from the board alone
+  (see [DNP authority](fab-export.md#dnp-authority)). This gate compares the
+  sealed netlist `dnp` property with the geometry `dnp` attribute for every
+  designator in both. Each disagreement, in either direction, is a
+  `designator_parity` defect, listed in `details.designators.dnp_disagreements`
+  as `{"designator", "schematic_dnp", "board_dnp"}`. The producer's own
+  `details.dnp_disagreements` is not trusted for this.
 
 Scope/3 requires the parameters to be exactly `{export_check}`. The export,
 its netlist and a geometry check must all come earlier in scope order. The check declares
@@ -64,6 +69,7 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | CSV not UTF-8, wrong header, wrong cell count, no rows, broken quoting, or a non-finite CPL number | `malformed`, `unknown` |
 | Compressed range (`R1-R4`), duplicate, empty or invalid designator; BOM quantity differs from its designator count; empty or invalid LCSC number; non-ASCII BOM cell | `ok`, `defect` |
 | A designator missing from the BOM, the CPL or the assembled board set. The defect names the designator and each missing side. | `ok`, `defect` |
+| A designator whose sealed netlist DNP state differs from its board footprint DNP state, in either direction (`designator_parity`) | `ok`, `defect` |
 | One LCSC number maps to more than one BOM footprint or board footprint library ID | `ok`, `defect` |
 | CPL `Layer` differs from the board footprint side, or is not Top/Bottom | `ok`, `defect` |
 | CPL X or Y differs from the native footprint anchor by more than 0.01 mm in the `fab_export/1` coordinate frame | `ok`, `defect` |
@@ -165,8 +171,10 @@ compressed/duplicate/empty references, LCSC binding and footprint conflicts, CPL
 side and coordinate violations, missing models and synthetic log diagnostics.
 A native source-mutation case also makes the schematic and board disagree on
 J1 DNP state in both directions. The producer succeeds with its board-derived
-manifest; the gate reports named assembly/parity defects rather than treating
-that valid manifest as stale.
+package, so BOM, CPL and board agree. The gate reports the disagreement as a
+named `designator_parity` defect. When the schematic marks a populated
+footprint DNP, it also reports `netlist_exclusion_assembled`. It does not treat
+the valid manifest as stale.
 Each is sealed and accepted through the existing requirement/check witness and
 central adjudication helpers. Controls, malformed packages, stale producer
 outputs and missing native evidence cannot qualify a defect witness. No witness

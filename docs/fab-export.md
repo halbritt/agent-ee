@@ -62,12 +62,41 @@ malformed. The zip is byte-identical for the same zlib implementation.
 
 ### BOM
 
-The BOM comes from the native XML netlist of the prerequisite, never from the
-board. Power symbols (`#` references) and DNP components are excluded. The
-symbol fields that bind a part follow AGENTEE-32: `LCSC` (`^C[1-9][0-9]*$`),
+Part bindings come from the native XML netlist of the prerequisite, never from
+the board. Power symbols (`#` references) are excluded. The symbol fields that bind a part follow AGENTEE-32: `LCSC` (`^C[1-9][0-9]*$`),
 `Manufacturer`, and `Partnumber` (or `PartNumber` when `Partnumber` is unset;
 two different values are refused). `Value` and `Footprint` (the full library id)
 are also required.
+
+#### DNP authority
+
+The board's footprint `dnp` attribute decides which parts the package
+assembles. The same flags drive the BOM, `--exclude-dnp` in the position file
+and `designators.board_non_dnp`, so the three agree by construction:
+
+- A netlist component with a board footprint is in the BOM exactly when that
+  footprint is not DNP. Its schematic DNP flag does not matter here; a
+  schematic-DNP part whose footprint is populated is bound from its netlist
+  fields and listed.
+- A netlist component with no board footprint keeps its schematic state. A
+  schematic-DNP part off the board is left out. A populated part off the board
+  stays in the BOM and then fails designator agreement (`malformed`).
+- A board footprint with no netlist component has no binding and is never in
+  the BOM, so it also fails designator agreement.
+- `exclude_from_bom` or `exclude_from_board` on a component that is populated
+  in either the schematic or the board is refused as `unsupported`.
+
+The export never resolves a schematic/board DNP disagreement silently. Each
+disagreeing designator is listed in `details.dnp_disagreements` as
+`{"designator", "schematic_dnp", "board_dnp"}`, and a limitation names it.
+`details.schematic_dnp` keeps the schematic DNP references. The package still
+completes, because the board flags fully define it. The
+[consistency gate](fab-consistency.md) reads the sealed netlist and geometry
+itself and reports every such designator as a `designator_parity` defect. The
+manifest is unchanged: `designators` holds only `board_non_dnp`. The board is
+the authority because it is the artefact that the Gerbers, drill and position
+file come from. Building the BOM from the schematic would let BOM and CPL
+disagree whenever the two sources did.
 
 Rows are grouped by LCSC number. Designators within a row are in natural order
 (`C1,C2,C10`), and `Quantity` is the designator count. Rows are ordered by their
@@ -93,8 +122,10 @@ compares these coordinates with the exact native geometry probe within 0.01 mm.
 Rows are in natural designator order. The check applies **no rotation, offset or pin-1 policy**:
 `Rotation` is the native KiCad angle. JLC rotation correction belongs to
 AGENTEE-72. The BOM and position-file designators must both equal the board's
-non-DNP footprints before a manifest is written. A mismatch makes the output
-malformed and retains the files only in `fab.incomplete/`.
+non-DNP footprints before a manifest is written. The DNP authority rule makes
+them agree when the netlist and board name the same parts. A remaining
+mismatch, such as a renamed footprint or a part missing from one side, makes
+the output malformed and retains the files only in `fab.incomplete/`.
 
 ### Manifest
 
@@ -166,6 +197,9 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 - the 2-layer and 4-layer packages, sealed;
 - byte-identical repeat runs whose raw native Gerber timestamps differ;
 - mismatched BOM/board references refused before completion;
+- schematic/board DNP disagreement in both directions: the package follows the
+  board, completes, and records `details.dnp_disagreements`;
+- the DNP authority and exclusion rules as unit cases;
 - real netlist → geometry → fab export → consistency checks with sealed evidence;
 - DNP exclusion, a missing part binding, and empty, removed or truncated native
   outputs;
