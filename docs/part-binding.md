@@ -64,10 +64,10 @@ Any property whose name matches `^PARAM_[A-Za-z0-9_]+$` (for example `PARAM_resi
    ```json
    {"min": "9900", "max": "10100", "nominal": "10000", "unit": "ohm"}
    ```
-   - `min` and `max` are required finite numbers or numeric strings parsed with exact `Decimal`.
+   - `min` and `max` are required finite numbers or numeric strings parsed with exact `Decimal` (ASCII digits only; underscores in numbers and exponents or precisions outside `MAX_DECIMAL_EXPONENT=1000` / `MAX_DECIMAL_SIGNIFICAND_DIGITS=28` are rejected).
    - `nominal` is optional; when present, it must satisfy `min <= nominal <= max`.
    - Must satisfy `min <= max`.
-   - `unit` is a required non-empty trimmed string.
+   - `unit` is a required non-empty trimmed string belonging to the declared `PARAM_UNITS` vocabulary (SI prefixes `f`/`p`/`n`/`u`/`m`/`k`/`M`/`G` on `ohm`/`Ohm`/`F`/`H`/`V`/`A`/`W`/`Hz`/`s`/`m`/`g`, plus `degC`, `K`, `C/W`, `K/W`, `%`, `ppm`, `ppm/K`, `ppm/degC`, `dB`, `bps`/`kbps`/`Mbps`/`Gbps`, `rad`, `deg`, `lm`, `cd`, `mcd`, `T`/`mT`/`uT`).
 
 2. **Discrete Set Form**:
    ```json
@@ -79,8 +79,8 @@ Any property whose name matches `^PARAM_[A-Za-z0-9_]+$` (for example `PARAM_resi
 
 3. **Strict JSON Rules**:
    - Duplicate JSON keys are rejected.
-   - `NaN`, `Infinity`, `-Infinity`, booleans, and `null` bounds are rejected.
-   - Any violation raises `PartBindingMalformedError`.
+   - `NaN`, `Infinity`, `-Infinity`, booleans, `null` bounds, underscores in numbers, non-ASCII digits, decimal overflow, and unknown units are rejected.
+   - Any violation raises `PartBindingMalformedError`. During `validate_part_bindings`, a malformed `PARAM_*` property is recorded under `param_errors` and sets that reference's outcome in `reference_outcomes` to `malformed` while still evaluating all other references.
 
 ---
 
@@ -136,18 +136,20 @@ When both `sch_bytes` and `pcb_bytes` are supplied to `validate_part_bindings`:
 
 | Condition | `execution` | `outcome` | Reason |
 |---|---|---|---|
-| Unparseable S-expression, wrong root tag, invalid `PARAM_*` JSON, duplicate keys, missing `unit`, or `min > max` | `malformed` | `unknown` | Structural or parameter literal syntax failure |
+| Unparseable S-expression, wrong root tag, invalid `PARAM_*` JSON, decimal overflow, underscore/non-ASCII number, duplicate keys, missing/unsupported `unit`, or `min > max` | `malformed` | `unknown` | Structural or parameter literal syntax failure |
 | Uncaptured child sheet, unsafe `Sheetfile`, sheet cycle or unmatched occurrence | `malformed` | `unknown` | Hierarchy coverage is incomplete |
 | Non-empty `disagreements` (schematic/board mismatch, missing parity, multi-unit conflict) or `invalid_bindings` (e.g. `LCSC` = `"12345"` or `"C0"`) | `ok` | `defect` | Binding violation or schematic/board contradiction |
 | Non-empty `missing_bindings` (missing `LCSC` without a marker, `Manufacturer` or `Partnumber` on a non-virtual component, a one-sided binding property, or an unannotated reference) and no defects | `ok` | `unknown` | Incomplete binding coverage is never reported as `pass` |
 | Zero non-virtual components evaluated and no defects/missing bindings | `ok` | `info` | Nothing eligible to qualify |
 | At least one non-virtual component evaluated with zero disagreements, invalid bindings, or missing bindings | `ok` | `pass` | All evaluated bindings are valid and consistent |
 
-`reference_outcomes` maps each evaluated reference to `pass`, `unknown` or
-`defect`. A reference with any invalid binding or disagreement is `defect`;
-otherwise one with any missing binding is `unknown`; otherwise it is `pass`.
-The run outcome follows the table above, so a defect elsewhere never hides
-an `unknown` reference.
+`reference_outcomes` maps each evaluated reference to `pass`, `unknown`,
+`defect` or `malformed`. A reference with a malformed `PARAM_*` property is
+`malformed` (and does not prevent other references from being evaluated);
+otherwise one with any invalid binding or disagreement is `defect`; otherwise
+one with any missing binding is `unknown`; otherwise it is `pass`.
+The run outcome follows the table above, so a defect or malformed parameter
+elsewhere never hides another reference's outcome.
 
 ## Related checks
 
