@@ -879,7 +879,9 @@ from .fab_export import check_fab_export
 
 from .fab_consistency import check_fab_consistency
 
-CHECK_FUNCS = {'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+from .fab_package import check_fab_package
+
+CHECK_FUNCS = {'fab_package': check_fab_package, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,

@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from .storage import identity
 
 
-KINDS = frozenset(('fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('fab_package', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
                    'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'assembly_readiness'))
@@ -361,6 +361,14 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'fab_consistency':
             from .fab_consistency import capability
             result['predicates'] = capability(params, scope, prerequisite, captured)
+        elif kind == 'fab_package':
+            from .fab_package import capability
+            result['predicates'] = capability(params, scope, spec, prerequisite, captured)
+            captured(scope.get('board'))
+            captured(scope.get('schematic'))
+            project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))
+            if project in files:
+                captured(project, immutable=True)
         elif kind == 'hardware_interface':
             from .hardware_interface import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])

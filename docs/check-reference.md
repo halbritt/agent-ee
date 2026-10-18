@@ -40,6 +40,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
@@ -432,3 +433,14 @@ or a missing sealed log is unknown coverage; broken hashes or malformed CSV
 are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
 through a sealed requirement/check witness. Rotation correction and DFM are
 outside this check.
+
+[`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
+are exactly `{netlist_check}` and it must be the last declared check; an earlier
+`geometry` check is required. It runs the same export and consistency code on its
+own staging tree and, on `pass`, records `details.artifacts`
+(`agent-ee.fab-artifacts/1`: gerbers.zip, every drill file, bom.csv, cpl.csv and
+manifest.json by sha256, bound to the candidate id and board digest). A missing,
+empty or unparseable export file is `failed`, `malformed` or `unsupported` with
+outcome `unknown`, or a gate `defect`; never `pass`. A scope with a `generation`
+marker is refused at capture unless this check is last and an acceptance
+requirement maps to it.

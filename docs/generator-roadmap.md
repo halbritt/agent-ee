@@ -54,11 +54,13 @@ The checks that constitute "done" for each rung:
 | 3 | Rung 2 set for every block instance and the integrated board, plus DFM geometry and fab profile rules | `fab_package` passes, round trip conserved |
 | 4 | Rung 3 set at FOME-MC scale, plus FOME-MC's own rules (for example HV clearance) | `fab_package` passes |
 
-`parts_subset`, `placement`, `block_provenance` and `fab_package` do not exist
-yet (AGENTEE-86, AGENTEE-92, AGENTEE-90, AGENTEE-94). The export half of the
-fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
-[consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
-CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
+`parts_subset`, `placement` and `block_provenance` do not exist yet
+(AGENTEE-86, AGENTEE-92, AGENTEE-90). [`fab_package`](fab-package.md)
+(AGENTEE-94) is the done gate: declared last, it runs the
+[`fab_export`](fab-export.md) producer (AGENTEE-23) and the
+[consistency gate](fab-consistency.md) (AGENTEE-73), including native CPL
+coordinate and export-log checks, and seals the artifact hashes. A scope with a
+`generation` marker is refused at capture without it. CPL rotation policy remains AGENTEE-72.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 

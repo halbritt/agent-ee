@@ -149,7 +149,7 @@ check evaluates that exact field:
 | Fixed footprint | `placement` (AGENTEE-92) | Bound to a `connector-edge/1` check whose `envelope` parameter names these exact captured envelope bytes, when no other requirement maps that check. The criterion grades side, anchor within tolerance, exact rotation, insertion side and the declared edge on the saved outline |
 | Outline | `placement` | None: `outline-containment/1` grades courtyards against the saved outline, not the outline against the envelope |
 | Keepouts, mounting holes | `placement` | None: `footprint-keepout/1` grades rule areas already saved, and no predicate checks declared holes |
-| Layer count, stackup | `fab_package` (AGENTEE-94, not registered) | None |
+| Layer count, stackup | `fab_package` (AGENTEE-94; registered as the [done gate](fab-package.md), no envelope binding yet) | None |
 
 `connector-edge/1` returns one verdict for every fixed footprint in its
 envelope. With two or more fixed footprints, a defect cannot be attributed to
@@ -344,7 +344,7 @@ mismatch.
 This record states obligations; it does not check placement, courtyards,
 clearances or fabrication. Arcs, cutouts, slots, multiple outlines and oblique
 connector edges are not supported. Outline, keepout, hole, layer-count and
-stackup bindings do not exist yet (layer count and stackup await AGENTEE-94), so
+stackup bindings do not exist yet (layer count and stackup need a `fab_package` binding), so
 an envelope scope/3 is refused at capture until they land. Capture reads only
 consumed paths for envelope authority, so an envelope a scope never cites stays
 unenforced. To make an envelope binding, declare it. Profile support means only that the typed, source-quoted minimum

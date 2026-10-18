@@ -102,7 +102,10 @@ class ScaffoldTest(Prepared):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
         self.assertEqual([(c['id'], c['stage']) for c in scope['checks']],
                          [('erc', 'schematic'), ('netlist', 'schematic'), ('drc', 'placement'),
-                          ('geometry', 'routing'), ('rc-step', 'verification')])
+                          ('geometry', 'routing'), ('rc-step', 'verification'), ('fab', 'verification')])
+        self.assertEqual(scope['checks'][-1]['kind'], 'fab_package')
+        self.assertEqual(scope['generation'], {'schema': 'agent-ee.generation/1', 'done_check': 'fab'})
+        self.assertIn({**rc.FAB_REQUIREMENT}, scope['baseline']['requirements'])
         self.assertEqual(declaration(scope)['order'], ['schematic', 'placement', 'routing', 'verification'])
         self.assertEqual(scope['mutable_inputs'], ['project/rung1_rc.kicad_sch', 'project/rung1_rc.kicad_pcb'])
         rc_step = next(c for c in scope['checks'] if c['id'] == 'rc-step')
@@ -113,6 +116,21 @@ class ScaffoldTest(Prepared):
         summary = rc.validate_scope_file(path)
         self.assertIn('generation/resolved.json', summary['immutable_generation_inputs'])
         self.assertNotIn('project/rung1_rc.kicad_pcb', summary['baseline_files'])
+
+    def test_removing_the_fab_package_requirement_is_refused_at_capture(self):
+        scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
+        scope['checks'] = [c for c in scope['checks'] if c['kind'] != 'fab_package']
+        scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements'] if r['id'] != 'R-fab']
+        path = self.rundir / 'scope-no-fab.json'
+        path.write_text(json.dumps(scope))
+        with self.assertRaisesRegex(ValueError, 'fab_package done check last'):
+            rc.validate_scope_file(path)
+        scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
+        scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements'] if r['id'] != 'R-fab']
+        path = self.rundir / 'scope-unmapped-fab.json'
+        path.write_text(json.dumps(scope))
+        with self.assertRaisesRegex(ValueError, 'trace to a baseline requirement'):
+            rc.validate_scope_file(path)
 
     def test_scope_with_widened_write_authority_is_refused(self):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
@@ -172,16 +190,28 @@ class StepTest(unittest.TestCase):
 
 
 class RecordTest(unittest.TestCase):
-    def test_done_requires_verdict_existing_exports_and_binding(self):
+    def test_done_requires_verdict_and_fab_hashes_recomputed_by_verify_campaign(self):
+        stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}}
         with tempfile.TemporaryDirectory() as tmp:
-            fab = {'exports_exist': True}
-            self.assertTrue(rc.write_record(tmp, {}, verdict='criteria_satisfied', fab=fab, fab_bound=True)['done'])
-            self.assertFalse(rc.write_record(tmp, {}, verdict='criteria_satisfied', fab=fab, fab_bound=False)['done'])
-            self.assertFalse(rc.write_record(tmp, {}, verdict='escalated', fab=fab, fab_bound=True)['done'])
-            self.assertFalse(rc.write_record(tmp, {}, verdict='criteria_satisfied',
-                                             fab={'exports_exist': False}, fab_bound=True)['done'])
+            done = lambda verdict, recomputed, artifacts=stored: rc.write_record(
+                tmp, {}, verdict=verdict, fab_artifacts=artifacts, recomputed=recomputed)['done']
+            self.assertTrue(done('criteria_satisfied', dict(stored)))
+            self.assertFalse(done('criteria_satisfied', None))
+            self.assertFalse(done('criteria_satisfied', None, None))
+            self.assertFalse(done('criteria_satisfied', {**stored, 'files': {'work/fab/fab/bom.csv': '2' * 64}}))
+            self.assertFalse(done('criteria_satisfied', {**stored, 'candidate_id': 'other'}))
+            self.assertFalse(done('escalated', dict(stored)))
             record = json.loads((Path(tmp) / 'rung1-campaign-record.json').read_text())
             self.assertEqual(record['done_rule'].split(' AND ')[0], 'campaign verdict criteria_satisfied')
+
+    def test_verify_campaign_output_parsing_is_strict(self):
+        run = '/r/runs/1'
+        good = f"criteria_satisfied\nfab_artifacts {'a' * 64} candidate c\n{'1' * 64}  {run}/work/fab/fab/bom.csv\n"
+        self.assertEqual(rc.recomputed_artifacts(good, run),
+                         {'artifacts_id': 'a' * 64, 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}})
+        self.assertIsNone(rc.recomputed_artifacts('criteria_satisfied\n', run))
+        self.assertIsNone(rc.recomputed_artifacts(good.replace(run, '/other/runs/1'), run))
+        self.assertIsNone(rc.recomputed_artifacts(good.replace('1' * 64, 'x' * 64), run))
 
     def test_fab_of_an_unaccepted_final_candidate_is_not_bound(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,7 +227,8 @@ class RecordTest(unittest.TestCase):
                     'project/rung1_rc.kicad_pcb': 'b', 'project/rung1_rc.kicad_sch': 's'}}))
                 record = rc.campaign_record(tmp, {}, None)
             self.assertTrue(record['fab_matches_final_captured_candidate'])
-            self.assertFalse(record['fab_bound_to_accepted_candidate'])
+            self.assertFalse(record['fab_artifacts_verified'])
+            self.assertIsNone(record['fab_artifacts'])
             self.assertFalse(record['done'])
             self.assertEqual((record['schema'], record['qualification']),
                              ('agent-ee.rung1-campaign-record/0-experimental', 'experimental-unqualified'))

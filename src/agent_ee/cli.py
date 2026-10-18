@@ -760,6 +760,12 @@ def main(argv=None):
             from .campaign import verify_campaign
             state = verify_campaign(args.campaign)
             print(state["state"])
+            artifacts = state.get("fab_artifacts")
+            if artifacts:
+                run = state["history"][-1]["run"]
+                print(f"fab_artifacts {artifacts['artifacts_id']} candidate {artifacts['candidate_id']}")
+                for rel, sha in artifacts["files"].items():
+                    print(f"{sha}  {run}/{rel}")
             return 0
         if args.command == "campaign":
             from .campaign import run_campaign

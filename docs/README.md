@@ -33,6 +33,7 @@ product's hardware qualification.
 | Gate the BOM for JLC assembly: LCSC binding, stock freshness, Extended parts | [Assembly readiness](assembly-readiness.md) |
 | Export a captured board into a JLCPCB fab package | [Fab export](fab-export.md) |
 | Verify sealed fabrication outputs against captured design evidence | [Fab-package consistency](fab-consistency.md) |
+| Gate generation "done" on a passing, hash-sealed fab package | [Fab package done gate](fab-package.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
