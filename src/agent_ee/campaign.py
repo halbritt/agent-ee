@@ -115,7 +115,7 @@ def implement(root, previous, definition, state, deadline):
     plan = step_plan(config, manifest, state["history"][-1], state.get("step_plan"))
     if any(entry['kind'] == 'routing' for entry in plan):
         prompt += ("\nThis is a coordinator routing turn. Leave /work/design byte-for-byte unchanged. "
-                   "The coordinator alone runs the pinned routing adapter on the placed source; "
+                   "The coordinator alone runs declared plane preparation then the pinned routing adapter; "
                    "fresh checks and reviews grade its captured proposal.")
     if any(entry["kind"] == "placement" for entry in plan):
         from .placement_adapter import TRANSFORMS, writer_context
@@ -235,21 +235,62 @@ def check_proposal(design, manifest, state):
             raise ValueError("implementation changed a verification adapter")
 
 
+def validate_routing_predecessors(steps, scope):
+    """Only the declared plane producer may precede the owned routing adapter."""
+    from .stage_receipts import validate_step
+    preceding = [validate_step(s, host=False) for s in steps if s['stage'] == 'routing']
+    if not preceding:
+        return
+    if (len(preceding) != 1 or preceding[0]['step'] != 'add-planes' or
+            set(preceding[0]['writes']) != {scope['board']} or preceding[0]['adoptable_exits'] != [0]):
+        raise ValueError('routing_adapter cannot be combined with routing implementation_steps '
+                         'except one add-planes producer writing only the board and adopting exit 0')
+
+
+def verify_routing_chain(work, index, expected, specs, *, terminal_incomplete):
+    """Replay exact producer inputs from the captured placed source, including failed prefixes."""
+    from .stage_receipts import ADOPTABLE, after_tree
+    previous_failed = False
+    for position, link in enumerate(index['receipts']):
+        receipt = read_json(work / link['path'])
+        if previous_failed:
+            raise ValueError('routing producer ran after a failed predecessor')
+        if receipt['inputs'] != expected:
+            raise ValueError('routing receipt chain differs from the captured source or preceding output')
+        if receipt['spec'] != specs[position]:
+            raise ValueError('routing receipt chain differs from the declared producer sequence')
+        previous_failed = receipt['status'] not in ADOPTABLE
+        if not previous_failed:
+            expected = after_tree(receipt)
+    complete = len(index['receipts']) == len(specs) and not previous_failed
+    if not complete and (not terminal_incomplete or (work / 'proposal.scope.json').exists()):
+        raise ValueError('unfinished routing producer chain must be the final incomplete implementation')
+    if (work / 'proposal.scope.json').exists() and index['delivered'] != expected:
+        raise ValueError('routing proposal differs from the adopted receipt chain')
+
+
 def run_implementation_steps(work, design, manifest, state, deadline, plan, *, source_inputs=None,
                              declaration=None):
     """Coordinator-run planned steps on the delivered design; receipts are provenance only."""
     from .stage_receipts import adopt, bind_implementation, run_step, validate_step
 
     number = int(work.name)
+    routing_turn = any(entry['kind'] == 'routing' for entry in plan)
+    expected_files = dict(manifest['files'])
     try:
+        if routing_turn:
+            from .routing_adapter import validate_live_binding
+            from .stage_receipts import file_tree
+            if file_tree(design) != (expected_files, []):
+                raise ValueError('routing writer changed the verified placed source')
+            validate_live_binding(state['routing_binding'])
         for entry in plan:
+            if routing_turn and file_tree(design) != (expected_files, []):
+                raise ValueError('routing producer input differs from preceding adopted receipt')
             if entry['kind'] == 'routing':
                 from .routing_adapter import validate_live_binding, verify_campaign_receipt
                 from .stage_receipts import file_tree
                 binding = state['routing_binding']
-                actual, other = file_tree(design)
-                if other or actual != manifest['files']:
-                    raise ValueError('routing writer changed the verified placed source')
                 validate_live_binding(binding)
                 spec = binding['spec']
                 k = entry['receipt_index']
@@ -257,8 +298,12 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
                 expected = {'implementation': number, 'source_candidate_id': manifest['candidate_id'],
                             'receipt_index': k}
                 receipt = run_step(receipt_dir, design, spec, expected, deadline=deadline)
+                if receipt['inputs'] != expected_files:
+                    raise ValueError('routing receipt chain input differs from preceding adopted output')
                 verify_campaign_receipt(receipt_dir, expected=expected, binding=binding)
                 adopt(receipt_dir, receipt, design)
+                from .stage_receipts import after_tree
+                expected_files = after_tree(receipt)
                 continue
             if entry["kind"] == "placement":
                 from .placement_adapter import run_placement_iteration
@@ -279,8 +324,15 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
             receipt_dir = work / "receipts" / f"{k}-{spec['step']}"
             receipt = run_step(receipt_dir, design, spec, {"implementation": number,
                 "source_candidate_id": manifest["candidate_id"], "receipt_index": k}, deadline=deadline)
+            if routing_turn and receipt['inputs'] != expected_files:
+                raise ValueError('routing predecessor receipt input differs from captured source')
             # A failed, partial-but-unadoptable or refused step stops the repair; no default output.
             adopt(receipt_dir, receipt, design)
+            if routing_turn:
+                from .stage_receipts import after_tree
+                expected_files = after_tree(receipt)
+        if routing_turn and file_tree(design) != (expected_files, []):
+            raise ValueError('routing delivered tree differs from adopted receipt chain')
     finally:
         state["stage_receipts"][work.name] = bind_implementation(work, design, number, manifest["candidate_id"])
 
@@ -325,8 +377,7 @@ def run_campaign(config_path, out):
         spec = campaign_spec(config['routing_adapter'], {'scope': scope}, scope.get('mutable_inputs',
                              [scope['board'], scope['schematic']]))
         validate_campaign_step(spec)
-        if any(s['stage'] == 'routing' for s in steps):
-            raise ValueError('routing_adapter cannot be combined with routing implementation_steps')
+        validate_routing_predecessors(steps, scope)
     if "placement_adapter" in config:
         from .placement_adapter import validate_declaration
         validate_declaration(config["placement_adapter"])
@@ -602,13 +653,15 @@ def verify_campaign_records(root, *, observations=None):
     for name in state.get('stage_receipts', {}):
         work = root / 'implementations' / name
         index = read_json(work / 'stage-receipts.json')
+        if routing_binding is not None and routing_binding['spec'] in plans[name]:
+            source = Path(state['history'][int(name) - 1]['run'])
+            verify_routing_chain(work, index, read_json(source / 'candidate.json')['files'], plans[name],
+                terminal_incomplete=int(name) == len(state['history']) and state['state'] == 'incomplete')
         for k, link in enumerate(index['receipts'], 1):
             receipt_path = work / link['path']
             if routing_binding is not None and plans[name][k - 1] == routing_binding['spec']:
                 source = Path(state['history'][int(name) - 1]['run'])
                 receipt = read_json(receipt_path)
-                if receipt['inputs'] != read_json(source / 'candidate.json')['files']:
-                    raise ValueError('routing writer changed the verified placed source')
                 verify_campaign_receipt(receipt_path.parent, expected={'implementation': int(name),
                     'source_candidate_id': read_json(source / 'candidate.json')['candidate_id'], 'receipt_index': k},
                     binding=routing_binding)
@@ -654,6 +707,8 @@ def verify_campaign_plans(root, state, config):
         number = int(name)
         source = Path(history[number - 1]["run"])
         manifest = read_json(source / "candidate.json")
+        if 'routing_adapter' in config:
+            validate_routing_predecessors(config.get('implementation_steps', []), manifest['scope'])
         plan = step_plan(config, manifest, history[number - 1], version)
         plans[name] = plan_receipt_specs(plan, work, config, manifest, state["mutable_inputs"])
         record = work / "placement-adapter.json"

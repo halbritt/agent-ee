@@ -327,3 +327,14 @@ later turn fails although every check passes, and a campaign without steps is un
 - A completed write-bearing receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.
+
+### Plane preparation before the owned routing adapter
+
+A campaign may combine its dedicated `routing_adapter` with one routing-stage
+`add-planes` step that writes only the board and adopts exit 0. The writer must
+leave the entire captured source unchanged on that turn. The coordinator and
+retained verifier require an exact input/after-tree chain through the plane
+receipt and the adapter receipt. The dedicated adapter's semantic verifier and
+`[0, 2]` complete/validated-partial policy remain in force. Other generic routing
+predecessors and duplicate router steps are refused. See
+[pod campaign preparation](pod-driver.md#routing-predecessor-integrity).
