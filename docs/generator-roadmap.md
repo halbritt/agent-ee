@@ -277,8 +277,9 @@ kicad-route `08179cd`. At that commit agent-ee relies on the following from
   `EROFS`, and the host state's file contents unchanged. The
   [adapter page](routing-adapter.md#limits) lists what that does not cover.
 - **Backends**: KRT is the default. Repeated KRT attempts on the placed RC gave
-  the same geometry but not identical bytes, so KRT determinism is not
-  claimed. A Freerouting run is an attempt; agent-ee does not cite it as a
+  the same geometry but not identical bytes. Determinism means
+  [normalized copper geometry equality](routing-equivalence.md);
+  `routing_equivalence` checks it while recording byte differences. A Freerouting run is an attempt; agent-ee does not cite it as a
   reproducible measurement.
 
 kicad-route's validation is diagnostic for agent-ee. Acceptance comes only from

@@ -329,6 +329,62 @@ def dfm_facts(board, board_path):
     return facts
 
 
+def routing_facts(board_path):
+    """Exact saved track/via/zone inventory for routing equivalence (no refill)."""
+    import pcbnew
+    from .routing_equivalence import canonical_ring
+
+    def polygons(poly):
+        if poly.ArcCount():
+            raise ValueError('curved zone contours are unsupported')
+        return sorted((canonical_ring([nm(poly.Outline(i).CPoint(j))
+                                       for j in range(poly.Outline(i).PointCount())]),
+                       tuple(sorted(canonical_ring([nm(poly.Hole(i, h).CPoint(j))
+                                                    for j in range(poly.Hole(i, h).PointCount())])
+                                    for h in range(poly.HoleCount(i)))))
+                      for i in range(poly.OutlineCount()))
+
+    board = pcbnew.LoadBoard(board_path)
+    if board is None:
+        raise ValueError('native board load failed')
+    copper = list(board.GetEnabledLayers().CuStack())
+    records = []
+    for track in board.GetTracks():
+        cls = track.GetClass()
+        entry = {'kind': cls, 'net': track.GetNetname()}
+        if cls == 'PCB_VIA':
+            if padstack_mode(track) != 'NORMAL':
+                raise ValueError('nonuniform via padstack is unsupported')
+            entry.update(position_nm=nm(track.GetPosition()),
+                         layers=sorted(board.GetLayerName(l) for l in copper if track.IsOnLayer(l)),
+                         width_nm=int(track.GetWidth(pcbnew.PADSTACK.ALL_LAYERS)),
+                         drill_nm=int(track.GetDrillValue()),
+                         via_type=enum_name(track.GetViaType(), 'VIATYPE_', VIA_TYPES),
+                         flash_layers=sorted(board.GetLayerName(l) for l in copper if track.FlashLayer(l)))
+        elif cls in ('PCB_TRACK', 'PCB_ARC'):
+            entry.update(layer=board.GetLayerName(track.GetLayer()), width_nm=int(track.GetWidth()),
+                         endpoints_nm=sorted([nm(track.GetStart()), nm(track.GetEnd())]))
+            if cls == 'PCB_ARC':
+                entry['mid_nm'] = nm(track.GetMid())
+        else:
+            raise ValueError(f'unsupported routed primitive: {cls}')
+        records.append(entry)
+    zones = [*board.Zones(), *(z for fp in board.GetFootprints() for z in fp.Zones())]
+    for zone in zones:
+        if zone.GetIsRuleArea():
+            continue  # Rule areas contain no routed copper.
+        layers = [l for l in copper if zone.IsOnLayer(l)]
+        if not layers:
+            continue
+        records.append({'kind': 'ZONE', 'net': zone.GetNetname(),
+                        'layers': sorted(board.GetLayerName(l) for l in layers),
+                        'width_nm': int(zone.GetMinThickness()),
+                        'outline_nm': polygons(zone.Outline()), 'filled': bool(zone.IsFilled()),
+                        'filled_polygons_nm': {board.GetLayerName(l): polygons(zone.GetFilledPolysList(l))
+                                               if zone.HasFilledPolysForLayer(l) else [] for l in layers}})
+    return records
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("board")

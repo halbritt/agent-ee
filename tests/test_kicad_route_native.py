@@ -22,7 +22,7 @@ from agent_ee import kicad_route_attempt as attempt
 from agent_ee import routing_adapter
 from agent_ee import stage_receipts
 from agent_ee.executor import execute
-from toolchain import require_kicad_route, require_toolchain
+from tests.toolchain import require_kicad_route, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 STRIP = r'''
@@ -114,6 +114,42 @@ class NativeKicadRouteTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
             routing_adapter.verify(work, inputs)
 
+    def test_repeated_krt_runs_compare_geometry_and_name_a_moved_segment(self):
+        from agent_ee.routing_equivalence import compare_boards
+        placed = self.placed_rc()
+        spec = self.spec()
+        outputs = []
+        for index in (1, 2):
+            work = self.root / f'repeat-{index}'
+            record = execute(placed, work, spec['argv'], timeout=spec['timeout_s'],
+                             extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
+            self.assertIn(record['exit_code'], (0, 2), record)
+            summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+            self.assert_native_attempt(work, summary)
+            output = self.root / f'routed-{index}.kicad_pcb'
+            source = work / 'routing/candidate/project/rc_filter.kicad_pcb'
+            self.assertTrue(source.is_file(), (source, summary))
+            shutil.copyfile(source, output)
+            outputs.append(output)
+        report = compare_boards(*outputs)
+        (self.root / 'repeated-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
+        self.assertTrue(report['geometry_equal'], report)
+        self.assertIn('byte_equal', report)
+        import pcbnew as k
+        board = k.LoadBoard(str(outputs[1]))
+        track = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK')
+        start = track.GetStart()
+        track.SetStart(k.VECTOR2I(start.x + 100000, start.y))
+        moved = self.root / 'moved.kicad_pcb'
+        k.SaveBoard(str(moved), board)
+        report = compare_boards(outputs[0], moved)
+        (self.root / 'moved-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
+        self.assertFalse(report['geometry_equal'])
+        self.assertEqual(len(report['only_board']), 1)
+        self.assertEqual(len(report['only_reference']), 1)
+        self.assertEqual(report['only_reference'][0]['kind'], 'PCB_TRACK')
+        self.assertIn('endpoints_nm', report['only_reference'][0])
+
     def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
         """Pinned code and present state files are not enough: KRT must import."""
         broken = self.root / 'broken-route'
@@ -153,7 +189,7 @@ class NativePrerequisiteTest(unittest.TestCase):
     """How the native class reports an absent, required or misconfigured kicad-route."""
 
     def run_native(self, checkout=None, strict=False):
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(ROOT / 'tests'), str(ROOT / 'src')]))
+        env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
         for name in ('AGENT_EE_KICAD_ROUTE_CHECKOUT', 'AGENT_EE_REQUIRE_TOOLCHAIN'):
             env.pop(name, None)
         if checkout is not None:
@@ -161,8 +197,8 @@ class NativePrerequisiteTest(unittest.TestCase):
         if strict:
             env['AGENT_EE_REQUIRE_TOOLCHAIN'] = '1'
         return subprocess.run([sys.executable, '-m', 'unittest', '-v',
-                               'test_kicad_route_native.NativeKicadRouteTest'],
-                              cwd=ROOT / 'tests', env=env, capture_output=True, text=True, timeout=120)
+                               'tests.test_kicad_route_native.NativeKicadRouteTest'],
+                              cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
 
     def test_unset_checkout_is_a_documented_skip(self):
         result = self.run_native()

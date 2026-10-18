@@ -59,6 +59,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
+| `routing_equivalence` | `/usr/bin/python3 -m agent_ee.routing_equivalence`; native saved copper comparison | 300 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
 | `fab_roundtrip` | Coordinator re-parses the sealed export’s Gerber/Excellon bytes against earlier sealed geometry; no tool launched ([details](fab-roundtrip.md)) | Enclosing run deadline |
@@ -202,6 +203,14 @@ unknown. General DRC and schematic parity remain separate obligations.
 The evidence includes generated and staged effective rule hashes and the native
 DRC reports. An impedance target remains unverified because no qualified stackup
 and solver path is implemented, even when those inputs are named in the contract.
+
+The [routing equivalence check](routing-equivalence.md) compares the captured
+board with `params.reference_board`, an immutable captured routed output. It
+normalizes native tracks, arcs, vias and zones in integer nanometres into sorted
+sets. It retains differing elements and both board hashes; UUID, ordering and
+other byte-only changes are informational. Empty or unsupported native
+inventories and failed execution remain unknown. This check does not replace
+routing completeness, DRC or parity.
 
 ## Captured fabricator profiles
 

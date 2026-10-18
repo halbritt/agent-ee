@@ -382,4 +382,7 @@ installed KiCad and pinned KRT processes.
   the fixture only.
 - KRT byte-level repeatability is not established. Two identical attempts on
   the placed RC gave the same segment geometry but different new-segment UUIDs
-  and file order.
+  and file order. The [routing equivalence check](routing-equivalence.md)
+  tests normalized copper geometry equality and records byte differences
+  without failing them. The native repeat test compares two real KRT outputs
+  and identifies a moved segment.

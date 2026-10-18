@@ -17,7 +17,7 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
     required_runtime = {'/usr/bin/python3', 'bwrap'}
     native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
                            'fab_export': 'kicad-cli', 'fab_package': 'kicad-cli',
-                           'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
+                           'routing_equivalence': 'pcbnew', 'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',
                            'passive_corners': '/usr/bin/ngspice', 'dc_path': 'pcbnew',
                            'assembly_readiness': 'kicad-cli',
                            'board_envelope': 'pcbnew', 'dfm_geometry': 'pcbnew'}

@@ -108,7 +108,9 @@ model or acquire measurements from instruments.
 
 Original [RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
 placed-unrouted and seeded placement defects with native checks and a KRT
-input receipt. The exact FOME-MC control derivatives requested by AGENTEE-103
+input receipt. The [routing equivalence check](docs/routing-equivalence.md)
+compares repeated routed outputs by normalized copper geometry and records
+byte differences without failing them. The exact FOME-MC control derivatives requested by AGENTEE-103
 remain blocked by unresolved third-party rights.
 
 The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
