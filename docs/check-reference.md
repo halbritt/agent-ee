@@ -261,6 +261,15 @@ these rule failures from independently established manufacturing failures.
 Native DRC coverage also depends on the project's configured checks and ignored
 rules; passing these checks is not full circuit function or fab qualification.
 
+The severities in force are the immutable project file's. ERC and DRC both record
+`details.by_severity`, `details.by_type` and `details.ignored_checks`, the keys
+kicad-cli reports at severity `ignore`. A warning is graded like an error. The
+[fome-mc severity template](scaffold.md#fome-mc-severity-template) (AGENTEE-189)
+carries fome-mc's pinned ERC and DRC severity maps. There is no waiver record:
+a reported item cannot be dispositioned as waived, and the capture refuses a
+source with ERC or DRC exclusions. Admitting violation-bound waivers is an
+owner decision that has not been made.
+
 Those project settings remain immutable during a campaign. A writer's
 `pcbnew.SaveBoard` may rewrite sibling `.kicad_pro`/`.kicad_prl` files and trip
 the immutable-input guard; the diagnostic names this likely cause when the

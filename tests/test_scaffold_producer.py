@@ -20,6 +20,7 @@ from test_scaffold import ROOT, ScaffoldFixture
 from toolchain import require_toolchain
 
 TEMPLATE = ROOT / 'fixtures/netclass-completeness/native.kicad_pro'
+FOME_RULES = ROOT / 'fixtures/fome-mc/rules'
 LIMITS = [('min_clearance_mm', 0.15, 'minimum'), ('min_trace_mm', 0.127, 'minimum'),
           ('min_trace_mm', 0.2, 'preferred'), ('min_via_pad_mm', 0.45, 'minimum'),
           ('min_via_drill_mm', 0.25, 'minimum'), ('min_edge_clearance_mm', 0.3, 'minimum'),
@@ -82,6 +83,13 @@ class ProducerFixture(ScaffoldFixture):
         with self.assertRaisesRegex(ValueError, pattern):
             self.build()
         self.assertFalse((self.root / 'produced').exists())
+
+    def use_fome_template(self):
+        """The pod template: the owned base with fome-mc's pinned ERC and DRC severities."""
+        shutil.copyfile(FOME_RULES / 'pod.kicad_pro', self.source / 'templates/pod.kicad_pro')
+        self.plan['template'] = 'templates/pod.kicad_pro'
+        self.write()
+        return read_json(FOME_RULES / 'severities.json')
 
 
 class ProducerTests(ProducerFixture, unittest.TestCase):
@@ -150,6 +158,45 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         # The template is provenance only; it stays outside mutable inputs.
         self.assertIn('templates/native.kicad_pro', manifest['files'])
         self.assertNotIn('templates/native.kicad_pro', manifest['scope']['mutable_inputs'])
+
+    def test_fome_severity_template(self):
+        record = self.use_fome_template()
+        receipt = self.build()
+        pro = read_json(self.root / 'produced/inputs/project/design.kicad_pro')
+        self.assertEqual(pro['erc']['rule_severities'], record['erc']['severities'])
+        design = pro['board']['design_settings']
+        self.assertEqual(design['rule_severities'], record['drc']['severities'])
+        self.assertNotIn('drc_exclusions', design)
+        self.assertNotIn('erc_exclusions', pro['erc'])
+        # The six rule keys stay at the fab profile's minimum limits, not fome-mc's values.
+        self.assertEqual(design['rules'], dict(
+            min_clearance=0.15, min_track_width=0.127, min_via_diameter=0.45, min_through_hole_diameter=0.25,
+            min_copper_edge_clearance=0.3, min_hole_to_hole=0.5))
+        self.assertEqual([(r['setting'], r['limit_id']) for r in receipt['derivation']['rules']], [
+            ('board.design_settings.rules.min_clearance', 'limit-0'),
+            ('board.design_settings.rules.min_track_width', 'limit-1'),
+            ('board.design_settings.rules.min_via_diameter', 'limit-3'),
+            ('board.design_settings.rules.min_through_hole_diameter', 'limit-4'),
+            ('board.design_settings.rules.min_copper_edge_clearance', 'limit-5'),
+            ('board.design_settings.rules.min_hole_to_hole', 'limit-6')])
+        # Template provenance: the receipt names the template bytes the record was applied to.
+        self.assertEqual(receipt['derivation']['template'],
+                         dict(path='templates/pod.kicad_pro', sha256=digest(FOME_RULES / 'pod.kicad_pro')))
+        self.assertEqual(record['source']['commit'], 'df304f3321296f7e517e0d2e2aa52e1380d52993')
+        # The severity map is immutable: it is a baseline criterion, never a mutable input.
+        run = self.root / 'capture'
+        run.mkdir()
+        manifest = capture(self.root / 'produced/scope.json', run)
+        self.assertIn('project/design.kicad_pro', read_json(run / 'baseline.json')['files'])
+        self.assertNotIn('project/design.kicad_pro', manifest['scope']['mutable_inputs'])
+
+    def test_fome_template_silencing_a_derived_rule_is_refused(self):
+        self.use_fome_template()
+        pod = read_json(self.source / 'templates/pod.kicad_pro')
+        pod['board']['design_settings']['rule_severities']['hole_to_hole'] = 'ignore'
+        write_json(self.source / 'templates/pod.kicad_pro', pod)
+        self.write()
+        self.refused('ignore derived rule severities.*hole_to_hole')
 
     def test_changed_profile_limit_changes_only_through_inputs(self):
         before = self.build('a')
@@ -331,6 +378,41 @@ class NativeProducerTests(ProducerFixture, unittest.TestCase):
         from agent_ee.stages import projection
         self.assertEqual(projection(verified['checks'], read_json(self.root / 'cli/scope.json'))
                          ['earliest_failing_stage'], 'schematic')
+
+    def ignored_natively(self, name):
+        """Keys kicad-cli ERC and DRC report as ignored on a produced empty project, and item counts."""
+        from agent_ee.executor import execute
+        self.build(name)
+        work = self.root / (name + '-native')
+        script = ('kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json '
+                  '/candidate/project/design.kicad_sch && kicad-cli pcb drc --format json --severity-all '
+                  '--units mm -o /work/drc.json /candidate/project/design.kicad_pcb')
+        result = execute(self.root / name / 'inputs', work, ['/bin/sh', '-c', script], timeout=300)
+        self.assertEqual((result['execution'], result['exit_code']), ('ok', 0), result)
+        reports = {kind: read_json(work / f'{kind}.json') for kind in ('erc', 'drc')}
+        ignored = {kind: {c['key'] for c in report['ignored_checks']} for kind, report in reports.items()}
+        items = [sum(len(s['violations']) for s in reports['erc']['sheets'])] + [
+            len(reports['drc'][key]) for key in ('violations', 'unconnected_items', 'schematic_parity')]
+        return ignored, items
+
+    def test_fome_severities_are_loaded_by_kicad_cli(self):
+        stock, stock_items = self.ignored_natively('stock')
+        record = self.use_fome_template()
+        fome, fome_items = self.ignored_natively('fome')
+        expected = {kind: {k for k, v in record[kind]['severities'].items() if v == 'ignore'}
+                    for kind in ('erc', 'drc')}
+        # kicad-cli reads the derived project: every fome-mc ignore is reported as an ignored check.
+        # Against KiCad 10.0.7's defaults fome-mc silences seven rules and activates one.
+        self.assertEqual({kind: (fome[kind] - stock[kind], stock[kind] - fome[kind]) for kind in fome}, dict(
+            erc=({'endpoint_off_grid', 'footprint_link_issues', 'lib_symbol_issues', 'lib_symbol_mismatch'}, set()),
+            drc=({'npth_inside_courtyard', 'pth_inside_courtyard', 'solder_mask_bridge'},
+                 {'footprint_type_mismatch'})))
+        self.assertEqual(record['drc']['severities']['footprint_type_mismatch'], 'error')
+        for kind in ('erc', 'drc'):
+            self.assertLessEqual(expected[kind], fome[kind])
+            # Keys fome-mc leaves unset keep KiCad's defaults, exactly as in fome-mc itself.
+            self.assertEqual(fome[kind] - expected[kind], stock[kind] - set(record[kind]['severities']))
+        self.assertEqual((stock_items, fome_items), ([0, 0, 0, 0], [0, 0, 0, 0]))
 
 if __name__ == '__main__':
     unittest.main()
