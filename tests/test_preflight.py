@@ -368,6 +368,16 @@ class PreflightTests(unittest.TestCase):
 
 
 class RuntimeProbeCleanupTests(unittest.TestCase):
+    @staticmethod
+    def _proc_state(pid):
+        # /proc/<pid>/stat can vanish before open() (FileNotFoundError / ENOENT)
+        # or between open() and read() when the kernel reaps the exited task under
+        # load (ProcessLookupError / ESRCH); both mean the descendant is gone.
+        try:
+            return Path(f'/proc/{pid}/stat').read_text().rpartition(')')[2].split()[0]
+        except (FileNotFoundError, ProcessLookupError):
+            return None
+
     def test_cancelled_probe_cleans_descendant_holding_output_pipe(self):
         import os
         import signal
@@ -392,20 +402,19 @@ class RuntimeProbeCleanupTests(unittest.TestCase):
                 self.assertTrue(marker.exists(), 'test probe did not start child')
                 pid = int(marker.read_text())
                 deadline = time.monotonic() + 1
-                while time.monotonic() < deadline:
-                    stat = Path(f'/proc/{pid}/stat')
-                    try:
-                        state = stat.read_text().split()[2]
-                    except FileNotFoundError:
-                        break
-                    if state == 'Z':
-                        break
+                state = self._proc_state(pid)
+                while state not in (None, 'Z') and time.monotonic() < deadline:
                     time.sleep(.01)
-                else:
-                    self.fail('runtime probe left descendant alive')
+                    state = self._proc_state(pid)
+                self.assertIn(state, (None, 'Z'), f'runtime probe left descendant alive (state={state!r})')
             finally:
                 if marker.exists():
                     try:
                         os.kill(int(marker.read_text()), signal.SIGKILL)
                     except ProcessLookupError:
                         pass
+        self.assertNotIn(self._proc_state(os.getpid()), (None, 'Z'))
+        for exc in (FileNotFoundError(2, 'No such file or directory'), ProcessLookupError(3, 'No such process')):
+            with patch.object(Path, 'read_text', side_effect=exc):
+                self.assertIsNone(self._proc_state(os.getpid()))
+
