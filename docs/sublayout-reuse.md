@@ -56,7 +56,10 @@ Schema `agent-ee.sublayout-request/1`. The document has exactly two keys,
 pcbnew runs only in `agent_ee.sublayout_probe`, a child process started
 through the production Bubblewrap executor. Networking is unshared and every
 board is copied into a read-only input directory. The planner itself is
-standard-library Python over the child's facts.
+standard-library Python over the child's facts. The child's `fills` command
+reads the saved fill of named zones, refills them on its private copy and
+reports both, without saving. The placement write scope uses it
+([zone fills](placement-adapter.md#group-local-copper-agentee-129)).
 
 1. **Anchor.** The sub-board footprint with the most pads is the anchor (ties:
    natural reference order). Each member is placed at

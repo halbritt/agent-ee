@@ -33,6 +33,9 @@ The campaign configuration key `placement_adapter` holds an
   Only the group-local copper of that request is then admitted besides footprint
   transforms (see [group-local copper](#group-local-copper-agentee-129)). A
   declaration without the key normalizes, hashes and binds exactly as before.
+  A `sublayout` together with a `helper` is refused by name: the pinned
+  `agent-ee.placer/1` refuses any board that holds tracks, vias or zones, so
+  every helper run after a reuse would fail.
 
 `run_campaign` validates the declaration before it creates the campaign
 directory, so before any provider call. It refuses these cases:
@@ -248,7 +251,9 @@ and copper already on the source board stays immutable as before.
 **Proof.** `write_scope(before, after, protected, groups)` lifts a new board-level
 node out of the comparison only when it carries the UUID of a planned copy or of
 the planned group node, and its kind matches (`segment`, `arc`, `via`, `zone`,
-`gr_*` graphics, `group`). A copy UUID is
+`gr_*` graphics, `group`). Each such UUID is lifted once; a second node with an
+admitted UUID is refused, in either order, because pcbnew keeps both nodes while
+a read keyed by UUID would see only one. A copy UUID is
 `uuid5(namespace, [group id, sub-board sha256, source uuid])`, so the admitted
 copper is bound to the captured sub-board bytes. Each lifted copy must also keep
 every saved token other than its geometry and net (`start`, `end`, `mid`,
@@ -268,7 +273,35 @@ show, exactly:
   group region: the sub-board module's extent (footprints and copied items, not
   its outline) moved and rotated like the copies;
 - each member's pose, pad positions, unchanged pad nets and planned fields;
-- the KiCad group `sublayout:<id>` with exactly the members and copies.
+- the KiCad group `sublayout:<id>` with exactly the members and copies;
+- each copied zone's saved fill, on every layer, exactly equal to a coordinator
+  refill (see below);
+- every board item UUID exactly once, and every item that is not on the source
+  board a planned copy of a reused group. The token comparison already refuses
+  both cases; the fresh read must agree with it.
+
+Both pcbnew reads are bound to the board bytes that the token comparison hashed
+(`after_sha256`).
+
+**Zone fills.** Fill geometry is not part of the plan. The token comparison
+skips `filled_polygon` and the facts carry only `IsFilled()`. Fresh DRC also
+grades saved fills without a refill pass (see [check reference](check-reference.md)).
+So a saved fill is admitted only when it equals a refill made by the coordinator.
+`sublayout.zone_fills` copies the delivered board into the networkless sandbox,
+and the child `agent_ee.sublayout_probe fills` reads every saved fill polygon of
+the copied zones on any layer, outline and holes in integer nanometres. It then
+unfills those zones and refills them with pcbnew's `ZONE_FILLER`, exactly as
+`sublayout_probe apply` refills them, and reads the fill again. The copy is never
+saved, and the candidate is never filled or written. Any difference refuses the
+group: a forged, extra, off-layer or missing fill, and also a stale fill. The
+writer must therefore refill the copied zones after the last change near them;
+`sublayout.reuse` already leaves an exact refill.
+
+This refill-and-compare was chosen over checking that each fill lies inside the
+zone's own outline. Containment would still admit a forged same-net fill inside
+the outline, for example one that ignores thermal relief, island removal or
+clearance to a higher-priority zone. Equality to the refill admits only the fill
+that pcbnew itself computes for the admitted copy.
 
 Any difference is a violation with the group named, and the iteration is refused.
 Protected footprints keep their rule: a protected member refuses its group.
@@ -278,7 +311,8 @@ Protected footprints keep their rule: a protected member refuses its group.
 the request digest and, per group, `status` (`reused`, `refused`, `absent` or
 `not_admissible` with the planner's findings), the sub-board path and sha256, and
 for applied groups the group UUID, rotation, anchor, members, region, mapped nets,
-copied counts by kind, item UUIDs and withheld copper. It is part of the anchored
+copied counts by kind, item UUIDs, withheld copper and `zone_fills`. `zone_fills`
+maps each copied zone UUID to the sha256 identity of its coordinator refill. It is part of the anchored
 `placement-adapter.json`, and `verify_record` and `verify_attempt` recompute it,
 with fresh pcbnew facts, from the source inputs and the captured proposal or
 scratch design.
@@ -287,11 +321,21 @@ The copper is graded like any proposal: the next run's fresh native DRC with
 schematic parity, placement checks and the routing-stage DRC decide. Neither
 the reuse result nor the scope record is evidence of a pass.
 
-Limits: with a coordinator helper, admitted group members are not added to the
-helper's fixed references, so a placer that moves a reused member away from its
-copper refuses the iteration; fix those references in the captured policy.
-Moving members of a group reused in an earlier iteration is still an ordinary
-footprint transform, and fresh DRC grades the copper it leaves behind.
+Limits:
+
+- **No placement helper.** A declaration with both a `sublayout` and a `helper`
+  is refused at validation, before the campaign directory exists. The pinned
+  placer (`placer_runner`) refuses any board with tracks, vias or zones, even
+  when every reused member is a fixed reference, so a helper after a reuse could
+  only fail. Fixing the members in the policy would not help in any case: policy
+  `fixed_refs` are protected footprints, and a protected member refuses its
+  group. The writer places the remaining footprints itself, under the ordinary
+  footprint-transform scope.
+- **Stale fills are refused.** A footprint move near a copied zone, after its fill,
+  refuses the group until the zone is refilled.
+- **Later moves are not tied to the copper.** Moving members of a group reused in
+  an earlier iteration is still an ordinary footprint transform, and fresh DRC
+  grades the copper they leave behind.
 
 ### Side flips
 
@@ -495,8 +539,14 @@ the iteration with no next candidate. Scope tests on the rotated instance of
 `fixtures/sublayout/top.kicad_pcb` refuse, from real pcbnew saves, a moved
 copy, a copy locked after the reuse, a missing copy, a member moved off its copper, a member field off the
 plan, copper outside the group region, extra copper inside the region, edits of
-a group's copper in a later iteration and a protected member. They admit a
-sub-board whose Reference text was moved.
+a group's copper in a later iteration and a protected member. They also refuse,
+from saved-board text edits, a second node that reuses a copy UUID in either order,
+and four kinds of saved fill on the copied zone: one forged far outside the
+region, one forged inside its outline, one forged on a layer the zone is not on,
+and a fill removed. They admit a sub-board whose Reference text was moved. A
+helper declared beside a sub-layout refuses the campaign before any writer runs.
+The real placer step, given the reused board with every member fixed, fails with
+`initial placer refuses existing tracks, vias or zones`.
 
 These obligations remain open:
 

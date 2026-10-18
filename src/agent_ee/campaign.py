@@ -125,7 +125,8 @@ def implement(root, previous, definition, state, deadline):
                    ("The declaration also admits the group-local copper of the captured sub-layout request "
                     f"{bound['sublayout']['request']['path']}, for example applied with agent_ee.sublayout: only "
                     "each whole group whose members are all new, copied exactly from its captured sub-board "
-                    "onto the voted nets, inside the group region. Any other copper refuses the iteration.\n"
+                    "onto the voted nets, inside the group region, with each copied zone's saved fill exactly "
+                    "its refill (refill after any later change near it). Any other copper refuses the iteration.\n"
                     if bound.get("sublayout") else "") + json.dumps({
                        "placement": writer_context(previous, manifest), "board": bound["board"],
                        "protected_references": refs}))

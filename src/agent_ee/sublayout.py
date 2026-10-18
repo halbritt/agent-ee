@@ -276,6 +276,21 @@ def board_facts(board, work, sha256=None):
     return json.loads((work / 'facts' / 'facts.json').read_text())
 
 
+def zone_fills(board, work, zones, sha256=None):
+    """Saved and refilled fill of each named zone, from a private copy of the board refilled in the
+    sandboxed child; the board itself is never filled or written. ``sha256`` binds the copy as in
+    ``board_facts``."""
+    work = Path(work)
+    inputs = work / 'fills-input'
+    inputs.mkdir(parents=True)
+    shutil.copyfile(board, inputs / 'board.kicad_pcb')
+    if digest(inputs / 'board.kicad_pcb') != (sha256 or digest(board)):
+        raise SublayoutError('stale_input', 'board changed while it was copied')
+    _child(inputs, work / 'fills', ['fills', '/candidate/board.kicad_pcb', *(a for z in zones for a in ('--zone', z)),
+                                    '-o', '/work/fills.json'])
+    return json.loads((work / 'fills' / 'fills.json').read_text())
+
+
 def _mm(value):
     return round(value * 1000000)
 

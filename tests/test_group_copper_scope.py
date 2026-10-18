@@ -18,6 +18,7 @@ import contextlib
 import copy
 import io
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -81,6 +82,23 @@ def edit_board(path, **edit):
     pcbnew(EDIT, path, json.dumps(edit))
 
 
+def node_span(text, key):
+    """Start and end of the top-level board node of a saved board that holds (uuid "key")."""
+    start = text.rindex('\n\t(', 0, text.index(f'(uuid "{key}")')) + 2
+    depth = 0
+    for end in range(start, len(text)):
+        depth += {'(': 1, ')': -1}.get(text[end], 0)
+        if depth == 0 and text[end] == ')':
+            return start, end + 1
+    raise AssertionError(f'unterminated node {key}')
+
+
+def shifted(node, dx_mm):
+    """The saved node text with every point moved by dx_mm, as a writer's text edit would."""
+    return re.sub(r'\((start|end|mid|xy|at) ([-0-9.]+) ([-0-9.]+)',
+                  lambda m: f'({m.group(1)} {float(m.group(2)) + dx_mm:g} {m.group(3)}', node)
+
+
 def request(*groups):
     return {'schema': sublayout.REQUEST_SCHEMA, 'groups': list(groups)}
 
@@ -126,6 +144,19 @@ class DeclarationTest(unittest.TestCase):
                 pa.validate_declaration({**plain, 'sublayout': bad})
         with self.assertRaises(ValueError):
             pa.validate_declaration({**plain, 'copper': SUBLAYOUT})
+
+    def test_a_sublayout_with_a_helper_is_refused_before_any_iteration(self):
+        # The pinned placer refuses boards with copper (SublayoutCampaignTest shows it), so a
+        # helper after a reuse could only fail; the pair is refused by name instead.
+        helped = {**declaration(), 'helper': 'agent-ee.placer/1', 'policy': 'project/placement-policy.json'}
+        with self.assertRaisesRegex(ValueError, 'sublayout cannot be declared with a helper: agent-ee.placer/1 '
+                                    'refuses boards that hold tracks, vias or zones'):
+            pa.validate_declaration(helped)
+        with self.assertRaisesRegex(ValueError, 'sublayout cannot be declared with a helper'):
+            pa.binding(helped, self.manifest(), self.tmp, ['project/top.kicad_pcb'])
+        # The same helper without a sub-layout is declared as before.
+        del helped['sublayout']
+        self.assertEqual(pa.validate_declaration(helped)['helper'], 'agent-ee.placer/1')
 
     def test_binding_records_the_captured_request_and_sub_board_hashes(self):
         record = pa.binding(declaration(), self.manifest(), self.tmp, ['project/top.kicad_pcb'])[0]
@@ -326,6 +357,53 @@ class GroupCopperScopeTest(unittest.TestCase):
         report = pa.proposal_scope(source, design, 'project/top.kicad_pcb', [], admission)
         self.assertRefused(report, 'U2 Reference differs from the sub-board')
 
+    def edited(self, text):
+        design = self.design()
+        (design / 'project/top.kicad_pcb').write_text(text)
+        return design
+
+    def test_a_repeated_copy_uuid_is_refused_in_either_order(self):
+        # pcbnew keeps both nodes of a reused UUID, and a fresh read sees only one of them.
+        text = (self.reused / 'project/top.kicad_pcb').read_text()
+        track = self.copied('PCB_TRACK')[0]
+        a, b = node_span(text, track)
+        stray = shifted(text[a:b], 30)
+        for name, edit in (('stray after the copy', text[:b] + '\n' + stray + text[b:]),
+                           ('stray before the copy', text[:a] + stray + '\n' + text[a:])):
+            with self.subTest(name):
+                report = self.scope(self.edited(edit))
+                self.assertRefused(report, f'board item {track} appears 2 times')
+                if name == 'stray before the copy':
+                    self.assertRefused(report, f'segment {track} repeats an admitted copy UUID')
+
+    def test_zone_fill_must_be_exactly_a_coordinator_refill(self):
+        text = (self.reused / 'project/top.kicad_pcb').read_text()
+        zone, = self.copied('ZONE')
+        report = self.scope(self.reused)
+        self.assertEqual(list(report['copper']['groups'][0]['zone_fills']), [zone])
+        a, b = node_span(text, zone)
+        node = text[a:b]
+        layer = re.search(r'\(layers? "([^"]+)"', node).group(1)
+        self.assertIn('filled_polygon', node)
+        region = [v / MM for v in self.admission['groups'][0]['region_nm']]
+
+        def forged(on, x0, y0):
+            fill = (f'\n\t\t(filled_polygon\n\t\t\t(layer "{on}")\n\t\t\t(pts\n\t\t\t\t(xy {x0} {y0}) '
+                    f'(xy {x0 + 15} {y0}) (xy {x0 + 15} {y0 + 15}) (xy {x0} {y0 + 15})\n\t\t\t)\n\t\t)\n\t')
+            return text[:a] + node[:-1].rstrip() + fill + ')' + text[b:]
+        unfilled = re.sub(r'\n\t\t\(filled_polygon\n.*?\n\t\t\)', '', node, flags=re.S)
+        self.assertNotIn('filled_polygon', unfilled)
+        cases = {'a forged fill far outside the group region': forged(layer, region[2] + 20, region[1]),
+                 'a forged fill inside the zone outline': forged(layer, region[0] + 1, region[1] + 1),
+                 'a forged fill on a layer the zone is not on': forged('F.Cu' if layer != 'F.Cu' else 'B.Cu',
+                                                                     region[0] + 1, region[1] + 1),
+                 'an unfilled copy': text[:a] + unfilled + text[b:]}
+        for name, edit in cases.items():
+            with self.subTest(name):
+                report = self.scope(self.edited(edit))
+                self.assertRefused(report, f'ZONE {zone} saved fill is not exactly a coordinator refill')
+                self.assertEqual(report['copper']['groups'][0]['status'], 'refused')
+
     def test_protected_member_refuses_the_group(self):
         protected = pa.protected_footprints(TOP.read_bytes(), [], ['U2'])[0]
         report = pa.proposal_scope(self.source, self.reused, 'project/top.kicad_pcb', protected, self.admission)
@@ -347,6 +425,44 @@ CHECKS = [{'id': 'drc-placement', 'kind': 'drc', 'stage': 'placement', 'params':
           {'id': 'drc-final', 'kind': 'drc', 'stage': 'routing'}]
 
 
+def regulator_scaffold(root):
+    """An actual AGENTEE-52 forward annotation of the emitted regulator schematic onto the owned
+    module's outline, with the owned routed module captured as the sub-board of one request."""
+    base = Path(root) / 'base'
+    project = base / 'project'
+    intent = load('regulator.intent.json')
+    result, files = emit_schematic(intent, captures(intent), load('regulator.layout.json'), **tables())
+    if result['execution'] != 'ok':
+        raise AssertionError(result['findings'])
+    shutil.copytree(PROJECT / 'lib', project / 'lib')
+    for name, data in files.items():
+        (project / name).write_bytes(data)
+    # The scaffold: the module's own outline and setup with every footprint, track and zone
+    # removed, then the emitted schematic's native netlist forward-annotated onto it.
+    board = base / BOARD
+    shutil.copyfile(MODULE, board)
+    pcbnew(STRIP, board, 'footprints')
+    work = Path(root) / 'annotation'
+    run_native(project, work / 'xml', 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+               '-o', '/work/design.xml', '/candidate/regulator.kicad_sch')
+    xml = work / 'xml' / 'design.xml'
+    manifest = load('footprints.manifest.json')
+    plan = fa.plan(board, xml, manifest, PROJECT, work / 'plan')
+    if plan['execution'] != 'ok':
+        raise AssertionError(plan['findings'])
+    applied = fa.apply(plan, board, xml, manifest, PROJECT, board, work / 'apply', backup_dir=work / 'backup')
+    if applied['execution'] != 'ok':
+        raise AssertionError(applied['findings'])
+    for generated in project.glob('*.kicad_prl'):
+        generated.unlink()
+    (base / 'subs').mkdir()
+    shutil.copyfile(MODULE, base / 'subs/regulator.kicad_pcb')
+    write_json(base / REQUEST, request(dict(GROUP, sub_board_sha256=digest(MODULE))))
+    (base / 'requirements').mkdir()
+    (base / 'requirements/placement.md').write_text('Owned AGENTEE-129 sub-layout campaign requirements.\n')
+    return base
+
+
 class SublayoutCampaignTest(unittest.TestCase):
     """A staged campaign whose placement iteration reuses one group with its copper."""
 
@@ -354,38 +470,7 @@ class SublayoutCampaignTest(unittest.TestCase):
     def setUpClass(cls):
         require_toolchain(native=True)
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-group-copper-campaign-')
-        cls.base = Path(cls.tmp.name) / 'base'
-        project = cls.base / 'project'
-        intent = load('regulator.intent.json')
-        result, files = emit_schematic(intent, captures(intent), load('regulator.layout.json'), **tables())
-        if result['execution'] != 'ok':
-            raise AssertionError(result['findings'])
-        shutil.copytree(PROJECT / 'lib', project / 'lib')
-        for name, data in files.items():
-            (project / name).write_bytes(data)
-        # The scaffold: the module's own outline and setup with every footprint, track and zone
-        # removed, then the emitted schematic's native netlist forward-annotated onto it.
-        board = cls.base / BOARD
-        shutil.copyfile(MODULE, board)
-        pcbnew(STRIP, board, 'footprints')
-        work = Path(cls.tmp.name) / 'annotation'
-        run_native(project, work / 'xml', 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
-                   '-o', '/work/design.xml', '/candidate/regulator.kicad_sch')
-        xml = work / 'xml' / 'design.xml'
-        manifest = load('footprints.manifest.json')
-        plan = fa.plan(board, xml, manifest, PROJECT, work / 'plan')
-        if plan['execution'] != 'ok':
-            raise AssertionError(plan['findings'])
-        applied = fa.apply(plan, board, xml, manifest, PROJECT, board, work / 'apply', backup_dir=work / 'backup')
-        if applied['execution'] != 'ok':
-            raise AssertionError(applied['findings'])
-        for generated in project.glob('*.kicad_prl'):
-            generated.unlink()
-        (cls.base / 'subs').mkdir()
-        shutil.copyfile(MODULE, cls.base / 'subs/regulator.kicad_pcb')
-        write_json(cls.base / REQUEST, request(dict(GROUP, sub_board_sha256=digest(MODULE))))
-        (cls.base / 'requirements').mkdir()
-        (cls.base / 'requirements/placement.md').write_text('Owned AGENTEE-129 sub-layout campaign requirements.\n')
+        cls.base = regulator_scaffold(Path(cls.tmp.name))
 
     @classmethod
     def tearDownClass(cls):
@@ -420,7 +505,7 @@ class SublayoutCampaignTest(unittest.TestCase):
                 'baseline': {'requirements': requirements, 'targets': ['requirements/placement.md'],
                              'reference_architectures': ['requirements/placement.md']}}
 
-    def campaign(self, sub=SUBLAYOUT, iterations=2):
+    def campaign(self, sub=SUBLAYOUT, iterations=2, adapter=None):
         definition = {'harness': 'codex', 'model': 'test', 'effort': 'high', 'timeout_s': 600}
         profile = {'schema': 'agent-ee.profile/1', 'name': 'sublayout-campaign-test',
                    'reviewers': [{**definition, 'role': 'circuit'}, {**definition, 'role': 'physical'}],
@@ -429,7 +514,7 @@ class SublayoutCampaignTest(unittest.TestCase):
         write_json(self.root / 'campaign.json', {
             'schema': 'agent-ee.campaign/1', 'scope': 'scope.json', 'review_profile': profile,
             'implementation': definition, 'max_iterations': iterations, 'max_seconds': 3600,
-            'placement_adapter': declaration(sub)})
+            'placement_adapter': adapter or declaration(sub)})
         self.out = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):
             status = run_campaign(self.root / 'campaign.json', self.out)
@@ -522,6 +607,35 @@ class SublayoutCampaignTest(unittest.TestCase):
                          ('refused', 'reused'))
         # Public verification recomputes the refused scope proof, copper section included.
         self.assertEqual(verify_campaign(self.out)['state'], 'incomplete')
+
+    def test_a_helper_beside_a_sub_layout_refuses_the_campaign_before_any_writer(self):
+        self.writes = {1: self.reuse}
+        adapter = {**declaration(), 'helper': 'agent-ee.placer/1', 'policy': 'project/placement-policy.json'}
+        with self.assertRaisesRegex(ValueError, 'sublayout cannot be declared with a helper'):
+            self.campaign(adapter=adapter)
+        self.assertFalse(self.out.exists())
+        self.assertEqual(self.prompts, {})
+
+    def test_the_pinned_placer_refuses_a_board_holding_reused_copper(self):
+        # Why the pair is refused: even with every reused member fixed, the coordinator-run
+        # placer step refuses the writer's board once it holds the group's copper.
+        from agent_ee import stage_receipts
+        design = self.root / 'design'
+        shutil.copytree(self.source, design)
+        self.reuse(design)
+        policy = {'schema': 'agent-ee.packing-policy/1', 'step_budget': 100000, 'gap_nm': 0, 'fixed_refs': [],
+                  'priority_refs': [], 'ground_nets': ['GND'], 'obstacles': []}
+        bound = {'board': BOARD, 'schematic': SCHEMATIC, 'timeout_s': 300}
+        spec, request = pa.prepare_step(self.root / 'placement/1', (design / BOARD).read_bytes(), policy, bound,
+                                        ['C1', 'J1', 'U1'])
+        self.assertEqual(request['policy']['fixed_refs'], ['C1', 'J1', 'U1'])
+        receipt_dir = self.root / 'receipts/1-agent-ee-placer'
+        receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1})
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertIn('initial placer refuses existing tracks, vias or zones',
+                      (receipt_dir / 'run/stderr.log').read_text())
+        with self.assertRaisesRegex(ValueError, 'placement helper failed'):
+            pa.qualify_receipt(receipt_dir, receipt, BOARD, [])
 
     def test_without_a_declared_sub_layout_the_reuse_is_refused(self):
         self.writes = {1: self.reuse}

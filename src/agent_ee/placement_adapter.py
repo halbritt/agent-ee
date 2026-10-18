@@ -137,6 +137,11 @@ def validate_declaration(value):
     normalized = {'schema': ADAPTER_SCHEMA, 'helper': helper, 'policy': policy,
                   'fixed_footprints': sorted(fixed), 'timeout_s': timeout}
     if 'sublayout' in value:
+        if helper is not None:
+            # The pinned placer refuses any board that holds tracks, vias or zones, so once a group
+            # is reused every helper run would fail; refused here, before any iteration is spent.
+            raise ValueError('a placement sublayout cannot be declared with a helper: '
+                             f'{helper} refuses boards that hold tracks, vias or zones')
         # Only present when declared, so the identity of a copper-free declaration is unchanged.
         normalized['sublayout'] = validate_sublayout(value['sublayout'])
     return normalized
@@ -595,11 +600,15 @@ def write_scope(before, after, protected=(), groups=None):
                   for root in roots]
         if admitted:
             known = {_uuid(n) for n in others[0] if isinstance(n, list)}
-            kept = []
+            seen, kept = set(), []
             for node in others[1]:
                 key = _uuid(node) if isinstance(node, list) and node else None
                 hit = admitted.get(key) if key not in known else None
-                if hit and hit[1] == ('group' if node[0] == 'group' else GROUP_TAGS.get(node[0])):
+                if hit and key in seen:
+                    # pcbnew keeps both nodes, and a fresh read would see only one of them.
+                    violations.append(f'group sublayout:{hit[0]}: {node[0]} {key} repeats an admitted copy UUID')
+                elif hit and hit[1] == ('group' if node[0] == 'group' else GROUP_TAGS.get(node[0])):
+                    seen.add(key)
                     present.add(hit[0])
                     if key in tokens and _copy_tokens(node) != tokens[key]:
                         violations.append(f'group sublayout:{hit[0]}: {node[0]} {key} changed beyond the '
@@ -674,8 +683,11 @@ def _inside(box, region):
     return region[0] <= box[0] and region[1] <= box[1] and box[2] <= region[2] and box[3] <= region[3]
 
 
-def _group_errors(group, old, after):
-    """Why the saved board's copy of an admitted group is not exactly its plan; empty when exact."""
+def _group_errors(group, old, after, fills):
+    """Why the saved board's copy of an admitted group is not exactly its plan; empty when exact.
+
+    `fills` holds the saved and coordinator-refilled fill of each copied zone. Fill geometry is
+    not part of the plan, so a saved fill is admitted only when it is exactly that refill."""
     from .sublayout import footprint_error
     plan, region = group['plan'], group['region_nm']
     items = {i['uuid']: i for i in after['items']}
@@ -694,6 +706,11 @@ def _group_errors(group, old, after):
             errors.append(f"{kind} {key} net {got['net']} is not a voted net of the group")
         if not _inside(got['bbox_nm'], region):
             errors.append(f'{kind} {key} lies outside the group region {region}')
+        if kind == 'ZONE':
+            fill = [f for f in fills if f['uuid'] == key]
+            if len(fill) != 1 or fill[0]['saved'] != fill[0]['refilled']:
+                errors.append(f'ZONE {key} saved fill is not exactly a coordinator refill of the delivered board '
+                              '(refill the copied zones after the last change near them)')
     for want in plan['footprints']:
         fp = prints.get(want['uuid'])
         error = f"{want['top_ref']} absent" if fp is None else footprint_error(want, fp, old[want['uuid']])
@@ -706,15 +723,29 @@ def _group_errors(group, old, after):
     return errors
 
 
-def copper_scope(copper, board, reused):
-    """The group-copper part of a scope report, from a fresh sandboxed pcbnew read of `board`."""
-    after = None
+def copper_scope(copper, board, reused, sha256=None):
+    """The group-copper part of a scope report, from fresh sandboxed pcbnew reads of `board`.
+
+    `sha256` binds those reads to the board bytes the token comparison saw."""
+    after, fills, violations = None, [], []
     if reused:
-        from .sublayout import board_facts
+        from .sublayout import board_facts, zone_fills
+        zones = sorted(c['uuid'] for g in copper['groups'] if g['id'] in reused
+                       for c in g['plan']['copy'] if c['expected']['kind'] == 'ZONE')
         with tempfile.TemporaryDirectory(prefix='agent-ee-group-copper-') as tmp:
-            after = board_facts(board, Path(tmp) / 'after')
+            after = board_facts(board, Path(tmp) / 'after', sha256)
+            if zones:
+                fills = zone_fills(board, Path(tmp) / 'fills', zones, sha256)
+        # The token comparison already refuses these; a fresh read must agree with it.
+        planned = {c['uuid'] for g in copper['groups'] if g['id'] in reused for c in g['plan']['copy']}
+        source = {i['uuid'] for i in copper['top']['items']}
+        keys = [i['uuid'] for i in after['items']]
+        violations += [f'board item {key} appears {keys.count(key)} times' for key in sorted(set(keys))
+                       if keys.count(key) > 1]
+        violations += [f'board item {key} is new but no planned copy of a reused group'
+                       for key in sorted(set(keys) - source - planned)]
     old = {fp['uuid']: fp for fp in copper['top']['footprints']}
-    groups, violations = [], []
+    groups = []
     for group in copper['groups']:
         entry = {'id': group['id'], 'name': group['name'], 'sub_board': group['sub_board']}
         if 'plan' not in group:
@@ -723,16 +754,18 @@ def copper_scope(copper, board, reused):
             entry['status'] = 'absent'
         else:
             plan = group['plan']
-            errors = _group_errors(group, old, after)
+            errors = _group_errors(group, old, after, fills)
             violations += [f"group {group['name']}: {e}" for e in errors]
             kinds = {}
             for copy_ in plan['copy']:
                 kinds[copy_['expected']['kind']] = kinds.get(copy_['expected']['kind'], 0) + 1
+            copied = {c['uuid'] for c in plan['copy']}
             entry.update(status='refused' if errors else 'reused', uuid=plan['uuid'], region_nm=group['region_nm'],
                          rotation_deg=plan['rotation_deg'], anchor_at_nm=plan['anchor_at_nm'],
                          members=sorted(fp['top_ref'] for fp in plan['footprints']),
                          nets={e['sub_net']: e['top_net'] for e in plan['net_map'] if e['status'] == 'mapped'},
-                         copied=dict(sorted(kinds.items())), items=sorted(c['uuid'] for c in plan['copy']),
+                         copied=dict(sorted(kinds.items())), items=sorted(copied),
+                         zone_fills={f['uuid']: identity(f['refilled']) for f in fills if f['uuid'] in copied},
                          withheld=plan['withheld'])
         groups.append(entry)
     return {'schema': COPPER_SCHEMA, 'request_sha256': copper['request_sha256'], 'groups': groups}, violations
@@ -788,7 +821,7 @@ def proposal_scope(source_inputs, design, board, protected, copper=None):
                              None if copper is None else [g for g in copper['groups'] if 'plan' in g])
     if copper is not None:
         reused = report.pop('reused_groups', [])
-        report['copper'], errors = copper_scope(copper, design / board, reused)
+        report['copper'], errors = copper_scope(copper, design / board, reused, report.get('after_sha256'))
         violations += errors
     report['violations'] = violations + report['violations']
     report.update(board=board, status='refused' if report['violations'] else 'allowed')
