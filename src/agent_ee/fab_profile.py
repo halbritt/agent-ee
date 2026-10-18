@@ -24,6 +24,10 @@ PROJECT_RULES = {'min_trace_mm': 'min_track_width', 'min_clearance_mm': 'min_cle
                  'min_via_drill_mm': 'min_through_hole_diameter', 'min_via_pad_mm': 'min_via_diameter',
                  'min_edge_clearance_mm': 'min_copper_edge_clearance',
                  'min_hole_to_hole_mm': 'min_hole_to_hole'}
+# fab-profile/2 conjunctive surcharge terms: each native finding cites only the via,
+# so the joint condition is the intersection of per-term via offender UUIDs.
+CONJUNCTIVE = {'min_via_drill_mm', 'min_via_pad_mm'}
+SCHEMAS = ('agent-ee.fab-profile/1', 'agent-ee.fab-profile/2')
 
 
 def date(text):
@@ -57,11 +61,37 @@ def verify_source(source, inputs, files, as_of):
     return source['path']
 
 
-def validate_limit(limit):
+def validate_conjunctive(limit):
+    """One sourced rule whose surcharge applies only when every term falls under its bound."""
+    if set(limit) - {'id', 'requirement', 'all', 'tier', 'source'}:
+        raise ValueError('unknown conjunctive rule fields')
+    if limit.get('tier') != 'preferred':
+        raise ValueError('conjunctive rules classify extra charges only; tier must be preferred')
+    terms = limit['all']
+    if not isinstance(terms, list) or len(terms) < 2:
+        raise ValueError('conjunctive rule needs at least two terms')
+    keys = set()
+    for term in terms:
+        if not isinstance(term, dict) or set(term) != {'key', 'value', 'unit'}:
+            raise ValueError('conjunctive term needs exactly key/value/unit')
+        if not isinstance(term['key'], str) or term['key'] not in CONJUNCTIVE:
+            raise ValueError('conjunctive terms support only ' + ', '.join(sorted(CONJUNCTIVE)))
+        if term['key'] in keys:
+            raise ValueError('duplicate conjunctive term key')
+        keys.add(term['key'])
+        if term['unit'] != 'mm':
+            raise ValueError('explicit physical unit mismatch')
+        if number(term['value'], term['key']) <= 0:
+            raise ValueError('fabricator bound must be positive')
+
+
+def validate_limit(limit, schema='agent-ee.fab-profile/1'):
     if (not isinstance(limit, dict) or not isinstance(limit.get('id'), str) or
             not ID.fullmatch(limit['id']) or not isinstance(limit.get('requirement'), str) or
             not limit['requirement'].strip()):
         raise ValueError('limit needs safe id and mapped requirement')
+    if schema == 'agent-ee.fab-profile/2' and 'all' in limit:
+        return validate_conjunctive(limit)
     if set(limit) - {'id', 'requirement', 'key', 'value', 'unit', 'tier', 'source'}:
         raise ValueError('unknown fabricator limit fields')
     key = limit.get('key')
@@ -86,20 +116,30 @@ def validate_limit(limit):
         raise ValueError('fabricator bound must be positive')
 
 
+def native_rule(record, key, value):
+    constraint, violation, condition = NATIVE[key]
+    rules = rule_text(record['marker'], condition, f'{constraint} (min {value:.12g}mm)')
+    record.update(rules=rules, rules_sha256=sha_text(rules), native_types=[violation],
+                  project_rules={PROJECT_RULES[key]: value})
+    return record
+
+
 def compile_profile(profile, files, inputs):
     if (not isinstance(profile, dict) or set(profile) != {'schema', 'name', 'as_of', 'limits'} or
-            profile['schema'] != 'agent-ee.fab-profile/1' or not isinstance(profile['name'], str)
+            profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
             or not profile['limits']):
-        raise ValueError('named, dated nonempty agent-ee.fab-profile/1 required; no defaults')
+        raise ValueError('named, dated nonempty agent-ee.fab-profile/1 or /2 required; no defaults')
     as_of = date(profile['as_of'])
     records, dependencies, ids, keys = [], set(), set(), set()
     for limit in profile['limits']:
-        validate_limit(limit)
-        lid, key, tier = limit['id'], limit['key'], limit['tier']
-        if lid in ids or (key, tier) in keys:
+        validate_limit(limit, profile['schema'])
+        lid, key, tier = limit['id'], limit.get('key'), limit['tier']
+        if lid in ids or (key is not None and (key, tier) in keys):
             raise ValueError('duplicate fabricator id or tier/key')
-        ids.add(lid); keys.add((key, tier))
+        ids.add(lid)
+        if key is not None:
+            keys.add((key, tier))
         record = {'id': lid, 'requirement': limit['requirement'], 'expected': copy.deepcopy(limit),
                   'kind': 'fab', 'marker': 'agent_ee_' + lid, 'execution': 'unsupported'}
         try:
@@ -112,11 +152,15 @@ def compile_profile(profile, files, inputs):
             records.append({**record, 'reason': str(exc)})
             continue
         record['execution'] = 'ready'
-        if key in NATIVE:
-            constraint, violation, condition = NATIVE[key]
-            rules = rule_text(record['marker'], condition, f'{constraint} (min {limit["value"]:.12g}mm)')
-            record.update(rules=rules, rules_sha256=sha_text(rules), native_types=[violation],
-                          project_rules={PROJECT_RULES[key]: limit['value']})
+        if key is None:
+            # Each term is its own isolated native run under a marker outside the ID alphabet.
+            record['terms'] = [native_rule({'id': f'{lid}+{term["key"]}', 'requirement': limit['requirement'],
+                                            'expected': copy.deepcopy(term),
+                                            'marker': f'{record["marker"]}+{term["key"]}',
+                                            'execution': 'ready'}, term['key'], term['value'])
+                               for term in limit['all']]
+        elif key in NATIVE:
+            native_rule(record, key, limit['value'])
         else:
             record['geometry'] = key
         records.append(record)
@@ -263,6 +307,19 @@ def evaluate_geometry(constraint, inventory):
             'actual': actual, 'offender_ids': [] if legal else ids}
 
 
+def evaluate_conjunctive(record, terms):
+    """Joint offenders are vias every term's native finding cites; any unproved term is unknown."""
+    record['terms'] = terms
+    for term in terms:
+        if term['execution'] != 'ok' or term['status'] not in ('satisfied', 'violation'):
+            return {**record, 'execution': term['execution'] if term['execution'] != 'ok' else 'unsupported',
+                    'reason': f"conjunctive term {term['expected']['key']} not evaluated: "
+                              + term.get('reason', term['status'])}
+    joint = sorted(set.intersection(*(offender_ids(term) for term in terms)))
+    return {**record, 'execution': 'ok', 'status': 'violation' if joint else 'satisfied',
+            'offender_ids': joint}
+
+
 def offender_ids(record):
     return set(record.get('offender_ids', [])) | {
         i['uuid'] for f in record.get('native_findings', []) for i in f['items']}
@@ -276,7 +333,7 @@ def classify_preferred(records, inventory):
     """
     if inventory['outline_xy_mm'] is None:
         for record in records:
-            if record['expected']['key'] == 'min_edge_clearance_mm' and record['status'] == 'satisfied':
+            if record['expected'].get('key') == 'min_edge_clearance_mm' and record['status'] == 'satisfied':
                 problem = inventory.get('outline_problem', {})
                 record.update(status='not_evaluated', execution='unsupported',
                               reason='edge clearance requires one simple closed straight-segment outline: '
@@ -286,15 +343,21 @@ def classify_preferred(records, inventory):
     for record in records:
         if record['expected']['tier'] != 'preferred':
             continue
-        minimum = minima.get(record['expected']['key'])
-        if minimum is None or minimum['status'] not in ('satisfied', 'violation'):
+        # A conjunctive rule needs every term key's minimum proved, and a via illegal
+        # under any of those minima is a defect, never part of the surcharge.
+        keys = ([t['key'] for t in record['expected']['all']] if 'all' in record['expected']
+                else [record['expected']['key']])
+        required = [minima.get(key) for key in keys]
+        if any(m is None or m['status'] not in ('satisfied', 'violation') for m in required):
             record.update(status='not_evaluated', execution='unsupported',
-                          reason='extra-charge classification requires evaluated minimum for same key')
+                          reason='extra-charge classification requires evaluated minimum for '
+                                 + ('every term key' if len(keys) > 1 else 'same key'))
         elif record['status'] == 'violation':
             found = offender_ids(record)
-            offenders = sorted(found - offender_ids(minimum))
+            illegal = set().union(*(offender_ids(m) for m in required))
+            offenders = sorted(found - illegal)
             record.update(status='extra_charge' if offenders else 'satisfied', offender_ids=offenders,
-                          minimum_violation_ids=sorted(found & offender_ids(minimum)))
+                          minimum_violation_ids=sorted(found & illegal))
     return records
 
 

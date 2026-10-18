@@ -1,7 +1,8 @@
 # Captured fabricator profiles (AGENTEE-75)
 
 `fab_profile` is a selectable coordinator check in scope/2 and scope/3. It
-evaluates an explicitly captured `agent-ee.fab-profile/1` document through the
+evaluates an explicitly captured `agent-ee.fab-profile/1` or
+`agent-ee.fab-profile/2` document through the
 [routing check's](routing-rules.md) staged native runner:
 
 ```json
@@ -63,6 +64,10 @@ Supported minimum/preferred keys:
 | `max_layers` | integer count | Saved board copper layer count |
 | `max_board_mm` | `[x,y]` mm | Saved-axis extents of one simple closed straight-segment outline, x to x and y to y |
 | `supports_smt` | boolean | Presence of saved SMD pads |
+
+`agent-ee.fab-profile/2` accepts every `/1` limit unchanged and adds
+[conjunctive surcharge rules](#conjunctive-surcharge-rules-fab-profile2). A `/1`
+document keeps its exact `/1` contract and refuses a conjunctive rule.
 
 Assembly coverage is limited to the declared presence of SMD pads. It does not
 establish assembly process compatibility, component sourcing or factory approval.
@@ -142,6 +147,51 @@ drill against a 0.2 mm minimum and 0.3 mm preferred limit, which reports both vi
 IDs as extra charges. These numbers are test assumptions, not a bundled standard
 preset or a quote from any fabricator.
 
+## Conjunctive surcharge rules (fab-profile/2)
+
+Some fabricators charge extra for a via only when its drill and its finished
+diameter are both small. A `/2` profile expresses that as one rule whose `all`
+terms must all hold. The rule has its own captured source, exactly like a scalar
+limit. These values are an **owned synthetic assumption**:
+
+```json
+{
+  "id": "small-via", "requirement": "fabrication", "tier": "preferred",
+  "all": [{"key": "min_via_drill_mm", "value": 0.3, "unit": "mm"},
+          {"key": "min_via_pad_mm", "value": 0.5, "unit": "mm"}],
+  "source": {
+    "path": "sources/owned-capabilities.txt",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source": "Owned synthetic assumptions",
+    "as_of": "2026-10-17", "page": 1,
+    "quote": "Small via: drill under 0.3 mm and diameter under 0.5 mm"
+  }
+}
+```
+
+A rule needs at least two distinct terms. Each term has exactly `key`, `value`
+and `unit`. The only term keys are `min_via_drill_mm` and `min_via_pad_mm`,
+because both native findings cite only the via. Values are positive millimetres
+in the native finite range. The tier must be `preferred`: a conjunctive rule
+classifies extra charges and never defines a defect or a scope/3 predicate. Any
+other shape invalidates the profile. A missing or mismatched source leaves the
+rule `execution=unsupported`, so the aggregate is unknown.
+
+Each term compiles to the same isolated native rule as the scalar key, under the
+marker `agent_ee_<id>+<key>`. `+` is outside the limit ID alphabet. Each term runs
+its own staged KiCad DRC under `native-rules/<id>/<key>/`. A term covers a via
+only when that via is strictly under the term's bound, as KiCad's native `min`
+constraint decides it. A via exactly at a bound does not meet that term. Engineers
+encode the cited text's boundary in the typed value. The rule's joint offenders
+are the via UUIDs that every term's native findings cite. The per-term records,
+with their native findings and hashes, stay under the rule's `terms`.
+
+If a term's DRC fails, is malformed or is unsupported, the rule is not evaluated
+and carries that term's execution and reason. Classification needs an evaluated
+minimum for every term key. A joint via that is illegal under any term's minimum
+is listed in `minimum_violation_ids` and stays a defect of that minimum. The
+remaining joint vias are the rule's `offender_ids` in its `extra_charge` record.
+
 ## Evidence and failure
 
 The profile hash is in `rules-evaluation.json` and the check's `details.source`.
@@ -165,6 +215,10 @@ Owned native fixtures cover:
 
 - 0.09 mm trace failure and 0.15 mm legal/preferred warning
 - undersized drills and 0.25 mm drill extra charges
+- conjunctive drill-and-diameter surcharges. Six saved vias cover joint,
+  drill-only, diameter-only, at-drill-bound, at-diameter-bound and control
+  sizes. Only the joint via's saved UUID is charged, a joint via under the
+  drill minimum stays a defect, and missing term minima are unknown
 - excessive layer counts, including renamed copper layers
 - fixed-axis outline extents
 - the remaining native rule mappings
@@ -188,8 +242,10 @@ real fabricator: the synthetic 0.25 mm example proves classification only.
 An applicable captured source and its permitted retention are still required.
 The [current JLCPCB capability table](https://jlcpcb.com/capabilities/pcb-capabilities/)
 (consulted 2026-10-17, not captured as a profile input) makes its small-via
-surcharge depend on both drill and via diameter. The scalar preferred-drill
-example does not encode that applicability and must not be labelled a qualified
+surcharge depend on both drill and via diameter. A `/2` conjunctive rule can
+express that joint condition, as the owned synthetic fixture shows. Capturing
+and retaining that table is a separate owner decision, so no JLCPCB rule is
+supplied. The scalar preferred-drill example must not be labelled a qualified
 JLCPCB preset.
 Arbitrary-angle minimum bounding dimensions, curved outlines and
 cutouts remain unsupported. Owner review and peer review remain separate from
