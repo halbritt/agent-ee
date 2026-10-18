@@ -114,6 +114,29 @@ class OwnedEmissionTests(unittest.TestCase):
             emit(json.dumps(record).encode(), {'Owned.kicad_sym': OWNED}, manifest(['R1', 'R2']),
                  TEMPLATE, 'owned')
 
+    def test_datasheet_travels_from_manifest_and_null_keeps_library_default(self):
+        url = 'https://example.invalid/owned-r.pdf'
+        fp = 'Resistor_SMD:R_0805_2012Metric'
+        parts = json.dumps(dict(schema=PARTS_SCHEMA, parts={
+            'R1': dict(Footprint=fp, Datasheet=url),
+            'R2': dict(Footprint=fp, Datasheet=None, datasheet_obligation='missing:catalog_has_no_datasheet_column')}))
+        outputs = self.emit_owned(parts=parts.encode())
+        tree = parse_quoted(outputs['owned.kicad_sch'])
+        fields = {}
+        for node in tree[1:]:
+            if isinstance(node, list) and node[0] == 'symbol':
+                props = {p[1]: p[2] for p in node[1:] if isinstance(p, list) and p[0] == 'property'}
+                fields[props['Reference']] = props['Datasheet']
+        self.assertEqual(fields['R1'], url)
+        self.assertEqual(fields['R2'], '')  # Owned library default; nothing invented.
+        receipt = json.loads(outputs['emit-receipt.json'])
+        self.assertEqual(receipt['ignored_manifest_keys'], ['R2.datasheet_obligation'])
+        for bad in ('', 'a\nb', 7):
+            broken = json.dumps(dict(schema=PARTS_SCHEMA, parts={'R1': dict(Footprint=fp, Datasheet=bad),
+                                                                 'R2': dict(Footprint=fp)})).encode()
+            with self.subTest(bad=bad), self.assertRaisesRegex(EmitError, 'R1.Datasheet must be'):
+                self.emit_owned(parts=broken)
+
     def test_component_missing_from_manifest_refused(self):
         with self.assertRaisesRegex(EmitError, 'missing from the parts manifest: R2'):
             self.emit_owned(parts=manifest(['R1']))
