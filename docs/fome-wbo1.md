@@ -19,12 +19,16 @@ provenance uses `kicad-libraries` commit
 `ab9c5f8a1517a04b9cada6880d67d190bfd48c05`; those library files are not copied.
 The stock-library hashes identify the acquisition host (KiCad 10.0.7).
 
-For full inventory reproducibility, run `scripts/qualify_block_inventory.py`
-with the AGENTEE-105 inventory, its wbo1-to-wbo2 fixture and the pinned local
-repositories. Its output belongs in scratch or ignored `build/`. It captures
-twice, compares every byte and checks the exact strap differences. The fixture
-README gives the selected-block publication call; this reuses the Git capture
-API and does not copy design files by hand.
+The fixture README gives the reproduction call using the committed requests
+and generated records as supplements to the Git capture API. Capture twice in
+a network-less sandbox and compare every byte with the committed directories.
+The source paths include only the two sheets. Requirements and generated
+interface contracts cite `docs/DESIGN.md` and `docs/BLOCK_LIBRARY.md` as
+`pinned-external` sources: repository, full commit, path, blob ID, SHA-256 and
+section locator. Their bytes remain outside agent-ee. Validation checks those
+identities in the local Git object store without reading the checkout or
+fetching missing objects. Missing objects leave each citation unverified.
+See [external source citations](reference-block-interface.md#external-source-citations).
 
 ## Native checks and adaptation
 
@@ -64,8 +68,10 @@ physical components and passes the interface check, while native ERC reports
 incomplete because independent reviews and adjudication have not run.
 
 The [Rev C difference report](../fixtures/fome-mc/wbo1/UPSTREAM-PARITY.md)
-lists all 78 differences as unexplained, using independently confirmed upstream
-blob identity and fresh native exports. It supplies no equivalence witness.
+lists all 78 differences as unexplained, using the retained upstream blob and
+fresh native exports. Its commit/tree/path attestation is reproducible from the
+existing upstream Git object store without network access; the retained blob
+alone cannot verify that membership. It supplies no equivalence witness.
 The [coverage ledger](../fixtures/fome-mc/wbo1/COVERAGE.md) records pending
 firmware decoder capture, active-model/LSU evidence, catalog/parts qualification
 and Q301 copper geometry. Domain/current declarations and draft parts also keep block

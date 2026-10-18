@@ -268,7 +268,9 @@ engineering claims.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit without Git transports or replacement refs, and checks
-declared ports against the native sheet. Missing local blobs are refused. It credits
+declared ports against the native sheet. Missing captured blobs are refused;
+pinned external requirement citations with unavailable Git objects stay
+unverified without copying the cited documents. It credits
 sealed interface evidence only for the block's actual native components and
 hierarchy. [Block adaptation](docs/block-adaptation.md) copies a flat block into
 a pre-created child, freezes its provenance and maps its requirements to fresh board checks.

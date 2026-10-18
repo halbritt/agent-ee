@@ -1,7 +1,7 @@
 """Offline Rev C difference report, reusing native capture and block comparison.
 
-The upstream sheet already exists in agent-ee. Its Git blob identity was
-confirmed against the public Rev C tree; this tool performs no network I/O.
+The upstream sheet already exists in agent-ee. Commit/tree/blob identities can
+be checked in a local upstream Git object store; this tool performs no network I/O.
 Differences are unexplained diagnostics, not equivalence or acceptance evidence.
 """
 import argparse
@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 CACHED = REPO / 'evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_hardware_board_module_wideband_controller.kicad_sch'
 COMMIT = 'ca2adce4aaea1deee66e459cc8949296763a0ad0'
+TREE = '8ddd75016d206b7187cd6bcbf99e7b606acefe9e'
 BLOB = 'a7701fc25373e1bcd28ace718cecb35d3b2b5d0e'
 SHA256 = 'e54843a1e6ef92a79153d8a7bb491ea1cd8ce8216adbdcd9b8f9d665338a1508'
 
@@ -85,9 +86,10 @@ def generate(out):
     source = projection(upstream_work / 'native.xml', '/', COMMIT)
     current = projection(current_work / 'native.xml', block['instances'][0]['uuid_path'], block['source']['commit'])
     changes = differences(source, current)
-    report = dict(upstream=dict(repository='mck1117/wideband', commit=COMMIT,
+    report = dict(upstream=dict(repository='mck1117/wideband', commit=COMMIT, git_tree=TREE,
         path='hardware/board_module/wideband_controller.kicad_sch', git_blob=BLOB, sha256=SHA256,
-        identity_source='https://api.github.com/repos/mck1117/wideband/git/trees/' + COMMIT + '?recursive=1'),
+        identity_source=dict(method='offline-git-objects', retained_blob='verified',
+                             commit_tree_membership='requires-local-upstream-objects')),
         fome=dict(commit=block['source']['commit'], sheet_sha256=block['files'][block['sheet']]),
         correspondence='Upstream physical reference number +300; no net or library aliases suppressed.',
         compared_fields=['symbol', 'value', 'footprint', 'populated', 'physical pins and conductors'],

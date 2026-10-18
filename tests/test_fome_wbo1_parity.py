@@ -15,6 +15,15 @@ spec.loader.exec_module(parity)
 
 
 class UpstreamIdentityTests(unittest.TestCase):
+    def test_attestation_uses_offline_objects_and_separates_membership_from_blob_identity(self):
+        report = read_json(FIXTURE / 'upstream-parity.json')
+        self.assertEqual(report['upstream']['git_tree'], parity.TREE)
+        self.assertEqual(report['upstream']['identity_source'], dict(
+            method='offline-git-objects', retained_blob='verified',
+            commit_tree_membership='requires-local-upstream-objects'))
+        self.assertNotIn('api.github.com', (FIXTURE / 'UPSTREAM-PARITY.md').read_text())
+        self.assertIn('No upstream bytes were', (FIXTURE / 'UPSTREAM-PARITY.md').read_text())
+
     def test_wrong_upstream_bytes_are_refused(self):
         parity.verify_upstream(parity.CACHED)
         with tempfile.TemporaryDirectory() as tmp:

@@ -43,6 +43,14 @@ class CaptureTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'unverified')
                 self.assertEqual(result['runs'], [])
                 self.assertEqual(record['source']['commit'], COMMIT)
+                self.assertEqual(set(record['source']['paths']), {record['sheet']})
+                self.assertFalse((root / 'sources').exists())
+                self.assertEqual(len(result['external_sources']), 4)
+                for citation in result['external_sources']:
+                    source = citation['source']
+                    self.assertEqual(source['kind'], 'pinned-external')
+                    self.assertEqual(source['commit'], COMMIT)
+                    self.assertIn(source['path'], ('docs/DESIGN.md', 'docs/BLOCK_LIBRARY.md'))
                 self.assertEqual(len(record['instances'][0]['references']), 58)
                 self.assertEqual(len(read_json(root / 'parts.json')['parts']), 58)
                 self.assertEqual(len(record['boundary_ports']), 10)

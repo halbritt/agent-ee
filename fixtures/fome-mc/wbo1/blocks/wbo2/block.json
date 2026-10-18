@@ -93,13 +93,11 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "dff8a79e930b4bb38389b7f4d30a7b3d5ac960ba096abd505141b915c1b94138",
+    "block-contract.json": "a73b47d4c5e88e2e65a84c3c0f08005fa1cd9ee2948d03acb15f0b89b5532ce8",
     "connectivity.json": "7267ae5f6d6d95aaf710a72cbdd7024fa8fe3e0bfe7d86c883f165f4af1e7837",
-    "interface.json": "f334faaaa86865694f0ce23db7590e2fcf049d48d7e3f5a1e9abddc8ede994f7",
+    "interface.json": "731dbf83ada0678a731f3365392a606e425c6e0c586579c121097a28070421d4",
     "parts.json": "7dfc0153ec07724fd4c25b8e8cd89553ab76e1e4d1184bf23ec1941f29d645f3",
-    "sheets/wbo2.kicad_sch": "053a946392cf7f4d2f2dc869a196adcd146125274cc608691281e34b3cdf7376",
-    "sources/docs/BLOCK_LIBRARY.md": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a",
-    "sources/docs/DESIGN.md": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+    "sheets/wbo2.kicad_sch": "053a946392cf7f4d2f2dc869a196adcd146125274cc608691281e34b3cdf7376"
   },
   "id": "fome-mc/wbo2",
   "instances": [
@@ -347,8 +345,13 @@
       "conditions": [],
       "id": "wbo2-function",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "5. Dual Integrated Wideband Controller Architecture",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "/home/halbritt/git/fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "1.65 V virtual ground, Nernst ESR injection, heater PWM under CAN control and a separate VDDA per channel."
     },
@@ -359,8 +362,13 @@
       ],
       "id": "wbo2-can-id",
       "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "5. Dual Integrated Wideband Controller Architecture",
-        "path": "sources/docs/DESIGN.md"
+        "path": "docs/DESIGN.md",
+        "repository": "/home/halbritt/git/fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
       },
       "statement": "The PA8 strap to +3V3_WBO2 selects CAN IDs 0x192/0x193 at 500 kbps."
     }
@@ -376,8 +384,13 @@
       ],
       "id": "wbo2-native",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "What \"verified block\" means, items 1 and 4",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "/home/halbritt/git/fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
     },
@@ -390,8 +403,13 @@
       ],
       "id": "wbo2-interface",
       "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
         "locator": "Block catalogue / Wideband channel (wbo1.kicad_sch, wbo2.kicad_sch)",
-        "path": "sources/docs/BLOCK_LIBRARY.md"
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "/home/halbritt/git/fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
       },
       "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
     }
@@ -404,9 +422,7 @@
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
     "license": "Owner-held fome-mc reference block; see fixtures/fome-mc/LICENSE-NOTICE.md and docs/decisions.md, 2026-10-18. Wideband origin: mck1117 wideband Rev C (MIT). Origin: mck1117 wideband Rev C at ca2adce (MIT), adapted from wbo1: references +100, WBO2 suffix, PA8 strap",
     "paths": {
-      "sheets/wbo2.kicad_sch": "sheets/wbo2.kicad_sch",
-      "sources/docs/BLOCK_LIBRARY.md": "docs/BLOCK_LIBRARY.md",
-      "sources/docs/DESIGN.md": "docs/DESIGN.md"
+      "sheets/wbo2.kicad_sch": "sheets/wbo2.kicad_sch"
     },
     "repository": "/home/halbritt/git/fome-mc"
   },

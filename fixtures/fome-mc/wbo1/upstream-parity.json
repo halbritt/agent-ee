@@ -1433,7 +1433,12 @@
   "upstream": {
     "commit": "ca2adce4aaea1deee66e459cc8949296763a0ad0",
     "git_blob": "a7701fc25373e1bcd28ace718cecb35d3b2b5d0e",
-    "identity_source": "https://api.github.com/repos/mck1117/wideband/git/trees/ca2adce4aaea1deee66e459cc8949296763a0ad0?recursive=1",
+    "git_tree": "8ddd75016d206b7187cd6bcbf99e7b606acefe9e",
+    "identity_source": {
+      "commit_tree_membership": "requires-local-upstream-objects",
+      "method": "offline-git-objects",
+      "retained_blob": "verified"
+    },
     "path": "hardware/board_module/wideband_controller.kicad_sch",
     "repository": "mck1117/wideband",
     "sha256": "e54843a1e6ef92a79153d8a7bb491ea1cd8ce8216adbdcd9b8f9d665338a1508"

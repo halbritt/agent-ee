@@ -95,10 +95,10 @@ scripted and establishes no model-review quality claim. Run them on the host:
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_reference_blocks -v
 ```
 
-No FOME-MC sheet is distributed with this library. The proposed `psu` and `wbo1`
-entries still need authorized source acquisition, explicit electrical
-declarations, parts qualification and complete passing sealed runs. Owned
-controls establish capture behavior, not qualification of those actual blocks.
+The owner-authorized [wideband capture](fome-wbo1.md) distributes pinned FOME-MC
+channel sheets. They still need explicit electrical declarations, parts
+qualification and complete passing sealed runs. Owned controls establish
+capture behavior, not qualification of those actual blocks.
 
 [Block adaptation](block-adaptation.md) instantiates a captured flat block into a
 pre-created child sheet and maps its requirements to fresh board checks. The
@@ -131,7 +131,8 @@ generates all of them.
   covering exactly the reference set.
 - `check_set`: `{id, kind, params}` with registered kinds and unique ids. Every
   check must trace to a requirement and every requirement check must exist.
-- Requirements may carry `source` (`{path, locator}`, a captured block file) and
+- Requirements may carry `source` (`{path, locator}`, a captured block file, or
+  the pinned external form below) and
   `conditions` (text list). When a run is verified, a sourced requirement must
   match the baseline requirement's source through the run's file mapping.
 - `pending_requirements`: `{id, statement, source, conditions, blocked_by}` for
@@ -150,3 +151,48 @@ listing keeps the block unverified. The validator report adds
 
 KiCad joins repeated hierarchical labels with one name into one sheet pin. Such
 labels are one port when their shapes agree and are refused when they conflict.
+
+## External source citations
+
+A block requirement, pending requirement or generated interface invariant may
+cite a document without capturing its bytes:
+
+```json
+{
+  "kind": "pinned-external",
+  "repository": "fome-mc",
+  "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+  "path": "docs/DESIGN.md",
+  "blob": "0123456789012345678901234567890123456789",
+  "sha256": "0123456789012345678901234567890123456789012345678901234567890123",
+  "locator": "5. Dual Integrated Wideband Controller Architecture"
+}
+```
+
+The blob and SHA-256 above illustrate the shape; use the observed identities of
+the cited document. `locator` is optional and is a human section reference, not
+a machine-verified statement. All other fields are required. Paths remain safe
+repository-relative paths. The citation is part of the immutable block contract.
+
+`validate_block(..., repository_locations={identity: local_path})` or
+`validate DIRECTORY --repository ID=PATH` resolves a repository identity to a
+local Git object store. An absolute repository identity also serves as its
+default local location. Relative identities require an explicit mapping; no
+network URL is opened. Validation uses `git cat-file` and the pinned commit's
+tree to verify ordinary-file membership, exact blob ID and SHA-256. Replacement
+refs, lazy fetching and Git transports are disabled. Neither a dirty checkout
+nor an available blob outside that commit can establish the citation.
+
+The block report's `external_sources` lists each citation and its verification
+status. An unavailable repository, commit, tree or blob is `unverified`, and
+prevents the block becoming verified even with passing sealed runs. A known
+identity mismatch, unsafe citation or non-regular source is refused. This checks
+identity only; it does not establish the requirement's engineering validity.
+
+Run baselines continue to cite captured files. For an external block requirement,
+the baseline must cite the mapped `block-contract.json` with locator
+`requirements/REQUIREMENT_ID/source`. That captured contract preserves the full
+external identity. Board `hardware_interface` checks still require captured
+requirement sources; external contract citations are accepted only when
+validating a source block. Adapted boards need fresh captured requirements and
+checks through the existing block adaptation mapping.

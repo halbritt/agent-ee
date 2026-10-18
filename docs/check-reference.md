@@ -717,6 +717,11 @@ qualify the board. See [block adaptation](block-adaptation.md) for scaffold
 inputs, requirement mapping, boundary probes, retained evidence and coverage
 limits.
 
+Source blocks can retain [pinned external citations](reference-block-interface.md#external-source-citations)
+for requirement and contract context without copying planning documents. Block
+validation verifies their commit/path/blob and SHA-256 offline; unavailable Git
+objects keep the block unverified. These citations supply no board-check credit.
+
 [`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
 are exactly `{netlist_check}` and it must be the last declared check; an earlier
 `geometry` check is required. It runs the same export and consistency code on its
