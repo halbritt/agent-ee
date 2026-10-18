@@ -52,6 +52,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `fab_consistency` | Coordinator reads the earlier export's sealed staging tree and version run, the captured board, the sealed netlist and earlier sealed geometry; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
 | `package_consistency` | `/usr/bin/python3 -B -m agent_ee.package_consistency /candidate/CATALOG MANIFEST_SHA256 /work/request.json /work/catalog-rows.json`; coordinator then compares preceding native XML names through the captured table ([details](package-consistency.md)) | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
+| `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
@@ -189,6 +190,18 @@ fixed-axis outline extents and SMD presence with the saved board. Missing source
 missing profiles and unqualified outlines are unknown. Preferred-tier overruns
 are reported as extra charges, never defects. Out-of-range numeric profile bounds
 are unsupported in both descriptors and execution. No real fabricator preset exists.
+
+## DFM geometry rules
+
+The [DFM geometry check](dfm-geometry.md) takes exactly `params.dfm_profile`.
+That is a captured `agent-ee.dfm-profile/1` with an explicit threshold for each
+rule. The rules are annular ring, via aspect ratio, acid trap, SMD bridge gap,
+component courtyard spacing, differential-pair skew and copper balance, and each
+is evaluated on the probe's exact `--dfm` facts. Findings carry a code,
+coordinates, native UUIDs and references, plus per-finding `gate_findings`
+identities. A rule that cannot evaluate an item, such as one with no saved board
+thickness, a blind via, an unfilled zone or a missing courtyard, is
+`unsupported`, and the check becomes `unsupported/unknown`.
 
 ## Native netlist
 
@@ -392,6 +405,9 @@ artifacts, margin arithmetic, domain/condition rules and failure paths. These
 interfaces can host independently qualified engineering tools; installing
 agent-ee does not install thermal, parasitic, DFM or supply-chain adapters. Declared
 assembly and test access geometry is the separate [`dfa_dft`](dfa-dft.md) check.
+
+agent-ee does not install thermal, parasitic, DFA/DFT or supply-chain adapters; the
+built-in DFM geometry rules are the separate [`dfm_geometry`](dfm-geometry.md) check.
 
 In scope/2, bounded `rc_transient` results also expose electrical scalar metrics
 and margins for coupling and empirical correction. Unbounded measurements remain

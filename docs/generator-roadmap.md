@@ -67,6 +67,9 @@ CPL coordinate and export-log checks. The separate
 [Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74) compares
 layer presence, drill histograms, copper pad/via flashes and outline bounds.
 CPL rotation policy remains AGENTEE-72.
+
+CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
+The rung-3 DFM geometry rules exist as [`dfm_geometry`](dfm-geometry.md) (AGENTEE-76).
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 

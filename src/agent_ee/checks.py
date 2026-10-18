@@ -890,6 +890,7 @@ from .placement_check import check_placement
 from .envelope_check import check_board_envelope
 from .assembly_readiness import check_assembly_readiness
 from .dfa_dft import check_dfa_dft
+from .dfm_geometry import check_dfm_geometry
 
 
 from .catalog_checks import check_catalog
@@ -916,7 +917,8 @@ CHECK_FUNCS = {'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts
                "geometry": check_geometry, "rc_transient": check_rc_transient,
                "passive_corners": check_passive_corners, "dc_path": check_dc_path,
                "placement": check_placement, "board_envelope": check_board_envelope,
-               "assembly_readiness": check_assembly_readiness, "dfa_dft": check_dfa_dft}
+               "assembly_readiness": check_assembly_readiness, "dfa_dft": check_dfa_dft,
+               "dfm_geometry": check_dfm_geometry}
 
 
 # ------------------------------------------------------------------ entry point

@@ -211,6 +211,12 @@ The [fab profile check](docs/fab-profile.md) runs captured, source-cited
 fabrication limits through the same native rules. It also compares layer count
 and outline size with the saved board and lists legal surcharged features
 separately. No real fabricator preset is supplied or qualified.
+The [DFM geometry check](docs/dfm-geometry.md) applies seven deterministic rules
+with captured thresholds to exact pcbnew geometry from the saved board: annular
+ring, via aspect ratio, acid traps, SMD bridge gap, courtyard spacing,
+differential-pair skew including arcs, and copper balance. It reports coded
+findings with coordinates and gives no score. A missing fact, such as the saved
+board thickness, leaves that rule unknown.
 
 [Offline catalog capture](docs/catalog.md) retains pinned snapshots and verifies
 that derived quantities match retained raw attributes. A pinned jlcparts feed
@@ -299,6 +305,9 @@ Thermal solvers, post-layout parasitic extraction, DFM analysis and BOM
 lifecycle services are **not bundled**. The [`dfa_dft` check](docs/dfa-dft.md)
 covers only declared connector orientation, test-point probe access and
 test-point coverage, and derives a bring-up plan. They need separately qualified tools,
+
+Thermal solvers, post-layout parasitic extraction, DFA/DFT analysis, DFM beyond the
+seven geometry rules, and BOM lifecycle services are **not bundled**. They need separately qualified tools,
 models and adapters. The built-in passive simulation is not a general active
 circuit simulator. The [coverage guide](docs/coverage.md) spells out these limits.
 
