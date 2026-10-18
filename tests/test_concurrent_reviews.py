@@ -196,20 +196,31 @@ class ConcurrentReviewTests(unittest.TestCase):
         budget = 3.0 * timings["export_s"] + (waves + 4.0) * timings["harness_s"] + total_sleep
         return budget, timings
 
-    def assert_within_budget(self, elapsed, budget, timings, result=None, context="coordinator run"):
+    def assert_within_budget(
+        self,
+        elapsed,
+        budget,
+        timings,
+        result=None,
+        context="coordinator run",
+        *,
+        expect_adjudication=False,
+    ):
         budget_exhausted = elapsed >= budget
         if result is not None:
             records = result.get("review_executions", [])
             for record in records:
                 if record.get("execution") == "timeout":
                     budget_exhausted = True
-                if "global review budget expired" in record.get("error", ""):
+                error = record.get("error", "")
+                if "global review budget expired" in error or "deadline exhausted" in error:
                     budget_exhausted = True
             for limitation in result.get("limitations", []):
                 if "Wall-clock work budget exhausted" in limitation:
                     budget_exhausted = True
             if (
-                records
+                expect_adjudication
+                and records
                 and all(r.get("execution") == "ok" for r in records)
                 and not result.get("adjudicated")
                 and not result.get("error")
@@ -240,16 +251,19 @@ class ConcurrentReviewTests(unittest.TestCase):
             durations.append(float(read_json(run / f"review-executions/{role}.json")["duration_s"]))
         wave_span = max(e for _, e in intervals) - min(s for s, _ in intervals)
         serial_budget = sum(durations)
+        load_1m = os.getloadavg()[0]
         self.assertLess(
             wave_span,
             serial_budget,
-            f"initial roles {roles} exceeded derived concurrent budget: "
-            f"span={wave_span:.3f}s >= serial_budget={serial_budget:.3f}s",
+            f"budget exceeded under load {load_1m:.2f} "
+            f"(initial roles {roles} exceeded derived concurrent budget: "
+            f"span={wave_span:.3f}s >= serial_budget={serial_budget:.3f}s)",
         )
         self.assertLess(
             max(s for s, _ in intervals),
             min(e for _, e in intervals),
-            f"initial roles {roles} did not overlap in time: {intervals}",
+            f"budget exceeded under load {load_1m:.2f} "
+            f"(initial roles {roles} did not overlap in time: {intervals})",
         )
 
     def harness(self, run, role, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
@@ -344,14 +358,31 @@ class ConcurrentReviewTests(unittest.TestCase):
     def test_global_deadline_bounds_both_calls_and_retains_partial_artifacts(self):
         self.settings["circuit"]["sleep"] = .2
         self.settings["physical"]["sleep"] = 3
+        _, timings = self.coordinator_budget(waves=1)
+        fast_sleep = self.settings["circuit"]["sleep"]
+        deadline_offset = max(.8, round(2.0 * timings["harness_s"] + fast_sleep, 3))
+        budget = deadline_offset + max(.7, 3.0 * timings["harness_s"])
+        self.settings["physical"]["sleep"] = max(self.settings["physical"]["sleep"], math.ceil(budget + 1.5))
+        role_timeout = max(5, math.ceil(self.settings["physical"]["sleep"] + 2.0))
+        for definition in self.profile["reviewers"]:
+            definition["timeout_s"] = role_timeout
         run, packet = self.prepare()
         start = time.monotonic()
         with patch("agent_ee.reviewers.dispatch", side_effect=self.harness):
-            reviews, records = initial_reviews(run, packet, start + .8, launch_context=self.context)
-        self.assertLess(time.monotonic() - start, 1.5)
+            reviews, records = initial_reviews(run, packet, start + deadline_offset, launch_context=self.context)
+        elapsed = time.monotonic() - start
+        self.assert_within_budget(
+            elapsed,
+            budget,
+            timings,
+            result={"review_executions": [r for r in records if r["role"] == "circuit"]},
+            context="global deadline initial_reviews",
+        )
+        self.assertLess(elapsed, budget)
+        self.assertLess(elapsed, self.settings["physical"]["sleep"])
         self.assertEqual([r["role"] for r in reviews], ["circuit"])
         self.assertEqual([r["execution"] for r in records], ["ok", "timeout"])
-        self.assertTrue(all(0 < r["timeout_s"] <= .8 for r in records))
+        self.assertTrue(all(0 < r["timeout_s"] <= deadline_offset for r in records))
         self.assert_retained(run, records)
 
     @toolchain_test
@@ -393,7 +424,7 @@ class ConcurrentReviewTests(unittest.TestCase):
             status = run_review(self.root / "scope.json", run, budget)
         elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
-        self.assert_within_budget(elapsed, budget, timings, result=result)
+        self.assert_within_budget(elapsed, budget, timings, result=result, expect_adjudication=True)
         self.assertEqual(status, 0, result)
         self.assertEqual(result["outcome"], "criteria_satisfied")
         self.assertEqual(self.calls[-1], "adjudicator")
@@ -437,31 +468,46 @@ class ConcurrentReviewTests(unittest.TestCase):
         write_json(self.root / "scope.json", self.scope)
         run = self.root / "coordinator-serial"
         real_executor = ThreadPoolExecutor
+        start = time.monotonic()
         with patch(
             "agent_ee.reviewers.ThreadPoolExecutor",
             side_effect=lambda max_workers=None, *a, **kw: real_executor(max_workers=1, *a, **kw),
         ), patch("agent_ee.reviewers.dispatch", side_effect=self.harness), contextlib.redirect_stdout(io.StringIO()):
             status = run_review(self.root / "scope.json", run, budget)
+        elapsed = time.monotonic() - start
         result = read_json(run / "result.json")
-        self.assertEqual(status, 0, result)
-        with self.assertRaisesRegex(AssertionError, r"exceeded derived concurrent budget"):
+        self.assert_within_budget(
+            elapsed,
+            budget,
+            timings,
+            result=result,
+            context="serialised coordinator run",
+            expect_adjudication=True,
+        )
+        self.assertEqual(
+            status,
+            0,
+            f"serialised reviewers must still complete within the wide wall-clock budget "
+            f"so assert_concurrent_initial_reviews is what catches serialisation: {result}",
+        )
+        with self.assertRaisesRegex(
+            AssertionError,
+            r"budget exceeded under load [0-9]+\.[0-9]{2} .*exceeded derived concurrent budget",
+        ):
             self.assert_concurrent_initial_reviews(run)
 
     def test_exhausted_coordinator_budget_reports_named_load_failure(self):
         timings = {"export_s": 12.5, "netlist_s": 0.45, "harness_s": 0.4}
         with self.assertRaisesRegex(AssertionError, r"^budget exceeded under load [0-9]+\.[0-9]{2} "):
             self.assert_within_budget(31.0, 30.0, timings, result={"state": "complete", "review_executions": []})
+        non_adjudicated = {
+            "state": "complete",
+            "adjudicated": False,
+            "review_executions": [{"role": "circuit", "execution": "ok"}, {"role": "physical", "execution": "ok"}],
+        }
+        self.assert_within_budget(10.0, 30.0, timings, result=non_adjudicated)
         with self.assertRaisesRegex(AssertionError, r"^budget exceeded under load [0-9]+\.[0-9]{2} "):
-            self.assert_within_budget(
-                10.0,
-                30.0,
-                timings,
-                result={
-                    "state": "complete",
-                    "adjudicated": False,
-                    "review_executions": [{"role": "circuit", "execution": "ok"}, {"role": "physical", "execution": "ok"}],
-                },
-            )
+            self.assert_within_budget(10.0, 30.0, timings, result=non_adjudicated, expect_adjudication=True)
 
 
     def test_owner_sigint_cancels_process_groups_and_queued_roles(self):
