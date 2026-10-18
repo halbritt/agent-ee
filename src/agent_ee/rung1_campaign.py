@@ -38,10 +38,22 @@ UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/age
 STAGE_ORDER = ['schematic', 'placement', 'routing', 'verification']
 CHECK_STAGES = {'erc': 'schematic', 'netlist': 'schematic', 'drc': 'placement',
                 'geometry': 'routing', 'rc-step': 'verification'}
+# The generation done gate (decision 1, AGENTEE-94): declared last, mapped to an acceptance requirement.
+DONE_CHECK = {'id': 'fab', 'kind': 'fab_package', 'params': {'netlist_check': 'netlist'}, 'stage': 'verification'}
+FAB_REQUIREMENT = {'id': 'R-fab', 'statement': 'A JLCPCB fab package is exported from the captured design, '
+                   'passes the fab consistency gate and is sealed',
+                   'source': {'path': 'requirements/fab-package.md', 'locator': 'R-fab'}, 'checks': ['fab']}
+FAB_PACKAGE_TEXT = ('# Fab package requirement\n\nR-fab: The accepted candidate must yield a JLCPCB fab package '
+                    '(Gerber zip, PTH/NPTH drill files, BOM and CPL with a hash manifest) exported by the pinned '
+                    'kicad-cli from the captured board and schematic, with no fab consistency defect or coverage gap. '
+                    'This establishes package existence and internal consistency, not DFM, CPL rotation policy, '
+                    'stock or orderability.\n')
 # kicad-route: 0 complete and valid; 2 valid but incomplete; 3 fails validation (never adoptable).
 NEVER_ADOPTABLE = {'routing': {1, 2, 3, 4}}
 MOUNT_STEPS, MOUNT_SOURCE, MOUNT_ROUTE = '/tool/steps', '/tool/agent-ee', '/tool/kicad-route'
 MOUNT_TEMPLATE = '/tool/template'
+# Scaffold top-level directories; the first capture must equal the scaffold receipt's after-tree on these.
+SCAFFOLD_DIRS = ('project', 'generation', 'requirements')
 DROPPED_BOARD_ITEMS = ('footprint', 'gr_line', 'gr_rect', 'gr_arc', 'gr_circle', 'gr_poly', 'gr_text',
                        'segment', 'arc', 'via', 'zone', 'group', 'dimension', 'image', 'net')
 
@@ -198,6 +210,12 @@ def empty_board(template_text, envelope):
     return text.encode('utf-8'), dropped
 
 
+def lib_table_check(project_dir):
+    for table in ('sym-lib-table', 'fp-lib-table'):
+        if '${KIPRJMOD}' in (project_dir / table).read_text():
+            raise PrepareFailure(f'{table} must use stock references only')
+
+
 def scaffold_files(resolved, envelope, template_dir):
     """The empty native project and builder template, by scaffold path, from one resolved record."""
     template_dir = Path(template_dir)
@@ -266,6 +284,7 @@ def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DI
     scaffold.mkdir()
     shutil.copytree(prep['requirements'], scaffold / 'requirements')
     (scaffold / 'requirements' / 'review-conventions.md').write_text(REVIEW_CONVENTIONS)
+    (scaffold / 'requirements' / 'fab-package.md').write_text(FAB_PACKAGE_TEXT)
     generation.mkdir()
     write_json(generation / 'intent.json', prep['intent'])
     (generation / 'resolved.json').write_bytes(prep['resolved_bytes'])
@@ -296,14 +315,16 @@ def write_scaffold(rundir, prep, *, source_root=PACKAGE_ROOT, steps_dir=STEPS_DI
 
 
 def scaffold_binding(record, candidate_manifest):
-    """Whether the scaffold receipt's whole after-tree is exactly what the first run captured."""
+    """Whether the scaffold receipt's after-tree equals the first capture on SCAFFOLD_DIRS, both ways."""
     from .stage_receipts import after_tree, validate_receipt
     path = Path(record['stage_receipt']['receipt'])
     receipt = validate_receipt(path.parent, binding={'rung1': 'scaffold', 'receipt_index': 1})
     if digest(path) != record['stage_receipt']['receipt_sha256']:
         raise ValueError('scaffold stage receipt changed after it was recorded')
-    files = candidate_manifest['files']
-    differences = sorted(rel for rel, sha in after_tree(receipt).items() if files.get(rel) != sha)
+    produced = after_tree(receipt)
+    captured = {rel: sha for rel, sha in candidate_manifest['files'].items()
+                if rel.split('/', 1)[0] in SCAFFOLD_DIRS}
+    differences = sorted(rel for rel in set(produced) | set(captured) if produced.get(rel) != captured.get(rel))
     return {'receipt': str(path), 'status': receipt['status'], 'bound': not differences,
             'differences': differences}
 
@@ -375,18 +396,23 @@ def compile_staged_scope(params, scope_dir, scaffold):
     inputs.append({'path': os.path.relpath(scaffold / 'generation', base), 'at': 'generation'})
     scope['inputs'] = inputs
     scope['name'] = 'Rung-1 RC low-pass, staged repair campaign from an empty candidate'
-    scope['requirements'] = list(scope.get('requirements', [])) + ['requirements/review-conventions.md']
+    scope['requirements'] = list(scope.get('requirements', [])) + ['requirements/fab-package.md',
+                                                                    'requirements/review-conventions.md']
     scope['scope'] = ('Review the rung-1 RC low-pass candidate against the requirements compiled from its '
                       'one-paragraph spec. The campaign starts from an empty native project (no symbols, '
                       'footprints or copper). After each implementation session the coordinator runs the '
                       'declared generation steps (schematic emitter, board build with row placement, '
                       'kicad-route KRT, fab export) on the delivered design and records stage receipts; '
-                      'only fresh checks and reviews of the captured result decide acceptance. Immutable '
+                      'only fresh checks and reviews of the captured result decide acceptance, ending with '
+                      'the fab_package done gate. Immutable '
                       'generation inputs are under generation/. This is a disposable benchmark board.')
     by_id = {c['id']: c for c in scope['checks']}
     if set(by_id) != set(CHECK_STAGES):
         raise PrepareFailure(f'scope template checks {sorted(by_id)} differ from {sorted(CHECK_STAGES)}')
     scope['checks'] = [{**by_id[cid], 'stage': stage} for cid, stage in CHECK_STAGES.items()]
+    scope['checks'].append(json.loads(json.dumps(DONE_CHECK)))
+    scope['baseline']['requirements'].append(json.loads(json.dumps(FAB_REQUIREMENT)))
+    scope['generation'] = {'schema': 'agent-ee.generation/1', 'done_check': DONE_CHECK['id']}
     scope['stages'] = {
         'schema': 'agent-ee.stages/1', 'order': list(STAGE_ORDER),
         'subjects': {
@@ -624,16 +650,42 @@ def campaign_summary(root):
     return state, iterations, implementations
 
 
-def write_record(rundir, base, *, verdict=None, fab=None, fab_bound=False, scaffold=None):
+def recomputed_artifacts(stdout, run):
+    """The fab artifact hashes verify-campaign printed for the final run, or None."""
+    lines = stdout.splitlines()
+    header = next((i for i, line in enumerate(lines) if line.startswith('fab_artifacts ')), None)
+    if header is None:
+        return None
+    fields = lines[header].split()
+    if len(fields) != 4 or fields[2] != 'candidate':
+        return None
+    files, prefix = {}, f'{run}/'
+    for line in lines[header + 1:]:
+        sha, sep, path = line.partition('  ')
+        if not sep or not path.startswith(prefix) or not re.fullmatch(r'[0-9a-f]{64}', sha):
+            return None
+        files[path[len(prefix):]] = sha
+    return {'artifacts_id': fields[1], 'candidate_id': fields[3], 'files': files}
+
+
+def artifacts_agree(stored, recomputed):
+    return bool(stored and recomputed) and all(stored.get(k) == recomputed[k]
+                                               for k in ('artifacts_id', 'candidate_id', 'files'))
+
+
+def write_record(rundir, base, *, verdict=None, fab=None, fab_artifacts=None, recomputed=None, scaffold=None):
     exists = bool(fab and fab['exports_exist'])
+    verified = artifacts_agree(fab_artifacts, recomputed)
     scaffold_bound = bool(scaffold and scaffold.get('bound'))
-    done = verdict == 'criteria_satisfied' and exists and fab_bound and scaffold_bound
+    done = verdict == 'criteria_satisfied' and verified and scaffold_bound
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, **base, 'verdict': verdict,
-              'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_bound_to_accepted_candidate': fab_bound,
+              'fab_manifest': fab, 'fab_exports_exist': exists, 'fab_artifacts': fab_artifacts,
+              'fab_artifacts_recomputed_by_verify_campaign': recomputed, 'fab_artifacts_verified': verified,
               'scaffold_receipt_binding': scaffold, 'done': done,
-              'done_rule': ('campaign verdict criteria_satisfied AND fab exports exist, are nonempty and match '
-                            'their manifest AND the fab step consumed the accepted candidate\'s board and schematic '
-                            'AND the scaffold receipt\'s after-tree is exactly the first captured candidate')}
+              'done_rule': ('campaign verdict criteria_satisfied AND the final campaign state lists the fab '
+                            'artifact hashes of the passing fab_package done check AND verify-campaign recomputed '
+                            'the same hashes from the retained run AND the scaffold receipt\'s after-tree is exactly the '
+                            'first captured candidate on project/, generation/ and requirements/')}
     write_json(Path(rundir) / 'rung1-campaign-record.json', record)
     return record
 
@@ -777,10 +829,15 @@ def campaign_record(rundir, base, command, source=PACKAGE_ROOT):
         fab_matches_final_captured_candidate=fab_final,
         verify_campaign={'exit_code': verify['exit_code'], 'stdout_tail': verify['stdout_tail'],
                          'stderr_tail': verify['stderr_tail']})
-    if verify['exit_code'] != 0 and verdict == 'criteria_satisfied':
+    recomputed = None
+    if verify['exit_code'] == 0:
+        stdout = (rundir / 'logs' / verify['stdout']).read_text(errors='replace') if verify.get('stdout') else ''
+        final_run = state['history'][-1]['run'] if state and state.get('history') else None
+        recomputed = recomputed_artifacts(stdout, final_run) if final_run else None
+    elif verdict == 'criteria_satisfied':
         verdict = 'unverified:' + verdict
     return write_record(rundir, base, verdict=verdict, fab=fab,
-                        fab_bound=fab_final and verdict == 'criteria_satisfied',
+                        fab_artifacts=state.get('fab_artifacts') if state else None, recomputed=recomputed,
                         scaffold=first_capture_binding(base, root / 'runs' / '1'))
 
 
@@ -827,7 +884,7 @@ def main(argv=None):
     except (FileExistsError, OSError, ValueError) as exc:
         parser.exit(2, f'rung1_campaign refused: {exc}\n')
     print(json.dumps({k: record.get(k) for k in ('mode', 'error', 'verdict', 'fab_exports_exist',
-                                                 'fab_bound_to_accepted_candidate', 'done')}))
+                                                 'fab_artifacts_verified', 'done')}))
     return 0 if record['done'] else 1
 
 

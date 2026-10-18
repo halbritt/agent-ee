@@ -51,7 +51,10 @@ def saved_structure(pcb):
     try:
         # Reuse the exhaustive recursive Edge.Cuts inventory (including fields).
         facts = envelope.board_facts(pcb)
-        result['outline'] = {k: facts[k] for k in ('edge_segments', 'other_edge_cuts')}
+        # Sealing compares the returned check result with its retained JSON.
+        result['outline'] = {'edge_segments': [[list(point) for point in segment]
+                                              for segment in facts['edge_segments']],
+                             'other_edge_cuts': facts['other_edge_cuts']}
     except (ValueError, TypeError, IndexError) as exc:
         result['outline'] = {'unavailable': str(exc)}
     try:

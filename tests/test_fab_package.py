@@ -1,0 +1,401 @@
+"""Generation done gate (AGENTEE-94): fab_package check, capture refusal and campaign artifact hashes.
+
+Native cases run the real fab_export producer, consistency gate and evidence seal
+on the owned `fixtures/fab-export` board. Fault cases damage the producer's
+staging between export and gate, as the AGENTEE-73 tests do, so every tool run is
+real. The campaign case scripts reviewer responses only; checks, capture, the
+evidence seal, convergence and verify-campaign are production code.
+"""
+import contextlib
+import copy
+import io
+import json
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from agent_ee import cli, executor, fab_export
+from agent_ee import rung1_campaign as rc
+from agent_ee.baseline import compile_baseline, freeze_evidence, load_baseline, verify_evidence
+from agent_ee.campaign import fab_artifacts, run_campaign, verify_campaign
+from agent_ee.candidate import capture
+from agent_ee.capabilities import describe_check
+from agent_ee.checks import run_checks
+from agent_ee.fab_package import artifact_record
+from agent_ee.storage import digest, read_json, write_json
+try:
+    from toolchain import require_toolchain
+except ImportError:  # run as tests.test_fab_package from the repository root
+    from tests.toolchain import require_toolchain
+
+REPO = Path(__file__).resolve().parents[1]
+FIXTURE = REPO / 'fixtures/fab-export'
+MARKER = {'schema': 'agent-ee.generation/1', 'done_check': 'fab'}
+
+
+def generation_scope(schema='agent-ee.scope/2'):
+    """The owned fab-export control as a generation scope ending with the done gate."""
+    scope = read_json(FIXTURE / 'control.scope.json')
+    scope['schema'] = schema
+    scope['inputs'][0]['path'] = str(FIXTURE)
+    scope['checks'] = [{'id': 'netlist', 'kind': 'netlist'}, {'id': 'geometry', 'kind': 'geometry'},
+                       {'id': 'fab', 'kind': 'fab_package', 'params': {'netlist_check': 'netlist'}}]
+    scope['generation'] = dict(MARKER)
+    req = scope['baseline']['requirements'][0]
+    req['checks'] = ['fab']
+    native = {**req, 'id': 'I-native', 'statement': 'Retain native board and schematic observations',
+              'checks': ['netlist', 'geometry']}
+    scope['baseline']['requirements'].append(native)
+    if schema == 'agent-ee.scope/3':
+        req['intent'] = 'acceptance'
+        native['intent'] = 'informational'
+    return scope
+
+
+def captured_files(scope):
+    return {f"design/{name}": digest(FIXTURE / name) for name in scope['inputs'][0]['include']}
+
+
+class GenerationMarkerTests(unittest.TestCase):
+    """Baseline compilation (capture) refuses a generation scope without its done gate."""
+
+    def compile(self, scope):
+        return compile_baseline(scope, captured_files(scope))
+
+    def test_generation_scope_binds_its_marker_into_the_baseline(self):
+        self.assertEqual(self.compile(generation_scope())['generation'], MARKER)
+        plain = generation_scope()
+        del plain['generation']
+        self.assertNotIn('generation', self.compile(plain))
+        self.assertNotEqual(self.compile(plain)['baseline_id'], self.compile(generation_scope())['baseline_id'])
+
+    def test_removing_the_fab_package_requirement_is_refused(self):
+        scope = generation_scope()
+        scope['checks'].pop()
+        scope['baseline']['requirements'] = scope['baseline']['requirements'][1:]
+        with self.assertRaisesRegex(ValueError, 'fab_package done check last'):
+            self.compile(scope)
+        scope = generation_scope()
+        scope['baseline']['requirements'][1]['checks'].append('fab')
+        scope['baseline']['requirements'] = scope['baseline']['requirements'][1:]
+        self.compile(scope)  # still mapped through another requirement
+        scope = generation_scope()
+        scope['baseline']['requirements'] = scope['baseline']['requirements'][1:]
+        with self.assertRaisesRegex(ValueError, 'trace to a baseline requirement'):
+            self.compile(scope)
+
+    def test_scope3_informational_mapping_is_not_an_acceptance_requirement(self):
+        scope = generation_scope('agent-ee.scope/3')
+        scope['baseline']['requirements'][0]['intent'] = 'informational'
+        with self.assertRaisesRegex(ValueError, 'acceptance requirement mapped to fab_package'):
+            self.compile(scope)
+
+    def test_done_check_must_be_last_and_named_by_a_well_formed_marker(self):
+        scope = generation_scope()
+        scope['checks'].insert(0, scope['checks'].pop())
+        with self.assertRaisesRegex(ValueError, 'done check last'):
+            self.compile(scope)
+        for marker in ({'schema': 'agent-ee.generation/1'}, {**MARKER, 'extra': 1},
+                       {**MARKER, 'schema': 'agent-ee.generation/0'}, {**MARKER, 'done_check': 'netlist'}, True):
+            with self.subTest(marker=marker):
+                scope = generation_scope()
+                scope['generation'] = marker
+                with self.assertRaises(ValueError):
+                    self.compile(scope)
+        scope = generation_scope()
+        scope['checks'][-1]['kind'] = 'fab_export'
+        with self.assertRaisesRegex(ValueError, 'done check last'):
+            self.compile(scope)
+        scope = generation_scope()
+        scope['schema'] = 'agent-ee.scope/1'
+        with self.assertRaisesRegex(ValueError, 'generation scope requires'):
+            self.compile(scope)
+
+    def test_capture_refuses_a_generation_scope_without_the_done_gate(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-fab-package-capture-') as tmp:
+            root = Path(tmp)
+            scope = generation_scope()
+            scope['checks'].pop()
+            scope['baseline']['requirements'] = scope['baseline']['requirements'][1:]
+            write_json(root / 'scope.json', scope)
+            (root / 'run').mkdir()
+            with self.assertRaisesRegex(ValueError, 'fab_package done check last'):
+                capture(root / 'scope.json', root / 'run')
+            self.assertFalse((root / 'run' / 'baseline.json').exists())
+
+    def test_capability_requires_last_position_netlist_and_geometry(self):
+        scope = generation_scope('agent-ee.scope/3')
+        files = captured_files(scope)
+
+        def describe(specs):
+            return describe_check(specs[-1] if specs[-1]['kind'] == 'fab_package' else
+                                  next(s for s in specs if s['kind'] == 'fab_package'),
+                                  check_specs=specs, files=files, scope={**scope, 'checks': specs})
+        good = describe(scope['checks'])
+        self.assertEqual(good['status'], 'supported', good)
+        self.assertIn('fab-package:sealed-artifacts', good['predicates'])
+        self.assertIn('fab-package:designator-parity', good['predicates'])
+        self.assertIn('fab-export:jlcpcb-package/1', good['predicates'])
+        netlist, geometry, fab = scope['checks']
+        for name, specs in (('not last', [netlist, fab, geometry]), ('no geometry', [netlist, fab]),
+                            ('no netlist', [geometry, fab]),
+                            ('extra param', [netlist, geometry, {**fab, 'params': {'netlist_check': 'netlist',
+                                                                                 'layers': []}}])):
+            with self.subTest(case=name):
+                self.assertEqual(describe(specs)['status'], 'unsupported')
+
+
+class NativeFabPackageTests(unittest.TestCase):
+    """The real export, gate and seal; fault injection between the producer and the gate."""
+
+    def setUp(self):
+        require_toolchain(native=True)
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-package-')
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.runs = 0
+
+    def run_case(self, *, mutate=None, scope=None):
+        self.runs += 1
+        case = self.root / str(self.runs)
+        case.mkdir()
+        write_json(case / 'scope.json', scope or generation_scope('agent-ee.scope/3'))
+        self.run_dir = case / 'run'
+        self.run_dir.mkdir()
+        capture(case / 'scope.json', self.run_dir)
+        producer = fab_export.check_fab_export
+
+        def damaged(ctx):
+            producer(ctx)
+            mutate(ctx.work / 'fab')
+            # A deleted file is one the producer never wrote, so it is not cited either.
+            ctx.result['evidence'] = [e for e in ctx.result['evidence'] if (ctx.run_dir / e).is_file()]
+        with mock.patch.object(fab_export, 'check_fab_export', damaged if mutate else producer):
+            self.results = run_checks(self.run_dir, time.monotonic() + 300)
+        freeze_evidence(self.run_dir, self.results)
+        verify_evidence(self.run_dir, self.results, required=True)
+        return self.results[-1]
+
+    @staticmethod
+    def rehash(stage):
+        manifest = read_json(stage / 'manifest.json')
+        manifest['files'] = {rel: digest(stage / rel) for rel in manifest['files'] if (stage / rel).is_file()}
+        write_json(stage / 'manifest.json', manifest)
+
+    def test_passing_package_seals_and_records_its_artifacts(self):
+        result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        artifacts = result['details']['artifacts']
+        self.assertEqual(artifacts, artifact_record(self.run_dir, result))
+        self.assertEqual(artifacts['candidate_id'], read_json(self.run_dir / 'candidate.json')['candidate_id'])
+        names = sorted(Path(p).name for p in artifacts['files'])
+        self.assertEqual(names, ['bom.csv', 'cpl.csv', 'fab-NPTH-drl_map.gbr', 'fab-NPTH.drl',
+                                 'fab-PTH-drl_map.gbr', 'fab-PTH.drl', 'gerbers.zip', 'manifest.json'])
+        seal = read_json(self.run_dir / 'work/verification/evidence.json')['checks']['fab']['artifacts']
+        for path, sha in artifacts['files'].items():
+            self.assertEqual(seal[path], sha)
+            self.assertEqual(digest(self.run_dir / path), sha)
+        self.assertEqual(result['details']['consistency']['designators']['parity_violations'], [])
+        self.assertTrue((self.run_dir / 'work/fab/fab-consistency.json').is_file())
+        predicates = load_baseline(self.run_dir)['coverage']['checks']['fab']['predicates']
+        self.assertIn('fab-package:done-gate', predicates)
+        self.assertFalse(any(t.startswith('pass means the exports exist') for t in result['limitations']))
+
+        bom = self.run_dir / 'work/fab/fab/bom.csv'
+        bom.write_bytes(bom.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'inventory mismatch'):
+            artifact_record(self.run_dir, result)
+        with self.assertRaisesRegex(ValueError, 'did not pass'):
+            artifact_record(self.run_dir, {**result, 'outcome': 'defect'})
+
+    def test_missing_empty_or_unparseable_export_file_is_never_a_pass(self):
+        def removed(name, rehash=True):
+            def mutate(stage):
+                (stage / name).unlink()
+                if rehash:
+                    self.rehash(stage)
+            return mutate
+
+        def replaced(name, data):
+            def mutate(stage):
+                (stage / name).write_bytes(data)
+                self.rehash(stage)
+            return mutate
+
+        def drill(stage):
+            next((stage / 'drill').glob('*-PTH.drl')).unlink()
+            self.rehash(stage)
+        cases = {
+            'missing bom': removed('bom.csv'),
+            'missing cpl unlisted': removed('cpl.csv', rehash=False),
+            'missing gerbers.zip': removed('gerbers.zip'),
+            'missing manifest': removed('manifest.json', rehash=False),
+            'missing PTH drill': drill,
+            'empty cpl': replaced('cpl.csv', b''),
+            'empty gerbers.zip': replaced('gerbers.zip', b''),
+            'unparseable gerbers.zip': replaced('gerbers.zip', b'not a zip archive'),
+            'unparseable bom': replaced('bom.csv', b'"broken'),
+            'unparseable summary': replaced('pcb_summary.json', b'{'),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(case=name):
+                result = self.run_case(mutate=mutate)
+                self.assertNotEqual(result['outcome'], 'pass', result)
+                self.assertIn(result['outcome'], ('unknown', 'defect'))
+                if result['outcome'] == 'unknown':
+                    self.assertNotEqual(result['execution'], 'ok')
+                self.assertNotIn('artifacts', result['details'])
+                with self.assertRaises(ValueError):
+                    artifact_record(self.run_dir, result)
+
+    def test_consistency_defect_is_a_done_gate_defect(self):
+        def drop_cpl_row(stage):
+            lines = (stage / 'cpl.csv').read_text().splitlines(keepends=True)
+            (stage / 'cpl.csv').write_text(''.join(lines[:1] + lines[2:]))
+            self.rehash(stage)
+        result = self.run_case(mutate=drop_cpl_row)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertIn('designator_parity', {d['code'] for d in result['details']['consistency']['defects']})
+        self.assertTrue(result['summary'].startswith('fab package done gate failed'))
+        self.assertNotIn('artifacts', result['details'])
+
+    def test_empty_native_output_is_failed(self):
+        native_execute = executor.execute
+
+        def empty_output(inputs, work, argv, **kwargs):
+            record = native_execute(inputs, work, argv, **kwargs)
+            if argv[:4] == ['kicad-cli', 'pcb', 'export', 'drill']:
+                next((Path(work) / 'out').glob('*-NPTH.drl')).write_bytes(b'')
+            return record
+        with mock.patch.object(executor, 'execute', side_effect=empty_output):
+            result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'), result)
+        self.assertFalse((self.run_dir / 'work/fab/fab/manifest.json').exists())
+
+    def test_not_last_is_unsupported_at_run_time(self):
+        scope = generation_scope()
+        del scope['generation']
+        scope['checks'].append({'id': 'tail', 'kind': 'netlist'})
+        scope['baseline']['requirements'][1]['checks'].append('tail')
+        self.run_case(scope=scope)
+        result = next(r for r in self.results if r['id'] == 'fab')
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+
+
+class GenerationCampaignTests(unittest.TestCase):
+    """A one-iteration generation campaign with scripted reviews; everything else is production code."""
+
+    def setUp(self):
+        require_toolchain(native=True)
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-package-campaign-')
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        definition = {'harness': 'codex', 'model': 'test', 'effort': 'high', 'timeout_s': 10}
+        profile = {'schema': 'agent-ee.profile/1', 'name': 'protocol-test',
+                   'reviewers': [{**definition, 'role': 'circuit'}, {**definition, 'role': 'physical'}],
+                   'adjudicator': definition}
+        scope = generation_scope()
+        scope.update(review_profile=profile, mutable_inputs=['design/fab.kicad_pcb'])
+        write_json(self.root / 'scope.json', scope)
+        write_json(self.root / 'campaign.json', {
+            'schema': 'agent-ee.campaign/1', 'scope': 'scope.json', 'review_profile': profile,
+            'implementation': definition, 'max_iterations': 2, 'max_seconds': 600})
+        self.addCleanup(mock.patch.stopall)
+        mock.patch('agent_ee.reviewers.dispatch', side_effect=self.agent).start()
+        mock.patch('agent_ee.cli.runtime_files', return_value={
+            name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+            for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3', 'kicad-cli', 'pcbnew')}).start()
+
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
+        packet = read_json(Path(run) / 'packet.json')
+        identity = {k: packet[k] for k in ('candidate_id', 'run_id')}
+        if label == 'adjudicator':
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/1', **identity, 'decisions': []}
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/1', **identity,
+                                     'packet_sha256': packet['packet_sha256'], 'role': label,
+                                     'coverage': ['protocol'], 'limitations': ['scripted test response'],
+                                     'findings': []}
+
+    def verify_cli(self, root):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(['verify-campaign', str(root)])
+        return code, out.getvalue()
+
+    def test_final_state_lists_fab_hashes_that_verify_campaign_recomputes(self):
+        root = self.root / 'campaign'
+        with contextlib.redirect_stdout(io.StringIO()):
+            status = run_campaign(self.root / 'campaign.json', root)
+        state = read_json(root / 'state.json')
+        self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state.get('error'))
+        final = Path(state['history'][-1]['run'])
+        check = read_json(final / 'checks/fab.json')
+        self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'))
+        self.assertEqual(state['fab_artifacts'], check['details']['artifacts'])
+        self.assertEqual(state['fab_artifacts'], fab_artifacts(final))
+        self.assertEqual(verify_campaign(root)['fab_artifacts'], state['fab_artifacts'])
+
+        code, stdout = self.verify_cli(root)
+        self.assertEqual(code, 0)
+        recomputed = rc.recomputed_artifacts(stdout, str(final))
+        self.assertEqual(recomputed['files'], state['fab_artifacts']['files'])
+        self.assertTrue(rc.artifacts_agree(state['fab_artifacts'], recomputed))
+
+        # The RC campaign record consumes exactly this verify-campaign output.
+        def in_process(argv, log_dir, label, timeout, source=None):
+            log_dir.mkdir(parents=True, exist_ok=True)
+            code, out = self.verify_cli(argv[-1])
+            (log_dir / f'{label}.stdout.log').write_text(out)
+            return {'argv': [str(a) for a in argv], 'exit_code': code, 'stdout': f'{label}.stdout.log',
+                    'stdout_tail': out[-2000:], 'stderr_tail': ''}
+        rundir = self.root / 'rung1'
+        rundir.mkdir()
+
+        def record_for(current, scaffold=None):
+            # campaign_record names RUNDIR/campaign; this campaign root stays where it ran. This campaign
+            # has no rung-1 scaffold step, so the scaffold receipt binding is stubbed (default: bound).
+            with mock.patch.object(rc, 'run_logged', side_effect=in_process), \
+                    mock.patch.object(rc, 'campaign_summary', return_value=(current, [], [])), \
+                    mock.patch.object(rc, 'first_capture_binding',
+                                      return_value=scaffold or {'bound': True, 'differences': []}), \
+                    mock.patch.object(rc, 'agent_ee_command', side_effect=lambda *a: ['agent-ee', str(root)]):
+                return rc.campaign_record(rundir, {}, None)
+        record = record_for(state)
+        self.assertEqual(record['fab_artifacts'], state['fab_artifacts'])
+        self.assertEqual(record['fab_artifacts_recomputed_by_verify_campaign']['files'],
+                         state['fab_artifacts']['files'])
+        self.assertTrue(record['fab_artifacts_verified'])
+        self.assertTrue(record['done'])
+        # Verified fab hashes do not make the record done when the scaffold receipt is unbound.
+        unbound = record_for(state, {'bound': False, 'differences': ['project/rung1_rc.kicad_dru']})
+        self.assertTrue(unbound['fab_artifacts_verified'])
+        self.assertFalse(unbound['done'])
+
+        # A changed sealed artifact or a forged state hash fails verify-campaign closed.
+        cpl = final / 'work/fab/fab/cpl.csv'
+        original = cpl.read_bytes()
+        cpl.write_bytes(original + b'\n')
+        with self.assertRaises(ValueError):
+            verify_campaign(root)
+        cpl.write_bytes(original)
+        verify_campaign(root)
+        forged = copy.deepcopy(state)
+        forged['fab_artifacts']['files'][next(iter(forged['fab_artifacts']['files']))] = '0' * 64
+        write_json(root / 'state.json', forged)
+        with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
+            verify_campaign(root)
+        dropped = copy.deepcopy(state)
+        del dropped['fab_artifacts']
+        write_json(root / 'state.json', dropped)
+        with self.assertRaisesRegex(ValueError, 'fab artifact hashes differ'):
+            verify_campaign(root)
+        record = record_for(dropped)
+        self.assertEqual(record['verdict'], 'unverified:criteria_satisfied')
+        self.assertFalse(record['fab_artifacts_verified'])
+        self.assertFalse(record['done'])
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,13 +1,11 @@
 """Pinned local catalog capture and offline, content-bound snapshot reads."""
 import csv
-import ctypes
 from contextlib import closing
 from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
 import io
 import json
-import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -15,7 +13,7 @@ import sqlite3
 import tempfile
 import zipfile
 
-from .storage import canonical, digest, identity, write_json
+from .storage import canonical, digest, identity, rename_noreplace, write_json
 
 COLUMNS = ('lcsc', 'mfr', 'mpn', 'package', 'category', 'stock', 'price1',
            'is_basic', 'is_preferred', 'last_seen', 'attributes')
@@ -152,8 +150,11 @@ def strict_json(text):
 def normalize_row(raw, provenance, snapshot_date):
     exact_fields(raw, COLUMNS)
     row = dict(raw)
-    for key in ('lcsc', 'mfr', 'mpn', 'package', 'category'):
+    for key in ('lcsc', 'mpn', 'package', 'category'):
         nonempty(row[key])
+    # Upstream catalogs can explicitly lack a manufacturer name. Keep it unknown.
+    if row['mfr'] != '':
+        nonempty(row['mfr'])
     if not re.fullmatch(r'C[1-9][0-9]*', row['lcsc']) or row['category'] not in CATEGORIES:
         raise ValueError('invalid LCSC/category')
     for key in ('is_basic', 'is_preferred'):
@@ -205,7 +206,7 @@ def validate_source(manifest):
     for volume in manifest['volumes']:
         exact_fields(volume, ('path', 'sha256', 'size_bytes', 'format'))
         path = str(safe_path(volume['path']))
-        if path in paths or volume['format'] not in ('csv', 'sqlite', 'zip-csv'):
+        if path in paths or volume['format'] not in ('csv', 'sqlite', 'zip-csv', 'jlcparts-v2-stocked-split-zip'):
             raise ValueError('duplicate volume or unsupported format')
         paths.add(path)
         if not isinstance(volume['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', volume['sha256']):
@@ -216,6 +217,9 @@ def validate_source(manifest):
         total += size
     if total > MAX_TOTAL_BYTES:
         raise ValueError('catalog exceeds capture limit')
+    if any(v['format'] == 'jlcparts-v2-stocked-split-zip' for v in manifest['volumes']):
+        from .catalog_jlcparts import split_volumes
+        split_volumes(manifest['volumes'])
 
 
 def csv_rows(payload):
@@ -272,6 +276,9 @@ def volume_rows(payload, volume):
 
 
 def capture_rows(manifest, source_root):
+    if manifest['volumes'][0]['format'] == 'jlcparts-v2-stocked-split-zip':
+        from .catalog_jlcparts import capture_rows as native_capture_rows
+        return native_capture_rows(manifest, source_root)
     root = Path(source_root).resolve(strict=True)
     rows, seen, pruned = [], set(), 0
     for volume in sorted(manifest['volumes'], key=lambda volume: volume['path']):
@@ -331,6 +338,11 @@ def write_database(path, rows):
             raise ValueError('derived SQLite quick_check failed')
 
 
+def publish_directory(stage, destination):
+    """Publish one complete capture directory without replacing another writer."""
+    rename_noreplace(stage, destination)
+
+
 def capture_catalog(source_manifest, source_root, destination):
     """Build in private staging and publish once; never replace an existing snapshot."""
     validate_source(source_manifest)
@@ -342,20 +354,15 @@ def capture_catalog(source_manifest, source_root, destination):
     try:
         database = stage / 'catalog.sqlite3'
         write_database(database, rows)
+        if not 0 < database.stat().st_size <= MAX_TOTAL_BYTES:
+            raise ValueError('derived catalog exceeds capture limit')
         manifest = {**source_manifest, 'schema': 'agent-ee.catalog/1',
                     'database': {'path': database.name, 'sha256': digest(database),
                                  'size_bytes': database.stat().st_size},
                     'row_counts': row_counts(rows), 'rows_sha256': identity(rows),
                     'pruned_rows': pruned, 'sqlite_version': sqlite3.sqlite_version}
         write_json(stage / 'manifest.json', manifest)
-        # Linux RENAME_NOREPLACE publishes the complete directory and refuses races.
-        libc = ctypes.CDLL(None, use_errno=True)
-        rename = libc.renameat2
-        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        rename.restype = ctypes.c_int
-        if rename(-100, os.fsencode(stage), -100, os.fsencode(destination), 1):
-            error = ctypes.get_errno()
-            raise OSError(error, os.strerror(error), str(destination))
+        publish_directory(stage, destination)
         return manifest
     finally:
         if stage.exists():

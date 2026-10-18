@@ -29,7 +29,7 @@ borrow another requirement's failed constraint as its defect witness.
   "constraints": [
     {"id": "usb-skew", "requirement": "board-routing", "kind": "skew",
      "nets": ["USB_D+", "USB_D-"], "max_mm": 0.15},
-    {"id": "usb-vias", "requirement": "usb", "kind": "via_count",
+    {"id": "usb-vias", "requirement": "board-routing", "kind": "via_count",
      "nets": ["USB_D+", "USB_D-"], "max_count": 2}
   ]
 }
@@ -40,9 +40,11 @@ Supported kinds are `length` (`min_mm`, `max_mm`, or `target_mm` with
 `via_count` (`max_count`, integer), and `clearance` (`min_mm`). A two-member
 skew set can represent an explicit differential pair; no pair-name inference is
 used. Length matching a bus uses one skew constraint naming all members. Length and
-skew use planar copper length in millimetres; staged project settings explicitly
-disable via-height additions, so an implicit stackup thickness cannot determine
-a result. Vertical delay/length and impedance need separate qualified inputs.
+skew use native KiCad length calculations in millimetres. Routing preserves
+captured project settings, including `use_height_for_length_calcs`; it does not
+force planar-only lengths. Capture the board's project file when its length
+settings are part of the requirement. These checks do not qualify propagation
+delay or an impedance model.
 `impedance` with `target_ohm` always remains unsupported: this implementation
 contains no qualified impedance solver, even if stackup or solver names appear.
 Net expressions, duplicate JSON keys, undeclared fields, nonfinite bounds and
@@ -85,6 +87,14 @@ The owned fixture generator in `tests/routing_fixture.py` creates independent
 native boards without libraries or third-party design assets. Strict native tests
 cover 0.3/0.1 mm skew against 0.15 mm, three vias against two, length and clearance,
 overlapping rules, missing routing, impedance and unchanged captured bytes.
+Malformed custom rules must leave coverage unknown; a captured project that
+ignores the via-count check must still produce a defect after staging enables it.
+Run these controls and the shared fabricator runner tests with:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_routing_rules tests.test_fab_profile -v
+```
+
 Public scope/3 review/verify tests exercise real native measurements with
 scripted independent reviewer transports and centralized adjudication, sealed
 witness validation, supported pass/defect, partial coverage and deliberate

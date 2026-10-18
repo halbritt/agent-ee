@@ -40,6 +40,9 @@ Check kinds and parameters:
   — list of `{name, at_ms, min?, max?}` with unique names, finite `at_ms`
   within (0, stop_ms], finite limits and min <= max; entries with limits are
   fixed acceptance criteria, entries without are informational.
+- `dfa_dft`: one declared assembly/test-access criterion over the sandboxed
+  saved-board probe (`connector-orientation/1`, `testpoint-access/1`,
+  `testpoint-coverage/1` with `bringup_plan.json`); see docs/dfa-dft.md.
 
 Result shape (contract `docs/contracts.md`): `{id, kind, candidate_id,
 execution, outcome, summary, evidence, details, limitations}` with execution
@@ -371,6 +374,9 @@ def parse_xml_netlist(path):
 
 
 def check_netlist(ctx):
+    from .native_netlist import hierarchy_gaps, read_native_instances
+    from .netlist_parity import Unsupported
+
     sch = ctx.candidate_path(ctx.scope["schematic"])
     files, expected = verified_hierarchy(ctx)
     ctx.seed_kicad_config()
@@ -381,9 +387,25 @@ def check_netlist(ctx):
     if not out.is_file() or out.stat().st_size == 0:
         raise CheckError("malformed", "XML netlist was not written")
     try:
+        inventory = read_native_instances(out)
+        gaps = hierarchy_gaps({rel: (ctx.inputs / rel).read_bytes() for rel in files},
+                              ctx.scope['schematic'], inventory)
         parsed = parse_xml_netlist(out)
+    except Unsupported as exc:
+        raise CheckError('unsupported', str(exc)) from exc
     except ET.ParseError as exc:
         raise CheckError("malformed", f"XML netlist does not parse: {exc}")
+    except (OSError, ValueError) as exc:
+        raise CheckError('failed', f'native netlist hierarchy audit failed: {exc}') from exc
+    if gaps:
+        missing = sorted({ref for gap in gaps if gap['problem'] == 'unexplained_omission'
+                          for ref in gap['references']})
+        refs = sorted({ref for gap in gaps for ref in gap['references']} |
+                      {gap['native'] for gap in gaps if isinstance(gap.get('native'), str)})
+        ctx.result['details'].update(hierarchy_gaps=gaps, missing_refs=missing)
+        raise CheckError('failed', f'native netlist does not match captured symbol instances; '
+                         f'missing references: {missing}; affected references: {refs}; '
+                         f"problems: {sorted({gap['problem'] for gap in gaps})}")
     if not parsed["components"] or not parsed["nets"]:
         raise CheckError("malformed", "XML netlist has no components or no nets")
     write_json(ctx.work / "connectivity.json", parsed)
@@ -865,7 +887,10 @@ from .dc_path import check_dc_path
 from .netclass_completeness import check_netclass_completeness
 from .netlist_extra import check_netlist_extra
 from .placement_check import check_placement
+from .envelope_check import check_board_envelope
 from .assembly_readiness import check_assembly_readiness
+from .dfa_dft import check_dfa_dft
+from .dfm_geometry import check_dfm_geometry
 
 
 from .catalog_checks import check_catalog
@@ -874,12 +899,20 @@ from .land_pattern import check_land_pattern
 from .part_binding import check_part_binding
 
 from .package_consistency import check_package_consistency
+from .parts_subset import check_parts_subset
 
 from .fab_export import check_fab_export
 
 from .fab_consistency import check_fab_consistency
+from .cpl_rotation import check_cpl_rotation
+from .fab_package import check_fab_package
 
-CHECK_FUNCS = {'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
+from .fab_roundtrip import check_fab_roundtrip
+
+from .schematic_lint import check_schematic_lint
+from .block_adaptation import check_block_provenance
+
+CHECK_FUNCS = {'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map,
                "active_spice": check_active_spice, "measurements": check_measurements,
                "coupled_margins": check_coupled_margins, "erc": check_erc,
@@ -887,7 +920,9 @@ CHECK_FUNCS = {'fab_consistency': check_fab_consistency, 'fab_export': check_fab
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
                "passive_corners": check_passive_corners, "dc_path": check_dc_path,
-               "placement": check_placement, "assembly_readiness": check_assembly_readiness}
+               "placement": check_placement, "board_envelope": check_board_envelope,
+               "assembly_readiness": check_assembly_readiness, "dfa_dft": check_dfa_dft,
+               "dfm_geometry": check_dfm_geometry}
 
 
 # ------------------------------------------------------------------ entry point

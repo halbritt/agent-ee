@@ -94,6 +94,13 @@ class NativePlacementTest(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), saved)
                 if variant == 'outside':
                     self.assertEqual(report['hard_failures'][0]['outside_area_mm2'], 4)
+                    self.assertEqual(report['off_board'], ['C1'])
+                if variant in ('missing_outline', 'open_outline', 'curved_outline'):
+                    status = 'outline_missing' if variant == 'missing_outline' else 'outline_unproven'
+                    self.assertEqual(facts['outline']['status'], status)
+                    self.assertEqual(report['unknown'], [{'kind': 'outline', 'reason': status}])
+                if variant == 'missing_courtyard':
+                    self.assertEqual(report['unknown'], [{'kind': 'courtyard', 'ref': 'C1', 'reason': 'missing'}])
                 if variant == 'overlap':
                     self.assertEqual(report['hard_failures'][0]['overlap_area_mm2'], 3)
 
@@ -161,3 +168,156 @@ class NativePlacementTest(unittest.TestCase):
                 self.assertEqual(caught.exception.execution, 'unsupported' if 'drc_check' not in params else 'not_run')
                 self.assertEqual(ctx.result['outcome'], 'unknown')
                 self.assertNotIn('tool', ctx.result['details'])
+
+
+class NativeDecouplingScoreTest(unittest.TestCase):
+    """Owned SOIC-8 with two 0402 capacitors: the Konnect-shaped scoring case.
+
+    The board is built here, not copied from the Konnect fixture. The 0402 pad
+    offset and size are the generic values KiCad's stock 0402 footprint also
+    uses; the SOIC pads and both courtyards are written for this test. C1
+    (100 nF, limit 2.5 mm) sits 4 mm and C2 (1 µF, limit 5 mm) 7 mm from U1;
+    each declared deduction is 15. In the connector variant U1 pin 1 and C3
+    share VBUS with J1, 2.25 mm from J1 and 5.75 mm from U1. In the VCC
+    connector variants J1 carries VCC and GND like the Konnect fixture's
+    connector, either far from both caps or 3 mm from C2.
+    """
+    POLICY = {'schema': 'agent-ee.placement-policy/1', 'ground_nets': ['GND'], 'ic_refs': ['U1'],
+              'connector_refs': [], 'max_shared_refs': 8,
+              'capacitors': {'C1': {'capacitance_nf': 100, 'max_distance_mm': 2.5, 'deduction': 15},
+                             'C2': {'capacitance_nf': 1000, 'max_distance_mm': 5, 'deduction': 15}}}
+
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain(native=True)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-placement-soic-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def board(self, variant='control'):
+        import pcbnew as k
+        board = k.BOARD()
+        def vec(x, y):
+            return k.VECTOR2I(round(x*1e6), round(y*1e6))
+        def outline(parent, layer, w, h):
+            corners = [(-w, -h), (w, -h), (w, h), (-w, h)]
+            for i, a in enumerate(corners):
+                shape = k.PCB_SHAPE(parent)
+                shape.SetShape(k.SHAPE_T_SEGMENT)
+                shape.SetLayer(layer)
+                shape.SetStart(vec(*a))
+                shape.SetEnd(vec(*corners[(i+1) % 4]))
+                shape.SetWidth(50000)
+                parent.Add(shape)
+        nets = {}
+        for name in ('VCC', 'GND', 'VBUS'):
+            nets[name] = k.NETINFO_ITEM(board, name)
+            board.Add(nets[name])
+        def footprint(ref, value, x, y, courtyard, pads):
+            fp = k.FOOTPRINT(board)
+            fp.SetReference(ref)
+            fp.SetValue(value)
+            board.Add(fp)
+            outline(fp, k.F_CrtYd, *courtyard)
+            for number, px, py, size, net in pads:
+                pad = k.PAD(fp)
+                pad.SetNumber(number)
+                pad.SetShape(k.PAD_SHAPE_RECT)
+                pad.SetAttribute(k.PAD_ATTRIB_SMD)
+                pad.SetSize(vec(*size))
+                layers = k.LSET()
+                layers.AddLayer(k.F_Cu)
+                pad.SetLayerSet(layers)
+                pad.SetPosition(vec(px, py))
+                fp.Add(pad)
+                if net:
+                    pad.SetNet(nets[net])
+            fp.SetPosition(vec(x, y))
+            return fp
+        edge = k.PCB_SHAPE(board)
+        edge.SetShape(k.SHAPE_T_RECT)
+        edge.SetLayer(k.Edge_Cuts)
+        edge.SetStart(vec(0, 0))
+        edge.SetEnd(vec(25, 20))
+        edge.SetWidth(50000)
+        board.Add(edge)
+        soic = {1: 'VBUS' if variant == 'connector' else None, 4: 'GND', 8: 'VCC'}
+        footprint('U1', 'owned SOIC-8', 10, 10, (3.7, 2.7),
+                  [(str(n), -2.7 if n <= 4 else 2.7, -1.905 + 1.27*((n-1) if n <= 4 else (8-n)),
+                    (1.55, .6), soic.get(n)) for n in range(1, 9)])
+        chip = (1.0, .5)
+        def cap(ref, value, x, y, net='VCC'):
+            footprint(ref, value, x, y, chip,
+                      [('1', -.48, 0, (.56, .62), net), ('2', .48, 0, (.56, .62), 'GND')])
+        cap('C1', '100nF', 10.5 if variant == 'overlap' else 10, 12.5 if variant == 'overlap' else 14)
+        cap('C2', '1uF', 17, 10)
+        if variant == 'connector':
+            footprint('J1', 'owned 2-pin', 2, 10, (1.0, 2.0),
+                      [('1', 0, -1, (1.2, 1.2), 'VBUS'), ('2', 0, 1, (1.2, 1.2), 'GND')])
+            cap('C3', '100nF', 4.25, 10, 'VBUS')
+        if variant in ('far_vcc_connector', 'near_vcc_connector'):
+            x, y = (22, 17) if variant == 'far_vcc_connector' else (17, 13)
+            footprint('J1', 'owned 2-pin', x, y, (1.0, 2.0),
+                      [('1', 0, -1, (1.2, 1.2), 'VCC'), ('2', 0, 1, (1.2, 1.2), 'GND')])
+        path = self.root / (variant + '.kicad_pcb')
+        k.SaveBoard(str(path), board)
+        return path
+
+    def test_saved_soic8_two_0402_caps_score70_with_only_decoupling_deductions(self):
+        from agent_ee.executor import execute
+        inputs, work = self.root / 'inputs', self.root / 'work'
+        inputs.mkdir()
+        (inputs / 'board.kicad_pcb').write_bytes(self.board().read_bytes())
+        execution = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe',
+                            '/candidate/board.kicad_pcb', '--out', '/work/placement.json'])
+        self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
+        facts = json.loads((work / 'placement.json').read_text())
+        self.assertEqual(facts['outline']['status'], 'proven')
+        report = judge(facts, self.POLICY)
+        self.assertEqual((report['verdict'], report['score']), ('pass', 70), report)
+        self.assertEqual((report['hard_failures'], report['unknown'], report['off_board']), ([], [], []))
+        self.assertEqual([(a['kind'], a['ref'], a['ic'], a['distance_mm']) for a in report['advisories']],
+                         [('decoupling_distance', 'C1', 'U1', 4), ('decoupling_distance', 'C2', 'U1', 7)])
+        self.assertEqual([(a['kind'], a['nets']) for a in report['associations']],
+                         [('decoupling', ['VCC']), ('decoupling', ['VCC'])])
+
+    def test_same_side_overlap_is_hard_fail_whatever_the_score(self):
+        facts = extract(self.board('overlap'))
+        report = judge(facts, self.POLICY)
+        self.assertEqual((report['verdict'], report['score']), ('hard_fail', 70))
+        self.assertEqual([(f['kind'], f['refs']) for f in report['hard_failures']],
+                         [('courtyard_overlap', ['C1', 'U1'])])
+        lenient = {**self.POLICY, 'capacitors': {r: {**c, 'max_distance_mm': 50}
+                                                 for r, c in self.POLICY['capacitors'].items()}}
+        self.assertEqual(judge(facts, lenient)['score'], 100)
+        self.assertEqual(judge(facts, lenient)['verdict'], 'hard_fail')
+
+    def test_vbus_cap_within_limit_is_an_interface_filter_without_deduction(self):
+        policy = {**self.POLICY, 'connector_refs': ['J1'],
+                  'capacitors': {**self.POLICY['capacitors'],
+                                 'C3': {'capacitance_nf': 100, 'max_distance_mm': 2.5, 'deduction': 15}}}
+        report = judge(extract(self.board('connector')), policy)
+        self.assertEqual((report['verdict'], report['score']), ('pass', 70), report)
+        filters = [a for a in report['associations'] if a['ref'] == 'C3']
+        self.assertEqual(filters, [{'ref': 'C3', 'kind': 'interface_filter', 'connectors': ['J1'],
+                                    'nearest_connector': 'J1', 'distance_mm': 2.25, 'nets': ['VBUS']}])
+        self.assertEqual(sorted(a['ref'] for a in report['advisories']), ['C1', 'C2'])
+
+    def test_vcc_connector_far_from_the_caps_waives_nothing(self):
+        policy = {**self.POLICY, 'connector_refs': ['J1']}
+        report = judge(extract(self.board('far_vcc_connector')), policy)
+        self.assertEqual((report['verdict'], report['score']), ('pass', 70), report)
+        self.assertEqual([(a['kind'], a['ref'], a['ic'], a['distance_mm']) for a in report['advisories']],
+                         [('decoupling_distance', 'C1', 'U1', 4), ('decoupling_distance', 'C2', 'U1', 7)])
+        self.assertEqual([(a['ref'], a['kind'], a['nets']) for a in report['associations']],
+                         [('C1', 'decoupling', ['VCC']), ('C2', 'decoupling', ['VCC'])])
+
+    def test_vcc_connector_within_one_cap_limit_waives_only_that_cap(self):
+        policy = {**self.POLICY, 'connector_refs': ['J1']}
+        report = judge(extract(self.board('near_vcc_connector')), policy)
+        self.assertEqual((report['verdict'], report['score']), ('pass', 85), report)
+        self.assertEqual([(a['kind'], a['ref']) for a in report['advisories']], [('decoupling_distance', 'C1')])
+        self.assertEqual(report['associations'][1], {'ref': 'C2', 'kind': 'interface_filter', 'connectors': ['J1'],
+                                                     'nearest_connector': 'J1', 'distance_mm': 3, 'nets': ['VCC']})

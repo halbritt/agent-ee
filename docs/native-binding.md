@@ -28,7 +28,15 @@ unchanged, and its reports cannot be relabeled as native coverage.
 footprint member and every declared symbol library are immutable scope/2 and
 scope/3 inputs. The declaration and the schematic remain candidate data. The
 native XML is producer evidence, never a baseline dependency. Assembly intent
-stays immutable; the declaration must repeat it exactly.
+stays immutable; the declaration must repeat it exactly. An optional captured
+`declarations` path is also an immutable input. It feeds the
+[owner declarations](footprint-libraries.md#owner-declarations) to the shared
+parity pass unchanged. The binding reads the XML with the shared reader's
+`pinless` mode. KiCad 10.0.7 omits `<pins>` for a pinless library part and
+writes an empty `<pins/>` for each of its units. Those parts are admitted with
+an empty inventory, and parity then requires a matching `pinless_symbols`
+declaration. An empty `<pins/>` on a library part, or a unit with pins on a
+pinless part, is still malformed. Other consumers of the reader stay strict.
 
 ## Runtime sequence
 
@@ -68,6 +76,14 @@ prefix exempts an exported component.
 
 ## Occurrence identity
 
+The `netlist` producer runs this audit before crediting its export or writing
+`connectivity.json`. It uses `native_netlist.read_native_instances`, the identity
+projection of the shared bounded XML reader, and `native_netlist.hierarchy_gaps`,
+which reuses the occurrence walker below. Missing, extra or ambiguous instances
+stop the producer with `failed/unknown`; downstream native binding refuses that
+prerequisite. The identity projection also covers pinless symbols and does not
+apply the full electrical inventory's component-search limit.
+
 A symbol occurrence is one sheet instance path and one symbol UUID. Owned
 KiCad 10.0.7 exports, all with ordinary references so the choice is visible,
 showed how the exporter picks an occurrence's reference:
@@ -101,8 +117,9 @@ by project name or by entry order:
 | Native sheets differ from the captured hierarchy | `hierarchy_mismatch` |
 | `symbol_instances` present | `legacy_symbol_instances` |
 
-Each of these leaves board scope unproved: `unsupported`, outcome `unknown`. A
-declared reference that matches no resolved occurrence is a
+Each of these leaves board scope unproved: a direct binding audit gives
+`unsupported`, outcome `unknown`; the netlist producer gives `failed/unknown`
+before binding runs. A declared reference that matches no resolved occurrence is a
 `ghost_declaration`, never an exclusion. Archived aliases for another root are
 therefore neither exclusions nor problems. A captured sheet outside the
 hierarchy, a missing child sheet, a cycle, a duplicate symbol UUID or a

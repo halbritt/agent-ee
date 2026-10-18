@@ -10,12 +10,26 @@ arguments, exit status and console output remain in `work/CHECK_ID/`.
 criteria; [geometry_probe.py](../src/agent_ee/geometry_probe.py) extracts saved
 board facts through pcbnew.
 
+[Stage-one intent import](design-intent.md) prepares source-bound requirements
+and incomplete interface stubs for later capture. Its lint outcome covers only
+the declared lexical checks; executable checks must supply acceptance evidence.
+The [requirement-record compiler](requirement-scope.md) maps quoted spec
+requirements to the check specifications on this page; it adds no check kind.
+
 ## Execution and engineering result
 
 Every result separates `execution` from `outcome`. A tool can run successfully
 and report a design violation: `execution=ok`, `outcome=defect`. A crash, missing
 output, unsupported component or absent measurement means unknown coverage,
 not a confirmed electrical defect and not a passing check.
+
+Opt-in [staged scopes](staged-campaign.md) first check declared native content.
+A successful native probe that confirms missing expected symbols, footprints or
+tracks produces `ok/defect` with reason `stage_not_reached`. Earlier defects
+block later handlers with `ok/defect`, reason `stage_blocked`; an earlier unknown
+leaves later checks `not_run/unknown`. Once the stage opens, missing simulation
+nets remain unknown coverage. Scopes without stage declarations keep their
+ordinary handler results and convergence rules.
 
 The native commands below show sandbox paths; `/candidate` is the captured
 `inputs/`, `/work` is this check's scratch. They document the emitted arguments,
@@ -27,20 +41,29 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json`; [snapshot integrity](catalog.md) only | 120 s |
+| `parts_subset` | `/usr/bin/python3 -m agent_ee.parts_subset /candidate MANIFEST /evidence/netlist/design.xml --schematic SHEETS --out /work/parts-subset.json`; [captured membership](approved-parts.md) | 120 s |
 | `part_selection` | Same runner with `part_selection` and `--requirements /candidate/REQUIREMENTS`; [declared catalog constraints](part-selection.md) | 120 s |
 | `netlist_parity` | Coordinator compares full native XML with captured intent/libraries or a golden netlist; qualified virtual power markers omitted by XML are listed in the report ([details](netlist-parity.md)) | Enclosing run deadline |
+
+| `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
+| `fab_roundtrip` | Coordinator re-parses the sealed export’s Gerber/Excellon bytes against earlier sealed geometry; no tool launched ([details](fab-roundtrip.md)) | Enclosing run deadline |
 | `fab_consistency` | Coordinator reads the earlier export's sealed staging tree and version run, the captured board, the sealed netlist and earlier sealed geometry; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
 | `package_consistency` | `/usr/bin/python3 -B -m agent_ee.package_consistency /candidate/CATALOG MANIFEST_SHA256 /work/request.json /work/catalog-rows.json`; coordinator then compares preceding native XML names through the captured table ([details](package-consistency.md)) | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
+| `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
+| `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
+| `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
+| `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
 
 The remaining run budget can shorten every ceiling. A deadline-shortened native
 timeout is recorded as interrupted coverage. There is no native network access.
@@ -69,6 +92,30 @@ and reason `no candidate`. Invalid requirements or snapshots return
 `execution: failed`, `outcome: unknown`. An unparseable attribute excludes its
 row as unknown. These results establish consistency with captured catalog
 claims; upstream authenticity and datasheet correctness require separate evidence.
+
+The [pinned native feed](catalog.md#pinned-jlcparts-acquisition) is acquired on the
+host before capture; its explicit stocked-parts profile excludes zero-stock and
+unsupported-category rows. A missing row cannot establish upstream unavailability.
+The [full-feed runtime qualification](catalog.md#full-feed-runtime-qualification)
+exceeded the 120-second helper ceiling on the busy host; that measurement is not
+qualification of a full-feed sealed check within its default budget.
+
+## Approved parts membership
+
+The [approved-parts manifest](approved-parts.md) uses `agent-ee.parts/1` and
+pins catalog, selection, CAD and datasheet provenance. The `parts_subset` check
+takes exactly `manifest`, `netlist_check` and `requirement_id`. Its requirement
+must point to the manifest's captured declaration source. The full dependency
+closure is immutable in scope/2 and scope/3.
+
+Every populated native instance must match its declared symbol, footprint and
+supplier identity, and every required sheet/reference selector must be present.
+A mismatch or absent required selector is a defect; footprint findings retain
+the reference and both footprint values. Missing or failed native evidence,
+missing identity data and required unavailable provenance leave coverage unknown.
+The per-reference table is retained in `work/CHECK_ID/parts-subset.json` and the
+coordinator seals the check and its prerequisite XML. The predicate establishes
+declared membership, not approval authenticity or component suitability.
 
 ## Hierarchy validation
 
@@ -121,12 +168,23 @@ rules; passing these checks is not full circuit function or fab qualification.
 
 ## Captured routing constraints
 
+The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
+in the writer's sandbox with a read-only checkout and state directory. Its receipt
+records provenance and applicability; it is not an acceptance check. The campaign
+verifies the retained routing result before adopting an exit-0 or exit-2 board and
+on replay. Exits 1, 3 and 4 produce no proposal. Fresh DRC (including parity and
+unconnected items), `copper-width/1` and configured routing constraints still
+determine the captured board's outcome.
+
 The [routing check](routing-rules.md) accepts a captured `params.routing_rules`
 JSON document. It compiles explicit bounds into isolated native custom-rule
 runs. Scope/2 and scope/3 bind exactly one requirement per routing check and
 freeze its rule document and captured native rule sidecars. Complete route and
 constraint coverage is required; unsupported topology or missing inputs are
 unknown. General DRC and schematic parity remain separate obligations.
+The evidence includes generated and staged effective rule hashes and the native
+DRC reports. An impedance target remains unverified because no qualified stackup
+and solver path is implemented, even when those inputs are named in the contract.
 
 ## Captured fabricator profiles
 
@@ -135,13 +193,44 @@ document whose limits each cite an exact quote in a captured UTF-8 source. It
 runs sourced physical minima as isolated native rules and compares layer count,
 fixed-axis outline extents and SMD presence with the saved board. Missing sources,
 missing profiles and unqualified outlines are unknown. Preferred-tier overruns
-are reported as extra charges, never defects. No real fabricator preset exists.
+are reported as extra charges, never defects. Out-of-range numeric profile bounds
+are unsupported in both descriptors and execution. No real fabricator preset exists.
+
+## DFM geometry rules
+
+The [DFM geometry check](dfm-geometry.md) takes exactly `params.dfm_profile`.
+That is a captured `agent-ee.dfm-profile/1` with an explicit threshold for each
+rule. The rules are annular ring, via aspect ratio, acid trap, SMD bridge gap,
+component courtyard spacing, differential-pair skew and copper balance, and each
+is evaluated on the probe's exact `--dfm` facts. Findings carry a code,
+coordinates, native UUIDs and references, plus per-finding `gate_findings`
+identities. A rule that cannot evaluate an item, such as one with no saved board
+thickness, a blind via, an unfilled zone or a missing courtyard, is
+`unsupported`, and the check becomes `unsupported/unknown`.
 
 ## Native netlist
 
 No check parameters are currently interpreted. A complete hierarchy is required.
 `design.xml` must exist, parse, and contain components and nets. It is retained
-unchanged. `connectivity.json` derives:
+unchanged. Before producing connectivity, the check uses the shared S-expression
+reader and [occurrence audit](native-binding.md#occurrence-identity) to match every
+placed symbol's sheet UUID path and symbol UUID to the native component inventory
+in both directions. Repeated sheets use separate occurrence paths; all placed
+units of a multi-unit component must match. DNP, `on_board no` and `in_bom no`
+components still require a match. An omitted `#` reference is exempt only when
+its embedded definition is power and its occurrence reference is unambiguous.
+
+A tool exit of 0 and matching sheet count are insufficient: KiCad can silently
+omit the components of an unreadable child sheet. Any unmatched or ambiguous
+occurrence gives execution `failed`, outcome `unknown`, with `hierarchy_gaps` and
+`missing_refs` in details and affected references in the summary. No connectivity
+projection is written or credited for that export. Checks that require this
+netlist refuse the failed prerequisite. Identity validation reuses the native
+XML reader without imposing consumers' pin inventory or topology-search limits.
+This establishes component-instance coverage; wire/label connectivity equivalence
+requires a separate declared predicate such as netlist parity.
+
+`connectivity.json` derives:
 
 - Components keyed by reference: value, footprint, DNP state, native `libsource`,
   sheet name, sheet UUID path and component UUID text.
@@ -151,6 +240,45 @@ A successful export has outcome `info`; connectivity extraction is evidence,
 not a functional acceptance limit. The native XML and original schematic remain
 available to check the extraction. Simulation consumes this generated
 connectivity from the same run; it does not use fixture-specific wiring.
+
+## Additional netlist checks
+
+`netlist_extra` requires `policy` and an earlier `netlist_check`. The
+[captured topology policy](netlist-extra.md) declares exact symbol classes,
+two-terminal pin inventories, exemptions and anchored rail pairs. One defect
+record names each self-shorted passive or switch, or merged rail pair, with
+its native pins and net identity. Unknown classes or unresolved declarations
+keep the check `unsupported/unknown`; missing or malformed connectivity makes
+execution `failed`.
+
+Same-basename nets on distinct native net IDs emit one advisory per basename
+with `severity=warning`, including `/a/SDA` and `/b/SDA`. These warnings retain
+`status=informational` and cannot supply a defect witness. A shared global net
+has one native ID and produces no island warning. The check covers direct-net
+equivalence; it does not trace geometric wire paths, copper or impedance.
+
+## Intent and golden netlist parity
+
+The [`netlist_parity` check](netlist-parity.md) compares a captured golden XML
+netlist or captured connectivity intent with an earlier native `netlist` check.
+Required parameters are `source`, `netlist_check`, `predicate` (`topology`,
+`components`, or `instance`) and `multiset` (`exactly` or, for component counts,
+`at_least`). Resolved intent requires its captured originating intent and libraries
+so the coordinator can rederive it. One check maps to one baseline requirement.
+
+Exact physical-pin incidence preserves identical component instances and ignores
+reference and net names. Missing or extra parts, changed bindings and merged or
+split nets are defects. Ambiguous required instance correspondence, unresolvable
+match keys and bounded-search exhaustion are unknown. Scores describe a match;
+they do not decide acceptance. Electrical adequacy and footprint suitability are
+outside this check.
+
+The full native `design.xml` supplies the graph. The retained `connectivity.json`
+must parse and agree with the existing XML projection. Missing or unreadable
+inputs and unsuccessful exports give execution `failed`; malformed or
+contradictory inputs give `malformed`. These failures have outcome `unknown`.
+The report records hashes of the source and both native artifacts; ordinary
+coordinator evidence sealing also covers those artifacts.
 
 ## Saved-board geometry
 
@@ -184,6 +312,8 @@ available. Coordinates and `width_mm` dimensions are millimetres, rounded to
 four decimal places. Track items also retain `native_class` and exact `width_nm`. The `nets` counts describe pads; track/zone-only nets can have zero pad
 counts. A failed unconnected-count query is recorded as unavailable information,
 not silently replaced with zero. Other extraction failures fail the probe.
+Fabrication facts also retain copper stack order, a proven straight outline,
+exact pad/via `drill_nm` and native `flash_layers`; see [fab round-trip](fab-roundtrip.md).
 
 With `criterion: "copper-width/1"`, declared tracks and native arcs are checked
 using integer-nanometre widths without the legacy tolerance/rounding. Empty or
@@ -278,7 +408,11 @@ The [measurement-adapter reference](measurement-adapters.md) defines producer an
 parser invocation, every supported parameter, request/report formats, retained
 artifacts, margin arithmetic, domain/condition rules and failure paths. These
 interfaces can host independently qualified engineering tools; installing
-agent-ee does not install thermal, parasitic, DFM/DFA/DFT or supply-chain adapters.
+agent-ee does not install thermal, parasitic, DFM or supply-chain adapters. Declared
+assembly and test access geometry is the separate [`dfa_dft`](dfa-dft.md) check.
+
+agent-ee does not install thermal, parasitic, DFA/DFT or supply-chain adapters; the
+built-in DFM geometry rules are the separate [`dfm_geometry`](dfm-geometry.md) check.
 
 In scope/2, bounded `rc_transient` results also expose electrical scalar metrics
 and margins for coupling and empirical correction. Unbounded measurements remain
@@ -346,6 +480,22 @@ schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
 
+## Reference-block evidence validation
+
+The [reference-block validator](reference-block-interface.md) is an offline
+capture/validation command, outside the check registry. It compares every block
+payload hash with the referenced run's candidate inventory and invokes the
+public run verifier, including baseline and coordinator evidence sealing.
+Changed sheet bytes are refused even when the block's local hashes are updated.
+Missing, incomplete or escalated runs leave the block unverified.
+
+Only passing `hardware_interface` requirements bound to the actual native block
+occurrences can currently contribute coverage. A checked shadow sheet cannot
+qualify an unused captured block. Optional layouts and other check families
+remain unverified. Parts payload bytes and the schema identifier are retained;
+this command does not qualify parts membership or selection. Adapted blocks
+require fresh checks on the new board candidate.
+
 ## Footprint assignment
 
 `footprint_assignment` requires captured `manifest` and `declaration` paths and
@@ -355,7 +505,13 @@ hash-valid. Empty selections, absent exact footprint names, missing or extra
 electrical pad numbers, connector count mismatches and assembly mismatches are
 defects. Duplicate thermal pad numbers count once; qualified paste-only and
 unnumbered mechanical pads do not participate in electrical parity. Library
-read or parse failures leave unknown coverage.
+read or parse failures leave unknown coverage. An optional captured
+`declarations` file (`agent-ee.footprint-declarations/1`, an immutable input)
+can declare mechanical copper pads (MP), thermal-via pads, custom pad numbering,
+assembly for attr-less footprints, and pinless symbols. Declared pads are
+reported as mechanical. Undeclared cases keep their extra-pad defect or unknown
+result, and a declaration that applies to nothing is unknown
+([owner declarations](footprint-libraries.md#owner-declarations)).
 
 Adding `netlist_check` binds each declaration to every native board component
 and its captured whole-device pin inventory. Missing declarations or ambiguous
@@ -365,6 +521,17 @@ declared-only evidence uses `footprint:assignment-parity/1`. Reports retain
 per-reference findings and library member hashes. See the
 [captured library contract](footprint-libraries.md) and
 [native binding rules](native-binding.md) for parameters, exclusions and limits.
+
+## Captured symbol pin references
+
+`symbol_pins` takes one captured `declaration` (an `agent-ee.symbol-query/1`
+reference list) and checks that each `(reference, lib_id, pin)` names a pin that
+exists exactly, by name or number, on the selected symbol in the declared
+captured libraries. A missing pin is a defect listing the actual pins; there is
+no case, glob or nearest-name substitution. A missing symbol, missing library or
+changed hash gives failed/unknown. The libraries are immutable inputs. See
+[symbol context](symbol-context.md) for the query schema and the offline
+`find-symbol`, `list-pins` and `find-footprint` tools.
 
 ## Supplier land patterns
 
@@ -391,7 +558,35 @@ unknown, never pass, and the table hash is recorded in the evidence. See
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
-authority and unknown boundaries.
+authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
+for the acceptance tests and remaining campaign and fabrication-limit gaps.
+
+## Board envelope predicates
+
+`board_envelope` takes exactly `criterion` and a captured immutable `envelope`
+path. `outline/1` compares the exact declared Edge.Cuts polygon against saved
+geometry and a native closed-contour probe. `layers/1` compares the exact ordered
+copper layer set against saved and native enabled layers. Each check binds one
+field and one requirement, with predicates `envelope:outline/1` or
+`envelope:layers/1`.
+
+`stackup/1` is refused as executable acceptance coverage: KiCad thickness does
+not establish nominal copper ounces. Direct execution retains diagnostic facts
+and returns unknown. Complete scope/3 envelope capture still requires that
+manufacturing authority; holes, keepouts and multiple fixed connectors also
+remain unsupported for acceptance. See the [native envelope contract](board-envelope.md#native-envelope-check)
+for evidence, binding and failure boundaries.
+
+## Assembly and test access
+
+`dfa_dft` evaluates one declared criterion per check over the sandboxed
+saved-board probe. `connector-orientation/1` checks that each connector faces
+its nearest edge, given its declared insertion direction. `testpoint-access/1`
+checks that no declared test point lies under another courtyard on the same
+side. `testpoint-coverage/1` requires a declared probe point on every rail and
+acceptance-measured net, and writes `bringup_plan.json`. See
+[assembly and test access](dfa-dft.md) for parameters, the plan schema and
+unknown boundaries.
 
 ## Qualified passive tolerance endpoints
 
@@ -412,19 +607,47 @@ undeclared freshness is unknown), stock for quantity per board times boards,
 and Basic/Preferred/Extended counts. DNP, `exclude_from_bom` and off-board
 symbols stay distinct, and an empty schematic is `info`, not `pass`.
 
+## Schematic readability lint
+
+`schematic_lint` reads the captured schematic hierarchy, the symbol definitions
+embedded in each sheet, and the native XML of an earlier `netlist` check. It
+reports overlap, wire, placement-topology, naming, grid and title-block
+findings at `info` or `warning`; a profile can raise a rule to `defect`. A
+symbol whose definition cannot be resolved is missing coverage, not a pass.
+See [schematic lint](schematic-lint.md) for rules, parameters and coverage.
+
+## Part-binding properties
+
+`part_binding` parses the captured root schematic, every captured child sheet
+occurrence and the board for `LCSC`, `Manufacturer`, `Partnumber`, `Datasheet`
+and typed `PARAM_*` interval or set properties. It launches no tool. A
+disagreement between two non-empty schematic and board values, or a malformed
+`LCSC` value, is a defect. A missing or one-sided property is `unknown` for that
+reference. Unparseable `PARAM_*` JSON and an uncaptured child sheet are
+`malformed`. See [part binding](part-binding.md) for the schema, markers and
+per-reference outcomes.
+
 ## JLCPCB fab package
 
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
 completion unless BOM/CPL/board designators agree, and applies no CPL rotation
-policy. Launch preflight requires the native `kicad-cli` binary. Empty produced
+policy. Board footprint DNP flags decide assembly. A schematic/board DNP
+disagreement is recorded in `details.dnp_disagreements` and does not block the
+package. An optional declared `assembly_exclusion` rule
+(`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
+in both the netlist and the board out of the BOM and CPL. The manifest lists
+them in `designators.excluded`. A marked part without the rule, or with
+disagreeing sources, is `unsupported`. Launch preflight requires the native `kicad-cli` binary. Empty produced
 native files are `failed/unknown`; pre-existing staging or native output
 directories are refused before reuse.
 
 [`fab_consistency`](fab-consistency.md) consumes that sealed export, its netlist
 and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,
-BOM/CPL/assembled-board reference parity, LCSC/footprint conflicts, CPL side,
+BOM/CPL/assembled-board reference parity (re-deriving rule exclusions from the
+sealed netlist and the captured board), schematic/board DNP disagreement
+(`designator_parity`), LCSC/footprint conflicts, CPL side,
 captured/embedded 3D models and recorded export-log diagnostics. CPL anchors
 must agree with exact native `position_nm` within 0.01 mm per axis, using
 absolute board X and negative board Y on either side. Missing exact positions
@@ -432,3 +655,53 @@ or a missing sealed log is unknown coverage; broken hashes or malformed CSV
 are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
 through a sealed requirement/check witness. Rotation correction and DFM are
 outside this check.
+
+## JLCPCB CPL rotation
+
+`cpl_rotation` takes `export_check`, `geometry_check`, a captured `policy`,
+captured `supplier_footprints` provenance records and `source_tolerance_nm`.
+It writes a JLC CPL whose rows are native pad-box midpoints, and it applies the
+versioned policy. Every rotation is cross-checked against the pin-1 frame of
+the captured supplier footprint, which detects quarter-turn offsets,
+reflections and diode polarity. Each row appears in exactly one of
+`applied_corrections` or `unmatched_footprints`. Missing geometry or a
+duplicate designator never falls back to the anchor. The status stays
+`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
+
+## Scaffold preparation
+
+[Empty-candidate scaffolding](scaffold.md) prepares inputs for these checks; its
+receipt is provenance and cannot satisfy a requirement. `scaffold` preserves the
+explicit planning scope's checks and baseline. Native ERC/DRC run through the
+ordinary `review` command. Staged absence is a coordinator defect only after a
+successful native presence observation; hierarchical presence and uncovered
+production envelope obligations continue to fail closed.
+
+[`fab_roundtrip`](fab-roundtrip.md), with exactly `{export_check}`, separately
+compares every enabled layer, round PTH/NPTH drill histograms, copper pad/via
+flash counts and outline bounds within 1 µm. It consumes earlier sealed export
+and geometry evidence. Missing layers/files and count/bound mismatches are named
+defects. Inch units and unknown Gerber commands are malformed; unsupported
+constructs are unknown with a 1-based source line. Artwork is outside coverage.
+
+## Captured block adaptation
+
+`block_provenance` takes `instance` (a captured `agent-ee.block-instance/1` file)
+and `netlist_check` (an earlier board-native netlist check). Scope/2 and scope/3
+freeze the record and all source-block files. The copied child stays mutable.
+A native semantic report lists component and net changes as information, while
+missing or rebound boundary ports produce defects. Source run results never
+qualify the board. See [block adaptation](block-adaptation.md) for scaffold
+inputs, requirement mapping, boundary probes, retained evidence and coverage
+limits.
+
+[`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
+are exactly `{netlist_check}` and it must be the last declared check; an earlier
+`geometry` check is required. It runs the same export and consistency code on its
+own staging tree and, on `pass`, records `details.artifacts`
+(`agent-ee.fab-artifacts/1`: gerbers.zip, every drill file, bom.csv, cpl.csv and
+manifest.json by sha256, bound to the candidate id and board digest). A missing,
+empty or unparseable export file is `failed`, `malformed` or `unsupported` with
+outcome `unknown`, or a gate `defect`; never `pass`. A scope with a `generation`
+marker is refused at capture unless this check is last and an acceptance
+requirement maps to it.

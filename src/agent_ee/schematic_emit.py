@@ -28,7 +28,8 @@ QUALIFICATION = 'experimental-unqualified'
 PARTS_SCHEMA = 'agent-ee.rung1-parts-manifest/0-experimental'
 SCH_VERSION = '20260306'  # KiCad 10 schematic file version (fixtures/rc/control).
 GRID = 2540000  # 2.54 mm in nanometres.
-MANIFEST_FIELDS = ('Footprint', 'LCSC', 'MPN', 'Manufacturer', 'JLCPCB_Assembly')
+MANIFEST_FIELDS = ('Footprint', 'Datasheet', 'LCSC', 'MPN', 'Manufacturer', 'JLCPCB_Assembly')
+STANDARD_FIELDS = ('Footprint', 'Datasheet', 'Description')  # Library fields an entry may override.
 UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/schematic-emit/1')
 PAPERS = (('A4', 297, 210), ('A3', 420, 297), ('A2', 594, 420), ('A1', 841, 594), ('A0', 1189, 841))
 LIB_NAME = re.compile(r'[A-Za-z0-9_.+\-]+')
@@ -217,6 +218,8 @@ def _parts(manifest, references):
         for key in MANIFEST_FIELDS:
             if key in source:
                 value = source[key]
+                if key == 'Datasheet' and value is None:
+                    continue  # An explicit missing datasheet keeps the library default; never invented.
                 if not isinstance(value, str) or not value or '\x00' in value or '\n' in value:
                     raise EmitError(f'{reference}.{key} must be a nonempty single-line string')
                 fields[key] = value
@@ -560,10 +563,10 @@ class _Emitter:
         out += [[key, flags[key]] for key in ('exclude_from_sim', 'in_bom', 'on_board', 'in_pos_files')]
         out += [['dnp', 'no'], ['uuid', Quoted(self.uuid(ident))]]
         fields = [('Reference', reference), ('Value', value)]
-        for key in ('Footprint', 'Datasheet', 'Description'):
+        for key in STANDARD_FIELDS:
             prop = _property(node, key)
             fields.append((key, extra.get(key, prop[2] if prop is not None else '')))
-        fields += [(key, extra[key]) for key in MANIFEST_FIELDS[1:] if key in extra]
+        fields += [(key, extra[key]) for key in MANIFEST_FIELDS if key in extra and key not in STANDARD_FIELDS]
         for key, text in fields:
             prop = _property(node, key)
             if prop is not None and key in ('Reference', 'Value', 'Footprint', 'Datasheet', 'Description'):

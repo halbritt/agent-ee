@@ -2,8 +2,11 @@
 
 The `netlist_parity` check compares a captured golden XML netlist or resolved
 connectivity intent with an earlier successful native `netlist` check. The full
-`design.xml` is authoritative. `connectivity.json` remains retained for navigation
-and does not supply the comparison graph.
+`design.xml` is authoritative. The retained navigation `connectivity.json` must
+parse and equal the existing native XML projection; it does not supply the
+comparison graph. Missing or unreadable source or native artifacts give execution
+`failed`; malformed or contradictory inputs give `malformed`. Both have outcome
+`unknown` and cannot establish a parity witness.
 
 ```json
 {
@@ -79,8 +82,9 @@ use UTF-8.
 XML also has depth/node limits. Exhaustion produces unsupported execution and
 unknown outcome. Approximate scores never decide conformance.
 
-`work/<id>/parity.json` records source/native hashes, component inventories and
-match candidates, expected/native net names, matched/missing/extra nets,
+`work/<id>/parity.json` records hashes of the source, native XML and connectivity
+JSON. It includes component inventories and match candidates, expected/native
+net names, matched/missing/extra nets,
 merge/split relations, changed or missing terminal bindings, native and intent
 locators, and descriptive Jaccard/precision/recall/F1 scores when a full mapping
 exists. Counts can establish a component mismatch before a graph mapping exists.

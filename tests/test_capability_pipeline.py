@@ -18,7 +18,7 @@ from agent_ee.baseline import load_baseline, validate_witnesses
 from agent_ee.capabilities import convert_scope
 from agent_ee.cli import run_review, verify
 from agent_ee.storage import digest, read_json, write_json
-from toolchain import require_toolchain
+from tests.toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 ORACLE = REPO / 'tests/fixtures/capability-mutations.json'

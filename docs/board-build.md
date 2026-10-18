@@ -27,7 +27,7 @@ python3 -m agent_ee.board_build PROJECTDIR --netlist NETLIST.xml --footprints FP
 | --- | --- |
 | 0 | Placed. The judge passes and the placed board has zero schematic-parity items. |
 | 1 | Input refused. The reason is on stderr and no receipt is written. |
-| 2 | Not placed. The placer returned a typed result such as `unsupported_geometry`, and the row stand-in was not requested or not applicable. |
+| 2 | Not placed. The placer returned a typed result such as `unsupported_geometry`, and the row stand-in was not requested or not applicable. A board too small for its parts is `packing_infeasible` with receipt `outcome: defect` and its proof in `placement/placement-plan.json`. |
 | 3 | Placed with defects (`outcome: defect`): the judge failed or parity items exist. For the row stand-in, any other violation also gives this result. |
 | 4 | The placement writer failed. Its `NAME-failure-*` diagnostics are kept under `OUTDIR/placement/`. |
 | 5 | A native tool failed. This is missing coverage, never a pass. |
@@ -147,6 +147,16 @@ the 1x03 header has rectangular and circular through-hole pads. The native
 build places these footprints, preserves their pad shapes, sizes and nets,
 and retains exact schematic parity. Unsupported pad geometry still produces
 a typed unknown rather than a passing placement.
+
+`test_stock_pads_place_with_exact_xml_nets_and_preserved_pad_geometry` builds
+the control from the unchanged installed footprints with the 50 x 30 mm
+envelope and J1 fixed. It checks the status `placed`, the judge verdict
+`pass` on the saved board, an empty `native_courtyard_overlaps` list and no
+courtyard violation in the placer's native DRC report, the recorded
+`pad_shapes` qualification, and zero schematic-parity items and violations.
+It also checks that C1 and R1 keep roundrect pads (4), J1 keeps one
+rectangular and two circular pads (1, 0, 0), and J1 stays locked at its
+envelope position.
 
 The tests show the placed path with owned placeholder copies of the three
 footprints in which every pad is rectangular. The placeholders exist only in

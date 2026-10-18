@@ -349,6 +349,51 @@ KEY_PINS = {'25': ('NRST', 'input'), '138': ('BOOT0', 'input'), '143': ('PDR_ON'
 TYPE_COUNTS = {'bidirectional': 114, 'input': 4, 'passive': 8, 'power_in': 16, 'power_out': 2}
 
 
+# A powered MCU-core sheet: supplies and grounds on the raw-text pin numbers
+# above, each VCAP pin decoupled by an owned capacitor, every other pin open.
+SUPPLY = VDD | {6, 32, 33, 95, 143}  # VBAT, VREF+, VDDA, VDD33USB, PDR_ON
+GROUND = VSS | {31, 138}  # VSSA, BOOT0
+QFP = Path('/usr/share/kicad/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod')
+STM32_TABLES = dict(symbol_table={'MCU_ST_STM32H7': '${KIPRJMOD}/lib/MCU_ST_STM32H7.kicad_sym',
+                                  'OwnedGen': '${KIPRJMOD}/lib/Owned_Gen.kicad_sym',
+                                  'OwnedPower': '${KIPRJMOD}/lib/Owned_Power.kicad_sym'},
+                    footprint_table={'Package_QFP': '${KIPRJMOD}/lib/Package_QFP.pretty'})
+
+
+def stm32_sheet_inputs(output, flags=True):
+    """Intent, layout and captures for an emitted STM32H723ZGTx core sheet."""
+    def term(component, number):
+        return dict(component=component, pin=dict(number=str(number)))
+    names = {'lib/MCU_ST_STM32H7.kicad_sym': 'MCU_ST_STM32H7', 'lib/Owned_Gen.kicad_sym': 'OwnedGen',
+             'lib/Owned_Power.kicad_sym': 'OwnedPower'}
+    lib = {path: output if name == 'MCU_ST_STM32H7' else (PROJECT / path).read_bytes()
+           for path, name in names.items()}
+    part = lambda id, ref, lib_id, value, footprint='': dict(id=id, reference=ref, lib_id=lib_id, value=value,
+                                                              footprint=footprint, units=[1])
+    components = [part('mcu', 'U26', 'MCU_ST_STM32H7:STM32H723ZGTx', 'STM32H723ZGTx',
+                       'Package_QFP:LQFP-144_20x20mm_P0.5mm'),
+                  part('c_vcap1', 'C1', 'OwnedGen:CAP', '2u2'), part('c_vcap2', 'C2', 'OwnedGen:CAP', '2u2'),
+                  part('gnd', '#PWR01', 'OwnedPower:GND', 'GND'),
+                  part('flag_gnd', '#FLG01', 'OwnedPower:PWR_FLAG', 'PWR_FLAG')]
+    supply = [term('mcu', n) for n in sorted(SUPPLY)]
+    if flags:
+        components.append(part('flag_3v3', '#FLG02', 'OwnedPower:PWR_FLAG', 'PWR_FLAG'))
+        supply.append(term('flag_3v3', 1))
+    nets = [dict(id='p3v3', name='+3V3', terminals=supply),
+            dict(id='gnd', name='GND', terminals=[term('mcu', n) for n in sorted(GROUND)] + [
+                term('gnd', 1), term('flag_gnd', 1), term('c_vcap1', 2), term('c_vcap2', 2)]),
+            dict(id='vcap1', name='VCAP1', terminals=[term('mcu', 71), term('c_vcap1', 1)]),
+            dict(id='vcap2', name='VCAP2', terminals=[term('mcu', 106), term('c_vcap2', 1)])]
+    intent = dict(schema='agent-ee.connectivity-intent/1',
+                  libraries=[dict(name=names[path], path=path, sha256=hashlib.sha256(data).hexdigest())
+                             for path, data in lib.items()],
+                  components=components, nets=nets,
+                  no_connects=[term('mcu', n) for n in range(1, 145) if n not in SUPPLY | GROUND | {71, 106}])
+    layout = dict(schema='agent-ee.schematic-layout/1', namespace='6f0f7f0e-5c43-5b8e-9a51-2a3f2c1d0e41',
+                  project='mcu', transforms={})
+    return intent, layout, lib
+
+
 class StockStm32Tests(unittest.TestCase):
     """Private actual-fixture qualification against the installed KiCad library."""
 
@@ -401,6 +446,34 @@ class StockStm32Tests(unittest.TestCase):
         self.assertEqual(binding['resolved_sha256'], record['canonical_sha256'])
 
 
+    def test_stacked_ground_pins_emit_one_label_and_conflicting_stacks_refuse(self):
+        intent, layout, lib = stm32_sheet_inputs(self.output)
+        record = resolve_intent(intent, lib)
+        stacks = {}
+        for p in next(c for c in record['components'] if c['id'] == 'mcu')['pins']:
+            stacks.setdefault((p['x_nm'], p['y_nm']), []).append(int(p['number']))
+        # The installed symbol stacks exactly its nine VSS pins on one point.
+        self.assertEqual([sorted(v) for v in stacks.values() if len(v) > 1], [sorted(VSS)])
+        result, files = emit_schematic(intent, lib, layout)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        root = parse_sexpr(files['mcu.kicad_sch'])
+        ground = [n for n in children(root, 'global_label') if n[1] == 'GND']
+        # One label per distinct ground point: the VSS stack, VSSA, BOOT0, two
+        # capacitor pins, the ground symbol and its flag. Nine stacked pins, one label.
+        self.assertEqual(len(ground), 7)
+        self.assertEqual(len(children(root, 'no_connect')), 144 - len(SUPPLY | GROUND) - 2)
+        for edit in (lambda i: i['nets'][1]['terminals'].remove(dict(component='mcu', pin=dict(number='120'))) or
+                     i['nets'][0]['terminals'].append(dict(component='mcu', pin=dict(number='120'))),
+                     lambda i: i['nets'][1]['terminals'].remove(dict(component='mcu', pin=dict(number='120'))) or
+                     i['no_connects'].append(dict(component='mcu', pin=dict(number='120')))):
+            intent, layout, lib = stm32_sheet_inputs(self.output)
+            edit(intent)
+            result, files = emit_schematic(intent, lib, layout)
+            self.assertIsNone(files)
+            self.assertEqual([(f['code'], f['location']) for f in result['findings']],
+                             [('impossible_pin_endpoint', '/components/mcu/pins/120')])
+
+
 class NativeCaptureTests(unittest.TestCase):
     def setUp(self):
         require_toolchain(native=True)
@@ -420,10 +493,10 @@ class NativeCaptureTests(unittest.TestCase):
         self.assertIn('Saving symbol library in updated format', (work / 'console.log').read_text())
         self.assertEqual((work / 'copy' / 'MCU_ST_STM32H7.kicad_sym').read_bytes(), output)
 
-    def erc(self, project, label):
+    def erc(self, project, label, name='regulator'):
         work = self.tmp / label
         run_native(project, work, 'kicad-cli', 'sch', 'erc', '--format', 'json', '--severity-all',
-                   '--units', 'mm', '-o', '/work/erc.json', '/candidate/regulator.kicad_sch')
+                   '--units', 'mm', '-o', '/work/erc.json', f'/candidate/{name}.kicad_sch')
         erc = json.loads((work / 'erc.json').read_text())
         self.assertEqual(erc['kicad_version'], '10.0.7')
         return [v for sheet in erc['sheets'] for v in sheet['violations']], work
@@ -458,6 +531,50 @@ class NativeCaptureTests(unittest.TestCase):
         violations, _ = self.erc(project, 'control')
         self.assertEqual([(v['type'], v['description']) for v in violations],
                          [('lib_symbol_mismatch', "Symbol 'CAP' doesn't match copy in library 'OwnedGen'")])
+
+    def stm32_project(self, files, lib, label):
+        if not QFP.is_file():
+            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+                raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: stock footprint missing: ' + str(QFP))
+            self.skipTest('stock footprint missing: ' + str(QFP))
+        project = self.tmp / label
+        (project / 'lib/Package_QFP.pretty').mkdir(parents=True)
+        shutil.copy(QFP, project / 'lib/Package_QFP.pretty')  # Run-time copy only, never committed.
+        for path, data in {**lib, **files}.items():
+            (project / path).write_bytes(data)
+        return project
+
+    def test_emitted_stm32_sheet_embedding_capture_passes_native_erc_and_netlist(self):
+        data = stock_library(self)
+        output, receipt = capture_symbols(data, ['STM32H723ZGTx'], library='MCU_ST_STM32H7')
+        intent, layout, lib = stm32_sheet_inputs(output)
+        result, files = emit_schematic(intent, lib, layout, **STM32_TABLES)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        self.assertEqual(result['libraries'][0]['sha256'], receipt['output']['sha256'])
+        project = self.stm32_project(files, lib, 'stm32')
+        violations, _ = self.erc(project, 'stm32-erc', 'mcu')
+        self.assertEqual(violations, [])
+        work = self.tmp / 'stm32-netlist'
+        run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                   '-o', '/work/design.xml', '/candidate/mcu.kicad_sch')
+        components, nets, singles = native_netlist(work / 'design.xml')
+        self.assertEqual(components['U26']['lib'], ('MCU_ST_STM32H7', 'STM32H723ZGTx'))
+        self.assertEqual(components['U26']['footprint'], 'Package_QFP:LQFP-144_20x20mm_P0.5mm')
+        mcu = lambda pins: [['U26', str(n)] for n in pins]
+        self.assertEqual({name: sorted(nodes) for name, nodes in nets.items()},
+                         {'/+3V3': sorted(mcu(SUPPLY)),
+                          'GND': sorted(mcu(GROUND) + [['C1', '2'], ['C2', '2']]),
+                          '/VCAP1': [['C1', '1'], ['U26', '71']], '/VCAP2': [['C2', '1'], ['U26', '106']]})
+        self.assertEqual(sorted(int(p) for (ref, p), _ in singles.values() if ref == 'U26'),
+                         [n for n in range(1, 145) if n not in SUPPLY | GROUND | {71, 106}])
+        self.assertTrue(all('no_connect' in kind for _, kind in singles.values()))
+        # Control: ERC does evaluate the MCU's power pins. Without the supply
+        # flag nothing drives +3V3, and native ERC must say so.
+        intent, layout, lib = stm32_sheet_inputs(output, flags=False)
+        result, files = emit_schematic(intent, lib, layout, **STM32_TABLES)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        violations, _ = self.erc(self.stm32_project(files, lib, 'stm32-control'), 'stm32-control-erc', 'mcu')
+        self.assertEqual(sorted({v['type'] for v in violations}), ['power_pin_not_driven'])
 
 
 if __name__ == '__main__':

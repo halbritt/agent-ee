@@ -48,7 +48,9 @@ stderr. Argument errors exit 2.
   `parts` is either an object keyed by reference or a list of objects that each
   have a `reference`. An entry's fields are either at the top level or under a
   `fields` object. The emitter uses `Footprint` (required, `LIBRARY:NAME`),
-  `LCSC`, `MPN`, `Manufacturer` and `JLCPCB_Assembly`. The only value accepted
+  `Datasheet`, `LCSC`, `MPN`, `Manufacturer` and `JLCPCB_Assembly`. A
+  `Datasheet` string replaces the library's Datasheet field; `null` is an
+  explicit missing datasheet and keeps the library default. The only value accepted
   for `JLCPCB_Assembly` is `"not_assembled"`. Other keys are not emitted. They
   are listed in the receipt as `ignored_manifest_keys`. Every component in the
   record needs an entry, and an entry for an unknown reference is refused. The
@@ -108,9 +110,9 @@ atom-only lists on one line, and consecutive `xy` points wrapped at column 99.
 It reproduces `fixtures/rc/control/rc_filter.kicad_sch` and 221 of the 223
 KiCad 10.0.7 stock symbol libraries byte for byte. The other two,
 `FPGA_Xilinx_Virtex7` and `MCU_ST_STM32H7`, exceed the shared parser's
-two-million-node limit. The parser refuses them, so this emitter (and
-`connectivity_ir`) cannot use them as captured libraries until that limit
-changes or a symbol is captured on its own. `kicad-cli sch upgrade
+two-million-node limit. The parser refuses them as whole libraries; a
+[large-symbol capture](symbol-capture.md) of the needed symbol is what the
+emitters and `connectivity_ir` then use. `kicad-cli sch upgrade
 --force` re-saves an emitted schematic with only these differences: the
 generator lines, and the project name (only when the file is renamed).
 

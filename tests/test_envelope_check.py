@@ -101,8 +101,58 @@ class ExactBoundaryTests(unittest.TestCase):
             with self.subTest(params=params), self.assertRaises(ValueError):
                 parameters(params)
 
+
+class EnvelopeRegistrationTests(unittest.TestCase):
+    def describe(self, criterion, *, params=None, files=None, board='board.kicad_pcb'):
+        from agent_ee.capabilities import describe_check
+        spec = {'id': 'mechanics', 'kind': 'board_envelope', 'params': params if params is not None else
+                {'criterion': criterion, 'envelope': 'envelope.json'}}
+        return describe_check(spec, check_specs=[spec], scope={'board': board},
+                              files=files if files is not None else {'board.kicad_pcb': 'board', 'envelope.json': 'envelope'})
+
+    def test_outline_and_layers_have_distinct_executable_capabilities(self):
+        for criterion in ('outline/1', 'layers/1'):
+            with self.subTest(criterion=criterion):
+                descriptor = self.describe(criterion)
+                self.assertEqual(descriptor['status'], 'supported')
+                self.assertTrue(descriptor['can_evaluate_bound'])
+                self.assertEqual(descriptor['predicates'], ['envelope:' + criterion])
+                self.assertEqual(descriptor['immutable_inputs'], ['envelope.json'])
+                self.assertEqual(descriptor['prerequisites'], [])
+
+    def test_stackup_cannot_supply_acceptance_coverage(self):
+        descriptor = self.describe('stackup/1')
+        self.assertEqual(descriptor['status'], 'unsupported')
+        self.assertFalse(descriptor['can_evaluate_bound'])
+        self.assertEqual(descriptor['predicates'], [])
+        self.assertIn('copper_weight_oz', str(descriptor['unsupported_reasons']))
+
+    def test_launch_expectation_requires_native_pcbnew(self):
+        from agent_ee.preflight import capture_expectation
+        result = {'run_id': 'owned-native-expectation', 'policy_files': {}, 'runtime_files': {}}
+        manifest = {'candidate_id': 'owned-native-envelope', 'files': {},
+                    'scope': {'schema': 'agent-ee.scope/1', 'checks': [
+                        {'id': 'outline', 'kind': 'board_envelope',
+                         'params': {'criterion': 'outline/1', 'envelope': 'envelope.json'}}]}}
+        expected = capture_expectation(result, manifest, [])
+        self.assertEqual(expected['required_runtime'], ['/usr/bin/python3', 'bwrap', 'pcbnew'])
+
+    def test_capability_refuses_missing_inputs_and_invalid_contracts(self):
+        cases = [{'files': {'envelope.json': 'hash'}}, {'files': {'board.kicad_pcb': 'hash'}},
+                 {'board': None}, {'params': {}},
+                 {'params': {'criterion': 'holes/1', 'envelope': 'envelope.json'}},
+                 {'params': {'criterion': 'layers/1', 'envelope': '../envelope.json'}},
+                 {'params': {'criterion': 'layers/1', 'envelope': 'envelope.json', 'allow_missing': True}}]
+        for case in cases:
+            with self.subTest(case=case):
+                descriptor = self.describe('layers/1', **case)
+                self.assertEqual(descriptor['status'], 'unsupported')
+                self.assertFalse(descriptor['can_evaluate_bound'])
+                self.assertTrue(descriptor['unsupported_reasons'])
+
+
 class NativeEnvelopeTests(unittest.TestCase):
-    """Production Ctx/executor/probe, without claiming unregistered scope/3 capture."""
+    """Registered coordinator execution; complete scope/3 capture still needs stackup authority."""
     def setUp(self):
         import tempfile
         from toolchain import require_toolchain
@@ -114,8 +164,7 @@ class NativeEnvelopeTests(unittest.TestCase):
 
     def run_native(self, criterion, pcb=PCB, raw=RAW, deadline=None):
         import time
-        from agent_ee.checks import Ctx
-        from agent_ee.envelope_check import check_board_envelope
+        from agent_ee.checks import Ctx, CHECK_FUNCS
         from agent_ee.storage import digest
         self.count += 1
         run = self.root / str(self.count)
@@ -130,10 +179,33 @@ class NativeEnvelopeTests(unittest.TestCase):
                 'params': {'criterion': criterion, 'envelope': 'envelope.json'}}
         ctx = Ctx(run, manifest, spec, deadline if deadline is not None else time.monotonic() + 60)
         self.last_ctx = ctx
-        check_board_envelope(ctx)
+        CHECK_FUNCS[spec['kind']](ctx)
         self.assertEqual((inputs / 'board.kicad_pcb').read_bytes(), pcb)
         self.assertEqual((inputs / 'envelope.json').read_bytes(), raw)
         return ctx
+
+    def test_registered_dispatcher_retains_native_result_and_unknown_stackup(self):
+        import time
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import digest, read_json, write_json
+        inputs = self.root / 'inputs'
+        inputs.mkdir()
+        (inputs / 'board.kicad_pcb').write_bytes(PCB)
+        (inputs / 'envelope.json').write_bytes(RAW)
+        checks = [{'id': criterion.split('/')[0], 'kind': 'board_envelope',
+                   'params': {'criterion': criterion, 'envelope': 'envelope.json'}}
+                  for criterion in ('outline/1', 'layers/1', 'stackup/1')]
+        write_json(self.root / 'candidate.json', {'candidate_id': 'owned-dispatch-envelope',
+                   'scope': {'board': 'board.kicad_pcb', 'checks': checks},
+                   'files': {p.name: digest(p) for p in inputs.iterdir()}})
+        results = run_checks(self.root, time.monotonic() + 60)
+        self.assertEqual([(r['execution'], r['outcome']) for r in results],
+                         [('ok', 'pass'), ('ok', 'pass'), ('unsupported', 'unknown')])
+        for result in results:
+            self.assertEqual(read_json(self.root / 'checks' / (result['id'] + '.json')), result)
+            self.assertIn('work/' + result['id'] + '/envelope-judgment.json', result['evidence'])
+            self.assertEqual(result['details']['board_sha256'], digest(inputs / 'board.kicad_pcb'))
+        self.assertIn('copper_weight_oz', results[-1]['summary'])
 
     def test_actual_native_outline_and_layers_controls(self):
         for criterion in ('outline/1', 'layers/1'):

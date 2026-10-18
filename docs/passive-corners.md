@@ -63,6 +63,10 @@ do not merely edit hashes to imply qualification. The policy intentionally pins
 one installed binary rather than claiming compatibility with arbitrary ngspice
 builds. Other versions/builds need a policy change and demonstrated qualification.
 
+`parser_sha256` covers the entire `agent_ee/checks.py` module, so changes to
+native-netlist prerequisites also require this process. If integration changes
+that module again, refresh and requalify against the final integrated bytes.
+
 If the scope carries empirical calibration, numerical corner evidence can remain
 as diagnostics but the check returns unsupported/unknown without acceptance
 margins. Calibration/2 exact nominal-design identity does not establish that a

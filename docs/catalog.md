@@ -1,8 +1,9 @@
 # Offline catalog snapshots
 
-`agent_ee.catalog` captures explicitly pinned **local** CSV, SQLite, or ordinary
-ZIP files containing CSVs. It never downloads data, reads provider credentials,
-or supplies invented availability. Source catalog bytes and derived snapshots
+`agent_ee.catalog` captures explicitly pinned **local** CSV, SQLite, ordinary
+ZIP/CSV files, or the jlcparts split ZIP64 feed described below. Capture never
+downloads data or reads provider credentials. A separate host acquisition script
+downloads pinned volumes before capture. Source catalog bytes and derived snapshots
 belong in private scratch until the owner approves publication. The committed
 tests generate owned synthetic inputs; their stock and prices are test values.
 
@@ -37,6 +38,8 @@ diode, led, connector and regulator. `stock` is a nonnegative integer;
 `price1` is decimal USD per unit. An empty stock or price cell means unknown.
 Booleans are explicitly `0` or `1`. `last_seen` must not exceed `snapshot_date`.
 `attributes` is a JSON object mapping attribute names to original text.
+An empty manufacturer name means unknown; it is retained without a guessed
+name. LCSC identity, MPN, package and category remain required nonempty text.
 Missing columns, extra columns, duplicate JSON keys, malformed row widths,
 negative prices and invalid dates fail capture. Duplicate ZIP members, unsafe
 member paths, symlinks, encryption and non-CSV members are refused.
@@ -63,11 +66,10 @@ catalog claim, not verification against a datasheet.
 private staging directory, validates SQLite integrity, and atomically publishes
 `catalog.sqlite3` and `manifest.json` together using Linux `renameat2` with
 no replacement. Failure publishes nothing; an existing destination is refused.
-This is a Linux capture interface. The stdlib importer supports ordinary ZIPs,
-not split 7z archives or vendor-specific upstream schemas. Those require a
-separately qualified outside-capture conversion and new hash pins. A source
-volume is limited to 512 MiB and total compressed/expanded catalog bytes to
-1 GiB; this implementation is not a streaming multi-GB upstream downloader.
+This is a Linux capture interface. Each compressed source volume is limited to
+512 MiB; all compressed volumes and the derived DB are each limited to 1 GiB.
+Ordinary ZIP/CSV expansion is limited to 1 GiB. Native split ZIP64 extraction
+has a separate 8 GiB limit and streams to private temporary files.
 
 The DB has `component_base` and one derived table per category. Base rows contain
 the source columns plus canonical JSON `normalized` SI intervals and `provenance`.
@@ -121,13 +123,11 @@ scope/3 coverage.
 It cannot satisfy an acceptance requirement; it does not expand reviewer or
 implementation permissions.
 
-Qualification uses original synthetic data: tests recapture two pinned ordinary
-ZIP volumes byte for byte, reject a mismatched second volume without publishing,
-and select a 1 kΩ 0603 resistor among value/package/unknown-stock distractors
-inside an actual isolated network namespace. These tests establish the local
-capture and offline-query contract. They do not establish that a native
-JLCPCB/LCSC feed has been acquired or converted correctly. Native upstream
-schema conversion, acquisition and real-feed qualification remain outstanding.
+Original synthetic tests cover both normalized inputs and the native
+`source-db-v2` layout. They recapture pinned volumes byte for byte, reject
+mismatched volumes before publication, exercise real HTTP byte/deadline failures,
+and query 1 kΩ 0603 resistors in an isolated network namespace. Supplier data is
+kept private; it is never used as a committed test fixture.
 
 All availability and prices are **as of `snapshot_date`**. No result establishes
 live inventory, order-time price, datasheet correctness, or assembly acceptance.
@@ -147,3 +147,98 @@ coordinator evidence seal. Corrupt or unavailable bytes produce failed/unknown.
 The application policy identity hashes `catalog.py`, `part_selection.py` and
 the adapter along with the rest of the Python package; changing normalization
 code invalidates public verification of earlier policy identity.
+
+
+## Pinned jlcparts acquisition
+
+The committed [source manifest](../catalog-sources/jlcparts-2026-09-14.json)
+pins the exact raw URLs at jlcparts commit
+`75daa67a78f3acf4ce18bab8dd68a86ac28c2818`: twelve 50 MiB pieces and the final
+ZIP piece, 680,612,272 compressed bytes in total. Every piece has a SHA-256 and
+size. Pins were established against that commit's Git tree blob IDs. The raw
+member is a 5,940,703,232-byte SQLite `source-db-v2` database. Source schema and
+values were inspected directly; the recovery documentation's older
+`components` schema does not describe these bytes. The upstream software is
+[MIT licensed](https://github.com/yaqwsx/jlcparts/blob/master/LICENSE).
+Pinning a public source does not grant permission to redistribute its data.
+
+Run acquisition **on the host**, with destinations in private scratch:
+
+```sh
+PYTHONPATH=src python3 scripts/acquire_catalog.py \
+  --manifest catalog-sources/jlcparts-2026-09-14.json \
+  --out /private/scratch/jlcparts-inputs --timeout 900
+agent-ee capture-catalog catalog-sources/jlcparts-2026-09-14.json \
+  --source-root /private/scratch/jlcparts-inputs \
+  --out /private/scratch/jlcparts-snapshot
+```
+
+The download runs in an owned child with a total wall deadline (1–3600 seconds,
+900 by default), not just a socket timeout. Each response is capped at its
+pinned byte count and verified by SHA-256. HTTP failures, wrong lengths, hashes,
+deadlines and cancellation leave no published inputs. Successful downloads and
+their source manifest publish together through the same no-replacement atomic
+directory publication used by catalog capture. Ambient proxy credentials are
+ignored. The script never runs inside a check sandbox. No retries or live API
+updates can change the pinned inputs.
+
+`jlcparts-v2-stocked-split-zip` is an explicit compact import profile, not the
+entire upstream universe. It retains present rows with positive captured stock
+in supported categories: resistors, capacitors, inductors, diodes, connectors,
+discrete LED indicators and linear/LDO regulators. Other families, absent parts
+and zero-stock rows are excluded. Missing parts in this profile do not prove
+unavailability in the complete upstream catalog. The pinned one-year
+`stale_before` cutoff applies to the retained row's UTC `fetched_at` date.
+`last_seen` records that date, so the publication date is not confused with an
+individual part's fetch date. No stock or price is made current by capture.
+
+All volumes are streamed into a private staging file and verified before any
+archive metadata or source rows are interpreted. The adapter accepts only
+contiguous `cache.z01` … `cache.zip` pieces, the pinned producer's fixed ZIP64
+trailer, and a single regular `cache.sqlite3` member beginning on disk zero.
+It translates split disk offsets, then delegates directory/decompression/CRC
+validation to Python's standard `zipfile` reader. No 7-Zip dependency, shell
+extraction or archive repair is used. Alternate layouts, encrypted members,
+unsafe names, oversized expansion and CRC errors fail capture. Extraction files
+are removed on success and failure.
+
+The native adapter checks SQLite `quick_check`, the `source-db-v2` marker and
+exact required table columns before conversion. It maps `mfr` to MPN,
+`manufacturer` to manufacturer name, `base`/`expand` to Basic/Extended, and
+`preferred` and `stock` directly. Empty manufacturer names stay unknown;
+structural text is trimmed and its original spelling retained in attributes.
+`price1` is the per-unit USD price at the smallest recorded MOQ, not a promise
+that one piece can be ordered. Invalid prices or flags fail the build.
+Original attribute strings remain under `upstream:` names; source category,
+package, MPN, manufacturer and datasheet URL are retained. Passive intervals
+require an explicit source tolerance. Recognized ratings feed the existing SI
+normalizer; absent, ambiguous or unparseable attributes stay unknown. This
+initial regulator mapping requires both input/output range endpoints; it does
+not infer omitted endpoints from a maximum or fixed nominal rating. Unknown limits cannot support selection constraints.
+
+Output uses the existing `agent-ee.catalog/1` schema, normalization, typed
+tables and atomic publication path. Its manifest retains every archive pin;
+row provenance names the complete archive's final piece and the row's one-based
+LCSC-ordered source position, with a hash of the native record. It does not claim
+that a record lives entirely in that piece. The format name pins the import
+profile policy. Repeat capture uses the same manifest and volumes; byte identity
+is qualified within the same SQLite version. Offline reads and checks retain
+the existing manifest/DB/date identity and evidence-authority rules.
+
+
+## Full-feed runtime qualification
+
+The pinned stocked profile produced 334,455 rows in a 749,039,616-byte DB on
+SQLite 3.45.1. A real networkless `select_parts` query for 1 kΩ ±1%, 0603
+returned 179 eligible candidates and selected C21190, retaining Basic=true,
+stock=8,013,731 and snapshot date 2026-09-14. That private qualification used a
+900-second process limit and completed in 327 seconds on the busy host.
+These are captured facts, not current supplier availability.
+
+The shared reader revalidates the whole snapshot before selection. The sealed
+`catalog` and `part_selection` runners retain their 120-second ceilings and the
+enclosing run deadline; this full feed has **not** been qualified within that
+ceiling. A timeout remains interrupted/unknown coverage. The original fixture
+checks qualify the check/evidence boundaries, while the large private query
+qualifies native conversion and offline selection at its recorded runtime.
+Do not infer full-feed sealed-check throughput from the small controls.

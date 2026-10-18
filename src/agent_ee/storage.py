@@ -93,3 +93,15 @@ def write_json(path, value):
 def json_digest(value):
     """Identity of the exact bytes produced by write_json."""
     return hashlib.sha256(json_bytes(value)).hexdigest()
+
+
+def rename_noreplace(source, destination):
+    """Linux RENAME_NOREPLACE: publish a complete staged directory and refuse races."""
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = libc.renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1):
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(destination))

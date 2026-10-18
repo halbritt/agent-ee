@@ -122,25 +122,6 @@ class ComparisonBoundaryTests(unittest.TestCase):
         self.assertEqual(len(report['matches']), 2)
 
 
-# Only this test process installs the pending root registry/descriptor seam.
-# No check, native-tool result, seal or verifier is replaced.
-def install_pending_registration(test):
-    from unittest.mock import patch
-    from agent_ee import capabilities, checks
-    from agent_ee.parts_subset import capability, check_parts_subset
-    original = capabilities.describe_check
-    def describe(spec, *, check_specs, files, scope, inputs=None):
-        if spec['kind'] != 'parts_subset':
-            return original(spec, check_specs=check_specs, files=files, scope=scope, inputs=inputs)
-        info = capability(spec['params'], files, inputs, scope, spec['id'])
-        return dict(check_id=spec['id'], kind='parts_subset', capability_version='parts_subset/1',
-                    status='supported', can_evaluate_bound=True, predicates=info['predicates'],
-                    prerequisites=[dict(check_id=spec['params']['netlist_check'], kind='netlist')],
-                    immutable_inputs=info['immutable_inputs'], unsupported_reasons=[])
-    test.enterContext(patch.object(capabilities, 'describe_check', describe))
-    test.enterContext(patch.dict(checks.CHECK_FUNCS, parts_subset=check_parts_subset))
-
-
 def captured_fixture(test, root, trio=False):
     """Original synthetic declarations and catalog; never real owner part approval."""
     import copy
@@ -334,14 +315,13 @@ class NativePartsPipelineTests(unittest.TestCase):
         from toolchain import require_toolchain
         require_toolchain(native=True)
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='agent-ee-86-')))
-        install_pending_registration(self)
         self.document = captured_fixture(self, self.root)
         self.count = 0
 
     def schematic(self, variant='control'):
         return subset_generator().trio() if variant == 'trio' else subset_generator().schematic(variant)
 
-    def run_case(self, variant='control', document=None):
+    def run_case(self, variant='control', document=None, schema='agent-ee.scope/3'):
         from agent_ee.cli import run_review
         from agent_ee.storage import write_json, read_json
         self.count += 1
@@ -351,7 +331,7 @@ class NativePartsPipelineTests(unittest.TestCase):
         for name, content in sheets.items():
             (self.root / name).write_text(content)
         (self.root / 'binding.kicad_pcb').write_text('(kicad_pcb (version 20241229) (generator "owned"))\n')
-        scope = dict(schema='agent-ee.scope/3', name='parts-fixture', scope='Owned synthetic parts membership.',
+        scope = dict(schema=schema, name='parts-fixture', scope='Owned synthetic parts membership.',
             limitations=[], schematic='binding.kicad_sch', board='binding.kicad_pcb', mutable_inputs=['binding.kicad_sch'],
             inputs=[dict(path=p.relative_to(self.root).as_posix(), at=p.relative_to(self.root).as_posix())
                     for p in self.root.rglob('*') if p.is_file() and not p.name.startswith('scope')
@@ -362,6 +342,8 @@ class NativePartsPipelineTests(unittest.TestCase):
             baseline=dict(requirements=[dict(id='membership', statement='R1 matches declared membership.',
                 source=dict(path='requirements.md', locator='line 1'), checks=['netlist', 'parts'], intent='acceptance')],
                 targets=['requirements.md'], reference_architectures=['requirements.md']))
+        if schema == 'agent-ee.scope/2':
+            del scope['baseline']['requirements'][0]['intent']
         write_json(self.root / 'scope.json', scope)
         run = self.root / f'run-{self.count}'
         run_review(self.root / 'scope.json', run, 120, checks_only=True)
@@ -370,13 +352,22 @@ class NativePartsPipelineTests(unittest.TestCase):
 
     def test_native_positive_and_footprint_defect_public_verify_and_witness(self):
         from agent_ee.cli import verify
+        from agent_ee.storage import read_json
         from agent_ee.baseline import validate_witnesses
         run, check = self.run_case()
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
         verify(run)
+        coverage = read_json(run / 'baseline.json')['coverage']
+        self.assertEqual(coverage['checks']['parts']['prerequisites'],
+                         [dict(check_id='netlist', kind='netlist')])
+        self.assertTrue(coverage['checks']['parts']['can_evaluate_bound'])
         run, check = self.run_case('footprint')
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'), check)
         self.assertEqual(check['details']['evaluated_predicates'], ['parts:declared-membership-multiplicity/1'])
+        finding = check['details']['report']['matches'][0]
+        self.assertEqual(finding['reference'], 'R1')
+        self.assertIn(dict(code='footprint_mismatch', field='footprint',
+                           declared='Owned:R2', native='Owned:SOT3'), finding['findings'])
         verify(run)
         validate_witnesses(run, [dict(requirement_id='membership', check_id='parts')],
                            [dict(path='checks/parts.json', locator='details.report.matches[0]')])
@@ -390,6 +381,15 @@ class NativePartsPipelineTests(unittest.TestCase):
             with self.subTest(tamper=relative), self.assertRaises(ValueError):
                 verify(run)
             path.write_bytes(original)
+
+    def test_native_absent_required_instance_is_a_sealed_defect(self):
+        from agent_ee.cli import verify
+        self.document['parts'][0]['instances'][0]['reference'] = 'R99'
+        run, check = self.run_case()
+        self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'), check)
+        rows = {row['reference']: row for row in check['details']['report']['matches']}
+        self.assertEqual(rows['R99']['findings'], [dict(code='required_absent')])
+        verify(run)
 
     def test_native_required_dnp_and_missing_required_datasheet(self):
         run, check = self.run_case('dnp')
@@ -456,6 +456,48 @@ class NativePartsPipelineTests(unittest.TestCase):
         path.write_bytes(path.read_bytes() + b' ')
         with self.assertRaises(ValueError):
             verify(fresh)
+
+    def test_scope2_freezes_complete_closure_and_rejects_campaign_manifest_replacement(self):
+        import shutil
+        from agent_ee.baseline import compile_baseline
+        from agent_ee.campaign import check_proposal, mutable_inputs
+        from agent_ee.cli import run_review, verify
+        from agent_ee.parts_manifest import dependency_closure
+        from agent_ee.storage import read_json, digest
+        run, check = self.run_case(schema='agent-ee.scope/2')
+        self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
+        verify(run)
+        baseline = read_json(run / 'baseline.json')
+        self.assertEqual(baseline['files']['parts.json'], digest(run / 'inputs/parts.json'))
+        for path, sha in dependency_closure(self.document, run / 'inputs').items():
+            self.assertEqual(baseline['files'][path], sha)
+        manifest = read_json(run / 'candidate.json')
+        proposal = self.root / 'proposal'
+        shutil.copytree(run / 'inputs', proposal)
+        state = dict(baseline=baseline, mutable_inputs=mutable_inputs(manifest, baseline))
+        check_proposal(proposal, manifest, state)
+        # Even a writer granted manifest mutability cannot override the baseline.
+        state['mutable_inputs'].append('parts.json')
+        with (proposal / 'parts.json').open('ab') as stream:
+            stream.write(b' ')
+        with self.assertRaisesRegex(ValueError, 'immutable baseline source: parts.json'):
+            check_proposal(proposal, manifest, state)
+        scope = manifest['scope']
+        scope['mutable_inputs'].append('parts.json')
+        with self.assertRaisesRegex(ValueError, 'mutable'):
+            compile_baseline(scope, manifest['files'], run / 'inputs')
+        scope['mutable_inputs'].remove('parts.json')
+        # The normal review entry point also refuses a fresh capture against an
+        # existing campaign baseline before running any checks or inference.
+        with (self.root / 'parts.json').open('ab') as stream:
+            stream.write(b' ')
+        refused = self.root / 'run-refused'
+        run_review(self.root / 'scope.json', refused, 120, checks_only=True,
+                   expected_baseline=baseline)
+        result = read_json(refused / 'result.json')
+        self.assertIn('candidate changed the campaign baseline', result['error'])
+        self.assertEqual(result['checks'], [])
+        self.assertEqual(result['outcome'], 'incomplete')
 
     def test_owned_rc_and_three_pin_header_complete_canonical_native_positive(self):
         # Fresh capture root: this is synthetic data, not a real component approval.

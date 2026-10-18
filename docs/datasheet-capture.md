@@ -124,12 +124,27 @@ sets and exact Datasheet text, without filtering population, board or BOM flags.
 Absent and empty values remain distinct. Actual KiCad 10.0.7 native tests qualify
 `fields/field[@name='Datasheet']`; dedicated elements and custom properties have
 parser-boundary controls, including contradiction/duplicate/structured rejection.
-This does not establish the separate emitter's production URL propagation.
+Emitter URL propagation is covered under [Generation path](#generation-path).
 
-The dispatcher and future approved-binding contract belong to their owning
-lanes. The preparation caller must retain the original catalog/requirements and
+## Generation path
+
+The rung-1 driver ([generate.md](generate.md#parts-rule)) runs
+`capture_datasheets` in stage 2 on every selected part's `Datasheet` and
+publishes `stages/2-parts/datasheets/` as a stage output; the receipt lists
+captured URLs with sha256 and fetch time, and every missing part. The
+[schematic emitter](schematic-emit.md) copies a non-null manifest `Datasheet`
+onto the symbol, so KiCad's native netlist carries the selected URL and
+`bindings_from_native(design.xml)` reproduces it. A focused test runs that chain
+from stage-2 part records through the emitter, a sandboxed `kicad-cli` netlist
+export and capture of an owned PDF over loopback HTTP: two parts sharing one URL
+cause one fetch, and the header without a URL stays missing. The fome-mc BOM has
+no datasheet column, so an actual rung-1 run captures nothing and records every
+part as missing.
+
+The future approved-binding contract (AGENTEE-86) belongs to its owning lane.
+The preparation caller must retain the original catalog/requirements and
 approval inputs, map every obligation into immutable baseline requirements, and
 request a fresh capture/review after a declaration changes. Neither adapter
-upgrades selection into owner approval. Whole-ticket acceptance still requires
-that contract and a URL-bearing emitter/source path; the experimental all-null
-rung1 manifest cannot demonstrate positive end-to-end acquisition.
+upgrades selection into owner approval. The rung-1 scope declares no
+`datasheet_facts` check, so the stage-2 capture is not yet mounted into its
+review inputs.

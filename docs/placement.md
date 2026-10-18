@@ -14,7 +14,8 @@ full polygons, including concave boundaries, using exact rational intersections.
 Positive-area same-layer courtyard intersection and positive-area courtyard
 outside a proven closed outline produce `verdict=hard_fail`, `outcome=defect`.
 Opposite-side courtyards and boundaries that only touch do not overlap. Findings
-name references, side and intersection/outside area in square millimetres.
+name references, side and intersection/outside area in square millimetres;
+`off_board` lists the references with positive area outside the outline.
 
 A proven contour requires straight, closed, non-self-intersecting geometry.
 Segment endpoints must match exactly and have degree two. Rectangles and simple
@@ -33,17 +34,30 @@ The optional captured `agent-ee.placement-policy/1` declaration supplies
 weight is inferred from a reference or value string. Shared non-ground nets
 within the declared reference-count limit associate each capacitor to its
 nearest declared IC. A qualifying connector net instead records an interface
-filter waiver with its nearest connector distance. Distances are Euclidean
+filter waiver with its nearest connector distance, but only when that distance
+is within the capacitor's own `max_distance_mm`. A capacitor farther from every
+connector than its limit falls through to the IC decoupling check, so a rail
+that also reaches a distant connector keeps its deduction. Distances are Euclidean
 footprint-centre distances, not routed loop lengths. Optional `connector_edge`
 contains `max_distance_mm` and `deduction` for an advisory nearest-outline-edge
 centre distance. Advisories reduce the initial score of 100 down to a minimum
 of zero; they never produce a defect or turn unknown geometry into a pass.
+Without a policy the score is `null`: no advisory was evaluated.
 
-The independent owned two-cap example declares 100 nF at 2.5 mm and 1 µF at
-5 mm, with a deduction of 15 per distant cap, giving score 70. This is **not**
-the upstream Konnect fixture or evidence of its exact numerical acceptance.
-No upstream code or design files were copied. That ticket criterion remains
-unmet pending qualified fixture provenance and publication authorization.
+The owned native SOIC-8 board with two 0402 capacitors
+(`NativeDecouplingScoreTest` in `tests/test_placement_native.py`) declares
+100 nF at 2.5 mm and 1 µF at 5 mm with a deduction of 15 each. Saved by pcbnew
+and probed in the tool sandbox, it scores 70 with only the two decoupling
+advisories, naming C1 and C2, and no hard failure. Moving C1 onto U1's
+courtyard is `hard_fail` whether the score is 70 or, under a lenient policy,
+100. A VBUS capacitor 2.25 mm from its connector is an `interface_filter` with
+no deduction although it also shares VBUS with U1. With a connector that
+carries VCC and GND, as the upstream fixture's does, placed far from both caps,
+the score is still 70 with both decoupling deductions; moved 3 mm from C2
+(within its 5 mm limit) it waives C2 only and the score is 85. The footprint
+geometry is written in the test; the 0402 pad offset and size are the generic
+values KiCad's stock 0402 footprint also uses. It is **not** the upstream Konnect fixture: that AGPL design
+file was not copied, so its exact numbers have not been reproduced.
 
 ## Placement check kind
 
@@ -93,12 +107,15 @@ the check criteria. The AGENTEE-75 profile has only a copper-to-edge key
 scope with every derived obligation covered. One `connector-edge/1` check
 covers the fixed-footprint obligation of an envelope with one fixed footprint
 ([baseline integration](board-envelope.md#baseline-integration)). `placement_predicates.connector_access` is the
-shared declared-edge predicate for AGENTEE-64. A declaration names reference,
+declared-edge predicate. A declaration names reference,
 side, edge segment and outward axis, anchor, tolerance, optional rotation,
 insertion (`through_edge`, `from_top`, `from_bottom`) and an optional
 footprint-local mating axis. That axis is mapped to board axes by mirroring y on
 the back and rotating by the saved orientation, qualified against pcbnew pad
-transforms. No nearest-edge heuristic replaces a declaration.
+transforms. No nearest-edge heuristic replaces a declaration. A connector with a
+declared insertion direction but no envelope edge is checked by the AGENTEE-64
+[`dfa_dft` connector-orientation/1](dfa-dft.md#connector-orientation), which uses
+the same axis mapping against the nearest saved outline edge.
 
 `ratsnest-mst/1` reports, per sorted net, every netted pad (duplicate pad
 numbers kept by pad UUID) and two minimum spanning trees over pad centres:
@@ -129,3 +146,41 @@ Native tests generate owned boards, save/reload them, exercise the real probe
 inside Bubblewrap, and compare native DRC courtyard overlap with the judge.
 These are software geometry qualifications, not fabrication approval. Copper,
 clearance, thermal, EMC and decoupling-loop physics remain separate checks.
+
+## Native qualification
+
+The following tests qualify the AGENTEE-92 predicates. The connector criterion
+has standalone native coverage; its normal coordinator path remains blocked by
+the envelope capture gate described below.
+
+| Criterion | Test and observation |
+| --- | --- |
+| Overlapping R/C courtyards cite native DRC | `test_placement_gates_native.NativePlacementGates.test_overlapping_rc_courtyards_defect_cites_the_native_item` checks a defect with C1/R1 UUIDs and the retained native report hash, then verifies the sealed witness |
+| Missing courtyard or unproved outline stays unknown | `test_placement_gates_native.NativePlacementGates.test_missing_courtyard_is_unknown_for_geometric_predicates` rejects a missing C1 courtyard as unknown; `test_placement_native.NativePlacementTest.test_saved_native_control_mutations_and_hash_binding` saves open, missing and curved outline variants and checks unknown results |
+| Moving the header names edge and distance | `test_placement_gates_native.NativePlacementGates.test_connector_edge_on_rc_header` saves a moved J1 and checks the declared `left` edge and 3 mm displacement |
+| Same saved board gives identical ratsnest totals | `test_placement_gates_native.NativePlacementGates.test_ratsnest_byte_identical_oracle_and_declared_maxima` compares complete `ratsnest.json` bytes across captures and checks an independent Manhattan MST oracle and exact maximum boundaries |
+
+Run these modules on the native host, with the test helper directory on the
+import path:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_placement_predicates tests.test_placement_gates_native \
+  tests.test_placement_native -v
+```
+
+The connector predicate qualification does not establish a complete envelope
+campaign. `test_board_envelope.EnvelopeNativeBaselineTests` exercises native
+connector checks and witness binding with test stand-ins for unrelated
+envelope obligations. Production envelope capture still refuses unresolved
+stackup manufacturing authority; that gate must remain closed. Likewise,
+`min_courtyard_edge_mm` is a captured scope declaration, not a fabricator-sourced
+courtyard limit. The optional routing test uses an owned result record to
+qualify parsing and advisory behavior, not to claim a routing attempt.
+
+An unpatched scope/3 declaration mapping outline, layer count and stackup to
+their `board_envelope` criteria, the fixed header to `connector-edge/1`, and the
+profile to `fab_profile` is refused before candidate creation:
+`R-envelope-rc-filter-stackup` lacks executable coverage because
+`copper_weight_oz` needs qualified captured manufacturing authority. A passing
+standalone connector judgment cannot close this coordinator-path acceptance gap.

@@ -91,15 +91,37 @@ class NativeExtraTests(unittest.TestCase):
                 if variant == 'passive-short':
                     self.assertEqual(violations[0]['pins'], ['1','2'])
                     self.assertEqual({t['net_name'] for t in violations[0]['terminals']}, {'/+3V3'})
+                if variant == 'switch-short':
+                    self.assertEqual(violations[0]['pins'], ['1','2'])
+                    self.assertEqual({t['net_name'] for t in violations[0]['terminals']}, {'/GND'})
                 if variant == 'rail-merge':
                     self.assertIn(['R1','1'], violations[0]['witness']['members'])
                     self.assertIn(['R2','2'], violations[0]['witness']['members'])
                 groups = {a['label']:a for a in result['details']['advisories']}
                 self.assertEqual({n['name'] for n in groups['SDA']['nets']}, {'/a/SDA','/b/SDA'})
                 self.assertEqual(groups['SDA']['status'], 'informational')
+                self.assertEqual(groups['SDA']['severity'], 'warning')
+                self.assertEqual(sum(a['label'] == 'SDA' for a in result['details']['advisories']), 1)
                 self.assertEqual(len({n['net_id'] for n in groups['SDA']['nets']}), 2)
                 freeze_evidence(run, checks)
                 verify_evidence(run, checks, required=True)
+
+    def test_shared_global_label_has_no_island_warning_or_defect_witness(self):
+        run, checks = self.run_variant('shared-sda')
+        result = checks[1]
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        connectivity = read_json(run/'work/netlist/connectivity.json')
+        sda_nets = [pins for name, pins in connectivity['nets'].items()
+                    if name.rsplit('/', 1)[-1] == 'SDA']
+        self.assertEqual(sda_nets, [['RA.1', 'RB.1']])
+        advisories = result['details']['advisories']
+        self.assertEqual([a['label'] for a in advisories], ['RETURN'])
+        self.assertEqual(advisories[0]['severity'], 'warning')
+        self.assertEqual(len(advisories[0]['nets']), 2)
+        freeze_evidence(run, checks)
+        with self.assertRaisesRegex(ValueError, 'freshly failed'):
+            validate_witnesses(run, [{'requirement_id':'topology','check_id':'extra'}],
+                               [{'path':'checks/extra.json','locator':'RETURN island warning'}])
 
     def test_unknown_class_and_incomplete_coverage_never_inherit_pass_or_defect(self):
         _, checks = self.run_variant('unknown')

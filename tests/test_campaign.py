@@ -433,6 +433,24 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertTrue(any('runtime_drift' in record.get('error', '') for record in result['review_executions']))
 
     @toolchain_test
+    def test_capture_refusal_surfaces_the_run_error_not_a_missing_candidate(self):
+        # An undeclared envelope obligation is refused inside capture, before any candidate exists.
+        self.scope["baseline"]["requirements"][0]["id"] = "R-envelope-undeclared"
+        write_json(self.root / "scope.json", self.scope)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 1)
+        root = self.root / "campaign"
+        state, result = read_json(root / "state.json"), read_json(root / "runs/1/result.json")
+        self.assertFalse((root / "runs/1/candidate.json").exists())
+        self.assertEqual(result["outcome"], "incomplete")
+        self.assertIn("without a scope envelope declaration: R-envelope-undeclared", result["error"])
+        self.assertEqual((state["state"], state["error"]),
+                         ("incomplete", f"ValueError: run 1 captured no candidate: {result['error']}"))
+        self.assertNotIn("candidate.json", state["error"])
+        self.assertEqual((state["history"], self.calls), ([], []))
+        self.assertEqual(verify_campaign(root)["state"], "incomplete")
+
+    @toolchain_test
     def test_campaign_verification_requires_separate_implementation_receipt(self):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / 'campaign.json', self.root / 'campaign'), 0)

@@ -61,7 +61,9 @@ its native observation and, for schematics, the raw XML netlist. Public verifica
 requires successful probe execution and checks these observations against the
 captured inventory. It counts top-level placed symbols or footprints by explicit Reference property,
 or saved straight/arc segments. Nested library definitions are not instances. Symbols explicitly excluded from
-both BOM and board (`in_bom no`, `on_board no`) are outside component presence;
+both BOM and board (`in_bom no`, `on_board no`) are outside component presence,
+and so are symbols whose Reference starts with `#` (power symbols and `PWR_FLAG`,
+which KiCad's netlist export omits whatever their `in_bom`/`on_board` flags);
 the resulting inventory must still agree with native export.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
@@ -137,6 +139,19 @@ board geometry checks and the existing campaign with a synthetic measurement
 producer and scripted independent reviewer/adjudicator responses. Scripted ERC
 in the transition test is explicitly not native ERC evidence. Existing unstaged
 convergence tests remain unchanged.
+
+Run the stage and unchanged convergence tests from the repository root with:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest discover -s tests -p test_stages.py -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_convergence -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_rung1_campaign -v
+```
+
+The scaffold test runs a checks-only native review: `erc`, `netlist`, `drc`
+and `geometry` report `stage_not_reached`, and `rc-step` reports `stage_blocked`.
+No check passes on that empty candidate. The checks-only result does not supply
+reviewer or adjudicator acceptance.
 
 A complete native RC ladder is unmet: these snapshots do not supply ERC-clean
 connectivity, native footprint closure, schematic/PCB parity, placement acceptance,

@@ -45,11 +45,17 @@ def _parse(path):
     return root
 
 
-def _parts(root):
+def _parts(root, pinless=False):
     parts = {}
     for part in root.findall('./libparts/libpart'):
         symbol = (text(part.get('lib')), text(part.get('part')))
         pins = {}
+        # KiCad 10.0.7 omits <pins> for a pinless libpart; an empty <pins/> is unqualified.
+        if pinless and not part.findall('pins'):
+            if symbol in parts:
+                raise ValueError('duplicate native library part')
+            parts[symbol] = pins
+            continue
         for pin in _one(part, 'pins').findall('pin'):
             number = text(pin.get('num'))
             if number in pins:
@@ -61,33 +67,40 @@ def _parts(root):
     return parts
 
 
-def _components(root, parts, sheets):
-    components, identities = {}, set()
+def _instances(root, sheets):
+    references, identities = set(), set()
     for comp in root.findall('./components/comp'):
         ref = text(comp.get('ref'))
-        lib = _one(comp, 'libsource')
-        symbol = text(lib.get('lib')), text(lib.get('part'))
         sheet = text(_one(comp, 'sheetpath').get('tstamps'))
         uuid = text(_one(comp, 'tstamps').text)
         instance_uuids = uuid.split()
-        if (ref in components or sheet not in sheets or len(instance_uuids) != len(set(instance_uuids))
+        if (ref in references or sheet not in sheets or len(instance_uuids) != len(set(instance_uuids))
                 or any((sheet, uid) in identities for uid in instance_uuids)):
             raise ValueError('duplicate or undeclared native component identity')
+        references.add(ref)
+        identities.update((sheet, uid) for uid in instance_uuids)
+        yield ref, comp, sheet, uuid
+
+
+def _components(root, parts, sheets, pinless=False):
+    components = {}
+    for ref, comp, sheet, uuid in _instances(root, sheets):
+        lib = _one(comp, 'libsource')
+        symbol = text(lib.get('lib')), text(lib.get('part'))
         if symbol not in parts:
             raise ValueError('missing native library inventory')
-        identities.update((sheet, uid) for uid in instance_uuids)
         units, selected = [], []
         for unit in _one(comp, 'units').findall('unit'):
             name = text(unit.get('name'))
             pins = [text(p.get('num')) for p in _one(unit, 'pins').findall('pin')]
-            if name in units or not pins or len(pins) != len(set(pins)):
+            if name in units or (not pins and parts[symbol]) or len(pins) != len(set(pins)):
                 raise ValueError('ambiguous native selected unit inventory')
             units.append(name)
             selected.extend(pins)
         # Common physical pins can occur in more than one graphical unit; only
         # libpart supplies their unique metadata, never a last-writer override.
         selected = sorted(set(selected))
-        if not selected or not set(selected) <= parts[symbol].keys():
+        if not (selected or (pinless and units and not parts[symbol])) or not set(selected) <= parts[symbol].keys():
             raise ValueError('missing native selected physical pin inventory')
         properties = {}
         for prop in comp.findall('property'):
@@ -148,15 +161,43 @@ def _footprint(comp):
     return value
 
 
-def read_native_inventory(path):
-    """Read bounded captured bytes; reject ambiguous identities and memberships."""
+def read_components(path):
+    """Component identities and properties only, without the parity graph bounds."""
     root = _parse(path)
+    sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
+    return _components(root, _parts(root), sheets)
+
+
+def _sheets(root):
     sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
     if ('/' not in sheets or len(sheets) != len(set(sheets)) or
             any(not s.startswith('/') or not s.endswith('/') for s in sheets)):
         raise ValueError('missing or ambiguous native hierarchy inventory')
-    parts = _parts(root)
-    components = _components(root, parts, sheets)
+    return sheets
+
+
+def read_native_instances(path):
+    """Identity projection of the shared XML reader, without pin/topology policy.
+
+    The netlist producer must also cover pinless symbols and large designs;
+    consumers separately qualify the full electrical inventory they require.
+    """
+    root = _parse(path)
+    sheets = _sheets(root)
+    return {'sheets': sheets, 'components': {
+        ref: {'sheet': sheet, 'uuid': uuid} for ref, _, sheet, uuid in _instances(root, sheets)}}
+
+
+def read_native_inventory(path, pinless=False):
+    """Read bounded captured bytes; reject ambiguous identities and memberships.
+
+    ``pinless`` admits library parts with no pins and their empty units, as
+    KiCad 10.0.7 exports them; callers that opt in must qualify such parts.
+    """
+    root = _parse(path)
+    sheets = _sheets(root)
+    parts = _parts(root, pinless)
+    components = _components(root, parts, sheets, pinless)
     nets, names = {}, set()
     for net in root.findall('./nets/net'):
         nid, name = text(net.get('code')), text(net.get('name'))
@@ -176,3 +217,16 @@ def read_native_inventory(path):
     graph['library_parts'] = {':'.join(symbol): pins for symbol, pins in parts.items()}
     graph['exporter'] = root.findtext('./design/tool') or ''
     return graph
+
+
+def hierarchy_gaps(schematics, root, inventory):
+    """Unmatched or ambiguous occurrences, using the shared exporter-omission audit.
+
+    Identity is (sheet occurrence UUID path, placed symbol UUID), including each
+    UUID of a multi-unit native component. Only omitted #-referenced embedded
+    power symbols are qualified virtual occurrences.
+    """
+    from .native_binding import virtual_symbols
+    records = virtual_symbols(schematics, root, inventory)
+    return [record if 'problem' in record else dict(record, problem='virtual_nonpower_symbol')
+            for record in records if 'problem' in record or not record['embedded_power']]

@@ -151,7 +151,10 @@ staged project hashes, native JSON, the fabrication inventory in
 the check's workspace.
 
 A missing, unreadable or invalid profile is unsupported and never selects
-defaults. A limit missing a valid source fact stays `execution=unsupported`, and
+defaults. Numeric bounds outside the native finite numeric range are invalid,
+including JSON integers too large to convert to a native number; descriptor
+generation and check execution both report unsupported coverage.
+A limit missing a valid source fact stays `execution=unsupported`, and
 the aggregate outcome is unknown. Other established violations remain visible in
 the per-limit records, but partial coverage cannot witness a defect. A changed
 profile or source capture cannot reuse the captured candidate's acceptance.
@@ -180,6 +183,14 @@ public review/verify pipeline covers pass, extra-charge, defect and no-outline
 cases with scripted reviewer transport.
 
 No real fabricator's capability document has been captured, so no real preset is
-qualified. Arbitrary-angle minimum bounding dimensions, curved outlines and
+qualified. The ticket's standard-preset surcharge criterion remains unmet for a
+real fabricator: the synthetic 0.25 mm example proves classification only.
+An applicable captured source and its permitted retention are still required.
+The [current JLCPCB capability table](https://jlcpcb.com/capabilities/pcb-capabilities/)
+(consulted 2026-10-17, not captured as a profile input) makes its small-via
+surcharge depend on both drill and via diameter. The scalar preferred-drill
+example does not encode that applicability and must not be labelled a qualified
+JLCPCB preset.
+Arbitrary-angle minimum bounding dimensions, curved outlines and
 cutouts remain unsupported. Owner review and peer review remain separate from
 these checks.

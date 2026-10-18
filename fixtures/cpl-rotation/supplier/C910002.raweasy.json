@@ -1,0 +1,45 @@
+{
+ "dataStr": {
+  "head": {
+   "c_para": {
+    "Manufacturer Part": "OWNED",
+    "Supplier Part": "C910002",
+    "package": "OWNED-HDR-2P-P2.54-V"
+   },
+   "docType": "2",
+   "puuid": "c1d7993f14dc5fed82a48a80eece7e94",
+   "uuid": "8e2c33a655105fc0be19f8652538b27a",
+   "x": 0,
+   "y": 0
+  },
+  "shape": []
+ },
+ "docType": 2,
+ "lcsc": {
+  "id": 1,
+  "number": "C910002"
+ },
+ "packageDetail": {
+  "dataStr": {
+   "head": {
+    "docType": "4",
+    "uuid": "c1d7993f14dc5fed82a48a80eece7e94",
+    "x": 4000,
+    "y": 3000
+   },
+   "shape": [
+    "PAD~RECT~4000~3000~6.6~6.6~11~~1~1.9685~3996.7 2996.7 4003.3 2996.7 4003.3 3003.3 3996.7 3003.3~0~h1~0~~Y~0~0~0.2~4000,3000",
+    "PAD~ELLIPSE~4000~3010~6.6~6.6~11~~2~1.9685~~0~h2~0~~Y~0~0~0.2~4000,3010"
+   ]
+  },
+  "docType": 4,
+  "title": "OWNED-HDR-2P-P2.54-V",
+  "uuid": "c1d7993f14dc5fed82a48a80eece7e94"
+ },
+ "szlcsc": {
+  "id": 1,
+  "number": "C910002"
+ },
+ "title": "OWNED C910002",
+ "uuid": "db829d5c83dd5a67b1189b5143b2484b"
+}

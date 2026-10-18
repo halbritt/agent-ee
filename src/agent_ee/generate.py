@@ -607,6 +607,23 @@ def stage_parts(stage, state, options):
     write_json(path, manifest)
     stage.output(stage.dir / 'catalog', 'catalog copy')
     stage.output(path, 'parts manifest')
+    # Capture phase (AGENTEE-33): each unique Datasheet URL is fetched once here; checks never fetch.
+    from .datasheet_capture import capture_datasheets
+    datasheets = stage.dir / 'datasheets'
+    capture = capture_datasheets([{'id': ref, 'datasheet_url': fields['Datasheet']} for ref, fields in parts.items()],
+                                 datasheets)
+    stage.output(datasheets, 'datasheet acquisition (captured PDFs and manifest)')
+    missing = [p['id'] for p in capture['parts'] if p['missing']]
+    stage.receipt['details']['datasheets'] = {
+        'manifest': stage.rel(datasheets / 'manifest.json'), 'outcome': capture['outcome'],
+        'captured': {p['id']: {'url': p['url'], 'sha256': p['sha256'], 'fetched_at': p['fetched_at']}
+                     for p in capture['parts'] if not p['missing']},
+        'missing': {p['id']: p['reason'] for p in capture['parts'] if p['missing']}}
+    if missing:
+        stage.receipt['limitations'].append(
+            'No datasheet PDF for ' + ', '.join(missing) + '; datasheet_facts and pin_map coverage for these '
+            'parts is unknown (missing), never assumed.')
+    state['datasheets'] = datasheets
     stage.receipt['details']['parts'] = {ref: {k: v for k, v in fields.items() if v} for ref, fields in parts.items()}
     stage.receipt['limitations'].append('The catalog is a design BOM without stock, price or tolerance data; '
                                         'qualified selection is AGENTEE-28 on a supplier snapshot (AGENTEE-27).')

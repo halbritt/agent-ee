@@ -43,6 +43,26 @@ def emit(intent_name='regulator', intent=None, layout=None, **kwargs):
     return emit_schematic(intent, captures(intent), layout, **kwargs)
 
 
+def stacked(edit=None):
+    """Regulator whose REG3 pin 4 sits on GND pin 2's connection point, as
+    stock MCU symbols stack their VSS pins; ``edit`` adjusts the intent."""
+    intent = load('regulator.intent.json')
+    files = captures(intent)
+    nc = '(pin no_connect line\n\t\t\t\t(at 0 7.62 270)'
+    data = files['lib/Owned_Gen.kicad_sym'].decode()
+    assert nc in data
+    files['lib/Owned_Gen.kicad_sym'] = data.replace(nc, '(pin power_in line\n\t\t\t\t(at 0 -7.62 90)', 1).encode()
+    intent['libraries'][0]['sha256'] = hashlib.sha256(files['lib/Owned_Gen.kicad_sym']).hexdigest()
+    if edit:
+        edit(intent)
+    return intent, files
+
+
+def on_ground(intent):
+    intent['no_connects'] = []
+    next(n for n in intent['nets'] if n['id'] == 'gnd')['terminals'].append(dict(component='reg', pin=dict(number='4')))
+
+
 # ASYM library pins: (number, x, y, orientation), millimetres, library y up.
 ASYM = [('1', -7.62, 2.54, 0), ('2', -7.62, -2.54, 0), ('3', 5.08, 7.62, 270), ('4', 10.16, -2.54, 180)]
 # Hand-derived sheet offsets and outward label angles for each transform.
@@ -232,6 +252,36 @@ class RefusalTests(unittest.TestCase):
         variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 6)\n'
                 '\t\t\t\t(end 5.08 5.08)\n\t\t\t)\n', 'unsupported_graphic')
 
+    def test_stacked_pins_share_one_label_only_on_one_net(self):
+        layout = load('regulator.layout.json')
+        result, files = emit_schematic(*stacked(on_ground), layout)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        root = parse_sexpr(files['regulator.kicad_sch'])
+        reg = next(n for n in children(root, 'symbol')
+                   if any(p[1] == 'Reference' and p[2] == 'U1' for p in children(n, 'property')))
+        self.assertEqual([p[1] for p in children(reg, 'pin')], ['1', '2', '3', '4'])
+        x, y = (float(v) for v in children(reg, 'at')[0][1:3])
+        stack = (x, round(y + 7.62, 4))  # Sheet y runs down from the library's (0, -7.62).
+        at = [(n[1], float(children(n, 'at')[0][1]), float(children(n, 'at')[0][2]))
+              for n in children(root, 'global_label')]
+        self.assertEqual([a for a in at if a[1:] == stack], [('GND', *stack)])
+        self.assertEqual(len(set(at)), len(at))
+        self.assertEqual(children(root, 'no_connect'), [])
+        # A stack on two nets, or a no-connect at a stack, would change connectivity.
+        refusals = (
+            lambda i: None,
+            lambda i: (on_ground(i), i['nets'][1]['terminals'].pop(), i['nets'][2]['terminals'].append(
+                dict(component='reg', pin=dict(number='4')))),
+            lambda i: (i['nets'][1]['terminals'].pop(1), i['no_connects'].append(
+                dict(component='reg', pin=dict(name='GND')))),
+        )
+        for edit in refusals:
+            result, out = emit_schematic(*stacked(edit), layout)
+            self.assertIsNone(out and sorted(out))
+            self.assertEqual(result['execution'], 'failed')
+            self.assertEqual([(f['code'], f['location']) for f in result['findings']],
+                             [('impossible_pin_endpoint', '/components/reg/pins/4')])
+
     def test_malformed_names_and_escaping(self):
         cases = [
             ('malformed_net_name', lambda i: i['nets'][2].update(name='VOUT[0..3]')),
@@ -412,6 +462,18 @@ class NativeEmissionTests(unittest.TestCase):
         self.assertEqual(len(components['U1']['uuid'].split()), 2)
         errors = [v for s in erc['sheets'] for v in s['violations'] if v['severity'] == 'error']
         self.assertEqual(errors, [])
+
+    def test_stacked_same_net_pins_connect_natively(self):
+        intent, captured = stacked(on_ground)
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'), **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        # The project library is the stacked capture, so ERC also compares the embedded copy with it.
+        _, _, erc, (_, nets, singles) = self.native_run('regulator', {**files, **captured}, 'stacked')
+        self.assertEqual([v for sheet in erc['sheets'] for v in sheet['violations']], [])
+        expected = load('regulator.expected.json')['nets']
+        expected['GND'] = sorted(expected['GND'] + [['U1', '4']])
+        self.assertEqual(nets, expected)
+        self.assertEqual(singles, {})
 
     def test_native_oracle_detects_swapped_and_shorted_terminals(self):
         intent = load('regulator.intent.json')

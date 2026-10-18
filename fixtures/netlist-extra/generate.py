@@ -43,7 +43,9 @@ def schematic(project='topology', variant='control', child=None):
             + prop('Reference',ref) + prop('Value','10k' if symbol.endswith(':R') else 'switch') + pins
             + f'(instances (project "{project}" (path "{path}" (reference "{ref}") (unit 1)))))')
         for i, label in enumerate(labels):
-            placed.append(f'(label "{label}" (at {x} {y+2.54*i} 0) '
+            kind = 'global_label' if variant == 'shared-sda' and label == 'SDA' else 'label'
+            shape = '(shape passive)' if kind == 'global_label' else ''
+            placed.append(f'({kind} "{label}" {shape} (at {x} {y+2.54*i} 0) '
                 f'(effects (font (size 1 1)) (justify left bottom)) (uuid "{uid(ref+label+str(i))}"))')
     if child is None:
         for i, name in enumerate(('a','b')):

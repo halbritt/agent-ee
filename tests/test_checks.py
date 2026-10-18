@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from agent_ee import candidate, checks  # noqa: E402
 
-from toolchain import require_toolchain
+from tests.toolchain import require_toolchain
 
 FIXTURES = REPO / "fixtures" / "rc"
 

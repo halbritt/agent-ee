@@ -170,11 +170,13 @@ def _library_differences(lib_id, libraries, captured_files, native_pins):
     return differences
 
 
-def bind_native_assignments(manifest, captured_files, declaration, graph, virtual, native_xml_sha256=None):
+def bind_native_assignments(manifest, captured_files, declaration, graph, virtual, native_xml_sha256=None,
+                            declarations=None):
     """Bind every native board component to an exact declaration and captured library.
 
     ``graph`` is a strict native inventory; ``virtual`` comes from
     ``virtual_symbols`` over the same candidate's captured sheets and graph.
+    Optional captured ``declarations`` pass through to the shared parity pass.
     """
     result = dict(schema=SCHEMA, predicate=PREDICATE, execution='ok', outcome='unknown',
                   coverage='complete', native_xml_sha256=native_xml_sha256, declaration_sha256=None,
@@ -253,7 +255,7 @@ def bind_native_assignments(manifest, captured_files, declaration, graph, virtua
     base, parity = None, {}
     if effective:
         base = check_assignments(manifest, captured_files, dict(declaration, components=effective),
-                                 native_membership=True)
+                                 native_membership=True, declarations=declarations)
         result['assignments'] = base
         parity = {a['reference']: a for a in base['assignments']}
         for binding in extra:
@@ -300,6 +302,7 @@ def main(argv=None):
     parser.add_argument('manifest')
     parser.add_argument('--captures', required=True)
     parser.add_argument('--assignments', required=True)
+    parser.add_argument('--declarations', help='captured agent-ee.footprint-declarations/1 file')
     parser.add_argument('--native-xml', required=True, help='retained native netlist producer XML')
     parser.add_argument('--schematic', required=True, nargs='+', help='every captured sheet path, root first')
     parser.add_argument('--out', required=True, help='new output JSON file')
@@ -309,7 +312,8 @@ def main(argv=None):
     except OSError as exc:
         parser.exit(2, str(exc) + '\n')
     try:
-        graph = read_native_inventory(args.native_xml)
+        # Pinless parts pass the reader; parity requires an owner pinless declaration.
+        graph = read_native_inventory(args.native_xml, pinless=True)
     except Unsupported as exc:
         result = _failure('unsupported', 'native_inventory', str(exc), sha)
     except (ValueError, KeyError, TypeError, ParseError, UnicodeError) as exc:
@@ -318,12 +322,14 @@ def main(argv=None):
         try:
             manifest = load_document(args.manifest)
             declaration = load_document(args.assignments)
+            declarations = load_document(args.declarations) if args.declarations else None
             paths = [m['path'] for _, m in _members(manifest)]
             paths += [lib['path'] for lib in declaration['libraries']]
             captures = read_captures(args.captures, paths)
             sheets = read_captures(args.captures, args.schematic)
             virtual = virtual_symbols(sheets, args.schematic[0], graph)
-            result = bind_native_assignments(manifest, captures, declaration, graph, virtual, sha)
+            result = bind_native_assignments(manifest, captures, declaration, graph, virtual, sha,
+                                             declarations)
         except OSError as exc:
             result = _failure('failed', 'captured_input', str(exc), sha)
         except FootprintError as exc:

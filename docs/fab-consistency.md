@@ -32,8 +32,22 @@ The manifest is a claim to verify, never an authority:
   netlist, and every netlist component must be on the board unless the netlist
   excludes it from the board. `designators.board_non_dnp` must equal the
   geometry's non-DNP references. Schematic DNP flags do not change this
-  board-derived manifest field; a disagreement with the assembled board is
-  reported separately as an assembly/parity defect.
+  board-derived manifest field. The producer takes DNP from the board alone
+  (see [DNP authority](fab-export.md#dnp-authority)). This gate compares the
+  sealed netlist `dnp` property with the geometry `dnp` attribute for every
+  designator in both. Each disagreement, in either direction, is a
+  `designator_parity` defect, listed in `details.designators.dnp_disagreements`
+  as `{"designator", "schematic_dnp", "board_dnp"}`. The producer's own
+  `details.dnp_disagreements` is not trusted for this.
+- Assembly exclusions. `designators.exclusion_rule` must equal the
+  `assembly_exclusion` parameter of the captured export check (or `null`).
+  The gate re-derives the excluded set with the producer's rule function from
+  the sealed netlist fields and the captured board footprint properties (see
+  [assembly exclusions](fab-export.md#assembly-exclusions)), and
+  `designators.excluded` must equal it exactly. Excluded designators are not
+  assembled for parity: one that appears in the BOM or CPL is a
+  `designator_parity` defect. `details.designators` records `excluded` and
+  `exclusion_rule`.
 
 Scope/3 requires the parameters to be exactly `{export_check}`. The export,
 its netlist and a geometry check must all come earlier in scope order. The check declares
@@ -53,7 +67,7 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | Board parse differs from the sealed geometry; geometry checks disagree; a non-board-only footprint is not in the netlist; a netlist component has no footprint and is not excluded from the board; duplicate netlist references; netlist XML and its connectivity record disagree | `malformed`, `unknown` |
 | A board-only footprint that would be assembled (no DNP or BOM/position exclusion) | `unsupported`, `unknown` (a gap) |
 | Staging directory absent or empty although the export reported ok | `malformed`, `unknown` |
-| Manifest fields not exactly the fab-manifest/1 set; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry | `malformed`, `unknown` |
+| Manifest fields not exactly the fab-manifest/1 set; candidate, board path or board digest differs from the capture; `board_non_dnp` differs from the sealed geometry; `exclusion_rule` is unknown or not the captured export rule; `excluded` is not the set re-derived from the sealed netlist and board, or the sources do not support it | `malformed`, `unknown` |
 | A staged file not in the manifest, a manifest file not staged, a hash mismatch, an empty file, a symlink or other non-regular file; `bom.csv`, `cpl.csv`, `gerbers.zip` or `pcb_summary.json` absent | `malformed`, `unknown` |
 | Manifest copper count or enabled layers differ from the board. The enabled layers must be every board copper layer, `F.Mask`, `B.Mask` and `Edge.Cuts`, plus optional paste and silkscreen layers. | `malformed`, `unknown` |
 | Fewer Gerber plots than enabled fab layers; an enabled layer with no plot whose `FileFunction` names it; two plots for one layer | `malformed`, `unknown` |
@@ -64,6 +78,7 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | CSV not UTF-8, wrong header, wrong cell count, no rows, broken quoting, or a non-finite CPL number | `malformed`, `unknown` |
 | Compressed range (`R1-R4`), duplicate, empty or invalid designator; BOM quantity differs from its designator count; empty or invalid LCSC number; non-ASCII BOM cell | `ok`, `defect` |
 | A designator missing from the BOM, the CPL or the assembled board set. The defect names the designator and each missing side. | `ok`, `defect` |
+| A designator whose sealed netlist DNP state differs from its board footprint DNP state, in either direction (`designator_parity`) | `ok`, `defect` |
 | One LCSC number maps to more than one BOM footprint or board footprint library ID | `ok`, `defect` |
 | CPL `Layer` differs from the board footprint side, or is not Top/Bottom | `ok`, `defect` |
 | CPL X or Y differs from the native footprint anchor by more than 0.01 mm in the `fab_export/1` coordinate frame | `ok`, `defect` |
@@ -128,6 +143,8 @@ so the evidence seal accepts the result.
 - CPL rotation and assembly centroid/offset corrections belong to the rotation
   lane. This check verifies native footprint anchors only.
 - The gate does not parse Gerber geometry or run DFM checks.
+  Use the separate [fab round-trip check](fab-roundtrip.md) for drill/flash
+  conservation and outline bounds.
   Plot identity comes only from `FileFunction` attributes.
 - Model resolution proves that a captured file, or a decodable embedded
   payload with a matching checksum, exists. It does not check the model
@@ -165,8 +182,14 @@ compressed/duplicate/empty references, LCSC binding and footprint conflicts, CPL
 side and coordinate violations, missing models and synthetic log diagnostics.
 A native source-mutation case also makes the schematic and board disagree on
 J1 DNP state in both directions. The producer succeeds with its board-derived
-manifest; the gate reports named assembly/parity defects rather than treating
-that valid manifest as stale.
+package, so BOM, CPL and board agree. The gate reports the disagreement as a
+named `designator_parity` defect. When the schematic marks a populated
+footprint DNP, it also reports `netlist_exclusion_assembled`. It does not treat
+the valid manifest as stale.
+A rule-exclusion case marks J1 `JLCPCB_Assembly=not_assembled` in the
+schematic and on the board, declares the rule on the export and passes with J1
+re-derived as excluded. Putting J1 back into the CPL is a `designator_parity`
+defect, and a manifest whose `excluded` list was emptied is `malformed`.
 Each is sealed and accepted through the existing requirement/check witness and
 central adjudication helpers. Controls, malformed packages, stale producer
 outputs and missing native evidence cannot qualify a defect witness. No witness

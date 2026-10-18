@@ -1,0 +1,1 @@
+R-cpl: The JLCPCB CPL uses pad-box midpoints and the captured versioned rotation policy, and every rotation agrees with the captured supplier footprint's pin-1 frame (status PREVIEW_REQUIRED; nothing is ordered). Owned synthetic fixture: the LCSC-style numbers, supplier records and manufacturer strings are placeholders that make no sourcing claim.

@@ -46,11 +46,14 @@ known violation. Missing, failed, malformed or mismatched native prerequisites
 produce `execution=failed`, `outcome=unknown`. Native resource bounds remain
 unsupported. Native duplicate/contradictory identities cannot establish defects.
 
-One informational advisory is emitted for each basename on distinct native net
-IDs, retaining full names, sheet identities and codes. `/a/SDA` and `/b/SDA`
-can be intentionally separate. These advisories never fail a requirement or
-supply a defect witness. Use an explicit endpoint relation check when a named
-connection is required. Single-node nets alone are not defects.
+One advisory with `severity=warning` is emitted for each basename on distinct
+native net IDs, retaining full names, sheet identities and codes. `/a/SDA` and
+`/b/SDA` produce one SDA warning. A global SDA label connecting both sheets is
+one native net and produces no SDA warning. The advisory's
+`status=informational` means it never fails a requirement or supplies a defect
+witness: separate local labels can be intentional. Use an explicit endpoint
+relation check when a named connection is required. Single-node nets alone are
+not defects.
 
 Policy bytes are immutable baseline dependencies in scope/2 and scope/3;
 schematic inputs remain mutable candidate bytes. Scope/3 exposes only declared

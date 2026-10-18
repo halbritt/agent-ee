@@ -40,7 +40,7 @@ class RoutingCompilerTest(unittest.TestCase):
         self.assertNotIn('rules', compiled['constraints'][0])
 
     def test_rejects_rule_injection_nan_and_fractional_via_limit(self):
-        for bad in (float('nan'), float('inf'), True, -1):
+        for bad in (float('nan'), float('inf'), True, -1, 10**400):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 compile_routing(contract(max_mm=bad))
         doc = contract(max_mm=0.15)
@@ -60,7 +60,7 @@ class RoutingCompilerTest(unittest.TestCase):
 class NativeRoutingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
 
     def run_rules(self, document, *, custom_rules=None, project=None, **board_options):
@@ -68,7 +68,7 @@ class NativeRoutingTest(unittest.TestCase):
         import tempfile
         import time
         from pathlib import Path
-        from routing_fixture import make_board, manifest_for_rules, assert_sealed_native
+        from tests.routing_fixture import make_board, manifest_for_rules, assert_sealed_native
         from agent_ee.checks import Ctx
         from agent_ee.routing_rules import check_routing_rules
         from agent_ee.storage import digest
@@ -100,7 +100,7 @@ class NativeRoutingTest(unittest.TestCase):
         import pcbnew as k
         import tempfile
         from pathlib import Path
-        from routing_fixture import make_board
+        from tests.routing_fixture import make_board
         from agent_ee.routing_native import route_coverage
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'board.kicad_pcb'
@@ -183,8 +183,7 @@ class NativeRoutingTest(unittest.TestCase):
                          {'usb': 'violation', 'permissive': 'satisfied'})
 
     def test_native_disabled_via_check_is_enabled_in_staging(self):
-        import json
-        project = json.dumps({'board': {'design_settings': {'rule_severities': {'too_many_vias': 'ignore'}}}})
+        project = {'board': {'design_settings': {'rule_severities': {'too_many_vias': 'ignore'}}}}
         result = self.run_rules(contract('via_count', max_count=2), vias=3, project=project)
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
 
@@ -197,7 +196,7 @@ class NativeRoutingTest(unittest.TestCase):
     def test_native_bad_custom_rules_are_missing_coverage(self):
         from agent_ee.checks import CheckError
         try:
-            result = self.run_rules(contract(max_mm=0.15), custom='(version 1) (rule "broken" (constraint nonsense))')
+            result = self.run_rules(contract(max_mm=0.15), custom_rules='(version 1) (rule "broken" (constraint nonsense))')
         except CheckError as failed:
             self.assertIn(failed.execution, ('failed', 'malformed'))
         else:
@@ -267,14 +266,14 @@ class NativeRoutingPipelineTest(unittest.TestCase):
     def setUp(self):
         import tempfile
         from pathlib import Path
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-routing-pipeline-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
     def prepare(self, name, document=None, **options):
-        from routing_fixture import make_scope
+        from tests.routing_fixture import make_scope
         root = self.root / name
         root.mkdir()
         make_scope(root, document or contract(max_mm=0.15), **options)
@@ -287,7 +286,7 @@ class NativeRoutingPipelineTest(unittest.TestCase):
         from agent_ee.cli import run_review, verify, runtime_files
         from agent_ee.baseline import load_baseline, validate_witnesses
         from agent_ee.storage import digest, read_json, write_json
-        from test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
+        from tests.test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
         runtime = runtime_files()
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
@@ -492,14 +491,14 @@ class RoutingContractIntegrationTest(unittest.TestCase):
 class NativePhysicalRouteTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
 
     def test_physical_contacts_and_simple_bends(self):
         import pcbnew as k
         import tempfile
         from pathlib import Path
-        from routing_fixture import make_board
+        from tests.routing_fixture import make_board
         from agent_ee.routing_native import route_coverage
         paths = {
             'simple-bend': [(0, 2), (5, 3), (10, 2)],
