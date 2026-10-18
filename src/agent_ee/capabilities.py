@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from .storage import identity
 
 
-KINDS = frozenset(('parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'active_spice',
                    'kicad_happy', 'hardware_interface', 'passive_corners', 'dc_path',
                    'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft'))
@@ -383,6 +383,9 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             if project in files:
                 captured(project, immutable=True)
             result['predicates'] = descriptor['predicates']
+        elif kind == 'fab_roundtrip':
+            from .fab_roundtrip import capability
+            result['predicates'] = capability(params, scope, prerequisite, captured)
         elif kind == 'fab_consistency':
             from .fab_consistency import capability
             result['predicates'] = capability(params, scope, prerequisite, captured)

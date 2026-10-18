@@ -34,6 +34,7 @@ product's hardware qualification.
 | Check part-binding properties in symbols and footprints | [Part binding](part-binding.md) |
 | Export a captured board into a JLCPCB fab package | [Fab export](fab-export.md) |
 | Verify sealed fabrication outputs against captured design evidence | [Fab-package consistency](fab-consistency.md) |
+| Compare Gerber/Excellon counts and outline with native geometry | [Fab round-trip conservation](fab-roundtrip.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |

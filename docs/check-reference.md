@@ -48,6 +48,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
 | `fab_profile` | Same runner; staged KiCad DRC per sourced limit plus a saved-board pcbnew inventory | 900 s outer call |
+| `fab_roundtrip` | Coordinator re-parses the sealed export’s Gerber/Excellon bytes against earlier sealed geometry; no tool launched ([details](fab-roundtrip.md)) | Enclosing run deadline |
 | `fab_consistency` | Coordinator reads the earlier export's sealed staging tree and version run, the captured board, the sealed netlist and earlier sealed geometry; no tool launched, no export regenerated ([details](fab-consistency.md)) | Enclosing run deadline |
 | `package_consistency` | `/usr/bin/python3 -B -m agent_ee.package_consistency /candidate/CATALOG MANIFEST_SHA256 /work/request.json /work/catalog-rows.json`; coordinator then compares preceding native XML names through the captured table ([details](package-consistency.md)) | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
@@ -285,6 +286,8 @@ available. Coordinates and `width_mm` dimensions are millimetres, rounded to
 four decimal places. Track items also retain `native_class` and exact `width_nm`. The `nets` counts describe pads; track/zone-only nets can have zero pad
 counts. A failed unconnected-count query is recorded as unavailable information,
 not silently replaced with zero. Other extraction failures fail the probe.
+Fabrication facts also retain copper stack order, a proven straight outline,
+exact pad/via `drill_nm` and native `flash_layers`; see [fab round-trip](fab-roundtrip.md).
 
 With `criterion: "copper-width/1"`, declared tracks and native arcs are checked
 using integer-nanometre widths without the legacy tolerance/rounding. Empty or
@@ -605,3 +608,10 @@ explicit planning scope's checks and baseline. Native ERC/DRC run through the
 ordinary `review` command. Staged absence is a coordinator defect only after a
 successful native presence observation; hierarchical presence and uncovered
 production envelope obligations continue to fail closed.
+
+[`fab_roundtrip`](fab-roundtrip.md), with exactly `{export_check}`, separately
+compares every enabled layer, round PTH/NPTH drill histograms, copper pad/via
+flash counts and outline bounds within 1 µm. It consumes earlier sealed export
+and geometry evidence. Missing layers/files and count/bound mismatches are named
+defects. Inch units and unknown Gerber commands are malformed; unsupported
+constructs are unknown with a 1-based source line. Artwork is outside coverage.

@@ -134,6 +134,8 @@ so the evidence seal accepts the result.
 - CPL rotation and assembly centroid/offset corrections belong to the rotation
   lane. This check verifies native footprint anchors only.
 - The gate does not parse Gerber geometry or run DFM checks.
+  Use the separate [fab round-trip check](fab-roundtrip.md) for drill/flash
+  conservation and outline bounds.
   Plot identity comes only from `FileFunction` attributes.
 - Model resolution proves that a captured file, or a decodable embedded
   payload with a matching checksum, exists. It does not check the model

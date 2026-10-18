@@ -209,3 +209,8 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 
 The native tests need Bubblewrap and `kicad-cli` in the sandbox. They skip when
 these are absent, and fail under `AGENT_EE_REQUIRE_TOOLCHAIN=1`.
+
+The separate [fab round-trip check](fab-roundtrip.md) consumes this manifest
+and exact zip bytes alongside sealed native geometry to check layer, drill,
+flash-count and outline conservation. Export success alone does not establish
+those comparisons.

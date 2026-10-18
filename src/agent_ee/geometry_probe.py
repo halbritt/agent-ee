@@ -40,12 +40,18 @@ def pad_attribute(pad):
 
 def extract(board_path):
     import pcbnew
+    from .placement_probe import primitive, prove_contours
     board = pcbnew.LoadBoard(board_path)
     report = {"pcbnew_version": pcbnew.Version(), "board": board_path}
+    copper = list(board.GetEnabledLayers().CuStack())
+    report['copper_layers'] = [board.GetLayerName(layer) for layer in copper]
+    outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
 
     nets = {}
     footprints, pads = [], []
     for fp in board.GetFootprints():
+        outline_shapes.extend(s for s in list(fp.GraphicalItems()) + list(fp.GetFields())
+                              if s.GetLayer() == pcbnew.Edge_Cuts)
         entry = {
             "ref": fp.GetReference(), "value": fp.GetValue(),
             "layer": board.GetLayerName(fp.GetLayer()),
@@ -70,6 +76,8 @@ def extract(board_path):
                 "position_mm": vec_mm(pad.GetPosition()),
                 "size_mm": vec_mm(size),
                 "drill_mm": vec_mm(drill),
+                "drill_nm": [int(drill.x), int(drill.y)],
+                "flash_layers": [board.GetLayerName(layer) for layer in copper if pad.FlashLayer(layer)],
                 "uuid": pad.m_Uuid.AsString(),
             }
             if net:
@@ -80,6 +88,8 @@ def extract(board_path):
         footprints.append(entry)
     report["footprints"] = footprints
     report["pads"] = pads
+    report['outline'] = prove_contours([primitive(s) for s in outline_shapes],
+                                       'outline_missing', 'outline_unproven')
 
     tracks = []
     for t in board.GetTracks():
@@ -93,6 +103,8 @@ def extract(board_path):
         if cls == "PCB_VIA":
             entry["type"] = "via"
             entry["drill_mm"] = mm(t.GetDrillValue())
+            entry['drill_nm'] = int(t.GetDrillValue())
+            entry['flash_layers'] = [board.GetLayerName(layer) for layer in copper if t.FlashLayer(layer)]
             entry["layers"] = [board.GetLayerName(t.TopLayer()),
                                board.GetLayerName(t.BottomLayer())]
         else:
