@@ -179,6 +179,10 @@ contradictory native connectivity artifacts leave parity coverage unknown.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs, and warn about same-name net islands. Island warnings
 are advisory. Neither check establishes electrical adequacy.
+[Net-name provenance](docs/net-names.md) checks that owner-declared net names
+survive generation: each names exactly one native net at its declared terminals.
+Suggested-name collisions are reported as information with deterministic
+proposals, and names without a level annotation are unknown.
 The [package consistency check](docs/package-consistency.md) compares each
 footprint with its LCSC part's package in a pinned catalog through a captured
 mapping table. Unmapped names are unknown; land-pattern geometry is not compared.

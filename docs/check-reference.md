@@ -44,6 +44,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist_parity` | Coordinator compares full native XML with captured intent/libraries or a golden netlist; qualified virtual power markers omitted by XML are listed in the report ([details](netlist-parity.md)) | Enclosing run deadline |
 
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
+| `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
@@ -230,6 +231,17 @@ with `severity=warning`, including `/a/SDA` and `/b/SDA`. These warnings retain
 `status=informational` and cannot supply a defect witness. A shared global net
 has one native ID and produces no island warning. The check covers direct-net
 equivalence; it does not trace geometric wire paths, copper or impedance.
+
+`net_names` requires `netlist_check`, `policy` and `levels`. The immutable
+[owner policy](net-names.md) declares required names with exported
+`{reference, pin}` anchors. The mutable annotation marks every generated name
+`required` or `suggested`. A required name that is absent, on two native nets,
+split across its anchors, displaced by another name, sharing a net with another
+required name, or downgraded to suggested is a defect. So is a `required` claim
+the owner did not make. Suggested collisions get deterministic `<name>_<k>`
+proposals that keep a trailing `_P`/`_N`, reported with `severity=info`. A named
+net without a level, or an unresolved anchor, keeps the check
+`unsupported/unknown`. Nothing is renamed.
 
 ## Intent and golden netlist parity
 

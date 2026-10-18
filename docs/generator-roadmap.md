@@ -171,7 +171,7 @@ fab-package items stay in stage 7).
 | --- | --- | --- | --- | --- |
 | 1 Requirements | AGENTEE-78 | `impl/intent-record` AGENTEE-26, then AGENTEE-25 (Sol); `impl/interface-contract` AGENTEE-8 | 25, 26 | AGENTEE-85 envelope record |
 | 2 Parts | AGENTEE-79 | `impl/catalog-selection` AGENTEE-27, then 28 (Sol); `impl/library-context` AGENTEE-36, then 35 (Sol); `impl/datasheet-facts` AGENTEE-18 | 27, 28, 31, 33–38, 61 | AGENTEE-86 approved-parts manifest |
-| 3 Schematic | AGENTEE-80 | `impl/connectivity-ir` AGENTEE-39 and `impl/netlist-parity` AGENTEE-41 (Sol); AGENTEE-65, then 58 (Sol) | 39–52, 60, 62, 65, 69 | AGENTEE-87 scaffold, AGENTEE-88 non-vacuous progress, AGENTEE-89 block format, AGENTEE-90 block adaptation |
+| 3 Schematic | AGENTEE-80 | `impl/connectivity-ir` AGENTEE-39 and `impl/netlist-parity` AGENTEE-41 (Sol); AGENTEE-65, then 58 (Sol); [`net_names`](net-names.md) AGENTEE-44 | 39–52, 60, 62, 65, 69 | AGENTEE-87 scaffold, AGENTEE-88 non-vacuous progress, AGENTEE-89 block format, AGENTEE-90 block adaptation |
 | 4 Placement | AGENTEE-81 | `impl/placement-judge` AGENTEE-53, then 54 (Sol) | 53–57 | AGENTEE-91 placement writer, AGENTEE-92 placement check kind |
 | 5 Routing | AGENTEE-82 | `impl/routing-rules` AGENTEE-63, then 75 (Sol) | 63 | AGENTEE-93 kicad-route sandboxed writer |
 | 6 Verification | AGENTEE-83 | `impl/netlist-extra-checks` AGENTEE-58 (Sol); `impl/active-spice`, `impl/kicad-happy`, `impl/passive-corners`, `impl/dc-resistance`, `impl/geometry`, `impl/seeded-benchmark` (AGENTEE-1 roadmap) | 58, 59, 67, 68, 70, 71 | AGENTEE-95 stage receipts, AGENTEE-96–99 rung records |
