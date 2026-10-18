@@ -14,6 +14,14 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   agent-ee runs on such material). The proposal is now included on main; the
   owner has not approved it. MIT was the owner's stated default; another license needs explicit
   owner approval.
+- One origin is **owner-confirmed**: `T16`, the fome-mc reference block
+  captures under `fixtures/fome-mc/`. On 2026-10-18 the owner decided they are
+  committed as fixtures and stated that the owner holds the rights to fome-mc
+  and agent-ee ([decision](decisions.md#fome-mc-reference-sheets-are-committed-as-fixtures)).
+  The decision chooses no licence, so those files are not offered under MIT
+  either. fome-mc sheets embed upstream FOME-Tech Polygonus content (`T3`, `T4`,
+  `T6`, `T8`), which stays unresolved, so every `T16` file reports
+  **unresolved** until the owner rules on that embedded content.
 - Every other origin is **unresolved**. Those files are not offered under MIT.
   Each origin needs an owner decision, recorded in the inventory, before its
   status changes. Ownership of this repository, or of the checkout a file was
@@ -47,6 +55,7 @@ Most unresolved files are retained evidence, which is classified by directory.
 | T12 | KiCad 10.0 PPA signing public key | No license stated | `docker/kicad-10.0-releases.asc` |
 | T13 | Seeded-benchmark source boards | CC-BY-SA-4.0, CERN-OHL-P/S-2.0 | Metadata and extracted identifiers in `benchmarks/seeded/`; no design files |
 | T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
+| T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file; owner holds the rights (owner-confirmed 2026-10-18); embeds unresolved Polygonus content | `fixtures/fome-mc/psu/`: the copied PSU sheet and project libraries, the block entry generated from them and the PSU inventory; planning documents are cited by identity, not copied |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and
@@ -94,6 +103,13 @@ recorded review.
 - an archive omits an origin of the evidence directory it holds;
 - a third-party origin is marked as proposed for MIT, or is marked
   `owner-confirmed` without an `owner_record`.
+
+A file is unresolved if any of its origins is unresolved. Otherwise it is
+owner-confirmed if any of its origins is. It is proposed for MIT only when all
+of its origins are agent-ee origins. A file's origins include, transitively,
+every origin its declared origins list in `embedded_origins`, so an owner
+decision on a derived design does not clear the upstream content it carries.
+An unknown or self-referencing embedded origin is an error.
 
 Without `.git`, as in the container image, the check walks the checkout with
 the `.gitignore` exclusions.

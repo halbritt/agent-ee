@@ -1,5 +1,6 @@
 """Block inventory capture and its private qualification over an owned hierarchical design."""
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -50,6 +51,7 @@ class InventoryStructureTests(unittest.TestCase):
             ('unknown document', lambda d: d['blocks'][0]['pending'][0].update(document='invented')),
             ('reserved requirement id', lambda d: d['blocks'][0]['pending'][0].update(id='ch1-interface')),
             ('external name', lambda d: d['design'].update(external_libraries={'../x': 'a' * 40})),
+            ('cite flag', lambda d: d['design'].update(cite_documents='yes')),
         ]
         for name, mutate in cases:
             with self.subTest(case=name):
@@ -108,6 +110,39 @@ class InventoryCaptureTests(unittest.TestCase):
         self.assertIsNone(read_json(ch1 / 'parts.json')['catalog'])
         with self.assertRaises(FileExistsError):
             self.capture('first')
+
+    def test_cited_documents_are_pinned_identities_not_copies(self):
+        inventory = copy.deepcopy(self.inventory)
+        inventory['design']['cite_documents'] = True
+        self.capture('cited', inventory, repository_label='owned')
+        self.capture('again', inventory, repository_label='owned')
+        self.assertEqual(tree(self.root / 'cited'), tree(self.root / 'again'))
+        ch1 = self.root / 'cited/ch1'
+        record = read_json(ch1 / 'block.json')
+        self.assertFalse([p for p in tree(ch1) if p.startswith('sources/')])
+        self.assertIn('sheets/chan1.kicad_sch', record['source']['paths'])
+        self.assertNotIn('docs/PLAN.md', record['source']['paths'].values())
+        plan = (self.root / 'design/docs/PLAN.md').read_bytes()
+        blob = subprocess.run(['git', '-C', str(self.root / 'design'), 'rev-parse', self.commit + ':docs/PLAN.md'],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        expected = dict(kind='pinned-external', repository='owned', commit=self.commit, path='docs/PLAN.md',
+                        blob=blob, sha256=hashlib.sha256(plan).hexdigest())
+        sources = [r['source'] for r in record['requirements'] + record['pending_requirements']]
+        sources += [i['source'] for i in read_json(ch1 / 'interface.json')['invariants']]
+        for source in sources:
+            self.assertEqual({k: v for k, v in source.items() if k != 'locator'}, expected)
+        self.assertEqual(read_json(ch1 / 'block-contract.json'), block_contract(record))
+        # A symbolic repository resolves only through an explicit local mapping.
+        report = validate_block(ch1)
+        self.assertEqual(report['status'], 'unverified')
+        self.assertEqual({c['status'] for c in report['external_sources']}, {'unverified'})
+        report = validate_block(ch1, repository_locations={'owned': str(self.root / 'design')})
+        self.assertEqual({c['status'] for c in report['external_sources']}, {'verified'})
+        self.assertEqual(report['status'], 'unverified')
+        # Without a label the citation names the resolved local repository, which verifies by default.
+        self.capture('unlabelled', inventory)
+        report = validate_block(self.root / 'unlabelled/ch1')
+        self.assertEqual({c['status'] for c in report['external_sources']}, {'verified'})
 
     def test_adaptation_reproduces_second_channel_except_straps(self):
         self.capture()

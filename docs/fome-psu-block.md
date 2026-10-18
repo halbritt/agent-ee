@@ -7,14 +7,17 @@ grades the block. The source is `sheets/psu.kicad_sch` at fome-mc commit
 commit carries FOMEMC-17 (`5954c3a`, the last change to the sheet before the
 pin). The material is committed under the owner decision of 2026-10-18. Its
 rights and capture rules are in `fixtures/fome-mc/LICENSE-NOTICE.md`,
-which AGENTEE-105 adds, and its origin is `T15` in
-[`file-origins.json`](file-origins.json).
+which AGENTEE-105 adds, and its origin is `T16` in
+[`file-origins.json`](file-origins.json). `T16` is owner-confirmed, but the
+sheet derives from an upstream donor design (`T3`, unresolved), which `T16` lists in
+`embedded_origins`. The [origin check](third-party-origins.md) therefore reports
+every `T16` file as unresolved until the owner rules on that embedded content.
 
 | Path | Content | Origin |
 | --- | --- | --- |
 | `inventory.json` | PSU-only [block inventory](block-inventory.md): the `psu` block, its sourced pending requirements, every other sheet occurrence unassigned | Written for agent-ee |
-| `capture/` | Output of `agent_ee.block_inventory capture`: `psu/` block entry and `inventory-report.json` | Generated, with byte copies of fome-mc blobs |
-| `board/` | Original standalone board and its generator | Written for agent-ee |
+| `capture/` | Output of `agent_ee.block_inventory capture`: `psu/` block entry and `inventory-report.json` | Generated, with byte copies of the fome-mc sheet and its project libraries |
+| `board/` | Original standalone board, its interface contract and their generator | Written for agent-ee |
 | `requirements.md`, `review.scope.json` | Review requirements and the scope/2 review | Written for agent-ee |
 
 ## Capture
@@ -25,25 +28,41 @@ working tree was not read. Nothing was copied by hand.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.block_inventory capture fixtures/fome-mc/psu/inventory.json \
-  --repo ~/git/fome-mc --out fixtures/fome-mc/psu/capture
+  --repo ~/git/fome-mc --repository-label fome-mc --out NEW_DIRECTORY
 ```
 
+`source.repository` records the label `fome-mc`, not a local path.
 `capture/psu/block.json` records `source.commit` and, in `files`, the SHA-256 of
 every payload file. Its `source.paths` map each payload file to its fome-mc path.
 
 | Payload | fome-mc path | SHA-256 |
 | --- | --- | --- |
 | `sheets/psu.kicad_sch` | `sheets/psu.kicad_sch` | `56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb` |
-| `sources/docs/DESIGN.md` | `docs/DESIGN.md` | `2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae` |
-| `sources/docs/BLOCK_LIBRARY.md` | `docs/BLOCK_LIBRARY.md` | `9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a` |
 | `libs/symbols/lmr14020.lib`, `libs/symbols/infineon_psu.lib`, `libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod` | same paths | in `block.json` `files` |
+
+The planning documents are not captured. The inventory sets `cite_documents`,
+so every requirement and contract source is a
+[pinned-external citation](reference-block-interface.md#external-source-citations):
+
+| Document | Git blob | SHA-256 |
+| --- | --- | --- |
+| `docs/DESIGN.md` | `53b60f15a26a5e0db05d2168a93a84df65188adb` | `2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae` |
+| `docs/BLOCK_LIBRARY.md` | `ffa17817a39b5ce12f3c071230d2a395a95f0efd` | `9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a` |
+
+Each citation names repository `fome-mc`, commit `df304f3…` and a section
+locator. `validate_block` reports them in `external_sources`. They are
+`unverified` unless `--repository fome-mc=PATH` names a local object store
+holding the commit, and an unverified citation keeps the block unverified.
 
 `inventory-report.json` binds the inventory identity, the exporter
 (`kicad-cli 10.0.7`) and the SHA-256 of `block.json` and `block-contract.json`.
 The block's libraries are all project (`source`) or KiCad stock libraries, so no
 external library checkout is needed. The inventory still declares
-`kicad-libraries` for the design. `source.repository` records the local
-repository path the capture read.
+`kicad-libraries` for the design.
+
+Two captures inside `bwrap --unshare-net`, with the network confirmed
+unreachable, gave byte-identical directories. Both matched the committed
+`capture/`, including the native `kicad-cli` export.
 
 The block is the 31 power parts of the `/psu/` occurrence
 (`/00000000-0000-0000-0000-00005da72eff/`). The CAN set U4, U5, D4, D5, R7, R8, R9
@@ -69,7 +88,7 @@ anything.
 ## Requirements
 
 `psu-native` and `psu-interface` are the bound block requirements. Eight more are
-pending requirements, each with a captured source section, its conditions and
+pending requirements, each with a cited source section, its conditions and
 the item it waits on. The five known PSU findings are:
 
 | Requirement | Finding | Source |
@@ -97,6 +116,9 @@ The remaining three are `psu-rails` (rail accuracy, `BLOCK_LIBRARY.md`),
   and J3 (both CAN buses).
 - An empty saved board.
 - A project file that restates the pinned fome-mc ERC rule severities.
+- `interface.json`, the board contract: the captured block contract with each
+  invariant's source moved to `block-contract.json`. A board check needs a
+  captured requirement source, and the captured contract preserves the citation.
 
 `+5V` and `+3V3` are global power nets inside the sheet and reach no header. Both
 reviewers of the first run pointed this out (see [Runs](#runs)).
@@ -104,16 +126,19 @@ reviewers of the first run pointed this out (see [Runs](#runs)).
 ## Review scope
 
 `review.scope.json` is scope/2. The candidate places the block payload at its
-block paths, so baseline requirement sources are the captured fome-mc files.
-`psu-native` and `psu-interface` carry the block's statements and sources
-unchanged, so a passing run could credit them through the
-[reference-block validator](reference-block-interface.md).
+block paths. Each baseline requirement keeps the block's statement and cites
+`block-contract.json` at `requirements/ID/source` (or
+`pending_requirements/ID/source`), the captured record of its pinned-external
+citation. That is the form the
+[reference-block validator](reference-block-interface.md) requires, so a passing
+run could credit `psu-native` and `psu-interface`. Reviewers see
+`requirements.md`, which restates each claim with its document and section.
 
 | Check | Kind | Requirement | Expected result |
 | --- | --- | --- | --- |
 | `erc` | `erc` | `psu-native` | ok/pass (no violations under the pinned ERC severities) |
 | `netlist` | `netlist` | `psu-native` | ok/info (43 components, 3 sheet instances) |
-| `interface` | `hardware_interface` on `interface.json` | `psu-interface` | ok/pass (every invariant satisfied) |
+| `interface` | `hardware_interface` on `board-interface.json` (`board/interface.json`) | `psu-interface` | ok/pass (every invariant satisfied) |
 | `input-filter` | `rc_transient`, `/12V_PROT` to `/VBOOST` | `psu-input-filter` | unsupported/unknown |
 | `tvs-clamp` | `datasheet_limits` (not registered) | `psu-tvs-clamp` | unsupported/unknown |
 | `reverse-block`, `brownout-floor`, `rail-regulation` | `active_model` (not registered) | the matching requirement | unsupported/unknown |
@@ -135,8 +160,16 @@ PYTHONPATH=src python3 -m agent_ee.cli review fixtures/fome-mc/psu/review.scope.
 
 ## Runs
 
-Both runs used the committed scope at `e869806`, which fixed the baseline before
-the first run. They share baseline `39534bca406c7a37c771c42aca233a68aa6a8cc30cc30495d04e9ff68e2ba431`
+The repair for the AGENTEE-106 review (no planning documents, a repository
+label, the `T16` origin) changed the block hash, the contract and the scope, so
+the baseline changed. The current scope compiles baseline
+`9641a8758e9b44e7cec8e7737dae5345bff668267dae7865a7ed440d472929c9` with
+candidate `2513e113752149fbcfda45252fbad28b032e43c90bd814fa72ed722bdb31ad8a`.
+A checks-only run executes all 11 checks with the results in the table above.
+No reviewed run exists yet on this baseline.
+
+The two earlier runs below used the superseded scope at `e869806`, which fixed
+that baseline before its first run. They share baseline `39534bca406c7a37c771c42aca233a68aa6a8cc30cc30495d04e9ff68e2ba431`
 and candidate `3a03ce81d5e721bfc5447076b4909407837e19facfcd8f81f5f413bc41c35f18`.
 They used the `profiles/claude-baseline.json` reviewers (`claude-fable-5`). The run
 directories stay on the host. No evidence store is created.
@@ -158,7 +191,8 @@ reviewers independently reported the same defects in the captured sheet:
 - The SMCJ24A clamp leaves about 1.1 V of margin to the 40 V parts.
 - The board gives `+5V` and `+3V3` no header.
 
-Independent review and adjudication of a run remain to be done.
+Independent review and adjudication of a run on the current baseline remain to
+be done.
 
 ## Adaptation
 
@@ -182,16 +216,30 @@ The tests check:
 
 - The committed capture's identities and hashes.
 - The contract's boundary and value invariants.
-- That the findings are sourced requirements bound in the scope.
+- That every source is a pinned-external citation with the recorded blob and
+  SHA-256, and stays unverified without a mapped object store.
+- That the findings are sourced requirements bound in the scope through
+  `block-contract.json`, and that the board contract differs from the block
+  contract only in its sources.
 - That the board generator reproduces the committed files.
 - The `"all"` unassigned rule on the owned inventory fixture.
 - A checks-only run of the review scope, and a block run reference to it that
   binds the exact bytes but credits nothing.
 - The adaptation smoke.
 
-`RecaptureTests` recaptures from the fome-mc object store and requires the same
-bytes. It runs when `AGENT_EE_FOME_MC_CHECKOUT` or `~/git/fome-mc` holds the
-pinned commit, and is skipped otherwise.
+None of these needs the fome-mc repository, and none is skipped in strict mode.
+Recapture is a manual host step, because it needs the fome-mc object store. It
+uses the shared qualification script. That script captures the pinned commit
+twice, requires the two captures to be byte-identical and requires the first to
+equal the committed `capture/`:
+
+```sh
+PYTHONPATH=src python3 scripts/qualify_block_inventory.py \
+  --inventory fixtures/fome-mc/psu/inventory.json --repo ~/git/fome-mc --out /tmp/NEW_DIRECTORY
+```
+
+It prints `status: qualified` with `expected.differing: []`. The output
+directory must lie outside the work tree.
 
 ## Limits
 

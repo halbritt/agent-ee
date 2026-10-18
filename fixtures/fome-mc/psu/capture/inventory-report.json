@@ -1,8 +1,8 @@
 {
   "blocks": [
     {
-      "block_sha256": "2cc9ec6bff9ecfe8e1a20241db14e4fdbc370d2a08b66a58791cffe399ffe8d2",
-      "contract_sha256": "c0131953f75b4bef044fbee0612a68442c7cd994257ce2a06ece02025b1cba28",
+      "block_sha256": "c2fb774e4494d43a520eb6412b426c0286a5b9322edb36f7bd219c6d994017c5",
+      "contract_sha256": "a7394cfbecf69e33047d4494b40ec3e6d959f09a9eb4afa08a3eb9fad509c730",
       "directory": "psu",
       "id": "fome-mc/psu",
       "pending_requirements": [
@@ -41,12 +41,124 @@
   "design": "fome-mc",
   "exporter": "kicad-cli 10.0.7",
   "exporter_console": "Warning: schematic has annotation errors, please use the schematic editor to fix them",
-  "inventory_sha256": "75838a5eed231c76af4d69f20cfe63cbafcefe85927619242debba0f0e7be3ca",
+  "inventory_sha256": "fb717c548fe74f367869c0db5b5503351e5092355a08c03f2d8bbc7c177e44e5",
   "limitations": [
     "Draft entries: derived contracts restate the pinned design and need owner approval; no block is verified without a complete run and review.",
-    "Captured third-party design files stay private until owner publication approval."
+    "Captured design files are the pinned source blobs; publishing them follows the source design licence statement and the owner decision that covers it."
   ],
   "schema": "agent-ee.block-inventory-report/1",
+  "source_files": {
+    "fome-mc.kicad_pro": {
+      "captured": false,
+      "git_blob": "8f749a35326790337ca3fb7ef1b2e3126bf9a8c7",
+      "sha256": "17a1d6b850f84ab2db63f079baa19660ecbed6c75abbef533b65d6c4cca7eda0"
+    },
+    "fome-mc.kicad_sch": {
+      "captured": false,
+      "git_blob": "b00fa0e05c630e6be551f9be937817346926c45c",
+      "sha256": "2158d8ace041cde3bd903496368d0c0b26082aab464b390a428caf71a7ca3f1b"
+    },
+    "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": {
+      "captured": true,
+      "git_blob": "b96252f9b9ade9a75290043f4ef6b92b12b6e594",
+      "sha256": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73"
+    },
+    "libs/symbols/infineon_psu.lib": {
+      "captured": true,
+      "git_blob": "b3a8d890599f67f781b8564235afad5d877e176e",
+      "sha256": "a28de6754df60efe6f201f81de74ee43fed69b987cec45992541bfea590df6f4"
+    },
+    "libs/symbols/lmr14020.lib": {
+      "captured": true,
+      "git_blob": "7ea7f21e104438cd564c0b3a6bec441e51c75015",
+      "sha256": "e38cf910613cec6f8c14146ef3765ade941e6c1df73713debdcdc6a0e6d960c0"
+    },
+    "sheets/Keep_Alive.kicad_sch": {
+      "captured": false,
+      "git_blob": "c322e2e3e79eab7c6657528fca6d03907727f7dc",
+      "sha256": "008f3b70dc25d6d109041a8c7691377820e319a1124f3371c3e61d42adf867c8"
+    },
+    "sheets/etb-9201.kicad_sch": {
+      "captured": false,
+      "git_blob": "41fc60b0fb802a1034fcd4fca0f7abbf7ecf959c",
+      "sha256": "b759aedcc581426c5b17d5e25f259e18b3722561dd28b4449df848147d4bbce2"
+    },
+    "sheets/highside_quad.kicad_sch": {
+      "captured": false,
+      "git_blob": "9560632b39018fe5ef717ec5adbfa49453fcbe17",
+      "sha256": "35ea55950b90cf7695f0bf3c175b2fbda368f08b56ef45677e38fc895fdf8298"
+    },
+    "sheets/ign4.kicad_sch": {
+      "captured": false,
+      "git_blob": "6e9c94f29f598e7da19e5ace6cd51d40fbc6ab16",
+      "sha256": "0e4dddd1ea5188bc911985c9be8edf30b7f77eaa675f2486a9c46186b719d6e9"
+    },
+    "sheets/ign_igbt.kicad_sch": {
+      "captured": false,
+      "git_blob": "a7d205b6e81ff13af856fea8bac34f853905ca12",
+      "sha256": "7982ed07b4b794a23a040292cead82549982a3ef5377ec46ab6514853ca6145d"
+    },
+    "sheets/knock.kicad_sch": {
+      "captured": false,
+      "git_blob": "a215b95f1ede1f764f06cae5d0a88ccb7b22a9eb",
+      "sha256": "274722ceadadc2298502d7ef952c34ef2ec2762093047bbd99959961752ddf04"
+    },
+    "sheets/lowside_quad.kicad_sch": {
+      "captured": false,
+      "git_blob": "932b3baafefbf8fec157ec8decf2dfe0d9bfcbd1",
+      "sha256": "249a0e7a0017770d27b6a69a4bddf91c88f5714f47224ee7166d1a1652645a2e"
+    },
+    "sheets/mcu.kicad_sch": {
+      "captured": false,
+      "git_blob": "e77eb4171465451f977258e95cba9057afecd47d",
+      "sha256": "1aad3f7e37ca440aed221ac51310705b4a48bbef25803d2e88084c46624cca6f"
+    },
+    "sheets/psu.kicad_sch": {
+      "captured": true,
+      "git_blob": "88a260461ade8a822325c33ccf29031d66948141",
+      "sha256": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb"
+    },
+    "sheets/quad_analog.kicad_sch": {
+      "captured": false,
+      "git_blob": "0d81dde7dbf3a88f08d408cbb0032bbbaf725a06",
+      "sha256": "616379cda3e9885568046fdaa09c7d8fc91fc2dbb7e18e96bfc1ce5ba4f5a8c1"
+    },
+    "sheets/quad_analog_pullup.kicad_sch": {
+      "captured": false,
+      "git_blob": "74e85a36c5cad13f2cdff6e9d75d35dc29a56312",
+      "sha256": "c5e624d711b8aa313e24db935e2ebb7656fd1cf95d86569250941296b6d7b97d"
+    },
+    "sheets/stepper_etb.kicad_sch": {
+      "captured": false,
+      "git_blob": "bb52fab441101472b0c7fa3d9c9df595d91583e8",
+      "sha256": "0d56274d074a22063be83f58b71d5da2dd6cb9cb9663898e1f8c05a580c258b5"
+    },
+    "sheets/triggers.kicad_sch": {
+      "captured": false,
+      "git_blob": "cd20b9797e3474d4b4f5dbfda3ca51f88218027d",
+      "sha256": "e53c9841565acceee340490f8da5247357bbd4ec540c060b316b9e0085a95e1a"
+    },
+    "sheets/wbo1.kicad_sch": {
+      "captured": false,
+      "git_blob": "666108f98cc6eca4be8cd79b1421f8215f599e7f",
+      "sha256": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73"
+    },
+    "sheets/wbo2.kicad_sch": {
+      "captured": false,
+      "git_blob": "13a528dcc41f1bb336bc2c90557b93d2ec238a95",
+      "sha256": "053a946392cf7f4d2f2dc869a196adcd146125274cc608691281e34b3cdf7376"
+    },
+    "toolchain/fixtures/rc_filter/rc_filter.kicad_pro": {
+      "captured": false,
+      "git_blob": "758490cac1e75ecf92915670f9ebadf18c29f311",
+      "sha256": "c1d3afe525b298918f0823f2e7e540292790aab4093bd740b0faaa7bb1fcd4f1"
+    },
+    "toolchain/fixtures/rc_filter/rc_filter.kicad_sch": {
+      "captured": false,
+      "git_blob": "5f3feb9b73afccff23c10c30fc6d61c667a63fc2",
+      "sha256": "ecc56a68a96b9297d8751ae7686a9c8818e9cac84faefafa364b06a0af8a342b"
+    }
+  },
   "unassigned": [
     {
       "instance": "/psu/",

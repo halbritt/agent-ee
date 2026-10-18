@@ -1,7 +1,7 @@
 {
   "schema": "agent-ee.scope/2",
   "name": "fome-mc PSU block, rung-2 power reference (AGENTEE-106)",
-  "scope": "Captured fome-mc psu.kicad_sch at df304f3 without the CAN transceivers (31 parts), on an original standalone board: J1 supplies /12V_RAW and GND, J2 exposes the protected and regulated rails, J3 the CAN buses, and an mcu stub the power-good and CAN logic nets. Judge the block against the captured DESIGN.md section 6.3 and BLOCK_LIBRARY.md power supply entry: input protection, reverse-battery block, LMR16020 buck, TLS115D0E sensor supplies, TLV757P 3.3 V LDO and capacitor selection. No layout is captured.",
+  "scope": "Captured fome-mc psu.kicad_sch at df304f3 without the CAN transceivers (31 parts), on an original standalone board: J1 supplies /12V_RAW and GND, J2 exposes the protected and regulated rails, J3 the CAN buses, and an mcu stub the power-good and CAN logic nets. Judge the block's input protection, reverse-battery block, LMR16020 buck, TLS115D0E sensor supplies, TLV757P 3.3 V LDO and capacitor selection against requirements.md, which restates fome-mc docs/DESIGN.md section 6.3 and the docs/BLOCK_LIBRARY.md power supply entry. block-contract.json cites those documents by pinned commit, path, Git blob and SHA-256 and carries none of their bytes. No layout is captured.",
   "inputs": [
     {
       "path": "capture/psu/sheets",
@@ -10,10 +10,6 @@
     {
       "path": "capture/psu/libs",
       "at": "libs"
-    },
-    {
-      "path": "capture/psu/sources",
-      "at": "sources"
     },
     {
       "path": "capture/psu/block.json",
@@ -54,6 +50,10 @@
     {
       "path": "requirements.md",
       "at": "requirements.md"
+    },
+    {
+      "path": "board/interface.json",
+      "at": "board-interface.json"
     }
   ],
   "schematic": "fome-mc-psu.kicad_sch",
@@ -80,7 +80,7 @@
       "id": "interface",
       "kind": "hardware_interface",
       "params": {
-        "contract": "interface.json",
+        "contract": "board-interface.json",
         "netlist_check": "netlist"
       }
     },
@@ -133,7 +133,8 @@
   ],
   "limitations": [
     "Checks of kinds datasheet_limits, active_model, catalog_part_identity and catalog_rating are not registered; they are declared so the requirements they serve are recorded as unknown coverage (AGENTEE-18, 19, 27, 29, 61, 137).",
-    "rc_transient models passive-only networks; the PSU sheet has active parts, so the L1/C6 filter check is expected to be unsupported.",
+    "rc_transient cannot model the L1/C6 filter: two PSU net names, /CAN+ and /CAN-, collide after SPICE node sanitisation, and the sheet has active parts that rc_transient does not model, so the check is expected to be unsupported.",
+    "The fome-mc planning documents are cited, not captured: requirement sources resolve only against a local fome-mc object store holding the pinned commit, and stay unverified without one.",
     "No datasheet, catalog snapshot or layout is captured. The saved board is empty.",
     "The block entry is a draft: boundary voltage domains and currents are undeclared owner facts, and parts.json is a draft listing."
   ],
@@ -143,8 +144,8 @@
         "id": "psu-native",
         "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present.",
         "source": {
-          "locator": "What \"verified block\" means, items 1 and 4",
-          "path": "sources/docs/BLOCK_LIBRARY.md"
+          "path": "block-contract.json",
+          "locator": "requirements/psu-native/source"
         },
         "checks": [
           "erc",
@@ -155,8 +156,8 @@
         "id": "psu-interface",
         "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract.",
         "source": {
-          "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)",
-          "path": "sources/docs/BLOCK_LIBRARY.md"
+          "path": "block-contract.json",
+          "locator": "requirements/psu-interface/source"
         },
         "checks": [
           "interface"
@@ -166,8 +167,8 @@
         "id": "psu-tvs-clamp",
         "statement": "D1 (SMCJ24A, LCSC C224045, unidirectional, cathode on /12V_RAW, anode on GND) clamps positive load dumps and inductive transients on /12V_RAW below 38.9 V, under every downstream absolute maximum: Q1 AO4485 40 V, TLE9201SG 40 V, B340A 40 V, VNLD5090 42 V, DRV8825 45 V.",
         "source": {
-          "locator": "6.3 Power Supply, item 1, Sacrificial Crowbar TVS (D1 & D22 SMCJ24A, C224045)",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-tvs-clamp/source"
         },
         "checks": [
           "tvs-clamp"
@@ -177,8 +178,8 @@
         "id": "psu-reverse-block",
         "statement": "Q1 (AO4485 P-MOSFET, LCSC C51499; drain pins 5-8 on /12V_RAW, source pins 1-3 on /12V_PROT) with D19 (BZT52C12 gate-source Zener, C43491) and R124 (47k gate pull-down, C25819) blocks reverse battery without a series diode drop.",
         "source": {
-          "locator": "6.3 Power Supply, item 1, P-Channel MOSFET Reverse-Polarity Block (Q1 AO4485, C51499)",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-reverse-block/source"
         },
         "checks": [
           "reverse-block"
@@ -188,8 +189,8 @@
         "id": "psu-c12-part",
         "statement": "C12, the +5V buck output capacitor, is the Murata GCM188R71C106KA64D 10 uF 16 V X7R 0603 (LCSC C3092605).",
         "source": {
-          "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C12",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-c12-part/source"
         },
         "checks": [
           "c12-part"
@@ -199,8 +200,8 @@
         "id": "psu-c4-rating",
         "statement": "C4, the 4.7 uF input RC damper on /12V_PROT via R2, is a 50 V X7R 1210 (Murata GCJ32ER71H475KA12L, LCSC C417122), rated above the 38.9 V SMCJ24A clamp.",
         "source": {
-          "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C4",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-c4-rating/source"
         },
         "checks": [
           "c4-rating"
@@ -210,8 +211,8 @@
         "id": "psu-brownout-floor",
         "statement": "+3V3 stays regulated at 3.30 V until U3 (LMR16020PDDAR) reaches its 4.30 V minimum operating VIN, a guaranteed steady-state floor of about 4.80 V at the battery (4.30 V plus the ~0.50 V series path), with the LMR16020 EN UVLO falling at 4.50 V.",
         "source": {
-          "locator": "6.3 Power Supply, item 3, Reconciled U3 (LMR16020PDDAR) Cranking Brownout Margin (FOMEMC-17)",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-brownout-floor/source"
         },
         "checks": [
           "brownout-floor"
@@ -221,8 +222,8 @@
         "id": "psu-rails",
         "statement": "+5V is 5.00 V within 2 % above 5.5 V input; 5V_SENSOR_1 and 5V_SENSOR_2 are 5.00 V within 1 %; +3V3 is 3.30 V within 1 %.",
         "source": {
-          "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN), Requirements",
-          "path": "sources/docs/BLOCK_LIBRARY.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-rails/source"
         },
         "checks": [
           "rail-regulation"
@@ -232,8 +233,8 @@
         "id": "psu-capacitor-ratings",
         "statement": "Every PSU capacitor is rated above the clamp voltage of its rail: C2, C5 (/12V_PROT), C7 (/VBOOST), C8 and C10 (U3 soft-start and bootstrap) are 50 V X7R, C6 is the 50 V hybrid polymer and C12 is 16 V on +5V.",
         "source": {
-          "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-capacitor-ratings/source"
         },
         "checks": [
           "capacitor-ratings"
@@ -243,8 +244,8 @@
         "id": "psu-input-filter",
         "statement": "/12V_PROT passes through the L1 (2.2 uH) + C6 (47 uF) LC filter directly into /VBOOST (U3 VIN).",
         "source": {
-          "locator": "6.3 Power Supply, item 2, No Boost Pre-Regulator",
-          "path": "sources/docs/DESIGN.md"
+          "path": "block-contract.json",
+          "locator": "pending_requirements/psu-input-filter/source"
         },
         "checks": [
           "input-filter"
@@ -252,11 +253,10 @@
       }
     ],
     "targets": [
-      "requirements.md",
-      "sources/docs/DESIGN.md"
+      "requirements.md"
     ],
     "reference_architectures": [
-      "sources/docs/BLOCK_LIBRARY.md"
+      "block.json"
     ]
   }
 }

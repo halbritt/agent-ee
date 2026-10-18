@@ -1,7 +1,8 @@
 """Original standalone rung-2 board around the captured fome-mc PSU sheet (AGENTEE-106).
 
-Writes the root schematic, an MCU-side stub sheet, an empty saved board and a
-project file. None of them copies fome-mc content. The root reuses three
+Writes the root schematic, an MCU-side stub sheet, an empty saved board, a
+project file and the board's interface contract. None of them copies fome-mc
+content. The root reuses three
 facts of the pinned design so that the captured ``sheets/psu.kicad_sch`` keeps
 its native identity: the fome-mc root sheet UUID and the ``psu`` sheet UUID
 (the captured symbols' instance paths), and the sheet name ``psu``. The stub is
@@ -11,7 +12,13 @@ from the MCU side (``/mcu/5V_SENSOR_1_PG``), as the pinned hierarchy does.
 The project's ERC rule severities restate the pinned fome-mc project's
 declared policy, so ERC grades the block under the design's own rules.
 
-    python3 fixtures/fome-mc/psu/board/generate.py   # rewrite the four files
+The board contract is the captured block contract (``capture/psu/interface.json``)
+with each invariant source moved from the block's pinned-external citation to the
+captured ``block-contract.json``, which preserves that citation. A board check
+needs a captured requirement source; the reference-block validator expects
+exactly this one for an externally cited block requirement.
+
+    python3 fixtures/fome-mc/psu/board/generate.py   # rewrite the five files
 """
 import json
 import sys
@@ -207,9 +214,17 @@ def project():
     }, indent=2, sort_keys=True) + '\n'
 
 
+def interface():
+    contract = json.loads((ROOT.parent / 'capture/psu/interface.json').read_text())
+    for invariant in contract['invariants']:
+        invariant['source'] = {'path': 'block-contract.json',
+                               'locator': 'requirements/' + invariant['requirement'] + '/source'}
+    return json.dumps(contract, indent=2, sort_keys=True) + '\n'
+
+
 def files():
     return {NAME + '.kicad_sch': root_schematic(), STUB_FILE: stub_schematic(),
-            NAME + '.kicad_pcb': board(), NAME + '.kicad_pro': project()}
+            NAME + '.kicad_pcb': board(), NAME + '.kicad_pro': project(), 'interface.json': interface()}
 
 
 def main(argv=None):

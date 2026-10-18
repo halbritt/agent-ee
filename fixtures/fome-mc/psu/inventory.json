@@ -8,7 +8,8 @@
     "license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee and on 2026-10-18 decided that captured fome-mc reference sheets are committed to agent-ee as fixtures (docs/decisions.md; fixtures/fome-mc/LICENSE-NOTICE.md). fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117 wideband Rev C ca2adce (MIT).",
     "external_libraries": {
       "kicad-libraries": "ab9c5f8a1517a04b9cada6880d67d190bfd48c05"
-    }
+    },
+    "cite_documents": true
   },
   "documents": {
     "plan": "docs/BLOCK_LIBRARY.md",

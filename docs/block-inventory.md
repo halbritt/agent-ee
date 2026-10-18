@@ -17,16 +17,29 @@ PYTHONPATH=src python3 -m agent_ee.block_inventory capture INVENTORY.json \
   --repo LOCAL_DESIGN --library-repo NAME=LOCAL_LIBRARY_REPO --out NEW_PRIVATE_DIRECTORY
 ```
 
+`--repository-label NAME` records `NAME` in each entry's `source.repository`
+instead of the resolved local path, so a committed capture does not depend on
+where the source was cloned.
+
 ## Inventory document
 
 `agent-ee.block-inventory/1` has exactly `schema`, `design`, `documents`,
 `unassigned` and `blocks`.
 
 - `design`: `name`, full 40-hex `commit`, `root` schematic, `license` statement,
-  `plan` (a `documents` key) and optional `external_libraries` (sibling directory
-  name to full commit, for `${KIPRJMOD}/../NAME/` library-table URIs).
-- `documents`: names mapped to repository paths. Each block captures the ones its
-  requirements cite under `sources/`, so requirement sources are captured files.
+  `plan` (a `documents` key), optional `external_libraries` (sibling directory
+  name to full commit, for `${KIPRJMOD}/../NAME/` library-table URIs) and
+  optional boolean `cite_documents`.
+- `documents`: names mapped to repository paths. By default each block captures
+  the ones its requirements cite under `sources/`, so requirement sources are
+  captured files. With `cite_documents: true` no document is copied: every
+  requirement, pending requirement and interface invariant source is a
+  [pinned-external citation](reference-block-interface.md#external-source-citations)
+  carrying the commit, path, Git blob ID and SHA-256 read from the pinned commit,
+  plus the locator. The citation's `repository` is the `--repository-label`
+  value, or the resolved local repository path without one. The
+  [PSU block](fome-psu-block.md) uses it so that no planning document is
+  committed.
 - `unassigned`: `{instance, references, reason}` for native components that
   belong to no block, for example root-sheet connectors. `references` may be
   `"all"` for a whole sheet occurrence outside every captured block. A

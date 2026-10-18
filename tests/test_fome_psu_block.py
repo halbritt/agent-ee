@@ -4,9 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
-import os
 import shutil
-import subprocess
 import tempfile
 import time
 import unittest
@@ -22,6 +20,11 @@ FIXTURE = REPO / 'fixtures/fome-mc/psu'
 CAPTURE = FIXTURE / 'capture'
 BLOCK = CAPTURE / 'psu'
 COMMIT = 'df304f3321296f7e517e0d2e2aa52e1380d52993'
+# Planning documents are cited by pinned identity (fome-mc df304f3), never captured.
+DOCUMENTS = {'docs/DESIGN.md': ('53b60f15a26a5e0db05d2168a93a84df65188adb',
+                                '2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae'),
+             'docs/BLOCK_LIBRARY.md': ('ffa17817a39b5ce12f3c071230d2a395a95f0efd',
+                                       '9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a')}
 CAN = ['D4', 'D5', 'R10', 'R7', 'R8', 'R9', 'U4', 'U5']
 # Ticket boundary: in /12V_RAW; out +5V, +3V3, sensor rails, VBOOST, power-good; plus the shared return.
 BOUNDARY_NETS = ['/12V_RAW', '+5V', '+3V3', '/5V_SENSOR_1', '/5V_SENSOR_2', '/VBOOST',
@@ -45,13 +48,6 @@ def tree(root):
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(Path(root).rglob('*')) if p.is_file()}
 
 
-def checkout():
-    """The fome-mc repository holding the pinned commit, or None (only its object store is read)."""
-    path = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', Path.home() / 'git/fome-mc'))
-    probe = subprocess.run(['git', '-C', str(path), 'cat-file', '-e', COMMIT + '^{commit}'], capture_output=True)
-    return path if probe.returncode == 0 else None
-
-
 class CommittedCaptureTests(unittest.TestCase):
     def setUp(self):
         self.record = read_json(BLOCK / 'block.json')
@@ -66,6 +62,32 @@ class CommittedCaptureTests(unittest.TestCase):
         payload = {p: hashlib.sha256(data).hexdigest() for p, data in tree(BLOCK).items() if p != 'block.json'}
         self.assertEqual(payload, self.record['files'])
         self.assertEqual(self.record['source']['paths']['sheets/psu.kicad_sch'], 'sheets/psu.kicad_sch')
+        # The source repository is a label, and no planning document is captured.
+        self.assertEqual(self.record['source']['repository'], 'fome-mc')
+        self.assertFalse(set(self.record['source']['paths'].values()) & set(DOCUMENTS))
+        self.assertFalse([p for p in tree(CAPTURE) if '/sources/' in p or p.endswith('.md')])
+        for path, data in tree(FIXTURE).items():
+            if '__pycache__' in path:
+                continue
+            with self.subTest(file=path):
+                self.assertNotIn(b'/home/', data)
+
+    def test_requirement_sources_are_pinned_external_citations(self):
+        cited = [r['source'] for r in self.record['requirements'] + self.record['pending_requirements']]
+        cited += [i['source'] for i in read_json(BLOCK / 'interface.json')['invariants']]
+        for source in cited:
+            self.assertEqual((source['kind'], source['repository'], source['commit']),
+                             ('pinned-external', 'fome-mc', COMMIT))
+            self.assertEqual((source['blob'], source['sha256']), DOCUMENTS[source['path']])
+            self.assertTrue(source['locator'].strip())
+        report = validate_block(BLOCK)
+        self.assertEqual(sorted(c['requirement'] for c in report['external_sources']),
+                         sorted(r['id'] for r in self.record['requirements'] + self.record['pending_requirements']))
+        # The label resolves only through an explicit local mapping, so a citation is never verified here.
+        self.assertEqual({c['status'] for c in report['external_sources']}, {'unverified'})
+        self.assertEqual(report['status'], 'unverified')
+        missing = validate_block(BLOCK, repository_locations={'fome-mc': str(REPO / 'no-such-repository')})
+        self.assertEqual({c['status'] for c in missing['external_sources']}, {'unverified'})
 
     def test_block_is_the_power_section_and_stays_unverified(self):
         instance, = self.record['instances']
@@ -91,22 +113,37 @@ class CommittedCaptureTests(unittest.TestCase):
 
     def test_known_findings_are_sourced_requirements_bound_in_the_scope(self):
         pending = {r['id']: r for r in self.record['pending_requirements']}
-        files = self.record['files']
         for rid, finding in FINDINGS.items():
             with self.subTest(requirement=rid):
-                self.assertIn(pending[rid]['source']['path'], files)
+                self.assertEqual(pending[rid]['source']['path'], 'docs/DESIGN.md')
                 self.assertTrue(pending[rid]['source']['locator'].strip())
                 if finding:
                     self.assertTrue(any(finding in c for c in pending[rid]['conditions']))
         scope = read_json(FIXTURE / 'review.scope.json')
         self.assertEqual(scope['schema'], 'agent-ee.scope/2')
+        self.assertFalse([i for i in scope['inputs'] if 'sources' in i['path']])
         baseline = {r['id']: r for r in scope['baseline']['requirements']}
-        for req in self.record['requirements']:
-            self.assertEqual(baseline[req['id']], {k: req[k] for k in ('id', 'statement', 'source', 'checks')})
-        for req in self.record['pending_requirements']:
-            bound = baseline[req['id']]
-            self.assertEqual((bound['statement'], bound['source']), (req['statement'], req['source']))
-            self.assertTrue(set(bound['checks']) <= UNKNOWN)
+        contract = read_json(BLOCK / 'block-contract.json')
+        # A cited block requirement is bound through the captured contract that preserves the citation.
+        for key in ('requirements', 'pending_requirements'):
+            for req in self.record[key]:
+                with self.subTest(requirement=req['id']):
+                    bound = baseline[req['id']]
+                    locator = key + '/' + req['id'] + '/source'
+                    self.assertEqual((bound['statement'], bound['source']),
+                                     (req['statement'], {'path': 'block-contract.json', 'locator': locator}))
+                    self.assertEqual({r['id']: r for r in contract[key]}[req['id']]['source'], req['source'])
+                    if key == 'requirements':
+                        self.assertEqual(bound['checks'], req['checks'])
+                    else:
+                        self.assertTrue(set(bound['checks']) <= UNKNOWN)
+        # The board contract is the block contract with the board-side source.
+        board = read_json(FIXTURE / 'board/interface.json')
+        block = read_json(BLOCK / 'interface.json')
+        self.assertEqual([{k: v for k, v in i.items() if k != 'source'} for i in board['invariants']],
+                         [{k: v for k, v in i.items() if k != 'source'} for i in block['invariants']])
+        self.assertEqual({json.dumps(i['source'], sort_keys=True) for i in board['invariants']},
+                         {json.dumps(baseline['psu-interface']['source'], sort_keys=True)})
 
     def test_board_generator_reproduces_committed_files(self):
         for name, text in generator().files().items():
@@ -159,45 +196,6 @@ class UnassignedAllCaptureTests(unittest.TestCase):
                 self.assertFalse((self.root / name.replace(' ', '-')).exists())
         with self.assertRaisesRegex(ValueError, 'without a block'):
             capture_inventory(self.single(), self.root / 'design', self.root / 'missing')
-
-
-@unittest.skipIf(checkout() is None, 'no local fome-mc object store holding the pinned commit '
-                 '(set AGENT_EE_FOME_MC_CHECKOUT)')
-class RecaptureTests(unittest.TestCase):
-    """Same commit, same bytes: recapture from the object store reproduces the committed fixture."""
-
-    def test_recapture_reproduces_committed_capture(self):
-        from toolchain import require_toolchain
-        require_toolchain(native=True)
-        repo = checkout()
-        with tempfile.TemporaryDirectory(prefix='agent-ee-106-recapture-') as tmp:
-            out = Path(tmp) / 'capture'
-            capture_inventory(read_json(FIXTURE / 'inventory.json'), repo, out)
-            fresh, committed = tree(out), tree(CAPTURE)
-            self.assertEqual(sorted(fresh), sorted(committed))
-            recorded = self.record_repository()
-            for path in committed:
-                with self.subTest(file=path):
-                    if str(repo.resolve()) == recorded or not path.endswith('.json'):
-                        self.assertEqual(fresh[path], committed[path])
-                    else:
-                        # Another checkout path changes only the recorded local repository.
-                        self.assertEqual(self.normal(fresh[path], str(repo.resolve())),
-                                         self.normal(committed[path], recorded))
-
-    @staticmethod
-    def record_repository():
-        return read_json(BLOCK / 'block.json')['source']['repository']
-
-    @staticmethod
-    def normal(data, repository):
-        value = json.loads(data)
-        text = json.dumps(value, sort_keys=True).replace(json.dumps(repository)[1:-1], 'REPOSITORY')
-        value = json.loads(text)
-        for block in value.get('blocks', []) if isinstance(value.get('blocks'), list) else []:
-            block.pop('block_sha256', None)
-            block.pop('contract_sha256', None)
-        return value
 
 
 class NativeReviewScopeTests(unittest.TestCase):

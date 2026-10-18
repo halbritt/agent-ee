@@ -97,6 +97,14 @@ def validate(inventory):
         for field in ('name', 'upstream_license', 'owner_decision'):
             if not str(origin.get(field) or '').strip():
                 errors.append(f'origin {key}: missing {field}')
+        embedded = origin.get('embedded_origins', [])
+        if not isinstance(embedded, list):
+            errors.append(f'origin {key}: embedded_origins must be a list')
+        else:
+            errors.extend(f'origin {key}: unknown embedded origin {other!r}' for other in embedded
+                          if other not in origins)
+            if key in embedded:
+                errors.append(f'origin {key}: embeds itself')
     for index, rule in enumerate(inventory.get('rules', [])):
         label = f'rule {index}'
         paths = rule.get('paths')
@@ -163,12 +171,26 @@ def classify(inventory, paths):
 
 
 def status(inventory, ids):
+    """Unresolved if any origin is; else owner-confirmed if any origin is; MIT is proposed only when all are."""
     statuses = {inventory['origins'][key]['permission_status'] for key in ids}
     if UNRESOLVED in statuses:
         return UNRESOLVED
-    # The MIT proposal covers only files whose every origin is proposed; an owner-confirmed
-    # third-party origin keeps the file under that owner decision instead.
     return CONFIRMED if CONFIRMED in statuses else PROPOSED
+
+
+def with_embedded(inventory, ids):
+    """Declared origins plus every origin they embed, transitively.
+
+    Upstream content carried inside a file keeps its own permission: a file whose
+    owner-confirmed origin embeds an unresolved upstream is unresolved.
+    """
+    found, pending = set(), list(ids)
+    while pending:
+        key = pending.pop()
+        if key not in found:
+            found.add(key)
+            pending.extend(inventory['origins'][key].get('embedded_origins', []))
+    return sorted(found)
 
 
 def capture_origins(inventory, manifest):
@@ -232,7 +254,8 @@ def check(root=ROOT, inventory=None, paths=None):
             if missing:
                 errors.append(f'{archive}: holds {group} material from {missing} not declared by rule {index}')
     files = [{'path': path, 'kind': rules[index]['kind'], 'origins': rules[index]['origins'],
-              'permission_status': status(inventory, rules[index]['origins']), 'rule': index}
+              'permission_status': status(inventory, with_embedded(inventory, rules[index]['origins'])),
+              'rule': index}
              for path, index in sorted(assigned.items())]
     summary = {'files': len(paths), 'classified': len(files),
                'by_status': dict(sorted(Counter(f['permission_status'] for f in files).items())),

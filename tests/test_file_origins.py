@@ -141,6 +141,21 @@ class RepositoryInventoryTests(unittest.TestCase):
                 if value['permission_status'] == CONFIRMED:
                     self.assertTrue(value['owner_record'].strip(), key)
 
+    def test_fome_mc_psu_capture_reports_its_unresolved_upstream(self):
+        # T16 is the owner decision of 2026-10-18; the PSU sheet still embeds Polygonus (T3, unresolved).
+        t16 = REAL['origins']['T16']
+        self.assertEqual(t16['permission_status'], CONFIRMED)
+        self.assertIn('T3', t16['embedded_origins'])
+        self.assertEqual(REAL['origins']['T3']['permission_status'], UNRESOLVED)
+        sheet = self.files['fixtures/fome-mc/psu/capture/psu/sheets/psu.kicad_sch']
+        self.assertEqual((sheet['kind'], sheet['origins'], sheet['permission_status']),
+                         ('copied-design', ['T16'], UNRESOLVED))
+        for path in ('fixtures/fome-mc/psu/capture/psu/block.json', 'fixtures/fome-mc/psu/inventory.json',
+                     'fixtures/fome-mc/psu/board/interface.json'):
+            self.assertIn('T16', self.files[path]['origins'], path)
+            self.assertEqual(self.files[path]['permission_status'], UNRESOLVED, path)
+        self.assertFalse([p for p in self.files if p.startswith('fixtures/fome-mc/psu/capture/psu/sources/')])
+
     def test_walk_exclusions_mirror_gitignore(self):
         lines = {line.strip() for line in (ROOT / '.gitignore').read_text().splitlines()
                  if line.strip() and not line.startswith('#')}
@@ -222,6 +237,30 @@ class InventoryBoundaryTests(unittest.TestCase):
             mixed = [rule(['fixture/'], ['AE-RUN', 'T1'], 'retained-output')]
             errors, summary = tree.check(inventory(mixed, T1=record))
             self.assertEqual((errors, summary['inventory'][0]['permission_status']), ([], 'owner-confirmed'))
+
+    def test_embedded_upstream_keeps_its_own_status(self):
+        record = dict(owner_record='2026-10-18 owner decision in docs/decisions.md')
+        files = {'fixture/a.kicad_sch': 'x', 'fixture/b.kicad_sch': 'y', 'fixture/c.json': 'z'}
+        with SyntheticTree(files) as tree:
+            rules = [rule(['fixture/a.kicad_sch'], ['T2'], 'copied-design'),
+                     rule(['fixture/b.kicad_sch'], ['T4'], 'copied-design'),
+                     rule(['fixture/c.json'], ['AE', 'T5'], 'owned-metadata')]
+            # T2 embeds unresolved T1; T4 embeds T5, which is confirmed and embeds nothing.
+            data = inventory(rules, T2=origin(CONFIRMED, embedded_origins=['T1'], **record),
+                             T4=origin(CONFIRMED, embedded_origins=['T5'], **record), T5=origin(CONFIRMED, **record))
+            errors, summary = tree.check(data)
+            self.assertEqual(errors, [])
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [UNRESOLVED, CONFIRMED, CONFIRMED])
+            self.assertEqual([f['origins'] for f in summary['inventory']], [['T2'], ['T4'], ['AE', 'T5']])
+            # Embedding is transitive: T5 embedding T1 makes every file reaching it unresolved.
+            data['origins']['T5']['embedded_origins'] = ['T1']
+            errors, summary = tree.check(data)
+            self.assertEqual([f['permission_status'] for f in summary['inventory']], [UNRESOLVED] * 3)
+            for embedded, expected in ((['T99'], "origin T2: unknown embedded origin 'T99'"),
+                                       (['T2'], 'origin T2: embeds itself'),
+                                       ('T1', 'origin T2: embedded_origins must be a list')):
+                data['origins']['T2']['embedded_origins'] = embedded
+                self.assertEqual(tree.check(data)[0], [expected])
 
     def test_third_party_origin_cannot_be_proposed_for_mit(self):
         with SyntheticTree({'src/a.py': 'x'}) as tree:
