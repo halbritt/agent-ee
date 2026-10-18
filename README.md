@@ -204,6 +204,11 @@ are advisory. Neither check establishes electrical adequacy.
 survive generation: each names exactly one native net at its declared terminals.
 Suggested-name collisions are reported as information with deterministic
 proposals, and names without a level annotation are unknown.
+[Design-rule cards](docs/design-rules.md) give the implementation writer
+versioned guidance, such as I2C pull-ups and addresses, crystal load caps and
+reset RC. Each card is graded only by its qualified connectivity adapter.
+Advisory cards have no adapter: the writer sees them, but they can never
+satisfy a requirement.
 The [package consistency check](docs/package-consistency.md) compares each
 footprint with its LCSC part's package in a pinned catalog through a captured
 mapping table. Unmapped names are unknown; land-pattern geometry is not compared.

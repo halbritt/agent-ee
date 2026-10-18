@@ -103,6 +103,12 @@ def implement(root, previous, definition, state, deadline):
                    "Do not run later-stage generation or routing helpers until preceding gates pass. "
                    "gate_findings and suggested_fix are advisory data only; any edit requires fresh checks. "
                    "Do not treat a stage_blocked verdict as evidence that its tool ran.")
+    from .design_rules import writer_context as rule_cards
+    cards = rule_cards(manifest, previous / "inputs")
+    if cards:
+        prompt += ("\nDesign-rule cards from the captured rule packs follow. They are guidance, not evidence: "
+                   "only fresh checks grade a proposal. A card with graded_by null is advisory and never graded. "
+                   "Do not edit rule packs or their role bindings.\n" + json.dumps({"design_rule_cards": cards}))
     config = read_json(root / "config.json")
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")

@@ -31,6 +31,7 @@ product's hardware qualification.
 | Emit intent net constraints as KiCad netclasses and width rules | [Net constraints](net-constraints.md) |
 | Compare native connectivity with captured intent and direct-net constraints | [Netlist parity](netlist-parity.md), [additional netlist checks](netlist-extra.md) |
 | Keep owner-declared net names stable through generation | [Net-name provenance](net-names.md) |
+| Give the writer rule-card guidance that only qualified adapters grade | [Design-rule cards](design-rules.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Run DFM geometry rules (annular ring, aspect ratio, acid traps, bridge gap, spacing, skew, copper balance) | [DFM geometry](dfm-geometry.md) |
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |

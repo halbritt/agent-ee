@@ -84,6 +84,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
+| `design_rules` | Coordinator grades the enforced cards of a captured rule pack against the earlier native netlist, owner role bindings and verified datasheet facts; no additional tool launched ([details](design-rules.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_rules` | `/usr/bin/python3 -m agent_ee.routing_native /work/rule-request.json`; staged KiCad DRC per constraint | 900 s outer call |
@@ -347,6 +348,18 @@ the owner did not make. Suggested collisions get deterministic `<name>_<k>`
 proposals that keep a trailing `_P`/`_N`, reported with `severity=info`. A named
 net without a level, or an unresolved anchor, keeps the check
 `unsupported/unknown`. Nothing is renamed.
+
+`design_rules` requires `pack`, `bindings`, `netlist_check` and `cards`. It
+also accepts `facts_check` (an earlier `datasheet_facts` check) and `delegated`.
+The immutable [rule pack](design-rules.md) holds versioned cards, and the
+immutable owner bindings anchor roles to exported `{reference, pin}`
+terminals. Each enforced card publishes one predicate. An advisory card has no
+qualified adapter or delegated check. Naming one in `cards` makes the check
+unsupported, so scope/3 refuses it. Fact-gated cards (`RESET_EN_RC`,
+`USB_SERIES_RESISTORS`, I2C addresses) are unknown without a verified
+applicable fact. A missing role group is unknown. Any violated card is a
+defect that cites the native net. With no defect, any unknown card keeps
+the check `unsupported/unknown`.
 
 ## Intent and golden netlist parity
 
