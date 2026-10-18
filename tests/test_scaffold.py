@@ -348,7 +348,9 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
         self.assertEqual(status, 1, state)
         self.assertIn('implementation', calls, dict(state=state['state'], history=state['history'],
             adjudication=read_json(self.root / 'campaign/runs/1/adjudicator-execution.json')))
-        self.assertEqual(state['error'], 'ValueError: implementation changed the captured file inventory')
+        # AGENTEE-115 checks the proposal invariant inside the bounded call and names the refusal there.
+        self.assertEqual(state['error'], 'ValueError: implementation execution failed; no provider fallback: '
+                                         'implementation changed the captured file inventory')
         self.assertEqual([c['execution'] for c in result['checks']], ['ok', 'ok'])
         self.assertEqual([c['details']['reason'] for c in result['checks']], ['stage_not_reached', 'stage_not_reached'])
         self.assertTrue(result['adjudicated'])
