@@ -91,12 +91,19 @@ defect cannot publish a completed package. Receipts retain the failed exit and
 available check evidence. A successfully corrected package still needs the
 JLCPCB preview: the generator's stage status is `PREVIEW_REQUIRED`. All three
 generation records decide `done` with the same allow-list,
-`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`), so they keep
-`done: false` and record `fab_rotation_blocker:
-"fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)"`; a
-missing or unknown status is never done. Admitting `PREVIEW_REQUIRED` is an
-owner decision made in that one constant. The generator also refuses a fab
-stage whose consumed policy digest differs from the stage-1 capture.
+`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`, `PREVIEW_REQUIRED`).
+By the owner decision of 2026-10-18 (AGENTEE-151, [decisions](decisions.md),
+"PREVIEW_REQUIRED rotations") `PREVIEW_REQUIRED` is done only as an operator
+obligation: `fab-manifest.json` and every record carry `preview_obligations`,
+each corrected CPL designator with its side and the policy sha256, recomputed
+from the sealed report and corrected CPL; the operator confirms each in the
+JLCPCB placement preview before ordering
+([preview obligations](fab-package.md#preview-obligations-agentee-151)). Missing
+or malformed obligations record `fab_rotation_blocker:
+"fab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded"` (or the
+named problem); a missing or unknown status is never done, and the status is
+never upgraded. The generator also refuses a fab stage whose consumed policy
+digest differs from the stage-1 capture.
 No owner preview evidence store is created by this integration.
 
 The existing `fab_export` limitations still apply. In particular, the generated

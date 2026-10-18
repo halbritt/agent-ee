@@ -169,12 +169,17 @@ verify-campaign printed after recomputing them from the final run.
 - verify-campaign recomputed the same `artifacts_id`, candidate and file hashes
   (`fab_artifacts_verified`).
 - The sealed rotation status (`fab_artifacts.rotation.status`, recorded as
-  `fab_rotation`) is in `fab_package.DONE_ROTATION_STATUSES`, currently
-  `{not_declared, ok}`. A declared `cpl_rotation` always reports
-  `PREVIEW_REQUIRED`, so `done` stays false even when every computational check
-  passed; the record's `fab_rotation_blocker` and the verify-campaign output name
-  the reason: `fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`.
-  A missing or unknown status is never done.
+  `fab_rotation`) is in `fab_package.DONE_ROTATION_STATUSES`,
+  `{not_declared, ok, PREVIEW_REQUIRED}`. A declared `cpl_rotation` always
+  reports `PREVIEW_REQUIRED`, which is done only as an operator obligation
+  (AGENTEE-151, owner decision 2026-10-18): verify-campaign prints the
+  `preview_obligations` it recomputed from the final run (each corrected CPL
+  designator with its side, and the policy sha256), the record requires them to
+  equal the state's, and lists them as `preview_obligations` for the operator to
+  confirm in the JLCPCB placement preview before ordering
+  ([preview obligations](fab-package.md#preview-obligations-agentee-151)).
+  Missing or disagreeing obligations keep `done` false (`fab_rotation_blocker`,
+  `fab_artifacts_verified`). A missing or unknown status is never done.
 - `scaffold_receipt_binding.bound`: the scaffold receipt revalidates with its recorded
   sha256, and its after-tree (inputs plus outputs) equals the first captured candidate
   (`campaign/runs/1/candidate.json`, or the empty checks-only run on `--dry-run`) on

@@ -378,8 +378,11 @@ captures freeze the policy, supplier provenance and raw geometry. In the rung-1
 campaign the `fab_package` done gate seals the corrected CPL and records the
 rotation status and policy digest. The corrected package records all applied
 corrections and retains `PREVIEW_REQUIRED`; done predicates are allow-lists over
-`fab_package.DONE_ROTATION_STATUSES`, so generation records cannot become done
-while that preview is pending. Missing inputs and incomplete rotation coverage
+`fab_package.DONE_ROTATION_STATUSES`, and by the owner decision of 2026-10-18
+(AGENTEE-151) a pending preview is done only as an operator obligation: each
+record lists the recomputed `preview_obligations` (every corrected CPL
+designator with its side) to confirm in the JLCPCB placement preview before
+ordering. Missing inputs, incomplete rotation coverage and missing obligations
 fail closed.
 See [CPL integration](cpl-rotation.md#generator-fab-integration) for the input
 tree, evidence layout and the separate non-DNP header export limitation.

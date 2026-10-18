@@ -32,12 +32,21 @@ digest. A failed or defective correction fails the gate. Without a declared
 `cpl_rotation` check the native CPL is sealed and the rotation status is
 `not_declared`. Whether a status may mark a generation done is
 `DONE_ROTATION_STATUSES` (`rotation_blocker`), applied by every driver.
+
+Preview obligations (AGENTEE-151, owner decision 2026-10-18). A
+`PREVIEW_REQUIRED` rotation is done-admissible only as an operator obligation:
+the rotation record carries `preview_obligations`, every designator of the
+sealed corrected CPL with its side and the policy sha256, recomputed from the
+sealed report and CPL (`preview_obligations`). The operator confirms each in the
+JLCPCB placement preview before ordering. The status itself is never upgraded.
 """
 
 import copy
+import re
 from pathlib import Path
 
 from . import fab_consistency, fab_export
+from .cpl_rotation import read_native_cpl
 from .storage import digest, identity, read_json
 
 ARTIFACT_SCHEMA = 'agent-ee.fab-artifacts/1'
@@ -46,20 +55,76 @@ PREDICATES = ['fab-package:done-gate', 'fab-package:sealed-artifacts']
 EXPORT_SCOPE_NOTE = 'pass means the exports exist, parsed, agree on designators and are hashed'
 # Rotation statuses a done predicate accepts (decision B, AGENTEE-126). `not_declared` keeps the
 # native-CPL behaviour of a scope without a cpl_rotation check; `ok` is a declared correction with
-# nothing physically pending. Every cpl_rotation result is PREVIEW_REQUIRED today, which keeps
-# `done` false until the owner accepts the unvalidated bottom-side transform; that decision is
-# the one-place change of adding 'PREVIEW_REQUIRED' here.
-DONE_ROTATION_STATUSES = frozenset({'not_declared', 'ok'})
+# nothing physically pending. `PREVIEW_REQUIRED` (every cpl_rotation result today) is admitted by
+# the owner decision of 2026-10-18 (AGENTEE-151) only as an operator obligation: a status in
+# OBLIGATION_STATUSES is done only with its recorded, policy-bound `preview_obligations`, so the
+# unvalidated bottom-side transform is confirmed in the JLCPCB placement preview before ordering.
+DONE_ROTATION_STATUSES = frozenset({'not_declared', 'ok', 'PREVIEW_REQUIRED'})
+OBLIGATION_STATUSES = frozenset({'PREVIEW_REQUIRED'})
 ROTATION_STATUSES = frozenset({'ok', 'PREVIEW_REQUIRED'})
-ROTATION_REASONS = {
-    'PREVIEW_REQUIRED': 'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)'}
+PREVIEW_ACTION = 'confirm each designator in the JLCPCB placement preview before ordering'
+OBLIGATION_KEYS = frozenset({'status', 'policy_sha256', 'action', 'designators'})
+SIDES = ('Top', 'Bottom')
+SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 
 
-def rotation_blocker(status):
-    """None when a rotation status may mark a generation done, else the named reason (fail closed)."""
-    if status in DONE_ROTATION_STATUSES:
+def preview_obligations(status, policy_sha256, report, cpl_text):
+    """The operator obligations a rotation status carries to done, or None when it carries none.
+
+    For a status in OBLIGATION_STATUSES: every designator of the corrected CPL text with its
+    side, naturally sorted, bound to the policy sha256. The report's designator records must
+    list exactly the same designators on the same sides; raises ValueError otherwise.
+    """
+    if status not in OBLIGATION_STATUSES:
         return None
-    return ROTATION_REASONS.get(status, f'fab: cpl rotation status {status!r} is not a done status')
+    if not isinstance(policy_sha256, str) or not SHA256_RE.fullmatch(policy_sha256):
+        raise ValueError(f'preview obligations need the policy sha256, not {policy_sha256!r}')
+    sides = {}
+    for row in read_native_cpl(cpl_text):
+        if row[0] in sides:
+            raise ValueError(f'corrected CPL lists {row[0]} twice')
+        sides[row[0]] = row[3]
+    records = report.get('designators')
+    if (not isinstance(records, list) or not all(isinstance(r, dict) for r in records)
+            or {r.get('designator'): r.get('layer') for r in records} != sides or len(records) != len(sides)):
+        raise ValueError('cpl_rotation report designators differ from the corrected CPL rows')
+    return {'status': status, 'policy_sha256': policy_sha256, 'action': PREVIEW_ACTION,
+            'designators': [{'designator': ref, 'side': sides[ref]}
+                            for ref in sorted(sides, key=fab_export.natural_key)]}
+
+
+def obligation_problem(status, obligations, policy_sha256):
+    """Why `obligations` is not the well-formed obligation record `status` requires, or None."""
+    if status not in OBLIGATION_STATUSES:
+        return None if obligations is None else f'status {status} carries no preview obligations'
+    if not isinstance(obligations, dict) or set(obligations) != OBLIGATION_KEYS:
+        return 'no preview obligations recorded'
+    if (obligations['status'], obligations['action']) != (status, PREVIEW_ACTION):
+        return 'preview obligations name another status or action'
+    if not isinstance(policy_sha256, str) or obligations['policy_sha256'] != policy_sha256:
+        return 'preview obligations are not bound to the sealed rotation policy'
+    listed = obligations['designators']
+    if not isinstance(listed, list) or not listed:
+        return 'preview obligations list no designator'
+    if not all(isinstance(e, dict) and set(e) == {'designator', 'side'} and isinstance(e['designator'], str)
+               and fab_export.REF_RE.fullmatch(e['designator']) and e['side'] in SIDES for e in listed):
+        return 'a preview obligation is not a designator with its side'
+    refs = [e['designator'] for e in listed]
+    if refs != sorted(set(refs), key=fab_export.natural_key):
+        return 'preview obligations are not unique and sorted'
+    return None
+
+
+def rotation_blocker(status, obligations=None, policy_sha256=None):
+    """None when a rotation status may mark a generation done, else the named reason (fail closed).
+
+    A status in OBLIGATION_STATUSES additionally needs its well-formed `preview_obligations`
+    bound to `policy_sha256`, the sealed rotation policy digest.
+    """
+    if status not in DONE_ROTATION_STATUSES:
+        return f'fab: cpl rotation status {status!r} is not a done status'
+    problem = obligation_problem(status, obligations, policy_sha256)
+    return f'fab: cpl rotation {status}: {problem}' if problem else None
 
 
 def validate_params(params):
@@ -106,7 +171,8 @@ def rotation_record(run_dir, scope, candidate_id, manifest):
     `{status: not_declared}` without a cpl_rotation check. Otherwise the check
     must have passed with complete coverage on this candidate and board, and
     have corrected exactly the native cpl.csv in `manifest`; raises ValueError
-    on any disagreement. The record never upgrades the report's status.
+    on any disagreement. The record never upgrades the report's status; a status in
+    OBLIGATION_STATUSES carries its recomputed `preview_obligations`.
     """
     run_dir = Path(run_dir)
     spec = declared_rotation(scope)
@@ -138,11 +204,13 @@ def rotation_record(run_dir, scope, candidate_id, manifest):
     if corrected.get('path') != 'cpl/cpl.csv' or digest(cpl_path) != corrected.get('sha256'):
         raise ValueError(f'cpl_rotation {cid!r} corrected CPL differs from its report')
     policy = report.get('policy') or {}
+    obligations = preview_obligations(status, policy.get('sha256'), report, cpl_path.read_text(encoding='utf-8'))
     return {'status': status, 'check_id': cid, 'policy_id': policy.get('policy_id'),
             'policy_sha256': policy.get('sha256'), 'report': report_rel, 'report_sha256': digest(report_path),
             'cpl': cpl_rel, 'cpl_sha256': corrected['sha256'], 'native_cpl_sha256': native_cpl,
             'applied_corrections': len(report.get('applied_corrections', [])),
-            'unmatched_footprints': len(report.get('unmatched_footprints', []))}
+            'unmatched_footprints': len(report.get('unmatched_footprints', [])),
+            'preview_obligations': obligations}
 
 
 def artifact_record(run_dir, check):
@@ -247,11 +315,17 @@ def check_fab_package(ctx):
     details['artifacts'] = artifacts
     details['rotation'] = artifacts['rotation']
     status = artifacts['rotation']['status']
+    obligations = artifacts['rotation'].get('preview_obligations')
     if status != 'not_declared':
         ctx.result['limitations'].append(
             f"the sealed CPL is cpl_rotation {artifacts['rotation']['check_id']!r}'s corrected cpl.csv; "
             f'rotation status {status}')
+    if obligations:
+        ctx.result['limitations'].append(
+            f"operator obligation before ordering: {PREVIEW_ACTION}: "
+            + ', '.join(f"{e['designator']} ({e['side']})" for e in obligations['designators']))
     ctx.result.update(execution='ok', outcome='pass',
                       summary=f'fab package done gate passed: {export_summary}; {sub.result["summary"]}; '
                               f'{len(artifacts["files"])} sealed artifacts {artifacts["artifacts_id"][:12]}; '
-                              f'cpl rotation {status}')
+                              f'cpl rotation {status}'
+                              + (f"; {len(obligations['designators'])} preview obligations" if obligations else ''))

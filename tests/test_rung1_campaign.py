@@ -367,7 +367,7 @@ class RecordTest(unittest.TestCase):
             self.assertFalse(preview['done'])
             self.assertTrue(preview['fab_artifacts_verified'])
             self.assertEqual(preview['fab_rotation_blocker'],
-                             'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)')
+                             'fab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded')
             self.assertTrue(record({'status': 'ok', 'policy_sha256': '2' * 64})['done'])
             for rotation in (None, {}, {'status': 'pass'}):
                 self.assertFalse(record(rotation)['done'], rotation)
@@ -376,11 +376,29 @@ class RecordTest(unittest.TestCase):
         run = '/r/runs/1'
         good = f"criteria_satisfied\nfab_artifacts {'a' * 64} candidate c\n{'1' * 64}  {run}/work/fab/fab/bom.csv\n"
         rotation = ('criteria_satisfied\nfab_rotation PREVIEW_REQUIRED policy ' + '2' * 64 +
-                    '\nfab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)\n')
+                    '\nfab: cpl rotation PREVIEW_REQUIRED: no preview obligations recorded\n')
         self.assertEqual(rc.recomputed_artifacts(good.replace('criteria_satisfied\n', rotation), run),
                          rc.recomputed_artifacts(good, run))
         self.assertEqual(rc.recomputed_artifacts(good, run),
-                         {'artifacts_id': 'a' * 64, 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}})
+                         {'artifacts_id': 'a' * 64, 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64},
+                          'preview_obligations': None})
+        # AGENTEE-151: printed obligations are parsed exactly; any inconsistency refuses the recompute.
+        from agent_ee.fab_package import PREVIEW_ACTION
+        head = f'fab_preview_obligations 2 policy {"2" * 64}: {PREVIEW_ACTION}\n'
+        listed = 'fab_preview_obligation C1 Top\nfab_preview_obligation R1 Bottom\n'
+        obliged = good.replace('criteria_satisfied\n', 'criteria_satisfied\nfab_rotation PREVIEW_REQUIRED policy '
+                               + '2' * 64 + '\n' + head + listed)
+        self.assertEqual(rc.recomputed_artifacts(obliged, run)['preview_obligations'],
+                         {'status': 'PREVIEW_REQUIRED', 'policy_sha256': '2' * 64, 'action': PREVIEW_ACTION,
+                          'designators': [{'designator': 'C1', 'side': 'Top'}, {'designator': 'R1', 'side': 'Bottom'}]})
+        for broken in (obliged.replace('obligations 2 ', 'obligations 3 '),
+                       obliged.replace('fab_preview_obligation R1 Bottom\n', ''),
+                       obliged.replace('R1 Bottom', 'R1 Bottom extra'),
+                       obliged.replace(PREVIEW_ACTION, 'nothing to confirm'),
+                       obliged.replace(head, ''),
+                       obliged.replace('fab_rotation PREVIEW_REQUIRED policy ' + '2' * 64 + '\n', ''),
+                       obliged + 'fab_preview_obligation Z9 Top\n'):
+            self.assertIsNone(rc.recomputed_artifacts(broken, run), broken)
         self.assertIsNone(rc.recomputed_artifacts('criteria_satisfied\n', run))
         self.assertIsNone(rc.recomputed_artifacts(good.replace(run, '/other/runs/1'), run))
         self.assertIsNone(rc.recomputed_artifacts(good.replace('1' * 64, 'x' * 64), run))

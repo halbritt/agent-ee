@@ -487,9 +487,11 @@ class FabStageEndToEndTest(unittest.TestCase):
         self.assertEqual((fab['name'], fab['status']), ('fab', 'PREVIEW_REQUIRED'), fab['error'])
         self.assertTrue(record['fab_exports_exist'])
         self.assertEqual(record['fab_status'], 'PREVIEW_REQUIRED')
-        self.assertFalse(record['done'])
-        self.assertEqual(record['fab_rotation_blocker'],
-                         'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)')
+        # AGENTEE-151: done with every corrected CPL designator listed as a JLCPCB-preview obligation.
+        self.assertTrue(record['done'])
+        self.assertIsNone(record['fab_rotation_blocker'])
+        obligations = record['preview_obligations']
+        self.assertEqual(obligations['policy_sha256'], digest(self.inputs / 'generation/cpl/jlc-cpl-policy.json'))
         run = self.root / 'run'
         for item in record['stages']:
             g.validate_receipt(json.loads((run / item['receipt']).read_text()))
@@ -504,12 +506,17 @@ class FabStageEndToEndTest(unittest.TestCase):
         with (stage / 'package/cpl.csv').open() as stream:
             rows = {r['Designator']: r for r in csv.DictReader(stream)}
         self.assertEqual(sorted(rows), sorted(manifest['cpl_designators']))
+        self.assertEqual(sorted((e['designator'], e['side']) for e in obligations['designators']),
+                         sorted((ref, row['Layer']) for ref, row in rows.items()))
+        self.assertEqual(manifest['preview_obligations'], obligations)
         self.assertLessEqual(set(manifest['bom_designators']), set(rows))
         self.assertEqual(rows['U1']['Rotation'], '0.000000')
         self.assertEqual(manifest['rotation']['policy']['sha256'],
                          digest(self.inputs / 'generation/cpl/jlc-cpl-policy.json'))
         receipt = json.loads((stage / 'receipt.json').read_text())
         self.assertEqual(receipt['details']['rotation'], manifest['rotation'])
+        self.assertEqual((receipt['status'], receipt['details']['preview_obligations']),
+                         ('PREVIEW_REQUIRED', obligations))
 
     def test_fab_stage_refuses_a_policy_other_than_the_stage_one_capture(self):
         other = self.root / 'other-capture'

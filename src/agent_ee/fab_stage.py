@@ -10,7 +10,7 @@ from .baseline import freeze_evidence, verify_evidence
 from .candidate import capture, source_manifest
 from .checks import run_checks
 from .fab_export import inventory, verify_manifest
-from .fab_package import ROTATION_STATUSES
+from .fab_package import ROTATION_STATUSES, preview_obligations
 from .storage import digest, read_json, write_json
 
 CPL_ROOT = Path('generation/cpl')
@@ -316,6 +316,8 @@ def package(run, target, manifest_path):
         # The CPL is always the default variant; a BOM variant may not change the populated set.
         raise ValueError(f'BOM designators {bom_designators} differ from CPL designators {cpl_designators}'
                          + (f'; BOM variant {variant!r} changes the populated set' if variant else ''))
+    obligations = preview_obligations(report['status'], report['policy']['sha256'], report,
+                                      corrected.read_text(encoding='utf-8'))
     shutil.copytree(native, target, ignore=shutil.ignore_patterns('manifest.json'))
     shutil.copyfile(corrected, target / 'cpl.csv')
     shutil.copyfile(report_path, target / 'cpl-rotation.json')
@@ -331,6 +333,7 @@ def package(run, target, manifest_path):
             'rotation': {'report_sha256': digest(report_path), 'policy': report['policy'],
                          'applied_corrections': report['applied_corrections'],
                          'unmatched_footprints': report['unmatched_footprints']},
+            'preview_obligations': obligations,
             'files': [{'path': p.relative_to(target).as_posix(), 'bytes': p.stat().st_size, 'sha256': digest(p)}
                       for p in sorted(target.rglob('*')) if p.is_file()],
             'limitations': (['PREVIEW_REQUIRED: inspect every part in the JLCPCB placement preview',

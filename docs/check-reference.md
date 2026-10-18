@@ -915,8 +915,11 @@ duplicate designator never falls back to the anchor. The status stays
 both rung-1 scopes declare it when `--cpl-inputs` captured a policy and supplier
 set; their derived package manifest records the corrections and policy digest.
 Missing policy or supplier coverage fails closed, and a status outside
-`fab_package.DONE_ROTATION_STATUSES` (today any `PREVIEW_REQUIRED`) prevents
-`done`. See [CPL rotation](cpl-rotation.md#generator-fab-integration).
+`fab_package.DONE_ROTATION_STATUSES` prevents `done`. `PREVIEW_REQUIRED` is done
+only as an operator obligation (AGENTEE-151): the records list every corrected
+CPL designator with its side as `preview_obligations`, to confirm in the JLCPCB
+placement preview before ordering. See
+[CPL rotation](cpl-rotation.md#generator-fab-integration).
 
 ## JLCPCB cost estimate
 
@@ -982,11 +985,15 @@ requirement maps to it. When the scope declares one `cpl_rotation` check
 (AGENTEE-126), the gate requires its passing, complete result bound to this
 candidate, board and native `cpl.csv`, seals the corrected `work/CPL/cpl/cpl.csv`
 in place of the native CPL, and records `rotation` (status `ok` or
-`PREVIEW_REQUIRED`, policy sha256, report digest) in `details` and the artifact
-record; a correction defect is a gate `defect`, any other non-pass is
-`unsupported`. Without one, `rotation` is `{status: not_declared}`. Done
-predicates admit only `fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`);
-see [CPL rotation in the done gate](fab-package.md#cpl-rotation).
+`PREVIEW_REQUIRED`, policy sha256, report digest and, for `PREVIEW_REQUIRED`,
+`preview_obligations`: every corrected CPL designator with its side, bound to
+the policy sha256) in `details` and the artifact record; a correction defect is
+a gate `defect`, any other non-pass is `unsupported`. Without one, `rotation` is
+`{status: not_declared}`. Done predicates admit only
+`fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`, `PREVIEW_REQUIRED`),
+`PREVIEW_REQUIRED` only with its recomputed obligations (AGENTEE-151); see
+[CPL rotation in the done gate](fab-package.md#cpl-rotation) and
+[preview obligations](fab-package.md#preview-obligations-agentee-151).
 
 ## Datasheet pin electrical contracts
 
