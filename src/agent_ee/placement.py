@@ -207,7 +207,7 @@ def _policy(policy, footprints):
 
 def _advisories(capture, policy):
     if policy is None:
-        return [], [], 100
+        return [], [], None
     footprints = {f['ref']: f for f in capture['footprints']}
     caps = _policy(policy, footprints)
     net_refs = {}
@@ -221,13 +221,14 @@ def _advisories(capture, policy):
         nets = sorted(n for n, rs in net_refs.items() if ref in rs and len(rs) <= policy['max_shared_refs'])
         connectors = sorted({r for n in nets for r in net_refs[n] if r in policy['connector_refs']})
         ics = sorted({r for n in nets for r in net_refs[n] if r in policy['ic_refs']})
-        if connectors:
-            distance, connector = min((math.dist(footprints[ref]['position_nm'],
-                footprints[r]['position_nm'])/10**6, r) for r in connectors)
+        pos = footprints[ref]['position_nm']
+        # The waiver holds only within the capacitor's own declared limit, so
+        # a rail shared with a distant connector still gets its IC check.
+        nearest = min(((math.dist(pos, footprints[r]['position_nm'])/10**6, r) for r in connectors), default=None)
+        if nearest is not None and nearest[0] <= declaration['max_distance_mm']:
             associations.append({'ref': ref, 'kind': 'interface_filter', 'connectors': connectors,
-                                 'nearest_connector': connector, 'distance_mm': distance, 'nets': nets})
+                                 'nearest_connector': nearest[1], 'distance_mm': nearest[0], 'nets': nets})
         elif ics:
-            pos = footprints[ref]['position_nm']
             distance, ic = min((math.dist(pos, footprints[r]['position_nm'])/10**6, r) for r in ics)
             associations.append({'ref': ref, 'kind': 'decoupling', 'ic': ic, 'nets': nets,
                                  'distance_mm': distance, **declaration})

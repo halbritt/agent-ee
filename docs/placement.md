@@ -34,11 +34,15 @@ The optional captured `agent-ee.placement-policy/1` declaration supplies
 weight is inferred from a reference or value string. Shared non-ground nets
 within the declared reference-count limit associate each capacitor to its
 nearest declared IC. A qualifying connector net instead records an interface
-filter waiver with its nearest connector distance. Distances are Euclidean
+filter waiver with its nearest connector distance, but only when that distance
+is within the capacitor's own `max_distance_mm`. A capacitor farther from every
+connector than its limit falls through to the IC decoupling check, so a rail
+that also reaches a distant connector keeps its deduction. Distances are Euclidean
 footprint-centre distances, not routed loop lengths. Optional `connector_edge`
 contains `max_distance_mm` and `deduction` for an advisory nearest-outline-edge
 centre distance. Advisories reduce the initial score of 100 down to a minimum
 of zero; they never produce a defect or turn unknown geometry into a pass.
+Without a policy the score is `null`: no advisory was evaluated.
 
 The owned native SOIC-8 board with two 0402 capacitors
 (`NativeDecouplingScoreTest` in `tests/test_placement_native.py`) declares
@@ -47,8 +51,12 @@ and probed in the tool sandbox, it scores 70 with only the two decoupling
 advisories, naming C1 and C2, and no hard failure. Moving C1 onto U1's
 courtyard is `hard_fail` whether the score is 70 or, under a lenient policy,
 100. A VBUS capacitor 2.25 mm from its connector is an `interface_filter` with
-no deduction although it also shares VBUS with U1. The footprint geometry is
-written in the test. It is **not** the upstream Konnect fixture: that AGPL design
+no deduction although it also shares VBUS with U1. With a connector that
+carries VCC and GND, as the upstream fixture's does, placed far from both caps,
+the score is still 70 with both decoupling deductions; moved 3 mm from C2
+(within its 5 mm limit) it waives C2 only and the score is 85. The footprint
+geometry is written in the test; the 0402 pad offset and size are the generic
+values KiCad's stock 0402 footprint also uses. It is **not** the upstream Konnect fixture: that AGPL design
 file was not copied, so its exact numbers have not been reproduced.
 
 ## Placement check kind

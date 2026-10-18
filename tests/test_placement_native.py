@@ -173,10 +173,14 @@ class NativePlacementTest(unittest.TestCase):
 class NativeDecouplingScoreTest(unittest.TestCase):
     """Owned SOIC-8 with two 0402 capacitors: the Konnect-shaped scoring case.
 
-    Pad and courtyard dimensions are written here, not copied from any library
-    or the Konnect fixture. C1 (100 nF, limit 2.5 mm) sits 4 mm and C2 (1 µF,
-    limit 5 mm) 7 mm from U1; each declared deduction is 15. In the connector
-    variant U1 pin 1 and C3 share VBUS with J1, 2.25 mm from J1 and 5.75 mm from U1.
+    The board is built here, not copied from the Konnect fixture. The 0402 pad
+    offset and size are the generic values KiCad's stock 0402 footprint also
+    uses; the SOIC pads and both courtyards are written for this test. C1
+    (100 nF, limit 2.5 mm) sits 4 mm and C2 (1 µF, limit 5 mm) 7 mm from U1;
+    each declared deduction is 15. In the connector variant U1 pin 1 and C3
+    share VBUS with J1, 2.25 mm from J1 and 5.75 mm from U1. In the VCC
+    connector variants J1 carries VCC and GND like the Konnect fixture's
+    connector, either far from both caps or 3 mm from C2.
     """
     POLICY = {'schema': 'agent-ee.placement-policy/1', 'ground_nets': ['GND'], 'ic_refs': ['U1'],
               'connector_refs': [], 'max_shared_refs': 8,
@@ -253,6 +257,10 @@ class NativeDecouplingScoreTest(unittest.TestCase):
             footprint('J1', 'owned 2-pin', 2, 10, (1.0, 2.0),
                       [('1', 0, -1, (1.2, 1.2), 'VBUS'), ('2', 0, 1, (1.2, 1.2), 'GND')])
             cap('C3', '100nF', 4.25, 10, 'VBUS')
+        if variant in ('far_vcc_connector', 'near_vcc_connector'):
+            x, y = (22, 17) if variant == 'far_vcc_connector' else (17, 13)
+            footprint('J1', 'owned 2-pin', x, y, (1.0, 2.0),
+                      [('1', 0, -1, (1.2, 1.2), 'VCC'), ('2', 0, 1, (1.2, 1.2), 'GND')])
         path = self.root / (variant + '.kicad_pcb')
         k.SaveBoard(str(path), board)
         return path
@@ -296,3 +304,20 @@ class NativeDecouplingScoreTest(unittest.TestCase):
         self.assertEqual(filters, [{'ref': 'C3', 'kind': 'interface_filter', 'connectors': ['J1'],
                                     'nearest_connector': 'J1', 'distance_mm': 2.25, 'nets': ['VBUS']}])
         self.assertEqual(sorted(a['ref'] for a in report['advisories']), ['C1', 'C2'])
+
+    def test_vcc_connector_far_from_the_caps_waives_nothing(self):
+        policy = {**self.POLICY, 'connector_refs': ['J1']}
+        report = judge(extract(self.board('far_vcc_connector')), policy)
+        self.assertEqual((report['verdict'], report['score']), ('pass', 70), report)
+        self.assertEqual([(a['kind'], a['ref'], a['ic'], a['distance_mm']) for a in report['advisories']],
+                         [('decoupling_distance', 'C1', 'U1', 4), ('decoupling_distance', 'C2', 'U1', 7)])
+        self.assertEqual([(a['ref'], a['kind'], a['nets']) for a in report['associations']],
+                         [('C1', 'decoupling', ['VCC']), ('C2', 'decoupling', ['VCC'])])
+
+    def test_vcc_connector_within_one_cap_limit_waives_only_that_cap(self):
+        policy = {**self.POLICY, 'connector_refs': ['J1']}
+        report = judge(extract(self.board('near_vcc_connector')), policy)
+        self.assertEqual((report['verdict'], report['score']), ('pass', 85), report)
+        self.assertEqual([(a['kind'], a['ref']) for a in report['advisories']], [('decoupling_distance', 'C1')])
+        self.assertEqual(report['associations'][1], {'ref': 'C2', 'kind': 'interface_filter', 'connectors': ['J1'],
+                                                     'nearest_connector': 'J1', 'distance_mm': 3, 'nets': ['VCC']})
