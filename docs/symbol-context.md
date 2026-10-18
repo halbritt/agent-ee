@@ -18,11 +18,14 @@ substitutions. No ambient KiCad library path is consulted.
 
 Bounding boxes are per-unit for body style 1, including common unit/body
 primitives. They bound local graphic centrelines and complete pin segments;
-rendered text, labels and stroke thickness are excluded. Rectangles, polylines
-and circles are supported. An unqualified primitive (including arcs) yields
-`coverage: unsupported` with `bounds_nm: null` for that unit. A partial box is
-never presented as complete. Missing bbox coverage does not invalidate an
-otherwise qualified pin inventory or establish a design defect.
+rendered text, labels and stroke thickness are excluded. Rectangles, polylines,
+circles and three-point circular arcs (`start`, `mid`, `end`, including any
+axis-extreme points on the swept arc, rounded outward to integer nanometres)
+are supported. Degenerate arcs (collinear points or zero radius) and
+unqualified primitives (such as `bezier`) yield `coverage: unsupported` with
+`bounds_nm: null` for that unit. A partial box is never presented as complete.
+Missing bbox coverage does not invalidate an otherwise qualified pin inventory
+or establish a design defect.
 
 A query JSON has schema `agent-ee.symbol-query/1`, explicit `libraries` entries
 `{name, path, sha256}`, and `selection` and `references`. For context, selection

@@ -58,15 +58,82 @@ class ContextTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
 
     def test_unqualified_geometry_does_not_invent_bbox_or_lose_pins(self):
-        data = LIBRARY.replace(b'(rectangle (start -2 -2) (end 2 2)', b'(arc (start -2 -2) (mid 0 3) (end 2 2)')
+        data = LIBRARY.replace(b'(rectangle (start -2 -2) (end 2 2)',
+                               b'(bezier (pts (xy -2 -2) (xy -1 3) (xy 1 3) (xy 2 2))')
         result = self.context(data=data)
         self.assertEqual(len(result['pins']), 3)
         self.assertEqual(result['bbox_by_unit']['1']['coverage'], 'unsupported')
         self.assertIsNone(result['bbox_by_unit']['1']['bounds_nm'])
+        self.assertIn('bezier', result['bbox_by_unit']['1']['reason'])
         # Pin existence remains independently qualified despite unavailable bbox.
         refs = check_pin_references(libraries(data), {'owned.kicad_sym': data},
             [dict(reference='U1', lib_id='Owned:Child', pin={'number': '1'})])
         self.assertEqual(refs['outcome'], 'pass')
+
+    def test_arc_bounds_quadrants(self):
+        pin_only = b'''(kicad_symbol_lib (version 20231120) (generator "owned")
+(symbol "ArcPart"
+(symbol "ArcPart_0_1" ARC_NODE)
+(symbol "ArcPart_1_1" (pin passive line (at 0 0 0) (length 0) (name "1") (number "1")))))'''
+        for name, arc, expected in (
+            ('cross_0', b'(arc (start 6 8) (mid 10 0) (end 6 -8))', [0, -8000000, 10000000, 8000000]),
+            ('cross_90', b'(arc (start 8 6) (mid 0 10) (end -8 6))', [-8000000, 0, 8000000, 10000000]),
+            ('cross_180', b'(arc (start -6 8) (mid -10 0) (end -6 -8))', [-10000000, -8000000, 0, 8000000]),
+            ('cross_270', b'(arc (start -8 -6) (mid 0 -10) (end 8 -6))', [-8000000, -10000000, 8000000, 0]),
+            ('cross_all_but_0', b'(arc (start 6 8) (mid -10 0) (end 6 -8))', [-10000000, -10000000, 6000000, 10000000]),
+            ('no_cross_q1', b'(arc (start 8 6) (mid 7.071068 7.071068) (end 6 8))', [0, 0, 8000000, 8000000]),
+            ('outward_rounding', b'(arc (start 0 1) (mid 0.500001 0.5) (end 0 0))', [0, -1, 500001, 1000001]),
+        ):
+            with self.subTest(name=name):
+                data = pin_only.replace(b'ARC_NODE', arc)
+                result = self.context('Owned:ArcPart', data)
+                self.assertEqual(result['execution'], 'ok')
+                self.assertEqual(result['bbox_by_unit']['1'],
+                                 dict(coverage='complete', bounds_nm=expected))
+
+    def test_degenerate_arc_refused(self):
+        for name, arc in (
+            ('collinear', b'(arc (start -2 -2) (mid 0 0) (end 2 2)'),
+            ('zero_radius', b'(arc (start 1 1) (mid 1 1) (end 1 1)'),
+            ('coincident_start_mid', b'(arc (start -2 0) (mid -2 0) (end 2 0)'),
+            ('coincident_start_end', b'(arc (start -2 0) (mid 0 2) (end -2 0)'),
+            ('missing_mid', b'(arc (start -2 0) (end 2 0)'),
+        ):
+            with self.subTest(name=name):
+                data = LIBRARY.replace(b'(rectangle (start -2 -2) (end 2 2)', arc)
+                result = self.context(data=data)
+                self.assertEqual(result['execution'], 'ok')
+                self.assertEqual(result['bbox_by_unit']['1']['coverage'], 'unsupported')
+                self.assertIsNone(result['bbox_by_unit']['1']['bounds_nm'])
+
+    def test_device_inductor_library_bounds(self):
+        import os
+        from pathlib import Path
+        from agent_ee.symbol_capture import capture_symbols
+        from agent_ee.symbol_library import parse_library
+        stock = Path('/usr/share/kicad/symbols/Device.kicad_sym')
+        if not stock.is_file():
+            if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+                raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: stock library missing: ' + str(stock))
+            self.skipTest('stock symbol library missing: ' + str(stock))
+        raw = stock.read_bytes()
+        all_l = [k for k in sorted(parse_library(raw)) if k == 'L' or k.startswith('L_')]
+        self.assertGreaterEqual(len(all_l), 39)
+        subset, _ = capture_symbols(raw, all_l, library='Device')
+        libs = [dict(name='Device', path='Device.kicad_sym', sha256=hashlib.sha256(subset).hexdigest())]
+        captured = {'Device.kicad_sym': subset}
+        for name in all_l:
+            with self.subTest(symbol=name):
+                ctx = build_context(libs, captured, 'Device:' + name)
+                self.assertEqual(ctx['execution'], 'ok', name)
+                self.assertEqual(ctx['bbox_by_unit']['1']['coverage'], 'complete', ctx['bbox_by_unit']['1'])
+                x0, y0, x1, y1 = ctx['bbox_by_unit']['1']['bounds_nm']
+                self.assertLess(x0, x1)
+                self.assertLess(y0, y1)
+        ctx_l = build_context(libs, captured, 'Device:L')
+        self.assertEqual(ctx_l['bbox_by_unit']['1']['bounds_nm'], [0, -3810000, 632300, 3810000])
+        ctx_small = build_context(libs, captured, 'Device:L_Small')
+        self.assertEqual(ctx_small['bbox_by_unit']['1']['bounds_nm'], [0, -2540000, 505800, 2540000])
 
     def test_cycle_missing_parent_and_unsupported_override_are_unknown(self):
         for data in (

@@ -329,7 +329,9 @@ class RefusalTests(unittest.TestCase):
         variant(vo, vo.replace('7.62 0', '-7.62 0'), 'impossible_pin_endpoint')
         variant(vo, vo.replace('7.62 0', '7.600001 0'), 'unlocatable_pin')
         body = '(symbol "REG3_0_1"\n'
-        variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 6)\n'
+        variant(body, body + '\t\t\t(bezier\n\t\t\t\t(pts (xy -5.08 5.08) (xy 0 6) (xy 0 6) (xy 5.08 5.08))\n'
+                '\t\t\t)\n', 'unsupported_graphic')
+        variant(body, body + '\t\t\t(arc\n\t\t\t\t(start -5.08 5.08)\n\t\t\t\t(mid 0 5.08)\n'
                 '\t\t\t\t(end 5.08 5.08)\n\t\t\t)\n', 'unsupported_graphic')
 
     def test_stacked_pins_share_one_label_only_on_one_net(self):
@@ -630,6 +632,71 @@ class NativeEmissionTests(unittest.TestCase):
         self.assertEqual(result['execution'], 'ok', result['findings'])
         _, _, _, (_, shorted, _) = self.native_run('regulator', files, 'short')
         self.assertEqual(shorted['/VIN'], [['C1', '1'], ['J1', '1'], ['J1', '3'], ['U1', '1'], ['U1', '3']])
+
+    def test_inductor_and_coax_emit(self):
+        import os
+        from agent_ee.symbol_capture import capture_symbols
+        stock_dir = Path('/usr/share/kicad/symbols')
+        for lib_file in ('Device.kicad_sym', 'Connector.kicad_sym'):
+            if not (stock_dir / lib_file).is_file():
+                if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
+                    raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: stock library missing: ' + lib_file)
+                self.skipTest('stock library missing: ' + lib_file)
+        dev_sub, _ = capture_symbols((stock_dir / 'Device.kicad_sym').read_bytes(), ['L'], library='Device')
+        con_sub, _ = capture_symbols((stock_dir / 'Connector.kicad_sym').read_bytes(), ['Conn_Coaxial'],
+                                     library='Connector')
+        pwr_raw = (PROJECT / 'lib/Owned_Power.kicad_sym').read_bytes()
+        captured = {'lib/Device.kicad_sym': dev_sub, 'lib/Connector.kicad_sym': con_sub,
+                    'lib/Owned_Power.kicad_sym': pwr_raw}
+        libs = [
+            dict(name='Device', path='lib/Device.kicad_sym', sha256=hashlib.sha256(dev_sub).hexdigest()),
+            dict(name='Connector', path='lib/Connector.kicad_sym', sha256=hashlib.sha256(con_sub).hexdigest()),
+            dict(name='OwnedPower', path='lib/Owned_Power.kicad_sym', sha256=hashlib.sha256(pwr_raw).hexdigest()),
+        ]
+        intent = dict(
+            schema='agent-ee.connectivity-intent/1',
+            libraries=libs,
+            components=[
+                dict(id='j1', reference='J1', lib_id='Connector:Conn_Coaxial', value='SMA',
+                     footprint='OwnedFP:CAP_2PAD', units=[1]),
+                dict(id='l1', reference='L1', lib_id='Device:L', value='4u7',
+                     footprint='OwnedFP:CAP_2PAD', units=[1]),
+                dict(id='gnd', reference='#PWR01', lib_id='OwnedPower:GND', value='GND', footprint='', units=[1]),
+                dict(id='flg', reference='#FLG01', lib_id='OwnedPower:PWR_FLAG', value='PWR_FLAG',
+                     footprint='', units=[1]),
+            ],
+            nets=[
+                dict(id='rf', name='RF_IN', terminals=[
+                    dict(component='j1', pin=dict(number='1')),
+                    dict(component='l1', pin=dict(number='1')),
+                ]),
+                dict(id='gnd', name='GND', terminals=[
+                    dict(component='j1', pin=dict(number='2')),
+                    dict(component='l1', pin=dict(number='2')),
+                    dict(component='gnd', pin=dict(number='1')),
+                    dict(component='flg', pin=dict(number='1')),
+                ]),
+            ],
+            no_connects=[],
+        )
+        layout = dict(schema='agent-ee.schematic-layout/1',
+                      namespace='6f0f7f0e-5c43-5b8e-9a51-2a3f2c1d0e40', project='coax_inductor')
+        symbol_table = {'Device': '${KIPRJMOD}/lib/Device.kicad_sym',
+                        'Connector': '${KIPRJMOD}/lib/Connector.kicad_sym',
+                        'OwnedPower': '${KIPRJMOD}/lib/Owned_Power.kicad_sym'}
+        footprint_table = {'OwnedFP': '${KIPRJMOD}/lib/OwnedFP.pretty'}
+        result, files = emit_schematic(intent, captured, layout,
+                                       symbol_table=symbol_table, footprint_table=footprint_table)
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project, work, erc, (components, nets, singles) = self.native_run(
+            'coax_inductor', {**captured, **files}, 'coax_inductor')
+        violations = [v for sheet in erc['sheets'] for v in sheet['violations']]
+        self.assertEqual(violations, [])
+        self.assertEqual({ref: c['lib'] for ref, c in components.items()},
+                         {'J1': ('Connector', 'Conn_Coaxial'), 'L1': ('Device', 'L')})
+        self.assertEqual(nets, {'/RF_IN': [['J1', '1'], ['L1', '1']], 'GND': [['J1', '2'], ['L1', '2']]})
+        self.assertEqual(singles, {})
+        self.assertNativeResave(project, work, 'coax_inductor', files)
 
 
 if __name__ == '__main__':
