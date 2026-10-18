@@ -384,3 +384,50 @@ hand-routing with pcbnew where a routing step was declared. Preserves the single
 writer and the check set as the acceptance authority; receipts become part of
 the acceptance rule rather than provenance only. Excludes stages with no
 declared step, where the writer remains the producer.
+
+### Telemetry pod questions (second batch, 2026-10-18)
+
+The owner answered eight further questions raised by the telemetry-pod surveys and
+the burndown reviews. Choices are quoted; each states what it preserves and excludes.
+
+**Criterion 4 analyzer gate.** > New severity-gate check, four offline analyzers
+A new check kind runs kicad-happy's schematic, PCB, cross-analysis and EMC analyzers
+offline, fails on any error-level finding, and requires a recorded disposition for
+every warning finding id. The existing `kicad_happy` check keeps its declared-rules
+policy. SPICE is excluded (it may reach the network and is not deterministic).
+
+**CAN transceiver.** > TJA1051T/3, compose from both sheets
+The pod's CAN block takes the TJA1051T/3 from fome-mc's wideband sheets and the
+PESD1CAN-UX and 120 ohm termination from the PSU sheet, 5 V on VCC and 3.3 V on VIO.
+The departure from "the verified block carries over unchanged" is recorded.
+
+**Stock evidence source.** > JLCPCB public search endpoint, scraped per LCSC id
+A host-side capture queries JLCPCB's component search once per LCSC id, rate-limited,
+saving each raw response with its sha256 and UTC timestamp into an
+`agent-ee.jlc-catalog/1` snapshot that `assembly_readiness` consumes in the sandbox
+with `as_of` bound to the run. Excludes using LCSC's own stock figure as JLCPCB stock
+and any capture inside a check.
+
+**JLCPCB DFM.** > You upload once; I bind the report as evidence
+The owner uploads the sealed Gerber zip at JLCPCB and saves the DFM result; a
+sandboxed check binds the report hash and the Gerber zip sha256 to the candidate.
+Geometry pre-checks run too but do not satisfy criterion 6 on their own.
+
+**PREVIEW_REQUIRED rotations.** > Operator obligation recorded at done
+`done` is reachable with PREVIEW_REQUIRED designators; the record lists each as an
+obligation the owner confirms in the JLCPCB placement preview before ordering.
+Excludes upgrading the status to pass.
+
+**fome-mc planning documents.** > Pinned-identity citations only
+Block captures cite requirement sources by fome-mc commit, path, blob id and sha256;
+DESIGN.md and BLOCK_LIBRARY.md are not committed as fixtures.
+
+**Derived-upstream sheets.** > Admit with upstream licence recorded
+fome-mc sheets derived from Polygonus / rusEFI Proteus may be captured as blocks; the
+block record carries the upstream origin and licence and the fixture includes the
+notice; the origin check reports them as derived, not owner-confirmed.
+
+**Default net class clearance.** > Default clearance = fab minimum
+The scaffold producer sets the Default class clearance to the fab profile's minimum,
+since KiCad DRC enforces class clearance as a hard floor; preferred values remain
+router targets.
