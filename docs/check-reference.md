@@ -579,13 +579,16 @@ See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
 completion unless BOM/CPL/board designators agree, and applies no CPL rotation
-policy. Launch preflight requires the native `kicad-cli` binary. Empty produced
+policy. Board footprint DNP flags decide assembly. A schematic/board DNP
+disagreement is recorded in `details.dnp_disagreements` and does not block the
+package. Launch preflight requires the native `kicad-cli` binary. Empty produced
 native files are `failed/unknown`; pre-existing staging or native output
 directories are refused before reuse.
 
 [`fab_consistency`](fab-consistency.md) consumes that sealed export, its netlist
 and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,
-BOM/CPL/assembled-board reference parity, LCSC/footprint conflicts, CPL side,
+BOM/CPL/assembled-board reference parity, schematic/board DNP disagreement
+(`designator_parity`), LCSC/footprint conflicts, CPL side,
 captured/embedded 3D models and recorded export-log diagnostics. CPL anchors
 must agree with exact native `position_nm` within 0.01 mm per axis, using
 absolute board X and negative board Y on either side. Missing exact positions

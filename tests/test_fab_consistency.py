@@ -987,6 +987,14 @@ class NativeFabPipelineTests(unittest.TestCase):
                 self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
                 self.assertIn('J1', result['location'])
                 self.assertIn('designator_parity', {d['code'] for d in result['details']['defects']})
+                # The package follows the board flags, so BOM, CPL and board agree; the named
+                # defect is the schematic/board disagreement itself.
+                self.assertEqual(result['details']['designators']['parity_violations'], [])
+                self.assertEqual(result['details']['designators']['dnp_disagreements'], [
+                    {'designator': 'J1', 'schematic_dnp': dnp_source == 'schematic',
+                     'board_dnp': dnp_source == 'board'}])
+                self.assertEqual(self.results[-2]['details']['dnp_disagreements'],
+                                 result['details']['designators']['dnp_disagreements'])
                 if dnp_source == 'schematic':
                     self.assertIn('netlist_exclusion_assembled', {d['code'] for d in result['details']['defects']})
                 self.assert_witness(result, accepted=True)

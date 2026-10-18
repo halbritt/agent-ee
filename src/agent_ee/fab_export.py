@@ -7,7 +7,8 @@ fab lane interface contract v1 under `work/<check-id>/fab/`:
     gerbers/          one plot per enabled fab layer, Protel (JLC) extensions
     drill/            exactly one PTH and one NPTH Excellon file + Gerber X2 maps
     bom.csv           part-binding properties from the native XML netlist of a
-                      preceding `netlist` check, grouped by LCSC number
+                      preceding `netlist` check for the board's non-DNP
+                      footprints, grouped by LCSC number
     cpl.csv           native position file rewritten to the JLCPCB CPL header
     gerbers.zip       gerbers/ + drill/, deterministic member order and metadata
     pcb_summary.json  native `kicad-cli pcb export stats` JSON
@@ -253,44 +254,72 @@ def schematic_variants(data):
 
 
 def part_bindings(xml_path):
-    """BOM inputs from the native XML netlist: refs, DNP and binding fields.
+    """Binding inputs from the native XML netlist for every physical component.
 
-    Returns (parts, dnp_refs, unsupported). Each part has value, footprint
-    and the `LCSC`, `Manufacturer` and `Partnumber` (fallback `PartNumber`)
-    symbol fields verbatim; validation happens in `bom_rows`.
+    Returns (components, unsupported). Each component has its schematic `dnp`
+    flag, schematic BOM/board exclusions, value, footprint and the `LCSC`,
+    `Manufacturer`, `Partnumber` and `PartNumber` symbol fields verbatim.
+    Which components are assembled is decided by `assembled_parts`.
     """
     root = ET.parse(xml_path).getroot()
-    parts, dnp, unsupported = {}, [], []
+    components, unsupported = {}, []
     for comp in root.findall('./components/comp'):
         ref = comp.get('ref') or ''
         if ref.startswith('#'):
             continue  # power symbols are virtual
-        if ref in parts or ref in dnp:
+        if ref in components:
             unsupported.append(f'netlist repeats component {ref}')
             continue
         props = {p.get('name'): p.get('value') for p in comp.findall('property')}
         fields = {}
         for field in comp.findall('./fields/field'):
             fields[field.get('name')] = (field.text or '').strip()
-        if 'dnp' in props:
-            dnp.append(ref)
+        components[ref] = {'dnp': 'dnp' in props,
+                           'excluded': sorted(set(props) & {'exclude_from_bom', 'exclude_from_board'}),
+                           'value': (comp.findtext('value') or '').strip(),
+                           'footprint': (comp.findtext('footprint') or '').strip(),
+                           'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
+                           'Partnumber': fields.get('Partnumber', ''), 'PartNumber': fields.get('PartNumber', '')}
+    return components, unsupported
+
+
+def assembled_parts(components, footprints):
+    """BOM parts under the board DNP authority.
+
+    Returns (parts, disagreements, unsupported). The board footprint `dnp`
+    attribute decides assembly for every component that has a footprint, so
+    the BOM, the `--exclude-dnp` position file and `board_non_dnp` derive from
+    the same flags. A component without a footprint keeps its schematic state:
+    a populated schematic part missing from the board still reaches the BOM and
+    fails designator agreement. A component whose schematic and board DNP flags
+    differ is listed in `disagreements`, never resolved silently; the
+    fab_consistency gate reports it as a `designator_parity` defect.
+    """
+    board_dnp = {}
+    for fp in footprints:
+        board_dnp[fp['ref']] = board_dnp.get(fp['ref'], False) or fp['dnp']
+    parts, disagreements, unsupported = {}, [], []
+    for ref in sorted(components, key=natural_key):
+        comp = components[ref]
+        if ref in board_dnp and board_dnp[ref] != comp['dnp']:
+            disagreements.append({'designator': ref, 'schematic_dnp': comp['dnp'], 'board_dnp': board_dnp[ref]})
+        assembled = not board_dnp.get(ref, comp['dnp'])
+        if comp['excluded'] and (assembled or not comp['dnp']):
+            unsupported.append(f'populated component {ref} carries {comp["excluded"]}; '
+                               'v1 refuses non-DNP exclusions')
             continue
-        excluded = sorted(set(props) & {'exclude_from_bom', 'exclude_from_board'})
-        if excluded:
-            unsupported.append(f'populated component {ref} carries {excluded}; v1 refuses non-DNP exclusions')
+        if not assembled:
             continue
         if not REF_RE.match(ref):
             unsupported.append(f'component reference {ref!r} is not a plain designator')
             continue
-        partnumber, camel = fields.get('Partnumber', ''), fields.get('PartNumber', '')
+        partnumber, camel = comp['Partnumber'], comp['PartNumber']
         if partnumber and camel and partnumber != camel:
             unsupported.append(f'{ref} has conflicting Partnumber {partnumber!r} and PartNumber {camel!r}')
             continue
-        parts[ref] = {'value': (comp.findtext('value') or '').strip(),
-                      'footprint': (comp.findtext('footprint') or '').strip(),
-                      'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
-                      'partnumber': partnumber or camel}
-    return parts, sorted(dnp, key=natural_key), unsupported
+        parts[ref] = {key: comp[key] for key in ('value', 'footprint', 'lcsc', 'manufacturer')}
+        parts[ref]['partnumber'] = partnumber or camel
+    return parts, disagreements, unsupported
 
 
 def bom_rows(parts):
@@ -552,10 +581,11 @@ def check_fab_export(ctx):
         except (OSError, ValueError) as exc:
             raise _error('malformed', f'schematic {rel} unreadable: {exc}') from exc
     try:
-        parts, dnp_refs, part_problems = part_bindings(xml)
+        components, part_problems = part_bindings(xml)
     except (ET.ParseError, OSError) as exc:
         raise _error('malformed', f'native XML netlist unreadable: {exc}') from exc
-    unsupported += part_problems
+    parts, disagreements, assembly_problems = assembled_parts(components, facts['footprints'])
+    unsupported += part_problems + assembly_problems
     try:
         rows, flagged = bom_rows(parts)
     except ValueError as exc:
@@ -563,7 +593,8 @@ def check_fab_export(ctx):
         rows, flagged = [], []
     if not parts:
         unsupported.append('netlist has no populated components to place in a BOM')
-    details['schematic_dnp'] = dnp_refs
+    details['schematic_dnp'] = sorted((r for r, c in components.items() if c['dnp']), key=natural_key)
+    details['dnp_disagreements'] = disagreements
     if unsupported:
         details['unsupported'] = unsupported
         raise _error('unsupported', 'fab export refused: ' + '; '.join(unsupported))
@@ -740,6 +771,12 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab)
         'part, side and model consistency require fab_consistency (AGENTEE-73)',
         'no DFM, panelisation, stock, price or orderability evaluation',
     ]
+    if details['dnp_disagreements']:
+        ctx.result['limitations'].append(
+            'schematic and board DNP flags disagree on ' +
+            ', '.join(d['designator'] for d in details['dnp_disagreements']) +
+            '; the board flags define the BOM, CPL and board_non_dnp, and fab_consistency '
+            'reports the disagreement as a designator_parity defect')
     ctx.result['execution'] = 'ok'
     ctx.result['outcome'] = 'pass'
     ctx.result['summary'] = (f"JLCPCB fab package exported by kicad-cli {version}: "

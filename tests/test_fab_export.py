@@ -16,7 +16,8 @@ from agent_ee.baseline import compile_baseline, freeze_evidence, verify_evidence
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import CheckError, Ctx, run_checks
-from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, board_facts, bom_rows,
+from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, assembled_parts,
+                                 board_facts, bom_rows,
                                  check_fab_export, cpl_rows, inventory, normalise, render_bom,
                                  scan_sexpr, validate_params, verify_manifest, write_zip,
                                  GERBER_TIMES)
@@ -181,6 +182,50 @@ class PackagingTests(unittest.TestCase):
                 inventory(fab)
 
 
+def component(dnp=False, excluded=(), **fields):
+    binding = part(**fields)
+    return {'dnp': dnp, 'excluded': sorted(excluded), 'value': binding['value'],
+            'footprint': binding['footprint'], 'lcsc': binding['lcsc'],
+            'manufacturer': binding['manufacturer'], 'Partnumber': binding['partnumber'], 'PartNumber': ''}
+
+
+def footprint(ref, dnp=False):
+    return {'ref': ref, 'side': 'Top', 'dnp': dnp, 'attributes': ['dnp'] if dnp else []}
+
+
+class AssemblyAuthorityTests(unittest.TestCase):
+    def test_board_dnp_flags_decide_the_bom_and_disagreements_are_recorded(self):
+        components = {'C1': component(), 'J1': component(dnp=True), 'R1': component(), 'R2': component(dnp=True)}
+        footprints = [footprint('C1'), footprint('J1'), footprint('R1', dnp=True), footprint('R2', dnp=True)]
+        parts, disagreements, unsupported = assembled_parts(components, footprints)
+        self.assertEqual(unsupported, [])
+        self.assertEqual(sorted(parts), ['C1', 'J1'])
+        self.assertEqual(parts['J1']['partnumber'], 'PN-1')
+        self.assertEqual(disagreements, [{'designator': 'J1', 'schematic_dnp': True, 'board_dnp': False},
+                                         {'designator': 'R1', 'schematic_dnp': False, 'board_dnp': True}])
+
+    def test_component_without_footprint_keeps_its_schematic_state(self):
+        components = {'C1': component(), 'R5': component(), 'R6': component(dnp=True, excluded=['exclude_from_board'])}
+        parts, disagreements, unsupported = assembled_parts(components, [footprint('C1')])
+        # R5 reaches the BOM and must then fail designator agreement with the board.
+        self.assertEqual((sorted(parts), disagreements, unsupported), (['C1', 'R5'], [], []))
+
+    def test_exclusions_are_refused_for_any_part_populated_in_either_source(self):
+        for schematic_dnp, board_dnp in ((False, False), (False, True), (True, False)):
+            with self.subTest(schematic_dnp=schematic_dnp, board_dnp=board_dnp):
+                components = {'C1': component(dnp=schematic_dnp, excluded=['exclude_from_bom'])}
+                parts, _, unsupported = assembled_parts(components, [footprint('C1', dnp=board_dnp)])
+                self.assertEqual(parts, {})
+                self.assertIn('v1 refuses non-DNP exclusions', unsupported[0])
+        parts, _, unsupported = assembled_parts({'C1': component(dnp=True, excluded=['exclude_from_bom'])},
+                                                [footprint('C1', dnp=True)])
+        self.assertEqual((parts, unsupported), ({}, []))
+        conflict = component()
+        conflict['PartNumber'] = 'PN-2'
+        _, _, unsupported = assembled_parts({'C1': conflict}, [footprint('C1')])
+        self.assertIn('conflicting Partnumber', unsupported[0])
+
+
 class CapabilityTests(unittest.TestCase):
     def setUp(self):
         self.scope = read_json(FIXTURE / 'control.scope.json')
@@ -286,6 +331,7 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertEqual(sorted(manifest['designators']['board_non_dnp']), cpl_refs)
         self.assertNotIn('C3', cpl_refs)
         self.assertIn('C3', read_json(run / 'work/netlist/connectivity.json')['components'])
+        self.assertEqual(result['details']['dnp_disagreements'], [])
         self.assertEqual({r[0]: r[3] for r in cpl_rows_}['R2'], 'Bottom')
         summary = read_json(fab / 'pcb_summary.json')
         self.assertEqual(summary['metadata']['date'], '1970-01-01T00:00:00')
@@ -342,6 +388,32 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertIn('R1', sets['bom'])
         self.assertIn('R99', sets['cpl'])
         self.assertFalse(sets['agree'])
+
+    def test_schematic_board_dnp_disagreement_follows_the_board_and_is_recorded(self):
+        schematic, board = self.source / 'fab.kicad_sch', self.source / 'fab.kicad_pcb'
+        original_schematic, original_board = schematic.read_text(), board.read_text()
+        for dnp_source in ('schematic', 'board'):
+            with self.subTest(dnp_source=dnp_source):
+                # J1 is the fixture's first schematic instance and only through-hole footprint.
+                schematic.write_text(original_schematic.replace('(dnp no)', '(dnp yes)', 1)
+                                     if dnp_source == 'schematic' else original_schematic)
+                board.write_text(original_board.replace('(attr through_hole)', '(attr through_hole dnp)', 1)
+                                 if dnp_source == 'board' else original_board)
+                run, result = self.run_case()
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+                sets = result['details']['designators']
+                self.assertTrue(sets['agree'])
+                self.assertEqual(sets['bom'], sets['cpl'])
+                self.assertEqual(sets['bom'], sets['board_non_dnp'])
+                self.assertEqual('J1' in sets['bom'], dnp_source == 'schematic')
+                self.assertEqual(result['details']['dnp_disagreements'], [
+                    {'designator': 'J1', 'schematic_dnp': dnp_source == 'schematic',
+                     'board_dnp': dnp_source == 'board'}])
+                self.assertEqual('J1' in result['details']['schematic_dnp'], dnp_source == 'schematic')
+                self.assertTrue(any('disagree on J1' in item for item in result['limitations']))
+                manifest = read_json(run / 'work/fab/fab/manifest.json')
+                self.assertEqual(manifest['designators']['board_non_dnp'], sets['board_non_dnp'])
+                self.assertEqual(verify_manifest(run / 'work/fab/fab', manifest), manifest['files'])
 
     def test_real_export_is_consumed_by_consistency_gate_and_sealed(self):
         self.scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})

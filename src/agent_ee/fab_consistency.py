@@ -819,8 +819,19 @@ def check_fab_consistency(ctx):
             absent = [k for k, v in membership.items() if not v]
             defects.append({'code': 'designator_parity', 'file': 'cpl.csv' if not membership['cpl'] else 'bom.csv',
                             'locator': f'designator {ref} absent from {", ".join(absent)}'})
+    # The package follows the board DNP flags; a schematic that disagrees is a
+    # parity defect between the two sources, in either direction.
+    dnp_disagreements = []
+    for ref in sorted(set(netlist) & set(by_ref)):
+        board_dnp = any(fp['dnp'] for fp in by_ref[ref])
+        if netlist[ref]['dnp'] != board_dnp:
+            dnp_disagreements.append({'designator': ref, 'schematic_dnp': netlist[ref]['dnp'],
+                                      'board_dnp': board_dnp})
+            defects.append({'code': 'designator_parity', 'locator':
+                            f'designator {ref} is {"DNP" if netlist[ref]["dnp"] else "populated"} in the '
+                            f'sealed netlist but {"DNP" if board_dnp else "populated"} on the board'})
     details['designators'] = {'bom': len(bom_refs), 'cpl': len(cpl), 'board_assembled': len(assembled_refs),
-                              'parity_violations': parity,
+                              'parity_violations': parity, 'dnp_disagreements': dnp_disagreements,
                               'sources': {'geometry': geometry_ids, 'netlist': nid}}
 
     for lcsc, rows in sorted(lcsc_rows.items()):
