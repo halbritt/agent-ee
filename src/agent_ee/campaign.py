@@ -28,16 +28,21 @@ def step_plan(config, manifest, record, version):
     from .stage_receipts import validate_step
     steps = [validate_step(s, host=False) for s in config.get("implementation_steps", [])]
     declaration = config.get("placement_adapter")
+    routing = config.get("routing_adapter")
     placement = False
     if version is None:
         if declaration is not None:
             raise ValueError("placement adapter requires a campaign step plan; start a fresh campaign")
+        if routing is not None:
+            raise ValueError("routing adapter requires a campaign step plan; start a fresh campaign")
         selected = steps
     elif version != STEP_PLAN:
         raise ValueError("unknown campaign step plan")
     elif manifest["scope"].get("stages") is None:
         if declaration is not None:
             raise ValueError("placement adapter requires a staged scope")
+        if routing is not None:
+            raise ValueError("routing adapter requires a staged scope")
         selected = steps
     else:
         active = record.get("earliest_failing_stage")
@@ -48,6 +53,8 @@ def step_plan(config, manifest, record, version):
         from .placement_adapter import validate_declaration
         helper = validate_declaration(declaration)["helper"] is not None
         plan.append({"kind": "placement", "receipt_index": len(plan) + 1 if helper else None})
+    if routing is not None and record.get('earliest_failing_stage') == 'routing':
+        plan.append({'kind': 'routing', 'receipt_index': len(plan) + 1})
     return plan
 
 
@@ -57,6 +64,9 @@ def plan_receipt_specs(plan, work, config, manifest, mutable):
     for entry in plan:
         if entry["kind"] == "step":
             specs.append(entry["spec"])
+        elif entry['kind'] == 'routing':
+            from .routing_adapter import campaign_spec
+            specs.append(campaign_spec(config['routing_adapter'], manifest, mutable))
         elif entry["receipt_index"] is not None:
             from .placement_adapter import bind_declaration, step_declaration
             bound = bind_declaration(config["placement_adapter"], manifest, mutable)
@@ -97,6 +107,10 @@ def implement(root, previous, definition, state, deadline):
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
     plan = step_plan(config, manifest, state["history"][-1], state.get("step_plan"))
+    if any(entry['kind'] == 'routing' for entry in plan):
+        prompt += ("\nThis is a coordinator routing turn. Leave /work/design byte-for-byte unchanged. "
+                   "The coordinator alone runs the pinned routing adapter on the placed source; "
+                   "fresh checks and reviews grade its captured proposal.")
     if any(entry["kind"] == "placement" for entry in plan):
         from .placement_adapter import TRANSFORMS, writer_context
         bound, _, _, _, refs = placement_binding(config, manifest, previous / "inputs", state["mutable_inputs"])
@@ -173,6 +187,23 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
     number = int(work.name)
     try:
         for entry in plan:
+            if entry['kind'] == 'routing':
+                from .routing_adapter import validate_live_binding, verify_campaign_receipt
+                from .stage_receipts import file_tree
+                binding = state['routing_binding']
+                actual, other = file_tree(design)
+                if other or actual != manifest['files']:
+                    raise ValueError('routing writer changed the verified placed source')
+                validate_live_binding(binding)
+                spec = binding['spec']
+                k = entry['receipt_index']
+                receipt_dir = work / 'receipts' / f"{k}-{spec['step']}"
+                expected = {'implementation': number, 'source_candidate_id': manifest['candidate_id'],
+                            'receipt_index': k}
+                receipt = run_step(receipt_dir, design, spec, expected, deadline=deadline)
+                verify_campaign_receipt(receipt_dir, expected=expected, binding=binding)
+                adopt(receipt_dir, receipt, design)
+                continue
             if entry["kind"] == "placement":
                 from .placement_adapter import run_placement_iteration
                 record = work / "placement-adapter.json"
@@ -223,6 +254,13 @@ def run_campaign(config_path, out):
     from .stage_receipts import validate_step
     for spec in steps:
         validate_step(spec)
+    if 'routing_adapter' in config:
+        from .routing_adapter import campaign_spec, validate_campaign_step
+        spec = campaign_spec(config['routing_adapter'], {'scope': scope}, scope.get('mutable_inputs',
+                             [scope['board'], scope['schematic']]))
+        validate_campaign_step(spec)
+        if any(s['stage'] == 'routing' for s in steps):
+            raise ValueError('routing_adapter cannot be combined with routing implementation_steps')
     if "placement_adapter" in config:
         from .placement_adapter import validate_declaration
         validate_declaration(config["placement_adapter"])
@@ -261,6 +299,9 @@ def record_iteration(root, state, run, config):
             # Bound once to the first captured candidate; later candidates must keep these exact bytes.
             state["placement_binding"] = placement_binding(config, manifest, run / "inputs",
                                                            state["mutable_inputs"])[0]
+        if 'routing_adapter' in config:
+            from .routing_adapter import campaign_binding
+            state['routing_binding'] = campaign_binding(config['routing_adapter'], manifest, state['mutable_inputs'])
     elif state["baseline"] != baseline:
         raise ValueError("candidate changed the campaign baseline")
     epoch = state.get("epoch", 0)
@@ -409,6 +450,35 @@ def verify_campaign_records(root):
     plans = verify_campaign_plans(root, state, config)
     from .stage_receipts import verify_campaign_receipts
     verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []), plans=plans)
+    from .routing_adapter import verify_campaign_receipt, validate_binding
+    routing_binding = state.get('routing_binding')
+    if 'routing_adapter' in config and state['history']:
+        first = Path(state['history'][0]['run'])
+        validate_binding(routing_binding, config['routing_adapter'], read_json(first / 'candidate.json'),
+                         state['mutable_inputs'], read_json(first / 'result.json')['policy_files'])
+    elif routing_binding is not None:
+        raise ValueError('routing binding without a routing adapter and captured source')
+    for name in state.get('stage_receipts', {}):
+        work = root / 'implementations' / name
+        index = read_json(work / 'stage-receipts.json')
+        for k, link in enumerate(index['receipts'], 1):
+            receipt_path = work / link['path']
+            if routing_binding is not None and plans[name][k - 1] == routing_binding['spec']:
+                source = Path(state['history'][int(name) - 1]['run'])
+                receipt = read_json(receipt_path)
+                if receipt['inputs'] != read_json(source / 'candidate.json')['files']:
+                    raise ValueError('routing writer changed the verified placed source')
+                verify_campaign_receipt(receipt_path.parent, expected={'implementation': int(name),
+                    'source_candidate_id': read_json(source / 'candidate.json')['candidate_id'], 'receipt_index': k},
+                    binding=routing_binding)
+                if receipt['status'] not in ('completed', 'partial'):
+                    if ((work / 'proposal.scope.json').exists() or int(name) != len(state['history']) or
+                            state['state'] != 'incomplete'):
+                        raise ValueError('failed routing attempt cannot have a proposal or later campaign run')
+                elif int(name) < len(state['history']):
+                    following = read_json(Path(state['history'][int(name)]['run']) / 'candidate.json')
+                    if following.get('scope_path') != str(work / 'proposal.scope.json'):
+                        raise ValueError('next campaign run was not captured from this routing proposal')
     return {**state, "state": "empirical_superseded"} if feedback_seen else state
 
 

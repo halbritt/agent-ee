@@ -1962,6 +1962,16 @@
     },
     {
       "paths": [
+        "tests/test_routing_campaign.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original campaign regression-test code with short synthetic KiCad format literals and an owned fixture-router driver. References existing fixture paths and native test helpers; embeds no copied third-party design or library text. Referenced fixtures retain their separate origin classifications."
+    },
+    {
+      "paths": [
         "tests/test_stages.py"
       ],
       "kind": "owned-source",
