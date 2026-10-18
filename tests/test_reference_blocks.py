@@ -239,7 +239,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
         document = captured_fixture(self, dependencies)
         write_json(payload / 'parts.json', document)
         record['files']['parts.json'] = digest(payload / 'parts.json')
-        sheet = generator.schematic().replace('(property "Value" "R"', '(property "Value" "100k"').rstrip()
+        sheet = generator.schematic().replace('(property "Value" "R"', '(property "Value" "10k"').rstrip()
         label = '''(hierarchical_label "IN" (shape input) (at 40 50 0)
           (effects (font (size 1 1))) (uuid "cb914ae0-18b3-43de-8045-9d41a1731b16"))'''
         if hierarchy:
@@ -254,8 +254,8 @@ class NativeReferenceBlockTests(unittest.TestCase):
         if shadow:
             (self.root / 'shadow.kicad_sch').write_bytes((payload / 'sheet.kicad_sch').read_bytes())
             data = (payload / 'sheet.kicad_sch').read_bytes()
-            self.assertIn(b'100k', data)
-            (payload / 'sheet.kicad_sch').write_bytes(data.replace(b'100k', b'200k'))
+            self.assertIn(b'10k', data)
+            (payload / 'sheet.kicad_sch').write_bytes(data.replace(b'10k', b'200k'))
         record['files']['sheet.kicad_sch'] = digest(payload / 'sheet.kicad_sch')
         if layout:
             (payload / 'layout.kicad_pcb').write_bytes((fixture / 'interface.kicad_pcb').read_bytes())
@@ -282,7 +282,7 @@ class NativeReferenceBlockTests(unittest.TestCase):
             terminals={}, allowed_edits=[],
             invariants=[dict(id='series-value', requirement='interface',
                 source=dict(path='requirements.md', locator='Structural interface'),
-                kind='value', component='series', equals='100k')])
+                kind='value', component='series', equals='10k')])
         write_json(self.root / 'contract.json', contract)
         if hierarchy:
             document['parts'][0]['instances'][0]['sheet'] = '/' + sheet_id + '/'
