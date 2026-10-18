@@ -950,6 +950,11 @@ ordinary `review` command. Staged absence is a coordinator defect only after a
 successful native presence observation; hierarchical presence and uncovered
 production envelope obligations continue to fail closed.
 
+The [qualified rung-1 driver](rung1-qualified.md#empty-scaffold) runs its
+scaffold step before the campaign and binds the after-tree to the first
+capture with a pre-receipt. Its symbol subsets and optional package map
+are prepared before that step; compiling the scope does not write inputs.
+
 [`fab_roundtrip`](fab-roundtrip.md), with exactly `{export_check}`, separately
 compares every enabled layer, round PTH/NPTH drill histograms, copper pad/via
 flash counts, flashed pad extents (aperture macros evaluated exactly), Conductor

@@ -438,10 +438,12 @@ Campaign tests bind a receipt to the captured proposal. They show that a late ch
 that undeclared or unanchored receipts are refused. A step whose backend report is `NaN` or truncated
 leaves a verifiable campaign.
 
-`test_rung1_campaign.py` runs the rung 1 `write-scaffold` step in the real sandbox. The
-scaffold files are the step's adopted outputs, a failing step keeps its `failed` receipt and
+`test_rung1_campaign.py` and `test_rung1_qualified.py` run the rung 1 `write-scaffold` step
+(builder `scaffold.native_files`) in the real sandbox. The scaffold files are the step's
+adopted outputs and byte-equal to the shared builder's, a failing step keeps its `failed` receipt and
 writes no project, and the record's scaffold binding is exact against the first captured
-candidate. The rung 1 steps (`emit-schematic`, `build-board`, `route-krt`, `export-fab`) are
+candidate. For rung1_qualified the imported pre-receipt passes `verify_pre_receipts` against a
+real capture of its staged scope and refuses a changed board or a planted generation file. The rung 1 steps (`emit-schematic`, `build-board`, `route-krt`, `export-fab`) are
 declared and validated there. They run in the driver's dry-run rehearsal and in a real
 campaign, not in the unit tests. No scaffold, placement helper or kicad-route execution is
 qualified.

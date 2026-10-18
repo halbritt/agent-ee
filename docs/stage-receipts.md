@@ -313,7 +313,8 @@ later turn fails although every check passes, and a campaign without steps is un
   Exit 2 is a partial proposal requiring fresh checks; exits 1, 3 and 4 stop the
   implementation without a proposal. The AGENTEE-54 placer runs through the
   [placement adapter](placement-adapter.md). Generic step tests use an original test program.
-- The [rung 1 driver](rung1-campaign.md) runs its `write-scaffold` step (stage `scaffold`)
+- The [rung 1 driver](rung1-campaign.md) and [rung1_qualified](rung1-qualified.md) run the
+  shared `write-scaffold` step (stage `scaffold`, builder `scaffold.native_files`) in place
   through `run_step` before the campaign exists, so its receipt is kept beside the campaign in
   `RUNDIR/scaffold-receipt/`, not in an implementation. The driver-written generation inputs and
   requirements (including `requirements/fab-package.md`) are receipt inputs; the empty project and

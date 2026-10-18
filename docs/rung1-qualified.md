@@ -57,7 +57,8 @@ reviewer or writer call is recorded as it happened and never retried.
 | Stage | Owned module (Plane item) | How the run uses it |
 | --- | --- | --- |
 | requirements | `design_dialog`, `design_intent` (AGENTEE-25, AGENTEE-26) | through `agent_ee.generate` stage 1 |
-| envelope | `board_envelope` (AGENTEE-85) | `derive`, `stage_one_requirements` and `round_trip`; the scaffold outline is read back from the validation record |
+| envelope | `board_envelope` (AGENTEE-85) | `derive`, `stage_one_requirements` and `round_trip`; the empty board is built from the captured envelope |
+| scaffold | `scaffold.native_files` (AGENTEE-87, AGENTEE-134) | the shared `write-scaffold` step, run in place before the campaign and imported as its pre-receipt |
 | parts | `parts_manifest`, `catalog`, `part_selection` (AGENTEE-86/27/28) | `--parts-manifest` replays and freezes the canonical bundle; without it the experimental BOM route remains (see [Gaps](#gaps)) |
 | schematic | `schematic_emitter` (AGENTEE-40) | step `emit-schematic`: intent, layout and captured symbols |
 | board population | `forward_annotation` (AGENTEE-52) | step `forward-annotate`: native XML netlist, plan, apply to a new board |
@@ -219,6 +220,31 @@ records the migration. Historical rung-1 evidence used
 `~/git/agent-ee/build/kicad-route-pin-08179cd`; its captured identities remain
 historical and do not qualify as runs of the current adapter.
 
+### Empty scaffold
+
+Selected symbol subsets live under `scaffold/generation/symbols/`; the scope
+also maps that directory to `stock/symbols`. Stock footprints and templates
+are captured separately. This keeps the scaffold pre-receipt's after-tree
+bound to its own inputs without claiming the separately captured stock tree.
+With `--parts-manifest`, the driver copies `rung1-package-map.json` before
+the scaffold step runs, so both the pre-receipt and `scaffold.json` bind it.
+Compiling the scope only reads the scaffold; it does not add files to it.
+
+The driver writes `requirements/` and the generation inputs. The empty
+schematic, board and project come from `agent_ee.scaffold.native_files`, the one
+empty-scaffold builder on main, through the same sandboxed `write-scaffold` step
+as the [RC campaign driver](rung1-campaign.md#empty-scaffold) (AGENTEE-134). The
+step runs in place before the campaign exists. It reads the captured
+`generation/envelope/envelope.json` (`agent-ee.envelope/1`) and
+`generation/layout.json` at their candidate paths. The board takes its outline,
+copper layers and stackup from the envelope. The schematic and project name the
+root-sheet UUID that `schematic_emitter` derives from the layout. The fixture
+project supplies only the `.kicad_pro` settings and the stock library tables. The
+step's receipt is kept in `RUNDIR/scaffold-receipt/`. The campaign configuration
+declares it under `pre_receipts` and never as an implementation step or stage.
+Campaign start imports it, and `verify-campaign` refuses a first capture that
+differs from the receipt's after-tree.
+
 ## Records
 
 | Path | Content |
@@ -226,6 +252,8 @@ historical and do not qualify as runs of the current adapter.
 | `prep/` | `agent_ee.generate` stage-1 and stage-2 receipts |
 | `parts-catalog/` | the catalog source manifest and volume built from the BOM through `generate.read_catalog_with_schema` and `generate.catalog_lcsc`, and the capture result (`header_schema` and `columns` recorded under `/parts/catalog_capture`) |
 | `scaffold/` | empty project, requirements, generation inputs (intent, layout, parts manifest, footprint manifest, placement policy, envelope records, golden netlist) |
+| `scaffold-receipt/` | the `write-scaffold` [stage receipt](stage-receipts.md) that wrote the empty project |
+| `campaign/pre-receipts/1/` | the imported scaffold receipt that `verify-campaign` revalidates against the first capture |
 | `scaffold-checks/` | kicad-cli loads of the empty files |
 | `probes/`, `probes.json` | scope/3 variants that consume the envelope, with the loaders' exact refusals |
 | `scope.json`, `campaign.json` | staged scope and campaign configuration |
@@ -234,7 +262,7 @@ historical and do not qualify as runs of the current adapter.
 | `rung1-qualified-record.json` | `agent-ee.rung1-qualified-record/0-experimental` |
 
 `done` is the campaign verdict `criteria_satisfied` with `verify-campaign`
-exit 0, and the final state lists the `agent-ee.stage-done/1` binding that
+exit 0 (which includes the scaffold pre-receipt's first-capture binding), and the final state lists the `agent-ee.stage-done/1` binding that
 verify-campaign recomputed (`stage_receipts_done.bound`). The schematic must be
 `emit-schematic`'s output. The board must come from `forward-annotate`, then the
 placement adapter's footprint moves, then the routing step, with no other edit
@@ -268,7 +296,10 @@ ground was the local label `/GND`. It ran from a clean worktree, with the
 kicad-route pin clone and `profiles/claude-baseline.json`, `max_iterations` 4
 and `max_seconds` 3600.
 The run directory is copied to `build/rung1-qualified-2026-10-17/`, with the
-final dry run under `dry-run-rehearsal/`. The campaign stopped `incomplete`,
+final dry run under `dry-run-rehearsal/`. The run also predates the shared
+scaffold builder and its pre-receipt (AGENTEE-134). Its empty board kept the
+fixture board's setup and had no stackup, so the current driver does not
+reproduce its candidate bytes. The campaign stopped `incomplete`,
 so `done` is false. `verify-campaign` exits 0 and prints `incomplete`.
 
 - Run 1 reviewed the empty candidate. The schematic, placement and routing

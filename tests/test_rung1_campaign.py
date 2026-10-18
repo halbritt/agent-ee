@@ -18,7 +18,7 @@ from agent_ee import generate as g
 from agent_ee import rung1_campaign as rc
 from agent_ee.stage_receipts import validate_receipt
 from agent_ee.stages import declaration, native_references
-from agent_ee.storage import digest
+from agent_ee.storage import canonical, digest, identity
 try:
     from toolchain import require_toolchain
     from test_generate import HEADER, ROWS, git_catalog
@@ -92,14 +92,44 @@ class ScaffoldTest(Prepared):
         self.assertEqual(text.count('(layer "Edge.Cuts")'), 4)
         self.assertIn('(start 100 100)', text)
         self.assertIn('(end 150 130)', text)
-        self.assertEqual(self.record['board_items_dropped_from_template'],
-                         {'footprint': 3, 'gr_line': 4, 'segment': 5, 'via': 1, 'zone': 1})
+        self.assertEqual(self.record['builder'], 'agent_ee.scaffold.native_files')
 
-    def test_scaffold_is_deterministic(self):
-        board, _ = rc.empty_board((rc.FIXTURE_PROJECT / 'rc_filter.kicad_pcb').read_text(), self.prep['envelope'])
-        self.assertEqual(board, (self.scaffold / 'project/rung1_rc.kicad_pcb').read_bytes())
+    def test_scaffold_is_deterministic_and_built_only_by_the_shared_scaffold_module(self):
+        from agent_ee.board_envelope import validate
+        from agent_ee.scaffold import native_files
+        raw = (self.scaffold / rc.BOARD_ENVELOPE).read_bytes()
+        self.assertEqual(raw, canonical(rc.envelope_record(self.prep['params'])) + b'\n')
+        self.assertEqual(self.record['envelope'], {'path': rc.BOARD_ENVELOPE, 'sha256': digest(self.scaffold / rc.BOARD_ENVELOPE)})
         root = rc.root_sheet_uuid(self.prep['resolved'])
-        self.assertEqual(rc.empty_schematic(root), (self.scaffold / 'project/rung1_rc.kicad_sch').read_bytes())
+        files = rc.scaffold_files(raw, root, rc.FIXTURE_PROJECT)
+        self.assertEqual(sorted(files), sorted(rc.SCAFFOLD_PATHS))
+        for rel, data in files.items():
+            self.assertEqual(data, (self.scaffold / rel).read_bytes(), rel)
+        seed = identity({'envelope': digest(self.scaffold / rc.BOARD_ENVELOPE), 'root': root})
+        project = json.loads((rc.FIXTURE_PROJECT / 'rc_filter.kicad_pro').read_text())
+        native = native_files(validate(raw), 'project/rung1_rc.kicad_sch', project, root, seed)
+        self.assertEqual(sorted(native), ['project/rung1_rc.kicad_pcb', 'project/rung1_rc.kicad_pro',
+                                          'project/rung1_rc.kicad_sch'])
+        for rel, data in native.items():
+            self.assertEqual(data, files[rel], rel)
+        self.assertIn(f'(uuid "{root}")'.encode(), files['project/rung1_rc.kicad_sch'])
+
+    def test_unbuildable_envelope_is_refused_by_the_step_program(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'out'
+            envelope = rc.envelope_record(self.prep['params'])
+            envelope['layer_count'] = 3
+            (Path(tmp) / 'envelope.json').write_bytes(canonical(envelope))
+            resolved = self.scaffold / 'generation/resolved.json'
+            argv = [str(Path(tmp) / 'envelope.json'), '--resolved', str(resolved),
+                    '--template', str(rc.FIXTURE_PROJECT), '--out', str(out)]
+            from contextlib import redirect_stderr
+            import io
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(rc.scaffold_main(argv), 3)
+            self.assertIn('write-scaffold refused', err.getvalue())
+            self.assertFalse(out.exists())
 
     def test_project_and_tables_equal_the_emitter_output(self):
         from agent_ee.schematic_emit import emit
@@ -107,8 +137,11 @@ class ScaffoldTest(Prepared):
         outputs = emit(self.prep['resolved_bytes'], captures, self.prep['parts_path'].read_bytes(),
                        (rc.FIXTURE_PROJECT / 'rc_filter.kicad_pro').read_bytes(), rc.NAME)
         project = self.scaffold / 'project'
-        for name in ('rung1_rc.kicad_pro', 'sym-lib-table', 'fp-lib-table'):
+        for name in ('sym-lib-table', 'fp-lib-table'):
             self.assertEqual(outputs[name], (project / name).read_bytes(), name)
+        # The shared builder writes sorted JSON; the emitter keeps the template's key order.
+        self.assertEqual(json.loads(outputs['rung1_rc.kicad_pro']),
+                         json.loads((project / 'rung1_rc.kicad_pro').read_bytes()))
         root = rc.root_sheet_uuid(self.prep['resolved'])
         self.assertIn(f'(uuid "{root}")'.encode(), outputs['rung1_rc.kicad_sch'])
 
@@ -137,9 +170,11 @@ class ScaffoldTest(Prepared):
         self.assertEqual([m['at'] for m in receipt['tool']['mounts']],
                          ['/tool/steps', '/tool/agent-ee', '/tool/template'])
         self.assertIsNotNone(receipt['tool']['source_tree']['sha256'])
-        # Inputs are the immutable generation inputs only; every project file is a step output.
+        # Inputs are the immutable generation inputs only, read in place; every project file is a step output.
         self.assertFalse(any(rel.startswith('project/') for rel in receipt['inputs']))
         self.assertIn('generation/resolved.json', receipt['inputs'])
+        self.assertIn(rc.BOARD_ENVELOPE, receipt['inputs'])
+        self.assertIn('/candidate/' + rc.BOARD_ENVELOPE, receipt['argv'])
         self.assertEqual(sorted(receipt['outputs']), sorted(receipt['changed']))
         self.assertEqual(len(receipt['outputs']), 7)
         for rel, sha in receipt['outputs'].items():
