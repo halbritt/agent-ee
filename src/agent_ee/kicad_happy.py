@@ -10,6 +10,12 @@ ANALYZERS = {
     'thermal': 'skills/kicad/scripts/analyze_thermal.py',
     'emc': 'skills/emc/scripts/analyze_emc.py',
 }
+SEVERITY_ANALYZERS = {
+    'schematic': ANALYZERS['schematic'],
+    'pcb': ANALYZERS['pcb'],
+    'cross_analysis': 'skills/kicad/scripts/cross_analysis.py',
+    'emc': ANALYZERS['emc'],
+}
 # Only these observed calculation records have qualified scalar semantics.
 CALCULATIONS = {('schematic', 'RC-DET'): {'cutoff_hz', 'time_constant_s'}}
 
@@ -134,8 +140,55 @@ def declarations(params):
     return rules, counted, blocking
 
 
-def check_kicad_happy(ctx):
+def run_analyzers(ctx, *, severity_gate=False, ambient=25.0):
+    """Execute pinned installed sources and retain every sandbox artifact."""
     from .checks import CheckError, verified_hierarchy
+    analyzers = SEVERITY_ANALYZERS if severity_gate else ANALYZERS
+    root = Path(ctx.params['installation']).expanduser().resolve()
+    if not (root / '.claude-plugin/plugin.json').is_file():
+        raise CheckError('unavailable', 'kicad-happy installation not found')
+    try:
+        before = installation(root)
+    except ValueError as exc:
+        raise CheckError('unsupported', str(exc)) from exc
+    if before['sha256'] != ctx.params['installation_sha256']:
+        raise CheckError('unsupported', 'installed analyzer bytes differ from declared pin')
+    ctx.result['details']['installation'] = {'root': str(root), **before}
+    write_json(ctx.work / 'installation.json', {'root': str(root), **before})
+    ctx.evidence('installation.json')
+    verified_hierarchy(ctx)
+    request = {'ambient_c': ambient, 'schematic': ctx.candidate_path(ctx.scope['schematic']),
+               'pcb': ctx.candidate_path(ctx.scope['board'])}
+    if severity_gate:
+        request['profile'] = 'severity_gate'
+    write_json(ctx.work / 'request.json', request)
+    write_json(ctx.work / 'config.json', {'version': 1, 'project': {}, 'suppressions': []})
+    ctx.evidence('request.json', 'config.json')
+    try:
+        ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.kicad_happy_runner'], 600,
+            extra_ro=[(root, '/analyzer'), (ctx.work / 'request.json', '/work/request.json'),
+                      (ctx.work / 'config.json', '/work/config.json')])
+    finally:
+        for path in sorted(ctx.work.rglob('*')):
+            if path.is_file():
+                ctx.evidence(path.relative_to(ctx.work).as_posix())
+    if installation(root) != before:
+        raise CheckError('unsupported', 'installed analyzer bytes changed during execution')
+    executed = ctx.load_json('executed.json', 'executed analyzer helpers')
+    if not isinstance(executed, dict) or not executed:
+        raise CheckError('unsupported', 'missing executed analyzer helper inventory')
+    for rel, sha in executed.items():
+        if before['files'].get(rel) != sha:
+            raise CheckError('unsupported', 'executed helper differs from installed identity')
+    stage = ctx.load_json('stage-status.json', 'analyzer stages')
+    if stage.get('execution') != 'ok':
+        raise CheckError(stage['execution'], stage['summary'])
+    reports = {name: ctx.load_json(f'{name}.json', name) for name in analyzers}
+    return reports, executed
+
+
+def check_kicad_happy(ctx):
+    from .checks import CheckError
     try:
         rules, counted, blocking = declarations(ctx.params)
         for rule in rules:
@@ -148,44 +201,7 @@ def check_kicad_happy(ctx):
         for rule in rules:
             if rule.get('adapter') == 'thermal-ldo-estimate/1' and rule['assumptions']['ambient_c'] != ambient:
                 raise ValueError('thermal rule ambient differs from immutable invocation')
-        root = Path(ctx.params['installation']).expanduser().resolve()
-        if not (root / '.claude-plugin/plugin.json').is_file():
-            raise CheckError('unavailable', 'kicad-happy installation not found')
-        try:
-            before = installation(root)
-        except ValueError as exc:
-            raise CheckError('unsupported', str(exc)) from exc
-        if before['sha256'] != ctx.params['installation_sha256']:
-            raise CheckError('unsupported', 'installed analyzer bytes differ from declared pin')
-        ctx.result['details']['installation'] = {'root': str(root), **before}
-        write_json(ctx.work / 'installation.json', {'root': str(root), **before})
-        ctx.evidence('installation.json')
-        verified_hierarchy(ctx)
-        request = {'ambient_c': ambient, 'schematic': ctx.candidate_path(ctx.scope['schematic']),
-                   'pcb': ctx.candidate_path(ctx.scope['board'])}
-        write_json(ctx.work / 'request.json', request)
-        write_json(ctx.work / 'config.json', {'version': 1, 'project': {}, 'suppressions': []})
-        ctx.evidence('request.json', 'config.json')
-        try:
-            ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.kicad_happy_runner'], 600,
-                extra_ro=[(root, '/analyzer'), (ctx.work / 'request.json', '/work/request.json'),
-                          (ctx.work / 'config.json', '/work/config.json')])
-        finally:
-            for path in sorted(ctx.work.rglob('*')):
-                if path.is_file():
-                    ctx.evidence(path.relative_to(ctx.work).as_posix())
-        if installation(root) != before:
-            raise CheckError('unsupported', 'installed analyzer bytes changed during execution')
-        executed = ctx.load_json('executed.json', 'executed analyzer helpers')
-        if not isinstance(executed, dict) or not executed:
-            raise CheckError('unsupported', 'missing executed analyzer helper inventory')
-        for rel, sha in executed.items():
-            if before['files'].get(rel) != sha:
-                raise CheckError('unsupported', 'executed helper differs from installed identity')
-        stage = ctx.load_json('stage-status.json', 'analyzer stages')
-        if stage.get('execution') != 'ok':
-            raise CheckError(stage['execution'], stage['summary'])
-        reports = {name: ctx.load_json(f'{name}.json', name) for name in ANALYZERS}
+        reports, executed = run_analyzers(ctx, ambient=ambient)
         findings, evaluations = normalize(reports, rules)
         normalized = {'candidate_id': ctx.manifest['candidate_id'],
                       'findings': findings, 'evaluations': evaluations,
@@ -211,7 +227,7 @@ def check_kicad_happy(ctx):
 
 def verify_installations(checks):
     for check in checks:
-        if check.get('kind') != 'kicad_happy':
+        if check.get('kind') not in ('kicad_happy', 'kicad_happy_severity_gate'):
             continue
         recorded = check.get('details', {}).get('installation')
         if recorded:

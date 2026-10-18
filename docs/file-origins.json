@@ -2629,6 +2629,22 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-59 feature documentation, including ticket-supplied tscircuit and parts-engine mechanism-reference links. No upstream content copied or retrieved; those links do not assert current licensing or behavior."
+    },
+    {
+      "paths": [
+        "fixtures/kicad-happy/severity-gate/error/gate.kicad_pcb",
+        "fixtures/kicad-happy/severity-gate/error/gate.kicad_pro",
+        "fixtures/kicad-happy/severity-gate/error/gate.kicad_sch",
+        "fixtures/kicad-happy/severity-gate/generate.py",
+        "fixtures/kicad-happy/severity-gate/warning/gate.kicad_pcb",
+        "fixtures/kicad-happy/severity-gate/warning/gate.kicad_pro",
+        "fixtures/kicad-happy/severity-gate/warning/gate.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original two-pad ground-link fixture and generator, reviewed 2026-10-18. All symbol, pad, trace, zone and outline geometry is authored here; no stock library or external design bytes. OwnedGroundLink2 identifies the fixture, not a manufacturer device."
     }
   ]
 }

@@ -1,0 +1,11 @@
+(kicad_sch (version 20250114) (generator "agent_ee_owned_fixture")
+      (uuid "2f8f7298-5dab-5a4c-8d63-6a39cb1d9ff7") (paper "A4")
+      (lib_symbols (symbol "Owned:GroundLink"
+        (property "Reference" "J" (at 0 0 0) (effects (font (size 1 1))))
+        (property "Value" "GroundLink" (at 0 0 0) (effects (font (size 1 1))))
+        (symbol "GroundLink_1_1" (pin passive line (at 0.0 0 90) (length 2.54) (name "GND" (effects (font (size 1 1)))) (number "1" (effects (font (size 1 1)))))(pin passive line (at 2.54 0 90) (length 2.54) (name "GND" (effects (font (size 1 1)))) (number "2" (effects (font (size 1 1))))))))
+      (symbol (lib_id "Owned:GroundLink") (at 10 10 0) (unit 1)
+        (in_bom yes) (on_board yes) (dnp no) (uuid "ff6e093c-3f7d-5c10-a113-4e368d0da03b") (property "Reference" "J1" (at 10 10 0) (effects (font (size 1 1))))(property "Value" "Owned ground link" (at 10 10 0) (effects (font (size 1 1))))(property "Footprint" "Owned:GroundLink" (at 10 10 0) (effects (font (size 1 1))))(property "MPN" "OwnedGroundLink2" (at 10 10 0) (effects (font (size 1 1))))(property "Manufacturer" "agent-ee fixture" (at 10 10 0) (effects (font (size 1 1))))
+        (instances (project "gate" (path "/2f8f7298-5dab-5a4c-8d63-6a39cb1d9ff7" (reference "J1") (unit 1)))))
+      (label "GND" (at 10 10 0) (effects (font (size 1 1))) (uuid "89971d3e-92b9-57f2-acfb-8bd16a72dc2d"))
+      (label "GND" (at 12.54 10 0) (effects (font (size 1 1))) (uuid "bc9661cc-5e7c-52ab-b941-afc120bfaaf3")))

@@ -79,6 +79,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") in ("catalog", "part_selection"):
             from .catalog_checks import capability
             paths.update(capability(spec["kind"], params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "kicad_happy_severity_gate":
+            from .happy_severity_gate import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "land_pattern":
             from .land_pattern import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
