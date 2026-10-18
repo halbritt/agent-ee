@@ -199,17 +199,33 @@ def footprint_manifest(parts):
                           for n, m in sorted(libraries.items())]}
 
 
-EDGE_CLEARANCE_MM = 0.5  # the template board's copper-to-edge clearance (board setup, 0.5 mm)
-EDGE_CLEARANCE_NM = 500_000
+EDGE_CLEARANCE_NM = 500_000  # the template board's copper-to-edge clearance (board setup, 0.5 mm)
 
 
-def packing_policy(params, outline=None):
+def edge_bands(outline, width=EDGE_CLEARANCE_NM):
+    """Four obstacle rectangles along the inside of the outline, per board side.
+
+    The placer grades courtyards against the outline only; copper-to-edge clearance is a native
+    DRC rule it does not read. Declaring the rule as obstacles (plus the policy gap) keeps every
+    courtyard, and so every pad, clear of it. The bands are captured policy input."""
+    nm = lambda v: int(round(v * 1_000_000))
+    x0, y0 = nm(outline['x']), nm(outline['y'])
+    x1, y1 = x0 + nm(outline['w']), y0 + nm(outline['h'])
+    gap = width // 5
+    rects = [(x0, y0, x1, y0 + width), (x0, y1 - width, x1, y1),
+             (x0, y0 + width + gap, x0 + width, y1 - width - gap),
+             (x1 - width, y0 + width + gap, x1, y1 - width - gap)]
+    # One obstacle per band: the placer reserves the bounding box of each obstacle's polygons.
+    return [{'side': side, 'polygons': [[[a, b], [c, b], [c, d], [a, d]]]}
+            for side in ('F', 'B') for a, b, c, d in rects]
+
+
+def packing_policy(params, outline):
     """agent-ee.packing-policy/1 for the placer helper. J1 is not fixed here: forward annotation
     stages it off-board, and the envelope fixed-footprint binding cannot be captured (see gaps)."""
     return {'schema': 'agent-ee.packing-policy/1', 'step_budget': 200000, 'gap_nm': 1_000_000,
-            'min_courtyard_edge_mm': EDGE_CLEARANCE_MM,
             'fixed_refs': [], 'priority_refs': [], 'ground_nets': [ground_net(params)],
-            'obstacles': []}
+            'obstacles': edge_bands(outline)}
 
 
 def golden_netlist(work):

@@ -200,38 +200,6 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
     return [found[rel] for rel in sorted(found)]
 
 
-def _scope_edge_margin_mm(inputs, manifest):
-    """Declared edge-clearance margin from placement check params or captured fab profiles."""
-    margins = []
-    files = manifest.get('files', {})
-    scope = manifest.get('scope', {})
-    profiles = set()
-    envelope = scope.get('envelope')
-    if isinstance(envelope, dict) and isinstance(envelope.get('profile'), str):
-        profiles.add(envelope['profile'])
-    for spec in scope.get('checks', []):
-        params = spec.get('params') if isinstance(spec.get('params'), dict) else {}
-        if spec.get('kind') == 'placement' and params.get('criterion') == 'edge-clearance/1':
-            margin = params.get('min_courtyard_edge_mm')
-            if not isinstance(margin, bool) and isinstance(margin, (int, float)):
-                margins.append(margin)
-        if spec.get('kind') == 'fab_profile' and isinstance(params.get('fab_profile'), str):
-            profiles.add(params['fab_profile'])
-    for rel in sorted(profiles):
-        if rel not in files:
-            continue
-        path = Path(inputs) / rel
-        if path.is_symlink() or not path.is_file() or digest(path) != files[rel]:
-            raise ValueError(f'captured fab profile {rel!r} changed')
-        profile = read_json(path)
-        for limit in profile.get('limits', []) if isinstance(profile, dict) else []:
-            if isinstance(limit, dict) and limit.get('key') == 'min_edge_clearance_mm':
-                value = limit.get('value')
-                if not isinstance(value, bool) and isinstance(value, (int, float)):
-                    margins.append(value)
-    return max(margins) if margins else None
-
-
 def _policy(inputs, bound, manifest):
     if bound['policy'] is None:
         return {'fixed_refs': []}
@@ -242,12 +210,6 @@ def _policy(inputs, bound, manifest):
     if (not isinstance(policy, dict) or not isinstance(policy.get('fixed_refs'), list) or
             any(not isinstance(r, str) for r in policy['fixed_refs'])):
         raise ValueError('placement policy must be an agent-ee.packing-policy/1 object with fixed_refs')
-    scope_margin = _scope_edge_margin_mm(inputs, manifest)
-    if scope_margin is not None:
-        current = policy.get('min_courtyard_edge_mm')
-        if current is None or (not isinstance(current, bool) and isinstance(current, (int, float))
-                               and scope_margin > current):
-            policy['min_courtyard_edge_mm'] = scope_margin
     return policy
 
 

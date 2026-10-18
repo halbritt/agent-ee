@@ -5,12 +5,9 @@ full polygons and the independent placement judge validate the proposed plan.
 A bounded search failure is unknown, never a proved design defect.
 """
 import copy
-from decimal import Decimal
 from fractions import Fraction
 
-from .placement import area2, cross, edges, intersection_area, judge, qualified_polygons, validate_capture
-from .placement_predicates import segment_distance2
-from .symbol_library import LibraryError, nanometres
+from .placement import area2, cross, intersection_area, judge, qualified_polygons, validate_capture
 
 
 # Native pcbnew PAD_SHAPE values, read from the KiCad 10.0.7 bindings.
@@ -52,21 +49,6 @@ def boxes(fp):
             for side, courtyard in fp['courtyards'].items()}
 
 
-def _edge_margin_nm(policy):
-    value = policy.get('min_courtyard_edge_mm')
-    if value is None:
-        return 0
-    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
-        raise ValueError('min_courtyard_edge_mm must be a nonnegative number')
-    try:
-        margin_nm = nanometres(str(value))
-    except LibraryError as exc:
-        raise ValueError('min_courtyard_edge_mm must be exact to 1 nm') from exc
-    if margin_nm < 0:
-        raise ValueError('min_courtyard_edge_mm must be nonnegative')
-    return margin_nm
-
-
 def _validate_policy(policy, refs):
     if policy.get('schema') != 'agent-ee.packing-policy/1':
         raise ValueError('unsupported packing policy')
@@ -74,7 +56,6 @@ def _validate_policy(policy, refs):
         raise ValueError('step budget must be 1..1000000')
     if type(policy.get('gap_nm')) is not int or policy['gap_nm'] < 0:
         raise ValueError('gap must be nonnegative integer nanometres')
-    _edge_margin_nm(policy)
     for name in ('fixed_refs', 'priority_refs', 'ground_nets'):
         seq = policy.get(name)
         if not isinstance(seq, list) or any(not isinstance(s, str) or not s for s in seq) or len(set(seq)) != len(seq):
@@ -186,18 +167,12 @@ def _blocked(candidate, reserved, gap):
     return False
 
 
-def _fits(candidate, outline, margin_nm=0):
-    for courtyard in candidate['courtyards'].values():
-        for p in courtyard['polygons']:
-            if intersection_area(p, outline) != Fraction(abs(area2(p)), 2):
-                return False
-            if margin_nm > 0 and min(segment_distance2(a, b, c, d)
-                                     for a, b in edges(p) for c, d in edges(outline)) < margin_nm * margin_nm:
-                return False
-    return True
+def _fits(candidate, outline):
+    return all(intersection_area(p, outline) == Fraction(abs(area2(p)), 2)
+               for courtyard in candidate['courtyards'].values() for p in courtyard['polygons'])
 
 
-def _candidate_positions(fp, rotation, outline, reserved, gap, margin_nm=0):
+def _candidate_positions(fp, rotation, outline, reserved, gap):
     at_origin = transform(fp, [0, 0], rotation)
     bounds = list(boxes(at_origin).values())
     bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
@@ -205,11 +180,7 @@ def _candidate_positions(fp, rotation, outline, reserved, gap, margin_nm=0):
     bounds.extend(b for _, b in _keepout_boxes(at_origin.get('packing_keepouts', [])))
     xs, ys = set(), set()
     for x0, y0, x1, y1 in bounds:
-        xs.update(p[0] + margin_nm - x0 for p in outline)
-        xs.update(p[0] - margin_nm - x1 for p in outline)
         xs.update(p[0]-x for p in outline for x in (x0, x1))
-        ys.update(p[1] + margin_nm - y0 for p in outline)
-        ys.update(p[1] - margin_nm - y1 for p in outline)
         ys.update(p[1]-y for p in outline for y in (y0, y1))
         for _, (a0, b0, a1, b1) in reserved:
             xs.update((a0-gap-x1, a1+gap-x0, a0-x0, a1-x1))
@@ -233,15 +204,10 @@ def _wire_cost(candidate, placed, grounds):
     return cost
 
 
-def _margin_mm(margin_nm):
-    return float(Fraction(margin_nm, 1_000_000))
-
-
-def _failure(capture, policy, status, outcome, steps, reason, margin_nm=0):
+def _failure(capture, policy, status, outcome, steps, reason):
     return {'schema': 'agent-ee.packing-plan/1', 'board_sha256': capture.get('board_sha256'),
             'status': status, 'outcome': outcome, 'steps_used': steps,
-            'step_budget': policy['step_budget'], 'min_courtyard_edge_mm': _margin_mm(margin_nm),
-            'policy': copy.deepcopy(policy),
+            'step_budget': policy['step_budget'], 'policy': copy.deepcopy(policy),
             'reason': reason, 'placements': [], 'authority': 'standalone-unsealed-plan'}
 
 
@@ -308,7 +274,6 @@ def _initial_reservations(capture, policy, outline, obstacles):
         shell = {'courtyards': {obstacle['side']: {'polygons': obstacle['polygons']}}}
         reserved.extend(boxes(shell).items())
     for i, fp in enumerate(placed):
-        # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
         if (not _fits(fp, outline) or _blocked(fp, reserved, policy['gap_nm']) or
                 _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError('fixed placement conflicts with outline, obstacle or reserved gap')
@@ -321,26 +286,25 @@ def pack(capture, policy):
     capture = copy.deepcopy(capture)
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
-    margin_nm = _edge_margin_nm(policy)
     try:
         outline = _qualified(capture)
         obstacles = _keepouts(capture)
     except ValueError as exc:
-        return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, str(exc), margin_nm)
+        return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, str(exc))
     proof = _area_impossibility(capture, outline)
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
-                           f"{proof['side']} courtyard area exceeds board area", margin_nm)
+                           f"{proof['side']} courtyard area exceeds board area")
         return {**failure, 'proof': proof}
     proof = _part_impossibility(capture, outline)
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
-                           f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's", margin_nm)
+                           f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's")
         return {**failure, 'proof': proof}
     try:
         fixed, placed, reserved = _initial_reservations(capture, policy, outline, obstacles)
     except ValueError as exc:
-        return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
+        return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc))
     priorities = {ref: i for i, ref in enumerate(policy['priority_refs'])}
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed),
                    key=lambda f: (priorities.get(f['ref'], len(priorities)), -len(f['pads']), f['ref']))
@@ -350,13 +314,13 @@ def pack(capture, policy):
         anchors = reserved + _keepout_boxes(obstacles + [area for f in placed
                                                         for area in f.get('packing_keepouts', [])])
         for rotation in (0, 90, 180, 270):
-            for position in _candidate_positions(fp, rotation, outline, anchors, policy['gap_nm'], margin_nm):
+            for position in _candidate_positions(fp, rotation, outline, anchors, policy['gap_nm']):
                 if steps == policy['step_budget']:
                     return _failure(capture, policy, 'packing_budget_exhausted', 'unknown', steps,
-                                    'deterministic candidate budget exhausted', margin_nm)
+                                    'deterministic candidate budget exhausted')
                 steps += 1
                 proposed = transform(fp, position, rotation)
-                if (_blocked(proposed, reserved, policy['gap_nm']) or not _fits(proposed, outline, margin_nm) or
+                if (_blocked(proposed, reserved, policy['gap_nm']) or not _fits(proposed, outline) or
                         _keepout_blocked(proposed, placed, obstacles)):
                     continue
                 key = (_wire_cost(proposed, placed, policy['ground_nets']), *position, rotation)
@@ -364,7 +328,7 @@ def pack(capture, policy):
                     best = key, proposed
         if best is None:
             return _failure(capture, policy, 'packing_search_exhausted', 'unknown', steps,
-                            'no candidate in the finite greedy search; infeasibility unproved', margin_nm)
+                            'no candidate in the finite greedy search; infeasibility unproved')
         placed.append(best[1])
         reserved.extend(boxes(best[1]).items())
     proposed_capture = {**capture, 'footprints': placed}
@@ -372,11 +336,9 @@ def pack(capture, policy):
     judgment['basis'] = 'transformed-proposal-not-native'
     if judgment['verdict'] != 'pass':
         return _failure(capture, policy, 'judge_rejected', 'unknown', steps,
-                        'independent full-polygon judge rejected complete proposal', margin_nm)
+                        'independent full-polygon judge rejected complete proposal')
     return {'schema': 'agent-ee.packing-plan/1', 'board_sha256': capture['board_sha256'],
-            'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan',
-            'steps_used': steps, 'step_budget': policy['step_budget'],
-            'min_courtyard_edge_mm': _margin_mm(margin_nm),
+            'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan', 'steps_used': steps, 'step_budget': policy['step_budget'],
             'policy': copy.deepcopy(policy), 'pad_shapes': pad_shape_qualification(), 'judgment': judgment,
             'placements': [{'ref': f['ref'], 'uuid': f['uuid'], 'position_nm': f['position_nm'],
                             'rotation_deg': f['rotation_deg'], 'fixed': f['ref'] in fixed}
