@@ -61,6 +61,19 @@ reviewer or writer call is recorded as it happened and never retried.
 
 `board_build.py` is not used at all: forward annotation populates the board.
 
+### Connectivity intent
+
+`generation/intent.json` is the `agent_ee.generate` intent with `/` stripped
+from net names: KiCad prefixes a root-sheet local label with the sheet path, so
+the labels `IN` and `OUT` export as `/IN` and `/OUT`. The ground net carries a
+declared `power:GND` (`#PWR01`) and a `power:PWR_FLAG` (`#FLG01`); every other
+pin is passive, so the flag drives the ground symbol's power input for ERC.
+`GND` is a global power net and exports as `GND`, the name the placement policy
+and the `rc-step` check use. A spec ground other than `GND` has no stock power
+symbol and is refused. The emitter writes both symbols `in_bom no` and
+`on_board no`, so the schematic presence probe and the native netlist agree on
+`C1`, `J1` and `R1` (AGENTEE-123).
+
 ### Staged scope
 
 The scope is `agent-ee.scope/2` with stage order schematic, placement,
@@ -99,7 +112,8 @@ The rung-1 IR is `qualified_intent`: the `agent_ee.generate` connectivity intent
 built from the stage-1 record (nets, header pins, values) and the stage-2
 selections (footprints and binding fields). J1.1 is on `IN`, R1 is between `IN`
 and `OUT`, C1 is between `OUT` and `GND`, J1.2 is on `OUT`, J1.3 is on `GND`, and a
-`power:PWR_FLAG` (`#FLG01`, no footprint) marks `GND`. Library paths name the
+`power:GND` (`#PWR01`) and a `power:PWR_FLAG` (`#FLG01`), both without a
+footprint, sit on `GND` (see [Connectivity intent](#connectivity-intent)). Library paths name the
 scope's captured `stock/symbols/*.kicad_sym`. The scaffold refuses an IR that does
 not resolve completely.
 
@@ -116,7 +130,7 @@ The emitter receipt `out/emit-receipt.json` is a receipt artifact. It records
 `intent_sha256`, `resolved_sha256`, the emitter module and its SHA-256, the
 captured library hashes and the hash of each emitted file. The stage receipt
 binds the inputs, the output hashes and the tool identity. The next review
-seals `erc`, `netlist`, `parity` (`normalized_power_symbols` lists `#FLG01`) and
+seals `erc`, `netlist`, `parity` (`normalized_power_symbols` lists `#FLG01` and `#PWR01`) and
 `drc-placement` (DRC with schematic parity).
 
 If an IR pin does not resolve in the captured libraries, the emitter refuses
@@ -143,8 +157,8 @@ without inference. It checks the following:
 - `drc-placement` reports 0 schematic parity issues, and the full `drc` is
   `stage_not_reached`.
 - The control reference shows the same components (C1, J1, R1) and three
-  matched nets. The control names its ground `GND` (a global `power:GND`), and
-  the IR exports `/GND`; topology ignores net names.
+  matched nets. The control and the IR both name their ground `GND`, the
+  global net of a `power:GND` symbol, so the net names match as well.
 
 `UnresolvedPinTest` gives R1 a pin 3 and checks the refusal through
 `run_step`, `adopt` and `campaign.run_implementation_steps`.
@@ -169,7 +183,7 @@ needs footprints on the board.
 ### Placement policy
 
 `generation/placement-policy.json` is a captured `agent-ee.packing-policy/1`.
-It fixes no reference (see [Gaps](#gaps)) and names `/GND` as the ground net.
+It fixes no reference (see [Gaps](#gaps)) and names `GND` as the ground net.
 Its obstacles are four 0.5 mm bands along the inside of the outline, on each
 side, one obstacle per band. The placer grades courtyards against the outline
 only. In a dry run without the bands it put C1's pad 0.255 mm from the edge, and
@@ -218,8 +232,10 @@ exit 0. The fab package is graded by checks inside the scope.
 ## Recorded run (2026-10-17)
 
 One real run used commit 512262a on `impl/rung1-qualified` (branched from main
-at f442ba0), from a clean worktree, with the kicad-route pin clone and
-`profiles/claude-baseline.json`, `max_iterations` 4 and `max_seconds` 3600.
+at f442ba0), before AGENTEE-123: its intent declared no power symbol, and its
+ground was the local label `/GND`. It ran from a clean worktree, with the
+kicad-route pin clone and `profiles/claude-baseline.json`, `max_iterations` 4
+and `max_seconds` 3600.
 The run directory is copied to `build/rung1-qualified-2026-10-17/`, with the
 final dry run under `dry-run-rehearsal/`. The campaign stopped `incomplete`,
 so `done` is false. `verify-campaign` exits 0 and prints `incomplete`.
@@ -284,18 +300,6 @@ These are recorded in every run with the owned module's exact refusal:
   0/1 `is_basic`/`is_preferred` values that the BOM does not have, and the
   selector needs stock and tolerance. The capture refusal is recorded; parts
   stay with the experimental `generate` selection.
-- **Power symbols (AGENTEE-40 with AGENTEE-48/88), resolved by AGENTEE-102.**
-  The emitter copies `in_bom`/`on_board` from the library definition, so a
-  declared `power:GND` or `power:PWR_FLAG` is written with `in_bom yes` and
-  `on_board yes`. The recorded run's dry run, with those symbols in the intent,
-  stopped every schematic check at `stage subject probe did not complete`
-  (`ValueError: bounded inventory disagrees with native reader; coverage
-  unsupported`, bounded `#FLG01, #PWR01, C1, J1, R1`, native `C1, J1, R1`), so
-  that run's intent had no power symbol. The bounded reader now leaves out `#`
-  references, as KiCad's netlist export does, and still has to agree with the
-  native export. The IR declares `#FLG01` on `GND`. Its labels `IN`, `OUT` and
-  `GND` are local and export as `/IN`, `/OUT` and `/GND`, and the `rc-step` check
-  names the ground node `/GND`. The topology parity check ignores net names.
 - **3D models.** Stock footprints use `${KICAD10_3DMODEL_DIR}` model paths,
   which `fab_consistency` reports as unknown until library roots map to
   captured inputs.

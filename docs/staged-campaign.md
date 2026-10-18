@@ -65,6 +65,10 @@ both BOM and board (`in_bom no`, `on_board no`) are outside component presence,
 and so are symbols whose Reference starts with `#` (power symbols and `PWR_FLAG`,
 which KiCad's netlist export omits whatever their `in_bom`/`on_board` flags);
 the resulting inventory must still agree with native export.
+Eeschema also places power symbols and `PWR_FLAG` with `in_bom no` and
+`on_board no`, and the owned [schematic emitter](schematic-emitter.md) writes
+them the same way, so a schematic with power symbols passes the probe on its
+flags as well as on its references.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
 bounded to 32 MiB and 128 levels. The qualified source-version set is schematic

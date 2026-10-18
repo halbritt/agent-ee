@@ -190,6 +190,29 @@ class DeterminismTests(unittest.TestCase):
                 if name == lib['name']:
                     self.assertEqual(node[2:], library[symbol][2:], lib_id)
 
+    def test_power_symbols_and_flags_are_virtual_instances(self):
+        # Eeschema's own placement (fixtures/rc/control) writes power symbols and
+        # PWR_FLAG as in_bom no / on_board no although the library says yes.
+        from agent_ee.stages import native_references
+        files = emit()[1]
+        root = parse_sexpr(files['regulator.kicad_sch'])
+        flags = {}
+        for node in children(root, 'symbol'):
+            ref = next(p[2] for p in children(node, 'property') if p[1] == 'Reference')
+            flags[ref] = {k: children(node, k)[0][1] for k in ('exclude_from_sim', 'in_bom', 'on_board', 'in_pos_files')}
+        physical = {'exclude_from_sim': 'no', 'in_bom': 'yes', 'on_board': 'yes', 'in_pos_files': 'yes'}
+        virtual = dict(physical, in_bom='no', on_board='no')
+        self.assertEqual(flags, {'J1': physical, 'U1': physical, 'C1': physical,
+                                 '#PWR01': virtual, '#FLG01': virtual, '#FLG02': virtual})
+        embedded = {n[1]: n for n in children(children(root, 'lib_symbols')[0], 'symbol')}
+        for lib_id in ('OwnedPower:GND', 'OwnedPower:PWR_FLAG'):
+            self.assertEqual((children(embedded[lib_id], 'in_bom'), children(embedded[lib_id], 'on_board')),
+                             ([['in_bom', 'yes']], [['on_board', 'yes']]), lib_id)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'regulator.kicad_sch'
+            path.write_bytes(files['regulator.kicad_sch'])
+            self.assertEqual(native_references(path, 'symbols'), ['C1', 'J1', 'U1'])
+
 
 class RefusalTests(unittest.TestCase):
     def assertRefused(self, code, intent=None, layout=None, name='regulator', **kwargs):

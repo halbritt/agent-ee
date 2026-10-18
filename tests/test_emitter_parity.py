@@ -120,6 +120,81 @@ class EmitterParityTests(unittest.TestCase):
         freeze_evidence(run, checks)
         verify_evidence(run, checks, required=True)
 
+    def staged_run(self, label, edit=None):
+        """Captured staged run (AGENTEE-48/88) whose schematic subject is the emitted regulator."""
+        import time
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import write_json
+        intent, layout = load('regulator.intent.json'), load('regulator.layout.json')
+        result, files = emit_schematic(intent, captures(intent), layout, **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        if edit:
+            files = dict(files, **{'regulator.kicad_sch': edit(files['regulator.kicad_sch'])})
+        root = self.tmp / label
+        project = native_project(files, root)
+        for lib in intent['libraries']:
+            lib['path'] = 'project/' + lib['path']
+        write_json(project / 'intent.json', intent)
+        (project / 'requirements.md').write_text('Preserve regulator physical connectivity and native ERC.\n')
+        checks = [{'id': 'erc', 'kind': 'erc', 'stage': 'schematic'},
+                  {'id': 'netlist', 'kind': 'netlist', 'stage': 'schematic'},
+                  {'id': 'parity', 'kind': 'netlist_parity', 'stage': 'schematic', 'params': {
+                      'source': {'kind': 'intent', 'path': 'project/intent.json'},
+                      'netlist_check': 'netlist', 'predicate': 'topology', 'multiset': 'exactly'}}]
+        scope = {
+            'schema': 'agent-ee.scope/3', 'name': 'regulator-staged', 'scope': 'Owned regulator emitter, staged.',
+            'limitations': [], 'schematic': 'project/regulator.kicad_sch',
+            'inputs': [{'path': str(project), 'at': 'project'}], 'requirements': ['project/requirements.md'],
+            'checks': checks,
+            'stages': {'schema': 'agent-ee.stages/1', 'order': ['schematic'], 'finding_retry_limit': 4,
+                       'subjects': {'schematic': {'path': 'project/regulator.kicad_sch', 'kind': 'symbols',
+                                                  'references': ['C1', 'J1', 'U1']}}},
+            'baseline': {'requirements': [{'id': 'connectivity', 'statement': 'Preserve connectivity.',
+                'source': {'path': 'project/requirements.md', 'locator': 'line 1'},
+                'checks': ['erc', 'netlist', 'parity'], 'intent': 'acceptance'}],
+                'targets': ['project/requirements.md'], 'reference_architectures': ['project/intent.json']}}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        capture(root / 'scope.json', run)
+        return run, run_checks(run, time.monotonic() + 240)
+
+    def test_staged_presence_probe_accepts_emitted_power_symbols(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.storage import read_json
+        run, checks = self.staged_run('staged')
+        self.assertEqual([(c['execution'], c['outcome']) for c in checks],
+                         [('ok', 'pass'), ('ok', 'info'), ('ok', 'pass')], checks)
+        for check in checks:
+            probe = run / 'work' / check['id'] / 'stage-subject'
+            self.assertEqual(read_json(probe / 'references.json'), ['C1', 'J1', 'U1'])
+            self.assertEqual(read_json(probe / 'native-observation.json')['native_references'], ['C1', 'J1', 'U1'])
+            witness = read_json(run / 'work' / check['id'] / 'stage-subject.json')
+            self.assertEqual((witness['observed'], witness['missing']), (['C1', 'J1', 'U1'], []))
+        report = read_json(run / 'work/parity/parity.json')
+        self.assertEqual({n['component'] for n in report['normalized_power_symbols']},
+                         {'gnd', 'flag_gnd', 'flag_vin'})
+        freeze_evidence(run, checks)
+        verify_evidence(run, checks, required=True)
+
+    def test_staged_presence_probe_refuses_an_ordinary_part_marked_virtual(self):
+        # The emitter writes only power symbols and flags in_bom/on_board no. An ordinary
+        # C1 rewritten that way drops out of the bounded inventory, but KiCad's netlist
+        # export still lists it, so the probe refuses the disagreement (fail closed).
+        def hidden(data):
+            text = data.decode()
+            physical, virtual = '(in_bom yes)\n\t\t(on_board yes)', '(in_bom no)\n\t\t(on_board no)'
+            reference = text.index('(property "Reference" "C1"')
+            flags = text.index(physical, text.rindex('\n\t(symbol\n', 0, reference))
+            self.assertLess(flags, reference)
+            return (text[:flags] + virtual + text[flags + len(physical):]).encode()
+        run, checks = self.staged_run('staged-hidden', hidden)
+        self.assertEqual([c['outcome'] for c in checks], ['unknown'] * 3, checks)
+        self.assertTrue(all(c['execution'] != 'ok' for c in checks), checks)
+        self.assertIn('bounded inventory disagrees with native reader',
+                      (run / 'work/erc/stage-subject/console.log').read_text())
+
     def test_emitted_native_export_passes_every_predicate(self):
         actual = self.native(self.intent, self.layout, 'base')
         self.assertEqual(self.compare(actual, 'components')['outcome'], 'pass')

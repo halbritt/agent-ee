@@ -74,7 +74,7 @@ QUALIFIED_REQUIREMENTS = """# Rung-1 requirements graded by the owned checks
 Derived from `spec.md` by `agent_ee.rung1_qualified`. Each line is one requirement that one
 coordinator check grades. They add no limit that the spec does not state.
 
-R-parity: The generated schematic must have the connectivity of the rung-1 intent built from the stage-1 record and the stage-2 selections (R1 between /IN and /OUT, C1 between /OUT and GND, J1 pins 1, 2 and 3 on /IN, /OUT and GND, a PWR_FLAG on GND): native netlist topology equal to the captured intent resolved against the captured libraries, component multiset exactly.
+R-parity: The generated schematic must have the connectivity of the rung-1 intent built from the stage-1 record and the stage-2 selections (R1 between /IN and /OUT, C1 between /OUT and GND, J1 pins 1, 2 and 3 on /IN, /OUT and GND, a power:GND symbol and a PWR_FLAG on GND): native netlist topology equal to the captured intent resolved against the captured libraries, component multiset exactly.
 
 R-courtyard: Footprint courtyards on the 2-layer board must not overlap (native DRC courtyard evaluation).
 
@@ -103,6 +103,8 @@ def sha(raw):
 # ------------------------------------------------------------------ owned generation inputs
 
 SYMBOL_CAPTURES = 'stock/symbols'  # the scope's captured stock symbol libraries
+POWER_GND = {'id': 'pwr_gnd', 'reference': '#PWR01', 'lib_id': 'power:GND', 'value': 'GND', 'units': [1],
+             'footprint': ''}
 FLAG = {'id': 'FLG1', 'reference': '#FLG01', 'lib_id': 'power:PWR_FLAG', 'value': 'PWR_FLAG', 'units': [1],
         'footprint': ''}
 
@@ -111,18 +113,26 @@ def qualified_intent(prep):
     """The rung-1 IR: the generate intent (stage-1 record, stage-2 selections) for the emitter.
 
     The emitter's label names exclude '/': KiCad prefixes a root-sheet local label with the
-    sheet path, so labels IN, OUT and GND export as /IN, /OUT and /GND. A PWR_FLAG marks the
-    ground net. Library paths name the scope's captured libraries under ``stock/symbols``, so
-    the emitter step and the intent-sourced parity check resolve the same bytes."""
+    sheet path, so labels IN and OUT export as /IN and /OUT. The ground net is driven by a
+    declared power:GND symbol with a power:PWR_FLAG (every other pin is passive, so the flag
+    drives the GND power input for ERC). It is a global power net and exports as GND. The
+    emitter writes both symbols in_bom/on_board no, KiCad's native convention, so the staged
+    presence probe and the native netlist agree on C1, J1 and R1 (AGENTEE-123). Library paths
+    name the scope's captured libraries under ``stock/symbols``, so the emitter step and the
+    intent-sourced parity check resolve the same bytes."""
     intent = copy.deepcopy(prep['intent'])
+    ground = ground_net(prep['params'])
     for library in intent['libraries']:
         library['path'] = f"{SYMBOL_CAPTURES}/{library['path']}"
     for net in intent['nets']:
         net['name'] = net['name'].lstrip('/')
-    ground = prep['params']['nets']['ground'].lstrip('/')
-    intent['components'].append(copy.deepcopy(FLAG))
-    net = next(n for n in intent['nets'] if n['name'] == ground)
-    net['terminals'].append({'component': FLAG['id'], 'pin': {'number': '1'}})
+    nets = [n for n in intent['nets'] if n['name'] == ground]
+    if ground != 'GND' or len(nets) != 1:
+        # The stock power:GND symbol names exactly one net GND; no other ground is approximated.
+        raise PrepareFailure(f'ground net {ground!r} has no stock power symbol in the intent')
+    for comp in (copy.deepcopy(POWER_GND), copy.deepcopy(FLAG)):
+        intent['components'].append(comp)
+        nets[0]['terminals'].append({'component': comp['id'], 'pin': {'number': '1'}})
     return intent
 
 
@@ -131,9 +141,9 @@ def intent_captures(intent):
     return {lib['path']: (g.STOCK / 'symbols' / Path(lib['path']).name).read_bytes() for lib in intent['libraries']}
 
 
-def native_net(name):
-    """The native netlist name of a root-sheet local label."""
-    return '/' + name.lstrip('/')
+def ground_net(params):
+    """The native netlist name of the ground net: a global power net, without a sheet prefix."""
+    return params['nets']['ground'].lstrip('/')
 
 
 def layout():
@@ -221,7 +231,7 @@ def packing_policy(params, outline):
     """agent-ee.packing-policy/1 for the placer helper. J1 is not fixed here: forward annotation
     stages it off-board, and the envelope fixed-footprint binding cannot be captured (see gaps)."""
     return {'schema': 'agent-ee.packing-policy/1', 'step_budget': 200000, 'gap_nm': 1_000_000,
-            'fixed_refs': [], 'priority_refs': [], 'ground_nets': [native_net(params['nets']['ground'])],
+            'fixed_refs': [], 'priority_refs': [], 'ground_nets': [ground_net(params)],
             'obstacles': edge_bands(outline)}
 
 
@@ -437,8 +447,8 @@ def compile_staged_scope(params, scope_dir, scaffold):
                       'This is a disposable benchmark board.')
     by_id = {c['id']: c for c in scope['checks']}
     rc_step = copy.deepcopy(by_id['rc-step'])
-    # The same ground node as the spec's GND, under its native local-label name.
-    rc_step['params']['ground_net'] = native_net(params['nets']['ground'])
+    # The spec's GND, the global power net of the declared power:GND symbol.
+    rc_step['params']['ground_net'] = ground_net(params)
     scope['checks'] = [
         {'id': 'erc', 'kind': 'erc', 'stage': 'schematic'},
         {'id': 'netlist', 'kind': 'netlist', 'stage': 'schematic'},
