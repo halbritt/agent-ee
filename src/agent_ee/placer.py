@@ -7,7 +7,7 @@ A bounded search failure is unknown, never a proved design defect.
 import copy
 from fractions import Fraction
 
-from .placement import area2, intersection_area, judge, qualified_polygons, validate_capture
+from .placement import area2, cross, intersection_area, judge, qualified_polygons, validate_capture
 
 
 # Native pcbnew PAD_SHAPE values, read from the KiCad 10.0.7 bindings.
@@ -154,14 +154,58 @@ def _failure(capture, policy, status, outcome, steps, reason):
             'reason': reason, 'placements': [], 'authority': 'standalone-unsealed-plan'}
 
 
+def _fraction(value):
+    return [value.numerator, value.denominator]
+
+
 def _area_impossibility(capture, outline):
     board_area = Fraction(abs(area2(outline)), 2)
     for side in ('F', 'B'):
         area = sum(Fraction(abs(area2(p)), 2) for fp in capture['footprints']
                    for p in fp['courtyards'].get(side, {}).get('polygons', []))
         if area > board_area:
-            return {'side': side, 'board_area_nm2': [board_area.numerator, board_area.denominator],
-                    'required_courtyard_area_nm2': [area.numerator, area.denominator]}
+            return {'kind': 'courtyard_area', 'side': side, 'board_area_nm2': _fraction(board_area),
+                    'required_courtyard_area_nm2': _fraction(area)}
+    return None
+
+
+def _hull(points):
+    points = sorted(set(map(tuple, points)))
+    def half(seq):
+        chain = []
+        for p in seq:
+            while len(chain) >= 2 and cross(chain[-2], chain[-1], p) <= 0:
+                chain.pop()
+            chain.append(p)
+        return chain[:-1]
+    return half(points) + half(reversed(points))
+
+
+def _extent(points):
+    """Exact squared minimum width and squared diameter of a point set's hull.
+
+    Both are invariant under rotation and translation, so containment in the
+    outline needs each to be no larger than the outline's own.
+    """
+    hull = _hull(points)
+    width = min(Fraction(max(cross(a, b, p) for p in hull)**2, (b[0]-a[0])**2 + (b[1]-a[1])**2)
+                for a, b in zip(hull, hull[1:] + hull[:1]))
+    diameter = max((a[0]-b[0])**2 + (a[1]-b[1])**2 for a in hull for b in hull)
+    return {'min_width_squared_nm2': width, 'diameter_squared_nm2': Fraction(diameter)}
+
+
+def _part_impossibility(capture, outline):
+    # Every courtyard of a part, on either side, must lie inside the one outline,
+    # whatever rigid motion is chosen; this proof is not limited to quarter turns.
+    board = _extent(outline)
+    for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
+        part = _extent([p for courtyard in fp['courtyards'].values()
+                        for poly in courtyard['polygons'] for p in poly])
+        for measure in ('min_width_squared_nm2', 'diameter_squared_nm2'):
+            if part[measure] > board[measure]:
+                return {'kind': measure.removesuffix('_squared_nm2'), 'ref': fp['ref'],
+                        'board_' + measure: _fraction(board[measure]),
+                        'footprint_' + measure: _fraction(part[measure])}
     return None
 
 
@@ -192,6 +236,11 @@ def pack(capture, policy):
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyard area exceeds board area")
+        return {**failure, 'proof': proof}
+    proof = _part_impossibility(capture, outline)
+    if proof:
+        failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
+                           f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's")
         return {**failure, 'proof': proof}
     try:
         fixed, placed, reserved = _initial_reservations(capture, policy, outline)

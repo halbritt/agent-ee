@@ -18,8 +18,21 @@ checks the complete proposal. No random numbers, wall-clock stopping rule, new
 runtime dependency or third-party implementation is used.
 
 The plan records budget and actual steps. Only a complete plan contains
-placements. Proven total same-side courtyard area exceeding board area yields
-`packing_infeasible`, `outcome=defect`. Budget exhaustion, finite greedy-search
+placements. A board too small for its parts yields `packing_infeasible`,
+`outcome=defect`, `steps_used=0` and the policy's `step_budget`, with an exact
+`proof` of one kind:
+
+| `proof.kind` | Proved | Recorded values |
+| --- | --- | --- |
+| `courtyard_area` | total same-side courtyard area exceeds board area | `side`, `board_area_nm2`, `required_courtyard_area_nm2` |
+| `min_width` | a part's courtyard convex hull is wider, in its narrowest direction, than the outline's hull | `ref`, `board_min_width_squared_nm2`, `footprint_min_width_squared_nm2` |
+| `diameter` | a part's courtyard is longer than the outline's longest vertex-to-vertex span | `ref`, `board_diameter_squared_nm2`, `footprint_diameter_squared_nm2` |
+
+Values are exact `[numerator, denominator]` rationals in square nanometres.
+The width and diameter proofs hold for every rotation, not only quarter turns,
+and cover all courtyards of a part on both sides. A part that could fit only
+at an angle the search does not try is not proved infeasible.
+Budget exhaustion, finite greedy-search
 exhaustion and a conflicting fixed placement yield typed unknown results:
 these do not prove geometric infeasibility. Missing/unsupported geometry is
 unknown. Initial rotations and pad rotations must be quarter turns. The placer
@@ -110,7 +123,11 @@ actual native XML exported from the existing owned RC schematic with
 independent rectangular mechanical placeholders; it does not qualify those
 placeholders as production footprint models. Authorization, net mismatch,
 unsupported geometry, insufficient area, deterministic budget and tool failure
-boundaries are exercised without fabricating successful tool evidence.
+boundaries are exercised without fabricating successful tool evidence. Owned
+saved boards too small by area and by width give `packing_infeasible`,
+`outcome=defect` from both `place_candidate` and the CLI (exit 1). The result
+records the step budget. No proposal, staging directory or failure board is
+left behind.
 
 The pad-shape tests build owned boards with every accepted shape at quarter
 turns, including plated circle and oval pads with drills, and check that the

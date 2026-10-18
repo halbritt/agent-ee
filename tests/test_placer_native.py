@@ -116,6 +116,69 @@ class NativePlacerTest(unittest.TestCase):
         self.assertTrue((diagnostics[0] / 'failed-candidate.kicad_pcb').is_file())
         self.assertEqual(self.source.read_bytes(), self.saved)
 
+    def small_board(self, name, width, height):
+        """Owned saved board: a width x height mm outline and two 2 x 2mm parts staged off it."""
+        import pcbnew as k
+        board = k.BOARD()
+        def vec(x, y):
+            return k.VECTOR2I(int(x*1e6), int(y*1e6))
+        def loop(parent, layer, corners):
+            for a, b in zip(corners, corners[1:] + corners[:1]):
+                shape = k.PCB_SHAPE(parent)
+                shape.SetShape(k.SHAPE_T_SEGMENT)
+                shape.SetLayer(layer)
+                shape.SetStart(vec(*a))
+                shape.SetEnd(vec(*b))
+                shape.SetWidth(50000)
+                parent.Add(shape)
+        loop(board, k.Edge_Cuts, [(0, 0), (width, 0), (width, height), (0, height)])
+        for ref, x in (('U1', 40), ('C1', 45)):
+            fp = k.FOOTPRINT(board)
+            fp.SetReference(ref)
+            fp.SetValue('owned')
+            board.Add(fp)
+            loop(fp, k.F_CrtYd, [(-1, -1), (1, -1), (1, 1), (-1, 1)])
+            pad = k.PAD(fp)
+            pad.SetNumber('1')
+            pad.SetShape(k.PAD_SHAPE_RECT)
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            pad.SetSize(vec(.5, .5))
+            layers = k.LSET()
+            layers.AddLayer(k.F_Cu)
+            pad.SetLayerSet(layers)
+            fp.Add(pad)
+            fp.SetPosition(vec(x, 40))
+        path = self.root / f'{name}.kicad_pcb'
+        k.SaveBoard(str(path), board)
+        return path
+
+    def test_board_too_small_is_typed_defect_with_budget_and_no_board(self):
+        import json
+        from agent_ee.placer_runner import main
+        # 3 x 2.5mm holds less than the two 8mm² courtyards; a 1.5mm strip is
+        # narrower than either part at any angle although its area suffices.
+        for name, width, height, kind in (('area', 3, 2.5, 'courtyard_area'), ('strip', 1.5, 30, 'min_width')):
+            source = self.small_board(name, width, height)
+            saved = source.read_bytes()
+            config = {'policy': request(fixed_refs=[], step_budget=4321), 'authorization': {
+                **self.config['authorization'], 'source_sha256': hashlib.sha256(saved).hexdigest()}}
+            report = place_candidate(source, self.netlist, self.scratch / f'{name}-proposal', config)
+            self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'), report)
+            self.assertEqual(report['proof']['kind'], kind)
+            self.assertEqual((report['step_budget'], report['steps_used'], report['placements']), (4321, 0, []))
+            self.assertEqual(report['board_sha256'], hashlib.sha256(saved).hexdigest())
+            # The CLI records the same typed failure, budget included, and exits nonzero.
+            request_path = self.root / f'{name}-request.json'
+            request_path.write_text(json.dumps(config))
+            result = self.scratch / f'{name}-result.json'
+            self.assertEqual(main([str(source), str(self.netlist), '--request', str(request_path),
+                                   '--destination', str(self.scratch / f'{name}-cli'), '--result', str(result)]), 1)
+            self.assertEqual(json.loads(result.read_text()), json.loads(json.dumps(report)))
+            self.assertEqual(source.read_bytes(), saved)
+        # Only the result files beside the writer lease locks: no proposal, staging or retained failure board.
+        self.assertEqual(sorted(p.name for p in self.scratch.iterdir() if not p.name.endswith('.writer.lock')),
+                         ['area-result.json', 'strip-result.json'])
+
     def test_writer_executes_in_actual_networkless_readonly_sandbox(self):
         import json
         from agent_ee.executor import execute

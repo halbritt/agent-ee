@@ -31,11 +31,39 @@ class PlacerTest(unittest.TestCase):
         report = pack(board, request(fixed_refs=[]))
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         self.assertEqual(report['placements'], [])
+        self.assertEqual((report['proof']['kind'], report['step_budget']), ('courtyard_area', 10000))
         board = capture([part('U1', 2, 2), part('C1', 2, 2)])
         report = pack(board, request(step_budget=1))
         self.assertEqual((report['status'], report['outcome']), ('packing_budget_exhausted', 'unknown'))
         self.assertEqual(report['steps_used'], 1)
         self.assertEqual(report['placements'], [])
+
+    def test_part_wider_or_longer_than_board_is_defect_in_any_rotation(self):
+        from test_placement import MM, rectangle
+        def single(w, h, outline):
+            return pack(capture([part('C1', 50, 50, shape=rectangle(50, 50, w, h))], outline),
+                        request(fixed_refs=[], step_budget=777))
+        # 4mm square in a 3mm wide strip: total area fits, the minimum width does not.
+        report = single(4, 4, rectangle(0, 0, 3, 40))
+        self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
+        self.assertEqual((report['steps_used'], report['step_budget'], report['placements']), (0, 777, []))
+        self.assertEqual(report['policy']['step_budget'], 777)
+        self.assertEqual(report['proof'], {'kind': 'min_width', 'ref': 'C1',
+                                           'board_min_width_squared_nm2': [9*MM*MM, 1],
+                                           'footprint_min_width_squared_nm2': [16*MM*MM, 1]})
+        # 30 x 1mm on 20 x 20mm: longer than the board diagonal at any angle.
+        report = single(30, 1, rectangle(0, 0, 20, 20))
+        self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
+        self.assertEqual(report['proof']['kind'], 'diameter')
+        self.assertEqual(report['proof']['board_diameter_squared_nm2'], [800*MM*MM, 1])
+        # 25 x 1mm could fit diagonally: the quarter-turn search fails, which is not a proof.
+        report = single(25, 1, rectangle(0, 0, 20, 20))
+        self.assertEqual((report['status'], report['outcome']), ('packing_search_exhausted', 'unknown'))
+        self.assertNotIn('proof', report)
+        # Exactly as wide as the strip, or turned to fit: placed, not infeasible.
+        self.assertEqual(single(3, 3, rectangle(0, 0, 3, 40))['status'], 'planned')
+        plan = single(10, 2, rectangle(0, 0, 3, 40))
+        self.assertEqual((plan['status'], plan['placements'][0]['rotation_deg']), ('planned', 90))
 
     def test_unsupported_geometry_does_not_place_and_inputs_unchanged(self):
         import copy
