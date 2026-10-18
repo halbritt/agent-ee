@@ -329,7 +329,10 @@ are reported as extra charges, never defects. A `fab-profile/2` conjunctive rule
 charges only vias whose drill and diameter are both under its bounds. Each term
 runs its own native DRC, and the rule charges the intersection of the cited via
 UUIDs. Out-of-range numeric profile bounds are unsupported in both descriptors
-and execution. No real fabricator preset exists.
+and execution. The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
+eight dated JLCPCB limits from numeric/name captures, with the omitted DFM
+constraints and unresolved envelope listed explicitly. No profile is selected
+implicitly.
 
 ## DFM geometry rules
 

@@ -16,7 +16,9 @@ exactly one mapped fabrication requirement, matching the routing witness contrac
 Scope/3 descriptors report one `fab:<limit-id>` predicate per sourced minimum
 limit; preferred limits only classify extra charges. Preflight requires both
 `kicad-cli` and `pcbnew`. No preset, network lookup, pricing service or default
-fabricator is supplied.
+fabricator is selected implicitly. The [telemetry-pod fixture](telemetry-pod-fab-profile.md)
+records a dated subset of JLCPCB JLC04161H-7628 limits; it does not provide
+complete supplier DFM or a resolved pod envelope.
 
 For example, an **owned synthetic assumption**, not a real fabricator's limit:
 
@@ -236,17 +238,14 @@ validate defect witnesses, and reject changed sealed artifacts and inputs. A
 public review/verify pipeline covers pass, extra-charge, defect and no-outline
 cases with scripted reviewer transport.
 
-No real fabricator's capability document has been captured, so no real preset is
-qualified. The ticket's standard-preset surcharge criterion remains unmet for a
-real fabricator: the synthetic 0.25 mm example proves classification only.
-An applicable captured source and its permitted retention are still required.
-The [current JLCPCB capability table](https://jlcpcb.com/capabilities/pcb-capabilities/)
-(consulted 2026-10-17, not captured as a profile input) makes its small-via
-surcharge depend on both drill and via diameter. A `/2` conjunctive rule can
-express that joint condition, as the owned synthetic fixture shows. Capturing
-and retaining that table is a separate owner decision, so no JLCPCB rule is
-supplied. The scalar preferred-drill example must not be labelled a qualified
-JLCPCB preset.
+The [telemetry-pod fixture](telemetry-pod-fab-profile.md) records dated JLCPCB
+manufacturing minima from a host capture as original numeric/name records.
+It supplies no surcharge rule. The standard-preset surcharge criterion remains
+unmet for a real fabricator: the synthetic 0.25 mm example proves classification
+only. JLCPCB's small-via surcharge depends on drill and diameter together;
+`/2` can express a joint condition, but this fixture does not qualify that
+conditional policy. Raw vendor pages remain outside the repository. The scalar
+preferred-drill example must not be labelled a qualified JLCPCB surcharge preset.
 Arbitrary-angle minimum bounding dimensions, curved outlines and
 cutouts remain unsupported. Owner review and peer review remain separate from
 these checks.

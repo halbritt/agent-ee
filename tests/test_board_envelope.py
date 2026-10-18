@@ -15,8 +15,8 @@ from unittest.mock import patch
 from agent_ee.board_envelope import (BINDINGS, CHECK_KINDS, board_facts, derive, obligation_coverage,
                                      require_obligations, round_trip, stage_one_requirements, validate)
 from agent_ee.storage import canonical, digest
-from test_fab_profile import owned_profile
-from toolchain import require_toolchain
+from tests.test_fab_profile import owned_profile
+from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 RC_ENVELOPE = ROOT / 'fixtures/board-envelope/rc.envelope.json'

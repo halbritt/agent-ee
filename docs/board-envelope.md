@@ -7,6 +7,11 @@ connectors (AGENTEE-85). The intent record states electrical intent; the
 envelope adds what an empty candidate needs before any part is placed
 (decisions 1 and 4 in the [generator direction](decisions.md#generator-direction-2026-10-17)).
 
+The [telemetry-pod fabrication inputs](telemetry-pod-fab-profile.md) include a
+source-verified fab profile and spec-bound mechanical facts. Their stackup
+sum and unspecified mechanical coordinates currently prevent a complete pod
+envelope; blocked input metadata does not satisfy this record's contract.
+
 ```sh
 PYTHONPATH=src python3 -m agent_ee.board_envelope ENVELOPE.json \
   --source-path requirements/envelope.json --out NEW_DIRECTORY \

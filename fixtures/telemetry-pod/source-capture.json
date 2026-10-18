@@ -1,0 +1,73 @@
+{
+  "work_item": "AGENTEE-160",
+  "as_of": "2026-10-18",
+  "raw_captures": [
+    {
+      "file": "jlc-capabilities.html",
+      "url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "sha256": "014df9885e6fff557e332ad5b2ca19762b395c6d40c0491085113efc226f1b52",
+      "bytes": 136919,
+      "captured_at": "2026-10-18T20:39:46.397242+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-stackup.html",
+      "url": "https://jlcpcb.com/impedance",
+      "resolved_url": "https://jlcpcb.com/impedance",
+      "sha256": "ca2b6b6c37c4b26204f77adffb5f108e7cb9bec2fcec467dcbdf7b2ba6f793c5",
+      "bytes": 319813,
+      "captured_at": "2026-10-18T20:39:47.266656+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "esp32-module.pdf",
+      "url": "https://documentation.espressif.com/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf",
+      "resolved_url": "https://documentation.espressif.com/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf",
+      "sha256": "27d71971da07c280c6068d08c74720d1a25b8f20cf8494dc1765bdd28d40d435",
+      "bytes": 1280501,
+      "captured_at": "2026-10-18T20:39:47.449779+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "esp32-guidelines-current.pdf",
+      "url": "https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32s3/esp-hardware-design-guidelines-en-master-esp32s3.pdf",
+      "resolved_url": "https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32s3/esp-hardware-design-guidelines-en-master-esp32s3.pdf",
+      "sha256": "057f6df63e10a2dfc155cf19d942adf5780127d839626e2beb4c1a61efeaf3a5",
+      "bytes": 4193822,
+      "captured_at": "2026-10-18T20:40:47.283838+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    }
+  ],
+  "raw_bytes_committed": false,
+  "retention": "Raw vendor responses are worker scratch only, not an owner evidence store. Only original numeric/name records and source identities are committed.",
+  "recorded_sources": {
+    "jlcpcb-capabilities.txt": {
+      "path": "sources/jlcpcb-capabilities.txt",
+      "sha256": "0e2ce035765ed8a3679582633ea380512a4666920ecb9c596730c8e9aaba873e",
+      "bytes": 309
+    },
+    "jlcpcb-stackup.txt": {
+      "path": "sources/jlcpcb-stackup.txt",
+      "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+      "bytes": 329
+    }
+  },
+  "locators": {
+    "trace-clearance": "PCB capabilities / Traces / 1 oz track width and spacing / Multilayer",
+    "via": "PCB capabilities / Drilling / Min. Via hole size/diameter / Multilayer / 1.6 mm (not <=1 mm special process)",
+    "edge": "PCB capabilities / Outline / Routed (not V-Cut)",
+    "holes": "PCB capabilities / Drilling / Pad Hole-to-Hole Spacing; used conservatively for every drilled-hole pair (via-only 0.2 mm relaxation not encoded)",
+    "size": "PCB capabilities / PCB Specifications / Maximum Dimensions / FR4(4-layer), thickness >=0.8 mm, ordinary 663 x 593 option",
+    "layers": "Impedance / 4-Layer Impedance Control Stackup / 1.6mm / 1oz outer / 0.5oz inner / 2) JLC04161H-7628 Stackup; max_layers=4 specializes this profile, not vendor-wide maximum",
+    "stackup": "Same stackup card; explicit thickness numbers preserved without adjustment"
+  },
+  "interpretation_limits": [
+    "min_clearance_mm records only the track-spacing floor. Pair-specific pad/hole/copper constraints require additional DFM rules; this profile is not complete JLCPCB DFM acceptance.",
+    "Via annular-ring relation (pad >= drill + 0.1 mm) is not expressible in scalar profile limits. Diameter and drill minima alone do not establish annular ring.",
+    "No surcharge, assembly, impedance or stock acceptance is claimed.",
+    "Source verification proves occurrence in this recorded fixture; it does not authenticate a vendor response or interpret its applicability. Raw response hashes are provenance identities, not offline replay evidence."
+  ],
+  "capture_runtime": "Python 3.12.3",
+  "recording_method": "Worker reviewed host HTML table/card rows and retained numbers/names in original UTF-8 records; no vendor prose, graphics or executable content retained."
+}
