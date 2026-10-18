@@ -251,6 +251,10 @@ def run_campaign(config_path, out):
 def record_iteration(root, state, run, config):
     from .cli import verify
 
+    if not (run / "candidate.json").exists():
+        # A refused capture leaves no candidate; report the run's own typed refusal.
+        error = read_json(run / "result.json").get("error") or "no recorded error"
+        raise ValueError(f"run {run.name} captured no candidate: {error}")
     result = verify(run)
     manifest = read_json(run / "candidate.json")
     baseline = load_baseline(run)
