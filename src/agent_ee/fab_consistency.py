@@ -37,17 +37,16 @@ from pathlib import PurePosixPath
 
 from . import kicad_embedded, models3d
 from .executor import SANDBOX_PATH
-from .fab_export import ASSEMBLY_RULES, RULE_FIELDS, assembly_exclusions
+from .fab_export import (ASSEMBLY_RULES, BOM_COLUMNS as BOM_HEADER, CPL_COLUMNS as CPL_HEADER, RULE_FIELDS,
+                         assembly_exclusions, header_records, verify_jlc_templates)
 from .storage import digest, read_json, write_json
 
 MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
 MANIFEST_KEYS = frozenset(('schema', 'candidate_id', 'board_path', 'board_sha256', 'tool', 'files',
-                           'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
+                           'headers', 'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
                            'generated_utc'))
+OPTIONAL_MANIFEST_KEYS = frozenset(('bom_variant',))
 REQUIRED_FILES = ('bom.csv', 'cpl.csv', 'gerbers.zip', 'pcb_summary.json')
-BOM_HEADER = ['Designator', 'Footprint', 'Quantity', 'Value', 'Manufacturer', 'Partnumber',
-              'LCSC Part #']
-CPL_HEADER = ['Designator', 'Mid X', 'Mid Y', 'Layer', 'Rotation']
 NON_COPPER_FAB = frozenset(('F.Mask', 'B.Mask', 'F.Paste', 'B.Paste', 'F.SilkS', 'B.SilkS',
                             'Edge.Cuts'))
 REQUIRED_NON_COPPER = frozenset(('F.Mask', 'B.Mask', 'Edge.Cuts'))
@@ -344,7 +343,8 @@ def load_manifest(ctx, stage):
                           parse_constant=lambda token: fail('manifest', f'non-finite {token}'))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         fail('manifest', f'manifest.json is not JSON ({exc})')
-    if not isinstance(data, dict) or set(data) != MANIFEST_KEYS or data['schema'] != MANIFEST_SCHEMA:
+    if (not isinstance(data, dict) or not (MANIFEST_KEYS <= set(data) <= MANIFEST_KEYS | OPTIONAL_MANIFEST_KEYS)
+            or data['schema'] != MANIFEST_SCHEMA):
         fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields')
     board = ctx.scope.get('board')
     captured = ctx.manifest['files'].get(board)
@@ -361,6 +361,12 @@ def load_manifest(ctx, stage):
         fail('manifest', 'tool needs path, version and sha256')
     if not isinstance(data['generated_utc'], str) or not data['generated_utc']:
         fail('manifest', 'generated_utc must be text')
+    try:
+        expected_headers = header_records()
+    except ValueError as exc:
+        fail('manifest', str(exc))
+    if data['headers'] != expected_headers:
+        fail('manifest', 'manifest headers do not match captured JLC templates')
     files = data['files']
     if not isinstance(files, dict) or not files or len(files) > MAX_FILES:
         fail('manifest', 'files must be a nonempty bounded mapping')
@@ -894,8 +900,13 @@ def gate(ctx, eid, export_spec, export_result, stage):
             fail('summary', f'pcb_summary.json is not JSON ({exc})')
         if not isinstance(summary, dict):
             fail('summary', 'pcb_summary.json must be an object')
-        bom_rows = read_csv(stage, 'bom.csv', BOM_HEADER)
-        cpl_rows = read_csv(stage, 'cpl.csv', CPL_HEADER)
+        try:
+            templates = verify_jlc_templates()
+        except ValueError as exc:
+            fail('csv', str(exc))
+        bom_rows = read_csv(stage, 'bom.csv', templates['bom']['columns'])
+        cpl_rows = read_csv(stage, 'cpl.csv', templates['cpl']['columns'])
+        details['headers'] = manifest['headers']
         bom, lcsc_rows = check_bom(bom_rows, defects)
         cpl = check_cpl(cpl_rows, defects)
     except Malformed as exc:

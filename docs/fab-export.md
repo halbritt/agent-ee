@@ -52,8 +52,8 @@ The layout follows the fab lane interface contract v1, under `work/<id>/fab/`:
 | --- | --- |
 | `gerbers/` | One plot per enabled fab layer, with native Protel extensions (`.gtl`, `.g1`…, `.gbl`, `.gts`, `.gbs`, `.gtp`, `.gbp`, `.gto`, `.gbo`, `.gm1`). Each plot must have the expected `%TF.FileFunction`, a coordinate format and a final `M02*`. The native `.gbrjob` is kept only in the step evidence. |
 | `drill/` | Exactly one `*-PTH.drl` and one `*-NPTH.drl`, with `Plated,1,n,PTH` / `NonPlated,1,n,NPTH` file functions, and their Gerber X2 drill maps. Any other drill file is refused. KiCad writes a header-only NPTH file when the board has no unplated holes. |
-| `bom.csv` | Header `Designator,Footprint,Quantity,Value,Manufacturer,Partnumber,"LCSC Part #"` |
-| `cpl.csv` | Header `Designator,Mid X,Mid Y,Layer,Rotation` |
+| `bom.csv` | Header `Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,"LCSC Part #"` (verified against `fixtures/fab-export/jlc-bom-template.csv`) |
+| `cpl.csv` | Header `Designator,Mid X,Mid Y,Layer,Rotation` (verified against `fixtures/fab-export/jlc-cpl-template.csv`) |
 | `gerbers.zip` | Flat archive of `gerbers/` (sorted) then `drill/` (sorted). Each member has the date 1980-01-01, mode 0644, Unix create system and deflate level 9. |
 | `pcb_summary.json` | Native `pcb export stats` JSON, with only `metadata.date` normalised |
 | `manifest.json` | `agent-ee.fab-manifest/1`, written last |
@@ -209,6 +209,12 @@ the output malformed and retains the files only in `fab.incomplete/`.
  "board_path": "design/fab.kicad_pcb", "board_sha256": "<captured digest>",
  "tool": {"path": "/usr/bin/kicad-cli", "version": "10.0.7", "sha256": "..."},
  "files": {"bom.csv": "<sha256>", "gerbers/fab-F_Cu.gtl": "<sha256>", "...": "..."},
+ "headers": {"bom": {"header": "Designator,Footprint,Quantity,Comment,Manufacturer,Partnumber,\"LCSC Part #\"",
+                     "columns": ["Designator", "Footprint", "Quantity", "Comment", "Manufacturer", "Partnumber", "LCSC Part #"],
+                     "sha256": "<header sha256>", "template_sha256": "<template sha256>"},
+             "cpl": {"header": "Designator,Mid X,Mid Y,Layer,Rotation",
+                     "columns": ["Designator", "Mid X", "Mid Y", "Layer", "Rotation"],
+                     "sha256": "<header sha256>", "template_sha256": "<template sha256>"}},
  "copper_layers": 2, "enabled_fab_layers": ["F.Cu", "B.Cu", "F.Mask", "..."],
  "drill": {"pth": "fab-PTH.drl", "npth": "fab-NPTH.drl"},
  "designators": {"board_non_dnp": ["C1", "C2", "C10", "J1", "..."],
@@ -218,7 +224,11 @@ the output malformed and retains the files only in `fab.incomplete/`.
 ```
 
 `files` holds the sha256 of every regular file in `fab/` except
-`manifest.json`, keyed by staging-relative path. `board_sha256` is the
+`manifest.json`, keyed by staging-relative path. `headers` records the verified
+BOM and CPL header strings, column lists, header-line SHA-256 digests and
+captured template SHA-256 digests (`fixtures/fab-export/jlc-bom-template.csv`,
+`fixtures/fab-export/jlc-cpl-template.csv`, and
+`fixtures/fab-export/jlc-templates.json`, AGENTEE-196). `board_sha256` is the
 candidate-manifest digest of the captured board. The check also confirms that
 the captured bytes still have that digest. `drill` gives file names inside
 `drill/`. `designators.board_non_dnp` comes from the board's footprint inventory,

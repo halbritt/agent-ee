@@ -43,7 +43,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from .easyeda_footprint import SupplierError, parse_package, symbol_pins
-from .fab_export import CPL_HEADER, NUMBER_RE, REF_RE, natural_key, verify_manifest
+from .fab_export import BOM_COLUMNS, CPL_HEADER, NUMBER_RE, REF_RE, natural_key, verify_manifest
 from .land_pattern import (PatternError, _decimal_text, _json, _path, board_footprint, board_footprints,
                            validate_provenance)
 from .storage import digest, read_json, write_json
@@ -58,7 +58,6 @@ POLICY_KEYS = frozenset(('schema_version', 'policy_id', 'provenance', 'footprint
 OFFSET_KEYS = frozenset(('offset_x_mm', 'offset_y_mm'))
 RULE_KEYS = frozenset(('id', 'footprint_prefix', 'rotation_degrees'))
 OVERRIDE_KEYS = frozenset(('id', 'designator', 'rotation_degrees'))
-BOM_COLUMNS = ['Designator', 'Footprint', 'Quantity', 'Value', 'Manufacturer', 'Partnumber', 'LCSC Part #']
 MICRO = Decimal('0.000001')
 NM_PER_MM = 1000000
 # Pin-1 classification compares exact pad centres; no real land pattern puts
