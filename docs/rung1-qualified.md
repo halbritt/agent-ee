@@ -69,7 +69,7 @@ routing, verification, fab. Checks, in order:
 | Check | Kind | Stage | Requirement |
 | --- | --- | --- | --- |
 | `erc`, `netlist` | `erc`, `netlist` | schematic | R-native |
-| `parity` | `netlist_parity` (`golden_xml`, `topology`, `exactly`) | schematic | R-parity |
+| `parity` | `netlist_parity` (`intent`, `topology`, `exactly`) | schematic | R-parity |
 | `drc-placement` | `drc`, projection `placement-stage/1` | placement | R-native |
 | `courtyard` | `placement` `courtyard-overlap/1` | placement | R-courtyard |
 | `outline` | `placement` `outline-containment/1` | placement | R-outline |
@@ -80,13 +80,74 @@ routing, verification, fab. Checks, in order:
 | `fab` | `fab_export` | fab | R-fab |
 | `fab-consistency` | `fab_consistency` | fab | R-fab-consistency |
 
-The golden netlist is a sandboxed `kicad-cli` XML export of a copy of
-`fixtures/rc/control`, captured under `generation/golden/`. The subjects are
+The parity source is the captured rung-1 IR, `generation/intent.json`, which the
+check resolves against the captured `stock/symbols` libraries in coordinator code.
+The IR and those libraries are immutable baseline inputs. The golden netlist is a
+sandboxed `kicad-cli` XML export of a copy of `fixtures/rc/control`, captured under
+`generation/golden/`. It is a reference, not an oracle: no check reads it, and the
+driver records a descriptive comparison with it (see
+[Schematic turn](#schematic-turn-agentee-102)). The subjects are
 the symbols and footprints R1, C1 and J1 and at least one track; the retry
 limit is 3. `mutable_inputs` is exactly the schematic and the board.
 `requirements/qualified.md` states the added requirements; it adds no limit
 that the spec does not state. The scope is validated by the loaders capture
 uses, with the inputs copied, so the parity capability reads its source.
+
+### Schematic turn (AGENTEE-102)
+
+The rung-1 IR is `qualified_intent`: the `agent_ee.generate` connectivity intent,
+built from the stage-1 record (nets, header pins, values) and the stage-2
+selections (footprints and binding fields). J1.1 is on `IN`, R1 is between `IN`
+and `OUT`, C1 is between `OUT` and `GND`, J1.2 is on `OUT`, J1.3 is on `GND`, and a
+`power:PWR_FLAG` (`#FLG01`, no footprint) marks `GND`. Library paths name the
+scope's captured `stock/symbols/*.kicad_sym`. The scaffold refuses an IR that does
+not resolve completely.
+
+On the schematic turn the coordinator runs two steps in its networkless sandbox
+on the delivered design. `emit-schematic` runs the pinned emitter
+(`python3 -m agent_ee.schematic_emitter`) on `/candidate/generation/intent.json`
+with captures read from `/candidate`. `forward-annotate` exports the native XML
+netlist of the emitted schematic and applies `forward_annotation` to the
+scaffold board. The three footprints land on its staging column, and placement
+is left to the placement stage. The steps write only the existing schematic and
+board, so the captured inventory gains no file.
+
+The emitter receipt `out/emit-receipt.json` is a receipt artifact. It records
+`intent_sha256`, `resolved_sha256`, the emitter module and its SHA-256, the
+captured library hashes and the hash of each emitted file. The stage receipt
+binds the inputs, the output hashes and the tool identity. The next review
+seals `erc`, `netlist`, `parity` (`normalized_power_symbols` lists `#FLG01`) and
+`drc-placement` (DRC with schematic parity).
+
+If an IR pin does not resolve in the captured libraries, the emitter refuses
+with `resolution_rejected` and the resolver's finding, writes no file, and exits
+1. The step is then `failed`, `stage_receipts.adopt` refuses it (`no output
+adopted or substituted`), forward annotation does not run, and the campaign
+records `incomplete`. No symbol is guessed.
+
+`reference_parity` compares a sealed native netlist with the control export.
+It uses the owned inventory reader and the exact topology comparison. The
+record is `agent-ee.rung1-reference-parity/0-experimental` with role
+`reference_not_oracle`. The dry run records it after the schematic turn as
+`reference_after_schematic`, and the campaign record stores it for each
+iteration as `reference_parity`. A read failure is recorded as `failed` and
+`unknown`, never as agreement.
+
+`SchematicTurnTest` in `tests/test_rung1_qualified.py` runs this turn natively,
+without inference. It checks the following:
+
+- Both steps complete, and the design's file set is unchanged.
+- The emitter receipt binds the IR, the emitter and the adopted schematic.
+- The board has the footprints C1, J1 and R1.
+- `erc` and intent `parity` pass.
+- `drc-placement` reports 0 schematic parity issues, and the full `drc` is
+  `stage_not_reached`.
+- The control reference shows the same components (C1, J1, R1) and three
+  matched nets. The control names its ground `GND` (a global `power:GND`), and
+  the IR exports `/GND`; topology ignores net names.
+
+`UnresolvedPinTest` gives R1 a pin 3 and checks the refusal through
+`run_step`, `adopt` and `campaign.run_implementation_steps`.
 
 ### Steps and the step plan
 
@@ -168,7 +229,8 @@ so `done` is false. `verify-campaign` exits 0 and prints `incomplete`.
   `stage_blocked`. Both reviewers and the adjudicator ran. Implementation 1
   (schematic turn): the writer ran for 254 s, then `emit-schematic` and
   `forward-annotate` completed with exit 0.
-- Run 2: `erc` pass, `netlist` info, `parity` pass, `drc-placement` pass,
+- Run 2: `erc` pass, `netlist` info, `parity` pass (that run's parity source was
+  the control's golden XML; it is now the IR), `drc-placement` pass,
   `courtyard` pass, `outline` defect (3 footprints on the staging column).
   Implementation 2 (placement turn): the writer ran for 110 s, then the
   `agent-ee-placer` helper completed, and the placement record is `proposed`.
@@ -219,20 +281,18 @@ These are recorded in every run with the owned module's exact refusal:
   0/1 `is_basic`/`is_preferred` values that the BOM does not have, and the
   selector needs stock and tolerance. The capture refusal is recorded; parts
   stay with the experimental `generate` selection.
-- **Power symbols (AGENTEE-40 with AGENTEE-48/88).** The emitter copies
-  `in_bom`/`on_board` from the library definition, so a declared `power:GND` or
-  `power:PWR_FLAG` is written with `in_bom yes` and `on_board yes`. The staged
-  presence probe's bounded reader then counts `#PWR01` and `#FLG01`, while the
-  native netlist omits them. A dry run on 2026-10-17 with those symbols in the
-  intent stopped every schematic check at `stage subject probe did not
-  complete`, from `python3 -m agent_ee.stages
-  /candidate/project/rung1_rc.kicad_sch symbols /work/references.json`:
-  `ValueError: bounded inventory disagrees with native reader; coverage
-  unsupported` (bounded `#FLG01, #PWR01, C1, J1, R1`, native `C1, J1, R1`).
-  The intent therefore declares no power symbol. Its labels `IN`, `OUT` and
-  `GND` are local and export as `/IN`, `/OUT` and `/GND`, and the `rc-step`
-  check names the ground node `/GND`. The topology parity check ignores net
-  names.
+- **Power symbols (AGENTEE-40 with AGENTEE-48/88), resolved by AGENTEE-102.**
+  The emitter copies `in_bom`/`on_board` from the library definition, so a
+  declared `power:GND` or `power:PWR_FLAG` is written with `in_bom yes` and
+  `on_board yes`. The recorded run's dry run, with those symbols in the intent,
+  stopped every schematic check at `stage subject probe did not complete`
+  (`ValueError: bounded inventory disagrees with native reader; coverage
+  unsupported`, bounded `#FLG01, #PWR01, C1, J1, R1`, native `C1, J1, R1`), so
+  that run's intent had no power symbol. The bounded reader now leaves out `#`
+  references, as KiCad's netlist export does, and still has to agree with the
+  native export. The IR declares `#FLG01` on `GND`. Its labels `IN`, `OUT` and
+  `GND` are local and export as `/IN`, `/OUT` and `/GND`, and the `rc-step` check
+  names the ground node `/GND`. The topology parity check ignores net names.
 - **3D models.** Stock footprints use `${KICAD10_3DMODEL_DIR}` model paths,
   which `fab_consistency` reports as unknown until library roots map to
   captured inputs.

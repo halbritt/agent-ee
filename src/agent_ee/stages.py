@@ -95,6 +95,10 @@ def native_references(path, kind):
             raise LibraryError('native stage subject has missing/ambiguous Reference')
         if kind == 'symbols' and children(node, 'in_bom') == [['in_bom', 'no']] and children(node, 'on_board') == [['on_board', 'no']]:
             continue
+        if kind == 'symbols' and props[0][2].startswith('#'):
+            # KiCad's netlist exporter omits virtual references (power symbols, PWR_FLAG)
+            # whatever their in_bom/on_board flags; native_probe still compares the result.
+            continue
         references.append(props[0][2])
     if len(set(references)) != len(references):
         raise LibraryError('native stage subject has duplicate references')

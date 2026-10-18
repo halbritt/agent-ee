@@ -122,6 +122,11 @@ class NativePresenceTests(unittest.TestCase):
                             '(symbol (property "Reference" "R1")) '
                             '(symbol (in_bom no) (on_board no) (property "Reference" "#PWR01")))')
             self.assertEqual(native_references(path, 'symbols'), ['R1'])
+            # Emitted power symbols and flags keep the library's in_bom/on_board yes.
+            path.write_text('(kicad_sch (version 20250114) '
+                            '(symbol (property "Reference" "R1")) '
+                            '(symbol (in_bom yes) (on_board yes) (property "Reference" "#FLG01")))')
+            self.assertEqual(native_references(path, 'symbols'), ['R1'])
             path.write_text('(kicad_sch (version 20250114) (sheet (uuid "child")))')
             with self.assertRaisesRegex(ValueError, 'hierarchical'):
                 native_references(path, 'symbols')
