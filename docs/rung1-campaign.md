@@ -17,9 +17,11 @@ pipeline and then reviews the finished design once.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_campaign \
-  fixtures/rung1/spec.md --out RUNDIR --dry-run --kicad-route ~/git/kicad-route
+  fixtures/rung1/spec.md --out RUNDIR --dry-run --kicad-route ~/git/kicad-route \
+  --cpl-inputs /path/to/your-cpl-inputs
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_campaign \
-  fixtures/rung1/spec.md --out RUNDIR --kicad-route ~/git/kicad-route
+  fixtures/rung1/spec.md --out RUNDIR --kicad-route ~/git/kicad-route \
+  --cpl-inputs /path/to/your-cpl-inputs
 ```
 
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
@@ -86,7 +88,14 @@ preparation with `PrepareFailure`, keeps the receipt and leaves no project.
 The checks and their stages are `erc` and `netlist` (schematic), `drc` with
 schematic parity (placement), `geometry` with a 0.2 mm minimum width
 (routing), `rc-step` (verification) and, last, the done gate `fab`
-([`fab_package`](fab-package.md), verification). The `rc-step` parameters are the same
+([`fab_package`](fab-package.md), verification). With `--cpl-inputs DIRECTORY`
+the scaffold captures the [policy and supplier tree](cpl-rotation.md#generator-fab-integration)
+under `generation/cpl/`, and the scope adds a final stage `fab` holding
+`fab-export` (`fab_export`), `cpl` (`cpl_rotation`, export check `fab-export`) and
+the done gate, which then seals the corrected CPL (R-cpl, sourced from
+`requirements/fab.md`). Without the capture no CPL check is declared, the stage
+order ends at verification, and the done gate seals the native CPL with rotation
+status `not_declared`. The `rc-step` parameters are the same
 as in the closed-loop control: a 1 V step at `/IN`, a 5 ms stop, and `/OUT` at
 1 ms in [0.62, 0.65] V. R-native, R-width and R-response map to these checks
 as in `fixtures/closed-loop/control.scope.json`; R-fab maps to `fab` and is
@@ -107,20 +116,21 @@ configuration.
 
 ### Implementation steps
 
-The steps run in this order after each implementation session, on the
-writer's delivered design. Each step runs in the coordinator's networkless
-sandbox, and only exit 0 is adoptable.
+The coordinator selects the steps of the earliest failing stage after each
+implementation session and runs them on the delivered design. Each step runs
+in the networkless sandbox, and only exit 0 is adoptable.
 
 | Step | Stage | Program | Writes |
 | --- | --- | --- | --- |
 | `emit-schematic` | schematic | `steps/emit.py`: `agent_ee.schematic_emit` | the schematic, from `out/sch/` |
 | `build-board` | placement | `steps/placement.sh`: XML netlist from `/candidate`, then `agent_ee.board_build --placement-fallback row` | the board, from `out/board/placed/` |
 | `route-krt` | routing | `steps/route.sh`: `kicad-route run --backend krt --budget 300` on a copy of the project | the board, copied from the run's candidate to `out/candidate/` |
-| `export-fab` | fab | `steps/fab.py`: Gerbers, drill, positions, BOM, JLCPCB rewrite, `fab-manifest.json` | the board, in place and unchanged |
+| `export-fab` | fab | `agent_ee.fab_stage`: native export, sealed CPL correction, derived `fab-manifest.json` | the board, in place and unchanged |
 
-The step programs are in
-[fixtures/rung1/staged/steps](../fixtures/rung1/staged/steps/). They are mounted
-at `/tool/steps`. The agent-ee source tree is mounted at `/tool/agent-ee` and is
+The schematic, placement and routing programs are in
+[fixtures/rung1/staged/steps](../fixtures/rung1/staged/steps/) and are mounted
+at `/tool/steps`. The fab step runs the shared source module; the older
+`steps/fab.py` entry point delegates to that module. The agent-ee source tree is mounted at `/tool/agent-ee` and is
 recorded as the receipt's Python source tree. The kicad-route checkout is
 mounted at `/tool/kicad-route` and is also its state directory
 (`KICAD_ROUTE_STATE`). The routing step reports kicad-route's `result.json`
@@ -157,6 +167,13 @@ verify-campaign printed after recomputing them from the final run.
   (`fab_artifacts`).
 - verify-campaign recomputed the same `artifacts_id`, candidate and file hashes
   (`fab_artifacts_verified`).
+- The sealed rotation status (`fab_artifacts.rotation.status`, recorded as
+  `fab_rotation`) is in `fab_package.DONE_ROTATION_STATUSES`, currently
+  `{not_declared, ok}`. A declared `cpl_rotation` always reports
+  `PREVIEW_REQUIRED`, so `done` stays false even when every computational check
+  passed; the record's `fab_rotation_blocker` and the verify-campaign output name
+  the reason: `fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)`.
+  A missing or unknown status is never done.
 - `scaffold_receipt_binding.bound`: the scaffold receipt revalidates with its recorded
   sha256, and its after-tree (inputs plus outputs) equals the first captured candidate
   (`campaign/runs/1/candidate.json`, or the empty checks-only run on `--dry-run`) on
@@ -176,6 +193,14 @@ The `export-fab` step's stage `fab` is not a declared scope stage, so a staged
 campaign's step plan never selects it; the done gate is the `fab` check. The
 stage-step binding lists it under `excluded`. The
 step remains in the configuration for `--dry-run` rehearsals.
+
+The `export-fab` step runs the shared receipted fab stage (`agent_ee.fab_stage`):
+`fab_export` then `cpl_rotation` in the networkless sandbox, with a derived
+corrected package. Without `--cpl-inputs` it refuses (exit 3, policy not
+captured) and its stage `fab` is not a declared scope stage, so a staged
+campaign's step plan never selects it; with the capture the `fab` stage is
+declared and the step may be selected for it. In both cases the done gate is the
+`fab` check, and the step remains in the configuration for `--dry-run` rehearsals.
 
 ## Recorded run (2026-10-17)
 
@@ -212,9 +237,11 @@ itself and has no stage receipt, so a rebuilt record of it stays unbound and not
 ## Limits
 
 - Placement uses the unqualified row stand-in of `board_build` (AGENTEE-109).
-- The `export-fab` step is the driver's export and is provenance only; acceptance
-  uses the `fab_package` done gate (AGENTEE-94), which runs the AGENTEE-23
-  export and AGENTEE-73 gate.
+- The `export-fab` step is provenance only; acceptance uses the `fab_package`
+  done gate (AGENTEE-94), which runs the AGENTEE-23 export and AGENTEE-73 gate
+  and, with `--cpl-inputs`, seals the AGENTEE-126 corrected CPL. The owned
+  exporter still refuses the generated hand-soldered non-DNP header without an
+  LCSC binding unless it carries the declared assembly exclusion (AGENTEE-122).
 - The recorded run below predates the done gate; its scope had no `fab` check.
 - Mount identities are observed when the step runs. Tool trees are not copied
   into the campaign.

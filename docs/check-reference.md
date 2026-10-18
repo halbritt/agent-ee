@@ -784,7 +784,12 @@ the captured supplier footprint, which detects quarter-turn offsets,
 reflections and diode polarity. Each row appears in exactly one of
 `applied_corrections` or `unmatched_footprints`. Missing geometry or a
 duplicate designator never falls back to the anchor. The status stays
-`PREVIEW_REQUIRED`. See [CPL rotation](cpl-rotation.md).
+`PREVIEW_REQUIRED`. The generator fab stage runs it after `fab_export`, and
+both rung-1 scopes declare it when `--cpl-inputs` captured a policy and supplier
+set; their derived package manifest records the corrections and policy digest.
+Missing policy or supplier coverage fails closed, and a status outside
+`fab_package.DONE_ROTATION_STATUSES` (today any `PREVIEW_REQUIRED`) prevents
+`done`. See [CPL rotation](cpl-rotation.md#generator-fab-integration).
 
 ## Scaffold preparation
 
@@ -822,4 +827,12 @@ manifest.json by sha256, bound to the candidate id and board digest). A missing,
 empty or unparseable export file is `failed`, `malformed` or `unsupported` with
 outcome `unknown`, or a gate `defect`; never `pass`. A scope with a `generation`
 marker is refused at capture unless this check is last and an acceptance
-requirement maps to it.
+requirement maps to it. When the scope declares one `cpl_rotation` check
+(AGENTEE-126), the gate requires its passing, complete result bound to this
+candidate, board and native `cpl.csv`, seals the corrected `work/CPL/cpl/cpl.csv`
+in place of the native CPL, and records `rotation` (status `ok` or
+`PREVIEW_REQUIRED`, policy sha256, report digest) in `details` and the artifact
+record; a correction defect is a gate `defect`, any other non-pass is
+`unsupported`. Without one, `rotation` is `{status: not_declared}`. Done
+predicates admit only `fab_package.DONE_ROTATION_STATUSES` (`not_declared`, `ok`);
+see [CPL rotation in the done gate](fab-package.md#cpl-rotation).

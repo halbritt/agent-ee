@@ -806,7 +806,13 @@ def main(argv=None):
             print(state["state"])
             artifacts = state.get("fab_artifacts")
             if artifacts:
+                from .fab_package import rotation_blocker
                 run = state["history"][-1]["run"]
+                rotation = artifacts.get("rotation") or {}
+                print(f"fab_rotation {rotation.get('status')} policy {rotation.get('policy_sha256')}")
+                blocker = rotation_blocker(rotation.get("status"))
+                if blocker:
+                    print(blocker)
                 print(f"fab_artifacts {artifacts['artifacts_id']} candidate {artifacts['candidate_id']}")
                 for rel, sha in artifacts["files"].items():
                     print(f"{sha}  {run}/{rel}")

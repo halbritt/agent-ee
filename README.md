@@ -240,7 +240,13 @@ native pad-box midpoints. It applies a captured, versioned rotation policy and
 requires every rotation to agree with the pin-1 frame of the captured supplier
 footprint. Disagreement is a defect: a quarter-turn mismatch, a reflection or a
 diode polarity mismatch. Its status stays `PREVIEW_REQUIRED`, because only the
-JLCPCB placement preview validates rotation physically.
+JLCPCB placement preview validates rotation physically. The generator fab stage
+and both rung-1 scopes apply this check from `--cpl-inputs` captures and retain
+the corrected package with its policy and correction manifest; in the rung-1
+campaign the done gate seals the corrected CPL. A missing capture fails closed
+in the generator. Done predicates admit only the rotation statuses in
+`fab_package.DONE_ROTATION_STATUSES`, so a pending preview keeps the generation
+record incomplete with a named reason.
 
 The [fab package done gate](docs/fab-package.md) (`fab_package`, declared last)
 runs that export and gate in one check and seals the package's file hashes. A

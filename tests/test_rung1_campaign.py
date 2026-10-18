@@ -52,7 +52,9 @@ class Prepared(unittest.TestCase):
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
         cls.rundir.mkdir()
-        cls.prep = rc.prepare(SPEC, cls.rundir, catalog_checkout=catalog)
+        from tests.test_fab_stage import rotation_inputs
+        cls.prep = rc.prepare(SPEC, cls.rundir, catalog_checkout=catalog,
+                              cpl_inputs=rotation_inputs(root / 'cpl-inputs'))
         cls.scaffold, cls.record = rc.write_scaffold(cls.rundir, cls.prep)
 
     @classmethod
@@ -173,11 +175,15 @@ class ScaffoldTest(Prepared):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
         self.assertEqual([(c['id'], c['stage']) for c in scope['checks']],
                          [('erc', 'schematic'), ('netlist', 'schematic'), ('drc', 'placement'),
-                          ('geometry', 'routing'), ('rc-step', 'verification'), ('fab', 'verification')])
+                          ('geometry', 'routing'), ('rc-step', 'verification'), ('fab-export', 'fab'),
+                          ('cpl', 'fab'), ('fab', 'fab')])
         self.assertEqual(scope['checks'][-1]['kind'], 'fab_package')
         self.assertEqual(scope['generation'], {'schema': 'agent-ee.generation/1', 'done_check': 'fab'})
         self.assertIn({**rc.FAB_REQUIREMENT}, scope['baseline']['requirements'])
-        self.assertEqual(declaration(scope)['order'], ['schematic', 'placement', 'routing', 'verification'])
+        self.assertIn({**rc.CPL_REQUIREMENT}, scope['baseline']['requirements'])
+        cpl = next(c for c in scope['checks'] if c['id'] == 'cpl')
+        self.assertEqual((cpl['kind'], cpl['params']['export_check']), ('cpl_rotation', 'fab-export'))
+        self.assertEqual(declaration(scope)['order'], ['schematic', 'placement', 'routing', 'verification', 'fab'])
         self.assertEqual(scope['mutable_inputs'], ['project/rung1_rc.kicad_sch', 'project/rung1_rc.kicad_pcb'])
         rc_step = next(c for c in scope['checks'] if c['id'] == 'rc-step')
         self.assertEqual((rc_step['params']['step_v'], rc_step['params']['measurements'][0]),
@@ -187,6 +193,23 @@ class ScaffoldTest(Prepared):
         summary = rc.validate_scope_file(path)
         self.assertIn('generation/resolved.json', summary['immutable_generation_inputs'])
         self.assertNotIn('project/rung1_rc.kicad_pcb', summary['baseline_files'])
+
+    def test_scope_without_a_cpl_capture_keeps_the_native_done_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scaffold = Path(tmp) / 'scaffold'
+            shutil.copytree(self.scaffold, scaffold)
+            shutil.rmtree(scaffold / 'generation' / 'cpl')
+            (scaffold / 'requirements' / 'fab.md').unlink()
+            scope = rc.compile_staged_scope(self.prep['params'], tmp, scaffold)
+            self.assertEqual([(c['id'], c['stage']) for c in scope['checks']],
+                             [('erc', 'schematic'), ('netlist', 'schematic'), ('drc', 'placement'),
+                              ('geometry', 'routing'), ('rc-step', 'verification'), ('fab', 'verification')])
+            self.assertEqual(declaration(scope)['order'], ['schematic', 'placement', 'routing', 'verification'])
+            self.assertNotIn('R-cpl', [r['id'] for r in scope['baseline']['requirements']])
+            path = Path(tmp) / 'scope.json'
+            path.write_text(json.dumps(scope))
+            summary = rc.validate_scope_file(path)
+            self.assertFalse([f for f in summary['immutable_generation_inputs'] if f.startswith('generation/cpl/')])
 
     def test_removing_the_fab_package_requirement_is_refused_at_capture(self):
         scope = rc.compile_staged_scope(self.prep['params'], self.rundir, self.scaffold)
@@ -273,7 +296,9 @@ class StepTest(unittest.TestCase):
 
 class RecordTest(unittest.TestCase):
     def test_done_requires_verdict_and_fab_hashes_recomputed_by_verify_campaign(self):
-        stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}}
+        # A scope without a cpl_rotation check: the done gate seals the native CPL.
+        stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64},
+                  'rotation': {'status': 'not_declared'}}
         with tempfile.TemporaryDirectory() as tmp:
             bound = {'bound': True}
             done = lambda verdict, recomputed, artifacts=stored, scaffold=bound: rc.write_record(
@@ -289,9 +314,29 @@ class RecordTest(unittest.TestCase):
             record = json.loads((Path(tmp) / 'rung1-campaign-record.json').read_text())
             self.assertEqual(record['done_rule'].split(' AND ')[0], 'campaign verdict criteria_satisfied')
 
+    def test_done_with_a_declared_cpl_requires_an_allowed_rotation_status(self):
+        stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/cpl/cpl/cpl.csv': '1' * 64}}
+        with tempfile.TemporaryDirectory() as tmp:
+            def record(rotation):
+                artifacts = {**stored, 'rotation': rotation} if rotation is not None else dict(stored)
+                return rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=artifacts,
+                                       recomputed=dict(stored), scaffold={'bound': True})
+            preview = record({'status': 'PREVIEW_REQUIRED', 'policy_sha256': '2' * 64})
+            self.assertFalse(preview['done'])
+            self.assertTrue(preview['fab_artifacts_verified'])
+            self.assertEqual(preview['fab_rotation_blocker'],
+                             'fab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)')
+            self.assertTrue(record({'status': 'ok', 'policy_sha256': '2' * 64})['done'])
+            for rotation in (None, {}, {'status': 'pass'}):
+                self.assertFalse(record(rotation)['done'], rotation)
+
     def test_verify_campaign_output_parsing_is_strict(self):
         run = '/r/runs/1'
         good = f"criteria_satisfied\nfab_artifacts {'a' * 64} candidate c\n{'1' * 64}  {run}/work/fab/fab/bom.csv\n"
+        rotation = ('criteria_satisfied\nfab_rotation PREVIEW_REQUIRED policy ' + '2' * 64 +
+                    '\nfab: cpl rotation PREVIEW_REQUIRED (bottom-side transform unvalidated)\n')
+        self.assertEqual(rc.recomputed_artifacts(good.replace('criteria_satisfied\n', rotation), run),
+                         rc.recomputed_artifacts(good, run))
         self.assertEqual(rc.recomputed_artifacts(good, run),
                          {'artifacts_id': 'a' * 64, 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64}})
         self.assertIsNone(rc.recomputed_artifacts('criteria_satisfied\n', run))
