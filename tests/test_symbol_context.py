@@ -20,6 +20,28 @@ def libraries(data=LIBRARY):
 
 
 class ContextTests(unittest.TestCase):
+    def test_expected_attributes_validate_and_compare_exactly(self):
+        import copy
+        ref = dict(reference='U1', lib_id='Owned:Child', pin={'number': '1'},
+                   expected={'name': 'GND', 'electrical_type': 'power_in'})
+        def check(value):
+            return check_pin_references(libraries(), {'owned.kicad_sym': LIBRARY}, [value])
+        self.assertEqual(check(ref)['outcome'], 'pass')
+        for change in ({'name': 'gnd'}, {'electrical_type': 'passive'}):
+            bad = copy.deepcopy(ref)
+            bad['expected'].update(change)
+            result = check(bad)
+            self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'))
+            self.assertEqual(result['references'][0]['actual'], [{'name': 'GND', 'electrical_type': 'power_in'}])
+        for change in ({'expected': {}}, {'expected': None},
+                       {'expected': {'name': 'GND', 'electrical_type': 'invented'}},
+                       {'expected': {'name': 'GND', 'electrical_type': []}},
+                       {'expected': {'name': '', 'electrical_type': 'power_in'}},
+                       {'pin': {'name': 'GND'}}, {'extra': True}):
+            bad = copy.deepcopy(ref)
+            bad.update(change)
+            self.assertEqual((check(bad)['execution'], check(bad)['outcome']), ('malformed', 'unknown'))
+
     def test_inherited_context_parses_library_once(self):
         from unittest import mock
         from agent_ee import symbol_library

@@ -1,0 +1,453 @@
+{
+  "schema": "agent-ee.datasheet-facts/1",
+  "facts": [
+    {
+      "id": "pin_1_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "1",
+      "value": "SDO",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 1; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 1",
+        "quote": "SDO"
+      }
+    },
+    {
+      "id": "pin_1_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "1",
+      "value": "1",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 1; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 1",
+        "quote": "1"
+      }
+    },
+    {
+      "id": "pin_2_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "2",
+      "value": "SDx",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 2; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 2",
+        "quote": "SDx"
+      }
+    },
+    {
+      "id": "pin_2_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "2",
+      "value": "2",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 2; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 2",
+        "quote": "2"
+      }
+    },
+    {
+      "id": "pin_3_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "3",
+      "value": "SCx",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 3; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 3",
+        "quote": "SCx"
+      }
+    },
+    {
+      "id": "pin_3_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "3",
+      "value": "3",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 3; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 3",
+        "quote": "3"
+      }
+    },
+    {
+      "id": "pin_4_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "4",
+      "value": "INT1",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 4; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 4",
+        "quote": "INT1"
+      }
+    },
+    {
+      "id": "pin_4_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "4",
+      "value": "4",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 4; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 4",
+        "quote": "4"
+      }
+    },
+    {
+      "id": "pin_5_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "5",
+      "value": "VDDIO",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 5; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 5",
+        "quote": "VDDIO"
+      }
+    },
+    {
+      "id": "pin_5_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "5",
+      "value": "5",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 5; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 5",
+        "quote": "5"
+      }
+    },
+    {
+      "id": "pin_6_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "6",
+      "value": "GND",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 6; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 6",
+        "quote": "GND"
+      }
+    },
+    {
+      "id": "pin_6_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "6",
+      "value": "6",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 6; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 6",
+        "quote": "6"
+      }
+    },
+    {
+      "id": "pin_7_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "7",
+      "value": "GND",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 7; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 7",
+        "quote": "GND"
+      }
+    },
+    {
+      "id": "pin_7_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "7",
+      "value": "7",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 7; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 7",
+        "quote": "7"
+      }
+    },
+    {
+      "id": "pin_8_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "8",
+      "value": "VDD",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 8; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 8",
+        "quote": "VDD"
+      }
+    },
+    {
+      "id": "pin_8_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "8",
+      "value": "8",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 8; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 8",
+        "quote": "8"
+      }
+    },
+    {
+      "id": "pin_9_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "9",
+      "value": "INT2",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 9; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 9",
+        "quote": "INT2"
+      }
+    },
+    {
+      "id": "pin_9_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "9",
+      "value": "9",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 9; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 9",
+        "quote": "9"
+      }
+    },
+    {
+      "id": "pin_10_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "10",
+      "value": "NC",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 10; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 10",
+        "quote": "NC"
+      }
+    },
+    {
+      "id": "pin_10_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "10",
+      "value": "10",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 10; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 10",
+        "quote": "10"
+      }
+    },
+    {
+      "id": "pin_11_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "11",
+      "value": "NC",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 11; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 11",
+        "quote": "NC"
+      }
+    },
+    {
+      "id": "pin_11_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "11",
+      "value": "11",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 11; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 11",
+        "quote": "11"
+      }
+    },
+    {
+      "id": "pin_12_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "12",
+      "value": "CS",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 12; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 12",
+        "quote": "CS"
+      }
+    },
+    {
+      "id": "pin_12_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "12",
+      "value": "12",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 12; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 12",
+        "quote": "12"
+      }
+    },
+    {
+      "id": "pin_13_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "13",
+      "value": "SCL",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 13; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 13",
+        "quote": "SCL"
+      }
+    },
+    {
+      "id": "pin_13_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "13",
+      "value": "13",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 13; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 13",
+        "quote": "13"
+      }
+    },
+    {
+      "id": "pin_14_pin_name",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_name",
+      "pin": "14",
+      "value": "SDA",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 14; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 14",
+        "quote": "SDA"
+      }
+    },
+    {
+      "id": "pin_14_pin_number",
+      "part_number": "LSM6DSO32",
+      "kind": "pin_number",
+      "pin": "14",
+      "value": "14",
+      "unit": "",
+      "conditions": "Section 3, Table 2; pin 14; both interface modes",
+      "source": {
+        "path": "datasheets/lsm6dso32.pdf",
+        "sha256": "4402a39b852970a820db832682ca2d1c9704243a927c440dc4751995bffe4c8c",
+        "page": 24,
+        "locator": "Section 3, Table 2, pin 14",
+        "quote": "14"
+      }
+    }
+  ]
+}

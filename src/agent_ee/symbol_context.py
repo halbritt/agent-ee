@@ -140,6 +140,29 @@ def build_context(libraries, captured_files, selection, *, _library_cache=None):
     return _seal(result)
 
 
+def validate_pin_reference(ref):
+    """Validate a selector and its optional exact number-to-attributes contract."""
+    from .symbol_library import ELECTRICAL_TYPES
+    fields = ('reference', 'lib_id', 'pin')
+    if isinstance(ref, dict) and 'expected' in ref:
+        fields += ('expected',)
+    _object(ref, fields)
+    _text(ref['reference'])
+    _text(ref['lib_id'])
+    selector = ref['pin']
+    if not isinstance(selector, dict) or set(selector) not in ({'number'}, {'name'}):
+        raise FootprintError('pin requires exactly one name or number')
+    _text(next(iter(selector.values())))
+    if 'expected' in ref:
+        if set(selector) != {'number'}:
+            raise FootprintError('expected pin attributes require a number selector')
+        _object(ref['expected'], ('name', 'electrical_type'))
+        _text(ref['expected']['name'])
+        _text(ref['expected']['electrical_type'])
+        if ref['expected']['electrical_type'] not in ELECTRICAL_TYPES:
+            raise FootprintError('invalid expected electrical type')
+
+
 def check_pin_references(libraries, captured_files, references):
     """Declared selectors, independent of connectivity's full net-accounting rules."""
     result = dict(schema='agent-ee.pin-reference-result/1', execution='ok', outcome='pass',
@@ -149,13 +172,7 @@ def check_pin_references(libraries, captured_files, references):
         if not isinstance(references, list) or not references:
             raise FootprintError('nonempty pin-reference list required')
         for ref in references:
-            _object(ref, ('reference', 'lib_id', 'pin'))
-            _text(ref['reference'])
-            _text(ref['lib_id'])
-            selector = ref['pin']
-            if not isinstance(selector, dict) or set(selector) not in ({'number'}, {'name'}):
-                raise FootprintError('pin requires exactly one name or number')
-            _text(next(iter(selector.values())))
+            validate_pin_reference(ref)
         identities = {(r['reference'], r['lib_id']) for r in references}
         if len({r for r, _ in identities}) != len(identities):
             raise FootprintError('reference has ambiguous selected symbols')
@@ -178,6 +195,12 @@ def check_pin_references(libraries, captured_files, references):
             record['available_pins'] = [dict(number=p['number'], name=p['name']) for p in context['pins']]
             record['numbers'] = sorted({p['number'] for p in matches})
             record['status'] = 'pass' if matches else 'defect'
+            if 'expected' in ref:
+                record['expected'] = dict(ref['expected'])
+                record['actual'] = [dict(name=p['name'], electrical_type=p['electrical_type'])
+                                    for p in matches]
+                if not matches or any(actual != ref['expected'] for actual in record['actual']):
+                    record['status'] = 'defect'
         result['references'].append(record)
     result['contexts'] = [contexts[key] for key in sorted(contexts)]
     if result['execution'] == 'ok' and any(r['status'] == 'defect' for r in result['references']):

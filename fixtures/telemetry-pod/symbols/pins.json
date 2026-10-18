@@ -1,0 +1,200 @@
+{
+  "schema": "agent-ee.symbol-query/1",
+  "libraries": [
+    {
+      "name": "Pod",
+      "path": "libs/Pod.kicad_sym",
+      "sha256": "3484c0974dd499caf48b1c53083087648675256979e9474d66e44ac5ad89afa0"
+    }
+  ],
+  "selection": null,
+  "references": [
+    {
+      "reference": "D1",
+      "lib_id": "Pod:PESD1CAN-UX",
+      "pin": {
+        "number": "1"
+      },
+      "expected": {
+        "name": "cathode 1",
+        "electrical_type": "passive"
+      }
+    },
+    {
+      "reference": "D1",
+      "lib_id": "Pod:PESD1CAN-UX",
+      "pin": {
+        "number": "2"
+      },
+      "expected": {
+        "name": "cathode 2",
+        "electrical_type": "passive"
+      }
+    },
+    {
+      "reference": "D1",
+      "lib_id": "Pod:PESD1CAN-UX",
+      "pin": {
+        "number": "3"
+      },
+      "expected": {
+        "name": "common cathode",
+        "electrical_type": "passive"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "1"
+      },
+      "expected": {
+        "name": "SDO",
+        "electrical_type": "bidirectional"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "2"
+      },
+      "expected": {
+        "name": "SDx",
+        "electrical_type": "bidirectional"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "3"
+      },
+      "expected": {
+        "name": "SCx",
+        "electrical_type": "bidirectional"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "4"
+      },
+      "expected": {
+        "name": "INT1",
+        "electrical_type": "bidirectional"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "5"
+      },
+      "expected": {
+        "name": "VDDIO",
+        "electrical_type": "power_in"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "6"
+      },
+      "expected": {
+        "name": "GND",
+        "electrical_type": "power_in"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "7"
+      },
+      "expected": {
+        "name": "GND",
+        "electrical_type": "power_in"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "8"
+      },
+      "expected": {
+        "name": "VDD",
+        "electrical_type": "power_in"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "9"
+      },
+      "expected": {
+        "name": "INT2",
+        "electrical_type": "bidirectional"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "10"
+      },
+      "expected": {
+        "name": "NC",
+        "electrical_type": "no_connect"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "11"
+      },
+      "expected": {
+        "name": "NC",
+        "electrical_type": "no_connect"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "12"
+      },
+      "expected": {
+        "name": "CS",
+        "electrical_type": "input"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "13"
+      },
+      "expected": {
+        "name": "SCL",
+        "electrical_type": "input"
+      }
+    },
+    {
+      "reference": "U1",
+      "lib_id": "Pod:LSM6DSO32",
+      "pin": {
+        "number": "14"
+      },
+      "expected": {
+        "name": "SDA",
+        "electrical_type": "bidirectional"
+      }
+    }
+  ]
+}

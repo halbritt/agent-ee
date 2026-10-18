@@ -7,6 +7,12 @@ a flat design, or one file per sheet for a hierarchical design (see
 a check: its receipt is diagnostic, and native ERC, netlist export and parity
 checks on the captured output decide whether the output is correct.
 
+The [owned telemetry-pod symbols](../fixtures/telemetry-pod/symbols/README.md)
+qualify PESD1CAN-UX and LSM6DSO32 emission with native KiCad 10.0.7 ERC,
+complete exported pin inventories and exact net terminals. Both drawings use
+rectangles without arcs or inheritance. This pin exercise does not qualify the
+pod's functional circuit.
+
 ```sh
 PYTHONPATH=src python3 -m agent_ee.schematic_emitter intent.json \
   --layout layout.json --captures captured-inputs \

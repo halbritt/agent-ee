@@ -1,0 +1,101 @@
+{
+  "schema": "agent-ee.datasheet-facts/1",
+  "facts": [
+    {
+      "id": "pin_1_pin_name",
+      "part_number": "PESD1CAN-UX",
+      "kind": "pin_name",
+      "pin": "1",
+      "value": "cathode 1",
+      "unit": "",
+      "conditions": "Section 2, Table 2; pin 1; both interface modes",
+      "source": {
+        "path": "datasheets/pesd1can-u.pdf",
+        "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+        "page": 1,
+        "locator": "Section 2, Table 2, pin 1",
+        "quote": "cathode 1"
+      }
+    },
+    {
+      "id": "pin_1_pin_number",
+      "part_number": "PESD1CAN-UX",
+      "kind": "pin_number",
+      "pin": "1",
+      "value": "1",
+      "unit": "",
+      "conditions": "Section 2, Table 2; pin 1; both interface modes",
+      "source": {
+        "path": "datasheets/pesd1can-u.pdf",
+        "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+        "page": 1,
+        "locator": "Section 2, Table 2, pin 1",
+        "quote": "1"
+      }
+    },
+    {
+      "id": "pin_2_pin_name",
+      "part_number": "PESD1CAN-UX",
+      "kind": "pin_name",
+      "pin": "2",
+      "value": "cathode 2",
+      "unit": "",
+      "conditions": "Section 2, Table 2; pin 2; both interface modes",
+      "source": {
+        "path": "datasheets/pesd1can-u.pdf",
+        "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+        "page": 1,
+        "locator": "Section 2, Table 2, pin 2",
+        "quote": "cathode 2"
+      }
+    },
+    {
+      "id": "pin_2_pin_number",
+      "part_number": "PESD1CAN-UX",
+      "kind": "pin_number",
+      "pin": "2",
+      "value": "2",
+      "unit": "",
+      "conditions": "Section 2, Table 2; pin 2; both interface modes",
+      "source": {
+        "path": "datasheets/pesd1can-u.pdf",
+        "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+        "page": 1,
+        "locator": "Section 2, Table 2, pin 2",
+        "quote": "2"
+      }
+    },
+    {
+      "id": "pin_3_pin_name",
+      "part_number": "PESD1CAN-UX",
+      "kind": "pin_name",
+      "pin": "3",
+      "value": "common cathode",
+      "unit": "",
+      "conditions": "Section 2, Table 2; pin 3; both interface modes",
+      "source": {
+        "path": "datasheets/pesd1can-u.pdf",
+        "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+        "page": 1,
+        "locator": "Section 2, Table 2, pin 3",
+        "quote": "common cathode"
+      }
+    },
+    {
+      "id": "pin_3_pin_number",
+      "part_number": "PESD1CAN-UX",
+      "kind": "pin_number",
+      "pin": "3",
+      "value": "3",
+      "unit": "",
+      "conditions": "Section 2, Table 2; pin 3; both interface modes",
+      "source": {
+        "path": "datasheets/pesd1can-u.pdf",
+        "sha256": "4f524ce85507734cfa700935dae241de2c7d6e0cc1ce55731e0cff9f783ae226",
+        "page": 1,
+        "locator": "Section 2, Table 2, pin 3",
+        "quote": "3"
+      }
+    }
+  ]
+}

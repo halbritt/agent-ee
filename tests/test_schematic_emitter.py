@@ -529,6 +529,7 @@ def native_project(files, tmp):
     project = Path(tmp) / 'project'
     shutil.copytree(PROJECT / 'lib', project / 'lib')
     for name, data in files.items():
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
         (project / name).write_bytes(data)
     return project
 
@@ -563,6 +564,44 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_pod_owned_symbols(self):
+        from test_pod_symbols import EXPECTED, pod_emission_inputs
+        intent, captured, layout = pod_emission_inputs()
+        for component in intent['components'][:2]:
+            library, footprint = component['footprint'].split(':')
+            path = library + '.pretty/' + footprint + '.kicad_mod'
+            captured['lib/' + path] = (Path('/usr/share/kicad/footprints') / path).read_bytes()
+        result, files = emit_schematic(intent, captured, layout,
+            symbol_table={'Pod': '${KIPRJMOD}/lib/Pod.kicad_sym',
+                          'OwnedPower': '${KIPRJMOD}/lib/Owned_Power.kicad_sym'},
+            footprint_table={name: '${KIPRJMOD}/lib/' + name + '.pretty'
+                             for name in ('Package_TO_SOT_SMD', 'Package_LGA')})
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project, work, erc, (components, nets, singles) = self.native_run(
+            'pod_owned_symbols', {**captured, **files}, 'pod')
+        self.assertEqual([v for sheet in erc['sheets'] for v in sheet['violations']], [])
+        self.assertEqual({ref: c['lib'] for ref, c in components.items()},
+                         {'D1': ('Pod', 'PESD1CAN-UX'), 'U1': ('Pod', 'LSM6DSO32')})
+        self.assertEqual(nets, {'/PIN_EXERCISE_A': [['D1', '1'], ['U1', '1']],
+                               '/PIN_EXERCISE_B': [['D1', '2'], ['U1', '2']],
+                               '/GROUND': [['D1', '3'], ['U1', '6'], ['U1', '7']],
+                               '/SUPPLY': [['U1', '5'], ['U1', '8']]})
+        native = ET.parse(work / 'netlist/design.xml').getroot()
+        parts = native.findall('./libparts/libpart')
+        self.assertEqual(sorted(p.get('part') for p in parts), sorted(EXPECTED))
+        for part in parts:
+            pins = sorted(part.findall('./pins/pin'), key=lambda p: int(p.get('num')))
+            # KiCad XML netlists replace whitespace in pin names with underscores.
+            self.assertEqual([(p.get('name'), p.get('type')) for p in pins],
+                             [(name.replace(' ', '_'), kind) for name, kind in EXPECTED[part.get('part')]])
+        resaved_files = dict(files)
+        sheet = resaved_files['pod_owned_symbols.kicad_sch']
+        for name in ('cathode 1', 'cathode 2', 'common cathode'):
+            sheet = sheet.replace(('(name "' + name + '"').encode(),
+                                  ('(name "' + name.replace(' ', '_') + '"').encode())
+        resaved_files['pod_owned_symbols.kicad_sch'] = sheet
+        self.assertNativeResave(project, work, 'pod_owned_symbols', resaved_files)
+
     def test_bindings_survive_real_native_export_and_forced_resave(self):
         intent = load('regulator.intent.json')
         binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',

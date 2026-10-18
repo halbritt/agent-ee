@@ -2,7 +2,8 @@
 from pathlib import Path
 
 from .candidate import safe_relative
-from .footprint_library import _object, _text, load_document
+from .footprint_library import _object, load_document
+from .symbol_context import validate_pin_reference
 
 
 def capability(params, files, inputs):
@@ -17,12 +18,7 @@ def capability(params, files, inputs):
     if not isinstance(query['references'], list) or not query['references']:
         raise ValueError('nonempty explicit pin references required')
     for ref in query['references']:
-        _object(ref, ('reference', 'lib_id', 'pin'))
-        _text(ref['reference'])
-        _text(ref['lib_id'])
-        if not isinstance(ref['pin'], dict) or set(ref['pin']) not in ({'name'}, {'number'}):
-            raise ValueError('exact name/number selector required')
-        _text(next(iter(ref['pin'].values())))
+        validate_pin_reference(ref)
     if not isinstance(query['libraries'], list) or not query['libraries']:
         raise ValueError('explicit pinned libraries required')
     dependencies = []
@@ -32,7 +28,12 @@ def capability(params, files, inputs):
         if dep not in files:
             raise ValueError('symbol library is not captured')
         dependencies.append(dep)
-    return dict(immutable_inputs=sorted(set(dependencies)), predicates=['symbol:pin-existence/1'])
+    predicates = ['symbol:pin-existence/1']
+    if any('expected' in ref for ref in query['references']):
+        # Attribute expectations are verification authority, not repairable data.
+        dependencies.append(path)
+        predicates.append('symbol:pin-attributes/1')
+    return dict(immutable_inputs=sorted(set(dependencies)), predicates=predicates)
 
 
 def check_symbol_pins(ctx):
@@ -49,7 +50,7 @@ def check_symbol_pins(ctx):
         ctx.evidence('pins.json')
     report = ctx.load_json('pins.json', 'captured symbol pins')
     ctx.result.update(execution=report['execution'], outcome=report['outcome'],
-                      summary='exact pin-reference existence on captured selected symbols')
+                      summary='exact pin references and declared attributes on captured selected symbols')
     ctx.result['details']['report'] = report
     ctx.result['location'] = ', '.join(r['reference'] + ':' + r['lib_id']
         for r in report['references'] if r['status'] == 'defect')

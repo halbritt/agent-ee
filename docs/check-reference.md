@@ -749,6 +749,13 @@ changed hash gives failed/unknown. The libraries are immutable inputs. See
 [symbol context](symbol-context.md) for the query schema and the offline
 `find-symbol`, `list-pins` and `find-footprint` tools.
 
+Number selectors may include `expected` with exact `name` and `electrical_type`
+attributes. Attribute mismatches are defects, including swapped pins whose
+numbers still exist. Such a query is immutable alongside its libraries and adds
+the `symbol:pin-attributes/1` predicate; existence-only queries retain their
+previous behavior. The [owned pod symbol fixture](../fixtures/telemetry-pod/symbols/README.md)
+binds both symbols, datasheet citations and stock footprint declarations.
+
 ## Supplier land patterns
 
 `land_pattern` takes a captured `criteria` path that binds supplier provenance,

@@ -1,0 +1,24 @@
+{
+  "schema": "agent-ee.footprint-libraries/1",
+  "complete": true,
+  "libraries": [
+    {
+      "name": "Package_TO_SOT_SMD",
+      "members": [
+        {
+          "path": "stock/Package_TO_SOT_SMD.pretty/SOT-323_SC-70.kicad_mod",
+          "sha256": "74e071f8714739c788536a0b053956a4f21489ee5173faf675e1a7ade4445ba8"
+        }
+      ]
+    },
+    {
+      "name": "Package_LGA",
+      "members": [
+        {
+          "path": "stock/Package_LGA.pretty/LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y.kicad_mod",
+          "sha256": "0484532e7987014dc4fb9505de57868e23da41a6c5f10673c4e221600d489ace"
+        }
+      ]
+    }
+  ]
+}
