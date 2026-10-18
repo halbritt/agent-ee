@@ -183,7 +183,7 @@ placer's inventory binding then refuses it.
 `write_scope(before, after, protected)` compares two complete saved
 `.kicad_pcb` parse trees, using the shared bounded S-expression parser. The
 report is `agent-ee.placement-write-scope/2`, and its transform family is
-`agent-ee.placement-transforms/2`. Each transform records `rotation_deg`,
+`agent-ee.placement-transforms/3`. Each transform records `rotation_deg`,
 `flipped` and the resulting `side`. Only the following footprint changes are
 allowed:
 
@@ -196,7 +196,9 @@ allowed:
   the native tests check actual pcbnew output;
 - a reordering of a footprint's UUID-keyed children, which KiCad re-sorts
   graphics into on save;
-- a front/back side flip, as described in the next section.
+- a front/back side flip, as described in the next section;
+- a footprint-owned straight zone polygon moving rigidly with its owner, as
+  described below (AGENTEE-178).
 
 Every other change is refused with a specific violation:
 
@@ -210,9 +212,23 @@ Every other change is refused with a specific violation:
 - a pad position, size, net, number or UUID change;
 - a field, model, schematic path or graphic change;
 - a lock-state change;
-- a footprint-owned zone that would move with its footprint.
+- an owned-zone edit beyond the exact owner transform, including a changed
+  vertex, layer inventory, rule flag or other zone setting.
 
-The only exception is the copper of a declared sub-layout, described next.
+Owned-zone polygons use board coordinates in KiCad 10.0.7. The comparison
+translates and quarter-turns each captured vertex about the footprint origin;
+a side flip first mirrors in the owner's local frame. Zone flips require
+quarter-turn starting orientations. Copper layers map to their opposite in the
+captured board stackup on a flip, including paired inner layers; unknown inner
+layer pairings are refused. Otherwise the layer tokens stay exact. Polygon count, vertex order, UUID,
+rule flags and every non-polygon setting stay exact. Added, removed, stale,
+independently moved or edited zones are refused. Curved polygons and moving
+zones with saved fills remain unsupported. Protected footprints cannot move
+with their zones. Scope reports retain both byte hashes and the owner transform.
+Family `/3` identifies this expanded transform domain; historical `/2` scope
+proofs are not silently relabelled.
+
+The only other exception is the copper of a declared sub-layout, described next.
 
 `proposal_scope` additionally requires every non-board file to keep its exact
 bytes and inventory. File-level `mutable_inputs` is therefore not enough: a

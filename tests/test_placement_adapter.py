@@ -295,7 +295,7 @@ class WriteScopeTest(unittest.TestCase):
     def test_exact_side_flip_is_a_transform_and_partial_flips_are_refused(self):
         report = pa.write_scope(TEXT.encode(), flipped(), [FP_J])
         self.assertEqual(report['status'], 'allowed', report['violations'])
-        self.assertEqual(report['family'], 'agent-ee.placement-transforms/2')
+        self.assertEqual(report['family'], 'agent-ee.placement-transforms/3')
         self.assertEqual(report['transforms'], [{'uuid': FP_R, 'reference': 'R1', 'rotation_deg': 0, 'flipped': True,
             'side': 'back', 'from': ['10', '10', '0'], 'to': ['10', '10', '0']}])
         # Flipped back to the front side, the mirror justification is removed again.
@@ -694,28 +694,147 @@ class NativeWriteScopeTest(unittest.TestCase):
         # pcbnew itself saves the tiny turn, so it is observable, not a parser artefact.
         self.assertIn(b' 1e-29)', self.edited('tiny', lambda k, board, fps: fps['R1'].SetOrientationDegrees(1e-29)))
 
-    def test_actual_pcbnew_footprint_owned_zone_moving_with_its_footprint_is_refused(self):
+    def owned_zone_source(self, copper_layers=2):
+        # Original rule-area fixture, representing a radio module without any
+        # stock/vendor footprint bytes. Its keepout overlaps its own courtyard.
         def zone(k, board, fps):
+            board.SetCopperLayerCount(copper_layers)
             area = k.ZONE(fps['R1'])
             area.SetIsRuleArea(True)
-            area.SetLayer(k.F_Cu)
+            area.SetDoNotAllowFootprints(True)
+            layers = k.LSET()
+            layers.AddLayer(k.F_Cu)
+            layers.AddLayer(k.B_Cu)
+            if copper_layers == 4:
+                layers.AddLayer(k.In1_Cu)
+                layers.AddLayer(k.In2_Cu)
+            area.SetLayerSet(layers)
             outline = area.Outline()
             outline.NewOutline()
-            for x, y in ((14, 14), (16, 14), (16, 16), (14, 16)):
+            for x, y in ((14, 14), (17, 14), (16, 16), (14, 16)):
                 outline.Append(x * 1_000_000, y * 1_000_000)
             fps['R1'].Add(area)
         source = self.root / 'zone.kicad_pcb'
         source.write_bytes(self.edited('zone-source', zone))
+        return source
+
+    def test_owned_zone_moves_with_footprint(self):
+        # Runtime-only installed library input: no third-party footprint file
+        # or saved board is added to the repository or retained as evidence.
+        import pcbnew as k
+        for layer_count in (2, 4):
+            board = k.BOARD()
+            board.SetCopperLayerCount(layer_count)
+            fp = k.FootprintLoad('/usr/share/kicad/footprints/RF_Module.pretty', 'ESP32-S3-WROOM-1')
+            self.assertIsNotNone(fp)
+            fp.SetReference('U_RF')
+            board.Add(fp)
+            fp.SetPosition(k.VECTOR2I(30_000_000, 30_000_000))
+            self.assertGreater(len(fp.Zones()), 0)
+            source = self.root / 'runtime-module.kicad_pcb'
+            k.SaveBoard(str(source), board)
+            before = source.read_bytes()
+            for turn in (0, 90, 180, 270):
+                def move(k, board, fps):
+                    fps['U_RF'].SetOrientationDegrees(turn)
+                    fps['U_RF'].SetPosition(k.VECTOR2I(45_000_000, 35_000_000))
+                after = self.edited('runtime-module-moved', move, source)
+                report = pa.write_scope(before, after)
+                self.assertEqual(report['status'], 'allowed', report['violations'])
+                self.assertEqual([t['reference'] for t in report['transforms']], ['U_RF'])
+                self.assertEqual(pa.write_scope(after, before)['status'], 'allowed')
+
+    def test_original_owned_zone_moves_rotates_and_flips_rigidly(self):
+        for layer_count in (2, 4):
+            source = self.owned_zone_source(layer_count)
+            for initial in (0, 90, 180, 270):
+                def orient(k, board, fps):
+                    fps['R1'].SetOrientationDegrees(initial)
+                oriented = self.root / 'zone-oriented.kicad_pcb'
+                oriented.write_bytes(self.edited('orient-zone', orient, source))
+                for bottom in (False, True):
+                    def side(k, board, fps):
+                        if bottom:
+                            fps['R1'].Flip(fps['R1'].GetPosition(), False)
+                    before = self.root / 'zone-before.kicad_pcb'
+                    before.write_bytes(self.edited('side-zone', side, oriented))
+                    for flip in (None, False, True):
+                        for turn in (0, 90, 180, 270):
+                            def move(k, board, fps):
+                                fp = fps['R1']
+                                if flip is not None:
+                                    fp.Flip(fp.GetPosition(), flip)
+                                fp.SetOrientationDegrees(fp.GetOrientationDegrees() + turn)
+                                fp.SetPosition(k.VECTOR2I(25_000_000, 23_000_000))
+                            with self.subTest(layers=layer_count, initial=initial, bottom=bottom, flip=flip, turn=turn):
+                                after = self.edited('zone-moved', move, before)
+                                report = pa.write_scope(before.read_bytes(), after)
+                                self.assertEqual(report['status'], 'allowed', report['violations'])
+                                self.assertEqual([t['reference'] for t in report['transforms']], ['R1'])
+                                self.assertEqual(pa.write_scope(after, before.read_bytes())['status'], 'allowed')
+                                self.assertEqual(pa.write_scope(before.read_bytes(), after,
+                                                 [uuid_of(before, 'R1')])['status'], 'refused')
+
+    def test_owned_zone_inner_layer_flip_uses_captured_stackup(self):
+        def inner_zone(k, board, fps):
+            next(iter(fps['R1'].Zones())).SetLayer(k.In1_Cu)
+        source = self.owned_zone_source(4)
+        source.write_bytes(self.edited('inner-source', inner_zone, source))
+        def flip(k, board, fps):
+            fps['R1'].Flip(fps['R1'].GetPosition(), False)
+        after = self.edited('inner-flipped', flip, source)
+        self.assertEqual(pa.write_scope(source.read_bytes(), after)['status'], 'allowed')
+        self.assertEqual(pa.write_scope(after, source.read_bytes())['status'], 'allowed')
+        transformed = self.root / 'inner-transformed.kicad_pcb'
+        transformed.write_bytes(after)
+        # Keeping In1.Cu after the flip is an independent layer edit: native
+        # KiCad maps it to In2.Cu on the captured four-layer stackup.
+        bad = self.edited('inner-layer-edited', inner_zone, transformed)
+        self.assertEqual(pa.write_scope(source.read_bytes(), bad)['status'], 'refused')
+
+    def test_owned_zone_edited_refused(self):
+        source = self.owned_zone_source()
         before = source.read_bytes()
-        self.assertIn(b'(zone', before)
-        control = pa.write_scope(before, self.edited('zone-resaved', lambda k, board, fps: None, source))
-        self.assertEqual(control['status'], 'allowed', control['violations'])
         def move(k, board, fps):
-            fps['R1'].SetPosition(k.VECTOR2I(fps['R1'].GetPosition().x + 3_000_000, fps['R1'].GetPosition().y))
-        report = pa.write_scope(before, self.edited('zone-moved', move, source))
-        self.assertEqual(report['status'], 'refused')
-        self.assertTrue(any('(R1): zone ' in v and 'changed beyond the footprint transform' in v
-                            for v in report['violations']), report['violations'])
+            fps['R1'].SetOrientationDegrees(90)
+            fps['R1'].SetPosition(k.VECTOR2I(25_000_000, 23_000_000))
+        after = self.edited('zone-moved', move, source)
+        self.assertEqual(pa.write_scope(before, after)['status'], 'allowed')
+        from agent_ee.schematic_emit import parse_quoted
+        root = parse_quoted(after)
+        # Serialize with the existing shared emitter, not a second parser.
+        from agent_ee.scaffold import sexpr
+        import copy
+        for edit in ('vertex', 'layer', 'flag', 'metadata', 'missing', 'added', 'stale', 'arc'):
+            changed = copy.deepcopy(root)
+            fp = next(n for n in pa.footprints(changed).values() if pa._reference(n) == 'R1')
+            zone = pa.children(fp, 'zone')[0]
+            if edit == 'vertex':
+                pa.children(pa.children(zone, 'polygon')[0], 'pts')[0][1][1] = '99'
+            elif edit == 'layer':
+                pa.children(zone, 'layers')[0].pop()
+            elif edit == 'flag':
+                pa.children(pa.children(zone, 'keepout')[0], 'footprints')[0][1] = 'allowed'
+            elif edit == 'metadata':
+                pa.children(zone, 'hatch')[0][2] = '0.6'
+            elif edit == 'missing':
+                fp.remove(zone)
+            elif edit == 'added':
+                other = copy.deepcopy(zone)
+                pa.children(other, 'uuid')[0][1] = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                fp.append(other)
+            elif edit == 'stale':
+                old_fp = next(n for n in pa.footprints(pa._board(before)).values() if pa._reference(n) == 'R1')
+                old_zone = pa.children(old_fp, 'zone')[0]
+                polygon = pa.children(zone, 'polygon')[0]
+                polygon[:] = pa.children(old_zone, 'polygon')[0]
+            else:
+                pts = pa.children(pa.children(zone, 'polygon')[0], 'pts')[0]
+                pts[1] = ['arc', ['start', '0', '0'], ['mid', '1', '1'], ['end', '2', '0']]
+            with self.subTest(edit=edit):
+                report = pa.write_scope(before, sexpr(changed))
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(report['violations'])
 
     def test_actual_pcbnew_out_of_scope_edits_are_refused(self):
         def move_fixed(k, board, fps):

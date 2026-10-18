@@ -3,7 +3,8 @@
 The coordinator, not the writer, runs the pinned AGENTEE-54 placer once per
 placement iteration as an AGENTEE-95 stage step, on a read-only snapshot of the
 delivered design and into a fresh scratch destination. A strict comparison of the
-complete saved boards admits only footprint translations and quarter turns.
+complete saved boards admits footprint translations, quarter turns, qualified
+side flips and the rigid motion of footprint-owned zone polygons.
 Receipts, the helper's own judgment and its local DRC are provenance only; the
 campaign's fresh captured checks grade every proposal.
 
@@ -26,6 +27,7 @@ from pathlib import Path, PurePosixPath
 
 from .storage import digest, identity, read_json, write_json
 from .symbol_library import LibraryError, children, parse_sexpr
+from .placer import rotate
 
 ADAPTER_SCHEMA = 'agent-ee.placement-adapter/1'
 SCOPE_SCHEMA = 'agent-ee.placement-write-scope/2'
@@ -61,10 +63,11 @@ FULL_TURN = 360 * 10 ** MAX_PLACES
 QUARTER_TURNS = tuple(turn * 10 ** MAX_PLACES for turn in (0, 90, 180, 270))
 MAX_TOKEN = 128
 # The exact transform family a placement iteration may apply; anything else is refused.
-TRANSFORM_FAMILY = 'agent-ee.placement-transforms/2'
+TRANSFORM_FAMILY = 'agent-ee.placement-transforms/3'
 TRANSFORMS = ('translations, quarter-turn rotations (0, 90, 180 or 270 degrees) and front/back side '
               'flips as pcbnew saves them (footprints without arcs, custom, chamfered, trapezoid or '
-              'offset-drill pads, or vertically justified text)')
+              'offset-drill pads, or vertically justified text); owned straight zone polygons follow '
+              'the owner rigidly, with every other zone setting preserved')
 HALF_TURN = 180 * 10 ** MAX_PLACES
 # Side flips, qualified against KiCad 10.0.7 FOOTPRINT::Flip in both directions from every
 # quarter turn: footprint-local points are saved mirrored in y, front/back layers swap, the
@@ -528,7 +531,74 @@ def _flip_follows(before, after, theta, theta_after):
     return False
 
 
-def _footprint(key, before, after, protected, violations, fields=False):
+def _zone_layer_flips(root):
+    """Copper layer pairing from the captured board, including inner layers."""
+    result = dict(FLIP_LAYERS)
+    tables = children(root, 'layers')
+    if len(tables) == 1:
+        names = [layer[1] for layer in tables[0][1:] if isinstance(layer, list) and len(layer) >= 3
+                 and isinstance(layer[1], str) and layer[1].endswith('.Cu')]
+        inner = [f'In{i}.Cu' for i in range(1, len(names)-1)]
+        if (2 <= len(names) <= 32 and len(names) % 2 == 0 and len(set(names)) == len(names) and
+                set(names) == {'F.Cu', 'B.Cu', *inner}):
+            result.update(zip(inner, reversed(inner)))
+    return result
+
+
+def _zone_follows(before, after, b_at, a_at, flipped, layer_flips):
+    """Owned zone polygons are saved in board coordinates, unlike footprint graphics.
+
+    Compare every vertex under the owner's rigid motion; all other zone tokens
+    stay exact. Side flips of zones require quarter-turn owner orientations.
+    """
+    rotation = _turn(a_at[2] + b_at[2] if flipped else a_at[2] - b_at[2])
+    if rotation not in QUARTER_TURNS or (flipped and b_at[2] % QUARTER_TURNS[1]):
+        return False
+    if (flipped or b_at[:2] != a_at[:2] or rotation) and _uses(before, ('filled_polygon', 'fill_segments')):
+        return False
+    def point(node):
+        if len(node) != 3 or node[0] != 'xy' or any(not isinstance(t, str) for t in node[1:]):
+            raise ValueError('zone polygon needs straight xy vertices')
+        numbers = [_number(t) for t in node[1:]]
+        if any(n is None for n in numbers):
+            raise ValueError('zone polygon has a malformed coordinate')
+        return [_scaled(n, t) for n, t in zip(numbers, node[1:])]
+    origin = [[_scaled(n, str(n)) for n in at[:2]] for at in (b_at, a_at)]
+    def follows(b, a):
+        p, q = point(b), point(a)
+        p = [p[i] - origin[0][i] for i in (0, 1)]
+        if flipped:
+            x, y = rotate(p, -b_at[2] // QUARTER_TURNS[1])
+            p = rotate((x, -y), a_at[2] // QUARTER_TURNS[1])
+        else:
+            p = rotate(p, rotation // QUARTER_TURNS[1])
+        return all(p[i] + origin[1][i] == q[i] for i in (0, 1))
+    if len(before) != len(after):
+        return False
+    polygons = 0
+    for b, a in zip(before, after):
+        if isinstance(b, list) and b and b[0] == 'polygon':
+            polygons += 1
+            if (not isinstance(a, list) or len(b) != 2 or len(a) != 2 or a[0] != 'polygon' or
+                    not isinstance(b[1], list) or not isinstance(a[1], list) or
+                    b[1][:1] != ['pts'] or a[1][:1] != ['pts'] or
+                    len(b[1]) < 4 or len(b[1]) != len(a[1]) or
+                    not all(follows(p, q) for p, q in zip(b[1][1:], a[1][1:]))):
+                return False
+        elif flipped and isinstance(b, list) and b and b[0] in ('layer', 'layers'):
+            def flip_layer(name):
+                return layer_flips.get(name, _flip_layer(name))
+            if (not isinstance(a, list) or a[:1] != b[:1] or len(b) != len(a) or
+                    any(not isinstance(t, str) or flip_layer(t) is None for t in b[1:]) or
+                    any(not isinstance(t, str) for t in a[1:]) or
+                    sorted(flip_layer(t) for t in b[1:]) != sorted(a[1:])):
+                return False
+        elif b != a:
+            return False
+    return polygons > 0
+
+
+def _footprint(key, before, after, protected, violations, fields=False, zone_layer_flips=None):
     label = f'footprint {key} ({_reference(before) or "no reference"})'
     count = len(violations)
     if [t for t in before[1:] if isinstance(t, str)] != [t for t in after[1:] if isinstance(t, str)]:
@@ -575,6 +645,11 @@ def _footprint(key, before, after, protected, violations, fields=False):
         if fields and _field_follows(b_child, a_child):
             continue
         try:
+            if b_child[0] == 'zone':
+                if _zone_follows(b_child, a_child, b_at, a_at, flipped, zone_layer_flips or FLIP_LAYERS):
+                    continue
+                violations.append(f'{label}: zone {item[1]} changed beyond the footprint transform')
+                continue
             if (_flip_follows(b_child, a_child, b_at[2], a_at[2]) if flipped else
                     _child_follows(b_child, a_child, rotation)):
                 continue
@@ -644,8 +719,10 @@ def write_scope(before, after, protected=(), groups=None):
                        for key in protected if key not in prints[0]]
         violations += [f'footprint {key} removed' for key in sorted(prints[0].keys() - prints[1].keys())]
         violations += [f'footprint {key} added' for key in sorted(prints[1].keys() - prints[0].keys())]
+        zone_layer_flips = _zone_layer_flips(roots[0])
         for key in sorted(prints[0].keys() & prints[1].keys()):
-            moved = _footprint(key, prints[0][key], prints[1][key], protected, violations, key in members)
+            moved = _footprint(key, prints[0][key], prints[1][key], protected, violations, key in members,
+                               zone_layer_flips)
             if moved:
                 report['transforms'].append(moved)
     if groups is not None:

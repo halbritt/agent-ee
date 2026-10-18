@@ -759,6 +759,12 @@ for the acceptance tests and remaining campaign and fabrication-limit gaps.
 The [placement adapter's property resave rule](placement-adapter.md#property-font-resave-default-agentee-147)
 admits KiCad's omitted 0.15 mm property-font thickness default during transform
 comparison; it does not grade placement or relax field value, layer or visibility checks.
+The [owned-zone write scope](placement-adapter.md#placement-write-scope)
+(AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
+The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
+footprint-forbidding polygons as exclusions for peer courtyards. These proposal
+rules do not change native DRC grading or the registered keepout predicate's
+unknown boundary for footprint-owned areas.
 A `defect` carries `details.gate_findings`, one identity per proved defect: the
 reference (or `+`-joined overlapping references, or ratsnest metric) and the
 defect kind; connector-edge violations use `connector_<kind>`. Only connector-edge

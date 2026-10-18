@@ -39,6 +39,30 @@ unknown. Initial rotations and pad rotations must be quarter turns. The placer
 does not optimize thermal/EMC behavior, decoupling loops, routing or arbitrary
 rotations.
 
+### Footprint-owned keepouts (AGENTEE-178)
+
+The existing native `rule_areas` inventory supplies footprint-forbidding rule
+areas. Their straight, qualified polygons exclude other footprints' courtyards
+on the declared copper sides. The owner is exempt from its own area. When the
+owner moves or rotates, its exclusion moves rigidly with it. The search checks
+both a candidate courtyard against placed owners' keepouts and the candidate
+owner's keepout against already placed peers. Concave exclusions use their
+polygons; their bounding boxes only supply search anchors. Keepouts may extend
+outside the board; courtyard containment still uses the board outline.
+Board-owned footprint keepouts are stationary polygon exclusions too.
+Unsupported outlines, malformed footprint flags or layers, and unknown owners
+return `unsupported_geometry`, `outcome=unknown`, with no placements.
+
+The native writer rechecks the complete saved board with the placement adapter's
+write scope and retains `placement-write-scope.json`; the result includes that
+proof as `write_scope`. An out-of-scope save retains diagnostics and publishes
+no destination. Native DRC runs as before, with its full raw report retained;
+this does not change DRC severity or the registered `footprint-keepout/1`
+predicate's current unknown boundary for owned areas. Native tests include a
+positive peer-in-keepout DRC control and fixed/moving-owner placement runs in
+the networkless sandbox. Committed fixtures are original; the adapter also tests
+the installed ESP32-S3-WROOM-1 at runtime without retaining its design files.
+
 ### Pad shapes (AGENTEE-109)
 
 Pad outlines never enter the search or the judge: the packer uses pad centres
@@ -86,9 +110,9 @@ The request contains `policy` plus explicit `authorization` with schema
 `agent-ee.placement-write/1`, `single_design_writer: true`, exact
 `source_sha256`, and an existing resolved `writable_root`. Destination must be
 a fresh direct child of that isolated scratch directory, and the source must
-be outside it. The writer refuses existing tracks/vias/zones and
-footprint-owned board edges. It acquires the repository's nonblocking writer
-lease, stages a new board, applies only movable footprint positions/rotations,
+be outside it. The writer refuses existing board tracks/vias/zones,
+footprint-owned copper zones and footprint-owned board edges. Footprint-owned
+rule areas are admitted. It acquires the repository's nonblocking writer lease, stages a new board, applies only movable footprint positions/rotations,
 then reloads the saved bytes. Static positions, rotations and native identities
 are checked against the plan; netlist terminal assignments are checked again.
 
