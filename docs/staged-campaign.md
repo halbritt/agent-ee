@@ -61,7 +61,9 @@ its native observation and, for schematics, the raw XML netlist. Public verifica
 requires successful probe execution and checks these observations against the
 captured inventory. It counts top-level placed symbols or footprints by explicit Reference property,
 or saved straight/arc segments. Nested library definitions are not instances. Symbols explicitly excluded from
-both BOM and board (`in_bom no`, `on_board no`) are outside component presence;
+both BOM and board (`in_bom no`, `on_board no`) are outside component presence,
+and so are symbols whose Reference starts with `#` (power symbols and `PWR_FLAG`,
+which KiCad's netlist export omits whatever their `in_bom`/`on_board` flags);
 the resulting inventory must still agree with native export.
 Duplicate/missing References, malformed syntax and hierarchical schematic
 subjects are unsupported probe execution, never absence evidence. The parser is
