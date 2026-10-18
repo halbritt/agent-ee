@@ -135,7 +135,8 @@
       "id": "psu",
       "role": "power",
       "title": "Power supply (psu.kicad_sch without CAN), rung-2 power reference",
-      "origin": "FOME-Tech Polygonus psu at b3176cb, adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)",
+      "origin": "FOME-Tech Polygonus psu at b3176cb (T8, T4, T6), adapted in fome-mc (docs/DESIGN.md sections 3 and 6.3)",
+      "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
       "instances": [
         {
           "path": "/psu/",

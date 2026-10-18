@@ -79,7 +79,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "4f5ead6db657006bc8c3546043f35de525c30b6cf1c85264f1d6050986a5537a",
+    "block-contract.json": "4798fb2888a9f183594dfa0bc62de978014ac5943742aaaad244787d07c5e652",
     "connectivity.json": "1f90e884f8085f7e1fde5db056dbd2d6cb42ab103700e5b6abcf755c7e1cd57f",
     "interface.json": "9ade219f0f16e6df4a497af96e9f530ec3d072b7a71cc2476c6e393b1b4ca86c",
     "parts.json": "dd9370e55003634d922b5154a2612d5b18e582dd6331e9b69287c428d2e039b4",
@@ -302,12 +302,14 @@
   "sheet": "sheets/ign_igbt.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: Polygonus-Universal-112 IGBT outputs at ddcf0f7 and FOME-Tech Polygonus ign4 at b3176cb",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: Polygonus-Universal-112 IGBT outputs at ddcf0f7 and FOME-Tech Polygonus ign4 at b3176cb (T3, T8, T6)",
     "paths": {
       "sheets/ign4.kicad_sch": "sheets/ign4.kicad_sch",
       "sheets/ign_igbt.kicad_sch": "sheets/ign_igbt.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "Polygonus-Universal-112 IGBT outputs at ddcf0f7 and FOME-Tech Polygonus ign4 at b3176cb (T3, T8, T6)"
   },
   "version": "draft-df304f332129"
 }

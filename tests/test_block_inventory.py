@@ -51,6 +51,9 @@ class InventoryStructureTests(unittest.TestCase):
             ('unknown document', lambda d: d['blocks'][0]['pending'][0].update(document='invented')),
             ('reserved requirement id', lambda d: d['blocks'][0]['pending'][0].update(id='ch1-interface')),
             ('external name', lambda d: d['design'].update(external_libraries={'../x': 'a' * 40})),
+            ('missing origin', lambda d: d['blocks'][0].pop('origin')),
+            ('missing upstream license', lambda d: d['blocks'][0].pop('upstream_license')),
+            ('empty upstream license', lambda d: d['blocks'][0].update(upstream_license='  ')),
         ]
         for name, mutate in cases:
             with self.subTest(case=name):
@@ -89,6 +92,8 @@ class InventoryCaptureTests(unittest.TestCase):
         self.assertTrue(report['draft_parts'])
         record = read_json(ch1 / 'block.json')
         self.assertEqual(record['source']['commit'], self.commit)
+        self.assertEqual(record['source']['upstream_origin'], self.inventory['blocks'][0]['origin'])
+        self.assertEqual(record['source']['upstream_license'], self.inventory['blocks'][0]['upstream_license'])
         self.assertEqual({p['name']: p['net_name'] for p in record['boundary_ports']},
                          {'SIG': '/CH1_SIG', 'OUT': '/CH1_OUT'})
         self.assertEqual(record['instances'][0]['references'], ['C101', 'R101', 'R102', 'U101'])
@@ -241,6 +246,8 @@ class InventoryCaptureTests(unittest.TestCase):
                 source=dict(path='sources/docs/PLAN.md', locator='## Channel'))),
             ('requirement source differs from interface', lambda r: r['requirements'][1]['source'].update(locator='other')),
             ('instances removed', lambda r: r.pop('instances')),
+            ('missing upstream origin', lambda r: r['source'].pop('upstream_origin')),
+            ('missing upstream license', lambda r: r['source'].pop('upstream_license')),
         ]
         import shutil
         for name, mutate in cases:
@@ -295,6 +302,14 @@ class FomeMcInventoryFixtureTests(unittest.TestCase):
         notice = (REPO / 'fixtures/fome-mc/LICENSE-NOTICE.md').read_text()
         self.assertIn(self.COMMIT, notice)
         self.assertIn('owner holds the rights', notice)
+        for token in ('T3', 'T4', 'T6', 'T8', 'T9', 'CC-BY-SA-4.0', 'Matthew Kennedy', 'derived'):
+            self.assertIn(token, notice)
+        by_id = {b['id']: b for b in self.inventory['blocks']}
+        for block_id, origin_id in (('keep-alive', 'T3'), ('psu', 'T4'), ('psu', 'T6'),
+                                    ('psu', 'T8'), ('lowside-quad', 'T8'), ('highside-quad', 'T8'),
+                                    ('wbo1', 'T9'), ('wbo2', 'T9')):
+            self.assertIn(origin_id, by_id[block_id]['origin'])
+            self.assertTrue(by_id[block_id]['upstream_license'].strip())
 
     def test_report_binds_the_inventory_and_every_entry(self):
         from agent_ee.storage import identity
@@ -320,6 +335,9 @@ class FomeMcInventoryFixtureTests(unittest.TestCase):
                 record = read_json(directory / 'block.json')
                 self.assertEqual(record['source']['commit'], self.COMMIT)
                 self.assertEqual(record['source']['repository'], 'fome-mc')
+                self.assertEqual(record['source']['upstream_origin'], planned[block_id]['origin'])
+                self.assertEqual(record['source']['upstream_license'], planned[block_id]['upstream_license'])
+                self.assertEqual(read_json(directory / 'block-contract.json')['source'], record['source'])
                 self.assertEqual([i['path'] for i in record['instances']],
                                  [i['path'] for i in planned[block_id]['instances']])
                 self.assertEqual([r['id'] for r in record['requirements']],
@@ -331,7 +349,10 @@ class FomeMcInventoryFixtureTests(unittest.TestCase):
     def test_every_catalogue_block_of_the_plan_has_an_entry(self):
         plan = self.inventory['documents'][self.inventory['design']['plan']]
         entry = self.report['source_files'][plan]
-        repository = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(Path.home() / 'git/fome-mc')))
+        home = Path.home() / 'git/fome-mc'
+        sibling = REPO.parents[1] / 'fome-mc'
+        default_repo = sibling if not home.is_dir() and sibling.is_dir() else home
+        repository = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(default_repo)))
         source = dict(kind='pinned-external', repository='fome-mc', commit=self.COMMIT, path=plan,
                       blob=entry['git_blob'], sha256=entry['sha256'])
         # The plan is cited, not committed; only the pinned blob of a local object store supplies its text.

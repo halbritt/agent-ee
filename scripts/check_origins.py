@@ -27,6 +27,7 @@ OWNED = {'AE', 'AE-RUN'}
 PROPOSED = 'proposed-mit-pending-owner-approval'
 UNRESOLVED = 'unresolved-owner-decision-required'
 CONFIRMED = 'owner-confirmed'
+DERIVED = 'derived'
 STATUSES = (PROPOSED, UNRESOLVED, CONFIRMED)
 
 # Mirrors .gitignore for checkouts without .git (for example the container image).
@@ -170,27 +171,35 @@ def classify(inventory, paths):
     return assigned, errors
 
 
+def with_embedded(inventory, ids):
+    """Transitive embedded upstream origins (id and upstream_license) outside declared ids.
+
+    When an owner-confirmed origin embeds upstream content whose own origin is
+    unresolved, the file status folds to derived and names each embedded
+    upstream origin id and upstream_license.
+    """
+    declared = set(ids)
+    found = set()
+    pending = [other for key in ids for other in inventory['origins'][key].get('embedded_origins', [])]
+    while pending:
+        key = pending.pop()
+        if key not in found and key not in declared:
+            found.add(key)
+            pending.extend(inventory['origins'][key].get('embedded_origins', []))
+    return [{'id': key, 'upstream_license': inventory['origins'][key]['upstream_license']}
+            for key in sorted(found)]
+
+
 def status(inventory, ids):
-    """Unresolved if any origin is; else owner-confirmed if any origin is; MIT is proposed only when all are."""
+    """Unresolved if any declared origin is; derived if an embedded upstream is unresolved; else confirmed or proposed."""
     statuses = {inventory['origins'][key]['permission_status'] for key in ids}
     if UNRESOLVED in statuses:
         return UNRESOLVED
-    return CONFIRMED if CONFIRMED in statuses else PROPOSED
-
-
-def with_embedded(inventory, ids):
-    """Declared origins plus every origin they embed, transitively.
-
-    Upstream content carried inside a file keeps its own permission: a file whose
-    owner-confirmed origin embeds an unresolved upstream is unresolved.
-    """
-    found, pending = set(), list(ids)
-    while pending:
-        key = pending.pop()
-        if key not in found:
-            found.add(key)
-            pending.extend(inventory['origins'][key].get('embedded_origins', []))
-    return sorted(found)
+    embedded = {inventory['origins'][item['id']]['permission_status']
+                for item in with_embedded(inventory, ids)}
+    if UNRESOLVED in embedded:
+        return DERIVED
+    return CONFIRMED if CONFIRMED in (statuses | embedded) else PROPOSED
 
 
 def capture_origins(inventory, manifest):
@@ -254,7 +263,8 @@ def check(root=ROOT, inventory=None, paths=None):
             if missing:
                 errors.append(f'{archive}: holds {group} material from {missing} not declared by rule {index}')
     files = [{'path': path, 'kind': rules[index]['kind'], 'origins': rules[index]['origins'],
-              'permission_status': status(inventory, with_embedded(inventory, rules[index]['origins'])),
+              'permission_status': status(inventory, rules[index]['origins']),
+              'upstream_origins': with_embedded(inventory, rules[index]['origins']),
               'rule': index}
              for path, index in sorted(assigned.items())]
     summary = {'files': len(paths), 'classified': len(files),

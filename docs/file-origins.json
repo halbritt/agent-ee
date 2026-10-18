@@ -16,7 +16,8 @@
   "permission_statuses": {
     "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
     "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
-    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given)."
+    "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given).",
+    "derived": "Captured or generated under an owner-confirmed origin that embeds upstream origins whose permission_status is unresolved; check_origins names each embedded upstream origin id and upstream_license."
   },
   "kinds": {
     "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
@@ -32,7 +33,7 @@
     "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
     "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
-  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its origins is unresolved, otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its declared origins is unresolved, derived if an owner-confirmed origin embeds an unresolved upstream origin (with each embedded origin id and upstream_license named), otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
   "origins": {
     "AE": {
@@ -374,16 +375,16 @@
     },
     "T16": {
       "name": "fome-mc reference block captures",
-      "description": "Byte copies of fome-mc sheets and project libraries captured through the offline Git path at a pinned commit, and the block entries, contracts and reports agent-ee generates from them. Planning documents (docs/DESIGN.md, docs/BLOCK_LIBRARY.md) are cited by pinned commit, path, Git blob and SHA-256, never copied. fixtures/fome-mc/LICENSE-NOTICE.md states the rights, scope, rules and capture provenance.",
+      "description": "Byte copies of fome-mc sheets and project libraries captured through the offline Git path at a pinned commit for the full block inventory (AGENTEE-105), the PSU reference block (AGENTEE-106) and the wideband reference channels (AGENTEE-107), and the block entries, contracts and reports agent-ee generates from them. Planning documents (docs/DESIGN.md, docs/BLOCK_LIBRARY.md) are cited by pinned commit, path, Git blob and SHA-256, never copied. Each block record carries its upstream origin and licence, and fixtures/fome-mc/LICENSE-NOTICE.md states the rights, scope, rules, upstream licences and capture provenance.",
       "upstream": {
         "repository": "https://github.com/halbritt/fome-mc",
         "local_path": "/home/halbritt/git/fome-mc (object store only; the working tree is never read)",
         "revisions": {
-          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory (AGENTEE-105, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files. Capture commit of fixtures/fome-mc/rules (AGENTEE-189): ERC and DRC rule_severities of fome-mc.kicad_pro, blob 8f749a35326790337ca3fb7ef1b2e3126bf9a8c7, SHA-256 in rules/severities.json source."
+          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory, fixtures/fome-mc/psu and fixtures/fome-mc/wbo1 (AGENTEE-105/106/107, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files. Capture commit of fixtures/fome-mc/rules (AGENTEE-189): ERC and DRC rule_severities of fome-mc.kicad_pro, blob 8f749a35326790337ca3fb7ef1b2e3126bf9a8c7, SHA-256 in rules/severities.json source."
         },
         "license_file": null
       },
-      "upstream_license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee. fome-mc sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no licence file found) and mck1117/wideband Rev C ca2adce (MIT; notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md).",
+      "upstream_license": "fome-mc has no licence file. The owner holds the rights to fome-mc and agent-ee. fome-mc sheets derive from FOME-Tech Polygonus b3176cb (T8; no licence file found in the local checkout), FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3; no licence file found in the local checkout), FOME-Tech kicad-libraries ab9c5f8 (T4; no licence file found, SamacSys terms not reviewed), KiCad 10.0.7 stock libraries (T6; CC-BY-SA-4.0 with the KiCad library exception) and mck1117/wideband Rev C ca2adce (T9; MIT, Copyright (c) 2023 Matthew Kennedy, notice reproduced in fixtures/fome-mc/LICENSE-NOTICE.md).",
       "license_verified": true,
       "embedded_origins": [
         "T3",
@@ -393,12 +394,14 @@
         "T9"
       ],
       "permission_status": "owner-confirmed",
-      "owner_record": "2026-10-18, docs/decisions.md \"fome-mc reference sheets are committed as fixtures\": captured fome-mc PSU and wideband sheets go into agent-ee under fixtures/, each with the fome-mc commit and sha256 it was captured from, through the offline Git capture path; the owner holds the rights to both repositories.",
-      "owner_decision": "Recorded on 2026-10-18 (owner_record). The decision does not choose a licence for these files; the MIT proposal does not cover them.",
+      "owner_record": "2026-10-18, docs/decisions.md \"fome-mc reference sheets are committed as fixtures\" and \"Telemetry pod questions (second batch, 2026-10-18)\": captured fome-mc PSU and wideband sheets go into agent-ee under fixtures/, each with the fome-mc commit and sha256 it was captured from, through the offline Git capture path; the owner holds the rights to both repositories; derived-from-Polygonus sheets are admitted with their upstream origin and licence recorded in the block record and in fixtures/fome-mc/LICENSE-NOTICE.md, and check_origins reports them as derived rather than owner-confirmed.",
+      "owner_decision": "Recorded on 2026-10-18 (owner_record). Files under T16 fold to permission_status derived with their embedded upstream origins (T3, T4, T6, T8, T9) and licences named; the MIT proposal does not cover them.",
       "evidence": [
         "docs/decisions.md",
         "fixtures/fome-mc/LICENSE-NOTICE.md",
         "fixtures/fome-mc/inventory/capture/inventory-report.json",
+        "fixtures/fome-mc/psu/capture/inventory-report.json",
+        "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
         "fixtures/fome-mc/rules/severities.json"
       ]
     }
@@ -2450,10 +2453,9 @@
       "kind": "retained-output",
       "origins": [
         "AE-RUN",
-        "T16",
-        "T9"
+        "T16"
       ],
-      "reviewed": "Native diagnostic comparison of fome-mc wideband with MIT mck1117/wideband Rev C ca2adce; upstream component/pin facts and offline Git identities, no downloaded upstream bytes."
+      "reviewed": "Native diagnostic comparison of fome-mc wideband with MIT mck1117/wideband Rev C ca2adce (embedded origin T9 of T16); upstream component/pin facts and offline Git identities, no downloaded upstream bytes."
     },
     {
       "paths": [

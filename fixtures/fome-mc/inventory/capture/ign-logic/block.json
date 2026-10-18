@@ -79,7 +79,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "72356f18644ea1afa0e9e553f9da344dc09c2e4527ddb6606e52502d215d9d7e",
+    "block-contract.json": "8c5d5493a4f8b883fa226670a05a701b1b0ad830bc3039750bea2eaa65e2a9c5",
     "connectivity.json": "e459ac514bcb55ae5707c642acdaa121639f1e955c3b5926d2c11450ee5d2e17",
     "interface.json": "21aa6df357b1c7cf84c9577fef6f0c835ecf547b23358b493ddefaecfacd3223",
     "parts.json": "4d24118eb43bec970cf8eb9e8abf7369532ba406a54447b5939920cc3667ad12",
@@ -243,11 +243,13 @@
   "sheet": "sheets/ign4.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus ign4 at b3176cb",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus ign4 at b3176cb (T8, T6)",
     "paths": {
       "sheets/ign4.kicad_sch": "sheets/ign4.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech kicad-libraries ab9c5f8 (T4; SamacSys terms not reviewed); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus ign4 at b3176cb (T8, T6)"
   },
   "version": "draft-df304f332129"
 }

@@ -122,6 +122,8 @@ def _optional_structure(record):
             if record[key] not in files or record[key] in paths or PurePosixPath(record[key]).suffix != '.json':
                 raise ValueError('missing/invalid generated ' + key)
     if 'instances' in record:
+        if 'upstream_origin' not in record['source'] or 'upstream_license' not in record['source']:
+            raise ValueError('inventory block source needs upstream_origin and upstream_license')
         _list(record['instances'])
         if not record['instances']:
             raise ValueError('instances must be nonempty')
@@ -202,8 +204,10 @@ def _structure(record):
     for key in ('id', 'version', 'role'):
         _text(record[key])
     source = record['source']
-    _object(source, ('repository', 'commit', 'paths', 'license'))
-    for key in ('repository', 'license'):
+    _object(source, ('repository', 'commit', 'paths', 'license'), ('upstream_origin', 'upstream_license'))
+    if ('upstream_origin' in source) != ('upstream_license' in source):
+        raise ValueError('source upstream_origin and upstream_license must be paired')
+    for key in ('repository', 'license', *(('upstream_origin', 'upstream_license') if 'upstream_origin' in source else ())):
         _text(source[key])
     _hash(source['commit'], 40)
     files = record['files']
@@ -648,7 +652,11 @@ def capture_block(request, repository, commit, destination, *, parts=None, suppl
     record = copy.deepcopy(request)
     if not isinstance(record, dict) or not isinstance(record.get('source'), dict):
         raise ValueError('capture request needs source object')
-    _object(record['source'], ('repository', 'commit', 'paths', 'license'))
+    _object(record['source'], ('repository', 'commit', 'paths', 'license'), ('upstream_origin', 'upstream_license'))
+    if ('upstream_origin' in record['source']) != ('upstream_license' in record['source']):
+        raise ValueError('source upstream_origin and upstream_license must be paired')
+    for key in (('upstream_origin', 'upstream_license') if 'upstream_origin' in record['source'] else ()):
+        _text(record['source'][key])
     if not isinstance(record['source']['paths'], dict) or not record['source']['paths']:
         raise ValueError('capture request needs source paths')
     if 'parts_manifest' not in record:

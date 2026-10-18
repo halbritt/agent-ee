@@ -128,7 +128,7 @@
   ],
   "connectivity": "connectivity.json",
   "files": {
-    "block-contract.json": "48d2f1f3adf24c5b2301c46ed3fc41accd45204d2f147549b0cf915c0360b5b8",
+    "block-contract.json": "26c6553d2b1f4f57aad85a8940d4fdbaaafc246b5ff3d833cf79770e2aa85020",
     "connectivity.json": "64b6a4d11271c0d728ee61b58607be949ad76f94d6a799ae327b6e01ec204a7b",
     "interface.json": "8cdc7f3f7174985e0fe788ac5ecb7ae0aea7bf7dcafff3d8377a7ecd48ff495e",
     "parts.json": "8a662396dabcd97ea25f40646fe4e522980baf226d60eb8d25c32ddd4f1d294f",
@@ -270,11 +270,13 @@
   "sheet": "sheets/psu.kicad_sch",
   "source": {
     "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
-    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7",
+    "license": "The owner holds the rights to fome-mc and agent-ee and decided on 2026-10-18 that captured fome-mc reference sheets are committed as agent-ee fixtures (docs/decisions.md, fixtures/fome-mc/LICENSE-NOTICE.md). The sheets derive from FOME-Tech Polygonus b3176cb and Polygonus-Universal-112 ddcf0f7 (no top-level licence file in the local checkouts) and mck1117 wideband Rev C ca2adce (wideband is MIT upstream; docs/file-origins.json). Origin: FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7 (T8, T3, T6)",
     "paths": {
       "sheets/psu.kicad_sch": "sheets/psu.kicad_sch"
     },
-    "repository": "fome-mc"
+    "repository": "fome-mc",
+    "upstream_license": "No licence file found in FOME-Tech Polygonus b3176cb (T8) or FOME-Tech Polygonus-Universal-112 ddcf0f7 (T3); KiCad 10.0.7 stock libraries (T6) are CC-BY-SA-4.0 with the KiCad library exception (fixtures/fome-mc/LICENSE-NOTICE.md).",
+    "upstream_origin": "FOME-Tech Polygonus psu at b3176cb and Polygonus-Universal-112 wbo-can-trans at ddcf0f7 (T8, T3, T6)"
   },
   "version": "draft-df304f332129"
 }
