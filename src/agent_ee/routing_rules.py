@@ -25,9 +25,14 @@ def sha_text(text):
 
 
 def number(value, label, *, integer=False):
-    if (isinstance(value, bool) or not isinstance(value, (int, float)) or
-            not math.isfinite(value) or value < 0 or
-            (integer and not isinstance(value, int))):
+    try:
+        invalid = (isinstance(value, bool) or not isinstance(value, (int, float)) or
+                   not math.isfinite(value) or value < 0 or
+                   (integer and not isinstance(value, int)))
+    except OverflowError:
+        # JSON integers can exceed the native numeric range used by KiCad rules.
+        invalid = True
+    if invalid:
         raise ValueError(f'{label} must be finite nonnegative ' + ('integer' if integer else 'numeric'))
     return value
 

@@ -200,7 +200,7 @@ def outline_board(path, segments, *, arc=None, footprint_edge=False, duplicate_l
     duplicate is written as a second saved gr_line, as a hand edit would be.
     """
     import pcbnew as k
-    from routing_fixture import make_board
+    from tests.routing_fixture import make_board
     make_board(path, **options)
     board = k.LoadBoard(str(path))
     for item in list(board.GetDrawings()):
@@ -235,7 +235,7 @@ class NativeOutlineTest(unittest.TestCase):
     """Actual saved+loaded pcbnew outlines; locators are the saved Edge.Cuts UUIDs."""
     @classmethod
     def setUpClass(cls):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
 
     def inventory(self, segments, **options):
@@ -289,7 +289,7 @@ class NativeOutlineTest(unittest.TestCase):
     def test_layer_locators_are_saved_canonical_copper_names(self):
         import tempfile
         from pathlib import Path
-        from routing_fixture import make_board
+        from tests.routing_fixture import make_board
         from agent_ee.fab_profile import native_inventory
         import pcbnew as k
         with tempfile.TemporaryDirectory() as tmp:
@@ -310,7 +310,7 @@ class NativeOutlineTest(unittest.TestCase):
 class NativeFabTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
 
     def run_profile(self, specs, *, unsupported=False, builder=None, **board_options):
@@ -318,7 +318,7 @@ class NativeFabTest(unittest.TestCase):
         import tempfile
         import time
         from pathlib import Path
-        from routing_fixture import make_board, manifest_for_rules, assert_sealed_native
+        from tests.routing_fixture import make_board, manifest_for_rules, assert_sealed_native
         from agent_ee.checks import Ctx
         from agent_ee.fab_profile import check_fab_profile
         from agent_ee.storage import digest
@@ -455,7 +455,7 @@ class NativeFabTest(unittest.TestCase):
     def test_native_renamed_copper_layers_remain_canonical_offenders(self):
         def renamed(path, **options):
             import pcbnew as k
-            from routing_fixture import make_board
+            from tests.routing_fixture import make_board
             make_board(path, **options)
             board = k.LoadBoard(str(path))
             board.SetLayerName(k.F_Cu, 'Top'); board.SetLayerName(k.In1_Cu, 'GND')
@@ -545,6 +545,56 @@ class FabContractIntegrationTest(unittest.TestCase):
             {'id': 'other', 'checks': ['fab'], 'source': {'path': 'requirements.txt', 'locator': 'other'}})
         self.assertEqual(self.describe()['status'], 'unsupported')
 
+    def test_missing_and_invalid_profiles_execute_as_unsupported_without_defaults(self):
+        import time
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import digest, write_json
+        inputs = self.root / 'inputs'
+        inputs.mkdir()
+        for contents in (None, '{}', '{', '[]'):
+            with self.subTest(contents=contents):
+                if contents is not None:
+                    (inputs / 'profile.json').write_text(contents)
+                files = {p.name: digest(p) for p in inputs.iterdir()}
+                write_json(self.root / 'candidate.json', {
+                    'scope': {**self.scope, 'checks': [self.spec]},
+                    'files': files, 'candidate_id': 'owned-invalid-profile'})
+                check, = run_checks(self.root, time.monotonic() + 60)
+                self.assertEqual((check['execution'], check['outcome']),
+                                 ('unsupported', 'unknown'), check)
+                self.assertEqual(check['evidence'], [])
+                self.assertNotIn('source', check['details'])
+
+    def test_out_of_range_numeric_profiles_are_unsupported_in_descriptor_and_execution(self):
+        import json
+        import time
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import digest, write_json
+        inputs = self.root / 'inputs'
+        inputs.mkdir()
+        (inputs / 'board.kicad_pcb').write_text('(kicad_pcb)')
+        (inputs / 'requirements.txt').write_text('Declared fabrication bound.')
+        huge = 10**400
+        for key, value, unit in (('min_trace_mm', huge, 'mm'),
+                                 ('max_layers', huge, 'count'),
+                                 ('max_board_mm', [huge, 10], 'mm')):
+            with self.subTest(key=key):
+                document = owned_profile(inputs, [(key, value, unit, 'minimum')])
+                (inputs / 'profile.json').write_text(json.dumps(document))
+                files = {p.name: digest(p) for p in inputs.iterdir()}
+                from agent_ee.capabilities import describe_check
+                descriptor = describe_check(self.spec, check_specs=[self.spec], scope=self.scope,
+                                            files=files, inputs=inputs)
+                self.assertEqual(descriptor['status'], 'unsupported', descriptor)
+                write_json(self.root / 'candidate.json', {
+                    'scope': {**self.scope, 'checks': [self.spec]},
+                    'files': files, 'candidate_id': 'owned-invalid-profile'})
+                check, = run_checks(self.root, time.monotonic() + 60)
+                self.assertEqual((check['execution'], check['outcome']),
+                                 ('unsupported', 'unknown'), check)
+                self.assertIn('finite nonnegative', check['summary'])
+                self.assertEqual(check['evidence'], [])
+
 
 class SharedRunnerStagingTest(unittest.TestCase):
     """Fabrication staging must not change captured routing project semantics."""
@@ -583,7 +633,7 @@ class SharedRunnerStagingTest(unittest.TestCase):
 def make_fab_scope(root, specs, *, version=3, **board_options):
     """Owned schematic placeholder, synthetic profile and one fabrication obligation."""
     import json
-    from routing_fixture import make_board
+    from tests.routing_fixture import make_board
     from agent_ee.storage import write_json
     make_board(root / 'test.kicad_pcb', **board_options)
     (root / 'test.kicad_sch').write_text(
@@ -610,7 +660,7 @@ class NativeFabPipelineTest(unittest.TestCase):
     def setUp(self):
         import tempfile
         from pathlib import Path
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-pipeline-')
         self.addCleanup(self.tmp.cleanup)
@@ -623,7 +673,7 @@ class NativeFabPipelineTest(unittest.TestCase):
         from agent_ee.cli import run_review, verify, runtime_files
         from agent_ee.baseline import load_baseline, validate_witnesses
         from agent_ee.storage import digest, read_json, write_json
-        from test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
+        from tests.test_capability_pipeline import NativeCapabilityPipelineTests, PROFILE_CALL
         runtime = runtime_files()
         for name in ('codex', 'codex_tool_host'):
             runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}

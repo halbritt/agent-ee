@@ -135,7 +135,8 @@ document whose limits each cite an exact quote in a captured UTF-8 source. It
 runs sourced physical minima as isolated native rules and compares layer count,
 fixed-axis outline extents and SMD presence with the saved board. Missing sources,
 missing profiles and unqualified outlines are unknown. Preferred-tier overruns
-are reported as extra charges, never defects. No real fabricator preset exists.
+are reported as extra charges, never defects. Out-of-range numeric profile bounds
+are unsupported in both descriptors and execution. No real fabricator preset exists.
 
 ## Native netlist
 
