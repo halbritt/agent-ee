@@ -22,16 +22,77 @@ SCHEMA = 'agent-ee.dfm-profile/1'
 REPORT = 'agent-ee.dfm-report/1'
 ID = re.compile(r'[a-z0-9][a-z0-9_.-]{0,63}\Z')
 NAME_PAIRS = 'name-suffix/1'
-# rule: (ported source code, required threshold fields)
+SUITE_LIMITATION = (
+    'saved-board geometry; zone fill as saved; no etch, thermal relief, paste, panel or '
+    'board-edge DFM; copper width and clearance belong to copper-width/1 and DRC'
+)
+# rule: (ported source code, required threshold fields, false-negative / unmodelled classes)
 RULES = {
-    'annular_ring': ('DFM-002', ('min_ring_mm',)),
-    'acid_trap': ('DFM-003', ('min_angle_deg',)),
-    'component_spacing': ('DFM-006', ('min_gap_mm',)),
-    'via_aspect_ratio': ('DFM-008', ('max_ratio',)),
-    'copper_balance': ('DFM-009', ('max_layer_share',)),
-    'smd_bridge_gap': ('DFM-010', ('min_gap_mm',)),
-    'diff_pair_skew': ('DFM-012', ('max_skew_mm', 'pairs')),
+    'annular_ring': (
+        'DFM-002',
+        ('min_ring_mm',),
+        (
+            'via annular ring uses all-layers padstack size only; zone and teardrop copper are not measured',
+            'per-layer padstack modes, custom/trapezoid/chamfered PTH pads, non-circular/non-oblong drills and offset drills in non-rectangular pads are unsupported',
+        ),
+    ),
+    'acid_trap': (
+        'DFM-003',
+        ('min_angle_deg',),
+        (
+            'exact shared track/arc endpoints only; mid-track T-junction acid traps are not detected',
+            'junctions inside pad copper or a via disk count as covered (pad polygons use pcbnew ERROR_OUTSIDE arc approximations); zone copper wedges are not measured',
+            'degenerate or zero-length tracks/arcs and non-track copper primitives are unsupported',
+        ),
+    ),
+    'component_spacing': (
+        'DFM-006',
+        ('min_gap_mm',),
+        (
+            'machine-placed footprint courtyard polygons only (with pcbnew ERROR_OUTSIDE arc approximations); 3D body bounds, pad copper and non-placed footprints are not compared',
+            'machine-placed footprints without a courtyard polygon on their placement side are unsupported',
+        ),
+    ),
+    'via_aspect_ratio': (
+        'DFM-008',
+        ('max_ratio',),
+        (
+            'saved board thickness is parsed from the first root-level general node only; PTH pad holes and plating thickness are not measured',
+            'missing saved board thickness and blind, buried or microvias without per-layer stackup thickness are unsupported',
+        ),
+    ),
+    'copper_balance': (
+        'DFM-009',
+        ('max_layer_share',),
+        (
+            'united copper area only (with pcbnew ERROR_OUTSIDE arc/zone approximations); spatial copper distribution, warp and odd-layer centre copper are not modelled',
+            'unfilled zones and missing layer copper-area records are unsupported',
+        ),
+    ),
+    'smd_bridge_gap': (
+        'DFM-010',
+        ('min_gap_mm',),
+        (
+            'curved SMD pad polygons use pcbnew ERROR_OUTSIDE arc approximations; same-footprint pads, same-net pads, PTH pads, tracks, vias, zones and solder-mask openings are not compared',
+            'SMD pads without native copper polygons on a declared layer are unsupported',
+        ),
+    ),
+    'diff_pair_skew': (
+        'DFM-012',
+        ('max_skew_mm', 'pairs'),
+        (
+            'whole-net track and arc length only; per-segment pairing, via barrel lengths, zones, pad/package delays and KiCad net classes are not measured',
+            'unrouted or absent pair nets and degenerate or non-track/arc segments are unsupported',
+        ),
+    ),
 }
+FALSE_NEGATIVE_CLASSES = {kind: classes for kind, (_, _, classes) in RULES.items()}
+
+
+def rule_limitation(spec):
+    code, _, classes = RULES[spec['rule']]
+    return f"{spec['id']} ({spec['rule']}, {code}): {'; '.join(classes)}"
+
 
 
 # ------------------------------------------------------------------ profile
@@ -249,7 +310,8 @@ def arm_direction(track, vertex):
 class Rule:
     def __init__(self, spec):
         self.spec = spec
-        self.code = RULES[spec['rule']][0]
+        self.code, _, classes = RULES[spec['rule']]
+        self.false_negative_classes = list(classes)
         self.findings, self.unsupported, self.checked = [], [], 0
         self.notes = {}
 
@@ -264,6 +326,7 @@ class Rule:
         thresholds = {k: v for k, v in self.spec.items() if k not in ('id', 'rule', 'basis')}
         base = {'id': self.spec['id'], 'rule': self.spec['rule'], 'code': self.code,
                 'thresholds': thresholds, 'checked': self.checked,
+                'false_negative_classes': list(self.false_negative_classes),
                 'findings': sorted(self.findings, key=lambda f: f['entity']),
                 'unsupported': sorted(self.unsupported, key=lambda u: u['entity']), **self.notes}
         if problem or self.unsupported:
@@ -563,7 +626,8 @@ def evaluate(facts, profile):
             problem = f'malformed probe facts: {type(exc).__name__}: {exc}'
             rule.findings = []
         records.append(rule.record(problem))
-    return {'schema': REPORT, 'profile': profile['name'], 'rules': records}
+    limitations = [SUITE_LIMITATION, *(rule_limitation(spec) for spec in profile['rules'])]
+    return {'schema': REPORT, 'profile': profile['name'], 'rules': records, 'limitations': limitations}
 
 
 # -------------------------------------------------------------------- check
@@ -591,12 +655,11 @@ def check_dfm_geometry(ctx):
     rules = report['rules']
     findings = [f for r in rules for f in r['findings']]
     complete = all(r['execution'] == 'ok' for r in rules)
-    ctx.result['limitations'].append(
-        'saved-board geometry; zone fill as saved; no etch, thermal relief, paste, panel or '
-        'board-edge DFM; copper width and clearance belong to copper-width/1 and DRC')
+    ctx.result['limitations'].extend(report['limitations'])
     ctx.result['details'].update(
         profile=source, board_sha256=report['board_sha256'], pcbnew_version=report['pcbnew_version'],
-        rules=[{k: r[k] for k in ('id', 'rule', 'code', 'execution', 'status', 'checked')} |
+        rules=[{k: r[k] for k in ('id', 'rule', 'code', 'execution', 'status', 'checked',
+                                  'false_negative_classes')} |
                ({'reason': r['reason']} if 'reason' in r else {}) for r in rules],
         findings=findings,
         gate_findings=[{'check_id': ctx.cid, 'entity': f['entity'], 'kind': 'dfm/' + f['rule_id']}

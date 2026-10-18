@@ -24,7 +24,8 @@ def v(x, y):
 
 
 def make_board(path, *, via_size=0.4, bridge_gap=0.15, acid_angle=30.0, arc=True,
-               thickness=True, courtyards=True, bottom_copper=False):
+               thickness=True, courtyards=True, bottom_copper=False,
+               custom_pad=False, unfilled_zone=False):
     """Seeded defects by default; each keyword selects the compliant twin."""
     import pcbnew as k
     b = k.BOARD()
@@ -44,8 +45,14 @@ def make_board(path, *, via_size=0.4, bridge_gap=0.15, acid_angle=30.0, arc=True
             pad.SetShape(k.PAD_SHAPE_RECTANGLE); pad.SetSize(v(0.6, 0.8))
             layers = k.LSET(); layers.AddLayer(k.F_Cu); pad.SetLayerSet(layers)
             fp.Add(pad); pad.SetPosition(v(px, 10)); pad.SetNet(net(name))
+        if custom_pad and ref == 'R1':
+            pad = k.PAD(fp); pad.SetNumber('3'); pad.SetAttribute(k.PAD_ATTRIB_PTH)
+            pad.SetShape(k.PAD_SHAPE_CUSTOM); pad.SetSize(v(1.0, 1.0))
+            pad.SetDrillShape(k.PAD_DRILL_SHAPE_CIRCLE); pad.SetDrillSize(v(0.4, 0.4))
+            pad.SetLayerSet(k.LSET.AllCuMask())
+            fp.Add(pad); pad.SetPosition(v(8.5, 10)); pad.SetNet(net('NET_A'))
         if courtyards:
-            xs = [p[1] for p in pads]
+            xs = [p[1] for p in pads] + ([8.5] if custom_pad and ref == 'R1' else [])
             corners = [(min(xs) - 0.35, 9.55), (max(xs) + 0.35, 9.55),
                        (max(xs) + 0.35, 10.45), (min(xs) - 0.35, 10.45)]
             for start, end in zip(corners, corners[1:] + corners[:1]):
@@ -84,6 +91,13 @@ def make_board(path, *, via_size=0.4, bridge_gap=0.15, acid_angle=30.0, arc=True
     if bottom_copper:
         for y in (3, 4, 6, 7):
             track((2, y), (38, y), 'NET_BOTTOM', k.B_Cu)
+    if unfilled_zone:
+        zone = k.ZONE(b); zone.SetLayer(k.F_Cu); zone.SetNet(net('NET_A'))
+        poly = zone.Outline(); poly.NewOutline()
+        for pt in ((25, 2), (28, 2), (28, 5), (25, 5)):
+            poly.Append(v(*pt))
+        zone.SetIsFilled(False)
+        b.Add(zone)
 
     corners = [(0, 0), (40, 0), (40, 30), (0, 30)]
     for start, end in zip(corners, corners[1:] + corners[:1]):
