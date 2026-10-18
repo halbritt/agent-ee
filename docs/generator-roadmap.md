@@ -123,7 +123,14 @@ A proposed layout for the scaffold's scope fragment:
 }
 ```
 
-The [RC campaign scaffold](rung1-campaign.md) now creates an empty candidate.
+The [scaffold command](scaffold.md) now creates deterministic native files from
+production envelope and parts records plus an explicit stage-one scope and
+project-rule template. It copies selected dependencies, pre-creates child sheets
+and preserves checks and baseline mappings. Automatic scope/rule compilation,
+hierarchical staged presence and complete production envelope acceptance remain
+unavailable. The experimental rung-1 driver still uses its earlier
+[RC campaign scaffold](rung1-campaign.md).
+
 Opt-in [staged campaigns](staged-campaign.md) implement AGENTEE-48/88 in the
 existing check scheduler and convergence reducer:
 
@@ -142,6 +149,8 @@ and expected subjects are part of the immutable baseline; history records retain
 owner convergence-contract acceptance remain outstanding; executable behavior
 does not establish those approvals. A complete native generation rung has the
 additional limits recorded in the [qualified RC campaign](rung1-qualified.md).
+Hierarchical presence is still unsupported; an empty flat subject needs a
+successful native probe.
 
 ## Stages, epics and work
 

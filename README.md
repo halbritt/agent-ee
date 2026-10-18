@@ -106,6 +106,13 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+The [empty-candidate scaffold](docs/scaffold.md) creates deterministic native
+projects from captured envelope and parts records plus an explicit stage-one
+scope. It preserves project rules, checks and baseline sources, pre-creates child
+sheets and leaves native execution to the ordinary review/campaign workflow.
+Automatic stage-one scope compilation and hierarchical staged presence remain
+unavailable.
+
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it
 cannot pass merely because an empty design produces no rule violations. Progress

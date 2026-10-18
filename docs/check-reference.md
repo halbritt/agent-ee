@@ -574,3 +574,12 @@ or a missing sealed log is unknown coverage; broken hashes or malformed CSV
 are `malformed/unknown`. Package disagreements are `ok/defect` and qualify only
 through a sealed requirement/check witness. Rotation correction and DFM are
 outside this check.
+
+## Scaffold preparation
+
+[Empty-candidate scaffolding](scaffold.md) prepares inputs for these checks; its
+receipt is provenance and cannot satisfy a requirement. `scaffold` preserves the
+explicit planning scope's checks and baseline. Native ERC/DRC run through the
+ordinary `review` command. Staged absence is a coordinator defect only after a
+successful native presence observation; hierarchical presence and uncovered
+production envelope obligations continue to fail closed.
