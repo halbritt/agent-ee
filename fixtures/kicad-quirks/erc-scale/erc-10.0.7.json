@@ -1,0 +1,211 @@
+{
+    "$schema": "https://schemas.kicad.org/erc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-10-17T21:15:39",
+    "ignored_checks": [
+        {
+            "description": "Global label only appears once in the schematic",
+            "key": "single_global_label"
+        },
+        {
+            "description": "Four connection points are joined together",
+            "key": "four_way_junction"
+        },
+        {
+            "description": "SPICE model issue",
+            "key": "simulation_model_issue"
+        },
+        {
+            "description": "Assigned footprint doesn't match footprint filters",
+            "key": "footprint_filter"
+        }
+    ],
+    "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+    ],
+    "kicad_version": "10.0.7",
+    "sheets": [
+        {
+            "path": "/",
+            "uuid_path": "/06600000-0000-0000-0000-000000000000",
+            "violations": [
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Label 'ALPHA'",
+                            "pos": {
+                                "x": 25.4,
+                                "y": 30.48
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000001"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Wires not connected to anything",
+                    "items": [
+                        {
+                            "description": "Horizontal Wire, length 25.40 mm",
+                            "pos": {
+                                "x": 40.64,
+                                "y": 60.96
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000005"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "wire_dangling"
+                },
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Global Label 'DELTA'",
+                            "pos": {
+                                "x": 63.5,
+                                "y": 152.4
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000004"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Label 'ECHO'",
+                            "pos": {
+                                "x": 88.9,
+                                "y": 25.4
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000008"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Label 'FOXTROT'",
+                            "pos": {
+                                "x": 114.3,
+                                "y": 25.4
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000009"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Label 'BRAVO'",
+                            "pos": {
+                                "x": 127.0,
+                                "y": 88.9
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000002"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Label 'GOLF'",
+                            "pos": {
+                                "x": 177.8,
+                                "y": 133.35
+                            },
+                            "uuid": "00660000-0000-0000-0000-000000000064"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Label not connected",
+                    "items": [
+                        {
+                            "description": "Global Label 'CHARLIE'",
+                            "pos": {
+                                "x": 203.2,
+                                "y": 40.64
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000003"
+                        }
+                    ],
+                    "severity": "error",
+                    "type": "label_dangling"
+                },
+                {
+                    "description": "Unconnected wire endpoint",
+                    "items": [
+                        {
+                            "description": "Horizontal Wire, length 25.40 mm",
+                            "pos": {
+                                "x": 40.64,
+                                "y": 60.96
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000005"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "unconnected_wire_endpoint"
+                },
+                {
+                    "description": "Unconnected wire endpoint",
+                    "items": [
+                        {
+                            "description": "Horizontal Wire, length 25.40 mm",
+                            "pos": {
+                                "x": 40.64,
+                                "y": 60.96
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000005"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "unconnected_wire_endpoint"
+                },
+                {
+                    "description": "Both ECHO and FOXTROT are attached to the same items; ECHO will be used in the netlist",
+                    "items": [
+                        {
+                            "description": "Label 'ECHO'",
+                            "pos": {
+                                "x": 88.9,
+                                "y": 25.4
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000008"
+                        },
+                        {
+                            "description": "Label 'FOXTROT'",
+                            "pos": {
+                                "x": 114.3,
+                                "y": 25.4
+                            },
+                            "uuid": "06600000-0000-0000-0000-000000000009"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "multiple_net_names"
+                }
+            ]
+        }
+    ],
+    "source": "erc_scale.kicad_sch"
+}

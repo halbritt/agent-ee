@@ -10,7 +10,9 @@ adapted from fome-mc `toolchain/eda.py` (read at fome-mc commit c43ad7b).
 Check kinds and parameters:
 
 - `erc`, `netlist`: no parameters; `drc`: optional `projection`. ERC
-  validates sheet-instance coverage against the hierarchy; DRC runs with
+  validates sheet-instance coverage against the hierarchy and scales or
+  withholds violation locations by the sealed kicad-cli version
+  (`agent_ee.kicad_quirks`); DRC runs with
   `--schematic-parity` on the as-saved board and detects kicad-cli's silent
   parity skip. `projection: "placement-stage/1"` grades violations and parity
   only; the raw report and unconnected count are retained ungraded, and a
@@ -241,14 +243,43 @@ def verified_hierarchy(ctx):
 
 # ---------------------------------------------------------------------- checks
 
+def sealed_kicad_cli(ctx):
+    """Pinned kicad-cli identity and the ERC coordinate regime of its sealed version run."""
+    from .fab_consistency import pinned_kicad_cli
+    from .kicad_quirks import erc_coordinate_regime
+    pinned = pinned_kicad_cli()
+    tool = {"path": pinned[0] if pinned else None, "sha256": pinned[1] if pinned else None, "version": None}
+    if ctx.remaining() <= 1:
+        raise CheckError("interrupted", "deadline exhausted before kicad-cli version could run")
+    rec = executor.execute(ctx.inputs, ctx.work / "kicad-version", ["kicad-cli", "version"],
+                           timeout=min(60, ctx.remaining()))
+    ctx.evidence(*(f"kicad-version/{name}" for name in
+                   ("execution.json", "console.log", "stdout.log", "stderr.log")))
+    stdout = ctx.work / "kicad-version" / "stdout.log"
+    line = stdout.read_text(errors="replace").strip() if stdout.is_file() else ""
+    if rec["execution"] == "ok" and rec["exit_code"] == 0 and line and "\n" not in line:
+        tool["version"] = line
+        regime = erc_coordinate_regime(line)
+    else:
+        regime = {"version": None, "regime": "withheld", "scale": None,
+                  "reason": f"kicad-cli version {rec['execution']} (exit {rec['exit_code']}) gave no "
+                            f"single version line; the ERC JSON coordinate scale is unclassified"}
+    return tool, regime
+
+
 def check_erc(ctx):
+    from .kicad_quirks import erc_locations
     sch = ctx.candidate_path(ctx.scope["schematic"])
     files, expected = verified_hierarchy(ctx)
     ctx.seed_kicad_config()
+    tool, regime = sealed_kicad_cli(ctx)
+    ctx.result["details"]["kicad_cli"] = tool
     ctx.execute(["kicad-cli", "sch", "erc", "--format", "json", "--severity-all",
                  "--units", "mm", "-o", "/work/erc.json", sch], timeout=900)
     ctx.evidence("erc.json")
     report = ctx.load_json("erc.json", "ERC")
+    if not isinstance(report, dict):
+        raise CheckError("malformed", "ERC report is not a JSON object")
     ctx.result["details"]["kicad_version"] = report.get("kicad_version")
     sheets = report.get("sheets")
     if not isinstance(sheets, list):
@@ -264,6 +295,13 @@ def check_erc(ctx):
         "by_type": count_by(violations, "type"),
         "ignored_checks": [c.get("key") for c in report.get("ignored_checks", [])],
     })
+    locations, coordinates = erc_locations(report, regime)
+    ctx.result["details"].update(erc_coordinates=coordinates, locations=locations)
+    if coordinates["status"] == "withheld":
+        ctx.result["limitations"].append("ERC violation coordinates withheld (info): " + coordinates["reason"])
+    elif "limitation" in coordinates:
+        ctx.result["limitations"].append("ERC coordinates corrected x100 for kicad-cli "
+                                         f"{coordinates['version']}; " + coordinates["limitation"])
     ctx.result["execution"] = "ok"
     if violations:
         findings = erc_findings(ctx.cid, sheets)

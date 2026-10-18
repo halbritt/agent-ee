@@ -37,6 +37,10 @@ only when the record says `done: true`, 1 otherwise, and 2 when the invocation
 is refused. `--stand-in-fixture` uses `fixtures/rc/control` when the schematic
 emitter or board builder is missing; those stages are then recorded as
 `not_reached:dependency_missing`, so such a run can never be done.
+`--bom-variant NAME` exports the stage 7 BOM for a design variant. `NAME` must be
+registered in the reviewed project's `.kicad_pro`; otherwise stage 7 fails before
+any kicad-cli command, because kicad-cli would silently export the default
+([quirk guards](kicad-quirks.md#bom-variant-names)). CPL stays the default variant.
 
 ## Stages
 

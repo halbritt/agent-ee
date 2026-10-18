@@ -54,7 +54,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 
 | Kind | Native/helper arguments | Individual ceiling |
 | --- | --- | --- |
-| `erc` | `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 900 s |
+| `erc` | `kicad-cli version` (sealed under `kicad-version/`), then `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 60 s, 900 s |
 | `drc` | `kicad-cli pcb drc --format json --severity-all --schematic-parity --units mm -o /work/drc.json BOARD` | 900 s |
 | `netlist` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC` | 600 s |
 | `catalog` | `/usr/bin/python3 -m agent_ee.catalog_checks catalog /candidate/SNAPSHOT MANIFEST_SHA256 --out /work/catalog.json`; [snapshot integrity](catalog.md) only | 120 s |
@@ -159,6 +159,16 @@ one identity per distinct violation, with `entity` the sheet path plus the sorte
 native item descriptions and `kind` the native violation type. No `suggested_fix`
 is attached; if any violation lacks item descriptions or a type, the check
 omits the list rather than report a partial one.
+
+Violation locations are in `details.locations`. Their scale is chosen from the
+sealed `kicad-cli version` run, never from the report alone. KiCad 10.0.0 to
+10.0.6 write ERC JSON positions at 1/100 scale, so `regime: scale_x100`
+multiplies them by 100. 10.0.7 and later 10.0.N are `native`. Any other version,
+or a report whose `kicad_version` differs from the sealed version, is `withheld`:
+items keep no positions and a limitation records the reason. `details.kicad_cli`
+and `details.erc_coordinates` record the pinned binary and the regime applied.
+Counts and outcome are unaffected. See
+[KiCad report-format quirk guards](kicad-quirks.md).
 
 An undriven power-input message describes the native symbol/connectivity rule.
 It does not alone establish that a physical rail has no supply. A reviewer must

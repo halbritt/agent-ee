@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "filename": "var.kicad_pro",
+    "version": 3
+  },
+  "schematic": {
+    "variants": [
+      {
+        "name": "LITE",
+        "description": "R1 unpopulated"
+      }
+    ]
+  }
+}

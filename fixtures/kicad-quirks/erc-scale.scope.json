@@ -1,0 +1,32 @@
+{
+  "schema": "agent-ee.scope/1",
+  "name": "ERC JSON coordinate-scale oracle",
+  "scope": "Run native ERC over an original sheet whose twelve ERC item locations are known from the text report; the sheet is a report-format fixture, not a circuit.",
+  "limitations": [
+    "Labels and wires only; no symbols, footprints or board."
+  ],
+  "inputs": [
+    {
+      "path": "erc-scale",
+      "at": "project",
+      "include": [
+        "erc_scale.kicad_sch"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/template",
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ]
+    }
+  ],
+  "schematic": "project/erc_scale.kicad_sch",
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    }
+  ]
+}

@@ -1111,6 +1111,17 @@ def stage_fab(stage, state, options):
                 '--ref-delimiter', ',', '--ref-range-delimiter', '', '--exclude-dnp',
                 '-o', '/work/out/bom.csv', f'/candidate/project/{name}.kicad_sch'],
     }
+    variant = options.get('bom_variant')
+    if variant is not None:
+        # kicad-cli silently exports the default for an undefined name (AGENTEE-66).
+        from .kicad_quirks import VariantError, validate_bom_variants
+        pro = source / 'project' / f'{name}.kicad_pro'
+        try:
+            stage.receipt['details']['bom_variant'] = validate_bom_variants(pro, [sch], [variant])
+        except VariantError as exc:
+            raise StageFailure(f'BOM variant {variant!r} refused before kicad-cli ran: {exc}') from exc
+        stage.input(pro, 'reviewed project file (variant registry)')
+        steps['bom'][-1:-1] = ['--variant', variant]
     package = stage.dir / 'package'
     for sub in ('gerbers', 'drill'):
         (package / sub).mkdir(parents=True)
@@ -1179,7 +1190,7 @@ def fab_exists(manifest_path):
 
 
 def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, max_seconds=2400, functions=None,
-             catalog_checkout=None):
+             catalog_checkout=None, bom_variant=None):
     """Run every stage in order; returns the rung-1 record."""
     rundir = Path(rundir)
     if rundir.exists():
@@ -1190,7 +1201,7 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
     functions = {**STAGE_FUNCTIONS, **(functions or {})}
     options = {'spec': str(Path(spec).absolute()), 'profile': str(Path(profile).absolute()) if profile else None,
                'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
-               'catalog_checkout': catalog_checkout}
+               'catalog_checkout': catalog_checkout, 'bom_variant': bom_variant}
     state, stages, blocked = {}, [], None
     for number, name in STAGES:
         stage = Stage(rundir, number, name)
@@ -1224,7 +1235,8 @@ def generate(spec, rundir, *, profile=None, skip_review=False, stand_in=False, m
     record = {'schema': RECORD_SCHEMA, 'qualification': QUALIFICATION, 'spec': {'path': options['spec'], 'sha256': digest(spec)},
               'options': {'skip_review': skip_review, 'stand_in': stand_in, 'max_seconds': max_seconds,
                           'profile': options['profile'],
-                          'profile_sha256': digest(profile) if profile else None},
+                          'profile_sha256': digest(profile) if profile else None,
+                          **({'bom_variant': bom_variant} if bom_variant is not None else {})},
               'generator': tool_identity('agent_ee'), 'stages': stages, 'verdict': verdict,
               'fab_manifest': ({'path': 'stages/7-fab/fab-manifest.json', 'sha256': digest(state['fab_manifest'])}
                                if state.get('fab_manifest') else None),
@@ -1247,10 +1259,13 @@ def main(argv=None):
     parser.add_argument('--stand-in-fixture', action='store_true',
                         help='use fixtures/rc/control when G1/G2 are absent (stages marked dependency_missing)')
     parser.add_argument('--max-seconds', type=float, default=2400)
+    parser.add_argument('--bom-variant', help='export the BOM for this .kicad_pro-registered design variant; '
+                                              'an unregistered name fails the fab stage before kicad-cli runs')
     args = parser.parse_args(argv)
     try:
         record = generate(args.spec, args.out, profile=args.profile, skip_review=args.skip_review,
-                          stand_in=args.stand_in_fixture, max_seconds=args.max_seconds)
+                          stand_in=args.stand_in_fixture, max_seconds=args.max_seconds,
+                          bom_variant=args.bom_variant)
     except (FileExistsError, ValueError, OSError) as exc:
         parser.exit(2, f'generate refused: {exc}\n')
     for item in record['stages']:

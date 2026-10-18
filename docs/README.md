@@ -43,6 +43,7 @@ product's hardware qualification.
 
 | Gate generation "done" on a passing, hash-sealed fab package | [Fab package done gate](fab-package.md) |
 | Understand each native/engineering check | [Check reference](check-reference.md) |
+| See how ERC coordinates and BOM variant names are guarded across KiCad 10.0.x | [KiCad report-format quirk guards](kicad-quirks.md) |
 | Protect owner-declared schematic terminals, loads and probes | [Hardware interfaces](hardware-interface.md) |
 | Parse records or understand finding dispositions | [Result reference](result-reference.md) |
 | Understand capture, isolation and orchestration | [Architecture](architecture.md) |
