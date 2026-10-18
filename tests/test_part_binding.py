@@ -492,6 +492,7 @@ class PartBindingTests(unittest.TestCase):
             ("duplicate_keys", '{"min": "1", "min": "2", "max": "3", "unit": "V"}'),
             ("missing_unit", '{"min": "1", "max": "2"}'),
             ("empty_unit", '{"min": "1", "max": "2", "unit": "   "}'),
+            ("unknown_unit", '{"min": "1", "max": "2", "unit": "banana"}'),
             ("reversed_bounds", '{"min": "10", "max": "5", "unit": "ohm"}'),
             ("nominal_out_of_range", '{"min": "1", "max": "5", "nominal": "6", "unit": "V"}'),
             ("nan_constant", '{"min": NaN, "max": 5, "unit": "V"}'),
@@ -500,6 +501,12 @@ class PartBindingTests(unittest.TestCase):
             ("empty_values_set", '{"values": [], "unit": "V"}'),
             ("mixed_interval_and_set", '{"min": "1", "max": "2", "values": ["1"], "unit": "V"}'),
             ("missing_max", '{"min": "1", "unit": "V"}'),
+            ("overflow_json_number", '{"min": 1, "max": 1e999999999, "unit": "V"}'),
+            ("overflow_string_number", '{"min": "1", "max": "1e999999999", "unit": "V"}'),
+            ("underflow_json_number", '{"min": 1e-999999999, "max": 1, "unit": "V"}'),
+            ("underscore_in_number_string", '{"min": "1_000", "max": "2_000", "unit": "ohm"}'),
+            ("underscore_in_set_string", '{"values": ["1_000", "2000"], "unit": "ohm"}'),
+            ("non_ascii_digits", '{"min": "\\u0661", "max": "\\u0662", "unit": "ohm"}'),
         ]
         for label, raw in bad_param_cases:
             with self.subTest(case=label):
@@ -514,6 +521,7 @@ class PartBindingTests(unittest.TestCase):
                     ("malformed", "unknown"),
                     f"case {label} did not produce malformed/unknown: {report}",
                 )
+                self.assertEqual(report["reference_outcomes"], {"R1": "malformed"})
                 self.assertTrue(report["errors"])
 
         # Unparseable S-expression and wrong root tag
@@ -939,6 +947,110 @@ class PartBindingTests(unittest.TestCase):
         del partial["other.kicad_sch"]
         _, res_partial = run(partial, hier_board())
         self.assertEqual((res_partial["execution"], res_partial["outcome"]), ("malformed", "unknown"))
+
+    def test_14_decimal_overflow_unit_vocabulary_and_per_reference_malformed(self):
+        # 1. Valid units in declared vocabulary pass; unknown units fail closed as malformed
+        for unit in ("ohm", "kohm", "Mohm", "V", "mV", "A", "mA", "W", "mW", "F", "nF", "uF", "H", "uH", "Hz", "MHz", "degC", "%", "ppm"):
+            with self.subTest(valid_unit=unit):
+                parsed = parse_param_value(json.dumps({"min": "1", "max": "10", "unit": unit}), "PARAM_x")
+                self.assertEqual(parsed["unit"], unit)
+
+        for bad_unit in ("banana", "volts", "ohms", "Ω", "°C", "123"):
+            with self.subTest(bad_unit=bad_unit):
+                with self.assertRaises(PartBindingMalformedError):
+                    parse_param_value(json.dumps({"min": "1", "max": "10", "unit": bad_unit}), "PARAM_x")
+
+        # 2. Underscores and non-ASCII digits in numeric strings are rejected
+        for bad_num in ("1_000", "10_000.5", "1e1_0", "\u0661\u0662"):
+            with self.subTest(bad_num=bad_num):
+                with self.assertRaises(PartBindingMalformedError):
+                    parse_param_value(json.dumps({"min": bad_num, "max": "100000", "unit": "ohm"}), "PARAM_r")
+
+        # 3. Decimal overflow on R1 is recorded as execution=malformed for R1 only,
+        # while R2 (pass) and R3 (defect) are still evaluated, and run_checks writes records for all checks.
+        huge = '{"min": 1, "max": 1e999999999, "unit": "V"}'
+        r1_props = valid_r1_props(Reference="R1", PARAM_voltage=huge)
+        r2_props = valid_r1_props(Reference="R2")
+        r3_props = valid_r1_props(Reference="R3", LCSC="C11111")
+        sch = build_synthetic_sch([
+            {"lib_id": "Device:R", "properties": r1_props},
+            {"lib_id": "Device:R", "properties": r2_props},
+            {"lib_id": "Device:R", "properties": r3_props},
+        ])
+        pcb = build_synthetic_pcb([
+            {
+                "lib_id": "Resistor_SMD:R_0603_1608Metric",
+                "properties": {k: v for k, v in r1_props.items() if k != "Footprint"},
+            },
+            {
+                "lib_id": "Resistor_SMD:R_0603_1608Metric",
+                "properties": {k: v for k, v in r2_props.items() if k != "Footprint"},
+            },
+            {
+                "lib_id": "Resistor_SMD:R_0603_1608Metric",
+                "properties": {
+                    **{k: v for k, v in r3_props.items() if k != "Footprint"},
+                    "LCSC": "C22222",
+                },
+            },
+        ])
+        report = validate_part_bindings(sch, pcb, require_datasheet=True, require_params=True)
+        self.assertEqual((report["execution"], report["outcome"]), ("malformed", "unknown"))
+        self.assertEqual(report["evaluated_references"], ["R1", "R2", "R3"])
+        self.assertEqual(
+            report["reference_outcomes"],
+            {"R1": "malformed", "R2": "pass", "R3": "defect"},
+        )
+        self.assertEqual([d["reference"] for d in report["disagreements"]], ["R3"])
+        self.assertEqual({e["reference"] for e in report["param_errors"]}, {"R1"})
+
+        # End-to-end via run_checks with two checks: neither aborts and both write check records
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "design.kicad_sch").write_bytes(sch)
+            (root / "design.kicad_pcb").write_bytes(pcb)
+            (root / "requirements.md").write_text("Bindings requirement.\n", encoding="utf-8")
+            paths = ["design.kicad_sch", "design.kicad_pcb", "requirements.md"]
+            checks = [
+                {"id": "bindings_all", "kind": "part_binding", "params": {"require_params": True}},
+                {"id": "bindings_board", "kind": "part_binding", "params": {"board": "design.kicad_pcb"}},
+            ]
+            scope = {
+                "schema": "agent-ee.scope/3",
+                "schematic": "design.kicad_sch",
+                "board": "design.kicad_pcb",
+                "inputs": [{"path": p, "at": p} for p in paths],
+                "checks": checks,
+                "requirements": ["requirements.md"],
+                "baseline": {
+                    "requirements": [{
+                        "id": "REQ_BINDING",
+                        "statement": "Every component has valid bindings.",
+                        "source": {"path": "requirements.md", "locator": "L1"},
+                        "checks": ["bindings_all", "bindings_board"],
+                        "intent": "acceptance",
+                    }],
+                    "targets": ["requirements.md"],
+                    "reference_architectures": ["requirements.md"],
+                },
+            }
+            write_json(root / "scope.json", scope)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            capture(root / "scope.json", run_dir)
+            results = run_checks(run_dir, time.monotonic() + 30)
+            self.assertEqual(len(results), 2)
+            for res in results:
+                self.assertEqual((res["execution"], res["outcome"]), ("malformed", "unknown"))
+                self.assertTrue((run_dir / "checks" / f"{res['id']}.json").is_file())
+            self.assertEqual(
+                results[0]["details"]["reference_outcomes"],
+                {"R1": "malformed", "R2": "pass", "R3": "defect"},
+            )
+            self.assertEqual(
+                results[1]["details"]["reference_outcomes"],
+                {"R1": "malformed", "R2": "pass", "R3": "defect"},
+            )
 
 
 if __name__ == "__main__":

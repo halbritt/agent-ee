@@ -14,6 +14,37 @@ from .symbol_library import LibraryError, children, parse_sexpr
 LCSC_RE = re.compile(r"^C[1-9][0-9]*$")
 MAX_SHEET_OCCURRENCES = 4096
 PARAM_NAME_RE = re.compile(r"^PARAM_[A-Za-z0-9_]+$")
+DECIMAL_LITERAL_RE = re.compile(r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$")
+MAX_DECIMAL_SIGNIFICAND_DIGITS = 28
+MAX_DECIMAL_EXPONENT = 1000
+PARAM_UNITS = frozenset((
+    *(
+        f"{prefix}{base}"
+        for prefix in ("", "f", "p", "n", "u", "m", "k", "M", "G")
+        for base in ("ohm", "Ohm", "F", "H", "V", "A", "W", "Hz", "s", "m", "g")
+    ),
+    "degC",
+    "K",
+    "C/W",
+    "K/W",
+    "%",
+    "ppm",
+    "ppm/K",
+    "ppm/degC",
+    "dB",
+    "bps",
+    "kbps",
+    "Mbps",
+    "Gbps",
+    "rad",
+    "deg",
+    "lm",
+    "cd",
+    "mcd",
+    "T",
+    "mT",
+    "uT",
+))
 TRUTHY_MARKERS = frozenset(("true", "yes", "1"))
 NO_LCSC_VALUES = frozenset(("DNP", "NO_LCSC", "NO-LCSC"))
 BINDING_FIELDS = frozenset(("LCSC", "Manufacturer", "Partnumber", "Datasheet"))
@@ -47,10 +78,36 @@ def _reject_json_constant(token):
     raise PartBindingMalformedError(f"non-finite JSON constant: {token!r}")
 
 
-def _decimal_text(value: Decimal) -> str:
-    if value == 0:
-        return "0"
-    return format(value.normalize(), "f")
+def _parse_json_number(token: str) -> Decimal:
+    if not isinstance(token, str) or not DECIMAL_LITERAL_RE.match(token):
+        raise PartBindingMalformedError(f"invalid JSON numeric literal: {token!r}")
+    try:
+        num = Decimal(token)
+    except (DecimalException, ArithmeticError, ValueError) as exc:
+        raise PartBindingMalformedError(f"invalid JSON numeric literal {token!r}: {exc}") from exc
+    return num
+
+
+def _decimal_text(value: Decimal, prop_name: str = "PARAM_?", field_name: str = "value") -> str:
+    try:
+        if not value.is_finite():
+            raise PartBindingMalformedError(f"{prop_name}: {field_name} must be finite")
+        if value == 0:
+            return "0"
+        digits = len(value.as_tuple().digits)
+        adj = abs(value.adjusted())
+        if digits > MAX_DECIMAL_SIGNIFICAND_DIGITS or adj > MAX_DECIMAL_EXPONENT:
+            raise PartBindingMalformedError(
+                f"{prop_name}: {field_name} decimal exponent or precision out of bounds (adjusted={value.adjusted()}, digits={digits})"
+            )
+        norm = value.normalize()
+        return format(norm, "f")
+    except PartBindingMalformedError:
+        raise
+    except (DecimalException, ArithmeticError, ValueError, MemoryError) as exc:
+        raise PartBindingMalformedError(
+            f"{prop_name}: {field_name} decimal overflow or invalid operation ({exc})"
+        ) from exc
 
 
 def _parse_decimal(raw, prop_name: str, field_name: str) -> Decimal:
@@ -61,21 +118,26 @@ def _parse_decimal(raw, prop_name: str, field_name: str) -> Decimal:
     if isinstance(raw, Decimal):
         num = raw
     elif isinstance(raw, (int, float)):
+        raw_str = str(raw)
+        if not DECIMAL_LITERAL_RE.match(raw_str):
+            raise PartBindingMalformedError(
+                f"{prop_name}: invalid numeric literal in {field_name}: {raw!r}"
+            )
         try:
-            num = Decimal(str(raw))
-        except DecimalException as exc:
+            num = Decimal(raw_str)
+        except (DecimalException, ArithmeticError, ValueError) as exc:
             raise PartBindingMalformedError(
                 f"{prop_name}: invalid numeric literal in {field_name}: {raw!r}"
             ) from exc
     elif isinstance(raw, str):
         stripped = raw.strip()
-        if not stripped or any(ch.isspace() for ch in stripped):
+        if not stripped or "_" in stripped or not DECIMAL_LITERAL_RE.match(stripped):
             raise PartBindingMalformedError(
-                f"{prop_name}: {field_name} must be a non-empty numeric string"
+                f"{prop_name}: invalid numeric string in {field_name}: {raw!r}"
             )
         try:
             num = Decimal(stripped)
-        except DecimalException as exc:
+        except (DecimalException, ArithmeticError, ValueError) as exc:
             raise PartBindingMalformedError(
                 f"{prop_name}: invalid numeric string in {field_name}: {raw!r}"
             ) from exc
@@ -83,9 +145,21 @@ def _parse_decimal(raw, prop_name: str, field_name: str) -> Decimal:
         raise PartBindingMalformedError(
             f"{prop_name}: {field_name} has unsupported type {type(raw).__name__}"
         )
-    if not num.is_finite():
+    try:
+        is_fin = num.is_finite()
+    except (DecimalException, ArithmeticError) as exc:
+        raise PartBindingMalformedError(
+            f"{prop_name}: {field_name} decimal error: {exc}"
+        ) from exc
+    if not is_fin:
         raise PartBindingMalformedError(
             f"{prop_name}: {field_name} must be finite, got {raw!r}"
+        )
+    digits = len(num.as_tuple().digits)
+    adj = abs(num.adjusted())
+    if digits > MAX_DECIMAL_SIGNIFICAND_DIGITS or adj > MAX_DECIMAL_EXPONENT:
+        raise PartBindingMalformedError(
+            f"{prop_name}: {field_name} decimal exponent or precision out of bounds: {raw!r}"
         )
     return num
 
@@ -101,12 +175,12 @@ def parse_param_value(raw_text: str, prop_name: str = "PARAM_?") -> dict:
             raw_text,
             object_pairs_hook=_unique_json_object,
             parse_constant=_reject_json_constant,
-            parse_float=Decimal,
-            parse_int=Decimal,
+            parse_float=_parse_json_number,
+            parse_int=_parse_json_number,
         )
     except PartBindingMalformedError:
         raise
-    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+    except (json.JSONDecodeError, DecimalException, ArithmeticError, ValueError, TypeError, RecursionError) as exc:
         raise PartBindingMalformedError(f"{prop_name}: invalid JSON ({exc})") from exc
 
     if not isinstance(parsed, dict):
@@ -116,6 +190,10 @@ def parse_param_value(raw_text: str, prop_name: str = "PARAM_?") -> dict:
     if not isinstance(raw_unit, str) or not raw_unit.strip():
         raise PartBindingMalformedError(f"{prop_name}: requires non-empty string 'unit'")
     unit = raw_unit.strip()
+    if unit not in PARAM_UNITS:
+        raise PartBindingMalformedError(
+            f"{prop_name}: unsupported unit {unit!r}; must be in declared unit vocabulary"
+        )
 
     has_values = "values" in parsed
     has_set = "set" in parsed
@@ -147,8 +225,8 @@ def parse_param_value(raw_text: str, prop_name: str = "PARAM_?") -> dict:
             for idx, item in enumerate(raw_items)
         ]
         by_numeric = {}
-        for dec in decimals:
-            text_val = _decimal_text(dec)
+        for idx, dec in enumerate(decimals):
+            text_val = _decimal_text(dec, prop_name, f"{set_key}[{idx}]")
             by_numeric[Decimal(text_val)] = text_val
         sorted_keys = sorted(by_numeric)
         sorted_values = [by_numeric[k] for k in sorted_keys]
@@ -170,22 +248,25 @@ def parse_param_value(raw_text: str, prop_name: str = "PARAM_?") -> dict:
         )
     low = _parse_decimal(parsed["min"], prop_name, "min")
     high = _parse_decimal(parsed["max"], prop_name, "max")
+    low_text = _decimal_text(low, prop_name, "min")
+    high_text = _decimal_text(high, prop_name, "max")
     if low > high:
         raise PartBindingMalformedError(
-            f"{prop_name}: min ({_decimal_text(low)}) exceeds max ({_decimal_text(high)})"
+            f"{prop_name}: min ({low_text}) exceeds max ({high_text})"
         )
     normalized = {
-        "min": _decimal_text(low),
-        "max": _decimal_text(high),
+        "min": low_text,
+        "max": high_text,
         "unit": unit,
     }
     if "nominal" in parsed:
         nom = _parse_decimal(parsed["nominal"], prop_name, "nominal")
+        nom_text = _decimal_text(nom, prop_name, "nominal")
         if nom < low or nom > high:
             raise PartBindingMalformedError(
-                f"{prop_name}: nominal ({_decimal_text(nom)}) outside [{_decimal_text(low)}, {_decimal_text(high)}]"
+                f"{prop_name}: nominal ({nom_text}) outside [{low_text}, {high_text}]"
             )
-        normalized["nominal"] = _decimal_text(nom)
+        normalized["nominal"] = nom_text
     return normalized
 
 
@@ -222,9 +303,12 @@ def _extract_single_str(node, tag: str, *, required: bool = False, default: str 
     return val
 
 
-def _extract_properties(node, context_label: str) -> tuple[dict[str, str], dict[str, dict]]:
+def _extract_properties(
+    node, context_label: str, *, defer_param_errors: bool = False
+) -> tuple[dict[str, str], dict[str, dict], list[dict]]:
     props = {}
     params = {}
+    param_errors = []
     for prop in children(node, "property"):
         if len(prop) < 3 or not isinstance(prop[1], str) or not isinstance(prop[2], str):
             raise PartBindingMalformedError(f"{context_label}: malformed (property ...) node")
@@ -236,12 +320,21 @@ def _extract_properties(node, context_label: str) -> tuple[dict[str, str], dict[
             raise PartBindingMalformedError(f"{context_label}: duplicate property {name!r}")
         props[name] = val
         if name.startswith("PARAM_"):
-            if not PARAM_NAME_RE.match(name):
-                raise PartBindingMalformedError(
-                    f"{context_label}: invalid parameter property name {name!r}"
-                )
-            params[name] = parse_param_value(val, name)
-    return props, params
+            try:
+                if not PARAM_NAME_RE.match(name):
+                    raise PartBindingMalformedError(
+                        f"{context_label}: invalid parameter property name {name!r}"
+                    )
+                params[name] = parse_param_value(val, name)
+            except PartBindingMalformedError as exc:
+                if not defer_param_errors:
+                    raise
+                param_errors.append({
+                    "property": name,
+                    "value": val,
+                    "reason": str(exc),
+                })
+    return props, params, param_errors
 
 
 def _identify_power_lib_symbols(root) -> set[str]:
@@ -410,7 +503,11 @@ def _is_dnp(dnp_flag: bool, lcsc: str, props: dict[str, str]) -> bool:
 
 
 def schematic_hierarchy_bindings(
-    sch_bytes: bytes, *, path: str = "", sheets: dict[str, bytes] | None = None
+    sch_bytes: bytes,
+    *,
+    path: str = "",
+    sheets: dict[str, bytes] | None = None,
+    defer_param_errors: bool = False,
 ) -> tuple[dict[str, dict], list[str]]:
     """Parse placed symbol bindings across the captured sheet hierarchy.
 
@@ -441,7 +538,9 @@ def schematic_hierarchy_bindings(
             on_board = _extract_yes_no(sym, "on_board", True)
 
             label = f"symbol({lib_id}) uuid {uuid!r} in {rel!r}"
-            props, params = _extract_properties(sym, label)
+            props, params, param_errors = _extract_properties(
+                sym, label, defer_param_errors=defer_param_errors
+            )
             ref, inst_unit = _occurrence_reference(sym, props, instance, flat, label)
             if inst_unit is not None:
                 unit = inst_unit
@@ -498,6 +597,10 @@ def schematic_hierarchy_bindings(
                 "no_lcsc": no_lcsc,
                 "exempt": dnp or no_lcsc,
                 "params": params,
+                "param_errors": [
+                    {"reference": ref, "source": "schematic", **err}
+                    for err in param_errors
+                ],
                 "properties": props,
                 "unit_disagreements": [],
             }
@@ -528,6 +631,7 @@ def schematic_hierarchy_bindings(
                 if uuid:
                     existing["uuids"].append(uuid)
                 existing["unit_disagreements"].extend(unit_entry["unit_disagreements"])
+                existing["param_errors"].extend(unit_entry["param_errors"])
 
                 # Check boolean flags across units
                 for flag_key in ("dnp", "native_dnp", "in_bom", "on_board", "virtual"):
@@ -590,10 +694,16 @@ def schematic_hierarchy_bindings(
 
 
 def parse_schematic_bindings(
-    sch_bytes: bytes, *, path: str = "", sheets: dict[str, bytes] | None = None
+    sch_bytes: bytes,
+    *,
+    path: str = "",
+    sheets: dict[str, bytes] | None = None,
+    defer_param_errors: bool = False,
 ) -> dict[str, dict]:
     """Parse placed symbol part bindings from captured .kicad_sch bytes."""
-    return schematic_hierarchy_bindings(sch_bytes, path=path, sheets=sheets)[0]
+    return schematic_hierarchy_bindings(
+        sch_bytes, path=path, sheets=sheets, defer_param_errors=defer_param_errors
+    )[0]
 
 
 def _extract_fp_text(fp_node) -> dict[str, str]:
@@ -641,7 +751,9 @@ def _has_copper_pads(fp_node) -> bool:
     return has_copper
 
 
-def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
+def parse_board_bindings(
+    pcb_bytes: bytes, *, defer_param_errors: bool = False
+) -> dict[str, dict]:
     """Parse footprint part bindings from captured .kicad_pcb bytes."""
     try:
         root = parse_sexpr(pcb_bytes)
@@ -667,7 +779,9 @@ def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
         in_bom_node = _extract_yes_no(fp, "in_bom", True)
         on_board_node = _extract_yes_no(fp, "on_board", True)
 
-        props, params = _extract_properties(fp, f"footprint({lib_id})")
+        props, params, param_errors = _extract_properties(
+            fp, f"footprint({lib_id})", defer_param_errors=defer_param_errors
+        )
         fp_texts = _extract_fp_text(fp)
 
         ref = props.get("Reference", "").strip() or fp_texts.get("reference", "").strip()
@@ -724,6 +838,10 @@ def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
             "no_lcsc": no_lcsc,
             "exempt": dnp or no_lcsc,
             "params": params,
+            "param_errors": [
+                {"reference": ref, "source": "board", **err}
+                for err in param_errors
+            ],
             "properties": props,
             "duplicate_disagreements": [],
         }
@@ -748,6 +866,7 @@ def parse_board_bindings(pcb_bytes: bytes) -> dict[str, dict]:
 
         if ref in bindings:
             prev = bindings[ref]
+            prev["param_errors"].extend(entry["param_errors"])
             if not prev["virtual"] or not entry["virtual"]:
                 prev["duplicate_disagreements"].append({
                     "reference": ref,
@@ -807,7 +926,7 @@ def _check_component_bindings(
     if not (dnp or no_lcsc):
         if require_datasheet and not datasheet:
             missing_props.append("Datasheet")
-        if require_params and not params:
+        if require_params and not params and not comp.get("param_errors"):
             missing_props.append("PARAM_*")
 
     for prop in missing_props:
@@ -821,14 +940,19 @@ def _check_component_bindings(
         })
 
 
-def _reference_outcomes(evaluated, missing_bindings, invalid_bindings, disagreements) -> dict[str, str]:
-    """Per-reference outcome: defect dominates unknown; pass only with no record at all."""
+def _reference_outcomes(
+    evaluated, missing_bindings, invalid_bindings, disagreements, param_errors=None
+) -> dict[str, str]:
+    """Per-reference outcome: malformed dominates defect, which dominates unknown; pass only with no record at all."""
     outcomes = dict.fromkeys(evaluated, "pass")
     for item in missing_bindings:
-        if outcomes.get(item["reference"]) != "defect":
+        if outcomes.get(item["reference"]) not in ("defect", "malformed"):
             outcomes[item["reference"]] = "unknown"
     for item in [*invalid_bindings, *disagreements]:
-        outcomes[item["reference"]] = "defect"
+        if outcomes.get(item["reference"]) != "malformed":
+            outcomes[item["reference"]] = "defect"
+    for item in param_errors or ():
+        outcomes[item["reference"]] = "malformed"
     return dict(sorted(outcomes.items()))
 
 
@@ -865,10 +989,15 @@ def validate_part_bindings(
 
     try:
         sch_bindings, sch_files = (
-            schematic_hierarchy_bindings(sch_bytes, path=schematic_path, sheets=sheets)
+            schematic_hierarchy_bindings(
+                sch_bytes, path=schematic_path, sheets=sheets, defer_param_errors=True
+            )
             if sch_bytes is not None else ({}, [])
         )
-        pcb_bindings = parse_board_bindings(pcb_bytes) if pcb_bytes is not None else {}
+        pcb_bindings = (
+            parse_board_bindings(pcb_bytes, defer_param_errors=True)
+            if pcb_bytes is not None else {}
+        )
     except PartBindingMalformedError as exc:
         return {
             "schema": "agent-ee.part-binding/1",
@@ -885,12 +1014,14 @@ def validate_part_bindings(
             "missing_bindings": [],
             "invalid_bindings": [],
             "disagreements": [],
+            "param_errors": [],
             "errors": [str(exc)],
         }
 
     missing_bindings: list[dict] = []
     invalid_bindings: list[dict] = []
     disagreements: list[dict] = []
+    param_errors: list[dict] = []
     evaluated_refs: set[str] = set()
     exempt_refs: set[str] = set()
     virtual_refs: set[str] = set()
@@ -899,6 +1030,7 @@ def validate_part_bindings(
         for ref in sorted(sch_bindings):
             comp = sch_bindings[ref]
             disagreements.extend(comp.get("unit_disagreements", []))
+            param_errors.extend(comp.get("param_errors", []))
             if comp["virtual"]:
                 virtual_refs.add(ref)
                 continue
@@ -932,6 +1064,10 @@ def validate_part_bindings(
                 missing_bindings=missing_bindings,
                 invalid_bindings=invalid_bindings,
             )
+
+    if pcb_bytes is not None:
+        for ref in sorted(pcb_bindings):
+            param_errors.extend(pcb_bindings[ref].get("param_errors", []))
 
     if sch_bytes is not None and pcb_bytes is not None:
         for ref in sorted(set(sch_bindings) | set(pcb_bindings)):
@@ -1025,8 +1161,14 @@ def validate_part_bindings(
                     "reason": f"{ref} disagrees on PartNumber: schematic={sch_comp['PartNumber']!r} vs board={pcb_comp['PartNumber']!r}",
                 })
 
+            malformed_param_names = {
+                err["property"]
+                for err in (sch_comp.get("param_errors", []) + pcb_comp.get("param_errors", []))
+            }
             all_params = sorted(set(sch_comp["params"]) | set(pcb_comp["params"]))
             for p_name in all_params:
+                if p_name in malformed_param_names:
+                    continue
                 s_param = sch_comp["params"].get(p_name)
                 b_param = pcb_comp["params"].get(p_name)
                 if s_param is None or b_param is None:
@@ -1041,7 +1183,12 @@ def validate_part_bindings(
                         "reason": f"{ref} disagrees on {p_name}: schematic={s_param!r} vs board={b_param!r}",
                     })
 
-    if disagreements or invalid_bindings:
+    if param_errors:
+        execution = "malformed"
+        outcome = "unknown"
+        summary = f"malformed part binding parameter(s): {param_errors[0]['reason']}"
+    elif disagreements or invalid_bindings:
+        execution = "ok"
         outcome = "defect"
         parts = []
         if disagreements:
@@ -1050,25 +1197,28 @@ def validate_part_bindings(
             parts.append(f"{len(invalid_bindings)} invalid binding(s)")
         summary = "part-binding validation found " + " and ".join(parts)
     elif missing_bindings:
+        execution = "ok"
         outcome = "unknown"
         summary = f"part-binding incomplete: {len(missing_bindings)} missing binding property(ies)"
     elif not evaluated_refs:
+        execution = "ok"
         outcome = "info"
         summary = "no non-virtual components to evaluate for part bindings"
     else:
+        execution = "ok"
         outcome = "pass"
         summary = f"all {len(evaluated_refs)} evaluated component(s) have valid, consistent part bindings"
 
     return {
         "schema": "agent-ee.part-binding/1",
-        "execution": "ok",
+        "execution": execution,
         "outcome": outcome,
         "summary": summary,
         "schematic_components": sch_bindings,
         "board_components": pcb_bindings,
         "schematic_files": sch_files,
         "reference_outcomes": _reference_outcomes(
-            evaluated_refs, missing_bindings, invalid_bindings, disagreements
+            evaluated_refs, missing_bindings, invalid_bindings, disagreements, param_errors
         ),
         "evaluated_references": sorted(evaluated_refs),
         "exempt_references": sorted(exempt_refs),
@@ -1076,7 +1226,11 @@ def validate_part_bindings(
         "missing_bindings": missing_bindings,
         "invalid_bindings": invalid_bindings,
         "disagreements": disagreements,
-        "errors": [],
+        "param_errors": param_errors,
+        "errors": [
+            f"{err['source']} {err['reference']}: {err['reason']}"
+            for err in param_errors
+        ],
     }
 
 
