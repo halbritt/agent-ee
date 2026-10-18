@@ -69,7 +69,10 @@ boundary remains a defect until repaired against the frozen binding contract.
 Instantiation refuses a nonempty or repeated destination, unsafe paths and
 incomplete mappings. Validation failures restore the empty child and remove the
 new record. Source blocks with unavailable source runs remain provenance inputs;
-no source acceptance is inferred.
+no source acceptance is inferred. Source parts manifests must still satisfy the
+shared parts/1 structural validator; malformed manifests are refused before the
+child is written. Source membership qualification remains separate from fresh
+board acceptance.
 
 ## Fresh provenance check
 

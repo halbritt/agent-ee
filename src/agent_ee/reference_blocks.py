@@ -9,9 +9,11 @@ import posixpath
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import traceback
 
 from .storage import canonical, digest, write_json
 from .symbol_library import children, field, parse_sexpr
+from .parts_manifest import PREDICATE, validate_manifest
 
 
 def _object(value, required, optional=()):
@@ -124,7 +126,7 @@ def _structure(record):
                                     (type(current) is float and not math.isfinite(current)) or current < 0):
             raise ValueError('current_a must be finite nonnegative amperes')
         if port['name'] in names:
-            raise ValueError('duplicate boundary port')
+            raise ValueError('duplicate boundary port: ' + port['name'])
         names.add(port['name'])
     _list(record['requirements'])
     if not record['requirements']:
@@ -176,33 +178,30 @@ def _payload(root, record):
     if _read(root / 'block-contract.json') != block_contract(record):
         raise ValueError('block contract differs from captured metadata')
     ports = hierarchy_ports((root / record['sheet']).read_bytes())
-    if ports != {p['name']: p['direction'] for p in record['boundary_ports']}:
-        raise ValueError('boundary ports differ from native hierarchical pins')
-    parts = _read(root / record['parts_manifest'])
-    if not isinstance(parts, dict) or parts.get('schema') != 'agent-ee.parts/1':
-        raise ValueError('expected captured agent-ee.parts/1 subset')
+    declared = {p['name']: p['direction'] for p in record['boundary_ports']}
+    differences = [f'{name!r} (declared={declared.get(name)!r}, native={ports.get(name)!r})'
+                   for name in sorted(ports.keys() | declared.keys())
+                   if ports.get(name) != declared.get(name)]
+    if differences:
+        raise ValueError('boundary ports differ from native hierarchical pins: ' + '; '.join(differences))
+    validate_manifest(_read(root / record['parts_manifest']))
 
 
-def _native_requirement_coverage(run, manifest, ref, record, req, checks):
-    """Recognize only qualified native interface witnesses for this block instance.
-
-    Other check families need their own subject binding; capture membership alone
-    never establishes applicability. Optional layout qualification is unsupported.
-    """
+def _native_block_subject(run, manifest, ref, record, native_id, checks):
+    """Bind a sealed native export to the block's captured hierarchy occurrences."""
     from xml.etree import ElementTree as ET
     from .checks import sheet_instances
-    from .hardware_interface import load_contract
 
-    if 'layout' in record:
-        return False
     scope = manifest['scope']
     specs = {c['id']: c for c in scope['checks']}
-    if not scope.get('schematic') or any(specs[c]['kind'] != 'hardware_interface' for c in req['checks']):
-        return False
+    native = checks.get(native_id, {})
+    if (not scope.get('schematic') or specs.get(native_id, {}).get('kind') != 'netlist' or
+            native.get('execution') != 'ok'):
+        return None
     sheet = ref['files'][record['sheet']]
     files, _, missing = sheet_instances(run / 'inputs', scope['schematic'])
-    if missing or sheet not in files:
-        return False
+    if missing or sheet not in files or sheet not in native.get('details', {}).get('schematic_files', []):
+        return None
 
     # Reconstruct native instance IDs from actual captured hierarchy, rather than
     # accepting author-written evaluated-files or ambiguous source basenames.
@@ -220,20 +219,30 @@ def _native_requirement_coverage(run, manifest, ref, record, req, checks):
     walk(scope['schematic'], '/')
     symbols = {field(symbol, 'uuid', 1)[0]
                for symbol in children(parse_sexpr((run / 'inputs' / sheet).read_bytes()), 'symbol')}
+    xml = ET.parse(run / 'work' / native_id / 'design.xml')
+    if xml.findtext('./design/source') != '/candidate/' + scope['schematic']:
+        return None
+    exported = {node.get('tstamps') for node in xml.findall('./design/sheet')}
+    if not occurrences or not occurrences <= exported:
+        return None
+    return occurrences, symbols
+
+
+def _native_requirement_coverage(run, manifest, ref, record, req, checks):
+    """Recognize qualified native interface witnesses for this block instance."""
+    from .hardware_interface import load_contract
+
+    specs = {c['id']: c for c in manifest['scope']['checks']}
+    if 'layout' in record or any(specs[c]['kind'] != 'hardware_interface' for c in req['checks']):
+        return False
     for cid in req['checks']:
         spec = specs[cid]
         params = spec['params']
         native_id = params['netlist_check']
-        native = checks.get(native_id, {})
-        if (specs[native_id]['kind'] != 'netlist' or native.get('execution') != 'ok' or
-                sheet not in native.get('details', {}).get('schematic_files', [])):
+        subject = _native_block_subject(run, manifest, ref, record, native_id, checks)
+        if subject is None:
             return False
-        xml = ET.parse(run / 'work' / native_id / 'design.xml')
-        if xml.findtext('./design/source') != '/candidate/' + scope['schematic']:
-            return False
-        exported = {node.get('tstamps') for node in xml.findall('./design/sheet')}
-        if not occurrences or not occurrences <= exported:
-            return False
+        occurrences, symbols = subject
         contract = load_contract(run / 'inputs', params['contract'])
         expected = {i['id'] for i in contract['invariants'] if i['requirement'] == req['id']}
         witnesses = [i for i in checks[cid]['details']['invariants']
@@ -249,6 +258,35 @@ def _native_requirement_coverage(run, manifest, ref, record, req, checks):
     return True
 
 
+def _parts_coverage(run, manifest, ref, record, checks):
+    """Use only sealed membership checks over the exact manifest and native block."""
+    covered = []
+    for spec in manifest['scope']['checks']:
+        if spec['kind'] != 'parts_subset' or spec['params']['manifest'] != ref['files'][record['parts_manifest']]:
+            continue
+        check = checks.get(spec['id'], {})
+        if check.get('execution') != 'ok' or check.get('outcome') != 'pass':
+            continue
+        details = check.get('details', {})
+        report = details.get('report', {})
+        if (PREDICATE not in details.get('evaluated_predicates', []) or
+                report.get('manifest_sha256') != record['files'][record['parts_manifest']] or
+                report.get('execution') != 'ok' or report.get('outcome') != 'pass' or
+                report.get('coverage') != 'complete'):
+            continue
+        native_id = spec['params']['netlist_check']
+        subject = _native_block_subject(run, manifest, ref, record, native_id, checks)
+        if subject is None:
+            continue
+        occurrences, symbols = subject
+        if report.get('native_xml_sha256') != digest(run / 'work' / native_id / 'design.xml'):
+            continue
+        if any(m.get('status') == 'pass' and m.get('sheet') in occurrences and m.get('uuid') in symbols
+               for m in report.get('matches', [])):
+            covered.append(spec['id'])
+    return covered
+
+
 def validate_block(directory, run_locations=None):
     """Refuse inconsistent records; return unverified for missing passing coverage."""
     root = Path(directory)
@@ -257,7 +295,7 @@ def validate_block(directory, run_locations=None):
     record = _read(root / 'block.json')
     _structure(record)
     _payload(root, record)
-    covered, runs = set(), []
+    covered, runs, parts_evidence = set(), [], []
     locations = run_locations or {}
     for ref in record['runs']:
         rid = ref['run_id']
@@ -286,6 +324,9 @@ def validate_block(directory, run_locations=None):
                 verify_evidence(run, result['checks'], required=True)
                 requirements = {r['id']: r for r in baseline['requirements']}
                 checks = {c['id']: c for c in result['checks']}
+                parts_evidence.extend(dict(run_id=rid, check_id=cid,
+                    manifest_sha256=record['files'][record['parts_manifest']])
+                    for cid in _parts_coverage(run, manifest, ref, record, checks))
                 for req in record['requirements']:
                     bound = requirements.get(req['id'])
                     if bound is None or bound.get('intent', 'acceptance') != 'acceptance':
@@ -305,13 +346,15 @@ def validate_block(directory, run_locations=None):
     declared = all(p['current_a'] is not None and p['voltage_domain'] is not None
                    for p in record['boundary_ports'])
     return dict(schema='agent-ee.block-report/1', block_id=record['id'],
-                status='verified' if declared and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
+                status='verified' if declared and parts_evidence and runs and all(r['status'] == 'passing' for r in runs) and covered == {r['id'] for r in record['requirements']} else 'unverified',
                 covered_requirements=sorted(covered), runs=runs,
+                parts_membership=dict(status='verified' if parts_evidence else 'unverified', evidence=parts_evidence),
                 missing_requirements=sorted({r['id'] for r in record['requirements']} - covered),
                 undeclared_ports=[p['name'] for p in record['boundary_ports']
                                   if p['current_a'] is None or p['voltage_domain'] is None],
                 limitations=['Provenance only; adaptations require fresh board checks.',
-                             'Parts subset bytes retained; selection/availability not qualified.',
+                             'Declared parts membership is not owner approval, live availability or hardware acceptance.',
+                             'Run references do not establish a containing campaign\'s current escalation state.',
                              'Only native hardware-interface requirement subjects are qualified; '
                              'other check families and optional layouts remain unverified.'])
 
@@ -399,9 +442,16 @@ def main(argv=None):
                     raise ValueError('run location must be unique ID=PATH')
                 locations[key] = path
             report = validate_block(args.directory, locations)
-    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+    except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
         print(json.dumps(dict(schema='agent-ee.block-report/1', status='refused', error=str(exc))))
         return 2
+    except Exception as exc:
+        # At the CLI boundary, crashes need a distinct exit from valid unknown
+        # coverage. Keep the traceback for diagnosis and never emit acceptance.
+        traceback.print_exc()
+        print(json.dumps(dict(schema='agent-ee.block-report/1', status='error',
+                              error=type(exc).__name__ + ': ' + str(exc))))
+        return 3
     print(json.dumps(report, sort_keys=True))
     return 0 if report['status'] == 'verified' else 1
 

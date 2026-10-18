@@ -16,6 +16,7 @@ from agent_ee.candidate import capture
 from agent_ee.checks import Ctx, CheckError, run_checks
 from agent_ee.reference_blocks import block_contract
 from agent_ee.schematic_emit import parse_quoted, format_sexpr
+from tests.block_parts_fixture import parts_manifest
 from agent_ee.storage import digest, read_json, write_json
 from agent_ee.symbol_library import children, field
 from tests.toolchain import require_toolchain
@@ -49,7 +50,7 @@ def fixture(root):
         source.append(parse_quoted(f'''(hierarchical_label "{name}" (shape {direction}) (at 40 {y} 0)
           (effects (font (size 1 1))) (uuid "c5485795-b0e0-4ac5-a51d-0f903a7615a{index}"))'''.encode()))
     (block / 'rc.kicad_sch').write_bytes(dump(source))
-    write_json(block / 'parts.json', {'schema': 'agent-ee.parts/1', 'parts': []})
+    write_json(block / 'parts.json', parts_manifest())
     record = {'schema': 'agent-ee.block/1', 'id': 'owned-rc', 'version': '7', 'role': 'filter',
         'source': {'repository': 'owned synthetic', 'commit': 'a'*40,
                    'paths': {'rc.kicad_sch': 'rc.kicad_sch'}, 'license': 'MIT'},
@@ -96,6 +97,24 @@ def fixture(root):
 
 
 class InstantiationTests(unittest.TestCase):
+    def test_invalid_block_parts_refused_before_writing_child(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scope, request = fixture(root)
+            child = root / request['sheet']
+            original = child.read_bytes()
+            source = root / request['block']
+            document = read_json(source / 'parts.json')
+            document['parts'][0]['lcsc'] = 'NOT-AN-LCSC'
+            write_json(source / 'parts.json', document)
+            record = read_json(source / 'block.json')
+            record['files']['parts.json'] = digest(source / 'parts.json')
+            write_json(source / 'block.json', record)
+            with self.assertRaisesRegex(ValueError, 'LCSC'):
+                instantiate(root, scope, request)
+            self.assertEqual(child.read_bytes(), original)
+            self.assertFalse((root / 'instance.json').exists())
+
     def test_byte_exact_copy_mapped_requirements_and_immutable_baseline(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
