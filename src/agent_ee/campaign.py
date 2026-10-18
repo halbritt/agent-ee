@@ -137,6 +137,8 @@ def implement(root, previous, definition, state, deadline):
                        'implementation_steps': [{**{key: spec[key] for key in ('stage', 'step', 'writes')},
                            'scheduled': spec['stage'] in scheduled_stages} for spec in config['implementation_steps']],
                        'step_owned_outputs': sorted({rel for spec in scheduled for rel in spec['writes']})}))
+    from .review_run import with_resubmission_notice
+    prompt = with_resubmission_notice(prompt, config.get('max_schema_resubmissions', 1))
     (work / 'implementation-prompt.txt').write_text(prompt, encoding='utf-8')
     from .preflight import capture_expectation
     original = read_json(previous / 'result.json')

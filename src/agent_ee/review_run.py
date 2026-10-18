@@ -29,6 +29,22 @@ def input_identity(run):
     return identity(files)
 
 
+RESUBMISSION_NOTICE = ('\nIf an OUTPUT VALIDATION ERROR is appended to this prompt, reissue only the '
+                       'structured record with the same judgment and finding set. Do not edit inputs '
+                       'or the implementation design during resubmission. The same evidence rules apply.')
+
+
+def with_resubmission_notice(prompt, limit):
+    """Return ``prompt`` carrying the fixed resubmission notice when ``limit`` allows a resubmission.
+
+    Idempotent, so a caller that retains the exact prompt before the call can apply it first and
+    the retained bytes equal what the role receives.
+    """
+    if resubmission_limit(limit) and not prompt.endswith(RESUBMISSION_NOTICE):
+        return prompt + RESUBMISSION_NOTICE
+    return prompt
+
+
 def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invariant=None, execution_path=None):
     """Reissue only malformed output, never execution failures or changed inputs.
 
@@ -37,10 +53,7 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
     """
     run = Path(run)
     limit = resubmission_limit(limit)
-    if limit:
-        prompt += ('\nIf an OUTPUT VALIDATION ERROR is appended to this prompt, reissue only the '
-                   'structured record with the same judgment and finding set. Do not edit inputs '
-                   'or the implementation design during resubmission. The same evidence rules apply.')
+    prompt = with_resubmission_notice(prompt, limit)
     original_inputs = input_identity(run)
     work = run / 'review-work' / role
     attempts = []
