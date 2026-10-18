@@ -837,7 +837,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         self.assertEqual(status, 0, state)
         work = self.root / 'campaign/implementations/1'
         prompt = (work / 'implementation-prompt.txt').read_text()
-        self.assertEqual(prompt, self.writer_prompts[0])
+        # The retained prompt is the campaign-composed prompt; the writer receives it plus the
+        # fixed AGENTEE-115 resubmission notice that review_run.structured_call appends.
+        from agent_ee.review_run import RESUBMISSION_NOTICE
+        self.assertEqual(prompt + RESUBMISSION_NOTICE, self.writer_prompts[0])
         context = json.loads(prompt.split('\nDeclared implementation steps:\n', 1)[1])
         self.assertEqual(context['implementation_steps'], [
             {'stage': 'placement', 'step': name, 'writes': {'design/design.json': 'design/design/design.json'},
