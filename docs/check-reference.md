@@ -181,15 +181,18 @@ exporter or active-circuit simulator.
 | `input_net` | Required | Exact exported net to drive |
 | `output_net` | Required | Exact exported net whose voltage is measured |
 | `ground_net` | Required | Exact net mapped to SPICE node 0 |
-| `step_v` | Explicit value required when measurements are requested | Finite positive ideal step amplitude, volts; see current limitation below |
+| `step_v` | 1.0 | Finite positive ideal step amplitude, volts |
 | `stop_ms` | 5.0 | Finite positive stop time, milliseconds |
 | `calibration_inputs` | Optional captured path list; nonempty before bench ingestion | Immutable model applicability inputs for empirical feedback |
 | `measurements` | Default empty | Entries with `name`, `at_ms`, optional `min`/`max` in volts |
 
-Current limitation: deck validation defaults an omitted `step_v` to 1.0, but
-metric-condition construction later reads the original parameter directly. With
-any requested measurement, omission therefore raises `KeyError` after simulation
-instead of producing a valid check. Set `step_v` explicitly in both scope versions.
+Deck generation and measurement conditions share validated parameters. Omitted
+`step_v` uses 1.0 V, including for bounded measurements; `details.step_v` records
+the effective amplitude. Defaults are not added to the captured scope. Omitted
+`step_v` and explicit `1.0` produce matching conditions, while their different
+scopes retain distinct candidate identities. Historical explicit amplitude
+spellings remain unchanged; see [coverage](coverage.md) for condition and runtime
+policy compatibility.
 
 Measurement names are lowercased and must be unique, matching
 `[a-z][a-z0-9_]{0,31}` after normalization. `at_ms` must be finite and in
