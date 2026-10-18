@@ -124,7 +124,8 @@ Refused, each with its offset:
 `fixtures/telemetry-pod/spec.md` is the owner's telemetry pod requirements,
 revision 2 (2026-10-18, which folds the owner decisions of that day into the
 text and supersedes the 2026-10-17 text with SHA-256 `c5128ef9…`), copied byte
-for byte (SHA-256
+for byte from its canonical copy, fome-mc `telemetry-pod/REQUIREMENTS.md` at
+`ca984da` (SHA-256
 `09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493`).
 `fixtures/telemetry-pod/spec-record.json` is its capture with the command above:
 7 function rows, 8 interface rows, 8 component-decision rows, 6 mechanical
