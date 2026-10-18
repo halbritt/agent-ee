@@ -41,7 +41,14 @@ emitter or board builder is missing; those stages are then recorded as
 `--bom-variant NAME` exports the stage 7 BOM for a design variant. `NAME` must be
 registered in the reviewed project's `.kicad_pro`; otherwise stage 7 fails before
 any kicad-cli command, because kicad-cli would silently export the default
-([quirk guards](kicad-quirks.md#bom-variant-names)). CPL stays the default variant.
+([quirk guards](kicad-quirks.md#bom-variant-names)). An accepted name is passed
+to the receipted `export-fab` step (`--bom-variant NAME` in its argv) and from
+there to the `fab_export` check's `bom_variant` parameter, which guards it again
+and gives it only to `kicad-cli sch export bom --variant NAME`
+([fab export](fab-export.md#bom-variant)). The fab manifest and the stage
+receipt (`details.bom_variant`, `details.bom_variant_export` and the native BOM
+command) record it. CPL stays the default variant: a variant that changes the
+populated set fails stage 7 by name. Stage 7 still requires `--cpl-inputs`.
 
 ## Stages
 
@@ -59,7 +66,7 @@ never starts after an earlier failure; it is recorded as `not_reached`.
 | 4 placement | Writes the envelope (50 x 30 mm outline at 100,100 mm; J1 fixed 2.54 mm inside the left edge) and packing policy, then runs `agent_ee.board_build` in the sandbox | `board_build` exits non-zero (its exit meanings are kept in the error) |
 | 5 routing | Runs `kicad-route --out stages/5-routing/out run --backend krt --budget 300` in a copy of the placed project and copies the candidate to `RUNDIR/design/` | kicad-route exits non-zero (0 is complete and valid) |
 | 6 review | Runs `agent-ee campaign` on the compiled scope (review profile from `--profile`, implementation = the adjudicator's harness/model, 3 iterations), then `verify-campaign` | The campaign state is not `criteria_satisfied`, or verification fails |
-| 7 fab | Runs native netlist, geometry, `fab_export` and `cpl_rotation` through an AGENTEE-95 stage receipt; derives a corrected package and hashes its files and correction report | Policy or supplier capture is missing, an export/check fails, or CPL coverage is incomplete; successful correction retains `PREVIEW_REQUIRED` |
+| 7 fab | Runs native netlist, geometry, `fab_export` (with `bom_variant` when `--bom-variant` is given) and `cpl_rotation` through an AGENTEE-95 stage receipt; derives a corrected package and hashes its files and correction report | Policy or supplier capture is missing, an export/check fails, CPL coverage is incomplete, or a `--bom-variant` is unregistered or changes the populated set; successful correction retains `PREVIEW_REQUIRED` |
 
 With `--skip-review`, stage 6 runs `agent-ee review --checks-only` instead.
 Its status is `not_reached:review_skipped` when every declared check executed

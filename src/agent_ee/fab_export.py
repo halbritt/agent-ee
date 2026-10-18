@@ -22,6 +22,14 @@ only when its netlist field and its board footprint property both carry the
 marker; the omitted designators and their rule are listed in the manifest.
 Without a declared rule, a populated part that carries the marker is refused.
 
+An optional declared `bom_variant` (AGENTEE-66 composed with AGENTEE-126) is
+validated by `kicad_quirks.validate_bom_variants` against the captured project
+file before any kicad-cli command, then passed only to a native
+`kicad-cli sch export bom --exclude-dnp --variant NAME` step; bom.csv is built
+from that export. The CPL stays the default variant, so a variant that changes
+the populated (assembled) set is refused by name. Without the parameter a
+schematic declaring variant clauses is refused.
+
 No rotation, offset or pin-1 policy is applied to the CPL; rotations are the
 native position-file values. The separate `cpl_rotation` check (AGENTEE-72)
 derives the corrected JLC CPL from this staging. Outcome `pass` means
@@ -80,6 +88,8 @@ TOKEN_RE = re.compile(r'\s+|;[^\n]*|\(|\)|"(?:[^"\\]|\\.)*"|[^\s();"]+')
 # The rung-1 generator writes this field on hand-soldered parts (AGENTEE-122).
 ASSEMBLY_RULES = {'JLCPCB_Assembly=not_assembled': ('JLCPCB_Assembly', 'not_assembled')}
 RULE_FIELDS = frozenset(field for field, _ in ASSEMBLY_RULES.values())
+# Ungrouped native BOM columns read for a declared bom_variant (field names double as labels).
+VARIANT_BOM_FIELDS = ('Reference', 'Value', 'Footprint', 'LCSC', 'Manufacturer', 'Partnumber', 'PartNumber')
 
 
 def _error(execution, message):
@@ -90,20 +100,24 @@ def _error(execution, message):
 # ------------------------------------------------------------ pure validation
 
 def validate_params(params):
-    """v1 interprets `netlist_check` and an optional `assembly_exclusion` rule.
+    """v1 interprets `netlist_check`, an optional `assembly_exclusion` rule and an optional `bom_variant`.
 
     Layer and output overrides are refused; the rule must be one of
-    ASSEMBLY_RULES verbatim.
+    ASSEMBLY_RULES verbatim; the variant must be a nonempty name (its
+    registration is checked against the captured project file at run time).
     """
     if (not isinstance(params, dict) or 'netlist_check' not in params or
-            not set(params) <= {'netlist_check', 'assembly_exclusion'}):
+            not set(params) <= {'netlist_check', 'assembly_exclusion', 'bom_variant'}):
         raise ValueError('fab_export/1 params must be {"netlist_check"} plus optional '
-                         '"assembly_exclusion"; layer and output overrides are refused in v1')
+                         '"assembly_exclusion" and "bom_variant"; layer and output overrides are refused in v1')
     if not isinstance(params['netlist_check'], str) or not params['netlist_check']:
         raise ValueError('netlist_check must name the preceding netlist check')
     rule = params.get('assembly_exclusion')
     if 'assembly_exclusion' in params and (not isinstance(rule, str) or rule not in ASSEMBLY_RULES):
         raise ValueError(f'assembly_exclusion {rule!r} is not one of {sorted(ASSEMBLY_RULES)}')
+    variant = params.get('bom_variant')
+    if 'bom_variant' in params and (not isinstance(variant, str) or not variant or variant != variant.strip()):
+        raise ValueError(f'bom_variant {variant!r} must be a nonempty variant name')
     return params
 
 
@@ -428,6 +442,37 @@ def bom_rows(parts):
     return rows, flagged
 
 
+def variant_parts(text, excluded=()):
+    """Assembled parts of one ungrouped native `sch export bom --exclude-dnp --variant` CSV.
+
+    Returns (parts, unsupported) shaped like `assembled_parts` output, without
+    the rule-excluded designators. Raises ValueError for a header other than
+    VARIANT_BOM_FIELDS, a short row, or a repeated or non-plain reference.
+    """
+    reader = csv.reader(io.StringIO(text))
+    try:
+        header = next(reader)
+    except StopIteration:
+        raise ValueError('variant BOM is empty')
+    if tuple(header) != VARIANT_BOM_FIELDS:
+        raise ValueError(f'variant BOM header {header} is not {list(VARIANT_BOM_FIELDS)}')
+    parts, unsupported = {}, []
+    for line in reader:
+        if len(line) != len(VARIANT_BOM_FIELDS):
+            raise ValueError(f'variant BOM row {line} does not have {len(VARIANT_BOM_FIELDS)} columns')
+        cells = dict(zip(VARIANT_BOM_FIELDS, (cell.strip() for cell in line)))
+        ref = cells['Reference']
+        if not REF_RE.match(ref) or ref in parts:
+            raise ValueError(f'variant BOM reference {ref!r} is invalid or repeated')
+        partnumber, camel = cells['Partnumber'], cells['PartNumber']
+        if partnumber and camel and partnumber != camel:
+            unsupported.append(f'{ref} has conflicting Partnumber {partnumber!r} and PartNumber {camel!r} '
+                               'in the variant BOM')
+        parts[ref] = {'value': cells['Value'], 'footprint': cells['Footprint'], 'lcsc': cells['LCSC'],
+                      'manufacturer': cells['Manufacturer'], 'partnumber': partnumber or camel}
+    return {ref: part for ref, part in parts.items() if ref not in excluded}, unsupported
+
+
 def render_bom(rows):
     out = io.StringIO()
     out.write(BOM_HEADER + '\n')
@@ -644,10 +689,14 @@ def check_fab_export(ctx):
         raise _error('malformed', f'board unreadable for fab export: {exc}') from exc
     details['board'] = {k: facts[k] for k in ('copper_layers', 'board_non_dnp', 'footprints')}
     unsupported = list(facts['unsupported'])
+    variant = params.get('bom_variant')
+    if variant is not None:
+        details['bom_variant'] = _variant_record(ctx, prior, variant)
     for rel in prior.get('details', {}).get('schematic_files', []):
         try:
-            if schematic_variants((ctx.inputs / rel).read_bytes()):
-                unsupported.append(f'schematic {rel} declares assembly variants')
+            if schematic_variants((ctx.inputs / rel).read_bytes()) and variant is None:
+                unsupported.append(f'schematic {rel} declares assembly variants and the check declares '
+                                   'no bom_variant')
         except (OSError, ValueError) as exc:
             raise _error('malformed', f'schematic {rel} unreadable: {exc}') from exc
     try:
@@ -681,7 +730,7 @@ def check_fab_export(ctx):
     if fab.exists() or fab.is_symlink():
         raise _error('malformed', 'fab staging directory already exists; refusing stale outputs')
     try:
-        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded)
+        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded, parts)
     except BaseException:
         if fab.is_dir():
             shutil.rmtree(ctx.work / 'fab.incomplete', ignore_errors=True)
@@ -694,8 +743,29 @@ def check_fab_export(ctx):
         raise
 
 
-def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded):
+def _variant_record(ctx, prior, variant):
+    """Refuse an unregistered or unloadable variant before kicad-cli runs (kicad_quirks guard)."""
+    from .kicad_quirks import VariantError, validate_bom_variants
+    schematic = ctx.scope.get('schematic')
+    if not isinstance(schematic, str) or not schematic.endswith('.kicad_sch'):
+        raise _error('unsupported', f'bom_variant {variant!r} needs the scope root schematic')
+    project = schematic[:-len('.kicad_sch')] + '.kicad_pro'
+    project_sha = ctx.manifest['files'].get(project)
+    if not project_sha or not (ctx.inputs / project).is_file() or digest(ctx.inputs / project) != project_sha:
+        raise _error('unsupported', f'BOM variant {variant!r} refused before kicad-cli ran: the variant '
+                                    f'registry {project} is not a captured candidate file')
+    files = prior.get('details', {}).get('schematic_files') or [schematic]
+    try:
+        record = validate_bom_variants(ctx.inputs / project, [ctx.inputs / rel for rel in files], [variant])
+    except VariantError as exc:
+        raise _error('unsupported', f'BOM variant {variant!r} refused before kicad-cli ran: {exc}') from exc
+    return {'name': variant, 'project': {'path': project, 'sha256': project_sha}, 'schematic': schematic,
+            **record}
+
+
+def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded, parts):
     details = ctx.result['details']
+    variant = details.get('bom_variant')
     version_dir = _step(ctx, 'version', ['kicad-cli', 'version'])
     version = (version_dir / 'stdout.log').read_text(errors='replace').strip()
     if not version or '\n' in version:
@@ -742,6 +812,12 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
     pos_dir = _step(ctx, 'pos', ['kicad-cli', 'pcb', 'export', 'pos', '-o', '/work/out/pos.csv',
                                  '--side', 'both', '--format', 'csv', '--units', 'mm',
                                  '--exclude-dnp', board])
+    if variant is not None:
+        # The variant reaches only the BOM export; positions stay the default variant.
+        bom_dir = _step(ctx, 'bom', ['kicad-cli', 'sch', 'export', 'bom', '--fields', ','.join(VARIANT_BOM_FIELDS),
+                                     '--labels', ','.join(VARIANT_BOM_FIELDS), '--ref-range-delimiter', '',
+                                     '--exclude-dnp', '-o', '/work/out/bom.csv',
+                                     '--variant', variant['name'], ctx.candidate_path(variant['schematic'])])
 
     fab.mkdir()
     (fab / 'gerbers').mkdir()
@@ -791,8 +867,36 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
         if pos is None:
             raise ValueError('kicad-cli pos wrote no pos.csv')
         native = cpl_rows(pos.read_text(encoding='utf-8'))
+        if variant is not None:
+            exported = _outputs(bom_dir, 'bom').get('bom.csv')
+            if exported is None:
+                raise ValueError('kicad-cli bom wrote no bom.csv')
+            varied, variant_problems = variant_parts(exported.read_text(encoding='utf-8'),
+                                                     {e['designator'] for e in excluded})
     except (ValueError, KeyError, TypeError, UnicodeError, OSError) as exc:
         raise _error('malformed', f'native fab output unusable: {exc}') from exc
+    if variant is not None:
+        default_refs = sorted(parts, key=natural_key)
+        variant_refs = sorted(varied, key=natural_key)
+        variant.update(native_bom_sha256=digest(exported), assembled=variant_refs,
+                       binding_changes=sorted((r for r in varied if r in parts and varied[r] != parts[r]),
+                                              key=natural_key))
+        if variant_refs != default_refs:
+            variant['populated_set_change'] = {
+                'added': [r for r in variant_refs if r not in parts],
+                'removed': [r for r in default_refs if r not in varied]}
+            details['unsupported'] = [f"BOM variant {variant['name']!r} changes the populated set"]
+            raise _error('unsupported', f"BOM variant {variant['name']!r} changes the populated set "
+                                        f"(adds {variant['populated_set_change']['added']}, removes "
+                                        f"{variant['populated_set_change']['removed']}); the CPL stays the "
+                                        'default variant, so BOM/CPL designator parity refuses it')
+        try:
+            rows, flagged = bom_rows(varied)
+        except ValueError as exc:
+            raise _error('unsupported', f'variant BOM unusable: {exc}') from exc
+        if variant_problems:
+            details['unsupported'] = variant_problems
+            raise _error('unsupported', 'variant BOM refused: ' + '; '.join(variant_problems))
     # Rule-excluded parts are populated, so the native position file lists them;
     # they are dropped here only after the native set matched the board.
     excluded_refs = [e['designator'] for e in excluded]
@@ -841,6 +945,9 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                                         'exclusion_rule': rule},
         'generated_utc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
+    if variant is not None:
+        manifest['bom_variant'] = {key: variant[key] for key in
+                                   ('name', 'project', 'registered', 'native_bom_sha256', 'binding_changes')}
     write_json(fab / 'manifest.json', manifest)
     try:
         verify_manifest(fab, read_json(fab / 'manifest.json'))

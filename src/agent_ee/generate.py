@@ -1055,22 +1055,22 @@ def stage_fab(stage, state, options):
         except VariantError as exc:
             raise StageFailure(f'BOM variant {variant!r} refused before kicad-cli ran: {exc}') from exc
         stage.input(pro, 'reviewed project file (variant registry)')
-        # The receipted fab stage exports through the fab_export check, which takes no variant and
-        # refuses variant-declaring designs; a requested variant cannot be honoured, so refuse by name
-        # rather than silently exporting the default (AGENTEE-66 composed with AGENTEE-126).
-        raise StageFailure(f'BOM variant {variant!r} cannot be honoured by the receipted fab stage: '
-                           'fab_export exports only the unvaried board')
-    spec = step(PACKAGE_ROOT, f'project/{name}.kicad_pcb', f'project/{name}.kicad_sch')
+    # The variant reaches the receipted step's fab_export check, which guards it again and passes
+    # it only to `kicad-cli sch export bom --variant`; the CPL stays the default variant.
+    spec = step(PACKAGE_ROOT, f'project/{name}.kicad_pcb', f'project/{name}.kicad_sch', variant)
     receipt_dir = stage.dir / 'export-fab'
     receipt = run_step(receipt_dir, source, spec, {'stage': 7, 'name': 'fab'})
     validate_stage_receipt(receipt_dir)
     stage.output(receipt_dir / 'receipt.json', 'fab stage receipt')
     stage.receipt['details']['stage_receipt'] = stage.rel(receipt_dir / 'receipt.json')
+    record_step_commands(stage, receipt_dir, receipt)
     if receipt['status'] != 'completed':
         raise StageFailure(f"fab stage {receipt['status']} (exit {receipt['exit_code']}); see "
                            + stage.rel(receipt_dir / 'run/console.log'))
     out = receipt_dir / 'run/out'
     manifest = json.loads((out / 'fab-manifest.json').read_text())
+    if (manifest.get('bom_variant') or {}).get('name') != variant:
+        raise StageFailure(f'fab stage did not honour the requested BOM variant {variant!r}')
     if state.get('cpl_inputs'):
         # The fab stage must consume exactly the policy stage 1 captured.
         captured = digest(Path(state['cpl_inputs']) / 'jlc-cpl-policy.json')
@@ -1082,9 +1082,29 @@ def stage_fab(stage, state, options):
     stage.output(stage.dir / 'fab-manifest.json', 'fab manifest')
     stage.receipt['details'].update(status=manifest['status'], physical_validation=False,
                                     rotation=manifest['rotation'])
+    if variant is not None:
+        stage.receipt['details']['bom_variant_export'] = manifest['bom_variant']
     state['fab_manifest'] = stage.dir / 'fab-manifest.json'
     state['fab_status'] = manifest['status']
     return manifest['status']
+
+
+def record_step_commands(stage, receipt_dir, receipt):
+    """List the receipted step and the native fab_export commands it ran (records retained inside it)."""
+    stage.receipt['commands'].append({
+        'label': 'export-fab', 'argv': receipt['argv'], 'sandbox': 'bwrap', 'exit_code': receipt['exit_code'],
+        'execution': (receipt.get('execution') or {}).get('execution'), 'status': receipt['status'],
+        'stage_receipt': stage.rel(receipt_dir / 'receipt.json')})
+    result_path = receipt_dir / 'run/out/checks/checks/fab.json'
+    if not result_path.is_file():
+        return
+    steps = receipt_dir / 'run/out/checks/work/fab/steps'
+    for label, tool in json.loads(result_path.read_text()).get('details', {}).get('tools', {}).items():
+        stage.receipt['commands'].append({
+            'label': label, 'argv': tool['argv'], 'sandbox': 'bwrap', 'within': 'export-fab',
+            'exit_code': tool['exit_code'], 'duration_s': tool['duration_s'],
+            'console_sha256': tool['console_sha256'],
+            'execution_record': stage.rel(steps / label / 'execution.json')})
 
 
 STAGE_FUNCTIONS = {'requirements': stage_requirements, 'parts': stage_parts, 'schematic': stage_schematic,

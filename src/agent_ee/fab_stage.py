@@ -49,12 +49,17 @@ def copy_rotation_inputs(source, inputs):
     return inputs / CPL_ROOT
 
 
-def step(source_root, board, schematic):
-    """The same receipted, networkless export step for both generation drivers."""
+def step(source_root, board, schematic, bom_variant=None):
+    """The same receipted, networkless export step for both generation drivers.
+
+    A `bom_variant` (generator `--bom-variant`) becomes part of the step argv, so
+    the receipt's spec digest binds it, and reaches only fab_export's BOM export.
+    """
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'export-fab',
             'argv': ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
                      '-m', 'agent_ee.fab_stage',
-                     '--board', board, '--schematic', schematic],
+                     '--board', board, '--schematic', schematic]
+                    + (['--bom-variant', bom_variant] if bom_variant is not None else []),
             'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'}],
             'source': '/tool/agent-ee', 'version_argv': ['/usr/bin/kicad-cli', 'version'],
             # Existing receipt contract requires a write; the input board remains identical.
@@ -63,7 +68,7 @@ def step(source_root, board, schematic):
             'adoptable_exits': [0], 'timeout_s': 900}
 
 
-def export(inputs, out, board, schematic):
+def export(inputs, out, board, schematic, bom_variant=None):
     """Retain the native export and promote only a fully checked corrected CPL."""
     inputs, out = Path(inputs), Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -73,8 +78,9 @@ def export(inputs, out, board, schematic):
         raise ValueError('CPL rotation policy is not captured')
     if not params['supplier_footprints']:
         raise ValueError('CPL supplier footprint set is missing')
+    fab = {'netlist_check': 'netlist', **({'bom_variant': bom_variant} if bom_variant is not None else {})}
     checks = [{'id': 'netlist', 'kind': 'netlist'}, {'id': 'geometry', 'kind': 'geometry'},
-              {'id': 'fab', 'kind': 'fab_export', 'params': {'netlist_check': 'netlist'}}, cpl]
+              {'id': 'fab', 'kind': 'fab_export', 'params': fab}, cpl]
     requirements = out / 'requirements.md'
     requirements.write_text('R-cpl: Export the captured board and correct its CPL using captured policy and supplier frames.\n')
     scope = {'schema': 'agent-ee.scope/2', 'name': 'Captured fab-stage export',
@@ -124,6 +130,16 @@ def package(run, target, manifest_path):
     corrected = run / 'work/cpl/cpl/cpl.csv'
     if digest(corrected) != report['cpl']['sha256'] or report['board_sha256'] != manifest['board_sha256']:
         raise ValueError('CPL correction digest or board binding disagrees')
+    declared = next(spec for spec in candidate['scope']['checks'] if spec['id'] == 'fab')
+    variant = declared.get('params', {}).get('bom_variant')
+    if variant != (manifest.get('bom_variant') or {}).get('name'):
+        raise ValueError(f'native export did not honour the declared BOM variant {variant!r}')
+    bom_designators = sorted(cpl_rotation.read_bom_bindings((native / 'bom.csv').read_text()))
+    cpl_designators = [r['designator'] for r in report['designators']]
+    if sorted(bom_designators) != sorted(cpl_designators):
+        # The CPL is always the default variant; a BOM variant may not change the populated set.
+        raise ValueError(f'BOM designators {bom_designators} differ from CPL designators {cpl_designators}'
+                         + (f'; BOM variant {variant!r} changes the populated set' if variant else ''))
     shutil.copytree(native, target, ignore=shutil.ignore_patterns('manifest.json'))
     shutil.copyfile(corrected, target / 'cpl.csv')
     shutil.copyfile(report_path, target / 'cpl-rotation.json')
@@ -132,8 +148,7 @@ def package(run, target, manifest_path):
             'status': report['status'], 'physical_validation': report['physical_validation'],
             'board': {'path': manifest['board_path'], 'sha256': manifest['board_sha256']},
             'schematic': {'path': schematic, 'sha256': candidate['files'][schematic]},
-            'bom_designators': sorted(cpl_rotation.read_bom_bindings((native / 'bom.csv').read_text())),
-            'cpl_designators': [r['designator'] for r in report['designators']],
+            'bom_designators': bom_designators, 'cpl_designators': cpl_designators,
             'native_export': {'manifest': 'work/fab/fab/manifest.json',
                               'candidate_id': manifest['candidate_id'],
                               'sha256': digest(native / 'manifest.json')},
@@ -145,6 +160,8 @@ def package(run, target, manifest_path):
             'limitations': (['PREVIEW_REQUIRED: inspect every part in the JLCPCB placement preview',
                              'Bottom-side transform remains unvalidated against a real JLCPCB preview']
                             if report['status'] == 'PREVIEW_REQUIRED' else [])}
+    if variant is not None:
+        data['bom_variant'] = manifest['bom_variant']
     write_json(manifest_path, data)
     return data
 
@@ -153,9 +170,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--board', required=True)
     parser.add_argument('--schematic', required=True)
+    parser.add_argument('--bom-variant')
     args = parser.parse_args(argv)
     try:
-        export('/candidate', '/work/out', args.board, args.schematic)
+        export('/candidate', '/work/out', args.board, args.schematic, args.bom_variant)
     except (ValueError, OSError) as exc:
         parser.exit(3, f'fab stage refused: {exc}\n')
     return 0

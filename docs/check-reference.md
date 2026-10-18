@@ -98,7 +98,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
 | `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
-| `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD; see [fab export](fab-export.md) | 600 s per step |
+| `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD, and `sch export bom --variant NAME` on the schematic only with a declared `bom_variant`; see [fab export](fab-export.md) | 600 s per step |
 | `fab_package` | The `fab_export` steps into its own `work/ID/fab/`, then the `fab_consistency` gate on that tree and an artifact-hash recomputation; declared last ([details](fab-package.md)) | 600 s per export step |
 | `assembly_readiness` | `kicad-cli sch export netlist --format kicadxml -o /work/design.xml SCHEMATIC`, then a coordinator join with the captured catalog; see [assembly readiness](assembly-readiness.md) | 600 s |
 | `cpl_rotation` | Coordinator reads the earlier export's verified CPL/BOM, earlier sealed geometry pad boxes, the captured board, policy and supplier footprints; no tool launched ([details](cpl-rotation.md)) | Enclosing run deadline |
@@ -755,7 +755,11 @@ package. An optional declared `assembly_exclusion` rule
 (`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
 in both the netlist and the board out of the BOM and CPL. The manifest lists
 them in `designators.excluded`. A marked part without the rule, or with
-disagreeing sources, is `unsupported`. Launch preflight requires the native `kicad-cli` binary. Empty produced
+disagreeing sources, is `unsupported`. An optional declared `bom_variant`
+(the generator's `--bom-variant`) is validated against the captured
+`.kicad_pro` before any kicad-cli command and passed only to the native BOM
+export; the CPL stays the default variant, and a variant that changes the
+populated set is `unsupported` by name ([BOM variant](fab-export.md#bom-variant)). Launch preflight requires the native `kicad-cli` binary. Empty produced
 native files are `failed/unknown`; pre-existing staging or native output
 directories are refused before reuse.
 

@@ -72,12 +72,19 @@ kicad-cli loading the schematic; the native token is `in_bom`.
 - a variant clause with `exclude_from_bom`, an unrecognised token or no single
   name, and an unreadable schematic.
 
-The generator's stage 7 is the only agent-ee path that runs
-`kicad-cli sch export bom`. It applies the guard when given `--bom-variant NAME`
-([generation driver](generate.md)). A refusal fails the stage before its first
-kicad-cli command and records no commands. An accepted name is passed as
-`--variant NAME` to the BOM export only. The receipt records the validation and
-the project file as an input. CPL stays the default variant, so the existing
-BOM/CPL designator agreement fails a variant that changes the populated set. The
-`fab_export` check takes no variant parameter and refuses any schematic or board
-that declares variants ([fab export](fab-export.md)).
+`kicad-cli sch export bom` runs only for a declared variant: the `fab_export`
+check's `bom_variant` parameter ([fab export](fab-export.md#bom-variant)), which
+the generator's stage 7 sets from `--bom-variant NAME`
+([generation driver](generate.md)). Stage 7 applies the guard in the driver
+first: a refusal fails the stage before its first kicad-cli command and records
+no commands. An accepted name is carried by the receipted `export-fab` step's
+argv (`--bom-variant NAME`, bound by the step spec digest) into `fab_export`,
+which applies the guard again on the captured project file and passes
+`--variant NAME` to the BOM export only. The stage receipt records the
+validation, the project file as an input, every native command the step ran
+(the BOM export's argv ends `--variant NAME SCHEMATIC`) and the sealed manifest's
+`bom_variant` record. CPL stays the default variant, so a variant that changes
+the populated set is refused by name, and the fab-stage package step refuses
+BOM/CPL designator disagreement. Without `bom_variant`, `fab_export` refuses any
+schematic that declares variant clauses; a board that declares variants is
+always refused.

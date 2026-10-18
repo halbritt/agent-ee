@@ -19,8 +19,8 @@ from agent_ee.checks import CheckError, Ctx, run_checks
 from agent_ee.fab_export import (BOM_HEADER, CPL_HEADER, SCHEMA, ascii_text, assembled_parts,
                                  assembly_exclusions, board_facts, bom_rows,
                                  check_fab_export, cpl_rows, inventory, normalise, render_bom,
-                                 scan_sexpr, validate_params, verify_manifest, write_zip,
-                                 GERBER_TIMES)
+                                 scan_sexpr, validate_params, variant_parts, verify_manifest, write_zip,
+                                 GERBER_TIMES, VARIANT_BOM_FIELDS)
 from agent_ee.storage import digest, read_json, write_json
 from toolchain import require_toolchain
 
@@ -691,6 +691,127 @@ class NativeFabExportTests(unittest.TestCase):
         with self.assertRaises(CheckError) as raised:
             check_fab_export(ctx)
         self.assertEqual(raised.exception.execution, 'unsupported')
+
+
+def variant_schematic(text):
+    """Owned variant clauses on R2: ALT overrides its part number, LITE makes it DNP."""
+    old = '(reference "R2") (unit 1)'
+    return text.replace(old, old + ' (variant (name "ALT") (field (name "Partnumber") (value "OFW-R-4K7-ALT")))'
+                                   ' (variant (name "LITE") (dnp yes))', 1)
+
+
+class BomVariantTests(unittest.TestCase):
+    HEADER = ','.join(VARIANT_BOM_FIELDS) + '\n'
+
+    def test_params_take_one_nonempty_variant_name(self):
+        self.assertEqual(validate_params({'netlist_check': 'n', 'bom_variant': 'ALT'})['bom_variant'], 'ALT')
+        for bad in ('', ' ALT', 3, ['ALT'], None):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'bom_variant'):
+                validate_params({'netlist_check': 'n', 'bom_variant': bad})
+
+    def test_variant_rows_are_read_per_reference_without_excluded_parts(self):
+        parts, problems = variant_parts(self.HEADER + 'R1,10k,lib:R,C1,Maker,PN-1,\nR2,1k,lib:R,C2,Maker,,PN-2\n',
+                                        {'R2'})
+        self.assertEqual(parts, {'R1': part('C1', '10k', 'lib:R', 'Maker', 'PN-1')})
+        self.assertEqual(problems, [])
+        _, problems = variant_parts(self.HEADER + 'R1,10k,lib:R,C1,Maker,PN-1,PN-X\n')
+        self.assertIn('conflicting Partnumber', problems[0])
+        for text, message in ((self.HEADER.replace('Reference', 'Refs') + 'R1,,,,,,\n', 'header'),
+                              (self.HEADER + 'R1,10k\n', 'columns'), ('', 'empty'),
+                              (self.HEADER + 'R1,,,,,,\nR1,,,,,,\n', 'repeated'),
+                              (self.HEADER + '"R1,R2",,,,,,\n', 'invalid')):
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                variant_parts(text)
+
+
+class NativeBomVariantTests(unittest.TestCase):
+    """fab_export with a declared bom_variant on the owned fixture (AGENTEE-66 + AGENTEE-126)."""
+
+    def setUp(self):
+        require_toolchain(tools=('kicad-cli',))
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-variant-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        shutil.copytree(FIXTURE, self.source)
+        schematic = self.source / 'fab.kicad_sch'
+        schematic.write_text(variant_schematic(schematic.read_text()))
+        (self.source / 'fab.kicad_pro').write_text(json.dumps(
+            {'meta': {'filename': 'fab.kicad_pro', 'version': 3},
+             'schematic': {'variants': [{'name': 'ALT'}, {'name': 'LITE'}]}}))
+        self.scope = read_json(FIXTURE / 'control.scope.json')
+        self.scope['inputs'][0]['path'] = str(self.source)
+        self.scope['inputs'][0]['include'].append('fab.kicad_pro')
+        self.runs = 0
+
+    def run_case(self, variant):
+        scope = copy.deepcopy(self.scope)
+        if variant is not None:
+            scope['checks'][1]['params']['bom_variant'] = variant
+        self.runs += 1
+        case = self.root / f'case{self.runs}'
+        case.mkdir()
+        write_json(case / 'scope.json', scope)
+        run = case / 'run'
+        run.mkdir()
+        capture(case / 'scope.json', run)
+        results = run_checks(run, time.monotonic() + 300)
+        self.assertEqual(results[0]['execution'], 'ok', results[0])
+        return run, results[-1]
+
+    def test_registered_variant_reaches_only_the_bom_export_and_is_sealed(self):
+        run, result = self.run_case('ALT')
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        bom = result['details']['tools']['bom']
+        self.assertEqual(bom['argv'][:4], ['kicad-cli', 'sch', 'export', 'bom'])
+        self.assertEqual(bom['argv'][-3:], ['--variant', 'ALT', '/candidate/design/fab.kicad_sch'])
+        self.assertTrue(all('--variant' not in result['details']['tools'][step]['argv']
+                            for step in ('stats', 'gerbers', 'drill', 'pos')))
+        fab = run / 'work/fab/fab'
+        manifest = read_json(fab / 'manifest.json')
+        self.assertEqual(verify_manifest(fab, manifest), manifest['files'])
+        record = manifest['bom_variant']
+        self.assertEqual((record['name'], record['registered'], record['binding_changes']),
+                         ('ALT', ['ALT', 'LITE'], ['R2']))
+        self.assertEqual(record['project'], {'path': 'design/fab.kicad_pro',
+                                             'sha256': digest(self.source / 'fab.kicad_pro')})
+        self.assertEqual(record['native_bom_sha256'], digest(run / 'work/fab/steps/bom/out/bom.csv'))
+        self.assertIn('work/fab/steps/bom/out/bom.csv', result['evidence'])
+        rows = {r[0]: r for r in csv.reader(io.StringIO((fab / 'bom.csv').read_text()))}
+        self.assertEqual(rows['R2'][5], 'OFW-R-4K7-ALT')
+        # The CPL is the default variant: the same bytes as an unvaried export of this design.
+        default_run, default = self.run_case(None)
+        self.assertEqual(default['outcome'], 'unknown')  # variant clauses need a declared variant
+        self.assertIn('declares no bom_variant', default['summary'])
+        plain = copy.deepcopy(self.scope)
+        plain['inputs'][0]['path'] = str(FIXTURE)
+        plain['inputs'][0]['include'].remove('fab.kicad_pro')
+        self.scope = plain
+        plain_run, plain_result = self.run_case(None)
+        self.assertEqual(plain_result['outcome'], 'pass', plain_result)
+        self.assertNotIn('bom_variant', read_json(plain_run / 'work/fab/fab/manifest.json'))
+        self.assertEqual((fab / 'cpl.csv').read_bytes(), (plain_run / 'work/fab/fab/cpl.csv').read_bytes())
+
+    def test_variant_that_changes_the_populated_set_is_refused_by_name(self):
+        run, result = self.run_case('LITE')
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertIn("BOM variant 'LITE' changes the populated set (adds [], removes ['R2'])", result['summary'])
+        self.assertIn('BOM/CPL designator parity refuses it', result['summary'])
+        self.assertEqual(result['details']['bom_variant']['populated_set_change'], {'added': [], 'removed': ['R2']})
+        self.assertFalse((run / 'work/fab/fab').exists())
+        self.assertFalse((run / 'work/fab/fab.incomplete/manifest.json').exists())
+
+    def test_unregistered_variant_or_uncaptured_registry_is_refused_before_kicad_cli(self):
+        run, result = self.run_case('NOPE')
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertIn("BOM variant 'NOPE' refused before kicad-cli ran", result['summary'])
+        self.assertIn("['NOPE'] are not registered in fab.kicad_pro", result['summary'])
+        self.assertNotIn('tools', result['details'])
+        self.scope['inputs'][0]['include'].remove('fab.kicad_pro')
+        run, result = self.run_case('ALT')
+        self.assertEqual(result['execution'], 'unsupported', result)
+        self.assertIn('variant registry design/fab.kicad_pro is not a captured candidate file', result['summary'])
+        self.assertNotIn('tools', result['details'])
 
 
 if __name__ == '__main__':

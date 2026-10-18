@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_ee import fab_stage, generate as g, rung1_campaign as rc, rung1_qualified as q
 from agent_ee.stage_receipts import run_step, validate_receipt
@@ -200,6 +201,87 @@ class NativeFabStageTests(unittest.TestCase):
         report = read_json(out / 'checks/work/cpl/cpl-rotation.json')
         self.assertEqual((report['execution'], report['outcome'], report['coverage']),
                          ('unsupported', 'unknown', 'incomplete'))
+
+
+
+class NativeBomVariantStageTests(unittest.TestCase):
+    """`generate --bom-variant` through the receipted stage 7 (AGENTEE-66 composed with AGENTEE-126)."""
+
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain(native=True)
+        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-variant-stage-')
+        cls.root = Path(cls.tmp.name)
+        cls.inputs = candidate(cls.root / 'inputs')
+        project = cls.inputs / 'project'
+        (project / 'cpl.kicad_pro').write_text(json.dumps(
+            {'meta': {'filename': 'cpl.kicad_pro', 'version': 3},
+             'schematic': {'variants': [{'name': 'FULL'}, {'name': 'LITE'}]}}))
+        sch = project / 'cpl.kicad_sch'
+        old = '(reference "R1") (unit 1)'
+        sch.write_text(sch.read_text().replace(old, old + ' (variant (name "LITE") (dnp yes))', 1))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def stage_fab(self, label, variant):
+        stage = g.Stage(self.root / label, 7, 'fab')
+        stage.start()
+        state = {'name': 'cpl', 'reviewed_inputs': self.inputs, 'cpl_inputs': self.inputs / 'generation/cpl'}
+        try:
+            status, error = g.stage_fab(stage, state, {'bom_variant': variant}), None
+        except g.StageFailure as exc:
+            status, error = 'failed', str(exc)
+        return stage, state, stage.finish(status, error)
+
+    def test_variant_is_bound_into_the_step_the_sealed_manifest_and_the_stage_receipt(self):
+        stage, state, receipt = self.stage_fab('full', 'FULL')
+        self.assertEqual(receipt['status'], 'PREVIEW_REQUIRED', receipt['error'])
+        g.validate_receipt(receipt)
+        receipt_dir = stage.dir / 'export-fab'
+        step = validate_receipt(receipt_dir)
+        self.assertEqual(step['argv'][-2:], ['--bom-variant', 'FULL'])
+        manifest = read_json(stage.dir / 'fab-manifest.json')
+        self.assertEqual((manifest['bom_variant']['name'], manifest['bom_variant']['registered']),
+                         ('FULL', ['FULL', 'LITE']))
+        self.assertEqual(manifest['bom_variant']['project'],
+                         {'path': 'project/cpl.kicad_pro', 'sha256': digest(self.inputs / 'project/cpl.kicad_pro')})
+        self.assertEqual(sorted(manifest['bom_designators']), sorted(manifest['cpl_designators']))
+        self.assertIn('R1', manifest['bom_designators'])
+        self.assertEqual(receipt['details']['bom_variant']['requested'], ['FULL'])
+        self.assertEqual(receipt['details']['bom_variant_export'], manifest['bom_variant'])
+        commands = {c['label']: c for c in receipt['commands']}
+        self.assertEqual(commands['export-fab']['argv'], step['argv'])
+        self.assertEqual(commands['bom']['argv'][-3:], ['--variant', 'FULL', '/candidate/project/cpl.kicad_sch'])
+        self.assertEqual((commands['bom']['within'], commands['bom']['exit_code']), ('export-fab', 0))
+        self.assertTrue((self.root / 'full' / commands['bom']['execution_record']).is_file())
+        self.assertNotIn('--variant', commands['pos']['argv'])
+        # A scope whose declared variant differs from the native export is refused: by the evidence
+        # seal first, and by the package step's own variant binding behind it.
+        run = receipt_dir / 'run/out/checks'
+        candidate_path = run / 'candidate.json'
+        record = read_json(candidate_path)
+        for spec in record['scope']['checks']:
+            if spec['id'] == 'fab':
+                spec['params']['bom_variant'] = 'LITE'
+        write_json(candidate_path, record)
+        with self.assertRaisesRegex(ValueError, 'immutable baseline changed'):
+            fab_stage.package(run, self.root / 'repackaged', self.root / 'repackaged.json')
+        with mock.patch.object(fab_stage, 'verify_evidence'), \
+                self.assertRaisesRegex(ValueError, "did not honour the declared BOM variant 'LITE'"):
+            fab_stage.package(run, self.root / 'repackaged', self.root / 'repackaged.json')
+        self.assertFalse((self.root / 'repackaged.json').exists())
+
+    def test_variant_that_changes_the_populated_set_fails_stage_seven_by_name(self):
+        stage, state, receipt = self.stage_fab('lite', 'LITE')
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertIn('fab stage failed (exit 3)', receipt['error'])
+        console = (stage.dir / 'export-fab/run/console.log').read_text()
+        self.assertIn("BOM variant 'LITE' changes the populated set (adds [], removes ['R1'])", console)
+        self.assertFalse((stage.dir / 'package').exists())
+        self.assertNotIn('fab_manifest', state)
+        self.assertEqual({c['label']: c['exit_code'] for c in receipt['commands']}['bom'], 0)
 
 
 if __name__ == '__main__':
