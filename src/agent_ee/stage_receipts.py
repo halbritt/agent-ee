@@ -39,7 +39,7 @@ TREE_DEPTH = 128
 NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 VERSION_TIMEOUT_S = 30
 STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'source',
-             'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s'}
+             'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s', 'inputs'}
 RECEIPT_KEYS = {'schema', 'receipt_id', 'binding', 'spec', 'spec_sha256', 'argv', 'tool', 'tool_after',
                 'inputs', 'outputs', 'changed', 'violations', 'artifacts', 'execution',
                 'version_execution', 'exit_code', 'status', 'started_unix', 'duration_s',
@@ -155,7 +155,16 @@ def validate_step(spec, *, host=True):
     if (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or
             not math.isfinite(timeout) or not 1 <= timeout <= 86400):
         raise ValueError('timeout_s must be between 1 and 86400 seconds')
-    return {'schema': STEP_SCHEMA, 'stage': spec['stage'], 'step': spec['step'], 'argv': argv,
+    inputs = spec.get('inputs')
+    if 'inputs' in spec:
+        if not isinstance(inputs, list) or not inputs or any(not isinstance(p, str) for p in inputs):
+            raise ValueError('stage step inputs must be a nonempty list of candidate paths')
+        for path in inputs:
+            _relative(path, 'step input')
+        if len(set(inputs)) != len(inputs) or set(inputs) & writes.keys():
+            raise ValueError('stage step inputs must be unique and separate from writes')
+    return {**({'inputs': inputs} if 'inputs' in spec else {}),
+            'schema': STEP_SCHEMA, 'stage': spec['stage'], 'step': spec['step'], 'argv': argv,
             'mounts': normalized_mounts, 'version_argv': version_argv, 'source': source,
             'backend_report': report, 'writes': dict(sorted(writes.items())), 'artifacts': list(artifacts),
             'adoptable_exits': sorted(exits), 'timeout_s': timeout}
@@ -480,6 +489,7 @@ def _records(work):
 
 def _violations(spec, inputs, receipt_dir, tool, tool_after, executions):
     violations = []
+    violations += ['missing_input:' + rel for rel in spec.get('inputs', []) if rel not in inputs]
     run = Path(receipt_dir) / 'run'
     try:
         files, other = file_tree(run / 'design')

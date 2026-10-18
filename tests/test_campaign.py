@@ -1026,3 +1026,109 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         shutil.rmtree(root / 'implementations/1')
         with self.assertRaisesRegex(ValueError, 'implementation execution record changed'):
             verify_campaign(root)
+
+
+class MutableIntentSchematicCampaignTests(unittest.TestCase):
+    """Scripted subscription responses; real emitter, annotation and receipt executor."""
+
+    def setUp(self):
+        try:
+            from tests.test_stage_receipts import CampaignStageReceiptTests
+            from tests.test_schematic_stage import prepare, INTENT, SCH, BOARD
+        except ImportError:
+            from test_stage_receipts import CampaignStageReceiptTests
+            from test_schematic_stage import prepare, INTENT, SCH, BOARD
+        self.fixture = CampaignStageReceiptTests
+        self.fixture.setUp(self)
+        require_toolchain(native=True)
+        from agent_ee.cli import runtime_files
+        runtime = runtime_files()
+        runtime['kicad-cli'] = {'path': '/usr/bin/kicad-cli', 'sha256': digest('/usr/bin/kicad-cli')}
+        patch('agent_ee.cli.runtime_files', return_value=runtime).start()
+        self.intent, self.sch, self.board = INTENT, SCH, BOARD
+        source = self.root / 'source'
+        self.stage = prepare(source)
+        scope = read_json(self.root / 'scope.json')
+        scope.update(board=BOARD, schematic=SCH, mutable_inputs=self.stage['mutable_inputs'])
+        scope['checks'][0]['stage'] = 'schematic'
+        scope['checks'].insert(0, {'id': 'erc', 'kind': 'erc', 'stage': 'schematic'})
+        scope['baseline']['requirements'].append({'id': 'R-native',
+            'statement': 'Native schematic ERC has no violations',
+            'source': {'path': 'design/requirements', 'locator': 'R-native'}, 'checks': ['erc']})
+        scope['stages'] = {'schema': 'agent-ee.stages/1', 'order': ['schematic'],
+            'subjects': {'schematic': {'path': SCH, 'kind': 'symbols', 'references': ['U1', 'C1', 'J1']}},
+            'finding_retry_limit': 3}
+        # A protocol-only requirement forces a writer turn, not simulator evidence.
+        # Native evidence comes from the production steps.
+        (source / 'solver.py').write_text('''from pathlib import Path
+import json
+intent=json.loads(Path('/candidate/design/generation/connectivity-intent.json').read_text())
+name=next(n['name'] for n in intent['nets'] if n['id']=='vout')
+Path('raw.json').write_text(json.dumps({'value': 5 if name=='VOUT_FIXED' else 15}))
+''')
+        write_json(self.root / 'scope.json', scope)
+        self.edit = 'intent'
+        self.config['max_seconds'] = 120
+
+    def agent(self, run, label, *args, **kwargs):
+        if label == 'implementation':
+            design = Path(run) / 'review-work/implementation/design'
+            if self.edit == 'intent':
+                intent = read_json(design / self.intent)
+                next(n for n in intent['nets'] if n['id'] == 'vout')['name'] = 'VOUT_FIXED'
+                write_json(design / self.intent, intent)
+            else:
+                path = design / (self.sch if self.edit == 'schematic' else self.board)
+                path.write_bytes(path.read_bytes() + b'\n')
+        return self.fixture.agent(self, run, label, *args, **kwargs)
+
+    def campaign(self, steps):
+        return self.fixture.campaign(self, steps)
+
+    @toolchain_test
+    def test_intent_mutable_schematic_receipted(self):
+        status, state = self.campaign(self.stage['implementation_steps'])
+        self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state.get('error'))
+        root = self.root / 'campaign'
+        index = read_json(root / 'implementations/1/stage-receipts.json')
+        receipts = [read_json(root / 'implementations/1' / link['path']) for link in index['receipts']]
+        initial = read_json(root / 'runs/1/candidate.json')
+        final = read_json(root / 'runs/2/candidate.json')
+        self.assertNotEqual(initial['files'][self.intent], receipts[0]['inputs'][self.intent])
+        self.assertEqual(receipts[0]['inputs'][self.intent], final['files'][self.intent])
+        self.assertEqual(receipts[1]['inputs'][self.intent], final['files'][self.intent])
+        self.assertEqual(receipts[0]['outputs'][self.sch], receipts[1]['inputs'][self.sch])
+        self.assertEqual(receipts[1]['outputs'][self.board], final['files'][self.board])
+        prompt = (root / 'implementations/1/implementation-prompt.txt').read_text()
+        declared = json.loads(prompt.split('\nDeclared implementation steps:\n', 1)[1])
+        self.assertIn(self.intent, declared['implementation_steps'][0]['inputs'])
+        self.assertIn('VOUT_FIXED', (root / 'runs/2/inputs' / self.board).read_text())
+        self.assertEqual(verify_campaign(root)['state'], 'criteria_satisfied')
+
+    @toolchain_test
+    def test_writer_schematic_edit_refused(self):
+        self.edit = 'schematic'
+        status, state = self.campaign(self.stage['implementation_steps'])
+        self.assertEqual((status, state['state']), (1, 'incomplete'))
+        self.assertIn('writer_step_output_edit', state['error'])
+        self.assertFalse((self.root / 'campaign/implementations/1/receipts').exists())
+
+    @toolchain_test
+    def test_writer_board_edit_refused(self):
+        self.edit = 'board'
+        status, state = self.campaign(self.stage['implementation_steps'])
+        self.assertEqual((status, state['state']), (1, 'incomplete'))
+        self.assertIn('writer_step_output_edit', state['error'])
+
+    @toolchain_test
+    def test_done_requires_emit_receipt(self):
+        # Checks pass before campaign start, but no declared producer ran.
+        path = self.root / 'source/generation/connectivity-intent.json'
+        intent = read_json(path)
+        next(n for n in intent['nets'] if n['id'] == 'vout')['name'] = 'VOUT_FIXED'
+        write_json(path, intent)
+        status, state = self.campaign(self.stage['implementation_steps'])
+        self.assertEqual((status, state['state']), (1, 'incomplete'))
+        self.assertIn('stage_step_unreceipted: schematic/emit-schematic', state['error'])
+        self.assertEqual(state['history'][-1]['outcome'], 'criteria_satisfied')
+        self.assertEqual(verify_campaign(self.root / 'campaign')['state'], 'incomplete')

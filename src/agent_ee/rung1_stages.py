@@ -199,7 +199,11 @@ def generation_setup(rundir, spec, *, kicad_route, catalog_checkout=None, parts_
 
 def review(rundir, setup, label):
     """A checks-only review of the current design; checks only, no reviewer or adjudicator."""
-    scope_path = rq.rehearsal_scope(setup['scope_path'], setup['design'], rundir / 'reviews' / f'{label}.scope.json')
+    # Later stages mutate design. Keep each review's declared source fixed so
+    # ordinary source verification remains meaningful for historical stages.
+    source = rundir / 'review-sources' / label
+    shutil.copytree(setup['design'], source)
+    scope_path = rq.rehearsal_scope(setup['scope_path'], source, rundir / 'reviews' / f'{label}.scope.json')
     out = rundir / 'reviews' / label
     command = rc.run_logged(rc.agent_ee_command('review', scope_path, '--out', out, '--checks-only'),
                             rundir / 'logs', f'review-{label}', 3600)

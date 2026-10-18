@@ -17,7 +17,10 @@ from pathlib import Path
 from agent_ee.executor import execute
 from agent_ee.schematic_emitter import emit_schematic, main, publish, transformed_pin
 from agent_ee.symbol_library import children, parse_sexpr
-from toolchain import require_toolchain
+try:
+    from toolchain import require_toolchain
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1] / 'fixtures/generation'
 PROJECT = ROOT / 'project'
