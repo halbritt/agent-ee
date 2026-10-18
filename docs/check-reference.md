@@ -166,7 +166,25 @@ are reported as extra charges, never defects. No real fabricator preset exists.
 
 No check parameters are currently interpreted. A complete hierarchy is required.
 `design.xml` must exist, parse, and contain components and nets. It is retained
-unchanged. `connectivity.json` derives:
+unchanged. Before producing connectivity, the check uses the shared S-expression
+reader and [occurrence audit](native-binding.md#occurrence-identity) to match every
+placed symbol's sheet UUID path and symbol UUID to the native component inventory
+in both directions. Repeated sheets use separate occurrence paths; all placed
+units of a multi-unit component must match. DNP, `on_board no` and `in_bom no`
+components still require a match. An omitted `#` reference is exempt only when
+its embedded definition is power and its occurrence reference is unambiguous.
+
+A tool exit of 0 and matching sheet count are insufficient: KiCad can silently
+omit the components of an unreadable child sheet. Any unmatched or ambiguous
+occurrence gives execution `failed`, outcome `unknown`, with `hierarchy_gaps` and
+`missing_refs` in details and affected references in the summary. No connectivity
+projection is written or credited for that export. Checks that require this
+netlist refuse the failed prerequisite. Identity validation reuses the native
+XML reader without imposing consumers' pin inventory or topology-search limits.
+This establishes component-instance coverage; wire/label connectivity equivalence
+requires a separate declared predicate such as netlist parity.
+
+`connectivity.json` derives:
 
 - Components keyed by reference: value, footprint, DNP state, native `libsource`,
   sheet name, sheet UUID path and component UUID text.

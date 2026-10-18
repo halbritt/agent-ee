@@ -371,6 +371,9 @@ def parse_xml_netlist(path):
 
 
 def check_netlist(ctx):
+    from .native_netlist import hierarchy_gaps, read_native_instances
+    from .netlist_parity import Unsupported
+
     sch = ctx.candidate_path(ctx.scope["schematic"])
     files, expected = verified_hierarchy(ctx)
     ctx.seed_kicad_config()
@@ -381,9 +384,25 @@ def check_netlist(ctx):
     if not out.is_file() or out.stat().st_size == 0:
         raise CheckError("malformed", "XML netlist was not written")
     try:
+        inventory = read_native_instances(out)
+        gaps = hierarchy_gaps({rel: (ctx.inputs / rel).read_bytes() for rel in files},
+                              ctx.scope['schematic'], inventory)
         parsed = parse_xml_netlist(out)
+    except Unsupported as exc:
+        raise CheckError('unsupported', str(exc)) from exc
     except ET.ParseError as exc:
         raise CheckError("malformed", f"XML netlist does not parse: {exc}")
+    except (OSError, ValueError) as exc:
+        raise CheckError('failed', f'native netlist hierarchy audit failed: {exc}') from exc
+    if gaps:
+        missing = sorted({ref for gap in gaps if gap['problem'] == 'unexplained_omission'
+                          for ref in gap['references']})
+        refs = sorted({ref for gap in gaps for ref in gap['references']} |
+                      {gap['native'] for gap in gaps if isinstance(gap.get('native'), str)})
+        ctx.result['details'].update(hierarchy_gaps=gaps, missing_refs=missing)
+        raise CheckError('failed', f'native netlist does not match captured symbol instances; '
+                         f'missing references: {missing}; affected references: {refs}; '
+                         f"problems: {sorted({gap['problem'] for gap in gaps})}")
     if not parsed["components"] or not parsed["nets"]:
         raise CheckError("malformed", "XML netlist has no components or no nets")
     write_json(ctx.work / "connectivity.json", parsed)

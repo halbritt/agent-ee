@@ -423,6 +423,13 @@ class NativeBindingPipelineTests(unittest.TestCase):
             self.assertEqual(ET.tostring(fresh.find(tag)), ET.tostring(committed.find(tag)), tag)
         self.assertEqual(fresh.findtext('./design/tool'), committed.findtext('./design/tool'))
 
+    def assert_producer_refusal(self, checks, code):
+        self.assertEqual((checks[0]['execution'], checks[0]['outcome']), ('failed', 'unknown'), checks)
+        self.assertIn(code, {r['problem'] for r in checks[0]['details']['hierarchy_gaps']})
+        self.assertEqual((checks[1]['execution'], checks[1]['outcome']), ('failed', 'unknown'), checks)
+        self.assertEqual(checks[1]['details']['evaluated_predicates'], [])
+        self.assertNotIn('report', checks[1]['details'])
+
     def test_actual_native_variants_match_predeclared_expectations(self):
         def tweak(variant, change):
             decl = declaration(variant)
@@ -456,6 +463,9 @@ class NativeBindingPipelineTests(unittest.TestCase):
         for variant, decl, expected, finding in cases:
             with self.subTest(variant=variant, finding=finding):
                 _, checks = self.run_variant(variant, decl)
+                if variant == 'virtual-nonpower':
+                    self.assert_producer_refusal(checks, 'virtual_nonpower_symbol')
+                    continue
                 self.assertEqual(checks[0]['execution'], 'ok', checks)
                 fp = checks[1]
                 self.assertEqual((fp['execution'], fp['outcome']), expected, fp)
@@ -504,6 +514,16 @@ class NativeBindingPipelineTests(unittest.TestCase):
                 sheets = GEN.hierarchy(variant) if variant.startswith('hierarchy') else None
                 run, checks = self.run_variant(variant, decl, schematic=None if sheets else GEN.schematic(variant),
                                                sheets=sheets)
+                producer_refusals = {
+                    'archived-same-path': 'ambiguous_occurrence_identity',
+                    'archived-same-path-first': 'ambiguous_occurrence_identity',
+                    'hierarchy-duplicate': 'duplicate_occurrence_reference',
+                    'hierarchy-missing': 'missing_occurrence_identity',
+                }
+                if variant in producer_refusals:
+                    self.assert_producer_refusal(checks, producer_refusals[variant])
+                    self.assertFalse((run / 'work/netlist/connectivity.json').exists())
+                    continue
                 self.assertEqual(checks[0]['execution'], 'ok', checks)
                 native = read_native_inventory(run / 'work/netlist/design.xml')
                 self.assertEqual(len(native['sheets']), 3 if sheets else 1)
