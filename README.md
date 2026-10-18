@@ -125,7 +125,8 @@ binding only when declared or consumed by the scope. Complete production envelop
 capture remains unavailable: outline, layer and stackup obligations still lack
 all required executable predicates, so capture refuses those gaps.
 
-Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export,
+Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export
+with captured symbol-instance coverage in both directions,
 saved-board geometry, [declared hardware interfaces](docs/hardware-interface.md),
 [page-cited datasheet facts and native symbol pin maps](docs/datasheet-facts.md),
 and an ideal passive R/C/L transient simulation through ngspice. An optional

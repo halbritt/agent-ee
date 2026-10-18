@@ -61,21 +61,28 @@ def _parts(root):
     return parts
 
 
-def _components(root, parts, sheets):
-    components, identities = {}, set()
+def _instances(root, sheets):
+    references, identities = set(), set()
     for comp in root.findall('./components/comp'):
         ref = text(comp.get('ref'))
-        lib = _one(comp, 'libsource')
-        symbol = text(lib.get('lib')), text(lib.get('part'))
         sheet = text(_one(comp, 'sheetpath').get('tstamps'))
         uuid = text(_one(comp, 'tstamps').text)
         instance_uuids = uuid.split()
-        if (ref in components or sheet not in sheets or len(instance_uuids) != len(set(instance_uuids))
+        if (ref in references or sheet not in sheets or len(instance_uuids) != len(set(instance_uuids))
                 or any((sheet, uid) in identities for uid in instance_uuids)):
             raise ValueError('duplicate or undeclared native component identity')
+        references.add(ref)
+        identities.update((sheet, uid) for uid in instance_uuids)
+        yield ref, comp, sheet, uuid
+
+
+def _components(root, parts, sheets):
+    components = {}
+    for ref, comp, sheet, uuid in _instances(root, sheets):
+        lib = _one(comp, 'libsource')
+        symbol = text(lib.get('lib')), text(lib.get('part'))
         if symbol not in parts:
             raise ValueError('missing native library inventory')
-        identities.update((sheet, uid) for uid in instance_uuids)
         units, selected = [], []
         for unit in _one(comp, 'units').findall('unit'):
             name = text(unit.get('name'))
@@ -148,13 +155,30 @@ def _footprint(comp):
     return value
 
 
-def read_native_inventory(path):
-    """Read bounded captured bytes; reject ambiguous identities and memberships."""
-    root = _parse(path)
+def _sheets(root):
     sheets = [text(s.get('tstamps')) for s in root.findall('./design/sheet')]
     if ('/' not in sheets or len(sheets) != len(set(sheets)) or
             any(not s.startswith('/') or not s.endswith('/') for s in sheets)):
         raise ValueError('missing or ambiguous native hierarchy inventory')
+    return sheets
+
+
+def read_native_instances(path):
+    """Identity projection of the shared XML reader, without pin/topology policy.
+
+    The netlist producer must also cover pinless symbols and large designs;
+    consumers separately qualify the full electrical inventory they require.
+    """
+    root = _parse(path)
+    sheets = _sheets(root)
+    return {'sheets': sheets, 'components': {
+        ref: {'sheet': sheet, 'uuid': uuid} for ref, _, sheet, uuid in _instances(root, sheets)}}
+
+
+def read_native_inventory(path):
+    """Read bounded captured bytes; reject ambiguous identities and memberships."""
+    root = _parse(path)
+    sheets = _sheets(root)
     parts = _parts(root)
     components = _components(root, parts, sheets)
     nets, names = {}, set()
@@ -176,3 +200,16 @@ def read_native_inventory(path):
     graph['library_parts'] = {':'.join(symbol): pins for symbol, pins in parts.items()}
     graph['exporter'] = root.findtext('./design/tool') or ''
     return graph
+
+
+def hierarchy_gaps(schematics, root, inventory):
+    """Unmatched or ambiguous occurrences, using the shared exporter-omission audit.
+
+    Identity is (sheet occurrence UUID path, placed symbol UUID), including each
+    UUID of a multi-unit native component. Only omitted #-referenced embedded
+    power symbols are qualified virtual occurrences.
+    """
+    from .native_binding import virtual_symbols
+    records = virtual_symbols(schematics, root, inventory)
+    return [record if 'problem' in record else dict(record, problem='virtual_nonpower_symbol')
+            for record in records if 'problem' in record or not record['embedded_power']]

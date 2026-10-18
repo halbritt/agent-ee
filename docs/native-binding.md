@@ -68,6 +68,14 @@ prefix exempts an exported component.
 
 ## Occurrence identity
 
+The `netlist` producer runs this audit before crediting its export or writing
+`connectivity.json`. It uses `native_netlist.read_native_instances`, the identity
+projection of the shared bounded XML reader, and `native_netlist.hierarchy_gaps`,
+which reuses the occurrence walker below. Missing, extra or ambiguous instances
+stop the producer with `failed/unknown`; downstream native binding refuses that
+prerequisite. The identity projection also covers pinless symbols and does not
+apply the full electrical inventory's component-search limit.
+
 A symbol occurrence is one sheet instance path and one symbol UUID. Owned
 KiCad 10.0.7 exports, all with ordinary references so the choice is visible,
 showed how the exporter picks an occurrence's reference:
@@ -101,8 +109,9 @@ by project name or by entry order:
 | Native sheets differ from the captured hierarchy | `hierarchy_mismatch` |
 | `symbol_instances` present | `legacy_symbol_instances` |
 
-Each of these leaves board scope unproved: `unsupported`, outcome `unknown`. A
-declared reference that matches no resolved occurrence is a
+Each of these leaves board scope unproved: a direct binding audit gives
+`unsupported`, outcome `unknown`; the netlist producer gives `failed/unknown`
+before binding runs. A declared reference that matches no resolved occurrence is a
 `ghost_declaration`, never an exclusion. Archived aliases for another root are
 therefore neither exclusions nor problems. A captured sheet outside the
 hierarchy, a missing child sheet, a cycle, a duplicate symbol UUID or a
