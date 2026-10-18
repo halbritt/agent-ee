@@ -163,6 +163,9 @@ mapping table. Unmapped names are unknown; land-pattern geometry is not compared
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
+The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
+board-bound manifest offline. It requires identical assembled designators
+across the board and CSVs before completing the package.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor

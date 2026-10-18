@@ -155,6 +155,12 @@ class PreflightTests(unittest.TestCase):
         self.optional_expectation([{'kind': 'active_spice', 'params': {}}])
         self.assert_refused('missing_binary:/usr/bin/ngspice')
 
+    def test_fab_export_requires_native_cli_before_dispatch(self):
+        self.runtime['kicad-cli'] = {'path': None, 'sha256': None}
+        self.optional_expectation([{'kind': 'fab_export', 'params': {'netlist_check': 'netlist'}}])
+        self.assertIn('kicad-cli', self.expected['required_runtime'])
+        self.assert_refused('missing_binary:kicad-cli')
+
     def test_broken_and_malformed_probe_never_dispatch(self):
         with patch('agent_ee.preflight.execute', return_value={'execution': 'ok'}):
             self.assert_refused('malformed_probe_receipt')

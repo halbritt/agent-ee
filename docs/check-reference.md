@@ -413,9 +413,11 @@ symbols stay distinct, and an empty schematic is `info`, not `pass`.
 
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
-v1 refusals and outcome mapping. It requires an earlier `netlist_check` and
-applies no CPL rotation policy. Empty produced native files are `failed/unknown`;
-pre-existing staging or native output directories are refused before reuse.
+v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
+completion unless BOM/CPL/board designators agree, and applies no CPL rotation
+policy. Launch preflight requires the native `kicad-cli` binary. Empty produced
+native files are `failed/unknown`; pre-existing staging or native output
+directories are refused before reuse.
 
 [`fab_consistency`](fab-consistency.md) consumes that sealed export, its netlist
 and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,

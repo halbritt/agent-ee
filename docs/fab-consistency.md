@@ -137,8 +137,8 @@ so the evidence seal accepts the result.
   run kicad-cli itself.
 - No policy yet covers assembled board-only parts, so they stay unknown.
 
-Malformed-package tests stage synthetic package bytes through a stub
-`fab_export` handler. That stub records a real sandboxed
+The focused consistency tests stage synthetic package bytes through
+a stub `fab_export` handler to inject faults. That stub records a real sandboxed
 `kicad-cli version` run, and its manifest names the actual pinned binary. Every
 case runs the real `geometry` check (pcbnew in the sandbox) on the captured
 board, so no case stubs the board inventory. Synthetic boards have no
@@ -171,3 +171,8 @@ Each is sealed and accepted through the existing requirement/check witness and
 central adjudication helpers. Controls, malformed packages, stale producer
 outputs and missing native evidence cannot qualify a defect witness. No witness
 schema or reviewer independence rule changes.
+
+The fab-export tests also run the real netlist, geometry, export and consistency
+checks together on the owned fabrication fixture, then seal and verify their
+evidence. This covers the producer-to-consumer manifest and tool-identity
+contract without substituting either handler.

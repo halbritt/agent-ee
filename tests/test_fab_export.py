@@ -318,6 +318,7 @@ class NativeFabExportTests(unittest.TestCase):
 
     def test_two_runs_are_byte_identical_except_generation_time(self):
         first, a = self.run_case()
+        time.sleep(1.1)  # Native headers must differ before normalisation.
         second, b = self.run_case()
         self.assertEqual((a['outcome'], b['outcome']), ('pass', 'pass'))
         ma = read_json(first / 'work/fab/fab/manifest.json')
@@ -328,6 +329,33 @@ class NativeFabExportTests(unittest.TestCase):
         for rel in ma['files']:
             self.assertEqual((first / 'work/fab/fab' / rel).read_bytes(),
                              (second / 'work/fab/fab' / rel).read_bytes(), rel)
+        raw = 'work/fab/steps/gerbers/out/fab-F_Cu.gtl'
+        self.assertNotEqual((first / raw).read_bytes(), (second / raw).read_bytes())
+
+    def test_bom_board_designator_mismatch_never_completes(self):
+        path = self.source / 'fab.kicad_pcb'
+        path.write_text(path.read_text().replace('"Reference" "R1"', '"Reference" "R99"'))
+        run, result = self.run_case()
+        self.assert_incomplete(run, result, 'malformed')
+        sets = result['details']['designators']
+        self.assertEqual(sets['cpl'], sets['board_non_dnp'])
+        self.assertIn('R1', sets['bom'])
+        self.assertIn('R99', sets['cpl'])
+        self.assertFalse(sets['agree'])
+
+    def test_real_export_is_consumed_by_consistency_gate_and_sealed(self):
+        self.scope['checks'].insert(1, {'id': 'geometry', 'kind': 'geometry'})
+        self.scope['checks'].append({'id': 'consistency', 'kind': 'fab_consistency',
+                                     'params': {'export_check': 'fab'}})
+        self.scope['baseline']['requirements'][0]['checks'] += ['geometry', 'consistency']
+        run, result = self.run_case()
+        results = [read_json(run / 'checks' / (spec['id'] + '.json'))
+                   for spec in self.scope['checks']]
+        for check, outcome in zip(results, ('info', 'info', 'pass', 'pass'), strict=True):
+            self.assertEqual((check['execution'], check['outcome']), ('ok', outcome), check)
+        self.assertEqual(result['kind'], 'fab_consistency')
+        freeze_evidence(run, results)
+        verify_evidence(run, results, required=True)
 
     def test_missing_part_binding_flags_row_and_never_completes(self):
         path = self.source / 'fab.kicad_sch'
