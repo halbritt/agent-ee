@@ -790,6 +790,11 @@ Its captured-parts scope declares `parts_subset`, `assembly_readiness` and
 
 ## JLCPCB fab package
 
+With a counted campaign fab step, all three fab checks require its sealed
+package and compare it with fresh sandbox output. Missing step output stays
+unknown and can schedule a coordinator fab turn only when all other checks and
+review are complete. See [declared fab steps](fab-export.md#declared-fab-steps).
+
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses

@@ -1022,7 +1022,7 @@ CHECK_FUNCS = {"design_rules": check_design_rules, 'jlc_cost_estimate': check_jl
 
 # ------------------------------------------------------------------ entry point
 
-def run_checks(run_dir, deadline):
+def run_checks(run_dir, deadline, *, fab_context=None):
     """Run every scope check; write checks/<id>.json immediately; return results."""
     run_dir = Path(run_dir)
     manifest = read_json(run_dir / "candidate.json")
@@ -1042,6 +1042,7 @@ def run_checks(run_dir, deadline):
             continue
         seen.add(cid)
         ctx = Ctx(run_dir, manifest, spec, deadline)
+        ctx.fab_context = fab_context
         func = CHECK_FUNCS.get(spec.get("kind"))
         try:
             if ctx.remaining() < MIN_CHECK_SECONDS:
@@ -1050,6 +1051,8 @@ def run_checks(run_dir, deadline):
                 raise CheckError("unsupported", f"unknown check kind {spec.get('kind')!r}")
             from .stages import before_check
             if before_check(ctx, results):
+                from .fab_stage import before_fab_check
+                before_fab_check(ctx)
                 func(ctx)
             from .stages import validate_gate_findings
             try:

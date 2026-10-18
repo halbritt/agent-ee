@@ -583,7 +583,7 @@ def inventory(fab):
 
 def verify_manifest(fab, manifest):
     """Recompute the staging inventory; raise ValueError on any disagreement."""
-    if manifest.get('schema') != SCHEMA:
+    if not isinstance(manifest, dict) or manifest.get('schema') != SCHEMA:
         raise ValueError('not an agent-ee.fab-manifest/1')
     actual = inventory(fab)
     if actual != manifest.get('files'):
@@ -980,3 +980,5 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                              f"drills, {len(rows)} BOM row(s), {len(cpl)} CPL row(s), "
                              f"{len(excluded)} rule-excluded part(s), manifest bound to "
                              f"board {board_sha[:12]}")
+    from .fab_stage import grade_native
+    grade_native(ctx)

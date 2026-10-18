@@ -307,3 +307,47 @@ The separate [fab round-trip check](fab-roundtrip.md) consumes this manifest
 and exact zip bytes alongside sealed native geometry to check layer, drill,
 flash-count and outline conservation. Export success alone does not establish
 those comparisons.
+
+## Declared fab steps
+
+When a campaign includes `fab` in `stages.order` and declares a fab step,
+`fab_export`, `cpl_rotation` and `fab_package` consume that step's sealed
+`out/fab` output. The shared [fab-stage producer](../src/agent_ee/fab_stage.py)
+retains `out/fab-manifest.json`, the corrected package, and the native check
+run under `out/checks`. All must be declared receipt artifacts. More than one
+fab producer is refused because the checks cannot select an authoritative package.
+
+The coordinator supplies the declaration and latest anchored receipt to each
+review. Each fab check seals `work/ID/fab-step.json` and records the same
+context in `details.fab_step`. The receipt must validate, match the frozen step,
+be adoptable, and have an after-tree identical to the captured candidate.
+Missing or changed artifacts, malformed package or native manifests, a stale
+candidate or an invalid receipt leave coverage unknown. Campaign verification reconstructs this context from its
+frozen configuration and preceding receipt indexes.
+
+Before the step runs, fab checks report `not_run`/`unknown` with
+`details.reason: fab_step_pending`. If all other checks and the independent
+review are complete and satisfied, the coordinator schedules the fab turn.
+The review remains incomplete. A crash, malformed export or other unknown
+check cannot enter this scheduling path. The turn consumes an iteration;
+without remaining budget the campaign stays incomplete.
+
+Afterwards, fresh sandbox exports still run. Every normalized Gerber, drill,
+ZIP, BOM, board summary and native CPL must be byte-identical to the step's
+sealed exports. The corrected CPL must also match the fresh correction; the
+policy, per-part results and preview status must agree. The checks grade copies
+of the matching step output. Native manifests and correction reports refer to the nested run's candidate
+identity. Manifest timestamps and report references to that run differ; these
+context fields are bound by the receipt. The remaining manifest and correction
+values must match the fresh run, including the native CPL digest. Payload files receive no additional normalization for comparison.
+A difference is a refusal with unknown coverage, never a passing substitute.
+
+Scopes without a declared fab step, or with `fab` outside the stage order,
+keep the existing self-export path. The declared-stage done binding and every
+rotation-status done term remain in force. `PREVIEW_REQUIRED` is preserved.
+`DeclaredFabStepTests` and `DeclaredFabCampaignTests` exercise native output,
+refusals and the D/F1/G1 fab-turn reachability shapes.
+
+Historical campaigns with a counted fab producer but no sealed step witness do
+not inherit this acceptance evidence. Start a fresh campaign to obtain it.
+Historical scopes without a counted fab producer keep their earlier behavior.
