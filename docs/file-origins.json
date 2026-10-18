@@ -2286,6 +2286,27 @@
         "AE"
       ],
       "reviewed": "Original structural audit of capabilities.describe_check (every capability() branch publishes predicates); no fixtures, no KiCad text."
+    },
+    {
+      "paths": [
+        "fixtures/design-diff/README.md",
+        "fixtures/design-diff/pair.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-51 original board hand-authored for the canonical design diff and re-saved once by kicad-cli 10.0.7: two inline two-pad footprints R1/R2 on nets /A, /B and GND, one segment and an outline; no donor design and no stock library content. See fixtures/design-diff/README.md."
+    },
+    {
+      "paths": [
+        "tests/test_design_diff.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing synthetic KiCad board and XML netlist literals (a legacy net-code board and a two-component netlist); referenced fixture paths do not copy those files into this source."
     }
   ]
 }

@@ -84,6 +84,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
+| `regeneration_determinism` | Coordinator compares two captured boards, schematics, netlists or JSON probe outputs after removing IDs; no additional tool launched ([details](design-diff.md)) | Enclosing run deadline |
 | `hardware_interface` | Coordinator compares a captured owner contract with preceding full native XML; no additional tool launched | Enclosing run deadline |
 | `footprint_assignment` | `/usr/bin/python3 -m agent_ee.footprint_library` for declared selections, or `agent_ee.native_binding` with an earlier native netlist | 60 s |
 | `routing_equivalence` | `/usr/bin/python3 -m agent_ee.routing_equivalence`; native saved copper comparison | 300 s |
@@ -357,6 +358,17 @@ the owner did not make. Suggested collisions get deterministic `<name>_<k>`
 proposals that keep a trailing `_P`/`_N`, reported with `severity=info`. A named
 net without a level, or an unresolved anchor, keeps the check
 `unsupported/unknown`. Nothing is renamed.
+
+`regeneration_determinism` requires `format`, `reference` and `subject`, plus
+`decimals` for boards and schematics. The [canonical design diff](design-diff.md)
+drops UUIDs, timestamps, net codes and tool/date headers, rounds coordinates to
+the declared decimals and keys children by reference, name or content. An empty
+diff passes even when the bytes differ; the byte difference is recorded, not
+graded. A non-empty diff is `ok/defect` with per-path before/after entries and
+structural, placement and identity hashes. A side that does not parse is
+`malformed`; a missing or unverified producer output is `not_run/unknown`,
+never "no change". A path `reference` is an immutable baseline input and cannot
+be the scope's writer-mutable board or schematic.
 
 ## Intent and golden netlist parity
 
