@@ -58,7 +58,10 @@ The checks that constitute "done" for each rung:
 yet (AGENTEE-86, AGENTEE-92, AGENTEE-90, AGENTEE-94). The export half of the
 fab package exists as [`fab_export`](fab-export.md) (AGENTEE-23); the
 [consistency gate](fab-consistency.md) also exists (AGENTEE-73), including native
-CPL coordinate and export-log checks. CPL rotation policy remains AGENTEE-72.
+CPL coordinate and export-log checks. The separate
+[Gerber/Excellon round-trip check](fab-roundtrip.md) (AGENTEE-74) compares
+layer presence, drill histograms, copper pad/via flashes and outline bounds.
+CPL rotation policy remains AGENTEE-72.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 

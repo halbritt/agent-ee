@@ -171,6 +171,10 @@ The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor
 coordinates within 0.01 mm and sealed export logs for warnings. Gerber geometry,
 DFM and assembly rotation corrections stay outside its coverage.
+The [fab round-trip check](docs/fab-roundtrip.md) re-parses native Gerber and
+Excellon output against the sealed geometry: enabled layers, PTH/NPTH drill
+histograms, copper pad/via flash counts and outline bounds within 1 µm. Its
+narrow parser fails closed on unsupported constructs; artwork is not compared.
 
 The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact

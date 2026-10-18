@@ -350,8 +350,12 @@ def load_manifest(ctx, stage):
     return data
 
 
-def inventory(stage, manifest):
-    """Exact manifest/directory equality; every file regular, nonempty, hash-bound."""
+def inventory(stage, manifest, missing_files=None):
+    """Verify regular, nonempty, hash-bound files against the exact manifest.
+
+    Roundtrip may collect absent files as named defects through missing_files;
+    the assembly gate retains its strict missing-file refusal.
+    """
     found = {}
     pending = [stage]
     while pending:
@@ -372,8 +376,10 @@ def inventory(stage, manifest):
                     fail('inventory', 'staging tree exceeds the file limit')
     declared = manifest['files']
     extra, missing = sorted(set(found) - set(declared)), sorted(set(declared) - set(found))
-    if extra or missing:
+    if extra or (missing and missing_files is None):
         fail('inventory', f'staging files not in manifest {extra}; manifest files absent {missing}')
+    if missing_files is not None:
+        missing_files.extend(missing)
     empty = sorted(rel for rel, size in found.items() if size == 0)
     if empty:
         fail('empty', f'empty staged artifact(s) {empty}')
