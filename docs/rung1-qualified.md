@@ -274,9 +274,12 @@ These are recorded in every run with the owned module's exact refusal:
   `Manufacturer` or `Partnumber`, and the fome-mc BOM has no manufacturer or
   MPN. `part_binding` and `fab_export` therefore cannot pass on the generated
   design.
-- **J1 not assembled.** `fab_export` excludes only DNP parts.
-  `forward_annotation` refuses DNP (`dnp_unsupported`) and the parity source
-  compares population state, so J1 stays populated and is flagged.
+- **J1 not assembled.** `forward_annotation` refuses DNP (`dnp_unsupported`)
+  and the parity source compares population state, so J1 stays populated.
+  `fab_export` can leave a populated part out of the BOM and CPL under a
+  declared `JLCPCB_Assembly=not_assembled` rule
+  ([assembly exclusions](fab-export.md#assembly-exclusions), AGENTEE-122). The
+  qualified scope does not declare that rule yet, so J1 is still flagged.
 - **Parts catalog (AGENTEE-27/28).** The owned capture needs `mfr`, `mpn` and
   0/1 `is_basic`/`is_preferred` values that the BOM does not have, and the
   selector needs stock and tolerance. The capture refusal is recorded; parts

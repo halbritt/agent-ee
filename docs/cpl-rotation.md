@@ -27,7 +27,12 @@ Parameters are exactly:
 
 - `export_check` names an earlier `fab_export` check. Its result must be `ok`,
   and its sealed `fab/manifest.json` must still verify against the staging
-  tree. The manifest must be bound to the captured board digest.
+  tree. The manifest must be bound to the captured board digest. Designators in
+  the manifest's `designators.excluded` (parts excluded by the declared
+  [assembly rule](fab-export.md#assembly-exclusions), which `fab_consistency`
+  re-derives) are not counted as populated geometry missing from the CPL. If
+  one of them is still a CPL row, the staging is `malformed`. The report lists
+  them in `assembly_excluded`.
 - `geometry_check` names an earlier `geometry` check of the same board digest.
   Its probe now records each footprint's lib id, orientation and exact nm
   anchor. It also records each pad's native board-space bounding box in integer
@@ -257,4 +262,7 @@ The native class runs the real `netlist` → `fab_export` → `geometry` →
 `cpl_rotation` pipeline on the owned fixture. It checks the oracle, the
 control, `U1` 90° → 0°, the partition, the evidence seal, NaN refusal at
 capture and at run time, a missing supplier footprint, and the capability
-descriptor.
+descriptor. A staged copy whose manifest excludes `R1` and whose CPL lacks it
+passes with `assembly_excluded: ["R1"]`. The same CPL without the claim leaves
+`R1` unlisted (`malformed`), and a claim for a designator still in the CPL is
+refused.

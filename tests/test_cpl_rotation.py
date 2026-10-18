@@ -519,6 +519,45 @@ class NativeCplRotationTests(unittest.TestCase):
         self.assertEqual(caught.exception.execution, 'malformed')
         self.assertEqual(sorted(p.name for p in ctx.work.iterdir()), [])
 
+    def test_manifest_rule_exclusions_are_not_unlisted_geometry_and_never_cpl_rows(self):
+        from agent_ee.checks import CheckError, Ctx
+        from agent_ee.cpl_rotation import check_cpl_rotation
+        rule = 'JLCPCB_Assembly=not_assembled'
+        manifest = read_json(self.rundir / 'candidate.json')
+        spec = copy.deepcopy(self.scope['checks'][3])
+        spec.update(id='cpl_excluded')
+
+        def staged(excluded, drop):
+            run = Path(tempfile.mkdtemp(prefix='excluded-', dir=self.root))
+            shutil.copytree(self.rundir, run, dirs_exist_ok=True)
+            stage = run / 'work/fab/fab'
+            fab = read_json(stage / 'manifest.json')
+            if drop:
+                lines = (stage / 'cpl.csv').read_text().splitlines(keepends=True)
+                (stage / 'cpl.csv').write_text(''.join(l for l in lines if not l.startswith('R1,')))
+                fab['files']['cpl.csv'] = digest(stage / 'cpl.csv')
+            fab['designators'].update(excluded=[{'designator': ref, 'rule': rule} for ref in excluded],
+                                      exclusion_rule=rule)
+            write_json(stage / 'manifest.json', fab)
+            return Ctx(run, manifest, spec, time.monotonic() + 120)
+
+        ctx = staged(['R1'], drop=True)
+        check_cpl_rotation(ctx)
+        self.assertEqual((ctx.result['execution'], ctx.result['outcome']), ('ok', 'pass'), ctx.result['details'])
+        report = read_json(ctx.work / 'cpl-rotation.json')
+        self.assertEqual((report['assembly_excluded'], report['geometry_unlisted']), (['R1'], []))
+        self.assertNotIn('R1', {row[0] for row in csv.reader(io.StringIO((ctx.work / 'cpl/cpl.csv').read_text()))})
+        # Without the manifest claim the same CPL leaves populated R1 unlisted.
+        ctx = staged([], drop=True)
+        check_cpl_rotation(ctx)
+        self.assertEqual(ctx.result['execution'], 'malformed')
+        self.assertEqual(read_json(ctx.work / 'cpl-rotation.json')['geometry_unlisted'], ['R1'])
+        # A designator claimed as excluded that the CPL still lists refuses the staging.
+        ctx = staged(['R1'], drop=False)
+        with self.assertRaisesRegex(CheckError, 'excludes from assembly') as caught:
+            check_cpl_rotation(ctx)
+        self.assertEqual(caught.exception.execution, 'malformed')
+
     def test_missing_supplier_footprint_is_unsupported_for_that_designator_only(self):
         result = self.results['cpl_missing']
         self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
