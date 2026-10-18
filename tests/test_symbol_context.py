@@ -101,6 +101,88 @@ class ContextTests(unittest.TestCase):
         missing = dispatch_tool('find-symbol', request, {'owned.kicad_sym': LIBRARY})
         self.assertEqual(missing['result']['outcome'], 'unknown')
 
+    def test_no_fuzzy_symbol_or_pin_substitution(self):
+        for selection in ('Owned:Ch*', 'Owned:Chil?', 'Owned:child', 'Owned:Child ', 'Child'):
+            result = self.context(selection)
+            self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'), selection)
+            self.assertEqual(result['pins'], [])
+        selectors = ({'name': 'gnd'}, {'name': ' GND'}, {'name': 'G*'}, {'name': '1'},
+                     {'number': '03'}, {'number': '~'})
+        result = check_pin_references(libraries(), {'owned.kicad_sym': LIBRARY},
+            [dict(reference='U1', lib_id='Owned:Child', pin=pin) for pin in selectors])
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'))
+        self.assertEqual([(r['status'], r['numbers']) for r in result['references']],
+                         [('defect', [])] * len(selectors))
+
+    def test_symbol_name_with_shell_metacharacters_is_found_literally(self):
+        name = 'Odd;$(id)*|` '
+        data = LIBRARY.replace(b'(symbol "Child" (extends "Base")',
+                               b'(symbol "' + name.encode() + b'" (extends "Base")')
+        result = self.context('Owned:' + name, data)
+        self.assertEqual(result['execution'], 'ok')
+        self.assertEqual(result['selection'], 'Owned:' + name)
+        self.assertEqual([s['symbol'] for s in result['sources']], ['Base', name])
+        self.assertEqual([p['number'] for p in result['pins']], ['1', '2', '3'])
+
+    def test_find_footprint_is_exact_literal_and_cites_member_hash(self):
+        from agent_ee.library_tools import dispatch_tool
+        data = b'''(footprint "SOT3" (version 20240108) (generator "owned") (layer "F.Cu")
+(pad "1" smd rect (at -1 0) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask"))
+(pad "2" smd rect (at 1 0) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask")))'''
+        member = dict(path='owned.pretty/SOT3.kicad_mod', sha256=hashlib.sha256(data).hexdigest())
+        manifest = dict(schema='agent-ee.footprint-libraries/1', complete=True,
+                        libraries=[dict(name='Owned', members=[member])])
+        captures = {member['path']: data}
+        found = dispatch_tool('find-footprint', dict(manifest=manifest, query='Owned:SOT3'), captures)
+        self.assertEqual(found['tool'], 'find-footprint')
+        self.assertEqual(found['result']['execution'], 'ok')
+        self.assertEqual([m['lib_id'] for m in found['result']['matches']], ['Owned:SOT3'])
+        self.assertEqual(found['result']['matches'][0]['source'], member)
+        for query in ('Owned:SOT*', 'Owned:sot3', 'SOT3', 'Owned:SOT3;$(id)'):
+            result = dispatch_tool('find-footprint', dict(manifest=manifest, query=query), captures)['result']
+            self.assertEqual((result['execution'], result['coverage'], result['matches']), ('ok', 'complete', []))
+        drifted = dispatch_tool('find-footprint', dict(manifest=manifest, query='Owned:SOT3'),
+                                {member['path']: data + b' '})['result']
+        self.assertEqual((drifted['execution'], drifted['outcome'], drifted['matches']), ('failed', 'unknown', []))
+        with self.assertRaises(ValueError):
+            dispatch_tool('find-footprint', dict(manifest=manifest, query=['Owned:SOT3']), captures)
+        with self.assertRaises(ValueError):
+            dispatch_tool('find-pins', dict(libraries=libraries(), selection='Owned:Child'), {})
+
+    def test_library_tool_cli_is_literal_stable_and_never_overwrites(self):
+        import json
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+        src = Path(__file__).resolve().parents[1] / 'src'
+        env = dict(os.environ, PYTHONPATH=str(src))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'captured').mkdir()
+            (root / 'captured/owned.kicad_sym').write_bytes(LIBRARY)
+
+            def run(selection, out):
+                (root / 'request.json').write_text(json.dumps(dict(libraries=libraries(), selection=selection)))
+                return subprocess.run([sys.executable, '-m', 'agent_ee.library_tools', 'list-pins',
+                                       str(root / 'request.json'), '--captures', str(root / 'captured'),
+                                       '--out', str(root / out)], cwd=root, env=env,
+                                      capture_output=True, text=True, timeout=60)
+            for out in ('first.json', 'second.json'):
+                proc = run('Owned:Child', out)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual((root / 'first.json').read_bytes(), (root / 'second.json').read_bytes())
+            answer = json.loads((root / 'first.json').read_text())
+            self.assertEqual([p['number'] for p in answer['result']['pins']], ['1', '2', '3'])
+            proc = run('Owned:$(touch should-not-exist);*', 'missing.json')
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertFalse((root / 'should-not-exist').exists())
+            self.assertEqual(json.loads((root / 'missing.json').read_text())['result']['outcome'], 'unknown')
+            before = (root / 'first.json').read_bytes()
+            self.assertEqual(run('Owned:Child', 'first.json').returncode, 2)
+            self.assertEqual((root / 'first.json').read_bytes(), before)
+
 
 class NativeSymbolContextTests(unittest.TestCase):
     def test_native_unconnected_pin_inventory_matches_context(self):
