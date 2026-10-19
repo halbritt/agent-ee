@@ -2898,6 +2898,32 @@
         "AE"
       ],
       "reviewed": "AGENTEE-165 original synthetic catalog claims captured with exact old agent-ee producer c3ec24c936296e2c55cc45924bc67a46b14ec8aa; code and input/output SHA256 in fixture provenance.json. No supplier rows, stock or suitability claims."
+    },
+    {
+      "paths": [
+        "tests/test_routing_adapter.py",
+        "tests/test_can_pair.py",
+        "fixtures/telemetry-pod/can-pair/board.py",
+        "fixtures/telemetry-pod/can-pair/probe.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-185 native CAN probe and adversarial tests using existing shared routing/capture/check infrastructure. Board builder adapts the project-owned two-net native test, with no vendor library assets."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/can-pair/net-constraints.json",
+        "fixtures/telemetry-pod/can-pair/routing-rules.json",
+        "fixtures/telemetry-pod/can-pair/gap.kicad_dru",
+        "fixtures/telemetry-pod/can-pair/requirements.md"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original declared CAN software probe bounds and native gap constraint; not external design data or owner pod qualification."
     }
   ]
 }

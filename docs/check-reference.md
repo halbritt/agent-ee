@@ -317,7 +317,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`e497916` (versioned `kicad-route/route/1` results)
+`a132899` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -1010,7 +1010,12 @@ changed or missing retained inputs still fail ordinary `agent-ee verify`.
 receipt is provenance and cannot satisfy a requirement. `scaffold --scope`
 preserves the explicit planning scope's checks and baseline. `scaffold --plan`
 derives `erc`, `netlist`, `parts_subset`, `drc` and `fab_profile` checks, their
-mappings and the project rules from the envelope, profile and parts manifest. Native ERC/DRC run through the
+mappings and the project rules from the envelope, profile and parts manifest.
+With captured `net_constraints` and `netclass_qualification` plan paths it also
+emits per-net classes and width rules through the shared net-constraint emitter,
+refuses values below the fab minimums, and derives `netclass_completeness` over
+the output project. This presence check maps to the native requirement and runs
+in the placement stage, before DRC. Native ERC/DRC run through the
 ordinary `review` command. Staged absence is a coordinator defect only after a
 successful native presence observation; hierarchical presence and uncovered
 production envelope obligations continue to fail closed.

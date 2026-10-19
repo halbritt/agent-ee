@@ -65,8 +65,7 @@ necessary for general board validity and schematic parity.
 
 Only single-layer SMD terminal pairs on a proved unbranched saved route in a
 two-copper-layer board are qualified. Straight tracks, non-reversing bends and
-through vias are supported. Every member needs exactly two pads, exact pad-centre
-endpoints, positive copper widths and connected copper without branches, stubs
+through vias are supported. Every member needs exactly two pads, distinct degree-one endpoints inside actual native pad copper, positive copper widths and connected copper without branches, stubs
 or disconnected islands. Native finite-width shape collision checks refuse
 nonincident track intersections, overlaps and pad/via contacts, including contact
 with other nets. Backtracking and acute junction angles at a shared endpoint
@@ -110,3 +109,18 @@ fabrication inventory, or receive outline-gated extra-charge classification.
 Routing constraints keep the captured project settings unchanged.
 
 Native rule semantics: [KiCad 10 PCB documentation](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html).
+
+## Native pad contacts (AGENTEE-185)
+
+KRT may stop a route inside an SMD pad instead of at its centre. Coverage now
+requires exactly one graph vertex inside each native pad shape on its copper
+layer, with degree one and distinct terminal assignments. A bounding box,
+endcap-only contact, multiple endpoints in a pad or incidental contact with
+other copper cannot establish this path. Existing branch, intersection,
+backtracking, pad-overlap and unsupported topology refusals remain.
+
+This changes only path coverage, not length measurement. Native KiCad DRC
+continues to evaluate saved copper length with the captured project settings.
+The CAN probe's 10 mm pad-centre separation produces 9.8125 mm of straight copper
+per member; no pad-centre offset is added by the checker. See
+[the CAN pair probe](pod-can-routing.md) for the controlled 5 mm skew negative.

@@ -1,4 +1,4 @@
-"""Actual kicad-route (pinned e497916) and KRT on the original placed RC, read-only.
+"""Actual kicad-route (pinned a132899) and KRT on the original placed RC, read-only.
 
 AGENT_EE_KICAD_ROUTE_CHECKOUT names a clean kicad-route checkout at the pin with
 its installed KRT state; the standard image sets it to /opt/kicad-route. Unset,
@@ -40,6 +40,45 @@ after = sorted((f.GetReference(), f.m_Uuid.AsString(), f.GetPosition().x, f.GetP
                 f.GetOrientationDegrees(), f.GetLayer()) for f in check.GetFootprints())
 assert not len(check.GetTracks()) and not len(check.Zones()) and after == before
 print("placed")
+'''
+
+# Original two-net fixture: two identical pad rows, 10 mm apart, on a 20 mm square.
+PAIR_BOARD = r'''
+import sys, pcbnew as k
+b = k.BOARD()
+point = lambda x, y: k.VECTOR2I(k.FromMM(x), k.FromMM(y))
+for start, end in [((40, 40), (60, 40)), ((60, 40), (60, 60)),
+                   ((60, 60), (40, 60)), ((40, 60), (40, 40))]:
+    edge = k.PCB_SHAPE(b)
+    edge.SetShape(k.SHAPE_T_SEGMENT)
+    edge.SetLayer(k.Edge_Cuts)
+    edge.SetStart(point(*start))
+    edge.SetEnd(point(*end))
+    edge.SetWidth(k.FromMM(.05))
+    b.Add(edge)
+nets = []
+for name in ('CAN+', 'CAN-'):
+    net = k.NETINFO_ITEM(b, name)
+    b.Add(net)
+    nets.append(net)
+for reference, x in (('J1', 45), ('J2', 55)):
+    fp = k.FOOTPRINT(b)
+    b.Add(fp)
+    fp.SetReference(reference)
+    fp.SetPosition(point(x, 50))
+    for number, net in enumerate(nets, 1):
+        pad = k.PAD(fp)
+        fp.Add(pad)
+        pad.SetNumber(str(number))
+        pad.SetNet(net)
+        pad.SetAttribute(k.PAD_ATTRIB_SMD)
+        pad.SetShape(k.PAD_SHAPE_RECT)
+        layers = k.LSET()
+        layers.AddLayer(k.F_Cu)
+        pad.SetLayerSet(layers)
+        pad.SetSize(point(.25, .25))
+        pad.SetPosition(point(x, 50 + (number - 1) * .6))
+k.SaveBoard(sys.argv[1], b)
 '''
 
 
@@ -191,6 +230,65 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.assertEqual((summary['classification'], summary['proposal'], summary['coverage']),
                          ('refused', 'none', 'missing_routing'))
         self.assertFalse((work / 'routing/candidate').exists())
+
+    def test_pair_opt_in_with_no_detected_pairs_uses_version_two(self):
+        placed = self.placed_rc()
+        spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+                                    schematic='rc_filter.kicad_sch', name='rc_filter', label='pairs-empty',
+                                    checkout=self.checkout, budget=120, diff_pairs='auto')
+        before = self.state()
+        receipt_dir = self.root / 'pairs-receipt'
+        receipt = stage_receipts.run_step(receipt_dir, placed, spec, {'implementation': 1, 'receipt_index': 1})
+        self.assertEqual(self.state(), before)
+        self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
+        self.assertIn(receipt['exit_code'], (0, 2), receipt['violations'])
+        self.assertEqual(receipt['violations'], [])
+        work = receipt_dir / 'run'
+        summary = routing_adapter.verify(work, receipt=receipt)
+        self.assertIn(summary['proposal'], ('eligible', 'eligible_partial'))
+        result = json.loads((work / 'routing/attempt/result.json').read_text())
+        record = json.loads((work / 'routing/attempt/attempt.json').read_text())
+        self.assertEqual(result['schema'], 'kicad-route/route/2')
+        self.assertEqual(set(result), attempt.RESULT_KEYS | {'pairs'})
+        self.assertEqual(record['schema'], 'kicad-route/attempt/2')
+        self.assertEqual(set(record), attempt.ATTEMPT_KEYS | {'pairs', 'pair_routing'})
+        self.assertEqual((result['pairs'], record['pairs'], record['pair_routing']), ([], [], {}))
+        self.assertEqual(result['settings'], attempt.expected_settings(
+            {'backend': 'krt', 'budget_s': 120, 'diff_pairs': 'auto'}, None, []))
+        self.forge_validated_board(work)
+        with self.assertRaisesRegex(ValueError, 'not the board the router validated'):
+            routing_adapter.verify(work, receipt=receipt)
+
+    def test_pair_opt_in_routes_an_original_two_net_board(self):
+        placed = self.placed_rc()
+        made = execute(placed, self.root / 'make-pair',
+                       ['/usr/bin/python3', '-I', '-B', '-c', PAIR_BOARD, '/work/pair.kicad_pcb'], timeout=300)
+        self.assertEqual(made['exit_code'], 0, (self.root / 'make-pair/console.log').read_text())
+        shutil.copyfile(self.root / 'make-pair/pair.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
+        pro = placed / 'project/rc_filter.kicad_pro'
+        project = json.loads(pro.read_text())
+        project['net_settings'] = {'meta': {'version': 3}, 'classes': [
+            {'name': 'Default', 'clearance': 0.2, 'track_width': 0.25,
+             'diff_pair_width': 0.25, 'diff_pair_gap': 0.35}], 'netclass_patterns': []}
+        pro.write_text(json.dumps(project))
+        spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+                                    schematic='rc_filter.kicad_sch', name='rc_filter', label='pairs-native',
+                                    checkout=self.checkout, budget=120, diff_pairs='auto')
+        before = self.state()
+        work = self.root / 'pairs-native'
+        observed = execute(placed, work, spec['argv'], timeout=spec['timeout_s'],
+                           extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
+        self.assertEqual(self.state(), before)
+        summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+        self.assertEqual(observed['exit_code'], 0, summary)
+        self.assertEqual(summary['classification'], 'complete')
+        result = json.loads((work / 'routing/attempt/result.json').read_text())
+        self.assertEqual(result['schema'], 'kicad-route/route/2')
+        pair, = result['pairs']
+        self.assertEqual((pair['p'], pair['n']), ('CAN+', 'CAN-'))
+        self.assertTrue(pair['routed'], pair)
+        self.assertEqual(pair['backend_status'], 'COUPLED')
+        self.assertEqual(pair['gap_violations'], 0)
 
     def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
         """Pinned code and present state files are not enough: KRT must import."""

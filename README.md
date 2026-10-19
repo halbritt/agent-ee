@@ -131,8 +131,9 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Per-net classes and hierarchical staged presence
-remain unavailable.
+refuses incomplete inputs. Optional captured net constraints add per-net classes,
+assignments, width rules and a Default completeness check. Hierarchical staged
+presence remains unavailable.
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it
@@ -326,7 +327,7 @@ The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
 The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
-`e497916` (versioned `kicad-route/route/1` results)
+`a132899` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 with read-only state, retains hashed attempt diagnostics, and verifies routing
 semantics before adopting a proposal. Fresh checks determine acceptance.
 The [fab profile check](docs/fab-profile.md) runs captured, source-cited

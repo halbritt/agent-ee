@@ -1,0 +1,25 @@
+{
+  "schema": "agent-ee.routing-rules/1",
+  "constraints": [
+    {
+      "id": "can-length",
+      "requirement": "can-probe-routing",
+      "kind": "length",
+      "nets": [
+        "CAN+",
+        "CAN-"
+      ],
+      "max_mm": 15.1
+    },
+    {
+      "id": "can-skew",
+      "requirement": "can-probe-routing",
+      "kind": "skew",
+      "nets": [
+        "CAN+",
+        "CAN-"
+      ],
+      "max_mm": 0.15
+    }
+  ]
+}

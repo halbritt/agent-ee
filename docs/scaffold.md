@@ -74,7 +74,7 @@ byte-identity tests here are the single source of truth for the board it emits.
 `agent-ee scaffold ENVELOPE PARTS --plan PLAN --out DIR` (AGENTEE-141) derives
 the scope/2 and the `.kicad_pro` design rules through the same module, then
 publishes exactly as stage one does. `PLAN` is an `agent-ee.scaffold-plan/1`
-with exactly these fields, none of which the envelope or parts manifest states:
+with these required fields, none of which the envelope or parts manifest states:
 
 ```json
 {
@@ -107,6 +107,55 @@ Derived from the inputs:
 | Default net class | `clearance` from the minimum limit, because KiCad DRC enforces it as a hard floor. `track_width`, `via_diameter` and `via_drill` from the preferred limit when present, otherwise the minimum: they are routing defaults, and DRC grades the board minimum rules instead. See [Default class clearance](#default-class-clearance) |
 | Board | Outline, layer count and stackup from the envelope, as in stage one |
 
+### Per-net classes
+
+AGENTEE-184 adds two optional plan fields, required together:
+
+```json
+{
+  "net_constraints": "requirements/net-constraints.json",
+  "netclass_qualification": "templates/qualification.json"
+}
+```
+
+Both paths must be captured by `inputs`. The first holds an
+[`agent-ee.net-constraints/1`](net-constraints.md) document; the second holds the
+[qualified KiCad 10.0.7 record](../fixtures/netclass-completeness/qualification.json).
+The template still carries only Default, with empty patterns and assignments.
+The producer derives the board minimums and Default first, then calls
+`net_constraints.emit` with that project and the captured envelope. The same
+emitter supplies the named classes, exact escaped net patterns and DRC width
+rules. No constraints means the existing Default-only output and five checks.
+
+The output contains `<project>.kicad_dru` when the emitter supplies rules and
+`<project>.net-constraints.record.json`. The receipt's `derivation.net_constraints`
+lists the input path/hash, derived class records, exact net-to-class map and
+record path. The record binds the final project bytes, including sheet metadata,
+and the emitted rule bytes. The constraints and record are added to the scope's
+immutable requirement inputs; native-rule consumers bind the project and rules.
+The captured qualification is also immutable.
+
+Declared widths, clearances and differential-pair track/via gaps below the fab
+minimums refuse production before any output is published. Width declarations
+are checked before rounding, and the emitted classes are checked again so a
+current-derived width below the minimum is also refused. A preferred class
+width is a routing default, not a fabrication minimum: a 0.15 mm class width is
+allowed with a 0.127 mm fab minimum and a 0.2 mm preferred width. Both the fab
+minimum via pad and the derived Default via pad must exceed their respective
+drills, independently; valid preferred dimensions cannot mask degenerate minima.
+
+The derived `netclasses` check uses `netclass_completeness`, maps to the native
+requirement and runs in the placement stage before DRC. It checks qualified
+Default field presence only. Stage-presence gates still apply to an empty
+candidate; an isolated project-check run can establish completeness without
+claiming the board has reached placement.
+
+The shared emitter's limits remain: a differential pair needs native `+`/`-`
+or `P`/`N` suffixes (`CAN_H`/`CAN_L` is refused); impedance is recorded without
+computed geometry. Classes such as CAN, RF_50 and PWR carry captured dimensions,
+not inferred electrical requirements. The tests' dimensions are owned synthetic
+assumptions, not approved telemetry-pod routing values.
+
 ### Default class clearance
 
 The owner decided on 2026-10-18 that the Default clearance is the fab minimum, and
@@ -115,8 +164,7 @@ that the router targets preferred values where it can
 that KiCad 10 DRC enforces the Default class `clearance` as a hard floor, but not
 the class track width, via diameter or via drill. Those three are graded only
 against the board minimum rules. A preferred clearance in the class would fail
-boards that meet the fab minimum, so every DRC floor the producer writes is a fab
-minimum:
+boards that meet the fab minimum, so the board rules and Default use fab minimums:
 
 - the six project rules and the Default `clearance` always use the minimum tier;
 - the Default `track_width`, `via_diameter` and `via_drill` use the preferred tier
@@ -151,7 +199,7 @@ The producer refuses, naming the cause, and publishes nothing when:
   (for example no minimum `max_layers` limit, or an unverified source);
 - any profile limit is not source-verified, one of the six rule keys has no
   minimum limit, a preferred value of a class key is below its minimum, the
-  Default via pad does not exceed its drill, or the limits name more than one
+  minimum or Default via pad does not exceed its drill, or the limits name more than one
   requirement;
 - the parts manifest lacks required datasheet provenance, or an envelope fixed
   footprint is not a declared parts instance;
@@ -164,7 +212,7 @@ The producer refuses, naming the cause, and publishes nothing when:
 
 If a required selector is on a child sheet, the staged presence checker cannot
 observe it. The producer then emits no stage policy and records why in the
-receipt. Net classes other than Default wait on AGENTEE-47 net constraints.
+receipt. Per-net classes require the optional captured constraints described above.
 KiCad rule settings outside the six keys keep the template values. The producer
 derives no `fab_package` done gate and no scope/3 envelope acceptance.
 
@@ -224,7 +272,7 @@ hashes, candidate and baseline identities, root/sheet identities, Python version
 and hashes of the agent-ee policy modules. With `--plan` the receipt is
 `agent-ee.scaffold-receipt/2`: it records `plan_sha256` in place of
 `scope_sha256`, and a `derivation` naming the envelope, profile, template and
-manifest hashes, each derived rule's setting, value, limit ID, tier and
+manifest hashes, any per-net constraint derivation, each derived rule's setting, value, limit ID, tier and
 `/limits/N` locator, each Default class value's `basis`, and the `router_targets`. It has no timestamp or absolute
 output path. Identical planning bytes and tool versions produce byte-identical
 outputs and the same candidate hash at different output paths.
@@ -259,11 +307,17 @@ gaps and producer migrations resolved before the envelope can become binding.
 [test_scaffold_producer.py](../tests/test_scaffold_producer.py) covers the
 producer on owned synthetic envelope, profile and parts fixtures: byte-identical
 outputs, the derived mappings, rules, class tiers, router targets and stages,
-every refusal above, the fome-mc severity template, and three native runs. In the
+every refusal above, the fome-mc severity template, and native runs. In the
 first, pcbnew loads the derived rules and Default class from the produced project,
 and each of the five checks reports `stage_not_reached` on the empty candidate.
 The second is the clearance DRC run described above. In the third, kicad-cli ERC
 and DRC get the derived fome-mc project, and their `ignored_checks` match the record.
+The per-net tests check exact CAN, RF_50 and PWR values/patterns, byte identity,
+immutable constraint evidence, refusal boundaries and a sealed passing
+`netclass_completeness` result on the derived project with the pod severity
+template. A native probe resolves all six declared nets to their classes while
+near-matching and undeclared names remain Default; DRC flags a 0.25 mm power
+track against its emitted 1.012 mm rule.
 [test_rule_severities.py](../tests/test_rule_severities.py) recaptures the
 committed record from the local fome-mc object store, rebuilds the template from
 it byte for byte, and covers the capture refusals.

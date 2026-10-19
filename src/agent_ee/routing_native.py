@@ -18,7 +18,7 @@ def node(position, layer):
 
 
 def route_coverage(board, net):
-    """Prove one unbranched pad-centre path; unsupported topology is unknown."""
+    """Prove one unbranched path with distinct endpoints inside native pad copper."""
     import pcbnew
     pads = [p for fp in board.GetFootprints() for p in fp.Pads() if p.GetNetname() == net]
     tracks = [t for t in board.GetTracks() if t.GetNetname() == net]
@@ -54,10 +54,16 @@ def route_coverage(board, net):
         layers = [l for l in p.GetLayerSet().Seq() if board.GetLayerName(l).endswith('.Cu')]
         if p.GetAttribute() != pcbnew.PAD_ATTRIB_SMD or len(layers) != 1:
             return {'complete': False, 'reason': 'only single-copper-layer SMD terminal pads qualified'}
-        terminals.append(node(p.GetPosition(), layers[0]))
+        layer = layers[0]
+        shape = p.GetEffectiveShape(layer)
+        contained = [n for n in adjacency if n[2] == layer and
+                     shape.Collide(pcbnew.VECTOR2I(n[0], n[1]), 0)]
+        if len(contained) != 1:
+            return {'complete': False, 'reason': 'missing or ambiguous native pad endpoint'}
+        terminals.append(contained[0])
     start, end = terminals
     if start == end or any(len(adjacency.get(t, [])) != 1 for t in terminals):
-        return {'complete': False, 'reason': 'missing pad-centre endpoint or ambiguous terminals'}
+        return {'complete': False, 'reason': 'missing unique pad endpoint or ambiguous terminals'}
     if any(len(neighbors) != (1 if n in terminals else 2) for n, neighbors in adjacency.items()):
         return {'complete': False, 'reason': 'branch or dangling copper; no unique complete route'}
     seen, pending, visited_edges = set(), [start], set()
@@ -127,7 +133,8 @@ def physical_contacts(board, tracks, pads):
             for layer in layers(track) & set(pad.GetLayerSet().Seq()):
                 if track.GetEffectiveShape(layer).Collide(pad.GetEffectiveShape(layer), contact_guard):
                     if (pad.m_Uuid.AsString() not in terminals or
-                            node(pad.GetPosition(), layer) not in endpoints(track, layer)):
+                            not any(pad.GetEffectiveShape(layer).Collide(k.VECTOR2I(p[0], p[1]), 0)
+                                    for p in endpoints(track, layer))):
                         return 'nonincident pad copper contact'
     for pad in pads:
         for other in all_pads:
