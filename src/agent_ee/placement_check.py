@@ -15,7 +15,9 @@ from .storage import digest, read_json, write_json
 
 COMMON = {'criterion', 'drc_check', 'policy', 'routing_feedback'}
 EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope', 'reference'},
-         'ratsnest-mst/1': {'max_manhattan_mm', 'max_euclidean_mm'}}
+         'ratsnest-mst/1': {'max_manhattan_mm', 'max_euclidean_mm'},
+         'imu-axes/1': {'envelope', 'imu_ref', 'graphic_id', 'marker_ref', 'forward_axis', 'side',
+                        'max_distance_mm', 'marker_rotation_deg', 'facts_check', 'axis_fact'}}
 REQUIRED = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope'}}
 MAXIMA = {'max_manhattan_mm': 'manhattan', 'max_euclidean_mm': 'euclidean'}
 
@@ -27,6 +29,9 @@ def parameters(params):
     criterion = params.get('criterion')
     if criterion not in predicates.CRITERIA:
         raise ValueError(f'placement requires one criterion of {list(predicates.CRITERIA)}')
+    if criterion == 'imu-axes/1':
+        from .imu_axes import parameters as imu_parameters
+        imu_parameters(params)
     unknown = set(params) - COMMON - EXTRA.get(criterion, set())
     missing = REQUIRED.get(criterion, set()) - set(params)
     if unknown or missing:
@@ -61,6 +66,8 @@ def parameters(params):
 
 def predicate_names(params):
     criterion = params['criterion']
+    if criterion == 'imu-axes/1':
+        return [f"placement:{criterion}:{params['imu_ref']}"]
     if criterion == 'connector-edge/1' and 'reference' in params:
         return [f"placement:{criterion}:{params['reference']}"]
     if criterion != 'ratsnest-mst/1':
@@ -164,6 +171,9 @@ def _routing(ctx, facts):
 
 
 def evaluate(criterion, facts, report, params, declarations=None):
+    if criterion == 'imu-axes/1':
+        from .imu_axes import evaluate as imu_evaluate
+        return imu_evaluate(facts, params, declarations)
     if criterion == 'courtyard-overlap/1':
         return predicates.courtyard_overlap(facts, report)
     if criterion == 'outline-containment/1':
@@ -193,6 +203,9 @@ def check_placement(ctx):
     declarations = validation = None
     if criterion == 'connector-edge/1':
         declarations, validation = _connector_declarations(ctx)
+    if criterion == 'imu-axes/1':
+        from .imu_axes import captured_declaration
+        declarations, validation = captured_declaration(ctx)
     board = ctx.candidate_path(ctx.scope['board'])
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', board,
                  '--out', '/work/placement-probe.json'], timeout=600)

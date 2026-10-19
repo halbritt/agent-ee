@@ -37,6 +37,21 @@ def primitive(shape):
     return {**record, 'kind': 'unsupported', 'native_shape': int(kind)}
 
 
+def marking(item, owner_ref=None):
+    """Retain native identity even for a graphic whose content we cannot grade."""
+    import pcbnew
+    record = {'uuid': item.m_Uuid.AsString(), 'owner_ref': owner_ref,
+              'native_class': item.GetClass(), 'layer': {pcbnew.F_SilkS: 'F.SilkS',
+                pcbnew.B_SilkS: 'B.SilkS'}.get(item.GetLayer(), pcbnew.LayerName(item.GetLayer()))}
+    if item.GetClass() not in ('PCB_TEXT', 'FP_TEXT', 'PCB_FIELD'):
+        return record
+    return {**record, 'text': item.GetText(), 'position_nm': vector_nm(item.GetPosition()),
+            'rotation_deg': item.GetTextAngle().AsDegrees(), 'mirrored': bool(item.IsMirrored()),
+            'visible': bool(item.IsVisible()), 'size_nm': vector_nm(item.GetTextSize()),
+            'thickness_nm': int(item.GetTextThickness()), 'knockout': bool(item.IsKnockout()),
+            'font': item.GetFontName() or None}
+
+
 def prove_contours(primitives, missing, unproven):
     """Every primitive must belong to an exact-endpoint degree-two closed ring."""
     record = {'status': missing if not primitives else unproven, 'primitives': primitives}
@@ -103,10 +118,12 @@ def extract(board_path):
     board = pcbnew.LoadBoard(str(path))
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
     footprints = []
+    markings = [marking(item) for item in board.GetDrawings()]
     areas = [rule_area(z, 'board') for z in board.Zones() if z.GetIsRuleArea()]
     for fp in board.GetFootprints():
         areas.extend(rule_area(z, fp.m_Uuid.AsString()) for z in fp.Zones() if z.GetIsRuleArea())
         graphics = list(fp.GraphicalItems()) + list(fp.GetFields())
+        markings.extend(marking(item, fp.GetReference()) for item in graphics)
         outline_shapes.extend(s for s in graphics if s.GetLayer() == pcbnew.Edge_Cuts)
         courtyards = {}
         for side, layer in (('F', pcbnew.F_CrtYd), ('B', pcbnew.B_CrtYd)):
@@ -133,6 +150,7 @@ def extract(board_path):
         outline.update(status='outline_unproven', reason='multiple board contours unsupported')
     return {'schema': 'agent-ee.placement-probe/1', 'board_sha256': hashlib.sha256(before).hexdigest(),
             'pcbnew_version': pcbnew.Version(), 'outline': outline,
+            'markings': sorted(markings, key=lambda m: (m['uuid'], m['owner_ref'] or '')),
             'rule_areas': sorted(areas, key=lambda a: (a['owner'], a['uuid'])),
             'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid']))}
 

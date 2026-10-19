@@ -78,6 +78,7 @@ Every check names an earlier `drc` check in `drc_check`:
 | `edge-clearance/1` | `min_courtyard_edge_mm` | exact courtyard-to-Edge.Cuts distance below the minimum, or courtyard crossing/outside the outline | unproved outline or courtyard |
 | `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; native check ignored |
 | `connector-edge/1` | `envelope`, `reference` (required for several fixed footprints) | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
+| `imu-axes/1` | `envelope`, `imu_ref`, `graphic_id` or `marker_ref`, `forward_axis`, `side`, `max_distance_mm`, `marker_rotation_deg`, `facts_check`, `axis_fact` | IMU side/rotation or mapped axes disagree; marker missing, wrong layer, rotation or distance | missing/ambiguous IMU, unverified/inapplicable axis fact, incomplete marker inventory, ambiguous or unreadable marking |
 | `ratsnest-mst/1` | optional `max_manhattan_mm`, `max_euclidean_mm` | proved total above a declared maximum | Euclidean interval straddles a maximum; no netted pads |
 
 The prerequisite must be `execution=ok` with outcome `pass` or `defect` for the
@@ -150,6 +151,59 @@ Native tests generate owned boards, save/reload them, exercise the real probe
 inside Bubblewrap, and compare native DRC courtyard overlap with the judge.
 These are software geometry qualifications, not fabrication approval. Copper,
 clearance, thermal, EMC and decoupling-loop physics remain separate checks.
+
+### IMU axes
+
+`imu-axes/1` selects one fixed footprint in the declared envelope using `imu_ref`.
+`side` must match that declaration (`front` or `back`); `forward_axis` is `x+`.
+The native side and rotation must equal the envelope values. A prior
+`datasheet_facts` check, selected by `facts_check`, must verify `axis_fact`.
+That fact uses the existing facts/1 or facts/2 record with `kind: axis_orientation`
+and these additional fields:
+
+```json
+{
+  "footprint_id": "Owned:R2",
+  "axes": {"X": "x-", "Y": "y+", "Z": "z+"}
+}
+```
+
+This example describes the original test stand-in at 180 degrees. It is not an
+LSM6DSO32 mapping. The ordinary fact fields (`id`, `part_number`, `value`, `unit`,
+`conditions`, `source`) remain required. `part_number` must equal the native IMU
+value and `footprint_id` its library ID. `axes` declares signed sensor directions
+in that footprint's front, zero-rotation frame. X and Y are orthogonal planar
+axes (`x+`, `x-`, `y+`, `y-`), Z is `z+` or `z-`, and the frame must be right-handed.
+KiCad board y increases downward. The existing qualified front/back quarter-turn
+transform must produce X=`x+`, Y=`y-`, Z=`z+` on the board. Unsupported transforms
+remain unknown. Fact interpretation and footprint applicability are engineering
+declarations: PDF text occurrence does not prove the interpretation of a drawing.
+
+`graphic_id` is the exact native UUID of a board or footprint graphic.
+Alternatively, `marker_ref` names a dedicated marker footprint containing one
+non-field graphic. The qualified marking is the scaffold's stroke text
+`IMU_AXES X forward Y left Z up` (whitespace is collapsed), on F.SilkS.
+It must be visible, unmirrored, without knockout or a custom font, at least
+0.8 mm in both text dimensions, with stroke at least 0.12 mm and at most one
+quarter of the smaller text dimension. Unsupported graphic/content/rendering
+is unknown. This check does not establish visual clearance from pads, masks or
+other graphics; use native DRC for silkscreen clearances.
+
+`marker_rotation_deg` is an explicit board-frame quarter turn, compared modulo
+360. `max_distance_mm` is a positive distance from IMU origin to marker origin;
+the exact squared-nanometre comparison includes the boundary. No inferred marker
+name, nearest text or rounded distance can stand in for the declared selection.
+The capability predicate is `placement:imu-axes/1:<imu_ref>`. The retained judgment
+names the IMU and marker and includes the measured transform and verified fact.
+The existing envelope fixed-footprint obligation still needs its separate
+`connector-edge/1` witness, which also checks position.
+
+`tests.test_placement_check` runs the registered scope/3 check over the scaffold
+and original PDF/footprint stand-ins. It proves rotated-IMU and missing-marker
+defects, unreadable-marker unknown coverage, layer/rotation/distance boundaries,
+part applicability and sealed witness binding. Production LSM6DSO32 axis capture
+and its exact footprint datum remain inputs to supply after AGENTEE-209 settles
+the IMU choice; these software tests do not qualify a production sensor mapping.
 
 ## Native qualification
 

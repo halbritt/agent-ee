@@ -892,6 +892,13 @@ findings carry a `suggested_fix`, copied from the owner declaration the
 predicate grades: `move` to the declared anchor, `rotate` to the declared
 rotation, or `flip` to the declared side. Hints are advisory and never applied.
 
+The `placement` criterion `imu-axes/1` checks an envelope-selected IMU transform
+and a selected F.SilkS axis marking against captured declarations. It consumes an
+earlier `datasheet_facts` result for part/footprint-specific axis mapping and the
+ordinary earlier DRC result. Missing markers are defects; unreadable markings or
+unverified axis facts are unknown. See [IMU axes](placement.md#imu-axes) for the
+required parameters, qualified text and evidence limits.
+
 ## Board envelope predicates
 
 `board_envelope` takes `criterion` and a captured immutable `envelope`

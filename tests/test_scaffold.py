@@ -462,6 +462,44 @@ class EnvelopeScaffoldFixture(ScaffoldFixture):
             at=p.relative_to(self.source).as_posix()) for p in sorted(self.source.rglob('*')) if p.is_file()]
         write_json(self.scope_path,self.scope)
 
+    def acceptance_scope(self, inputs):
+        """Complete scope/3 mechanics checks for the original pod-sized stand-in."""
+        from agent_ee.board_envelope import validate, derive_requirements, source_inventory
+        record = validate((inputs / 'envelope.json').read_bytes(),
+            profile=(inputs / 'fab-profile.json').read_bytes(),captured=source_inventory(inputs))
+        requirements = derive_requirements(record,'envelope.json')['requirements']
+        version = subprocess.run(['/usr/bin/pdftotext','-v'],capture_output=True,text=True,check=True).stderr.splitlines()[0]
+        checks = [dict(id='facts',kind='datasheet_facts',params=dict(facts='facts.json',extractor=dict(
+            path='/usr/bin/pdftotext',sha256=digest('/usr/bin/pdftotext'),version=version))),
+            dict(id='drc',kind='drc'),
+            dict(id='fab',kind='fab_profile',params=dict(fab_profile='fab-profile.json'))]
+        for req in requirements:
+            field = req['source']['locator'].split('/')[1]
+            cid = req['id'].removeprefix('R-envelope-telemetry-pod-').lower()
+            if field == 'fab_profile':
+                cid = 'fab'
+            elif field == 'fixed_footprints':
+                ref = record[field][int(req['source']['locator'].split('/')[-1])]['reference']
+                checks.append(dict(id=cid,kind='placement',params=dict(
+                    criterion='connector-edge/1',envelope='envelope.json',reference=ref,drc_check='drc')))
+            else:
+                criterion = {'outline':'outline/1','layer_count':'layers/1','stackup':'stackup/1',
+                    'mounting_holes':'mounting-holes/1','keepouts':'keepouts/1'}[field]
+                params = dict(criterion=criterion,envelope='envelope.json')
+                if field in ('mounting_holes','keepouts'):
+                    params['id'] = record[field][int(req['source']['locator'].split('/')[-1])]['id']
+                checks.append(dict(id=cid,kind='board_envelope',params=params))
+            req['checks'] = [cid]
+            del req['field_sha256'],req['check_kinds']
+        requirements.append(dict(id='R-facts',statement='Verify cited mechanical dimensions.',intent='informational',
+            source=dict(path='targets.md',locator='line 1'),checks=['facts']))
+        requirements.append(dict(id='native-drc',statement='Native DRC passes.',intent='acceptance',
+            source=dict(path='targets.md',locator='line 1'),checks=['drc']))
+        scope = read_json(self.root / 'content/scope.json')
+        scope.update(schema='agent-ee.scope/3',checks=checks,envelope=dict(path='envelope.json',profile='fab-profile.json',dialog=None),
+            baseline=dict(requirements=requirements,targets=['targets.md'],reference_architectures=['reference.md']))
+        return scope
+
     def content(self, name='content', **overrides):
         from agent_ee.scaffold import content_step
         from agent_ee.stage_receipts import run_step, adopt
@@ -597,43 +635,10 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
 
     def test_registered_envelope_checks_pass(self):
         import time
-        from agent_ee.board_envelope import validate, derive_requirements, source_inventory
         from agent_ee.checks import run_checks
         inputs,path,receipt = self.content()
         self.assert_completed(path,receipt)
-        record = validate((inputs / 'envelope.json').read_bytes(),
-            profile=(inputs / 'fab-profile.json').read_bytes(),captured=source_inventory(inputs))
-        requirements = derive_requirements(record,'envelope.json')['requirements']
-        version = subprocess.run(['/usr/bin/pdftotext','-v'],capture_output=True,text=True,check=True).stderr.splitlines()[0]
-        checks = [dict(id='facts',kind='datasheet_facts',params=dict(facts='facts.json',extractor=dict(
-            path='/usr/bin/pdftotext',sha256=digest('/usr/bin/pdftotext'),version=version))),
-            dict(id='drc',kind='drc'),
-            dict(id='fab',kind='fab_profile',params=dict(fab_profile='fab-profile.json'))]
-        for req in requirements:
-            field = req['source']['locator'].split('/')[1]
-            cid = req['id'].removeprefix('R-envelope-telemetry-pod-').lower()
-            if field == 'fab_profile':
-                cid = 'fab'
-            elif field == 'fixed_footprints':
-                ref = record[field][int(req['source']['locator'].split('/')[-1])]['reference']
-                checks.append(dict(id=cid,kind='placement',params=dict(
-                    criterion='connector-edge/1',envelope='envelope.json',reference=ref,drc_check='drc')))
-            else:
-                criterion = {'outline':'outline/1','layer_count':'layers/1','stackup':'stackup/1',
-                    'mounting_holes':'mounting-holes/1','keepouts':'keepouts/1'}[field]
-                params = dict(criterion=criterion,envelope='envelope.json')
-                if field in ('mounting_holes','keepouts'):
-                    params['id'] = record[field][int(req['source']['locator'].split('/')[-1])]['id']
-                checks.append(dict(id=cid,kind='board_envelope',params=params))
-            req['checks'] = [cid]
-            del req['field_sha256'],req['check_kinds']
-        requirements.append(dict(id='R-facts',statement='Verify cited mechanical dimensions.',intent='informational',
-            source=dict(path='targets.md',locator='line 1'),checks=['facts']))
-        requirements.append(dict(id='native-drc',statement='Native DRC passes.',intent='acceptance',
-            source=dict(path='targets.md',locator='line 1'),checks=['drc']))
-        scope = read_json(self.root / 'content/scope.json')
-        scope.update(schema='agent-ee.scope/3',checks=checks,envelope=dict(path='envelope.json',profile='fab-profile.json',dialog=None),
-            baseline=dict(requirements=requirements,targets=['targets.md'],reference_architectures=['reference.md']))
+        scope = self.acceptance_scope(inputs)
         write_json(self.root / 'content/scope.json',scope)
         run = self.root / 'checks'
         run.mkdir()
