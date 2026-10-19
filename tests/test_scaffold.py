@@ -400,7 +400,7 @@ class EnvelopeScaffoldFixture(ScaffoldFixture):
                 ('J2','back','right',15,1,270,'through_edge'),
                 ('U1','front','top',50,30,180,'from_top'),
                 ('U2','front','top',40,30,90,'from_top'))]
-        self.envelope['keepouts'] = [dict(id='antenna', antenna=dict(reference='U2', facts_check='facts'),
+        self.envelope['keepouts'] = [dict(id='fixture-clearance', polygon=[[10,35],[12,35],[12,37],[10,37]],
             layers=['F.Cu','In1.Cu','In2.Cu','B.Cu'],
             forbid=['tracks','vias','pads','copper_pours','footprints'])]
         self.envelope['keepouts'].append(dict(id='board-clearance', polygon=[[60,30],[62,30],[62,32],[60,32]],
@@ -450,7 +450,7 @@ class EnvelopeScaffoldFixture(ScaffoldFixture):
         write_json(self.source / 'intent.json', self.intent)
         write_json(self.source / 'layout.json', dict(schema='agent-ee.schematic-layout/1',
             namespace=str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-ee177')), project='design', transforms={}))
-        multipage_text_pdf(self.source / 'owned.pdf',45,45,['18','25.5','6','15'])
+        multipage_text_pdf(self.source / 'owned.pdf',45,45,['18','25.5','6'])
         self.facts = esp32_s3_wroom_1_datasheet_facts(pdf_path='owned.pdf',pdf_sha256=digest(self.source / 'owned.pdf'))
         write_json(self.source / 'facts.json',self.facts)
         self.save()
@@ -640,7 +640,7 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         capture(self.root / 'content/scope.json',run)
         results = {r['id']:r for r in run_checks(run,time.monotonic()+300)}
         for cid in ['facts','outline','layer-count','stackup',*[f'hole-h{i}' for i in range(1,5)],
-                    'keepout-antenna','keepout-board-clearance',*[f'fixed-{ref}' for ref in ('j1','j2','u1','u2')]]:
+                    'keepout-fixture-clearance','keepout-board-clearance',*[f'fixed-{ref}' for ref in ('j1','j2','u1','u2')]]:
             self.assertEqual((results[cid]['execution'],results[cid]['outcome']),('ok','pass'),results[cid])
 
     def test_pre_receipt_verifies(self):
@@ -683,32 +683,21 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         failed = read_json(self.root / 'mismatch-campaign/state.json')
         self.assertIn('pre_receipt output differs from first capture',failed['error'])
 
-    def test_antenna_native_transforms_and_refusal_boundaries(self):
-        from agent_ee.envelope_check import keepout_verdict
-        from agent_ee.board_envelope import validate
-        from agent_ee.executor import execute
-        for side in ('front','back'):
-            for angle in (0,90,180,270):
-                with self.subTest(side=side,angle=angle):
-                    self.envelope['fixed_footprints'][-1].update(side=side,rotation_deg=angle,
-                        insertion='from_top' if side=='front' else 'from_bottom')
-                    self.save()
-                    name = f'antenna-{side}-{angle}'
-                    inputs,path,receipt = self.content(name)
-                    self.assert_completed(path,receipt)
-                    work = self.root / (name+'-probe')
-                    result = execute(inputs,work,['/usr/bin/python3','-B','-m','agent_ee.envelope_probe',
-                        '/candidate/project/design.kicad_pcb','--out','/work/native.json'])
-                    self.assertEqual(result['execution'],'ok',result)
-                    area = validate((inputs / 'envelope.json').read_bytes())['keepouts'][0]
-                    verdict = keepout_verdict(area,read_json(work / 'native.json'),self.facts)
-                    self.assertEqual(verdict['status'],'pass',verdict)
-        self.envelope['fixed_footprints'][-1]['rotation_deg'] = 45
+    def test_legacy_dynamic_antenna_remains_refused(self):
+        # AGENTEE-211 withdrew the former dimension-to-clearance derivation.
+        # Generic mechanical/receipt tests above use an ordinary explicit polygon.
+        self.envelope['keepouts'][0] = dict(id='antenna',
+            antenna=dict(reference='U2',facts_check='facts'),
+            layers=['F.Cu','In1.Cu','In2.Cu','B.Cu'],
+            forbid=['tracks','vias','pads','copper_pours','footprints'])
         self.save()
-        inputs,path,receipt = self.content('oblique')
-        self.assertEqual(receipt['status'],'failed')
-        self.assertIn('exact quarter turn',(path / 'run/console.log').read_text())
-        self.assertEqual(receipt['inputs']['project/design.kicad_pcb'],digest(path / 'run/design/project/design.kicad_pcb'))
+        for name,args,message in [('legacy',{},'placement qualification unresolved'),
+                                  ('missing-facts',dict(antenna_facts=None),'requires captured antenna facts')]:
+            inputs,path,receipt = self.content(name,**args)
+            self.assertEqual(receipt['status'],'failed')
+            self.assertIn(message,(path / 'run/console.log').read_text())
+            self.assertEqual(receipt['inputs']['project/design.kicad_pcb'],
+                             digest(path / 'run/design/project/design.kicad_pcb'))
 
     def test_wrong_identity_and_nonempty_board_are_refused(self):
         from agent_ee.scaffold import content_step
@@ -738,7 +727,6 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
     def test_content_refusals_leave_board_unchanged(self):
         for label,overrides,message in (
             ('missing-layout',dict(layout=None),'require captured intent'),
-            ('missing-facts',dict(antenna_facts=None),'requires captured antenna facts'),
             ('unknown-imu',dict(imu_reference='U99'),'declared fixed footprint')):
             with self.subTest(label=label):
                 inputs,path,receipt = self.content(label,**overrides)

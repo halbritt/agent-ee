@@ -225,3 +225,134 @@ class CapturedRuleAreaContractTests(unittest.TestCase):
             mutate(f,z)
             with self.assertRaises(ValueError):
                 verify_native_retention(changed,retention['items'],self.root)
+
+
+# Production writer integration over the existing original mechanics fixture.
+# The policy bytes/pin are synthetic; native geometry and refusal behavior are real.
+from tests.test_scaffold import EnvelopeScaffoldFixture
+
+
+class CapturedRuleAreaContentTests(EnvelopeScaffoldFixture, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        from agent_ee.board_envelope import validate
+        from agent_ee.storage import read_json, identity
+        self.envelope['keepouts'][0] = dict(id='antenna',
+            antenna=dict(reference='U2',facts_check='facts'),
+            layers=['F.Cu','In1.Cu','In2.Cu','B.Cu'],
+            forbid=['tracks','vias','pads','copper_pours','footprints'])
+        self.envelope['fixed_footprints'][-1].update(side='front',position_mm=62.5,
+            inset_mm=6.5,rotation_deg=0,insertion='from_top')
+        source = 'RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod'
+        raw = (self.source/source).read_bytes().rstrip()
+        (self.source/source).write_bytes(raw[:-1]+b'\n'+CAD[CAD.index(b'(zone '):-1]+b'\n)')
+        cad = read_json(self.source/'cad.json')
+        for lib in cad['libraries']:
+            for member in lib['members']:
+                member['sha256'] = sha(self.source/member['path'])
+        write_json(self.source/'cad.json',cad)
+        self.parts['cad']['manifest']['sha256'] = sha(self.source/'cad.json')
+        members = [m for lib in cad['libraries'] for m in lib['members']]
+        self.parts['cad']['members_sha256'] = identity(sorted(
+            [*members,dict(path='Owned.kicad_sym',sha256=sha(self.source/'Owned.kicad_sym'))],
+            key=lambda m:m['path']))
+        write_json(self.source/'parts.json',self.parts)
+        self.save()
+        native_envelope = validate((self.source/'envelope.json').read_bytes())
+        policy_bytes = b'%PDF-1.4\nOwned synthetic policy source.\n'
+        (self.source/'guideline.pdf').write_bytes(policy_bytes)
+        patcher = patch.object(fl,'ESP32_GUIDELINES_SHA256',hashlib.sha256(policy_bytes).hexdigest())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        policy = fl.esp32_s3_wroom_1_placement_policy('outside_board',pdf_path='guideline.pdf')
+        item = dict(keepout_id='antenna',reference='U2',footprint=fl.ESP32_FOOTPRINT_ID,
+            pose={k:native_envelope['fixed_footprints'][-1][k] for k in ('anchor_mm','rotation_deg','side')},
+            source=dict(path=source,sha256=sha(self.source/source)),
+            rule_areas=fl.probe_rule_areas((self.source/source).read_bytes(),path=source),
+            policy=policy,context=fl.antenna_placement_context(policy,{'guideline.pdf':policy_bytes}))
+        self.retention = dict(schema='agent-ee.captured-rule-areas/1',purpose='retain-captured-cad-only',
+            envelope=dict(path='envelope.json',sha256=sha(self.source/'envelope.json')),
+            parts=dict(path='parts.json',sha256=sha(self.source/'parts.json')),items=[item])
+        write_json(self.source/'retained.json',self.retention)
+        self.save()
+
+    def produce(self, name):
+        from agent_ee.scaffold import write_envelope_content
+        self.build(name)
+        inputs = self.root/name/'inputs'
+        write_envelope_content(inputs,'envelope.json','parts.json','project/design.kicad_pcb',
+            intent_rel='intent.json',layout_rel='layout.json',captured_rule_areas_rel='retained.json')
+        return inputs
+
+    def test_full_native_writer_preserves_outside_zone_and_unknown(self):
+        from agent_ee import envelope_probe
+        from agent_ee.envelope_check import keepout_verdict
+        from agent_ee.board_envelope import validate
+        first = self.produce('first')
+        second = self.produce('second')
+        board = first/'project/design.kicad_pcb'
+        self.assertEqual(board.read_bytes(),(second/'project/design.kicad_pcb').read_bytes())
+        native = envelope_probe.extract(board)
+        self.assertEqual(len(native['footprints']),8)
+        fp = next(f for f in native['footprints'] if f['ref']=='U2')
+        self.assertEqual(fp['position_nm'],[62500000,6500000])
+        zones = [z for z in native['rule_areas'] if z['owner']==fp['uuid']]
+        self.assertEqual(len(zones),1)
+        self.assertEqual(zones[0]['outline']['polygons'],
+            [[[38500000,-250000],[86500000,-250000],[86500000,-21250000],[38500000,-21250000]]])
+        self.assertEqual(len([z for z in native['rule_areas'] if z['owner']=='board']),1)
+        area = validate((first/'envelope.json').read_bytes())['keepouts'][0]
+        verdict = keepout_verdict(area,native,self.facts)
+        self.assertEqual(verdict['status'],'unknown')
+        self.assertEqual((first/'envelope.json').read_bytes(),(self.source/'envelope.json').read_bytes())
+        from agent_ee.forward_annotation import board_facts
+        before = board_facts(board,self.root/'native-paths')
+        self.assertEqual(len([f for f in before['footprints'] if f['path']]),4)
+        from agent_ee.schematic_emitter import emit_schematic
+        from agent_ee.executor import execute
+        from agent_ee.storage import read_json
+        from agent_ee import forward_annotation as fa
+        result, files = emit_schematic(self.intent,
+            {'Owned.kicad_sym':(first/'Owned.kicad_sym').read_bytes()}, read_json(first/'layout.json'))
+        self.assertEqual(result['execution'],'ok')
+        (first/'project/design.kicad_sch').write_bytes(files['design.kicad_sch'])
+        result = execute(first,self.root/'xml',['kicad-cli','sch','export','netlist','--format','kicadxml',
+            '-o','/work/native.xml','/candidate/project/design.kicad_sch'])
+        self.assertEqual(result['execution'],'ok',result)
+        xml = self.root/'xml/native.xml'
+        manifest = read_json(first/'cad.json')
+        plan = fa.plan(board,xml,manifest,first,self.root/'annotation-plan')
+        self.assertEqual(plan['execution'],'ok',plan)
+        self.assertEqual(plan['counts']['add'],0)
+        annotated = self.root/'annotated.kicad_pcb'
+        applied = fa.apply(plan,board,xml,manifest,first,annotated,self.root/'annotation-apply',
+                           backup_dir=self.root/'backups')
+        self.assertEqual(applied['execution'],'ok',applied)
+        self.assertEqual(envelope_probe.extract(annotated)['rule_areas'],native['rule_areas'])
+
+    def test_failed_retention_never_publishes_a_changed_board(self):
+        from agent_ee.scaffold import write_envelope_content
+        self.build('refusals')
+        inputs = self.root/'refusals/inputs'
+        board = inputs/'project/design.kicad_pcb'
+        before = board.read_bytes()
+        for mutation in ('pose','policy','zone'):
+            record = copy.deepcopy(self.retention)
+            if mutation=='pose':
+                record['items'][0]['pose']['anchor_mm'] = ['0','0']
+            elif mutation=='policy':
+                record['items'][0]['context']['outcome'] = 'pass'
+            else:
+                record['items'][0]['rule_areas']['rule_areas'][0]['polygon_nm'][0][0] = 0
+            write_json(inputs/'retained.json',record)
+            with self.assertRaises(ValueError):
+                write_envelope_content(inputs,'envelope.json','parts.json','project/design.kicad_pcb',
+                    intent_rel='intent.json',layout_rel='layout.json',captured_rule_areas_rel='retained.json')
+            self.assertEqual(board.read_bytes(),before)
+        write_json(inputs/'retained.json',self.retention)
+        with patch('agent_ee.scaffold_rule_areas.verify_native_retention',
+                   side_effect=ValueError('native saved zone changed')):
+            with self.assertRaisesRegex(ValueError,'native saved zone changed'):
+                write_envelope_content(inputs,'envelope.json','parts.json','project/design.kicad_pcb',
+                    intent_rel='intent.json',layout_rel='layout.json',captured_rule_areas_rel='retained.json')
+        self.assertEqual(board.read_bytes(),before)
