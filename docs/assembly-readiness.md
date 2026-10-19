@@ -6,6 +6,7 @@ captured KiCad schematic. Each must carry the required sourcing and rating
 properties and resolve by exact LCSC ID to a captured offline catalog snapshot.
 That snapshot must show fresh stock for the declared board quantity, and the
 design must stay within any declared Extended-part budget.
+Captured hand-fit deviations are reported separately under the rules below.
 
 The check does not pick replacements, query live stock or price the board.
 Live JLCPCB stock reaches it only through an owner-run
@@ -89,10 +90,51 @@ Live JLCPCB stock reaches it only through an owner-run
 | `stale_before` | `str \| None` | catalog `stale_before` | ISO date; earlier `last_seen` observations are stale. |
 | `as_of` | `str \| None` | catalog `snapshot_date` | Evaluation date or ISO-8601 timestamp for stock age. Required for a JLCPCB stock capture, where it binds the evaluation to the run. |
 | `stock_floor` | `int >= 0` | `0` | Minimum stock per LCSC ID: `threshold = max(quantity_per_board * boards, stock_floor)`. |
+| `deviations` | `str \| None` | `None` | Captured mutable `agent-ee.part-deviations/1` file shared with `part_decisions`. |
 
 `property` lookups for `Footprint`, `LCSC` and `Manufacturer` also accept the
 common aliases (`footprint`, `LCSC Part`, `jlcpcb_part`, `Mfr`, ...); other
 names are exact. Empty and `~` values count as missing.
+
+## Declared hand-fit deviations
+
+The owner's telemetry-pod decision permits hand-fitting the TE 776228-1 header,
+and NEO-M9N or an SMA connector if unavailable from JLCPCB. An assembly entry
+in the [shared deviations format](part-decisions.md#captured-deviations) must
+name its exact `original.mpn`, `assembly` (`consigned` or `hand_soldered`),
+`purchase_source`, `reason`, `stock_deviation.reason`, and captured
+`evidence_refs`. Both modes mean fitting after delivery.
+
+Every matched native component must be populated, on board and in BOM, with
+the exact `Partnumber` and, when specified, `LCSC`. It must carry
+`JLCPCB_Assembly=not_assembled`. Missing, duplicate, unmatched or invalid
+declarations are defects. A marker without a valid declaration is a defect.
+A NO_LCSC marker alone is also a defect. Part-binding's marker spellings
+remain valid on declared exceptions; an absent LCSC is allowed too.
+Manufacturer, footprint, part number and applicable rating policies still run.
+
+The check refuses an exception if any captured catalog row for the exact MPN
+or native LCSC ID has positive stock, including stock insufficient for the
+requested build. A matching row with null stock cannot establish unavailability
+and is refused. JLC capture freshness and failed/unrequested-ID checks still
+apply to declared parts with an LCSC ID. For parts without a catalog identity,
+the purchase source and cited declaration are reviewed evidence of the
+exception, not an automated proof of distributor absence. No network is used.
+
+`declared_deviation` lists each valid exception with its native reference,
+sheet and UUID, MPN, LCSC, assembly mode, purchase source, reasons, evidence
+hashes and deviation-file hash. Its `stock_state` is `declared_deviation`.
+These parts remain visible in `populated_refs` and `components`, with
+`lcsc_status=declared_deviation`; they do not enter `parts`, stock quantities
+or tier counts. `counts.declared_deviation` and the summary distinguish them
+from JLC assembly parts. Every remaining component grades normally. Substitution
+records remain the `part_decisions` check's presence obligation.
+
+For fabrication, set the `fab_export` parameter `assembly_exclusion` to
+`JLCPCB_Assembly=not_assembled` and put the marker on both symbol and footprint.
+The [fab exporter](fab-export.md) omits the part from BOM and CPL and lists
+its designator and rule in the manifest. Run both checks: the exporter does
+not validate sourcing declarations. Reports use ordinary coordinator sealing.
 
 ## Component classification
 
