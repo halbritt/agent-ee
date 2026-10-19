@@ -548,7 +548,11 @@ bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave th
 outline only across envelope-declared edges and distances. Declared group
 regions and anchor distances are enforced and graded by `placement-groups/1`, and
 parts without courtyards are refused by name
-([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). A declared captured
+([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
+result past the fixed reservations records the board's capacity at the packing
+gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
+is a proved infeasibility only when the policy opts in
+([AGENTEE-249](docs/placer.md#board-capacity-agentee-249)). A declared captured
 sub-layout also admits exactly the copper of whole reused groups. KiCad's
 unchanged custom-property font default is tolerated on resave. Fresh checks grade
 every proposal. These checks do not establish routing quality or a

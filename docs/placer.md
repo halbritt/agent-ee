@@ -4,8 +4,9 @@
 [placement probe](placement.md). The policy is captured input, using schema
 `agent-ee.packing-policy/1` and explicit `step_budget`, `gap_nm`, `fixed_refs`,
 `priority_refs`, `ground_nets`, and `obstacles`, plus optional
-`min_courtyard_edge_mm` (default `0.0`), envelope-bound `fixed_overhangs` and
-declared `groups` ([AGENTEE-212](#real-pod-residuals-agentee-212)). Obstacles declare `side` and
+`min_courtyard_edge_mm` (default `0.0`), envelope-bound `fixed_overhangs`,
+declared `groups` ([AGENTEE-212](#real-pod-residuals-agentee-212)) and the boolean
+`capacity_proof` (default `false`, [AGENTEE-249](#board-capacity-agentee-249)). Obstacles declare `side` and
 closed straight `polygons` in integer nanometres. Locked footprints are fixed
 even when absent from `fixed_refs`; interface-owned fixed references must be
 supplied by the coordinator from captured owner intent. When
@@ -48,6 +49,8 @@ placements. A board too small for its parts yields `packing_infeasible`,
 | `diameter` | a part's courtyard is longer than the outline's longest vertex-to-vertex span | `ref`, `board_diameter_squared_nm2`, `footprint_diameter_squared_nm2` |
 | `region_capacity` | a declared group region cannot hold the courtyards that must lie in it ([below](#region-capacity-proofs-agentee-212)) | `group`, `side`, `groups`, `references`, `region_board_area_nm2`, `blocked_area_nm2`, `blocked_by`, `available_area_nm2`, `required_courtyard_area_nm2` |
 | `region_capacity_gap` | the same, with every courtyard and the region grown by half the packing gap | `group`, `side`, `groups`, `references`, `gap_nm`, `grown_region_area_upper_nm2`, `blocked_area_nm2`, `blocked_by`, `available_area_nm2`, `required_grown_courtyard_area_nm2` |
+| `board_capacity_gap` | with `capacity_proof`: the movable courtyards on one side, grown by half the gap, exceed the board's free area ([below](#board-capacity-agentee-249)) | `side`, `gap_nm`, `blocked_by`, `square_nm` (0), `references`, `required_grown_courtyard_area_nm2`, `available_area_upper_nm2`, `ratio` |
+| `board_capacity_fragmented` | with `capacity_proof`: the parts at least `square_nm` thick exceed the free area such parts can reach | the same, `square_nm` > 0 |
 
 Values are exact `[numerator, denominator]` rationals in square nanometres.
 The width and diameter proofs hold for every rotation, not only quarter turns,
@@ -292,7 +295,10 @@ changes, tested on owned fixtures (`tests/test_placer_crowded.py`):
 
 Search failures also record `search.placed_peak`: the most movable parts placed
 at once. It is a diagnostic only. A plan is complete or empty, and the outcome
-stays unknown.
+stays unknown. The capacity figure above is now computed by the engine and
+recorded in every result as [`capacity`](#board-capacity-agentee-249); the v2
+input gives 1548.703575 / 1619.765150 mm² (0.956128), and no fragmentation row
+exceeds 0.944, so it stays unknown.
 
 The rank key is unchanged. A touching-perimeter (compaction) term raised the
 pod's deepest partial placement further, but it moved parts against each other
@@ -327,6 +333,72 @@ pairwise disjoint.
 Both are exact rationals, `packing_infeasible`, `outcome=defect`, with
 `steps_used=0`. Edge margin and the width of a region are not used, so a
 region too narrow but large enough by area is still only a search failure.
+
+### Board capacity (AGENTEE-249)
+
+After the fixed reservations and region proofs, the engine bounds board-wide
+capacity at the packing gap for each side that has movable courtyards. With
+r = `gap_nm`/2:
+
+- **Container.** A movable courtyard lies in the outline at least
+  `min_courtyard_edge_mm` (m) from its edges, so grown by r it lies in the
+  outline's box offset inward by m − r.
+- **Blocked.** Fixed courtyards (inner bounds) and declared obstacles keep the
+  gap, so grown by r they share no area with grown movable courtyards. Only
+  boxes inside those grown sets are counted: each slab of a rectilinear polygon
+  grown by r along x and, separately, along y (the corners stay free). A
+  non-rectilinear blocker counts nothing. When m ≥ r and the outline is
+  rectilinear, the outline's box less the outline is blocked too, grown by
+  m − r. Footprint keepouts are not counted. So `available_area_upper_nm2` is an
+  upper bound.
+- **Required.** Each movable part's courtyards on that side, by inner bound,
+  grown by r, bounded below as in the region proofs (Steiner with pi taken as 3
+  for one convex polygon, `gap_nm` times the larger extent for another, ungrown
+  area for several).
+
+`capacity.sides.<side>.free_area` compares the two. It is the scratch
+calculation of the [crowded-cluster](#crowded-clusters-agentee-212) analysis,
+now in the engine.
+
+**Fragmentation.** A part has square size a when every point of its
+courtyards lies in an a × a square inside them: the smaller side of a
+rectangle, the thinnest arm of a rectilinear polygon (checked exactly against
+its own square cover), and 0 for any other shape. A rigid motion carries the
+squares along, so at any angle each point of the grown courtyard lies in a
+square grown by r that fits in the free space. Such a set holds a disc of
+radius a/2 + r and lies within a/√2 + r of its centre. Its centre therefore
+lies where the axis cross of half-length a/2 + r is free, and it reaches only
+free points within an axis box of half-side ⌈a/√2⌉ + r (rounded up to the half
+nanometre) of such a centre. For each distinct square size, the parts at least
+that thick must fit in that reachable free area. These are the
+`capacity.sides.<side>.fragmentation` rows. Narrow strips, slots and margins
+then count only for parts that can reach them. The bound holds for every
+rotation, not only quarter turns.
+
+Every row is a necessary condition for every placement, so exceeding one is a
+proof. The `capacity` record (`basis: diagnostic-only`, method
+`gapped-free-area/1`, exact `[numerator, denominator]` areas and ratios, and a
+six-decimal `ratio_display` rounded down) is attached to the plan, to search and
+budget failures and to judge rejections. It never passes or fails a plan. Results
+that stop before the reservations (unsupported geometry, fixed conflicts, the
+earlier proofs) do not carry it.
+
+A row that is exceeded becomes a `packing_infeasible` / `defect` result
+(`board_capacity_gap` for the free-area row, `board_capacity_fragmented` for a
+square size) only when the policy sets `capacity_proof: true`. By default the
+result stays the search's unknown. Turning it on changes the verdict of truly
+infeasible inputs that existing tests keep as search failures: the 4 mm board
+with a 1.5 mm margin (`test_placer.PlacerTest.test_edge_margin`), the 3 mm
+notch at a 1.5 mm gap
+(`test_placer.EnvelopeFixedTest.test_fixed_courtyard_is_a_polygon_not_its_bounding_box`)
+and two 1 mm circles in a 2.506 mm square at the 0.5 mm gap
+(`test_placer_residuals.CurvedCourtyardTest.test_circle_infeasibility_is_proved_only_on_the_inner_bound`).
+Making it the default is an owner decision. No placement constraint is relaxed
+either way. The bound is not tight: a feasible input never exceeds it, but an
+infeasible one may not either. Owned fixtures are in
+`tests/test_placer_capacity.py`. On a 20 × 12 mm board with a 12 × 9 mm fixed
+block, six 3.2 mm squares are placed. Seven are proved infeasible by the
+fragmentation row, although they need only about 81 % of the free area.
 
 ### Pad shapes (AGENTEE-109)
 
