@@ -32,8 +32,8 @@ from agent_ee.capabilities import describe_check
 from agent_ee.checks import run_checks, sheet_instances
 from agent_ee.jlc_stock_capture import capture_jlc_stock, ids_from_netlist
 from agent_ee.storage import digest, read_json, write_json
-from test_jlc_stock_capture import JlcStub, row, search
-from toolchain import require_toolchain
+from tests.test_jlc_stock_capture import JlcStub, row, search
+from tests.toolchain import require_toolchain
 
 
 HIDDEN = "(effects (font (size 1.27 1.27)) (hide yes))"
@@ -209,6 +209,186 @@ class AssemblyReadinessTests(unittest.TestCase):
                                            hierarchy_files=files)
 
     # ------------------------------------------------------------------ LCSC binding
+    def handfit(self, mpn='776228-1', assembly='consigned', lcsc=None):
+        return {'requirement_id': 'POD-AC-5', 'original': {'mpn': mpn, 'lcsc': lcsc},
+                'assembly': assembly, 'reason': 'Hand-fitted after delivery per captured decision.',
+                'purchase_source': 'Original fixture supplier purchase list, line 1',
+                'stock_deviation': {'reason': 'Not offered for JLC assembly in this synthetic capture.'},
+                'evidence_refs': [{'path': 'purchase.txt', 'locator': 'line 1'}]}
+
+    def handfit_case(self, declarations=None, *, lcsc='NO_LCSC', marker='not_assembled', stock=None):
+        (self.root / 'purchase.txt').write_text('Original synthetic procurement declaration; not a live quote.\n')
+        declarations = [self.handfit()] if declarations is None else declarations
+        write_json(self.root / 'deviations.json', {'schema': 'agent-ee.part-deviations/1',
+                                                  'deviations': declarations})
+        rows = [{'lcsc': 'C25804', 'stock': 1000, 'is_basic': True, 'last_seen': '2026-10-15'}]
+        if stock is not None:
+            rows.append({'lcsc': 'C90099', 'mpn': '776228-1', 'stock': stock,
+                         'is_basic': False, 'last_seen': '2026-10-15'})
+        cat = self.catalog(rows)
+        netlist = self.export('pod.kicad_sch', schematic('pod', [part('R1'),
+            part('J1', 'J', lcsc=lcsc, part_number=('Partnumber', '776228-1'), rating=None,
+                 extra={'JLCPCB_Assembly': marker} if marker is not None else {})]))
+        return netlist, {'catalog': cat, 'deviations': 'deviations.json'}
+
+    def test_consigned_deviation_listed(self):
+        netlist, params = self.handfit_case()
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+        self.assertEqual(report['parts']['C25804']['references'], ['R1'])
+        self.assertEqual(report['parts']['C25804']['stock_state'], 'ok')
+        self.assertEqual(report['counts']['unique_lcsc'], 1)
+        self.assertEqual(report['counts']['declared_deviation'], 1)
+        entry = report['declared_deviation'][0]
+        self.assertEqual((entry['reference'], entry['mpn'], entry['assembly']), ('J1', '776228-1', 'consigned'))
+        self.assertEqual(entry['stock_state'], 'declared_deviation')
+        self.assertEqual(entry['deviations_sha256'], digest(self.root / 'deviations.json'))
+        self.assertEqual(entry['evidence'][0]['sha256'], digest(self.root / 'purchase.txt'))
+        self.assertEqual(report['invalid_lcsc'], {})
+        self.assertIn('1 declared hand-fit deviation', report['summary'])
+        # The exemption cannot hide a defect in the remaining BOM.
+        self.catalog([{'lcsc': 'C25804', 'stock': 0, 'is_basic': True, 'last_seen': '2026-10-15'}])
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['findings'][0]['code'], 'out_of_stock')
+
+    def test_undeclared_no_lcsc_defect(self):
+        netlist, params = self.handfit_case([])
+        for configured in (params, {'catalog': params['catalog']}):
+            with self.subTest(configured=configured):
+                report = self.evaluate(netlist, configured)
+                self.assertEqual(report['outcome'], 'defect')
+                self.assertEqual(report['declared_deviation'], [])
+                self.assertEqual(report['invalid_lcsc'], {'J1': 'NO_LCSC'})
+                self.assertIn('undeclared_assembly_marker', [f['code'] for f in report['findings']])
+        netlist, params = self.handfit_case([], marker=None)
+        self.assertEqual(self.evaluate(netlist, params)['outcome'], 'defect')
+
+    def test_deviation_for_stocked_part_refused(self):
+        for lcsc in ('NO_LCSC', 'C90099'):
+            with self.subTest(lcsc=lcsc):
+                netlist, params = self.handfit_case(lcsc=lcsc, stock=10)
+                report = self.evaluate(netlist, params)
+                self.assertEqual(report['outcome'], 'defect')
+                self.assertEqual(report['declared_deviation'], [])
+                self.assertIn('stocked part refused', report['findings'][0]['message'])
+
+    def test_handfit_missing_source_reason_evidence_identity_or_marker_refused(self):
+        mutations = [lambda d: d.pop('purchase_source'), lambda d: d.update(purchase_source='  '),
+                     lambda d: d.update(stock_deviation={'reason': ''}), lambda d: d.update(reason=''),
+                     lambda d: d.update(evidence_refs=[]),
+                     lambda d: d.update(evidence_refs=[{'path': 'absent', 'locator': 'x'}]),
+                     lambda d: d.update(evidence_refs=[{'path': '../escape', 'locator': 'x'}]),
+                     lambda d: d.update(original={'mpn': 'OTHER', 'lcsc': None}),
+                     lambda d: d.update(assembly='jlc_assembled'),
+                     lambda d: d.update(replacement={'mpn': 'OTHER', 'lcsc': None})]
+        for mutate in mutations:
+            declaration = self.handfit()
+            mutate(declaration)
+            with self.subTest(declaration=declaration):
+                netlist, params = self.handfit_case([declaration])
+                report = self.evaluate(netlist, params)
+                self.assertEqual(report['outcome'], 'defect')
+                self.assertEqual(report['declared_deviation'], [])
+        for marker in (None, 'assembled', 'consigned'):
+            netlist, params = self.handfit_case(marker=marker)
+            report = self.evaluate(netlist, params)
+            self.assertEqual(report['outcome'], 'defect')
+            self.assertEqual(report['declared_deviation'], [])
+
+    def test_duplicate_deviation_is_defect_and_missing_capture_never_passes(self):
+        netlist, params = self.handfit_case([self.handfit(), self.handfit()])
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertIn('duplicate assembly deviation', report['findings'][0]['message'])
+        (self.root / 'deviations.json').write_text('{')
+        with self.assertRaises(AssemblyReadinessExecutionError):
+            self.evaluate(netlist, params)
+        (self.root / 'deviations.json').unlink()
+        with self.assertRaises(AssemblyReadinessExecutionError):
+            self.evaluate(netlist, params)
+
+    def test_stocked_native_id_cannot_hide_behind_a_different_catalog_mpn(self):
+        netlist, params = self.handfit_case(lcsc='C25804')
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['declared_deviation'], [])
+        self.assertIn('stocked part refused', report['findings'][0]['message'])
+
+    def test_unknown_stock_and_failed_jlc_observation_cannot_be_exempted(self):
+        netlist, params = self.handfit_case(lcsc='C90099', stock=0)
+        doc = read_json(self.root / 'catalog.json')
+        doc['parts'][-1]['stock'] = None
+        write_json(self.root / 'catalog.json', doc)
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['declared_deviation'], [])
+        doc = self.jlc_capture(self.root, {'C25804': (200, search(row('C25804', 500))),
+                                          'C90099': (503, b'busy')}, ['C25804', 'C90099'])
+        params.update(catalog='jlc/catalog.json', as_of=self.shifted(doc['as_of'], 1), max_age_hours=12)
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'failed requests'):
+            self.evaluate(netlist, params)
+
+    def test_jlc_raw_capture_controls_deviation_for_zero_not_found_and_positive_stock(self):
+        netlist, params = self.handfit_case(lcsc='C90099')
+        for index, stock in enumerate((0, None, 10)):
+            with self.subTest(stock=stock):
+                parent = self.root / f'capture-{index}'
+                parent.mkdir()
+                response = search() if stock is None else search(row('C90099', stock, componentModelEn='776228-1'))
+                doc = self.jlc_capture(parent, {'C25804': (200, search(row('C25804', 500))),
+                                               'C90099': (200, response)}, ['C25804', 'C90099'])
+                params.update(catalog=f'capture-{index}/jlc/catalog.json',
+                              as_of=self.shifted(doc['as_of'], 1), max_age_hours=12)
+                report = self.evaluate(netlist, params)
+                self.assertEqual(report['outcome'], 'defect' if stock else 'pass', report)
+                self.assertEqual(len(report['declared_deviation']), 0 if stock else 1)
+                if stock:
+                    self.assertIn('stocked part refused', report['findings'][0]['message'])
+                    self.assertEqual(report['parts']['C90099']['references'], ['J1'])
+                else:
+                    self.assertNotIn('C90099', report['parts'])
+
+    def test_deviations_must_be_captured_and_native_assembly_fields_agree(self):
+        from agent_ee.assembly_readiness import capability
+        netlist, params = self.handfit_case()
+        with self.assertRaisesRegex(ValueError, 'captured input'):
+            capability(params, {'catalog.json': {}}, self.root)
+        desc = capability(params, {'catalog.json': {}, 'deviations.json': {}}, self.root)
+        self.assertNotIn('deviations.json', desc['immutable_inputs'])
+        # The exact marker and sourcing fields cannot use a conflicting XML representation.
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(netlist)
+        comp = tree.find("./components/comp[@ref='J1']")
+        prop = comp.find("property[@name='JLCPCB_Assembly']")
+        if prop is None:
+            prop = ET.SubElement(comp, 'property', name='JLCPCB_Assembly')
+        prop.set('value', 'assembled')
+        tree.write(netlist)
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'contradictory native property'):
+            self.evaluate(netlist, params)
+
+    def test_neo_and_sma_hand_soldered_without_lcsc(self):
+        declarations = [self.handfit(mpn, 'hand_soldered') for mpn in ('NEO-M9N', 'OWNED-SMA')]
+        netlist, params = self.handfit_case(declarations)
+        netlist = self.export('gnss.kicad_sch', schematic('gnss', [part('R1')] + [
+            part(ref, lib, lcsc=None, part_number=('Partnumber', mpn), rating=None,
+                 extra={'JLCPCB_Assembly': 'not_assembled'})
+            for ref, lib, mpn in [('U1', 'U', 'NEO-M9N'), ('J1', 'J', 'OWNED-SMA')]]))
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'pass', report)
+        self.assertEqual({d['mpn'] for d in report['declared_deviation']}, {'NEO-M9N', 'OWNED-SMA'})
+        self.assertEqual(report['missing_lcsc_refs'], [])
+
+    def test_native_bom_exclusion_cannot_hide_an_undeclared_no_lcsc_part(self):
+        netlist, params = self.handfit_case([])
+        netlist = self.export('excluded.kicad_sch', schematic('excluded', [part('R1'),
+            part('J1', 'J', lcsc='NO_LCSC', part_number=('Partnumber', '776228-1'), in_bom=False)]))
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['excluded_from_bom'], ['J1'])
+        self.assertEqual(report['findings'][0]['code'], 'invalid_assembly_exclusion')
+
     def test_lcsc_binding_missing_invalid_and_unknown_in_catalog(self):
         cat = self.catalog([{"lcsc": "C25804", "stock": 1000, "is_basic": True, "last_seen": "2026-10-15"}])
         netlist = self.export("design.kicad_sch", schematic("design", [

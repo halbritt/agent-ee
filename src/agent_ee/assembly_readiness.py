@@ -18,6 +18,7 @@ from .catalog import decimal_number
 from .fab_export import natural_key
 from .hardware_interface import unique_object
 from .jlc_stock_capture import is_capture, response_paths, validate_capture
+from .part_binding import NO_LCSC_VALUES, _is_no_lcsc
 from .storage import digest, write_json
 from .symbol_library import LibraryError, parse_sexpr
 
@@ -79,6 +80,7 @@ ALLOWED_PARAM_KEYS = frozenset((
     "as_of",
     "stock_floor",
     "calibration_inputs",
+    "deviations",
 ))
 
 CATALOG_SQLITE_COLUMNS = (
@@ -607,7 +609,18 @@ def read_netlist_components(netlist_path: Path) -> dict:
             name = field.get("name")
             if not name:
                 raise AssemblyReadinessExecutionError("failed", f"{ref} has a field without a name")
+            if name in fields:
+                raise AssemblyReadinessExecutionError("failed", f"{ref} repeats native field {name}")
             fields[name] = (field.text or "").strip()
+        properties = {}
+        for prop in comp.findall("property"):
+            name, value = prop.get("name"), prop.get("value")
+            if value is None:
+                continue
+            if name in properties or (name in fields and fields[name] != value.strip()):
+                raise AssemblyReadinessExecutionError("failed", f"{ref} has contradictory native property {name}")
+            properties[name] = value.strip()
+        fields.update(properties)
         value = (comp.findtext("value") or "").strip()
         footprint = (comp.findtext("footprint") or "").strip()
         fields["Value"] = value
@@ -826,6 +839,10 @@ def validate_params(params):
     if isinstance(stock_floor, bool) or not isinstance(stock_floor, int) or stock_floor < 0:
         raise ValueError("stock_floor must be an integer >= 0")
 
+    deviations = params.get("deviations")
+    if deviations is not None and str(safe_relative(deviations)) != deviations:
+        raise ValueError("deviations must be a normalized captured path")
+
     return {
         "catalog": catalog,
         "catalog_sha256": catalog_sha256,
@@ -838,6 +855,7 @@ def validate_params(params):
         "stale_before": stale_before.strip() if isinstance(stale_before, str) else None,
         "as_of": as_of.strip() if isinstance(as_of, str) else None,
         "stock_floor": stock_floor,
+        "deviations": deviations,
     }
 
 
@@ -847,6 +865,8 @@ def capability(params, files, inputs=None):
     catalog_rel = cfg["catalog"]
     if catalog_rel not in files:
         raise ValueError(f"catalog {catalog_rel!r} must be a captured input")
+    if cfg["deviations"] is not None and cfg["deviations"] not in files:
+        raise ValueError("deviations must be a captured input")
 
     immutable_inputs = [catalog_rel]
     if inputs is not None:
@@ -888,8 +908,74 @@ def capability(params, files, inputs=None):
     }
 
 
+def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files):
+    from .hardware_interface import exact_keys
+    from .part_decisions import evidence_references, validate_deviation
+
+    declared, findings = [], []
+    if cfg["deviations"] is None:
+        return declared, findings
+    path, rel = _resolve_captured_file(inputs, cfg["deviations"], "deviations")
+    doc = _load_strict_json(path)
+    try:
+        exact_keys(doc, 'schema deviations')
+        if doc['schema'] != 'agent-ee.part-deviations/1' or not isinstance(doc['deviations'], list):
+            raise ValueError('unsupported part deviations')
+    except (ValueError, TypeError, KeyError) as exc:
+        raise AssemblyReadinessExecutionError('failed', str(exc)) from exc
+    files = captured_files if captured_files is not None else {
+        p.relative_to(inputs).as_posix() for p in Path(inputs).rglob('*') if p.is_file()}
+    seen = set()
+    for index, deviation in enumerate(doc['deviations']):
+        try:
+            if not validate_deviation(deviation):
+                continue  # Substitutions remain the part_decisions check's obligation.
+            evidence = evidence_references(deviation['evidence_refs'], inputs, files)
+            identity = deviation['original']
+            matches = [c for c in extracted['populated'] if
+                       c['properties'].get('Partnumber') == identity['mpn'] and
+                       (identity['lcsc'] is None or c['properties'].get('LCSC') == identity['lcsc'])]
+            if not matches:
+                raise ValueError('assembly deviation has no populated BOM component with its exact identity')
+            matched_ids = {_lookup_single_property(c['properties'], 'LCSC') for c in matches}
+            stocked = [p['lcsc'] for p in catalog['parts'].values() if
+                       (p['mpn'] == identity['mpn'] or p['lcsc'] in matched_ids) and
+                       p['stock'] is not None and p['stock'] > 0]
+            if stocked:
+                raise ValueError(f'deviation for stocked part refused: {stocked}')
+            if any(p['stock'] is None for p in catalog['parts'].values() if
+                   p['mpn'] == identity['mpn'] or p['lcsc'] in matched_ids):
+                raise ValueError('unknown stock cannot establish an unavailable part')
+            for comp in matches:
+                if comp['reference'] in seen:
+                    raise ValueError('duplicate assembly deviation for component')
+                if comp['properties'].get('JLCPCB_Assembly') != 'not_assembled':
+                    raise ValueError('hand-fitted part requires JLCPCB_Assembly=not_assembled')
+                lcsc = _lookup_single_property(comp['properties'], 'LCSC')
+                if lcsc and not LCSC_RE.fullmatch(lcsc) and lcsc.upper() not in NO_LCSC_VALUES:
+                    raise ValueError('assembly deviation has malformed LCSC identity')
+                if LCSC_RE.fullmatch(lcsc) and catalog.get('capture') is not None:
+                    _capture_gate(catalog['capture'], cfg, [lcsc] if lcsc not in catalog['parts'] else [])
+            for comp in matches:
+                seen.add(comp['reference'])
+                declared.append({'reference': comp['reference'], 'sheet': comp['sheet'],
+                    'sheet_path': comp['sheet_path'], 'uuid': comp['uuid'],
+                    'mpn': identity['mpn'], 'lcsc': _lookup_single_property(comp['properties'], 'LCSC') or None,
+                    'assembly': deviation['assembly'], 'purchase_source': deviation['purchase_source'],
+                    'stock_deviation': deviation['stock_deviation'], 'reason': deviation['reason'],
+                    'requirement_id': deviation['requirement_id'], 'evidence': evidence,
+                    'declaration_index': index, 'deviations_path': rel, 'deviations_sha256': digest(path),
+                    'assembly_rule': 'JLCPCB_Assembly=not_assembled', 'stock_state': 'declared_deviation'})
+        except AssemblyReadinessExecutionError:
+            raise
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            findings.append({'severity': 'defect', 'code': 'invalid_assembly_deviation',
+                             'declaration_index': index, 'declaration': deviation, 'message': str(exc)})
+    return declared, findings
+
+
 def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: dict, *, expected_sheets=None,
-                                hierarchy_files=None) -> dict:
+                                hierarchy_files=None, captured_files=None) -> dict:
     """Join native XML netlist components with the BOM property policy and captured catalog snapshot.
 
     ``expected_sheets`` is the hierarchy instance count; a netlist covering a
@@ -920,7 +1006,8 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     excluded_from_bom = extracted["excluded_from_bom"]
     ignored_non_assembly = extracted["ignored_non_assembly"]
 
-    findings = []
+    declared_deviation, findings = _assembly_deviations(Path(inputs_root), cfg, extracted, catalog, captured_files)
+    declared_refs = {d['reference'] for d in declared_deviation}
     missing_properties_by_ref = {}
     missing_rating_refs = []
     missing_lcsc_refs = []
@@ -930,6 +1017,11 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     # 1. Report excluded_from_bom components distinctly from DNP.
     for comp in excluded_from_bom:
         ref = comp["reference"]
+        if comp['properties'].get('JLCPCB_Assembly') or _is_no_lcsc(
+                _lookup_single_property(comp['properties'], 'LCSC'), comp['properties']):
+            findings.append({'severity': 'defect', 'code': 'invalid_assembly_exclusion',
+                             'reference': ref, 'message': 'hand-fit parts must stay in the native BOM '
+                             'with a recorded deviation and not_assembled marker'})
         findings.append({
             "severity": "info",
             "code": "exclude_from_bom",
@@ -949,6 +1041,10 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
         ref = comp["reference"]
         props = comp["properties"]
         comp_missing_props = []
+        declared = ref in declared_refs
+        if props.get('JLCPCB_Assembly') and not declared:
+            findings.append({'severity': 'defect', 'code': 'undeclared_assembly_marker',
+                             'reference': ref, 'message': 'assembly exclusion requires a valid recorded deviation'})
 
         markers = _non_native_markers(props)
         if markers:
@@ -970,7 +1066,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             if len(choices) == 1 and choices[0].lower() == "lcsc":
                 # LCSC is checked dedicatedly in step 3; still record in comp_missing_props if requested.
                 val = _lookup_single_property(props, "LCSC")
-                if not val:
+                if not val and not declared:
                     comp_missing_props.append(label)
                 continue
             satisfied = any(_lookup_single_property(props, candidate) for candidate in choices)
@@ -1010,7 +1106,9 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
 
         lcsc_val = _lookup_single_property(props, "LCSC")
         lcsc_status = "ok"
-        if not lcsc_val:
+        if declared:
+            lcsc_status = 'declared_deviation'
+        elif not lcsc_val:
             lcsc_status = "missing_lcsc"
             missing_lcsc_refs.append(ref)
             findings.append({
@@ -1272,10 +1370,10 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     else:
         outcome = "pass"
         summary = (
-            f"all {len(populated)} populated component(s) ({len(matched_by_lcsc)} unique LCSC part(s)) "
+            f"{len(populated) - len(declared_refs)} JLC assembly component(s) ({len(matched_by_lcsc)} unique LCSC part(s)) "
             f"have required BOM properties and fresh stock for {boards} board(s) "
             f"(Basic: {tier_counts['basic_unique']}, Preferred: {tier_counts['preferred_unique']}, "
-            f"Extended: {tier_counts['extended_unique']})"
+            f"Extended: {tier_counts['extended_unique']}); {len(declared_refs)} declared hand-fit deviation(s)"
         )
 
     return {
@@ -1316,6 +1414,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "excluded_from_bom": len(excluded_from_bom),
             "ignored_non_assembly": len(ignored_non_assembly),
             "unique_lcsc": len(matched_by_lcsc),
+            "declared_deviation": len(declared_refs),
             "defects": len(defect_findings),
             "unknowns": len(unknown_findings),
         },
@@ -1323,6 +1422,8 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
         "populated_refs": [c["reference"] for c in populated],
         "excluded_dnp": [c["reference"] for c in excluded_dnp],
         "excluded_from_bom": [c["reference"] for c in excluded_from_bom],
+        "declared_deviation": declared_deviation,
+        "deviations_sha256": digest(Path(inputs_root) / cfg['deviations']) if cfg['deviations'] else None,
         "ignored_non_assembly": [
             {"reference": c["reference"], "lib_id": c["lib_id"], "reason": c["ignore_reason"]}
             for c in ignored_non_assembly
@@ -1373,7 +1474,7 @@ def check_assembly_readiness(ctx):
 
     try:
         report = evaluate_assembly_readiness(ctx.inputs, netlist, ctx.params, expected_sheets=instances,
-                                             hierarchy_files=files)
+                                             hierarchy_files=files, captured_files=ctx.manifest['files'])
     except AssemblyReadinessExecutionError as exc:
         raise CheckError(exc.execution, str(exc)) from exc
 

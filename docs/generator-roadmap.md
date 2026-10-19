@@ -62,6 +62,10 @@ registered for scope/2 and scope/3 (AGENTEE-86). The optional
 RC/header fields and records a real reference-board parts run. Complete
 empty-candidate campaign qualification remains pending; the default generator
 still uses its experimental parts record.
+The telemetry pod's [hand-fit deviation contract](assembly-readiness.md#declared-hand-fit-deviations)
+records unavailable 776228-1, NEO-M9N and SMA parts with named purchase sources
+and assembly exclusions. It grades remaining BOM stock and preserves explicit
+fab-manifest exclusions; it does not establish a complete pod campaign.
 `placement` is also registered ([details](placement.md#placement-check-kind));
 its native qualification does not establish a complete generation campaign
 (AGENTEE-92). `block_provenance` and `fab_package` remain pending (AGENTEE-90,

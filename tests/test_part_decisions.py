@@ -18,8 +18,8 @@ from agent_ee.native_netlist import read_native_inventory
 from agent_ee.part_decisions import compile_decisions, evaluate
 from agent_ee.spec_record import capture as capture_spec
 from agent_ee.storage import json_bytes, read_json, write_json
-from test_native_binding import FIXTURE, GEN
-from toolchain import require_toolchain
+from tests.test_native_binding import FIXTURE, GEN
+from tests.toolchain import require_toolchain
 
 PARTS = [('CAN', 'TJA1051T/3', 'C38695'), ('Protection', 'PESD1CAN-UX', 'C907839'),
          ('IMU', 'LSM6DSO32', None), ('Radio', 'ESP32-S3-WROOM-1-N8', None),
@@ -106,6 +106,18 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'pass')
         self.assertIn('independent suitability', result['records'][4]['deviation']['reason'])
         self.assertEqual(len(result['deviations'][0]['evidence'][0]['sha256']), 64)
+
+    def test_assembly_deviation_preserves_original_choice_and_rejects_invalid_shape(self):
+        item = {'requirement_id': 'TEST-CD-HARNESS', 'original': {'mpn': '776228-1', 'lcsc': None},
+                'assembly': 'consigned', 'reason': 'Hand-fit after delivery',
+                'stock_deviation': {'reason': 'Unavailable for assembly'}, 'purchase_source': 'Owned supplier list',
+                'evidence_refs': [{'path': 'evidence.txt', 'locator': 'purchase source'}]}
+        result = self.result([item])
+        self.assertEqual(result['outcome'], 'pass', result)
+        self.assertEqual(result['records'][-1]['matches'][0]['fields']['Partnumber'], '776228-1')
+        self.assertEqual(result['records'][-1]['deviation'], item)
+        del item['purchase_source']
+        self.assertEqual(self.result([item])['outcome'], 'defect')
 
     def test_deviation_without_reason_or_evidence_defect(self):
         for field, value in [('reason', ''), ('evidence_refs', []),
