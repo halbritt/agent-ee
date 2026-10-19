@@ -45,7 +45,19 @@ results can skip; malformed commands and other probe failures fail the suite. Th
 production execution still records unavailable/failed tools as incomplete work.
 
 The [container image](container.md) provides the pinned toolchain. Project CI
-runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` and no permitted skips.
+runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` through
+`scripts/strict_suite.py`, which permits no skips. Tests that need the owner's
+fome-mc object store or the pod's retained external captures fail there and are
+named as not executed, so the hosted strict step fails until those inputs are
+provisioned; see [required external inputs](container.md#required-external-inputs). The full
+gate passes only on a host with those inputs. Set `AGENT_EE_FOME_MC_CHECKOUT`,
+and also `AGENT_EE_POD_INPUTS` / `AGENT_EE_POD_J1_GEOMETRY` when the captures
+were relocated:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc PYTHONPATH=src \
+  /usr/bin/python3 scripts/strict_suite.py --jobs 4
+```
 
 
 | Test module | Protection |

@@ -177,7 +177,9 @@ from the local fome-mc object store (`AGENT_EE_FOME_MC_CHECKOUT`, default
 the sandbox, then re-parses every plot. There are no unknowns. The comparison
 finds no defects and no gaps, including 1318 macro pad flashes, 1799/1674 F.Cu
 pad/via flashes, 4276 F.Cu segments and 375 copper regions. The board is never
-committed. The test skips only when that object store is absent.
+committed. Without that object store the test skips, or fails under
+`AGENT_EE_REQUIRE_TOOLCHAIN=1` as the named
+[`fome-mc-store` required input](container.md#required-external-inputs).
 
 Pure parser controls cover line numbers, modal state, trailers, undefined tools,
 non-finite aperture input, exact macro arithmetic and extents, arc direction

@@ -410,6 +410,14 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
         from agent_ee.cli import verify
         self.staged()
         self.build()
+        # Dispatch is scripted, so the codex executable is fingerprinted and
+        # preflighted but never launched. A test-owned native ELF and its tool
+        # host keep this test independent of a host codex install (the image has none).
+        harness = self.root / 'codex-harness'
+        harness.mkdir()
+        for name in ('codex', 'codex-code-mode-host'):
+            shutil.copy2('/usr/bin/true', harness / name)
+        self.enterContext(patch.dict(os.environ, {'AGENT_EE_CODEX_BINARY': str(harness / 'codex')}))
         definition = dict(harness='codex', model='test', effort='high', timeout_s=10)
         profile = dict(schema='agent-ee.profile/1', name='scripted-scaffold-test',
             reviewers=[dict(**definition, role='circuit'), dict(**definition, role='physical')], adjudicator=definition)

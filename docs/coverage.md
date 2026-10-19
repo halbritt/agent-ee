@@ -211,7 +211,9 @@ thermal qualification.
 Native-dependent tests preflight their sandbox and installed prerequisites.
 Unavailable prerequisites produce explicit skips by default;
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` makes them fail. A skipped test supplies no native
-execution evidence. Parser, orchestration and failure tests that do not require
+execution evidence. Tests that read the owner's fome-mc object store follow the
+same rule; a strict run names them as required tests not executed and fails
+([container](container.md#required-external-inputs)). Parser, orchestration and failure tests that do not require
 those tools continue to run. See the [maintainer guide](maintainer-guide.md#development-and-checks)
 for the strict command. Production missing-tool classification is unchanged.
 

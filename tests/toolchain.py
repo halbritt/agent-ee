@@ -73,6 +73,38 @@ def require_toolchain(*, native=False, tools=()):
         raise unittest.SkipTest(reason)
 
 
+# Named partitions of required inputs that this repository does not carry.
+# Under AGENT_EE_REQUIRE_TOOLCHAIN=1 an absent one always fails the test; the
+# strict runner names those failures, and no setting turns them into a pass.
+REQUIRED_INPUTS = ('fome-mc-store', 'pod-retained-inputs')
+MISSING_INPUT = 'AGENT_EE_REQUIRE_TOOLCHAIN=1: required input {gap} missing: '
+
+
+def unavailable(gap, reason):
+    """An absent required input of the named partition: a skip, or a failure
+    under AGENT_EE_REQUIRE_TOOLCHAIN=1 whose message names the partition so the
+    strict runner reports it as not executed (docs/container.md). Never a pass."""
+    if gap not in REQUIRED_INPUTS:
+        raise ValueError(f'unknown required-input partition: {gap}')
+    if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1':
+        raise unittest.SkipTest(reason)
+    raise AssertionError(MISSING_INPUT.format(gap=gap) + reason)
+
+
+def fome_mc_store(repository, *revisions):
+    """The local fome-mc Git object store holding every pinned revision (HEAD if none).
+
+    fome-mc design material is read from the owner's store, never committed or
+    fetched here; an absent store or revision is the fome-mc-store gap."""
+    repository = Path(repository)
+    missing = [rev for rev in revisions or ('HEAD',) if not repository.is_dir() or subprocess.run(
+        ['git', '-C', str(repository), 'cat-file', '-e', rev + '^{commit}'], capture_output=True).returncode]
+    if missing:
+        unavailable('fome-mc-store', f'fome-mc object store with {", ".join(r[:12] for r in missing)} '
+                                     f'not available at {repository}')
+    return repository
+
+
 def toolchain_test(test):
     @functools.wraps(test)
     def gated(*args, **kwargs):

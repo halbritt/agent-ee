@@ -19,7 +19,7 @@ from agent_ee.schematic_emit import format_sexpr, parse_quoted
 from agent_ee.storage import digest, read_json
 from agent_ee.symbol_library import children, field
 from tests.test_block_adaptation import fixture
-from tests.toolchain import require_toolchain
+from tests.toolchain import fome_mc_store, require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / 'fixtures/fome-mc/pod-can'
@@ -69,6 +69,7 @@ class CaptureTests(unittest.TestCase):
     def test_offline_git_capture_twice_matches_every_committed_byte(self):
         require_toolchain()
         repository = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', Path.home() / 'git/fome-mc'))
+        fome_mc_store(repository, read_json(BLOCK / 'block.json')['source']['commit'])
         self.assertTrue((repository / '.git').exists(), 'local pinned fome-mc object store required')
         code = '''from pathlib import Path
 from agent_ee.reference_blocks import capture_block

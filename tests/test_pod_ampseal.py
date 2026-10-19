@@ -20,7 +20,7 @@ from agent_ee.executor import execute  # noqa: E402
 from agent_ee.footprint_capture import CaptureError, capture_footprints, verify_capture  # noqa: E402
 from agent_ee.footprint_library import check_assignments, load_document  # noqa: E402
 from agent_ee.storage import json_bytes  # noqa: E402
-from toolchain import require_toolchain  # noqa: E402
+from toolchain import fome_mc_store, require_toolchain  # noqa: E402
 
 CAPTURE = ROOT / 'fixtures/fome-mc/ampseal/capture'
 REQUEST = ROOT / 'fixtures/fome-mc/ampseal/request.json'
@@ -46,17 +46,9 @@ LEGACY = b'''(module owned-pair (layer F.Cu) (tedit 5ED9717A)
 
 
 def fome_mc():
-    """The pinned fome-mc object store; absent is a skip, or a failure under AGENT_EE_REQUIRE_TOOLCHAIN=1."""
+    """The pinned fome-mc object store (tests/toolchain.py fome_mc_store)."""
     repository = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(Path.home() / 'git/fome-mc')))
-    commit = load_document(REQUEST)['commit']
-    found = repository.is_dir() and subprocess.run(
-        ['git', '-C', str(repository), 'cat-file', '-e', commit + '^{commit}'], capture_output=True).returncode == 0
-    if not found:
-        reason = f'fome-mc object store with {commit[:12]} not available at {repository}'
-        if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-            raise AssertionError('AGENT_EE_REQUIRE_TOOLCHAIN=1: ' + reason)
-        raise unittest.SkipTest(reason)
-    return repository
+    return fome_mc_store(repository, load_document(REQUEST)['commit'])
 
 
 def git(repo, *args):

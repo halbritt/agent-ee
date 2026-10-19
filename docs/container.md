@@ -11,7 +11,12 @@ The image has been built and exercised on one Linux x86-64 host with Docker
 29.8 (Ubuntu 24.04 host, kernel 6.8, AppArmor enabled). The project CI also passed on a hosted Ubuntu runner at commit `c0ddba2`: 230
 strict tests, no skips, documentation checks and both native RC gates. See the
 [retained CI result](https://github.com/halbritt/agent-ee/actions/runs/39050160054).
-Other architectures and container engines have not been demonstrated. The first
+Hosted CI then failed on every push from 2026-10-18 (last green `18c2d97`); see
+[Hosted CI restore](#hosted-ci-restore-2026-10-18) for the causes and the
+corrections, which have been replayed locally in the image but not yet observed
+on a hosted runner. The required strict suite step stays red on hosted runners
+until the [required external inputs](#required-external-inputs) are provisioned
+there. Other architectures and container engines have not been demonstrated. The first
 hosted run exposed an AppArmor user-namespace requirement, handled below.
 
 ## Pinned toolchain
@@ -188,8 +193,14 @@ repository. One job:
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
    executor before the suite. Failed setup also records host AppArmor diagnostics.
 3. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
-   and fails if any test fails, errors or is skipped.
-4. Runs `scripts/check_docs.py` in the image.
+   through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
+   a time. This is the required full gate: it fails if any test fails, errors or
+   is skipped, or if any module produces no valid result. Its job summary gives
+   the module and test counts and names every test that did not execute because a
+   [required external input](#required-external-inputs) is absent.
+4. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
+   check and step 5 also run after a failed suite step, so that their own results
+   are reported. Any failed step still fails the job.
 5. Runs checks-only reviews of the RC control and seeded fixtures directly in
    the image, with `--network none` and the runner's non-root UID, then
    `agent-ee verify` on each run. The same gate script the action uses judges
@@ -209,6 +220,63 @@ runner and only the gate summary reaches the job page.
 must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user
 namespace, the installed kicad-happy or the pinned kicad-route is missing. CI also refuses any skip on its own, so a skip cannot pass
 unnoticed whatever the test suite's skip behavior.
+
+### Required external inputs
+
+A few tests read pinned objects from the owner's fome-mc Git object store
+(`AGENT_EE_FOME_MC_CHECKOUT`, default `~/git/fome-mc`). They are recapture and
+reparse regressions over fome-mc design files that this repository cites but
+does not republish, and they use `fome_mc_store` in
+[tests/toolchain.py](../tests/toolchain.py). This is the `fome-mc-store`
+partition. The second partition, `pod-retained-inputs`, covers
+[test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py). Its J1 courtyard
+recipe is pinned to retained external captures that are not committed: the
+vendor drawing PDF and the geometry and registration records
+(`AGENT_EE_POD_INPUTS` and `AGENT_EE_POD_J1_GEOMETRY`, defaulting to the
+preparing host's retained directories).
+
+These tests are required. Without the input, a test skips by default. Under
+`AGENT_EE_REQUIRE_TOOLCHAIN=1` it always fails, with a message naming the
+partition; no environment setting turns it into a skip or a pass. The strict
+runner reports each such failure as a required test not executed, by partition,
+in an error annotation and in the job summary. The run still fails. A present
+store whose pinned file does not verify also fails.
+
+The image has no fome-mc store, and the pod captures are not in the repository,
+so the strict suite step fails on hosted runners. Fetching the owner's fome-mc
+repository in the workflow waits for an owner decision on using fome-mc design
+material in hosted CI, even though that repository is public. The retained pod
+captures include a vendor PDF, which this repository does not republish. Host
+gates run with `AGENT_EE_FOME_MC_CHECKOUT` set and the retained captures present,
+so these tests execute there. A run with any of them not executed does not
+satisfy the required full gate.
+
+### Hosted CI restore (2026-10-18)
+
+The hosted runs failed for four reasons, each reproduced in the locally built
+image with `AGENT_EE_FOME_MC_CHECKOUT` unset:
+
+- Tests that needed the fome-mc store failed or errored (`test_pod_ampseal`,
+  `test_pod_can`, `test_generate`, `test_rung1_qualified`) or skipped in strict
+  mode (`test_block_inventory`, `test_fab_roundtrip`, `test_rule_severities`).
+  They now share the fail-closed `fome-mc-store` partition above. They fail
+  under strict mode, never skip.
+- `test_scaffold`'s campaign test needed a host Codex installation for the
+  real launch preflight, although its inference is scripted and the executable
+  never runs. The test now supplies its own native stand-in through
+  `AGENT_EE_CODEX_BINARY`; fingerprinting and preflight remain real.
+- `test_pod_j1_courtyard` (added at `485ed56`, after the last analysed hosted
+  run) read its retained captures from fixed host `/tmp` directories and failed
+  everywhere else. It now uses the `pod-retained-inputs` partition, with the
+  geometry root configurable.
+- `test_tree_hygiene` ran `git ls-files` in `/opt/agent-ee`, which has no `.git`
+  because the build context excludes it. Without `.git` it now scans every file
+  of the copied tree; a checkout whose Git fails still fails. The host-side
+  `check_conflict_markers.sh` step still checks the Git tree.
+
+The serial suite also took 53 of the job's 60 minutes. The runner now runs
+modules in parallel, each in its own process and temporary directory, and the
+job limit is 90 minutes.
 
 The workflow file has been checked locally for YAML structure, and its image,
 test, docs and fixture commands have been run locally in the built image. The
