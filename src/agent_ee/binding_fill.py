@@ -11,6 +11,7 @@ from .part_decisions import validate_deviation
 from .parts_manifest import (load_manifest, qualify_manifest, read_captured, _read_blob,
                              _path)
 from .storage import canonical, identity, write_json
+from .probe_features import is_probe, declarations, marker, PROPERTY
 
 
 def datasheet(root, part):
@@ -86,6 +87,10 @@ def fill(root, intent, manifest, refs, deviations, *, captures):
     dependencies.update(qualified['dependencies'])
     dependencies.update({(Path(captures) / lib['path']).as_posix(): lib['sha256'] for lib in intent['libraries']})
     parts = {p['id']: p for p in manifest['parts']}
+    probes = declarations(manifest, root)
+    missing_probes = set(probes) - {c['reference'] for c in physical.values()}
+    if missing_probes:
+        raise ValueError('missing probe feature(s): ' + ', '.join(sorted(missing_probes)))
     output, records = copy.deepcopy(intent), []
     for comp in output['components']:
         if comp['id'] not in physical:
@@ -102,8 +107,22 @@ def fill(root, intent, manifest, refs, deviations, *, captures):
             raise ValueError('component symbol capture differs from part_ref CAD')
         if any(comp[k] != part[k] for k in ('lib_id', 'footprint')):
             raise ValueError('component CAD differs from part_ref: ' + comp['id'])
-        if {'sheet': '/', 'reference': comp['reference']} not in part['instances']:
+        if not any(s['sheet'] == '/' and s['reference'] == comp['reference'] for s in part['instances']):
             raise ValueError('component reference outside part instance allocation: ' + comp['id'])
+        if is_probe(part):
+            record = probes[comp['reference']]
+            connected = [net['name'] for net in resolved['nets'] if
+                         any(t['component'] == comp['id'] and t['pin'] == record['pin']['number']
+                             for t in net['terminals'])]
+            if connected != [record['net']]:
+                raise ValueError('probe intent net differs: ' + comp['reference'])
+            fields = {PROPERTY: marker(record)}
+            if any(fields.get(k) != v for k, v in comp.get('part_binding', {}).items()):
+                raise ValueError('writer binding mismatch: ' + comp['id'])
+            comp['part_binding'] = fields
+            records.append({'component': comp['id'], 'reference': comp['reference'],
+                            'part_ref': part['id'], 'fields': fields, 'assembly_deviation': None})
+            continue
         sheet, paths = datasheet(root, part)
         dependencies.update(paths)
         fields = {'LCSC': part['lcsc'], 'Manufacturer': part['manufacturer'], 'Partnumber': part['mpn'],

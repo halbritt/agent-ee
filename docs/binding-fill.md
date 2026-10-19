@@ -142,3 +142,7 @@ write-scope verification. It is not the telemetry pod and proves no real part's
 pin map, footprint, circuitry, stock availability or assembly suitability.
 Actual pod captures, reviewed projections and all remaining stage checks are
 still required. No network, model, purchase or upload operation is performed.
+
+## Required copper probes
+
+A declared [bare copper probe feature](probe-features.md) receives only the source-derived `AGENT_EE_Probe` identity property. Binding fill requires its exact reference allocation and intent net and refuses supplier, DNP and assembly claims. Missing declared probes are refused by reference.

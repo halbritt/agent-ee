@@ -1,0 +1,62 @@
+{
+  "status": "manufactured probe feature proposal; awaiting supported consumer contract",
+  "in_bom": false,
+  "on_board": true,
+  "paste": false,
+  "physical": [
+    {
+      "component": "debug/tp1",
+      "reference": "TP1",
+      "lib_id": "PodFeatures:PogoPad",
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "pin": "1",
+      "net": "POD_UART_TX"
+    },
+    {
+      "component": "debug/tp2",
+      "reference": "TP2",
+      "lib_id": "PodFeatures:PogoPad",
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "pin": "1",
+      "net": "POD_UART_RX"
+    },
+    {
+      "component": "debug/tp3",
+      "reference": "TP3",
+      "lib_id": "PodFeatures:PogoPad",
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "pin": "1",
+      "net": "GND"
+    },
+    {
+      "component": "debug/tp4",
+      "reference": "TP4",
+      "lib_id": "PodFeatures:PogoPad",
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "pin": "1",
+      "net": "MCU_EN"
+    },
+    {
+      "component": "debug/tp5",
+      "reference": "TP5",
+      "lib_id": "PodFeatures:PogoPad",
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "pin": "1",
+      "net": "MCU_BOOT"
+    },
+    {
+      "component": "debug/tp6",
+      "reference": "TP6",
+      "lib_id": "PodFeatures:PogoPad",
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "pin": "1",
+      "net": "+3V3"
+    }
+  ],
+  "limitations": [
+    "No LCSC/MPN/manufacturer/stock identity because these are PCB copper features, not purchased or DNP components.",
+    "Use fixture ground and verify3.3V logic; TP6 is rail measurement/reference, not permission to backfeed power.",
+    "Program by controlling GPIO0 boot and EN reset; fuse/module timing remains unqualified.",
+    "Exposed1.5mm pads and mask opening require pogo fixture access/finish/spacing review before sealing."
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "agent-ee.symbol-capture/1",
+  "implementation": {
+    "module": "agent_ee.symbol_capture",
+    "sha256": "e33078d49aa87d28cefef0fabfa5696d1a943e5d23d4943ea5a6ca4f8b793395"
+  },
+  "authority": "informational-provenance",
+  "source": {
+    "library": "PodFeatures",
+    "file": "PodFeatures.kicad_sym",
+    "sha256": "63240690ced9bce60c822565ec54387daa914e35978a9dc4775151d15bce6922",
+    "bytes": 563,
+    "header": [
+      {
+        "key": "version",
+        "sha256": "f664901cf94d516230a657513d7dd4920e79c263b48bbe0ef17d9ebe0c81764c"
+      },
+      {
+        "key": "generator",
+        "sha256": "c3ab1cca6e12c3f113d806277e67df306f738f0ddbe35f0f5e0575fbd17395a0"
+      }
+    ]
+  },
+  "selected": [
+    "PogoPad"
+  ],
+  "symbols": [
+    {
+      "name": "PogoPad",
+      "role": "selected",
+      "extends": null,
+      "sha256": "f045bae88090828806e35b903ac1577578abcbb06c568687e668a16967845450",
+      "bytes": 489,
+      "nodes": 142
+    }
+  ],
+  "output": {
+    "path": "PodFeatures.kicad_sym",
+    "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9",
+    "bytes": 567
+  },
+  "limits": {
+    "source_bytes": 33554432,
+    "scan_nodes": 8000000,
+    "closure_symbols": 64,
+    "closure_bytes": 4194304,
+    "closure_nodes": 1000000
+  },
+  "canonical_sha256": "5aaa77391efa06397ffac18944aee609a188699dba9ebf6690a09be484400656"
+}

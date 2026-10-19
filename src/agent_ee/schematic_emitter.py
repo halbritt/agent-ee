@@ -368,7 +368,16 @@ def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
                                 'exclude_from_board', 'exclude_from_bom', 'exclude_from_sim', 'in_pos_files'}
                     or name.startswith('ki_')):
                 raise EmissionError('malformed_part_binding', 'binding cannot override native identity or flags', location)
-            _field_text(value, 'malformed_part_binding', location + '/part_binding/' + name)
+            if name == 'AGENT_EE_Probe':
+                from .probe_features import parse_marker
+                if not isinstance(value, str) or len(value) > 4096 or '${' in value or '\\' in value:
+                    raise EmissionError('malformed_part_binding', 'invalid probe identity property', location)
+                try:
+                    parse_marker(value)
+                except ValueError as exc:
+                    raise EmissionError('malformed_part_binding', str(exc), location) from exc
+            else:
+                _field_text(value, 'malformed_part_binding', location + '/part_binding/' + name)
         if comp['footprint'] and not FOOTPRINT.fullmatch(comp['footprint']):
             raise EmissionError('malformed_footprint', 'footprint must be empty or exact library:name', location)
         if comp['power']:

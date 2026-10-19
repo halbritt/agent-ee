@@ -189,3 +189,9 @@ missing value is `unknown` and an explicit no-LCSC marker is accepted.
 missing or non-catalog LCSC value there is a defect. `package_consistency`
 treats an authored `DNP` field as data and excludes only native flags. A
 no-LCSC part can therefore pass `part_binding` and fail `assembly_readiness`.
+
+## Required copper probes
+
+To validate [bare copper probe features](probe-features.md), declare `probe_manifest` and `netlist_check`, naming an earlier native netlist check. The source manifest and dependency closure become immutable inputs. Required native connectivity, embedded symbol, schematic flags, saved board pad geometry and cross-side presence are checked before the feature bypasses purchased-part properties. The marker alone cannot grant this exemption. Ordinary components retain all configured binding obligations.
+
+Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.

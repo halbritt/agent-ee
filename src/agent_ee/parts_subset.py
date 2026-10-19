@@ -7,9 +7,10 @@ from pathlib import Path
 from .parts_manifest import (IDENTITY_FIELDS, LIMIT, PREDICATE, dependency_closure,
                              load_manifest, qualify_manifest, read_captured)
 from .storage import digest, identity, write_json
+from .probe_features import is_probe, native_component
 
 
-def compare_inventory(document, graph, virtual, missing_provenance=()):
+def compare_inventory(document, graph, virtual, missing_provenance=(), probes=None):
     """Compare a validated manifest with the shared strict native inventory.
 
     Callers must qualify captured dependencies first. ``virtual`` must come from
@@ -56,6 +57,16 @@ def compare_inventory(document, graph, virtual, missing_provenance=()):
             row['findings'].append(dict(code='unexpected_populated_instance'))
         else:
             report['evaluated'] += 1
+            if is_probe(part):
+                try:
+                    if probes is None or ref not in probes:
+                        raise ValueError(ref + ': probe captured qualification required')
+                    native_component(probes[ref], comp, graph)
+                except ValueError as exc:
+                    row['findings'].append(dict(code='probe_feature_mismatch', message=str(exc)))
+                if row['findings']:
+                    row['status'] = 'defect'
+                continue
             if not comp['on_board']:
                 row['findings'].append(dict(code='declared_physical_instance_off_board'))
             for field in IDENTITY_FIELDS:
@@ -101,7 +112,14 @@ def evaluate(root, manifest_path, native_xml, schematic_paths):
         graph = read_native_inventory(native_xml)
         sheets = {p: read_captured(root, p) for p in schematic_paths}
         virtual = virtual_symbols(sheets, schematic_paths[0], graph)
-        compared = compare_inventory(document, graph, virtual, qualified['missing_provenance'])
+        from .probe_features import declarations, validate_schematic
+        probes = declarations(document, root)
+        seen = set()
+        for data in sheets.values():
+            seen.update(validate_schematic(data, probes))
+        if seen != set(probes):
+            raise ValueError('missing probe feature(s): ' + ', '.join(sorted(set(probes) - seen)))
+        compared = compare_inventory(document, graph, virtual, qualified['missing_provenance'], probes)
         report.update(compared, qualification=qualified)
     except (OSError, ValueError, KeyError, TypeError, ParseError) as exc:
         report['findings'].append(dict(code='unavailable_captured_evidence', message=str(exc)))

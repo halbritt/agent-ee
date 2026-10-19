@@ -45,7 +45,7 @@ MANIFEST_SCHEMA = 'agent-ee.fab-manifest/1'
 MANIFEST_KEYS = frozenset(('schema', 'candidate_id', 'board_path', 'board_sha256', 'tool', 'files',
                            'headers', 'copper_layers', 'enabled_fab_layers', 'drill', 'designators',
                            'generated_utc'))
-OPTIONAL_MANIFEST_KEYS = frozenset(('bom_variant',))
+OPTIONAL_MANIFEST_KEYS = frozenset(('bom_variant', 'probe_features'))
 REQUIRED_FILES = ('bom.csv', 'cpl.csv', 'gerbers.zip', 'pcb_summary.json')
 NON_COPPER_FAB = frozenset(('F.Mask', 'B.Mask', 'F.Paste', 'B.Paste', 'F.SilkS', 'B.SilkS',
                             'Edge.Cuts'))
@@ -916,6 +916,15 @@ def gate(ctx, eid, export_spec, export_result, stage):
     details.update(enabled_fab_layers=sorted(enabled), plots=plots, drill=drill, zip_members=zipped)
 
     footprints = board['footprints']
+    from .probe_features import load_for_check, validate_board
+    probe_path = (export_spec.get('params') or {}).get('probe_manifest')
+    try:
+        probes = load_for_check(ctx, export_spec['params']) if probe_path else {}
+        if manifest.get('probe_features', {}) != probes:
+            raise ValueError('fab manifest probe features differ from immutable declaration')
+        validate_board((ctx.inputs / ctx.scope['board']).read_bytes(), probes)
+    except (OSError, ValueError) as exc:
+        raise CheckError('malformed', str(exc)) from exc
     by_ref = {}
     for fp in footprints:
         by_ref.setdefault(fp['ref'], []).append(fp)
@@ -940,7 +949,7 @@ def gate(ctx, eid, export_spec, export_result, stage):
         raise CheckError('malformed', f'stale: manifest excluded {manifest["designators"]["excluded"]} disagrees '
                                       f'with the sealed netlist and board {excluded}')
     excluded_refs = {e['designator'] for e in excluded}
-    assembled_refs = {fp['ref'] for fp in footprints if assembled(fp)} - excluded_refs
+    assembled_refs = {fp['ref'] for fp in footprints if assembled(fp)} - excluded_refs - set(probes)
     for ref in sorted(assembled_refs):
         if len(by_ref[ref]) > 1 or designator_defect(ref):
             defects.append({'code': 'board_designator', 'locator': f'board footprint {ref!r} '

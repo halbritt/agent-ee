@@ -192,6 +192,8 @@ def _bindings(document, contracts, graph, facts, verified):
             identity_reason = 'unmatched part/native instance'
         elif not comp['populated']:
             identity_reason = 'unpopulated native instance; electrical behavior unsupported'
+        elif part.get('kind') == 'bare_copper_probe':
+            identity_reason = 'bare copper probe is not purchased-part electrical evidence'
         elif (comp['lib_id'] != part['lib_id'] or any(comp['properties'].get(document['property_fields'][k]) != part[k]
                  for k in ('mpn', 'manufacturer'))):
             identity_reason = 'native symbol, manufacturer or part-number mismatch'
