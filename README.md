@@ -480,6 +480,10 @@ selection and its captured library pins; declared-only reports remain distinct.
 [Pinned legacy footprints](docs/footprint-libraries.md#converting-pinned-legacy-footprints)
 from another repository's object store are converted with `kicad-cli fp upgrade`
 and recorded with commit, path, blob id and SHA-256 (the telemetry pod's AMPSEAL-23).
+[Datasheet-derived footprints](docs/datasheet-footprint.md) are published only
+when two isolated agent extractions of one captured PDF agree within 0.01 mm,
+every pad value equals a verified page-cited fact, kicad-cli loads the result and
+the footprint assignment check confirms symbol pin/pad parity.
 A [land-pattern geometry kernel](docs/land-geometry.md) compares supported pad
 shapes using exact areas or certified bounds. Its supplier/native check adapter
 and supplier qualification remain pending; the kernel alone cannot accept a part.
