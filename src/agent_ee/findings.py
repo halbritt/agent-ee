@@ -45,6 +45,33 @@ REVIEW_VERSION = "agent-ee.review/2"
 DECISIONS_VERSION = "agent-ee.decisions/2"
 
 
+class CitationValidationError(ValueError):
+    """An unresolved structured citation, eligible for output resubmission."""
+
+
+def citation_format(data):
+    """Describe locator choices from the same bytes the resolvers inspect."""
+    try:
+        text = data.decode("utf-8")
+        is_text = "\x00" not in text and not data.startswith((b"%" + b"PDF-", b"\x89PNG"))
+    except UnicodeDecodeError:
+        is_text = False
+    text_kinds = ["lines"] if is_text else []
+    try:
+        json.loads(data)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        pass
+    else:
+        return {"format": "JSON", "locator_kinds": ["pointer", *text_kinds]}
+    try:
+        ET.fromstring(data)
+    except (ET.ParseError, ValueError, LookupError, RecursionError):
+        pass
+    else:
+        return {"format": "XML", "locator_kinds": ["xpath", *text_kinds]}
+    return {"format": "UTF-8 text" if is_text else "binary", "locator_kinds": text_kinds}
+
+
 def safe_id(value, label="id"):
     if not isinstance(value, str) or not SAFE_ID_RE.fullmatch(value) or ".." in value:
         raise ValueError(f"invalid {label}: {value!r}")
@@ -107,7 +134,7 @@ def _validate_xpath(data, xpath):
             path = "./" + tail if sep else "."
         if not root.findall(path):
             raise ValueError(f"citation xpath {xpath!r} does not resolve")
-    except (ET.ParseError, SyntaxError, KeyError, TypeError, RecursionError) as exc:
+    except (ET.ParseError, SyntaxError, LookupError, TypeError, RecursionError) as exc:
         raise ValueError("citation xpath requires valid XML and an ElementTree-supported path") from exc
 
 
@@ -163,13 +190,26 @@ def validate_citation(item, run_dir, *, require_structured=False):
     locator = _nonempty_str(item["locator"], "evidence locator")
     fields = item.keys() & STRUCTURED_CITATION_FIELDS
     if require_structured and not fields:
-        raise ValueError("evidence citation requires pointer, lines or xpath")
+        info = citation_format((Path(run_dir) / path_norm).read_bytes())
+        raise CitationValidationError(
+            f"citation {path_norm!r}: evidence citation requires pointer, lines or xpath; "
+            f"locator kind used: none; {info['format']} requires locator kind(s) {info['locator_kinds']}")
     # Descriptive locators in retained /1 records are deliberately never parsed.
     if fields:
         data = (Path(run_dir) / path_norm).read_bytes()
+        errors = []
         for key, validate in (("pointer", _validate_pointer), ("lines", _validate_lines), ("xpath", _validate_xpath)):
             if key in fields:
-                validate(data, item[key])
+                try:
+                    validate(data, item[key])
+                except ValueError as exc:
+                    errors.append(f"{key}: {exc}")
+        if errors:
+            info = citation_format(data)
+            required = ", ".join(info["locator_kinds"]) or "none; cite a captured text extraction instead"
+            raise CitationValidationError(
+                f"citation {path_norm!r}: locator kind(s) used {', '.join(sorted(fields))}; "
+                f"{info['format']} requires locator kind(s) {required}. " + "; ".join(errors))
     return {"path": path_norm, "locator": locator,
             **{key: copy.deepcopy(item[key]) for key in STRUCTURED_CITATION_FIELDS if key in item}}
 

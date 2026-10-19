@@ -53,6 +53,10 @@ context, but accepted defects still require their sealed failed-check citation.
 New reviewer and adjudicator `/2` citations require a resolvable JSON `pointer`,
 text `lines` range or XML `xpath`; descriptive locators in retained `/1` records
 keep their compatibility rule. See [response and citation rules](result-reference.md#structured-citations).
+The packet lists evidence formats and locator kinds, including files omitted
+from excerpts. Native KiCad text requires `lines`; unused JSON/XML fields must
+be omitted. A refused citation names the file and supplied/required kinds in the
+configured bounded resubmission request; unresolved locations remain refused.
 
 Opt-in [staged scopes](staged-campaign.md) first check declared native content.
 A successful native probe that confirms missing expected symbols, footprints or
