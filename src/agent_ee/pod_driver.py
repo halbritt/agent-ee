@@ -1,0 +1,342 @@
+"""Prepare a pod campaign from explicit captured inputs and declared producers.
+
+No component selection, inference or RC fallback occurs during preparation.
+See docs/pod-driver.md for the plan and authority boundaries.
+"""
+import argparse
+import copy
+import io
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+from . import candidate, scaffold, stage_receipts, stages
+from .baseline import compile_baseline
+from .cli import validate_scope
+from .profiles import validate_profile
+from .storage import digest, identity, read_json, write_json
+
+SCHEMA = 'agent-ee.pod-plan/1'
+ORDER = ['schematic', 'placement', 'routing', 'verification']
+STEPS = [('binding-fill', 'schematic'), ('emit-schematic', 'schematic'),
+         ('forward-annotate', 'schematic'), ('place-board', 'placement'),
+         ('add-planes', 'routing')]
+SOURCE = Path(__file__).resolve().parents[1]
+BUDGET_NOTE = ('Historical rung-1 estimate: $10-15 review plus $1-3.6 writing per iteration '
+               'for three parts; pod work may multiply this. Estimate, not measurement or spending authority.')
+
+
+def _path(value):
+    if not isinstance(value, str) or str(candidate.safe_relative(value)) != value:
+        raise ValueError('canonical candidate-relative path required')
+    return value
+
+
+def _integer(value, name, low, high):
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f'{name} must be between {low} and {high}')
+    return value
+
+
+def validate_plan(plan):
+    required = {'schema', 'scope', 'envelope', 'parts', 'spec', 'spec_record',
+                'writer_inputs', 'implementation_steps', 'review_profile', 'implementation',
+                'routing_adapter', 'routing_budget_s', 'review_budget_s'}
+    if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
+            not required <= plan.keys() or set(plan) - required - {'max_iterations', 'max_seconds'}):
+        raise ValueError('expected agent-ee.pod-plan/1 fields')
+    if not isinstance(plan['scope'], str) or not plan['scope']:
+        raise ValueError('scope must name a planning scope file')
+    if not isinstance(plan['implementation_steps'], list):
+        raise ValueError('implementation_steps must be a list')
+    for step in plan['implementation_steps']:
+        stage_receipts.validate_step(step, host=False)
+    for key in ('envelope', 'parts', 'spec', 'spec_record'):
+        _path(plan[key])
+    if (not isinstance(plan['writer_inputs'], dict) or
+            set(plan['writer_inputs']) != {'intent', 'deviations'}):
+        raise ValueError('writer_inputs requires intent and deviations paths')
+    paths = [_path(p) for p in plan['writer_inputs'].values()]
+    if len(set(paths)) != 2:
+        raise ValueError('intent and deviations must be different files')
+    if any(Path(p).suffix != '.json' for p in paths):
+        raise ValueError('writer inputs must be captured JSON records')
+    validate_profile(plan['review_profile'])
+    validate_profile({**plan['review_profile'], 'adjudicator': plan['implementation']})
+    iterations = _integer(plan.get('max_iterations', 10), 'max_iterations', 8, 100)
+    routing = _integer(plan['routing_budget_s'], 'routing_budget_s', 1, 3600)
+    review = _integer(plan['review_budget_s'], 'review_budget_s', 1, 86400)
+    # Reserve two full routing turns, each with coordinator overhead, plus explicit review time.
+    from .routing_adapter import STEP_MARGIN_S, validate_declaration
+    route = validate_declaration(plan['routing_adapter'])
+    if route['budget'] != routing or route['timeout'] < 2 * routing + 300:
+        raise ValueError('routing adapter budget must match and timeout must cover twice budget plus 300 seconds')
+    minimum = 2 * (route['timeout'] + STEP_MARGIN_S) + review
+    seconds = _integer(plan.get('max_seconds', minimum), 'max_seconds', minimum, 86400)
+    return iterations, seconds
+
+
+def validate_configuration(plan, scope, files, inputs):
+    iterations, seconds = validate_plan(plan)
+    if scope.get('schema') != 'agent-ee.scope/3':
+        raise ValueError('pod campaign requires scope/3')
+    validate_scope(scope)
+    declaration = stages.declaration(scope, files)
+    if declaration is None:
+        raise ValueError('pod campaign requires declared stages')
+    order = declaration['order']
+    if 'fab' in order:
+        raise ValueError('fab in stages.order requires AGENTEE-146-compatible pod step wiring; this driver excludes fab')
+    if order != ORDER:
+        raise ValueError('pod stages must be schematic, placement, routing, verification')
+    baseline = compile_baseline(scope, files, inputs)
+    from .campaign import mutable_inputs
+    mutable = set(mutable_inputs({'scope': scope, 'files': files}, baseline))
+    writer = set(plan['writer_inputs'].values())
+    if not writer <= mutable or writer & {scope['schematic'], scope['board']}:
+        raise ValueError('captured intent/deviations must be mutable non-native inputs')
+    raw_steps = plan['implementation_steps']
+    if not isinstance(raw_steps, list):
+        raise ValueError('implementation_steps must be a list')
+    normalized = [stage_receipts.validate_step(s) for s in raw_steps]
+    expected = STEPS
+    if [(s['step'], s['stage']) for s in normalized] != expected:
+        raise ValueError('pod requires binding-fill, emit-schematic, forward-annotate, place-board, '
+                         'add-planes in that order; routing uses the owned routing_adapter')
+    written = set()
+    for step in normalized:
+        writes = set(step['writes'])
+        if step['adoptable_exits'] != [0]:
+            raise ValueError('pod generic steps adopt exit 0 only; the owned router controls partial routing')
+        if not writes or not writes <= mutable or writes & writer:
+            raise ValueError('step writes must be coordinator outputs, outside writer inputs and inside mutable_inputs')
+        written.update(writes)
+    if mutable != writer | written:
+        raise ValueError('mutable_inputs may contain only intent/deviations and declared coordinator outputs')
+    for name, path in [('emit-schematic', scope['schematic']), ('forward-annotate', scope['board']),
+                       ('place-board', scope['board']), ('add-planes', scope['board'])]:
+        if path not in next(s for s in normalized if s['step'] == name)['writes']:
+            raise ValueError(f'{name} must produce its native design output')
+    from .routing_adapter import campaign_spec, validate_campaign_step
+    from .campaign import validate_routing_predecessors
+    validate_routing_predecessors(normalized, scope)
+    route = campaign_spec(plan['routing_adapter'], {'scope': scope}, sorted(mutable))
+    validate_campaign_step(route)
+    generation = scope.get('generation')
+    checks = {c['id']: c for c in scope['checks']}
+    if (not isinstance(generation, dict) or
+            checks.get(generation.get('done_check'), {}).get('kind') != 'fab_package'):
+        raise ValueError('pod generation must retain the fab_package done gate')
+    if checks[generation['done_check']]['stage'] != 'verification':
+        raise ValueError('fab_package must grade the final declared stage')
+    from .spec_record import verify
+    spec_path, record_path = inputs / plan['spec'], inputs / plan['spec_record']
+    verify(record_path.read_bytes(), spec_path.read_bytes())
+    spec = read_json(record_path)
+    if spec['ids']['prefix'] != 'POD' or not {'POD-AC-8', 'POD-AC-9'} <= {r['id'] for r in spec['requirements']}:
+        raise ValueError('expected the captured telemetry pod requirement record')
+    if not {plan['spec'], plan['spec_record']} <= baseline['files'].keys():
+        raise ValueError('pod spec and capture must be immutable baseline sources')
+    for requirement in ('POD-AC-8', 'POD-AC-9'):
+        if not any(requirement in text and 'BENCH REQUIRED' in text for text in scope.get('limitations', [])):
+            raise ValueError(f'{requirement} must remain an explicit BENCH REQUIRED obligation')
+    return dict(baseline_id=baseline['baseline_id'], stage_policy_id=identity(declaration),
+                mutable_inputs=sorted(mutable), writer_inputs=sorted(writer),
+                coordinator_outputs=sorted(written), max_iterations=iterations,
+                max_seconds=seconds, implementation_steps=normalized, routing_step=route)
+
+
+def _scope_for_inputs(scope, inputs):
+    result = copy.deepcopy(scope)
+    result['inputs'] = [dict(path=str(inputs / name), at=name)
+                        for name in sorted(p.name for p in inputs.iterdir())]
+    return result
+
+
+def _final_scope(scope, plan, inputs):
+    scope = _scope_for_inputs(scope, inputs)
+    scope['mutable_inputs'] = sorted(set(scope['mutable_inputs']) |
+                                    set(plan['writer_inputs'].values()) |
+                                    {p for s in plan['implementation_steps'] for p in s['writes']})
+    return scope
+
+
+def _scaffold_step(plan_dir, outputs):
+    return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='write-scaffold',
+        argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
+              '-m', 'agent_ee.pod_driver', '_scaffold', '/tool/plan/scaffold.json'],
+        mounts=[dict(source=str(SOURCE), at='/tool/agent-ee'),
+                dict(source=str(plan_dir), at='/tool/plan')], source='/tool/agent-ee',
+        version_argv=['/usr/bin/python3', '--version'],
+        writes={p: 'scaffold/inputs/' + p for p in outputs},
+        artifacts=['scaffold/scaffold-receipt.json'], adoptable_exits=[0], timeout_s=300)
+
+
+def run_scaffold(recipe):
+    """Only the shared scaffold producer writes native files, in the receipt sandbox."""
+    recipe = read_json(recipe)
+    scaffold.scaffold(Path('/candidate') / recipe['envelope'], Path('/candidate') / recipe['parts'],
+                      '/work/scaffold', scope_path='/tool/plan/scope.json')
+
+
+def build(plan_path, out, *, dry_run=False):
+    """Validate and prepare without inference; failed native work retains its receipt."""
+    plan_path, out = Path(plan_path).resolve(), Path(out).absolute()
+    raw = plan_path.read_bytes()
+    plan = scaffold.strict_json(raw)
+    validate_plan(plan)
+    scope_path = (plan_path.parent / plan['scope']).resolve()
+    scope_raw = scope_path.read_bytes()
+    scope = scaffold.strict_json(scope_raw)
+    validate_scope(scope)
+    before, sources, _ = candidate.source_manifest(scope, scope_path.parent)
+    for key in ('envelope', 'parts', 'spec', 'spec_record'):
+        if plan[key] not in sources:
+            raise ValueError(f'uncaptured pod {key}: {plan[key]}')
+    if out.exists() or out.is_symlink():
+        raise ValueError('pod output must not exist')
+    out = out.resolve()
+    for src in sources.values():
+        if out == Path(src) or out in Path(src).parents:
+            raise ValueError('pod output must not contain source inputs')
+    for item in scope['inputs']:
+        src = candidate.source_path(item['path'], scope_path.parent)
+        if src.is_dir() and (out == src or src in out.parents):
+            raise ValueError('pod output must be outside source input directories')
+    # This temporary preparation exercises the exact existing validators before publishing any run.
+    with tempfile.TemporaryDirectory(prefix='agent-ee-pod-preflight-') as tmp:
+        preview = Path(tmp) / 'scaffold'
+        scaffold.scaffold(sources[plan['envelope']], sources[plan['parts']], preview, scope_path=scope_path)
+        initial = read_json(preview / 'scope.json')
+        prepared_scope = _final_scope(initial, plan, preview / 'inputs')
+        files, _, _ = candidate.source_manifest(prepared_scope, preview)
+        validation = validate_configuration(plan, prepared_scope, files, preview / 'inputs')
+        outputs = sorted(p for p in files if before.get(p) != files[p])
+        if not {scope['schematic'], scope['board']} <= set(outputs):
+            # Empty input placeholders may already equal the scaffold; still receipt-own both outputs.
+            outputs = sorted(set(outputs) | {scope['schematic'], scope['board']})
+        expected = dict(files)
+    if plan_path.read_bytes() != raw or scope_path.read_bytes() != scope_raw or candidate.source_manifest(scope, scope_path.parent)[0] != before:
+        raise ValueError('pod preparation inputs changed during validation')
+    out.mkdir(parents=True)
+    record = dict(schema='agent-ee.pod-driver-receipt/1', status='preparing', done=False,
+                  plan_sha256=digest(plan_path), source_scope_sha256=digest(scope_path),
+                  tool=dict(module_sha256=digest(Path(__file__)), python=sys.version.split()[0]),
+                  source_files=before, validation=validation, inference_budget_note=BUDGET_NOTE,
+                  limitations=scope.get('limitations', []),
+                  acceptance='Preparation is not design acceptance; owner DFM and physical bench obligations remain.')
+    write_json(out / 'driver-receipt.json', record)
+    (out / 'plan.json').write_bytes(raw)
+    inputs = out / 'inputs'
+    for rel, src in sources.items():
+        target = inputs / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, target)
+        if digest(target) != before[rel]:
+            raise ValueError('pod input changed while copying: ' + rel)
+    tools = out / 'scaffold-plan'
+    tools.mkdir()
+    write_json(tools / 'scaffold.json', {'envelope': plan['envelope'], 'parts': plan['parts']})
+    sandbox_scope = _scope_for_inputs(scope, inputs)
+    sandbox_scope['inputs'] = [dict(path='/candidate/' + e['at'], at=e['at']) for e in sandbox_scope['inputs']]
+    write_json(tools / 'scope.json', sandbox_scope)
+    step = _scaffold_step(tools, outputs)
+    receipt_dir = out / 'scaffold-receipt'
+    receipt = stage_receipts.run_step(receipt_dir, inputs, step, {'pre_receipt': 1})
+    stage_receipts.adopt(receipt_dir, receipt, inputs)
+    if stage_receipts.file_tree(inputs) != (expected, []):
+        raise ValueError('receipted scaffold differs from validated preparation')
+    final_scope = _final_scope(initial, plan, inputs)
+    files, _, _ = candidate.source_manifest(final_scope, out)
+    final_validation = validate_configuration(plan, final_scope, files, inputs)
+    if final_validation != validation:
+        raise ValueError('pod validation changed after scaffold execution')
+    binding = stage_receipts.pre_receipt_binding(receipt, files)
+    if not binding['bound']:
+        raise ValueError('scaffold pre_receipt does not bind the initial candidate')
+    final_scope['inputs'] = [dict(path='inputs/' + e['at'], at=e['at']) for e in final_scope['inputs']]
+    link = dict(path='scaffold-receipt/receipt.json', sha256=digest(receipt_dir / 'receipt.json'), binding={'pre_receipt': 1})
+    stage_receipts.validate_pre_receipt(out, link)
+    config = dict(schema='agent-ee.campaign/1', scope='scope.json',
+                  review_profile=plan['review_profile'], implementation=plan['implementation'],
+                  writer_editable=validation['writer_inputs'],
+                  implementation_steps=validation['implementation_steps'], pre_receipts=[link],
+                  routing_adapter=plan['routing_adapter'],
+                  max_iterations=validation['max_iterations'], max_seconds=validation['max_seconds'],
+                  max_schema_resubmissions=1)
+    write_json(out / 'scope.json', final_scope)
+    write_json(out / 'campaign.json', config)
+    record.update(status='prepared', campaign_sha256=digest(out / 'campaign.json'),
+                  scope_sha256=digest(out / 'scope.json'), scaffold=link, first_capture_binding=binding)
+    write_json(out / 'driver-receipt.json', record)
+    if dry_run:
+        run_dry(out)
+    return record
+
+
+def run_dry(out):
+    """Native checks only; keep engine outcomes and identify unexecuted later stages."""
+    from .cli import run_review
+    out = Path(out)
+    stream = io.StringIO()
+    code = run_review(out / 'scope.json', out / 'dry-run', 1200, checks_only=True, output_stream=stream)
+    (out / 'dry-run-console.txt').write_text(stream.getvalue(), encoding='utf-8')
+    result = read_json(out / 'dry-run/result.json')
+    scope = read_json(out / 'scope.json')
+    checks = result['checks']
+    stages_record = dry_stage_results(checks, scope)
+    reached = next((entry['stage'] for entry in stages_record
+                    if any(c['execution'] != 'ok' or c['outcome'] not in ('pass', 'info')
+                           for c in entry['checks'])), None)
+    record = dict(schema='agent-ee.pod-dry-run/1', done=False, inference=False, exit_code=code,
+                  earliest_failing_stage=reached, stages=stages_record,
+                  result_sha256=digest(out / 'dry-run/result.json'))
+    write_json(out / 'dry-run-record.json', record)
+    return record
+
+
+def dry_stage_results(checks, scope):
+    """Keep unknown execution and explicit gate reasons separate from evaluated checks."""
+    check_stages = {c['id']: c['stage'] for c in scope['checks']}
+    result = []
+    for stage in scope['stages']['order']:
+        selected = [c for c in checks if check_stages[c['id']] == stage]
+        reasons = {c.get('details', {}).get('reason') for c in selected}
+        if selected and reasons == {'stage_blocked'}:
+            status = 'stage_blocked'
+        elif not selected or any(c['execution'] != 'ok' or c['outcome'] == 'unknown' for c in selected):
+            status = 'unknown'
+        elif selected and reasons == {'stage_not_reached'}:
+            status = 'stage_not_reached'
+        else:
+            status = 'evaluated'
+        result.append(dict(stage=stage, status=status, checks=selected))
+    return result
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == '_scaffold':
+        run_scaffold(argv[1])
+        return 0
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('plan', type=Path)
+    parser.add_argument('--out', required=True, type=Path)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--dry-run', action='store_true')
+    mode.add_argument('--run', action='store_true', help='explicitly launch subscription inference after preparation')
+    args = parser.parse_args(argv)
+    try:
+        build(args.plan, args.out, dry_run=args.dry_run)
+        if args.run:
+            from .campaign import run_campaign
+            return run_campaign(args.out / 'campaign.json', args.out / 'campaign')
+        return 0
+    except (OSError, ValueError) as exc:
+        print(f'pod driver refused: {exc}', file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

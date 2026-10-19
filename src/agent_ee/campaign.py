@@ -17,6 +17,72 @@ IMPLEMENTATION_SCHEMA = {"type": "object", "additionalProperties": False,
 STEP_PLAN = "agent-ee.step-plan/1"
 
 
+def writer_editable(config, mutable, files=None):
+    """Optional writer subset; coordinator output authority remains mutable_inputs."""
+    from .candidate import safe_relative
+    if 'writer_editable' not in config:
+        return None
+    value = config['writer_editable']
+    if (not isinstance(value, list) or any(not isinstance(p, str) for p in value) or
+            len(set(value)) != len(value)):
+        raise ValueError('writer_editable must be a unique list of captured mutable paths')
+    try:
+        canonical = all(str(safe_relative(p)) == p for p in value)
+    except ValueError as exc:
+        raise ValueError('writer_editable contains an unsafe candidate path') from exc
+    if not canonical or not set(value) <= set(mutable):
+        raise ValueError('writer_editable must contain canonical paths within mutable_inputs')
+    if files is not None and not set(value) <= set(files):
+        raise ValueError('writer_editable names uncaptured paths')
+    return value
+
+
+def check_writer_files(actual, manifest, editable):
+    if editable is None:
+        return
+    if actual.keys() != manifest['files'].keys():
+        raise ValueError('writer_editable inventory differs from captured source')
+    changed = sorted(p for p, sha in manifest['files'].items() if actual[p] != sha and p not in editable)
+    if changed:
+        raise ValueError('writer_editable forbids edits outside the writer allowlist: ' + ', '.join(changed))
+
+
+def check_writer_proposal(design, manifest, state, editable):
+    check_proposal(design, manifest, state)
+    if editable is not None:
+        from .stage_receipts import file_tree
+        actual, other = file_tree(design)
+        if other:
+            raise ValueError('writer_editable tree contains non-files')
+        check_writer_files(actual, manifest, editable)
+
+
+def verify_writer_records(root, state, config):
+    """Verify writer boundaries from ordinary receipt indexes, including no-step turns."""
+    if 'writer_editable' not in config:
+        return
+    anchors = state.get('stage_receipts')
+    if not isinstance(anchors, dict):
+        raise ValueError('writer_editable requires anchored stage receipt indexes')
+    for work in (root / 'implementations').glob('*'):
+        number = int(work.name)
+        source = read_json(Path(state['history'][number - 1]['run']) / 'candidate.json')
+        editable = writer_editable(config, state['mutable_inputs'], source['files'])
+        if work.name not in anchors:
+            if (number != len(state['history']) or state['state'] != 'incomplete' or
+                    (work / 'proposal.scope.json').exists()):
+                raise ValueError('writer_editable implementation lacks its anchored receipt index')
+            continue
+        index = read_json(work / 'stage-receipts.json')
+        actual = (read_json(work / index['receipts'][0]['path'])['inputs']
+                  if index['receipts'] else index['delivered'])
+        check_writer_files(actual, source, editable)
+        if number < len(state['history']) and not state['history'][number].get('bench_transaction'):
+            following = read_json(Path(state['history'][number]['run']) / 'candidate.json')
+            if following.get('scope_path') != str(work / 'proposal.scope.json'):
+                raise ValueError('writer_editable successor was not captured from the verified proposal')
+
+
 def step_plan(config, manifest, record, version):
     """Ordered coordinator steps of one implementation, with receipt indexes from one allocator.
 
@@ -113,9 +179,14 @@ def implement(root, previous, definition, state, deadline):
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
     plan = step_plan(config, manifest, state["history"][-1], state.get("step_plan"))
+    editable = writer_editable(config, state['mutable_inputs'], manifest['files'])
+    if editable is not None:
+        prompt += ("\nOnly the following writer_editable files may change during your turn. "
+                   "Every other captured file remains protected in every stage, including verification.\n" +
+                   json.dumps({'writer_editable': editable}))
     if any(entry['kind'] == 'routing' for entry in plan):
         prompt += ("\nThis is a coordinator routing turn. Leave /work/design byte-for-byte unchanged. "
-                   "The coordinator alone runs the pinned routing adapter on the placed source; "
+                   "The coordinator alone runs declared plane preparation then the pinned routing adapter; "
                    "fresh checks and reviews grade its captured proposal.")
     if any(entry["kind"] == "placement" for entry in plan):
         from .placement_adapter import TRANSFORMS, writer_context
@@ -171,7 +242,7 @@ def implement(root, previous, definition, state, deadline):
                 supplied, IMPLEMENTATION_SCHEMA, min(definition["timeout_s"], max(.001, deadline - time.monotonic())),
                 launch_context={'expected': expected, 'boundary': 'implementation', 'deadline': deadline}),
             validate, limit=config.get('max_schema_resubmissions', 1),
-            invariant=lambda: check_proposal(design, manifest, state))
+            invariant=lambda: check_writer_proposal(design, manifest, state, editable))
     finally:
         execution_path = work / 'implementation-execution.json'
         if execution_path.is_file():
@@ -182,7 +253,7 @@ def implement(root, previous, definition, state, deadline):
                      limit=config.get('max_schema_resubmissions', 1))
     if record["execution"] != "ok" or response is None:
         raise ValueError("implementation execution failed; no provider fallback: " + record.get('error', record['execution']))
-    check_proposal(design, manifest, state)
+    check_writer_proposal(design, manifest, state, editable)
     if manifest['scope'].get('stages') is not None:
         for entry in plan:
             if entry['kind'] == 'step':
@@ -236,21 +307,62 @@ def check_proposal(design, manifest, state):
             raise ValueError("implementation changed a verification adapter")
 
 
+def validate_routing_predecessors(steps, scope):
+    """Only the declared plane producer may precede the owned routing adapter."""
+    from .stage_receipts import validate_step
+    preceding = [validate_step(s, host=False) for s in steps if s['stage'] == 'routing']
+    if not preceding:
+        return
+    if (len(preceding) != 1 or preceding[0]['step'] != 'add-planes' or
+            set(preceding[0]['writes']) != {scope['board']} or preceding[0]['adoptable_exits'] != [0]):
+        raise ValueError('routing_adapter cannot be combined with routing implementation_steps '
+                         'except one add-planes producer writing only the board and adopting exit 0')
+
+
+def verify_routing_chain(work, index, expected, specs, *, terminal_incomplete):
+    """Replay exact producer inputs from the captured placed source, including failed prefixes."""
+    from .stage_receipts import ADOPTABLE, after_tree
+    previous_failed = False
+    for position, link in enumerate(index['receipts']):
+        receipt = read_json(work / link['path'])
+        if previous_failed:
+            raise ValueError('routing producer ran after a failed predecessor')
+        if receipt['inputs'] != expected:
+            raise ValueError('routing receipt chain differs from the captured source or preceding output')
+        if receipt['spec'] != specs[position]:
+            raise ValueError('routing receipt chain differs from the declared producer sequence')
+        previous_failed = receipt['status'] not in ADOPTABLE
+        if not previous_failed:
+            expected = after_tree(receipt)
+    complete = len(index['receipts']) == len(specs) and not previous_failed
+    if not complete and (not terminal_incomplete or (work / 'proposal.scope.json').exists()):
+        raise ValueError('unfinished routing producer chain must be the final incomplete implementation')
+    if (work / 'proposal.scope.json').exists() and index['delivered'] != expected:
+        raise ValueError('routing proposal differs from the adopted receipt chain')
+
+
 def run_implementation_steps(work, design, manifest, state, deadline, plan, *, source_inputs=None,
                              declaration=None):
     """Coordinator-run planned steps on the delivered design; receipts are provenance only."""
     from .stage_receipts import adopt, bind_implementation, run_step, validate_step
 
     number = int(work.name)
+    routing_turn = any(entry['kind'] == 'routing' for entry in plan)
+    expected_files = dict(manifest['files'])
     try:
+        if routing_turn:
+            from .routing_adapter import validate_live_binding
+            from .stage_receipts import file_tree
+            if file_tree(design) != (expected_files, []):
+                raise ValueError('routing writer changed the verified placed source')
+            validate_live_binding(state['routing_binding'])
         for entry in plan:
+            if routing_turn and file_tree(design) != (expected_files, []):
+                raise ValueError('routing producer input differs from preceding adopted receipt')
             if entry['kind'] == 'routing':
                 from .routing_adapter import validate_live_binding, verify_campaign_receipt
                 from .stage_receipts import file_tree
                 binding = state['routing_binding']
-                actual, other = file_tree(design)
-                if other or actual != manifest['files']:
-                    raise ValueError('routing writer changed the verified placed source')
                 validate_live_binding(binding)
                 spec = binding['spec']
                 k = entry['receipt_index']
@@ -258,8 +370,12 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
                 expected = {'implementation': number, 'source_candidate_id': manifest['candidate_id'],
                             'receipt_index': k}
                 receipt = run_step(receipt_dir, design, spec, expected, deadline=deadline)
+                if receipt['inputs'] != expected_files:
+                    raise ValueError('routing receipt chain input differs from preceding adopted output')
                 verify_campaign_receipt(receipt_dir, expected=expected, binding=binding)
                 adopt(receipt_dir, receipt, design)
+                from .stage_receipts import after_tree
+                expected_files = after_tree(receipt)
                 continue
             if entry["kind"] == "placement":
                 from .placement_adapter import run_placement_iteration
@@ -280,8 +396,15 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
             receipt_dir = work / "receipts" / f"{k}-{spec['step']}"
             receipt = run_step(receipt_dir, design, spec, {"implementation": number,
                 "source_candidate_id": manifest["candidate_id"], "receipt_index": k}, deadline=deadline)
+            if routing_turn and receipt['inputs'] != expected_files:
+                raise ValueError('routing predecessor receipt input differs from captured source')
             # A failed, partial-but-unadoptable or refused step stops the repair; no default output.
             adopt(receipt_dir, receipt, design)
+            if routing_turn:
+                from .stage_receipts import after_tree
+                expected_files = after_tree(receipt)
+        if routing_turn and file_tree(design) != (expected_files, []):
+            raise ValueError('routing delivered tree differs from adopted receipt chain')
     finally:
         state["stage_receipts"][work.name] = bind_implementation(work, design, number, manifest["candidate_id"])
 
@@ -306,6 +429,12 @@ def run_campaign(config_path, out):
     scope = read_json(scope_path)
     if scope.get("schema") not in ("agent-ee.scope/2", "agent-ee.scope/3"):
         raise ValueError("campaign requires an immutable scope/2 or scope/3 baseline")
+    if 'writer_editable' in config:
+        from .candidate import source_manifest
+        mutable = scope['mutable_inputs'] if 'mutable_inputs' in scope else [scope['board'], scope['schematic']]
+        writer_editable(config, mutable)
+        files, _, _ = source_manifest(scope, scope_path.parent)
+        writer_editable(config, mutable, files)
     from .stages import finding_retry_limit
     stages = scope.get('stages')
     if isinstance(stages, dict) and 'finding_retry_limit' in stages:
@@ -326,8 +455,7 @@ def run_campaign(config_path, out):
         spec = campaign_spec(config['routing_adapter'], {'scope': scope}, scope.get('mutable_inputs',
                              [scope['board'], scope['schematic']]))
         validate_campaign_step(spec)
-        if any(s['stage'] == 'routing' for s in steps):
-            raise ValueError('routing_adapter cannot be combined with routing implementation_steps')
+        validate_routing_predecessors(steps, scope)
     if "placement_adapter" in config:
         from .placement_adapter import validate_declaration
         validate_declaration(config["placement_adapter"])
@@ -375,6 +503,7 @@ def record_iteration(root, state, run, config):
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
+        writer_editable(config, state['mutable_inputs'], manifest['files'])
         if "placement_adapter" in config:
             # Bound once to the first captured candidate; later candidates must keep these exact bytes.
             state["placement_binding"] = placement_binding(config, manifest, run / "inputs",
@@ -559,6 +688,7 @@ def verify_campaign_records(root, *, observations=None):
         if not history:
             if state["mutable_inputs"] != mutable_inputs(manifest, state["baseline"]):
                 raise ValueError("campaign mutable_inputs differ from captured write authority")
+            writer_editable(config, state['mutable_inputs'], manifest['files'])
             if stored["epoch"] != 0:
                 raise ValueError("campaign must begin at epoch zero")
         elif stored["epoch"] != history[-1]["epoch"]:
@@ -592,6 +722,7 @@ def verify_campaign_records(root, *, observations=None):
     plans = verify_campaign_plans(root, state, config)
     from .stage_receipts import verify_campaign_receipts
     verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []), plans=plans)
+    verify_writer_records(root, state, config)
     from .routing_adapter import verify_campaign_receipt, validate_binding
     routing_binding = state.get('routing_binding')
     if 'routing_adapter' in config and state['history']:
@@ -603,13 +734,15 @@ def verify_campaign_records(root, *, observations=None):
     for name in state.get('stage_receipts', {}):
         work = root / 'implementations' / name
         index = read_json(work / 'stage-receipts.json')
+        if routing_binding is not None and routing_binding['spec'] in plans[name]:
+            source = Path(state['history'][int(name) - 1]['run'])
+            verify_routing_chain(work, index, read_json(source / 'candidate.json')['files'], plans[name],
+                terminal_incomplete=int(name) == len(state['history']) and state['state'] == 'incomplete')
         for k, link in enumerate(index['receipts'], 1):
             receipt_path = work / link['path']
             if routing_binding is not None and plans[name][k - 1] == routing_binding['spec']:
                 source = Path(state['history'][int(name) - 1]['run'])
                 receipt = read_json(receipt_path)
-                if receipt['inputs'] != read_json(source / 'candidate.json')['files']:
-                    raise ValueError('routing writer changed the verified placed source')
                 verify_campaign_receipt(receipt_path.parent, expected={'implementation': int(name),
                     'source_candidate_id': read_json(source / 'candidate.json')['candidate_id'], 'receipt_index': k},
                     binding=routing_binding)
@@ -655,6 +788,8 @@ def verify_campaign_plans(root, state, config):
         number = int(name)
         source = Path(history[number - 1]["run"])
         manifest = read_json(source / "candidate.json")
+        if 'routing_adapter' in config:
+            validate_routing_predecessors(config.get('implementation_steps', []), manifest['scope'])
         plan = step_plan(config, manifest, history[number - 1], version)
         plans[name] = plan_receipt_specs(plan, work, config, manifest, state["mutable_inputs"])
         record = work / "placement-adapter.json"

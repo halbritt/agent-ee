@@ -293,6 +293,132 @@ class RoutingCampaignTests(unittest.TestCase):
         self.assertFalse((work / 'proposal.scope.json').exists())
 
 
+class RoutingPredecessorTests(unittest.TestCase):
+    """Plane preparation is a real sandbox producer; router receipts remain owned and verified."""
+    def setUp(self):
+        self.lane = RoutingCampaignTests()
+        self.lane.setUp()
+        self.addCleanup(self.lane.doCleanups)
+        self.root = self.lane.root
+        script = self.root / 'add-planes.py'
+        script.write_text('from pathlib import Path\n'
+                          'p=Path("/candidate/design/rc.kicad_pcb")\n'
+                          'Path("/work/board").write_bytes(p.read_bytes()+b"; plane fixture\\n")\n')
+        self.step = dict(schema='agent-ee.stage-step/1', stage='routing', step='add-planes',
+            argv=['/usr/bin/python3', '-B', '/tool/add-planes.py'],
+            mounts=[dict(source=str(script),at='/tool/add-planes.py')],
+            writes={'design/rc.kicad_pcb':'board'}, adoptable_exits=[0],timeout_s=30)
+        self.lane.config['implementation_steps'] = [self.step]
+
+    def raw_run(self, declaration):
+        write_json(self.root / 'scope.json', self.lane.scope)
+        write_json(self.root / 'campaign.json', {**self.lane.config,'routing_adapter':declaration})
+        with contextlib.redirect_stdout(io.StringIO()):
+            return campaign.run_campaign(self.root / 'campaign.json',self.root / 'campaign')
+
+    def test_plane_receipt_then_owned_router_forms_exact_replayable_chain(self):
+        status,state,work=self.lane.run_campaign(self.lane.spec())
+        self.assertEqual((status,state['state']),(0,'criteria_satisfied'))
+        first=stage_receipts.validate_receipt(work/'receipts/1-add-planes')
+        second=stage_receipts.validate_receipt(work/'receipts/2-kicad-route-krt')
+        source=read_json(Path(state['history'][0]['run'])/'candidate.json')
+        self.assertEqual(first['inputs'],source['files'])
+        self.assertEqual(second['inputs'],stage_receipts.after_tree(first))
+        self.assertEqual(second['spec']['adoptable_exits'],[0,2])
+        self.assertEqual(routing.verify_campaign_receipt(work/'receipts/2-kicad-route-krt')['classification'],'complete')
+        self.assertIn('plane fixture',(work/'receipts/2-kicad-route-krt/inputs/design/rc.kicad_pcb').read_text())
+
+    def test_owned_routing_composes_with_empty_writer_allowlist(self):
+        self.lane.config['writer_editable'] = []
+        status,state,work = self.lane.run_campaign(self.lane.spec())
+        self.assertEqual((status,state['state']),(0,'criteria_satisfied'))
+        self.assertTrue((work/'receipts/1-add-planes/receipt.json').is_file())
+        self.assertTrue((work/'receipts/2-kicad-route-krt/receipt.json').is_file())
+
+    def test_failed_plane_producer_never_launches_router(self):
+        self.step['argv']=['/usr/bin/false']
+        status,state,work=self.lane.run_campaign(self.lane.spec())
+        self.assertEqual((status,state['state']),(1,'incomplete'))
+        self.assertTrue((work/'receipts/1-add-planes/receipt.json').is_file())
+        self.assertFalse((work/'receipts/2-kicad-route-krt').exists())
+        self.assertFalse((work/'proposal.scope.json').exists())
+
+    def test_writer_edit_outside_plane_outputs_refused_before_first_producer(self):
+        (self.lane.source/'intent.json').write_text('{}\n')
+        self.lane.scope['mutable_inputs'].append('design/intent.json')
+        declaration=self.lane.spec()
+        agent=self.lane.fixture.agent
+        def editing_writer(run,label,*args,**kwargs):
+            result=agent(run,label,*args,**kwargs)
+            if label=='implementation':
+                (Path(run)/'review-work/implementation/design/design/intent.json').write_text('{"changed":true}')
+            return result
+        with patch('agent_ee.reviewers.dispatch',side_effect=editing_writer):
+            status,state,work=self.lane.run_campaign(declaration)
+        self.assertEqual((status,state['state']),(1,'incomplete'))
+        self.assertIn('routing writer changed',state['error'])
+        self.assertFalse((work/'receipts').exists())
+        self.assertFalse((work/'proposal.scope.json').exists())
+
+    def test_failed_plane_prefix_requires_final_incomplete_state_on_replay(self):
+        self.step['argv']=['/usr/bin/false']
+        status,state,work=self.lane.run_campaign(self.lane.spec())
+        index=read_json(work/'stage-receipts.json')
+        source=read_json(Path(state['history'][0]['run'])/'candidate.json')
+        specs=[stage_receipts.validate_step(self.step),state['routing_binding']['spec']]
+        campaign.verify_routing_chain(work,index,source['files'],specs,terminal_incomplete=True)
+        with self.assertRaisesRegex(ValueError,'final incomplete'):
+            campaign.verify_routing_chain(work,index,source['files'],specs,terminal_incomplete=False)
+        # Even a state still called incomplete cannot retain a proposal after failed planes.
+        write_json(work/'proposal.scope.json',{})
+        with self.assertRaisesRegex(ValueError,'final incomplete'):
+            campaign.verify_routing_chain(work,index,source['files'],specs,terminal_incomplete=True)
+
+    def test_unreceipted_between_step_edit_stops_before_router(self):
+        declaration=self.lane.spec()
+        original=stage_receipts.adopt
+        def altered(path,receipt,design):
+            original(path,receipt,design)
+            if receipt['spec']['step']=='add-planes':
+                with (Path(design)/'design/rc.kicad_pcb').open('a') as f:
+                    f.write('; unreceipted edit\n')
+        with patch.object(stage_receipts,'adopt',side_effect=altered):
+            status=self.raw_run(declaration)
+        state=campaign.verify_campaign(self.root/'campaign')
+        self.assertEqual((status,state['state']),(1,'incomplete'))
+        self.assertIn('preceding adopted receipt',state['error'])
+        self.assertFalse((self.root/'campaign/implementations/1/receipts/2-kicad-route-krt').exists())
+
+    def test_individually_valid_but_forged_receipt_chain_is_refused_on_replay(self):
+        declaration=self.lane.spec()
+        original=stage_receipts.run_step
+        def tampered(receipt_dir,design,spec,binding,**kw):
+            if spec['step']=='kicad-route-krt':
+                with (Path(design)/'design/rc.kicad_pcb').open('a') as f:
+                    f.write('; forged intermediate input\n')
+            return original(receipt_dir,design,spec,binding,**kw)
+        with patch.object(stage_receipts,'run_step',side_effect=tampered):
+            self.assertEqual(self.raw_run(declaration),1)
+        work=self.root/'campaign/implementations/1'
+        for name in ('1-add-planes','2-kicad-route-krt'):
+            stage_receipts.validate_receipt(work/'receipts'/name)
+        with self.assertRaisesRegex(ValueError,'routing receipt chain'):
+            campaign.verify_campaign(self.root/'campaign')
+        self.assertFalse((work/'proposal.scope.json').exists())
+
+    def test_predecessor_does_not_run_before_routing_stage(self):
+        config={**self.lane.config,'routing_adapter':self.lane.spec()}
+        plan=campaign.step_plan(config,{'scope':self.lane.scope},{'earliest_failing_stage':'schematic'},campaign.STEP_PLAN)
+        self.assertEqual(plan,[])
+        plan=campaign.step_plan(config,{'scope':self.lane.scope},{'earliest_failing_stage':'routing'},campaign.STEP_PLAN)
+        self.assertEqual([s['kind'] for s in plan],['step','routing'])
+        self.assertEqual([s['receipt_index'] for s in plan],[1,2])
+        for change in ({'step':'other'},{'adoptable_exits':[0,2]},
+                       {'writes':{'design/rc.kicad_sch':'out'}}):
+            with self.subTest(change=change),self.assertRaisesRegex(ValueError,'except one add-planes'):
+                campaign.validate_routing_predecessors([{**self.step,**change}],self.lane.scope)
+
+
 class NativeRoutingCampaignTests(unittest.TestCase):
     def test_pinned_krt_runs_inside_campaign_and_state_is_unchanged(self):
         checkout = require_kicad_route()

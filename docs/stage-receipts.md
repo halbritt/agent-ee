@@ -338,3 +338,30 @@ The full input tree is still retained and hashed. Declarations without this
 field retain their historical normalization and done behavior.
 The [mutable-intent schematic stage](intent-schematic-stage.md) uses this binding
 for the writer intent and block seeds consumed by emission and forward annotation.
+
+### Plane preparation before the owned routing adapter
+
+A campaign may combine its dedicated `routing_adapter` with one routing-stage
+`add-planes` step that writes only the board and adopts exit 0. The writer must
+leave the entire captured source unchanged on that turn. The coordinator and
+retained verifier require an exact input/after-tree chain through the plane
+receipt and the adapter receipt. The dedicated adapter's semantic verifier and
+`[0, 2]` complete/validated-partial policy remain in force. Other generic routing
+predecessors and duplicate router steps are refused. See
+[pod campaign preparation](pod-driver.md#routing-predecessor-integrity).
+
+## Writer permission and coordinator output permission
+
+A campaign may declare `writer_editable` as a unique list of canonical captured
+paths within `mutable_inputs`. Empty means the writer may change no files.
+Omitting the field preserves the existing writer contract. The pod driver always
+sets it to its captured intent and deviations. Coordinator steps retain their
+ordinary declared output authority within `mutable_inputs`.
+
+Every writer attempt is checked before producers, including attempts returning
+malformed output and turns without scheduled steps. Retained verification checks
+the first receipt's input tree against the captured source outside the allowlist;
+for no-step turns it checks the ordinary anchored delivered tree. An ordinary
+successor must come from that proposal, and missing indexes are allowed only for
+a final incomplete implementation without a proposal. Dedicated routing still
+requires an entirely unchanged writer tree before its producers.
