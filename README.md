@@ -490,8 +490,10 @@ Before each reviewer, adjudicator or implementation call, a
 [preflight guard](docs/result-reference.md#pre-inference-environment-receipts)
 checks captured tool and policy identities and tests sandbox execution. Drift or
 an unavailable prerequisite stops the call with a retained diagnostic.
-Campaigns allow one [bounded output resubmission](docs/campaign-guide.md#bounded-output-resubmission)
-per role per iteration by default. Both calls and the original validation error
+Campaigns and standalone reviews allow one
+[bounded output resubmission](docs/campaign-guide.md#bounded-output-resubmission)
+per role per review by default. `run_review(..., max_schema_resubmissions=0)`
+keeps a single model call. Both calls and the original validation error
 are retained; checks, execution failures and environment drift remain terminal.
 Adjudicators may cite the verified immutable `baseline.json`.
 

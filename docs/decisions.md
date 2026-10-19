@@ -84,7 +84,8 @@ come from the explicit profile (300 seconds in small evaluation profiles, 900 in
 donor profiles). The run deadline further bounds every call. A run has a finite declared check/reviewer list, no
 automatic provider fallback and no autonomous source repair. The later
 [bounded output decision](#bounded-resubmission-after-an-output-format-refusal-2026-10-17)
-permits one separately recorded schema resubmission in campaigns. Completed
+permits one separately recorded schema resubmission per role in campaigns and
+standalone reviews by default (AGENTEE-200). Completed
 records are saved immediately. A crash, interruption, invalid output or exhausted
 budget leaves incomplete coverage.
 
