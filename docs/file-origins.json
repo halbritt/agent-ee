@@ -1629,6 +1629,16 @@
     },
     {
       "paths": [
+        "docs/datasheet-cascade.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-248 cascade documentation. The PDF header marker describes envelope validation only; no third-party document or design is embedded."
+    },
+    {
+      "paths": [
         "fixtures/fab-export/fab.kicad_pcb"
       ],
       "kind": "owned-fixture",
