@@ -180,3 +180,11 @@ writes, tampered scaffold receipts and failed scaffold execution.
 and the owned router protocol against the existing synthetic router; it exercises
 live and retained chain tampering and earlier-stage dispatch. These tests prove
 configuration and custody behavior, not a functioning telemetry pod.
+
+## Writer repair of invalid intent
+
+The campaign can return verified unknown-pin and unaccounted-pin diagnostics
+from the owned emitter to another writer attempt, within the existing stage
+finding limit and campaign deadline. The driver’s `writer_editable` restriction
+continues to apply. Failed producer outputs are never adopted; see
+[intent repair](intent-repair.md) for the exact recovery and replay contract.

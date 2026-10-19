@@ -3000,6 +3000,27 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-176 flat composition and native regression controls. Source symbols and stock connector library are read from separately admitted captures or the installed toolchain at runtime; no third-party symbol bodies are embedded in this code."
+    },
+    {
+      "paths": [
+        "src/agent_ee/intent_retry.py",
+        "tests/test_campaign_intent_retry.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-205 original bounded schematic intent repair and scripted-writer/native-producer regression controls. Reuses owned campaign and schematic fixtures; no supplier or copied third-party source."
+    },
+    {
+      "paths": [
+        "docs/intent-repair.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-205 original documentation of owned pin-resolution recovery, source inventory, bounded attempts and offline replay; no external text copied."
     }
   ]
 }

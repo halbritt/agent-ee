@@ -370,3 +370,11 @@ The [binding-fill producer](binding-fill.md) may precede schematic emission.
 It writes only the intent and uses the ordinary captured receipt/adoption
 contract. Its manifest, explicit component part references and captured source
 closure stay immutable; a failed binding leaves no adoptable output.
+
+## Owned schematic pin-resolution repair
+
+A failed owned emit step still adopts no output. Staged campaigns with a frozen
+writer allowlist may retain that failed attempt and return its verified pin
+diagnostics to a bounded writer repair attempt. See [intent repair](intent-repair.md)
+for eligibility, budgets and offline custody. Other step failures keep their
+existing terminal behavior.
