@@ -1102,6 +1102,22 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
 
         passive_type = _passive_kind(comp)
         has_rating = True
+        rating_provenance = None
+        if passive_type in ("R", "C"):
+            from .passive_ratings import PROPERTY as RATING_PROVENANCE, validate_binding
+            problems = validate_binding(props, passive_type)
+            rating_provenance = ('invalid' if problems else
+                                 'source_backed' if RATING_PROVENANCE in props else 'unsourced')
+            if problems:
+                findings.append({
+                    "severity": "defect",
+                    "code": "invalid_rating_provenance",
+                    "reference": ref,
+                    "component_kind": passive_type,
+                    "sheet": comp["sheet"],
+                    "problems": problems,
+                    "message": f"{ref} rating fields disagree with their source provenance: " + "; ".join(problems),
+                })
         if cfg["require_passive_ratings"] and passive_type in ("R", "C"):
             has_rating = _has_passive_rating(props, passive_type)
             if not has_rating:
@@ -1172,6 +1188,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "missing_properties": comp_missing_props,
             "passive_kind": passive_type,
             "has_rating_property": has_rating if passive_type else None,
+            "rating_provenance": rating_provenance,
         })
 
     capture = catalog.get("capture")

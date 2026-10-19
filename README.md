@@ -409,6 +409,10 @@ identity and freeze those sources; suitability and live stock need separate evid
 Captured part bindings can pin
 [selected and rejected datasheet sources](docs/binding-fill.md#captured-datasheet-source-selection)
 while preserving the purchased part identity.
+Opt-in [source-derived passive ratings](docs/binding-fill.md#source-derived-passive-ratings)
+project R/C power and voltage ratings from the purchased catalog row or from verified
+facts on the selected datasheet. The ratings carry hashed provenance, and absent
+ratings stay missing.
 
 An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.

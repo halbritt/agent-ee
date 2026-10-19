@@ -3313,6 +3313,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-237 synthetic source-selection tests and authored PDF envelope bytes. No vendor PDF, third-party design or library content is copied; identifiers and URLs are synthetic test labels."
+    },
+    {
+      "paths": [
+        "tests/test_passive_ratings.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-233 synthetic passive-rating tests: owned JLCPCB-shaped rows, authored one-page text PDFs and synthetic part numbers. No vendor PDF, real pod part data, third-party design or library content is copied."
     }
   ]
 }
