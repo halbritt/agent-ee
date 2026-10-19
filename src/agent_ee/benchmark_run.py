@@ -378,14 +378,16 @@ def execute_batch(prepared, output):
     write_json(output/'index.json',{'schema':'agent-ee.benchmark-executions/1','records':records,'model_pass':False})
 
 
-def run(manifest_path, cache_prepared, output, expectation_commit, image):
-    manifest = committed_manifest(manifest_path,expectation_commit)
-    prepared = external(cache_prepared);record = check_prepared(prepared,manifest_path)
-    if not re.fullmatch(r'sha256:[a-f0-9]{64}',image) or image!=manifest['image_id']:
+def pinned_image(image, expected):
+    if not re.fullmatch(r'sha256:[a-f0-9]{64}',image) or image!=expected:
         raise ValueError('image differs from pinned immutable image identity')
     actual = subprocess.run(['docker','image','inspect',image,'--format','{{.Id}}'],capture_output=True,text=True,check=True).stdout.strip()
     if actual!=image:
         raise ValueError('Docker image identity mismatch')
+
+
+def archive_implementation(output):
+    """Extract the committed HEAD tree under output; refuse uncommitted changes."""
     # Freeze the implementation as a separate reachable commit too. Git archive
     # is built only from HEAD, and the launcher runs exclusively that tree.
     status = subprocess.run(['git','-C',str(REPOSITORY),'status','--porcelain'],capture_output=True,text=True,check=True).stdout
@@ -398,19 +400,23 @@ def run(manifest_path, cache_prepared, output, expectation_commit, image):
     import io
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(source,filter='data')
-    store = 'agent-ee' if manifest_store(manifest_path)[0]==REPOSITORY.resolve() else 'private-git'
-    request = {'schema':'agent-ee.benchmark-request/1','expectation_commit':expectation_commit,'expectation_store':store,
-        'manifest_sha256':digest(manifest_path),'implementation_commit':implementation,
-        'implementation_archive_sha256':sha(archive),'image_id':image,'prepared_sha256':digest(prepared/'prepared.json'),
-        'strict_toolchain':True,'model_pass':False}
-    write_json(output/'request.json',request)
-    command = ['docker','run','--rm','--init','--name',manifest.get('container_prefix','agent-ee-21-')+output.name,
+    return output, implementation, sha(archive), source
+
+
+def container_command(name, image, source, mounts, args):
+    """The pinned image without network, under the documented outer confinement."""
+    command = ['docker','run','--rm','--init','--name',name,
         '--network','none','--user',f'{os.getuid()}:{os.getgid()}','-e','HOME=/tmp',
         '-e','AGENT_EE_REQUIRE_TOOLCHAIN=1','--security-opt','seccomp=unconfined',
         '--security-opt','apparmor=agent-ee-container','--security-opt','systempaths=unconfined',
-        '-v',f'{source}:/opt/agent-ee:ro','-v',f'{prepared}:{prepared}:ro',
-        '-v',f'{output}:{output}','-w','/opt/agent-ee','--entrypoint','/usr/bin/python3',image,
-        '/opt/agent-ee/scripts/seeded_benchmark.py','_execute',str(prepared),str(output/'runs')]
+        '-v',f'{source}:/opt/agent-ee:ro']
+    for path,readonly in mounts:
+        command += ['-v',f'{path}:{path}'+(':ro' if readonly else '')]
+    return command+['-w','/opt/agent-ee','--entrypoint','/usr/bin/python3',image,
+                    '/opt/agent-ee/scripts/seeded_benchmark.py',*args]
+
+
+def launch(command, output):
     write_json(output/'command.json',command)
     with (output/'console.log').open('wb') as console:
         with subprocess.Popen(command,stdout=console,stderr=subprocess.STDOUT) as process:
@@ -421,9 +427,38 @@ def run(manifest_path, cache_prepared, output, expectation_commit, image):
     write_json(output/'exit.json',{'exit_code':returncode})
     if returncode:
         raise subprocess.CalledProcessError(returncode,command)
+
+
+def run(manifest_path, cache_prepared, output, expectation_commit, image):
+    manifest = committed_manifest(manifest_path,expectation_commit)
+    prepared = external(cache_prepared);record = check_prepared(prepared,manifest_path)
+    pinned_image(image,manifest['image_id'])
+    output, implementation, archive_sha256, source = archive_implementation(output)
+    store = 'agent-ee' if manifest_store(manifest_path)[0]==REPOSITORY.resolve() else 'private-git'
+    request = {'schema':'agent-ee.benchmark-request/1','expectation_commit':expectation_commit,'expectation_store':store,
+        'manifest_sha256':digest(manifest_path),'implementation_commit':implementation,
+        'implementation_archive_sha256':archive_sha256,'image_id':image,'prepared_sha256':digest(prepared/'prepared.json'),
+        'strict_toolchain':True,'model_pass':False}
+    write_json(output/'request.json',request)
+    launch(container_command(manifest.get('container_prefix','agent-ee-21-')+output.name,image,source,
+        [(prepared,True),(output,False)],['_execute',str(prepared),str(output/'runs')]),output)
     if check_prepared(prepared,manifest_path)!=record:
         raise ValueError('prepared input changed during execution')
     return output
+
+
+def image_native_rerun(first, output, image, repeats=2):
+    """native_rerun inside the retained run's pinned image, from the committed implementation."""
+    first = external(first);retained = read_json(first/'request.json')
+    pinned_image(image,retained['image_id'])
+    output, implementation, archive_sha256, source = archive_implementation(output)
+    write_json(output/'request.json',{'schema':'agent-ee.benchmark-native-rerun-request/1',
+        'source_request_sha256':digest(first/'request.json'),'source_implementation_commit':retained['implementation_commit'],
+        'implementation_commit':implementation,'implementation_archive_sha256':archive_sha256,'image_id':image,
+        'repeats':repeats,'strict_toolchain':True,'model_pass':False})
+    launch(container_command('agent-ee-'+output.name,image,source,[(first,True),(output,False)],
+        ['native-rerun',str(first),str(output/'rerun'),'--repeats',str(repeats)]),output)
+    return read_json(output/'rerun'/'native-rerun.json')
 
 
 def canonical_check(check):
@@ -461,29 +496,223 @@ def observations(run):
             raise ValueError('check projection differs from retained check')
         if cid in records:
             raise ValueError('duplicate check record')
-        raw = None
-        if check['kind'] in ('drc','erc'):
-            path = Path(run)/'work'/cid/(check['kind']+'.json')
-            if path.exists():
-                raw = read_json(path)
-                # These native fields are provenance/time only. Preserve all
-                # actual violation geometry, item UUIDs, rule types and values.
-                for key in ('date','kicad_version','source'):
-                    raw.pop(key,None)
-        records[cid] = {'check':canonical_check(check),'native':canonical_native(raw)}
-        if check['kind']=='drc':
-            from .benchmark import parse, children, uid, values
-            manifest = read_json(run/'candidate.json')
-            board = parse((run/'inputs'/manifest['scope']['board']).read_text())
-            mapping = {}
-            for footprint in children(board,'footprint'):
-                pads = {}
-                for pad in children(footprint,'pad'):
-                    if values(pad)[0]:
-                        pads.setdefault(values(pad)[0],[]).append(uid(pad))
-                mapping[uid(footprint)] = pads
-            records[cid]['pcb_pad_uuids'] = mapping
+        records[cid] = check_record(run,check)
     return records
+
+
+def check_record(run, check):
+    """One check's comparable record: canonical result, native report and pad map."""
+    run = Path(run)
+    raw = None
+    if check['kind'] in ('drc','erc'):
+        path = run/'work'/check['id']/(check['kind']+'.json')
+        if path.exists():
+            raw = read_json(path)
+            # These native fields are provenance/time only. Preserve all
+            # actual violation geometry, item UUIDs, rule types and values.
+            for key in ('date','kicad_version','source'):
+                raw.pop(key,None)
+    record = {'check':canonical_check(check),'native':canonical_native(raw)}
+    if check['kind']=='drc':
+        from .benchmark import parse, children, uid, values
+        manifest = read_json(run/'candidate.json')
+        board = parse((run/'inputs'/manifest['scope']['board']).read_text())
+        mapping = {}
+        for footprint in children(board,'footprint'):
+            pads = {}
+            for pad in children(footprint,'pad'):
+                if values(pad)[0]:
+                    pads.setdefault(values(pad)[0],[]).append(uid(pad))
+            mapping[uid(footprint)] = pads
+        record['pcb_pad_uuids'] = mapping
+    return record
+
+
+def connection_semantics(native, islands):
+    """Net -> sorted unconnected island identities, from native ratsnest witnesses.
+
+    Each unconnected_items record names one item of each of two copper islands.
+    KiCad may pick a different item pair, or a different spanning tree over the
+    same islands, on an identical board. The records of each net must form one
+    spanning tree over its islands; otherwise, or if any witness item has no
+    consistent native island, the semantics are unresolved (None).
+    """
+    if native is None or not isinstance(native.get('unconnected_items'),list):
+        return None
+    nets = {}
+    for row in native['unconnected_items']:
+        found = [islands.get(item.get('uuid')) for item in row.get('items',[])]
+        if len(found)!=2 or None in found or found[0][0]!=found[1][0] or found[0][1]==found[1][1]:
+            return None
+        nets.setdefault(found[0][0],[]).append((found[0][1],found[1][1]))
+    result = {}
+    for net,edges in nets.items():
+        nodes = {node for edge in edges for node in edge}
+        reached, frontier = set(), [edges[0][0]]
+        while frontier:
+            node = frontier.pop()
+            if node not in reached:
+                reached.add(node)
+                frontier.extend(b if a==node else a for a,b in edges if node in (a,b))
+        if len(edges)!=len(nodes)-1 or reached!=nodes:
+            return None
+        result[net] = sorted(nodes)
+    return result
+
+
+# KiCad's console names each TrueType font it replaces. Text geometry, and so
+# DRC text and silkscreen records, depends on the installed substitute.
+FONT_SUBSTITUTION = re.compile(r"Font '([^']+)' not found; substituting '([^']+)'")
+
+
+def font_substitutions(run, check_id):
+    path = Path(run)/'work'/check_id/'console.log'
+    return dict(FONT_SUBSTITUTION.findall(path.read_text(errors='replace'))) if path.is_file() else {}
+
+
+def same_board(first, second):
+    """The captured board text when both runs reviewed byte-identical boards, else None."""
+    texts = []
+    for run in (Path(first),Path(second)):
+        manifest = read_json(run/'candidate.json')
+        rel = manifest['scope'].get('board')
+        path = run/'inputs'/rel if rel else None
+        if path is None or not path.is_file() or digest(path)!=manifest['files'].get(rel):
+            return None
+        texts.append(path.read_bytes())
+    return texts[0].decode('utf-8') if texts[0]==texts[1] else None
+
+
+def native_rerun(first, output, repeats=2):
+    """Re-execute every retained run's declared checks from its captured inputs.
+
+    Each repeat copies the hash-verified captured inputs into a fresh scratch run
+    and calls the ordinary check dispatcher, so native tools run in the same
+    networkless sandbox with the same arguments. Results are compared with the
+    retained run exactly, then by native connection semantics.
+    """
+    import time
+    from .checks import run_checks
+    first = external(first);output = fresh(output)
+    if repeats<1:
+        raise ValueError('at least one repeat required')
+    index = read_json(first/'runs/index.json')
+    cases = []
+    for entry in sorted(index['records'],key=lambda e:e['id']):
+        retained = first/'runs'/safe_id(entry['id'])
+        if digest(retained/'result.json')!=entry['result_sha256']:
+            raise ValueError('retained result changed')
+        original = observations(retained)
+        manifest = read_json(retained/'candidate.json')
+        row = {'id':entry['id'],'repeats':[]}
+        for repeat in range(1,repeats+1):
+            run = output/f'repeat-{repeat}'/entry['id'];run.mkdir(parents=True)
+            for rel,expected in sorted(manifest['files'].items()):
+                source = retained/'inputs'/rel
+                if source.is_symlink() or digest(source)!=expected:
+                    raise ValueError('captured input changed: '+rel)
+                target = run/'inputs'/rel;target.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(source,target)
+            for name in ('candidate.json','baseline.json'):
+                if (retained/name).is_file():
+                    shutil.copyfile(retained/name,run/name)
+            results = run_checks(run,time.monotonic()+1800)
+            records = {check['id']:check_record(run,check) for check in results}
+            board = same_board(retained,run)
+            native = compare_records(original,records,board,NATIVE_FIELDS)
+            fonts = {c['id']:{'retained':font_substitutions(retained,c['id']),'rerun':font_substitutions(run,c['id'])}
+                     for c in results if c['kind'] in ('erc','drc')}
+            row['repeats'].append({'repeat':repeat,'executions':{c['id']:c['execution'] for c in results},
+                'native_exact':native['exact'],'native_semantic':native['semantic'],
+                'font_substitutions':{k:v for k,v in fonts.items() if v['retained']!=v['rerun']},
+                **compare_records(original,records,board)})
+        cases.append(row)
+    from .cli import runtime_files
+    retained = read_json(first/'runs'/index['records'][0]['id']/'result.json')['runtime_files']
+    host = runtime_files()
+    native = ('kicad-cli','bwrap','/usr/bin/python3','pcbnew')
+    summary = {'schema':'agent-ee.benchmark-native-rerun/1','source':str(first),
+        'request':read_json(first/'request.json'),'repeats':repeats,'model_pass':False,
+        'exact_cases':sum(all(r['exact'] for r in c['repeats']) for c in cases),
+        'semantic_cases':sum(all(r['semantic'] for r in c['repeats']) for c in cases),
+        'native_exact_cases':sum(all(r['native_exact'] for r in c['repeats']) for c in cases),
+        'native_semantic_cases':sum(all(r['native_semantic'] for r in c['repeats']) for c in cases),
+        'all_cases':len(cases),'cases':cases,
+        # Check records also carry implementation-defined details; only the
+        # native records are expected to match a run of another implementation.
+        'implementation':{'retained':read_json(first/'request.json').get('implementation_commit'),'rerun':implementation()},
+        # The rerun environment is this process, not the pinned image; the
+        # native binaries are compared by content with the retained run.
+        'native_runtime':{name:{'retained':retained.get(name,{}).get('sha256'),'rerun':host.get(name,{}).get('sha256')}
+                          for name in native},
+        'same_font_substitutions':not any(r['font_substitutions'] for c in cases for r in c['repeats']),
+        'same_native_runtime':all(retained.get(n,{}).get('sha256') and
+                                  retained[n]['sha256']==host.get(n,{}).get('sha256') for n in native)}
+    write_json(output/'native-rerun.json',summary)
+    return summary
+
+
+def implementation():
+    """This process's implementation commit, marked when the checkout has uncommitted changes."""
+    head = subprocess.run(['git','-C',str(REPOSITORY),'rev-parse','HEAD'],capture_output=True,text=True)
+    status = subprocess.run(['git','-C',str(REPOSITORY),'status','--porcelain'],capture_output=True,text=True)
+    if head.returncode or status.returncode:
+        return None
+    return head.stdout.strip()+('+uncommitted' if status.stdout.strip() else '')
+
+
+def native_rows(native, section):
+    return sorted(canonical(row).decode() for row in (native or {}).get(section,[]))
+
+
+NATIVE_FIELDS = ('native','pcb_pad_uuids')
+
+
+def compare_records(original, other, board_text=None, fields=None):
+    """Exact comparison of two runs' check records, then native connection semantics.
+
+    Only DRC unconnected_items may be equal semantically rather than exactly; every
+    other field, section, value and locator must stay identical. A semantic match
+    needs the same captured board, resolved by native connectivity. ``fields``
+    restricts the comparison, for example to the native records alone.
+    """
+    if fields is not None:
+        def project(records):
+            return {cid:{'check':{'kind':r['check']['kind']},**{k:r[k] for k in fields if k in r}}
+                    for cid,r in records.items()}
+        original, other = project(original), project(other)
+    differences = []
+    semantic = True
+    for cid in sorted(set(original)|set(other)):
+        first, second = original.get(cid), other.get(cid)
+        if first==second:
+            continue
+        row = {'check_id':cid}
+        if first is None or second is None:
+            row['missing'] = 'first' if first is None else 'second'
+            differences.append(row);semantic = False
+            continue
+        row['fields'] = sorted(k for k in set(first)|set(second) if first.get(k)!=second.get(k))
+        a, b = first.get('native') or {}, second.get('native') or {}
+        row['native_sections'] = sorted(k for k in set(a)|set(b) if a.get(k)!=b.get(k))
+        row['first_only'] = {};row['second_only'] = {}
+        for section in row['native_sections']:
+            if isinstance(a.get(section),list) and isinstance(b.get(section),list):
+                x, y = native_rows(a,section), native_rows(b,section)
+                row['first_only'][section] = [json.loads(r) for r in x if r not in y]
+                row['second_only'][section] = [json.loads(r) for r in y if r not in x]
+        stripped = [{**r,'native':{k:v for k,v in (r.get('native') or {}).items() if k!='unconnected_items'}}
+                    for r in (first,second)]
+        row['semantic_equal'] = False
+        if (first['check']['kind']=='drc' and board_text is not None and stripped[0]==stripped[1]):
+            from .benchmark import copper_islands
+            islands = copper_islands(board_text)
+            left, right = connection_semantics(a,islands), connection_semantics(b,islands)
+            row['connection_semantics'] = left if left==right else {'first':left,'second':right}
+            row['semantic_equal'] = left is not None and left==right
+        semantic = semantic and row['semantic_equal']
+        differences.append(row)
+    return {'exact':not differences,'semantic':semantic,'differences':differences}
 
 
 def classify(expected, record, case, control=None):
@@ -651,13 +880,18 @@ def report(manifest_path, first, second=None):
         cases.append(row)
     controls = []
     unresolved = {k:0 for k in counts}
+    adjudication = adjudicate_controls(manifest,first)
+    decided = {c['id']:c['records'] for c in adjudication['controls']}
     for board in manifest['boards']:
         control = observed[board['id']+'-control']
         for r in control.values():
             unresolved[r['check']['kind']] += finding_count(r)
+        def verdicts(cid):
+            rows = [r['verdict'] for r in decided[board['id']+'-control'] if r['check_id']==cid]
+            return {v:rows.count(v) for v in sorted(set(rows))}
         controls.append({'id':board['id']+'-control','checks':[
             {'id':cid,'kind':r['check']['kind'],'execution':r['check']['execution'],
-             'outcome':r['check']['outcome'],'finding_count':finding_count(r),'adjudication':'unresolved; not automatically a false alarm'}
+             'outcome':r['check']['outcome'],'finding_count':finding_count(r),'adjudication':verdicts(cid)}
             for cid,r in control.items()]})
     comparison = None
     if second:
@@ -669,6 +903,7 @@ def report(manifest_path, first, second=None):
         if {r['id'] for r in other_index['records']}!=expected_ids:
             raise ValueError('rerun missing cases')
         differences = []
+        witness_differences = []
         assessment_differences = []
         other_observed = {}
         for entry in other_index['records']:
@@ -680,6 +915,8 @@ def report(manifest_path, first, second=None):
             original = observed[entry['id']]
             if other!=original:
                 differences.append(entry['id'])
+                compared = compare_records(original,other,same_board(first/'runs'/entry['id'],run))
+                witness_differences.append({'id':entry['id'],**compared})
             if {k:v['check'] for k,v in other.items()}!={k:v['check'] for k,v in original.items()}:
                 assessment_differences.append(entry['id'])
         classification_differences = []
@@ -689,17 +926,135 @@ def report(manifest_path, first, second=None):
             if statuses!=[p['status'] for p in first_case['predictions']]:
                 classification_differences.append(case['id'])
         comparison = {'same_check_results':not differences,'different_cases':differences,
+            'same_check_semantics':all(d['semantic'] for d in witness_differences),
+            'native_witness_differences':witness_differences,
             'same_check_assessments':not assessment_differences,'different_check_assessments':assessment_differences,
             'same_seed_classifications':not classification_differences,'different_seed_classifications':classification_differences,
-            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; preserve exact details/locators/numerical values.'}
+            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; preserve exact details/locators/numerical values.',
+            'semantic_basis':'Only DRC unconnected_items witnesses may match semantically: on byte-identical captured boards, '
+                             'both runs must name the same native copper islands per net, each as one spanning tree; '
+                             'every other field must be exactly equal.'}
     return {'schema':'agent-ee.benchmark-report/1','synthetic':True,'model_pass':False,
         'expectation_commit':request['expectation_commit'],'image_id':request['image_id'],
         'per_kind':counts,'cases':cases,'controls':controls,
         'seeded_detection':{'detected':detected,'all_seeds':len(cases),'evaluated_seeds':evaluated,
             'all_seed_fraction':detected/len(cases),'evaluated_fraction':detected/evaluated if evaluated else None},
-        'false_alarms':{'per_kind':{k:{'confirmed':0,'unresolved_control_findings':unresolved[k],'negative_opportunities':0,'rate':None} for k in counts},
-            'status':'No control findings independently adjudicated; zero confirmed is not proof of no false alarms.'},
+        'false_alarms':false_alarms(adjudication,unresolved,counts),'control_adjudication':adjudication,
         'native_visibility':visibility(cases),'rerun':comparison,'limitations':manifest['limitations']}
+
+
+# Native library-resolution messages that describe the review sandbox's library
+# tables, not the design. Matched exactly; any other wording needs judgement.
+LIBRARY_ABSENT = re.compile(r"The current configuration does not include the (symbol|footprint) library '([^']+)'")
+LIBRARY_RULES = {('erc','lib_symbol_issues'):'symbol',('erc','footprint_link_issues'):'footprint',
+                 ('drc','lib_footprint_issues'):'footprint'}
+ADJUDICATION_RULES = {
+    'environment-library-table': 'false alarm: the native message names a library nickname that neither the '
+        "check's retained hermetic library table nor the captured project table defines; it reports the review "
+        'sandbox configuration of an unmodified control, not a design defect',
+    'frozen-invariant-satisfied': 'true negative: an evaluated hardware-interface invariant, frozen from this '
+        'unmodified control, is satisfied',
+    'frozen-invariant-violated': 'false alarm: an evaluated hardware-interface invariant, frozen from this '
+        'unmodified control, is reported violated',
+    'not-executed': 'not evaluated: the check or invariant did not execute, so there is no opportunity',
+    'requires-judgement': 'unadjudicated: deciding whether this native record is a genuine control defect '
+        'requires engineering judgement; it is not counted as either outcome',
+}
+
+
+def library_nicknames(path):
+    """Library nicknames a KiCad library table defines; an absent table defines none."""
+    from .symbol_library import children as nodes, field, parse_sexpr
+    if not path.is_file():
+        return set()
+    return {field(lib,'name',1)[0] for lib in nodes(parse_sexpr(path.read_bytes()),'lib')}
+
+
+def native_control_rows(run, check):
+    """(category, raw locator, record, sheet) for every retained native ERC/DRC record."""
+    raw = read_json(Path(run)/'work'/check['id']/(check['kind']+'.json'))
+    if check['kind']=='erc':
+        rows = [('violations',f'/sheets/{i}/violations/{j}',v,s) for i,s in enumerate(raw['sheets'])
+                for j,v in enumerate(s['violations'])]
+    else:
+        rows = [(k,f'/{k}/{j}',v,None) for k in ('violations','unconnected_items','schematic_parity')
+                for j,v in enumerate(raw[k])]
+    return raw, rows
+
+
+def adjudicate_controls(manifest, first):
+    """Deterministic benchmark classification of every retained control record.
+
+    This never edits the sealed runs, makes no model call and never changes a
+    finding disposition: the central adjudicator treats check defects as
+    authoritative. Records the fixed rules cannot settle stay unadjudicated.
+    """
+    from .violation_waivers import violation_key
+    per_kind, controls = {}, []
+    for board in manifest['boards']:
+        cid = board['id']+'-control';run = Path(first)/'runs'/cid
+        result = read_json(run/'result.json');candidate = read_json(run/'candidate.json')
+        scope = candidate['scope'];rows = []
+        for check in result['checks']:
+            kind = check['kind']
+            tally = per_kind.setdefault(kind,{'records':0,'false_alarm':0,'true_negative':0,'unadjudicated':0,
+                                              'not_evaluated':0,'checks_not_ok':0,'by_rule':{}})
+            if check['execution']!='ok':
+                # No executed check, no opportunity: never a true negative.
+                tally['checks_not_ok'] += 1
+                tally['not_evaluated'] += len(check.get('details',{}).get('invariants',[]))
+                rows.append({'check_id':check['id'],'kind':kind,'execution':check['execution'],
+                             'verdict':'not_evaluated','rule':'not-executed'})
+                continue
+            decided = []
+            if kind=='hardware_interface':
+                for invariant in check.get('details',{}).get('invariants',[]):
+                    status = invariant['status']
+                    if status not in ('satisfied','violation'):
+                        tally['not_evaluated'] += 1
+                        rows.append({'check_id':check['id'],'kind':kind,'invariant':invariant['id'],'status':status,
+                                     'verdict':'not_evaluated','rule':'not-executed'})
+                    elif status=='satisfied':
+                        decided.append(({'invariant':invariant['id']},'true_negative','frozen-invariant-satisfied'))
+                    else:
+                        decided.append(({'invariant':invariant['id']},'false_alarm','frozen-invariant-violated'))
+            elif kind in ('erc','drc'):
+                raw, records = native_control_rows(run,check)
+                subject = scope['schematic' if kind=='erc' else 'board']
+                tables = {name:library_nicknames(run/'work'/check['id']/'kicad-config'/'10.0'/f'{name}-lib-table')
+                          | library_nicknames(run/'inputs'/Path(subject).parent/f'{name}-lib-table')
+                          for name in ('sym','fp')}
+                for category,locator,record,sheet in records:
+                    key = violation_key(kind,subject,category,raw,record,sheet)
+                    library = LIBRARY_RULES.get((kind,record.get('type')))
+                    match = LIBRARY_ABSENT.fullmatch(record.get('description',''))
+                    entry = {'raw_locator':locator,'type':record.get('type'),'severity':record.get('severity'),
+                             'location_hash':key['location_hash'] if key else None}
+                    if (library and match and match.group(1)==library and
+                            match.group(2) not in tables['sym' if library=='symbol' else 'fp']):
+                        decided.append(({**entry,'library':match.group(2)},'false_alarm','environment-library-table'))
+                    else:
+                        decided.append((entry,'unadjudicated','requires-judgement'))
+            for entry,verdict,rule in decided:
+                tally['records'] += 1;tally[verdict] += 1
+                tally['by_rule'][rule] = tally['by_rule'].get(rule,0)+1
+                rows.append({'check_id':check['id'],'kind':kind,**entry,'verdict':verdict,'rule':rule})
+        controls.append({'id':cid,'records':rows})
+    for kind,tally in per_kind.items():
+        n, fa, tn, open_ = tally['records'], tally['false_alarm'], tally['true_negative'], tally['unadjudicated']
+        if kind=='hardware_interface':
+            # Each evaluated frozen invariant is one negative opportunity.
+            tally['negative_opportunities'] = fa+tn
+            tally['rate'] = fa/(fa+tn) if fa+tn else None
+        else:
+            # Native records have no negative opportunity count: report the share
+            # of control records that are false alarms, bounded by the open ones.
+            tally['negative_opportunities'] = None
+            tally['rate'] = fa/n if n and not open_ else None
+            tally['share_bounds'] = [fa/n,(fa+open_)/n] if n else None
+    return {'rules':ADJUDICATION_RULES,'per_kind':per_kind,'controls':controls,
+        'status':'Deterministic rules only. Unadjudicated records are neither false alarms nor genuine defects; '
+                 'a native share bound spans every possible decision of them.'}
 
 
 def visibility(cases):
@@ -717,6 +1072,18 @@ def visibility(cases):
     return {'native_visible_real_defect':group(True),'native_invisible_real_defect':group(False),
         'basis':'Catalogue judgement of the real defect, not the seed. Schematic-only seeds keep PCB copper and can '
                 'add parity records that a synchronized real defect would not; those are seed artifacts.'}
+
+
+def false_alarms(adjudication, unresolved, counts):
+    rows = {}
+    for kind in counts:
+        tally = adjudication['per_kind'].get(kind,{})
+        rows[kind] = {'confirmed':tally.get('false_alarm',0),'unresolved_control_findings':unresolved[kind],
+            'unadjudicated_records':tally.get('unadjudicated',0),'adjudicated_records':
+                tally.get('false_alarm',0)+tally.get('true_negative',0),
+            'negative_opportunities':tally.get('negative_opportunities'),'rate':tally.get('rate'),
+            'share_bounds':tally.get('share_bounds')}
+    return {'per_kind':rows,'status':adjudication['status']}
 
 
 def finding_count(record):
@@ -753,3 +1120,142 @@ def canonical_native(value):
         if isinstance(result.get(key),list):
             result[key] = sorted(result[key],key=canonical)
     return result
+
+
+CLOSURE_SCHEMA = 'agent-ee.benchmark-dependency-closure/1'
+BENCHMARK_INPUTS = ('benchmark/requirements.json','benchmark/contract.json')
+# Native binaries a retained run records by content; the closure pins each one.
+NATIVE_RUNTIME = ('kicad-cli','bwrap','/usr/bin/python3','pcbnew')
+# Every consumed library copy is embedded in, or captured beside, a pinned native file.
+LIBRARY_LICENCES = {'kicad-stock':'CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)',
+                    'project':'board hardware grant (captured project file)',
+                    'third-party-custom':'board hardware grant (embedded copy; source library not acquired)',
+                    'none':'board hardware grant (embedded copy)'}
+
+
+def design_dependencies(board, tree):
+    """Every library nickname, 3D-model root and project table one pinned flat board names."""
+    from .benchmark import children, one, parse, values
+    from .symbol_library import children as nodes, field, parse_sexpr
+    native = board['native_files'];hashes = board['native_file_sha256']
+    schematic = parse(checked_read(tree,native['schematic'],hashes[native['schematic']]))
+    pcb = parse(checked_read(tree,native['pcb'],hashes[native['pcb']]))
+    if children(schematic,'sheet'):
+        raise ValueError('dependency closure covers flat boards only')
+    embedded = {values(s)[0] for lib in children(schematic,'lib_symbols') for s in children(lib,'symbol')}
+    symbols = set()
+    for symbol in children(schematic,'symbol'):
+        lib_id = values(one(symbol,'lib_id'))[0]
+        name = values(one(symbol,'lib_name'))[0] if children(symbol,'lib_name') else lib_id
+        if name not in embedded:
+            raise ValueError('placed symbol has no embedded definition: '+lib_id)
+        symbols.add(lib_id.split(':',1)[0] if ':' in lib_id else '')
+    footprints = {values(f)[0].split(':',1)[0] if ':' in values(f)[0] else '' for f in children(pcb,'footprint')}
+    models = {values(m)[0].rsplit('/',1)[0] for f in children(pcb,'footprint') for m in children(f,'model')}
+    tables = {}
+    for rel,expected in sorted(board['captured_dependency_sha256'].items()):
+        if Path(rel).name in ('fp-lib-table','sym-lib-table'):
+            data = safe_path(tree,rel).read_bytes()
+            if sha(data)!=expected:
+                raise ValueError('captured library table changed: '+rel)
+            tables[rel] = {field(lib,'name',1)[0]:field(lib,'uri',1)[0] for lib in nodes(parse_sexpr(data),'lib')}
+    return {'symbol_libraries':sorted(symbols),'footprint_libraries':sorted(footprints),
+            'model_roots':sorted(models),'project_tables':tables}
+
+
+def library_origin(kind, nickname, tables, stock):
+    """Where a nickname would resolve: the installed stock set, a captured project table, or nowhere."""
+    if not nickname:
+        return 'none'
+    if any(nickname in rows and rows[nickname].startswith('${KIPRJMOD}') for rows in tables.values()):
+        return 'project'
+    path = Path(stock)/('symbols' if kind=='symbol' else 'footprints')/(nickname+('.kicad_sym' if kind=='symbol' else '.pretty'))
+    return 'kicad-stock' if path.exists() else 'third-party-custom'
+
+
+def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/share/kicad'):
+    """Refuse unless the committed closure lists exactly what the pinned inputs and runs depend on."""
+    manifest = load_manifest(manifest_path);cache = external(cache)
+    closure = read_json(closure_path)
+    if closure.get('schema')!=CLOSURE_SCHEMA or closure.get('manifest_sha256')!=digest(manifest_path):
+        raise ValueError('dependency closure belongs to a different manifest')
+    if closure['image_id']!=manifest['image_id']:
+        raise ValueError('closure image differs from the pinned image')
+    listed = {b['board_id']:b for b in closure['boards']}
+    if set(listed)!={b['id'] for b in manifest['boards']}:
+        raise ValueError('closure board set differs from manifest')
+    counts = {}
+    for board in manifest['boards']:
+        if owner_source(board):
+            raise ValueError('dependency closure covers the public corpus only')
+        entry = listed[board['id']];found = design_dependencies(board,cache/board['id']/'tree')
+        if entry['hardware_grant']!=board['license']['hardware_grant']:
+            raise ValueError('closure hardware grant differs: '+board['id'])
+        for key,kind in (('symbol_libraries','symbol'),('footprint_libraries','footprint')):
+            names = [row['nickname'] for row in entry[key]]
+            if names!=found[key]:
+                raise ValueError(f'{board["id"]} {key} not closed: listed {names}, found {found[key]}')
+            for row in entry[key]:
+                if (row['origin']!=library_origin(kind,row['nickname'],found['project_tables'],stock) or
+                        row.get('licence_class')!=LIBRARY_LICENCES[row['origin']]):
+                    raise ValueError(f'{board["id"]} {kind} library origin or licence differs: {row["nickname"]}')
+        if entry['model_roots']!=found['model_roots'] or entry['project_tables']!=found['project_tables']:
+            raise ValueError(f'{board["id"]} model roots or project tables not closed')
+        counts[board['id']] = {k:len(found[k]) for k in found}
+    alternates = sorted({(c['mutation']['alternate_source'].rsplit('/',1)[-1],c['mutation']['alternate_sha256'])
+        for c in manifest['cases'] if c['mutation']['operation']=='replace_embedded_physical_footprint'
+        and 'alternate_git' not in c['mutation']})
+    library = closure['alternate_library']
+    if [(a['name'],a['sha256']) for a in library['footprints']]!=alternates:
+        raise ValueError('alternate footprint closure differs from mutations')
+    record = Path(manifest_path).parent/'alternate-library.json'
+    if digest(record)!=library['record_sha256']:
+        raise ValueError('alternate library record changed')
+    for name,expected in alternates:
+        if digest(safe_path(cache/'alternate-footprints',name))!=expected:
+            raise ValueError('cached alternate footprint differs: '+name)
+    if digest(cache/'alternate-footprints'/'LICENSE.md')!=read_json(record)['license_sha256']:
+        raise ValueError('cached alternate library license differs')
+    tools = {t['name']:t for t in closure['tools']}
+    for tool in closure['tools']:
+        evidence = tool.get('licence_evidence')
+        if not tool.get('licence_class') or not evidence or digest(evidence['path'])!=evidence['sha256']:
+            raise ValueError('tool licence evidence missing or changed: '+tool['name'])
+    if any(name not in tools or not re.fullmatch(r'[a-f0-9]{64}',tools[name].get('sha256') or '') for name in NATIVE_RUNTIME):
+        raise ValueError('native runtime not pinned in closure')
+    for package in closure['fonts']['packages']:
+        # Image-only files are pinned by the image identity, not by this host.
+        evidence = package.get('licence_evidence') or {}
+        if (not package.get('licence_class') or evidence.get('location')!='image' or
+                not re.fullmatch(r'[a-f0-9]{64}',evidence.get('sha256') or '')):
+            raise ValueError('font licence evidence missing: '+package.get('package','?'))
+    substitutions = {}
+    checked = []
+    for run in runs:
+        run = Path(run);request = read_json(run/'request.json')
+        if request['image_id']!=closure['image_id'] or request['manifest_sha256']!=closure['manifest_sha256']:
+            raise ValueError('run image or manifest differs from closure')
+        boards = {b['id']:b for b in manifest['boards']}
+        for entry in read_json(run/'runs/index.json')['records']:
+            result = read_json(run/'runs'/entry['id']/'result.json')
+            scope = read_json(run/'runs'/entry['id']/'candidate.json')
+            board = boards[scope['scope']['name']]
+            allowed = {*board['native_file_sha256'],*board['captured_dependency_sha256'],*BENCHMARK_INPUTS}
+            if not set(scope['files'])<=allowed:
+                raise ValueError('run consumed an input outside the closure: '+', '.join(sorted(set(scope['files'])-allowed)))
+            required = set(result['launch_expectation']['required_runtime'])
+            if not required <= set(tools):
+                raise ValueError('run required an unlisted runtime: '+', '.join(sorted(required-set(tools))))
+            for name in NATIVE_RUNTIME:
+                if result['runtime_files'][name]['sha256']!=tools[name]['sha256']:
+                    raise ValueError(f'run runtime {name} differs from closure')
+            for check in result['checks']:
+                version = check.get('details',{}).get('kicad_version')
+                if check['kind'] in ('erc','drc') and version!=tools['kicad-cli']['version']:
+                    raise ValueError('native KiCad version differs from closure')
+                if check['kind'] in ('erc','drc'):
+                    substitutions.update(font_substitutions(run/'runs'/entry['id'],check['id']))
+        checked.append(str(run))
+    if runs and substitutions!=closure['fonts']['substitutions']:
+        raise ValueError(f'run font substitutions {substitutions} differ from closure')
+    return {'closed':True,'boards':counts,'alternate_footprints':len(alternates),'tools':sorted(tools),'runs':checked}

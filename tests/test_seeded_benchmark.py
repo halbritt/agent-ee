@@ -299,3 +299,341 @@ class ControlWitnessTests(unittest.TestCase):
             return {'check':{'execution':'ok','outcome':'defect'},'pcb_pad_uuids':{'f':{'1':['pad']}},
                 'native':{'schematic_parity':[{'type':'net_conflict','description':witness,'items':[{'uuid':'pad'}]}]}}
         self.assertEqual(classify(expected,record('new wording'),case,record('existing flaw')),'control_unresolved')
+
+
+class ConnectionSemanticsTests(unittest.TestCase):
+    """KiCad may name another item pair, or another spanning tree, for the same split net."""
+    islands = {'pad':('N','P'),'a1':('N','A'),'a2':('N','A'),'b1':('N','B'),'m':('M','X'),'zone':None}
+
+    @staticmethod
+    def native(*pairs):
+        return {'unconnected_items':[{'type':'unconnected_items','items':[{'uuid':a},{'uuid':b}]} for a,b in pairs]}
+
+    def test_other_witness_items_or_tree_over_the_same_islands_match(self):
+        from agent_ee.benchmark_run import connection_semantics
+        first = connection_semantics(self.native(('pad','a1'),('a2','b1')),self.islands)
+        self.assertEqual(first,{'N':['A','B','P']})
+        self.assertEqual(connection_semantics(self.native(('pad','b1'),('b1','a2')),self.islands),first)
+        self.assertEqual(connection_semantics(self.native(),self.islands),{})
+
+    def test_unresolved_witnesses_are_never_equal(self):
+        from agent_ee.benchmark_run import connection_semantics
+        for pairs in ([('pad','zone')],[('pad','unknown')],[('a1','a2')],[('pad','m')],
+                      [('pad','a1')],[('pad','a1'),('a2','pad')]):
+            with self.subTest(pairs=pairs):
+                semantics = connection_semantics(self.native(*pairs),self.islands)
+                self.assertTrue(semantics is None or semantics!={'N':['A','B','P']})
+        self.assertIsNone(connection_semantics(None,self.islands))
+        self.assertIsNone(connection_semantics(self.native(('pad','a1'),('a2','b1'),('pad','b1')),self.islands))
+
+
+def owned_split_board(directory):
+    """One net in three saved-copper islands: a lone pad and two separate tracks."""
+    import pcbnew
+    from pathlib import Path
+    board = pcbnew.BOARD()
+    net = pcbnew.NETINFO_ITEM(board,'N');board.Add(net)
+    footprint = pcbnew.FOOTPRINT(board);footprint.SetReference('J1');board.Add(footprint)
+    pad = pcbnew.PAD(footprint);pad.SetNumber('1');pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+    layers = pcbnew.LSET();layers.AddLayer(pcbnew.F_Cu);pad.SetLayerSet(layers)
+    pad.SetSize(pcbnew.VECTOR2I(pcbnew.FromMM(1),pcbnew.FromMM(1)));pad.SetNet(net);footprint.Add(pad)
+    tracks = []
+    for y in (5,10):
+        for x in ((0,4),(4,8)):
+            track = pcbnew.PCB_TRACK(board);track.SetLayer(pcbnew.F_Cu);track.SetWidth(pcbnew.FromMM(.25))
+            track.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(x[0]),pcbnew.FromMM(y)))
+            track.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(x[1]),pcbnew.FromMM(y)));track.SetNet(net);board.Add(track)
+            tracks.append(track)
+    # An outline keeps DRC from reporting the board itself, whose item UUID
+    # KiCad regenerates on every load.
+    outline = pcbnew.PCB_SHAPE(board);outline.SetShape(pcbnew.SHAPE_T_RECT);outline.SetLayer(pcbnew.Edge_Cuts)
+    outline.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(-5),pcbnew.FromMM(-5)))
+    outline.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(15),pcbnew.FromMM(15)));board.Add(outline)
+    path = Path(directory)/'owned.kicad_pcb';pcbnew.SaveBoard(str(path),board)
+    text = path.read_text()
+    from agent_ee.benchmark import parse, children, one, uid, values
+    root = parse(text)
+    pads = [uid(p) for f in children(root,'footprint') for p in children(f,'pad')]
+    # Saved order is not creation order: name each segment by its start point.
+    segments = {tuple(values(one(s,'start'))):uid(s) for s in children(root,'segment')}
+    return text, pads[0], [segments[k] for k in (('0','5'),('4','5'),('0','10'),('4','10'))]
+
+
+class NativeConnectionWitnessTests(unittest.TestCase):
+    def test_native_islands_equate_witness_choice_but_keep_other_differences(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import tempfile
+        from agent_ee.benchmark import copper_islands
+        from agent_ee.benchmark_run import compare_records
+        with tempfile.TemporaryDirectory() as tmp:
+            text, pad, (a1,a2,b1,b2) = owned_split_board(tmp)
+        islands = copper_islands(text)
+        self.assertEqual(islands[a1],islands[a2])
+        self.assertNotEqual(islands[a1],islands[b1])
+        self.assertEqual(len({islands[pad],islands[a1],islands[b1]}),3)
+        def record(*pairs, violations=()):
+            native = ConnectionSemanticsTests.native(*pairs)
+            native['violations'] = list(violations);native['schematic_parity'] = []
+            return {'d':{'check':{'kind':'drc','execution':'ok','details':{'unconnected_items':len(pairs)}},'native':native}}
+        first = record((pad,a1),(a2,b1))
+        compared = compare_records(first,record((pad,b2),(b1,a1)),text)
+        self.assertFalse(compared['exact'])
+        self.assertTrue(compared['semantic'],compared)
+        self.assertEqual(compared['differences'][0]['native_sections'],['unconnected_items'])
+        self.assertTrue(compared['differences'][0]['first_only']['unconnected_items'])
+        self.assertTrue(compare_records(first,record((pad,a1),(a2,b1)),text)['exact'])
+        for other,board in ((record((pad,a1),(a2,b1),violations=[{'type':'clearance','items':[]}]),text),
+                            (record((pad,b2),(b1,a1)),None),(record((pad,a1)),text)):
+            with self.subTest(other=other,board=board is None):
+                self.assertFalse(compare_records(first,other,board)['semantic'])
+
+
+def owned_native_run(root):
+    """One owned checks-only review with native ERC and DRC, in a benchmark run layout.
+
+    The board is the owned split net, so DRC retains unconnected-item witnesses.
+    """
+    import json
+    import shutil
+    from pathlib import Path
+    from agent_ee.benchmark_run import review_case
+    from agent_ee.storage import digest
+    fixture = Path(__file__).resolve().parents[1]/'fixtures/hardware-interface'
+    source = root/'source';source.mkdir()
+    for name in ('interface.kicad_sch','requirements.md'):
+        shutil.copyfile(fixture/name,source/name)
+    text = owned_split_board(source)[0]
+    (source/'interface.kicad_pcb').write_text(text);(source/'owned.kicad_pcb').unlink()
+    checks = [{'id':'owned-netlist','kind':'netlist'},{'id':'owned-erc','kind':'erc'},{'id':'owned-drc','kind':'drc'}]
+    scope = {'schema':'agent-ee.scope/2','name':'owned','scope':'Owned native rerun fixture.',
+        'schematic':'interface.kicad_sch','board':'interface.kicad_pcb',
+        'inputs':[{'path':p,'at':p} for p in ('interface.kicad_sch','interface.kicad_pcb','requirements.md')],
+        'requirements':['requirements.md'],'checks':checks,
+        'baseline':{'requirements':[{'id':'owned','statement':'Owned native checks.','source':{'path':'requirements.md','locator':'owned'},
+            'checks':[c['id'] for c in checks]}],'targets':['requirements.md'],'reference_architectures':['requirements.md']}}
+    (source/'scope.json').write_text(json.dumps(scope))
+    first = root/'first';(first/'runs').mkdir(parents=True)
+    run = first/'runs'/'owned-control'
+    review_case(source/'scope.json',run)
+    (first/'request.json').write_text(json.dumps({'schema':'agent-ee.benchmark-request/1'}))
+    (first/'runs/index.json').write_text(json.dumps({'records':[{'id':'owned-control','run':str(run),
+        'result_sha256':digest(run/'result.json')}],'model_pass':False}))
+    return first, run
+
+
+class NativeRerunTests(unittest.TestCase):
+    def test_reruns_from_captured_inputs_reproduce_retained_native_records(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import native_rerun
+        with tempfile.TemporaryDirectory() as tmp:
+            first, run = owned_native_run(Path(tmp))
+            retained = json.loads((run/'result.json').read_text())
+            self.assertEqual({c['id']:c['execution'] for c in retained['checks']},
+                             {'owned-netlist':'ok','owned-erc':'ok','owned-drc':'ok'})
+            native = json.loads((run/'work/owned-drc/drc.json').read_text())
+            self.assertEqual(len(native['unconnected_items']),2)
+            summary = native_rerun(first,Path(tmp)/'rerun',repeats=2)
+            self.assertEqual((summary['native_semantic_cases'],summary['semantic_cases'],summary['all_cases']),(1,1,1),summary)
+            for repeat in summary['cases'][0]['repeats']:
+                # A different witness choice is reported, and only for unconnected items.
+                for difference in repeat['differences']:
+                    self.assertEqual(difference['native_sections'],['unconnected_items'],difference)
+                    self.assertTrue(difference['semantic_equal'])
+            self.assertTrue(summary['same_native_runtime'])
+            self.assertEqual([r['repeat'] for r in summary['cases'][0]['repeats']],[1,2])
+            self.assertTrue((Path(tmp)/'rerun/repeat-2/owned-control/work/owned-drc/drc.json').is_file())
+            self.assertEqual(json.loads((Path(tmp)/'rerun/native-rerun.json').read_text()),summary)
+            with self.assertRaises(FileExistsError):
+                native_rerun(first,Path(tmp)/'rerun')
+            board = run/'inputs/interface.kicad_pcb'
+            board.write_text(board.read_text()+'\n')
+            # The retained artifact inventory refuses a changed captured input first.
+            with self.assertRaisesRegex(ValueError,'retained benchmark artifacts changed'):
+                native_rerun(first,Path(tmp)/'tampered-input')
+            (run/'result.json').write_text(json.dumps({**retained,'outcome':'changed'}))
+            with self.assertRaisesRegex(ValueError,'retained result changed'):
+                native_rerun(first,Path(tmp)/'tampered-result')
+
+
+class ControlAdjudicationTests(unittest.TestCase):
+    def control(self, root, *, project_table=None, hardware=None):
+        import json
+        from pathlib import Path
+        run = Path(root)/'runs'/'owned-control'
+        (run/'work/erc/kicad-config/10.0').mkdir(parents=True);(run/'work/drc').mkdir(parents=True)
+        (run/'inputs/hw').mkdir(parents=True)
+        (run/'work/erc/kicad-config/10.0/sym-lib-table').write_text('(sym_lib_table (version 7) (lib (name "Global")(type "KiCad")(uri "x")(options "")(descr "")))')
+        if project_table:
+            (run/'inputs/hw/sym-lib-table').write_text(project_table)
+        def item(uuid):
+            return {'description':'item','pos':{'x':1.0,'y':2.0},'uuid':uuid}
+        missing = "The current configuration does not include the symbol library '{}'"
+        erc = {'coordinate_units':'mm','kicad_version':'10.0.7','sheets':[{'path':'/','uuid_path':'/root','violations':[
+            {'type':'lib_symbol_issues','severity':'warning','description':missing.format('Custom'),'items':[item('00000000-0000-0000-0000-000000000001')]},
+            {'type':'lib_symbol_issues','severity':'warning','description':missing.format('Project'),'items':[item('00000000-0000-0000-0000-000000000002')]},
+            {'type':'lib_symbol_issues','severity':'warning','description':missing.format('Global'),'items':[item('00000000-0000-0000-0000-000000000003')]},
+            {'type':'lib_symbol_issues','severity':'warning','description':missing.format('Custom')+' (changed wording)','items':[]},
+            {'type':'footprint_link_issues','severity':'warning','description':missing.format('Custom'),'items':[]},
+            {'type':'power_pin_not_driven','severity':'error','description':'Input Power pin not driven by any Output Power pins','items':[]}]}]}
+        drc = {'coordinate_units':'mm','kicad_version':'10.0.7','violations':[
+            {'type':'lib_footprint_issues','severity':'warning','description':"The current configuration does not include the footprint library 'Stock'",'items':[]},
+            {'type':'clearance','severity':'error','description':'Clearance violation','items':[]}],
+            'unconnected_items':[],'schematic_parity':[]}
+        (run/'work/erc/erc.json').write_text(json.dumps(erc));(run/'work/drc/drc.json').write_text(json.dumps(drc))
+        checks = [{'id':'erc','kind':'erc','execution':'ok'},{'id':'drc','kind':'drc','execution':'ok'},
+            {'id':'interface','kind':'hardware_interface','execution':'ok','details':{'invariants':hardware or [
+                {'id':'a','status':'satisfied'},{'id':'b','status':'satisfied'},{'id':'c','status':'violation'},
+                {'id':'d','status':'not_evaluated'}]}},
+            {'id':'skipped','kind':'hardware_interface','execution':'unsupported','details':{'invariants':[{'id':'e','status':'not_evaluated'}]}}]
+        (run/'result.json').write_text(json.dumps({'checks':checks}))
+        (run/'candidate.json').write_text(json.dumps({'scope':{'schematic':'hw/owned.kicad_sch','board':'hw/owned.kicad_pcb'}}))
+        return {'boards':[{'id':'owned'}]}
+
+    def test_only_fixed_rules_decide_and_open_records_bound_the_share(self):
+        import tempfile
+        from agent_ee.benchmark_run import adjudicate_controls
+        with tempfile.TemporaryDirectory() as tmp:
+            table = '(sym_lib_table (version 7) (lib (name "Project")(type "KiCad")(uri "${KIPRJMOD}/p.kicad_sym")(options "")(descr "")))'
+            result = adjudicate_controls(self.control(tmp,project_table=table),tmp)
+        erc, drc, hardware = (result['per_kind'][k] for k in ('erc','drc','hardware_interface'))
+        # Only the absent nickname with the exact native wording and matching type is decided.
+        self.assertEqual((erc['records'],erc['false_alarm'],erc['unadjudicated']),(6,1,5))
+        self.assertIsNone(erc['rate'])
+        self.assertEqual(erc['share_bounds'],[1/6,1.0])
+        self.assertEqual((drc['false_alarm'],drc['unadjudicated'],drc['share_bounds']),(1,1,[0.5,1.0]))
+        self.assertEqual((hardware['true_negative'],hardware['false_alarm'],hardware['not_evaluated'],
+                          hardware['checks_not_ok'],hardware['negative_opportunities']),(2,1,2,1,3))
+        self.assertAlmostEqual(hardware['rate'],1/3)
+        rows = result['controls'][0]['records']
+        decided = [r for r in rows if r['verdict']=='false_alarm' and r['kind']=='erc']
+        self.assertEqual([(r['library'],r['raw_locator']) for r in decided],[('Custom','/sheets/0/violations/0')])
+        self.assertRegex(decided[0]['location_hash'],'^[a-f0-9]{64}$')
+        self.assertTrue(all(r['rule']=='requires-judgement' for r in rows if r['verdict']=='unadjudicated'))
+
+    def test_without_open_records_native_rate_is_exact_and_all_satisfied_is_zero(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import adjudicate_controls
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self.control(tmp,hardware=[{'id':'a','status':'satisfied'}])
+            path = Path(tmp)/'runs/owned-control/work/erc/erc.json'
+            erc = json.loads(path.read_text());erc['sheets'][0]['violations'] = erc['sheets'][0]['violations'][:1]
+            path.write_text(json.dumps(erc))
+            result = adjudicate_controls(manifest,tmp)
+        self.assertEqual(result['per_kind']['erc']['rate'],1.0)
+        self.assertEqual(result['per_kind']['hardware_interface']['rate'],0.0)
+
+
+class DependencyClosureTests(unittest.TestCase):
+    SCHEMATIC = ('(kicad_sch (lib_symbols (symbol "Device:R") (symbol "Custom:Part") (symbol "Local"))'
+                 '(symbol (lib_id "Device:R") (uuid "s1")) (symbol (lib_id "Custom:Part") (uuid "s2"))'
+                 '(symbol (lib_id "Other:Part") (lib_name "Local") (uuid "s3")))')
+    PCB = ('(kicad_pcb (footprint "Resistor_SMD:R_0402" (model "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R.step"))'
+           '(footprint "owned:J" (model "${KIPRJMOD}/models/J.step")) (footprint "Logo"))')
+    TABLE = '(fp_lib_table (version 7) (lib (name "owned")(type "KiCad")(uri "${KIPRJMOD}/owned.pretty")(options "")(descr "")))'
+
+    def board(self, root, schematic=SCHEMATIC):
+        from agent_ee.benchmark import sha
+        files = {'hw/b.kicad_sch':schematic,'hw/b.kicad_pcb':self.PCB,'hw/fp-lib-table':self.TABLE}
+        for rel,text in files.items():
+            (root/rel).parent.mkdir(parents=True,exist_ok=True);(root/rel).write_text(text)
+        return {'native_files':{'schematic':'hw/b.kicad_sch','pcb':'hw/b.kicad_pcb'},
+            'native_file_sha256':{r:sha(files[r].encode()) for r in ('hw/b.kicad_sch','hw/b.kicad_pcb')},
+            'captured_dependency_sha256':{'hw/fp-lib-table':sha(self.TABLE.encode())}}
+
+    def test_inventory_names_every_library_model_root_and_table(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import design_dependencies, library_origin
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            found = design_dependencies(self.board(root),root)
+            stock = root/'stock';(stock/'symbols').mkdir(parents=True);(stock/'footprints/Resistor_SMD.pretty').mkdir(parents=True)
+            (stock/'symbols/Device.kicad_sym').write_text('(kicad_symbol_lib)')
+            origins = [library_origin('symbol',n,found['project_tables'],stock) for n in found['symbol_libraries']]
+            footprints = [library_origin('footprint',n,found['project_tables'],stock) for n in found['footprint_libraries']]
+        self.assertEqual(found['symbol_libraries'],['Custom','Device','Other'])
+        self.assertEqual(origins,['third-party-custom','kicad-stock','third-party-custom'])
+        self.assertEqual(found['footprint_libraries'],['','Resistor_SMD','owned'])
+        self.assertEqual(footprints,['none','kicad-stock','project'])
+        self.assertEqual(found['model_roots'],['${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes','${KIPRJMOD}/models'])
+        self.assertEqual(found['project_tables'],{'hw/fp-lib-table':{'owned':'${KIPRJMOD}/owned.pretty'}})
+
+    def test_missing_definition_hierarchy_and_changed_bytes_are_refused(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import design_dependencies
+        cases = [(self.SCHEMATIC.replace('(symbol "Custom:Part") ',''),'no embedded definition'),
+                 (self.SCHEMATIC[:-1]+'(sheet (uuid "h")))','flat boards only')]
+        for schematic,message in cases:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaisesRegex(ValueError,message):
+                    design_dependencies(self.board(Path(tmp),schematic),Path(tmp))
+        with tempfile.TemporaryDirectory() as tmp:
+            board = self.board(Path(tmp));(Path(tmp)/'hw/fp-lib-table').write_text(self.TABLE+' ')
+            with self.assertRaisesRegex(ValueError,'captured library table changed'):
+                design_dependencies(board,Path(tmp))
+
+    def test_committed_closure_pins_manifest_runtime_and_licence_classes(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import LIBRARY_LICENCES, NATIVE_RUNTIME, load_manifest, verify_closure
+        from agent_ee.storage import digest
+        seeded = Path(__file__).resolve().parents[1]/'benchmarks/seeded'
+        closure = json.loads((seeded/'dependency-closure.json').read_text())
+        manifest = load_manifest(seeded/'expectations.json')
+        self.assertEqual(closure['manifest_sha256'],digest(seeded/'expectations.json'))
+        self.assertEqual(closure['image_id'],manifest['image_id'])
+        self.assertEqual([b['board_id'] for b in closure['boards']],[b['id'] for b in manifest['boards']])
+        for board in closure['boards']:
+            for row in board['symbol_libraries']+board['footprint_libraries']:
+                self.assertEqual(row['licence_class'],LIBRARY_LICENCES[row['origin']])
+        tools = {t['name']:t for t in closure['tools']}
+        self.assertTrue(set(NATIVE_RUNTIME)<=set(tools))
+        for tool in tools.values():
+            self.assertTrue(tool['licence_class'])
+            self.assertEqual(digest(tool['licence_evidence']['path']),tool['licence_evidence']['sha256'],tool['name'])
+        self.assertEqual(closure['alternate_library']['record_sha256'],digest(seeded/'alternate-library.json'))
+        self.assertFalse(closure['redistribution']['benchmark_publishes'])
+        with tempfile.TemporaryDirectory() as tmp:
+            changed = Path(tmp)/'closure.json'
+            changed.write_text(json.dumps({**closure,'manifest_sha256':'0'*64}))
+            with self.assertRaisesRegex(ValueError,'different manifest'):
+                verify_closure(seeded/'expectations.json',Path(tmp)/'cache',changed)
+
+
+class FontSubstitutionTests(unittest.TestCase):
+    def test_console_substitutions_are_read_exactly(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import font_substitutions
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp)/'work/drc').mkdir(parents=True)
+            (Path(tmp)/'work/drc/console.log').write_text(
+                "Found 6 violations\n18:06:03: Font 'Arial' not found; substituting 'DejaVu Sans Book'.\n"
+                "18:06:03: Font 'Futura' not found; substituting 'DejaVu Sans Bold'.\nFont Arial missing\n")
+            self.assertEqual(font_substitutions(tmp,'drc'),{'Arial':'DejaVu Sans Book','Futura':'DejaVu Sans Bold'})
+            self.assertEqual(font_substitutions(tmp,'erc'),{})
+
+
+class ContainerCommandTests(unittest.TestCase):
+    def test_image_launch_keeps_network_init_and_read_only_mounts(self):
+        from pathlib import Path
+        from agent_ee.benchmark_run import container_command
+        image = 'sha256:'+'a'*64
+        command = container_command('agent-ee-21-x',image,Path('/src'),[(Path('/in'),True),(Path('/out'),False)],['_execute','/in','/out/runs'])
+        self.assertEqual(command[:6],['docker','run','--rm','--init','--name','agent-ee-21-x'])
+        self.assertEqual(command[command.index('--network')+1],'none')
+        self.assertIn('apparmor=agent-ee-container',command)
+        volumes = [command[i+1] for i,a in enumerate(command) if a=='-v']
+        self.assertEqual(volumes,['/src:/opt/agent-ee:ro','/in:/in:ro','/out:/out'])
+        self.assertEqual(command[command.index(image)+1:],['/opt/agent-ee/scripts/seeded_benchmark.py','_execute','/in','/out/runs'])

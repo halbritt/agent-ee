@@ -4,8 +4,10 @@ AGENTEE-21 adds a scratch-only fetch, mutation, checks-only runner and report
 utility. Its [expectations](../benchmarks/seeded/expectations.json) identify five
 pinned public boards and 30 synthetic mutations. This ledger freezes assembly
 values, conductor relationships and connector mating geometry. It does not
-establish 30 functional electrical failures or native-clean controls. Owner
-review and complete dependency qualification remain outstanding.
+establish 30 functional electrical failures or native-clean controls. The
+[dependency closure](#dependency-closure) lists every tool and library the
+benchmark depends on. Owner review and any publication decision remain
+outstanding.
 
 The corpus has nine value substitutions, five schematic wire swaps, nine removed
 schematic wires, five physical pad-geometry substitutions and two removed RFID
@@ -27,12 +29,60 @@ upstream hardware grants, not a change to agent-ee's code license.
 Downloads, original license files, libraries, generated candidates and review
 artifacts stay outside this repository. Publication of third-party designs or
 modified derivatives still requires owner approval. The repository contains
-metadata and small independent numerical expectations only. The
+metadata and small independent numerical expectations only. The preregistered
 [dependency inventory](../benchmarks/seeded/dependency-qualification.json) records
-embedded symbols, model references, and library/license file hashes. Several
-custom libraries and models are absent; complete dependency and redistribution
-closure is unqualified. The utility never installs replacement parts or overrides
-a license to make a run work.
+embedded symbols, model references, and library/license file hashes. The utility
+never installs replacement parts or overrides a license to make a run work.
+
+### Dependency closure
+
+[`dependency-closure.json`](../benchmarks/seeded/dependency-closure.json) closes
+that inventory. It pins the manifest digest, the image and each native binary by
+SHA-256, and it gives every entry a licence class. The verifier refuses the record
+when any listed set differs from what the pinned files name.
+
+| Dependency | Pin | Licence class | Use |
+|---|---|---|---|
+| Five upstream boards | commit, archive and native-file SHA-256 (manifest) | CC-BY-SA-4.0, CERN-OHL-P-2.0, CERN-OHL-S-2.0 | design input |
+| Embedded symbol and footprint copies | the native-file hashes | board grant; KiCad stock copies also have the KiCad design-use exception | read by ERC, DRC and netlist export |
+| Referenced stock and custom library nicknames | listed per board with their origin | not acquired | never loaded; the sandbox has no global library table |
+| Captured project table and footprints (`usb-host-pmod`) | captured-dependency hashes | board grant | resolved by `${KIPRJMOD}` |
+| 3D-model roots | listed per board | not acquired | never loaded by ERC or DRC |
+| Alternate 1.27 mm footprints | footprint bytes, package version, licence hash | CC-BY-SA-4.0 with design-use exception | mutation input |
+| Image `sha256:d6094c3b…0234` | image ID | aggregate of Ubuntu packages | execution; ngspice is present but unused |
+| `kicad-cli` and `pcbnew` 10.0.7 | binary SHA-256 | GPL | native checks; preparation and island resolution |
+| `bwrap` 0.9.0 | binary SHA-256 | LGPL-2.0-or-later | check sandbox |
+| Python 3.12.3 | binary SHA-256 | PSF-2.0 | runtime, standard library only |
+| `git`, `docker` CLI | binary SHA-256 | GPL-2.0, Apache-2.0 | host only: ancestry, archive, image launch |
+| DejaVu fonts 2.37 and fontconfig in the image | image ID; substitution map | Bitstream Vera (permissive); HPND-style | substitutes for `Arial`, `Arial Black` and `Futura` text in `tmf8829` |
+
+Each licence class cites a licence file by hash: the installed package
+`copyright` file, or Docker's README. KiCad's Debian `copyright` file says GPL v2.
+Font licence files are inside the image, so the image identity pins them. Fonts
+are a real dependency. DRC text-thickness and silkscreen records depend on the
+substitute font, and `closure` requires each run's console substitutions to
+equal the recorded map.
+Redistribution eligibility comes from the upstream grants only. The benchmark
+publishes nothing. Publishing boards, derivatives or results stays an owner gate.
+One gap remains: the alternate library's upstream source commit cannot be
+recovered offline from the binary package. Its bytes and package version are
+pinned.
+
+```sh
+python3 scripts/seeded_benchmark.py closure benchmarks/seeded/expectations.json /tmp/agent-ee-21-cache --closure benchmarks/seeded/dependency-closure.json --run /tmp/agent-ee-21-run1 --run /tmp/agent-ee-21-run2
+```
+
+`closure` checks these points:
+
+- It re-derives every symbol nickname, footprint nickname, model root and project
+  table from the pinned flat native files, and requires an embedded definition
+  for each placed symbol.
+- It recomputes each library origin against the installed stock set and checks
+  each licence class.
+- It checks the alternate footprints and the hashes of the tool licence files.
+- For each retained run, it requires the closure's image, binary hashes and KiCad
+  version. Every consumed input must be a pinned native file, a captured
+  dependency or a generated benchmark file.
 
 ## Preparation and temporal ordering
 
@@ -108,11 +158,28 @@ the same native rule at the target pad remains unresolved even if its witness
 wording changes. Checks without a prediction
 have zero scored opportunities, not perfect recall.
 
-Control findings require independent engineering adjudication. The report counts
-unresolved control findings per kind and leaves false-alarm rates unavailable
-until negative opportunities and decisions exist. Zero confirmed false alarms
-before that work does not mean the controls are defect-free. Model results, if
-added later, must stay in a separate report.
+The report classifies every retained control record with fixed deterministic
+rules (`control_adjudication`). It makes no model call and does not modify sealed
+runs. It also changes no finding disposition: the central adjudicator treats check
+defects as authoritative and refuses to dismiss or defer them. Each record is bound
+by its raw locator and, where eligible, the exact
+[waiver location hash](violation-waivers.md).
+
+| Rule | Verdict |
+|---|---|
+| A hardware-interface invariant frozen from the control is satisfied | true negative |
+| Such an invariant is violated | false alarm |
+| The native message is exactly `The current configuration does not include the symbol/footprint library 'X'`, with the matching rule type. Neither the check's retained hermetic table nor the captured project table defines `X` | false alarm (environment) |
+| The check or invariant did not execute | not evaluated, no opportunity |
+| Anything else | unadjudicated |
+
+Hardware-interface false-alarm rates divide by evaluated invariants. Native ERC
+and DRC records have no countable negative opportunities. The report gives the
+share of control records that are false alarms. While records remain
+unadjudicated, it reports only bounds covering every possible decision of them.
+An unadjudicated record is neither a false alarm nor a genuine defect. The rules
+were written after the controls' records were inspected. They change no seed
+result. Model results, if added later, must stay in a separate report.
 Reviewer false-positive rates are measured separately by the
 [false-positive calibration](fp-calibration.md) (AGENTEE-70).
 
@@ -125,6 +192,81 @@ artifacts remain available. Numerical or locator differences remain differences.
 The report checks retained snapshot/evidence integrity; the runner's public
 verification provides the full runtime/source verification inside the pinned
 image. Generated boards and raw runs are not publication artifacts.
+
+The report also checks connection semantics (`same_check_semantics`). A DRC
+`unconnected_items` record names one item of each of two copper islands. On
+byte-identical captured boards, two runs agree if native `pcbnew` connectivity
+places their witnesses in the same islands of each net. The records of each net
+must also form one spanning tree. Any other field must match exactly. The raw
+differing records are listed under `native_witness_differences`.
+
+`native-rerun` re-executes every retained run from its captured inputs:
+
+```sh
+python3 scripts/seeded_benchmark.py native-rerun /tmp/agent-ee-21-run1 /tmp/agent-ee-21-native-rerun --repeats 2
+```
+
+Each repeat copies the hash-verified inputs into a fresh scratch run. It then calls
+the ordinary check dispatcher, so native tools run in the same networkless
+sandbox. Native records are compared exactly and by connection semantics; whole
+check records are compared too. The summary records both implementation commits.
+It compares the host's `kicad-cli`, `bwrap`, Python and `pcbnew` hashes with the
+retained run's. Details added by a newer implementation therefore show up as
+check-record differences, not as native ones.
+
+### Retained runs (2026-10-17)
+
+Runs 5 and 6 used expectation commit `3b2da2c`, implementation `4687c92` and the
+pinned image, from one prepared input set. This report applies the current matcher
+to their retained artifacts. Results are checks-only, with no model pass:
+
+| Kind | Detection | Miss | Unsupported |
+|---|---|---|---|
+| `hardware_interface` | 9 | 1 | 15 |
+| `drc` | 18 | 1 | 0 |
+
+22 of 30 seeds were detected; 23 had an evaluated prediction. Seven seeds have
+only hardware-interface predictions. Their boards' contract checks were
+unsupported, so those seeds remain undetected in the all-30 denominator.
+`i2c-rj45-swap-01` was missed by both predicted checks.
+
+| Control kind | Records | False alarm | True negative | Unadjudicated | Rate or share bounds |
+|---|---|---|---|---|---|
+| `hardware_interface` | 12 evaluated invariants (18 not evaluated) | 0 | 12 | 0 | 0/12 |
+| `erc` | 501 | 352 (library table) | 0 | 149 | 0.70 to 1.00 |
+| `drc` | 76 | 26 (library table) | 0 | 50 | 0.34 to 1.00 |
+
+The 149 open ERC records are 126 `endpoint_off_grid`, 21 `power_pin_not_driven`,
+one `pin_not_connected` and one `pin_not_driven`. The 50 open DRC records are
+clearance, edge, courtyard, hole, mask, silk, text, outline and two parity records.
+
+Run 6 reproduced every check execution, outcome, assessment and seed
+classification. One native difference occurred, in `tmf8829-footprint-01`.
+For the split `+3V3` net, run 5 joined connector pad J5-3 to one track island;
+run 6 joined it to the other. Both runs report the same three islands, with two
+missing connections. The connection semantics are equal, and the raw records stay
+listed as a difference.
+
+`native-rerun --image` then re-executed all 35 retained run-5 reviews twice
+inside the pinned image, from their captured inputs. Native binaries and font
+substitutions matched the retained run. The native records of 33 cases were
+exactly equal in both repeats; all 35 were equal by connection semantics. The
+exact differences were all witness choices:
+
+- In `tmf8829-footprint-01`, both repeats chose other `+3V3` witnesses, and
+  repeat 2 also chose other `SCL` witnesses.
+- In `usb-host-pmod-footprint-01`, repeat 2 joined pad J2-11 to another
+  `/USB_D+` track.
+
+Each is a footprint seed that leaves a pad on a net split into several islands.
+No ERC record, DRC violation, parity record or pad map differed. The whole check
+records also differed, because the newer implementation adds result details.
+
+A host rerun with the same `kicad-cli`, `pcbnew`, `bwrap` and Python binaries is
+not equivalent. The host substitutes Liberation Sans for `Arial`, where the image
+uses DejaVu Sans. All seven `tmf8829` DRC reports then gained five
+`text_thickness` records and lost one `silk_overlap` record. Font substitution
+is therefore part of the closure, and `native-rerun` reports it.
 
 ## fome-mc corpus (AGENTEE-108)
 

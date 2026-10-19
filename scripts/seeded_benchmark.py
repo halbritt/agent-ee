@@ -12,7 +12,7 @@ from agent_ee import benchmark_run as benchmark
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command',required=True)
-    for name in ('fetch','prepare','run','report'):
+    for name in ('fetch','prepare','run','report','closure'):
         command = sub.add_parser(name)
         command.add_argument('manifest',type=Path)
         if name=='fetch':
@@ -28,9 +28,18 @@ def main():
             command.add_argument('output',type=Path)
             command.add_argument('--expectation-commit',required=True)
             command.add_argument('--image',required=True)
-        else:
+        elif name=='report':
             command.add_argument('first',type=Path)
             command.add_argument('--second',type=Path)
+        else:
+            command.add_argument('cache',type=Path)
+            command.add_argument('--closure',type=Path,required=True)
+            command.add_argument('--run',type=Path,action='append',default=[],
+                                 help='retained run whose runtime and native versions must match the closure')
+    rerun = sub.add_parser('native-rerun',help='re-execute retained runs from their captured inputs')
+    rerun.add_argument('first',type=Path);rerun.add_argument('output',type=Path)
+    rerun.add_argument('--repeats',type=int,default=2)
+    rerun.add_argument('--image',help='run inside this pinned image from the committed implementation')
     internal = sub.add_parser('_execute',help=argparse.SUPPRESS)
     internal.add_argument('prepared',type=Path);internal.add_argument('output',type=Path)
     args = parser.parse_args()
@@ -43,6 +52,16 @@ def main():
         print(benchmark.run(args.manifest,args.prepared,args.output,args.expectation_commit,args.image))
     elif args.command=='report':
         print(json.dumps(benchmark.report(args.manifest,args.first,args.second),indent=2,allow_nan=False))
+    elif args.command=='closure':
+        print(json.dumps(benchmark.verify_closure(args.manifest,args.cache,args.closure,args.run),indent=2,allow_nan=False))
+    elif args.command=='native-rerun':
+        if args.image:
+            summary = benchmark.image_native_rerun(args.first,args.output,args.image,args.repeats)
+        else:
+            summary = benchmark.native_rerun(args.first,args.output,args.repeats)
+        print(json.dumps({k:summary[k] for k in ('exact_cases','semantic_cases','native_exact_cases',
+                                                  'native_semantic_cases','all_cases','same_font_substitutions',
+                                                  'same_native_runtime')}))
     else:
         benchmark.execute_batch(args.prepared,args.output)
 

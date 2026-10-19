@@ -833,6 +833,39 @@ def pcb_groups(text):
     return result, owners, pcbnew.Version()
 
 
+@functools.lru_cache(maxsize=4)
+def copper_islands(text):
+    """Copper item UUID -> (net, island identity) from native saved-copper clusters.
+
+    An island is one native connectivity cluster: the item plus every item
+    GetConnectedItems returns for it. Its identity is the hash of the sorted
+    member UUIDs. An item whose cluster is not a consistent partition (for
+    example a zone whose fill spans several clusters) maps to None.
+    """
+    import tempfile
+    import pcbnew
+    from .storage import identity
+    with tempfile.TemporaryDirectory(prefix='agent-ee-benchmark-islands-') as directory:
+        path = Path(directory)/'board.kicad_pcb'
+        path.write_bytes(text.encode('utf-8'))
+        board = pcbnew.LoadBoard(str(path))
+    board.BuildConnectivity()
+    connectivity = board.GetConnectivity()
+    items = [*board.GetTracks(), *board.Zones(), *(p for f in board.GetFootprints() for p in f.Pads())]
+    members, nets = {}, {}
+    for item in items:
+        key = item.m_Uuid.AsString()
+        if key in members:
+            raise ValueError('ambiguous native copper UUID')
+        members[key] = frozenset({key, *(i.m_Uuid.AsString() for i in connectivity.GetConnectedItems(item))})
+        nets[key] = item.GetNetname()
+    result = {}
+    for key, group in members.items():
+        consistent = all(members.get(other) == group and nets[other] == nets[key] for other in group)
+        result[key] = (nets[key], identity(sorted(group))) if consistent else None
+    return result
+
+
 def verify_pcb_connectivity(before, after, mutation, reference, footprint_uuid):
     """Saved copper must keep exactly the operation's declared pad partition."""
     op = mutation['operation']
