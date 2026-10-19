@@ -60,6 +60,18 @@ def placed(items, name):
     return out
 
 
+def no_connect_marker(x, y, tag):
+    return f'(no_connect (at {x} {y}) (uuid "{generator.uid(tag)}"))'
+
+
+def no_connect_probe(hidden=False):
+    """The disconnect fixture with the probe pin of library type no_connect."""
+    pin = '(symbol "Probe_1_1" (pin passive line (at 0 -0.0 0)'
+    schematic = generator.schematic('disconnect')
+    assert pin in schematic
+    return schematic.replace(pin, pin.replace('passive', 'no_connect') + (' hide' if hidden else ''))
+
+
 class InterfaceTests(unittest.TestCase):
     def setUp(self):
         self.contract = read_json(FIXTURE / 'contract.json')
@@ -156,6 +168,58 @@ class InterfaceTests(unittest.TestCase):
         # Unmodelled items elsewhere cannot break an exact native route.
         self.assertEqual(classify('(rule_area (polyline (pts (xy 0 0) (xy 1 1))))'
                                   + global_label(NC_PROBE[0], 120, 50, 'on-pin'))[0], 'connected')
+
+    def test_library_no_connect_pin_is_isolated_only_by_its_own_explicit_marker(self):
+        from agent_ee.hardware_interface import label_connection
+        from agent_ee.symbol_library import parse_sexpr
+        probe = {'sheet': '/', 'reference': 'PROBE', 'uuid': generator.uid('PROBE'),
+                 'symbol': 'ConnectorOwned:Probe'}
+        pin = '(symbol "Probe_1_1" (pin passive line (at 0 -0.0 0)'
+        marker = no_connect_marker(120, 50, 'nc-marker')
+        def classify(extra, hidden=False, name=NC_PROBE[0]):
+            schematic = no_connect_probe(hidden)
+            source = parse_sexpr((schematic[:-2] + extra + ')\n').encode())
+            return label_connection({'interface.kicad_sch': source}, generator.uid('root'), probe, '1', name)
+        for hidden in (False, True):
+            with self.subTest(hidden=hidden):
+                status, locators = classify(marker + global_label(NC_PROBE[0], 140, 80, 'far'), hidden)
+                self.assertEqual(status, 'disconnected')
+                self.assertEqual(locators, [f'interface.kicad_sch: no_connect at (120, 50) mm, UUID '
+                                            f'{generator.uid("nc-marker")} alone isolates library '
+                                            'no_connect PROBE pin 1'])
+        cases = {
+            'no marker': ('', 'no unique explicit no_connect marker'),
+            'offset marker': (no_connect_marker(120.0001, 50, 'nc-off'), 'no unique explicit no_connect marker'),
+            'two markers': (marker + no_connect_marker(120, 50, 'nc-twin'), 'no unique explicit no_connect marker'),
+            'unmodelled item': (marker + '(rule_area (polyline (pts (xy 0 0) (xy 1 1))))',
+                                'unsupported native schematic item'),
+            'wire in margin': (marker + wire((120.01, 50), (130, 50), 'near'), 'wire may touch PROBE pin 1'),
+            'junction on pin': (marker + f'(junction (at 120 50) (diameter 0) (color 0 0 0 0) '
+                                f'(uuid "{generator.uid("j")}"))', 'junction may touch'),
+            'second marker in margin': (marker + no_connect_marker(120.01, 50, 'nc-near'), 'no_connect may touch'),
+            'marker chain': (marker + no_connect_marker(120.01, 50, 'nc-a') + global_label('X', 120.02, 50, 'chain'),
+                             'global_label, no_connect may touch'),
+            # Never 'connected' by a global label spelling, even exactly on the pin.
+            'exact global label on pin': (marker + global_label(NC_PROBE[0], 120, 50, 'on-pin'),
+                                          'global_label may touch'),
+            'local label': (marker + '(label "L" (at 120 50 0) (effects (font (size 1 1))) '
+                            f'(uuid "{generator.uid("local")}"))', 'label may touch'),
+            'bus entry': (marker + f'(bus_entry (at 120 50) (size 2.54 2.54) (stroke (width 0) (type default)) '
+                          f'(uuid "{generator.uid("entry")}"))', 'bus_entry may touch'),
+        }
+        for hidden in (False, True):
+            for case, (extra, expected) in cases.items():
+                with self.subTest(case=case, hidden=hidden):
+                    status, reason = classify(extra, hidden)
+                    self.assertEqual(status, 'unknown')
+                    self.assertIn(expected, reason)
+        # Hidden pins of any other type still lack a visible source point.
+        hidden_passive = generator.schematic('disconnect').replace(pin, pin + ' hide')
+        source = parse_sexpr((hidden_passive[:-2] + marker + ')\n').encode())
+        status, reason = label_connection({'interface.kicad_sch': source}, generator.uid('root'),
+                                          probe, '1', NC_PROBE[0])
+        self.assertEqual(status, 'unknown')
+        self.assertIn('no unique visible source point', reason)
 
     def test_generated_singleton_name_is_judged_by_geometry_not_source_text(self):
         from agent_ee.hardware_interface import qualify_global_names
@@ -299,6 +363,40 @@ class NativeInterfaceTests(unittest.TestCase):
         records = {r['id']: r for r in checks['interface']['details']['invariants']}
         self.assertEqual(records['probe-name']['status'], 'violation')
         self.assertEqual(records['probe-wire']['status'], 'violation')
+
+    def test_native_library_no_connect_pin_with_explicit_marker_is_satisfied(self):
+        contract = read_json(FIXTURE / 'contract.json')
+        isolated = {**copy.deepcopy(contract['invariants'][1]), 'id': 'probe-nc', 'kind': 'no_connect',
+                    'terminal': 'probe-tip'}
+        del isolated['component'], isolated['populated']
+        contract['invariants'] = [isolated]
+        contract['allowed_edits'] = []
+        marker = no_connect_marker(120, 50, 'nc-marker')
+        for hidden in (False, True):
+            with self.subTest(hidden=hidden, marker=True):
+                schematic = no_connect_probe(hidden)
+                run, checks = self.run_variant(contract=contract, interface_only=True,
+                                               schematic=schematic[:-2] + marker + ')\n')
+                inventory = read_inventory(run / 'work/netlist/design.xml')
+                self.assertEqual(inventory['nets'][inventory['memberships'][('PROBE', '1')]], NC_PROBE[0])
+                self.assertEqual((checks['interface']['execution'], checks['interface']['outcome']),
+                                 ('ok', 'pass'), checks)
+                record = checks['interface']['details']['invariants'][0]
+                self.assertEqual(record['status'], 'satisfied', record)
+                source = record['actual']['global_label_sources'][0]
+                self.assertEqual(source['status'], 'disconnected', source)
+                self.assertIn(generator.uid('nc-marker'), source['locators'][0])
+            # Without its own marker, or with anything else in the margin, isolation stays unproven.
+            for extra, reason in (('', 'no unique explicit no_connect marker'),
+                                  (marker + wire((120.01, 50), (130, 50), 'near'), 'wire may touch')):
+                with self.subTest(hidden=hidden, extra=reason):
+                    _, checks = self.run_variant(contract=contract, interface_only=True,
+                                                 schematic=no_connect_probe(hidden)[:-2] + extra + ')\n')
+                    self.assertEqual((checks['interface']['execution'], checks['interface']['outcome']),
+                                     ('unsupported', 'unknown'), checks)
+                    record = checks['interface']['details']['invariants'][0]
+                    self.assertEqual(record['status'], 'not_evaluated', record)
+                    self.assertIn(reason, record['actual']['reason'])
 
     def test_native_global_label_exact_nc_name_is_a_conductor(self):
         contract = read_json(FIXTURE / 'contract.json')

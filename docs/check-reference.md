@@ -793,6 +793,10 @@ an unresolved predicate without asserting MCU-to-connector net equality.
 schema, immutable inputs, supported predicates and unsupported mapping policy.
 It checks declared schematic properties and direct conductors, without inferring
 interfaces from names or treating components as transparent shorts.
+A library `no_connect` pin, hidden or visible, is proved isolated only by its
+own explicit no-connect marker exactly on the pin, with every sheet item
+modelled and nothing else within the 10 µm source margin; otherwise it is
+unknown, never pass.
 
 ## Reference-block evidence validation
 

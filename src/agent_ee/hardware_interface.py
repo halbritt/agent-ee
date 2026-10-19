@@ -412,6 +412,33 @@ def label_locator(rel, item):
     return f'{rel}: global_label {item["name"]} at ({x}, {y}) mm, UUID {item["uuid"]}'
 
 
+def touch_cluster(target, items):
+    """Conservative closure: anything within the margin may be connected."""
+    cluster = [target]
+    for item in cluster:
+        cluster += [other for other in items if all(other is not c for c in cluster)
+                    and touches(item['shape'], other['shape'], TOUCH_MARGIN)]
+    return cluster
+
+
+def marker_isolation(rel, items, problems, target, where):
+    """A library no_connect pin is isolated only by its own explicit marker."""
+    if problems:
+        return 'unknown', f'{rel}: source geometry unsupported: {problems[0]}'
+    origin = target['shape'][0]
+    markers = [i for i in items if i['kind'] == 'no_connect' and i['shape'][0] == origin]
+    if len(markers) != 1:
+        return 'unknown', (f'{rel}: no unique explicit no_connect marker exactly on {where}; '
+                           'no_connect isolation unproven')
+    others = [i for i in touch_cluster(target, items)[1:] if i is not markers[0]]
+    if others:
+        return 'unknown', (f'{rel}: {", ".join(sorted({i["kind"] for i in others}))} may touch '
+                           f'{where}; no_connect isolation unproven')
+    x, y = (f'{v / 1e6:g}' for v in origin)
+    return 'disconnected', [f'{rel}: no_connect at ({x}, {y}) mm, UUID {markers[0]["uuid"]} '
+                            f'alone isolates library no_connect {where}']
+
+
 def label_connection(schematics, root, component, pin, name):
     """Classify one exact global label spelling against one native pin.
 
@@ -421,6 +448,12 @@ def label_connection(schematics, root, component, pin, name):
     connectable item in the sheet file to be modelled and nothing name-bearing,
     whatever its spelling, within TOUCH_MARGIN of the pin's conductor. Anything
     else is 'unknown'; text presence or absence is never evidence.
+
+    A library no_connect pin, hidden or visible, is never joined by name, so it
+    is never 'connected'. It is 'disconnected' only when every connectable item
+    is modelled, one explicit no_connect marker sits exactly on the pin, and the
+    TOUCH_MARGIN cluster holds nothing but that marker. Other hidden pins may
+    join nets implicitly and stay 'unknown'.
     """
     from .symbol_library import children
     try:
@@ -439,11 +472,13 @@ def label_connection(schematics, root, component, pin, name):
     except ValueError as exc:
         return 'unknown', f'source geometry unsupported: {exc}'
     targets = [i for i in items if i['kind'] == 'pin' and i['node'] is symbol and i['number'] == pin]
-    if len(targets) != 1 or targets[0]['pin']['hidden'] or targets[0]['pin']['type'] == 'no_connect':
+    if len(targets) != 1 or (targets[0]['pin']['hidden'] and targets[0]['pin']['type'] != 'no_connect'):
         return 'unknown', (f'{rel}: {component["reference"]} pin {pin} has no unique visible source point'
                            + ''.join(f'; {problem}' for problem in problems[:1]))
     target = targets[0]
     origin = target['shape'][0]
+    if target['pin']['type'] == 'no_connect':
+        return marker_isolation(rel, items, problems, target, f'{component["reference"]} pin {pin}')
     wires = [i for i in items if i['kind'] == 'wire']
     junctions = [i['shape'][0] for i in items if i['kind'] == 'junction']
     # Only exact connections observed with native kicad-cli; no tolerance.
@@ -466,11 +501,7 @@ def label_connection(schematics, root, component, pin, name):
             return 'connected', [label_locator(rel, label) + f' joins {component["reference"]} pin {pin}{route}']
     if problems:
         return 'unknown', f'{rel}: source geometry unsupported: {problems[0]}'
-    # Conservative closure: anything within the margin may be connected.
-    cluster = [target]
-    for item in cluster:
-        cluster += [other for other in items if all(other is not c for c in cluster)
-                    and touches(item['shape'], other['shape'], TOUCH_MARGIN)]
+    cluster = touch_cluster(target, items)
     blockers = sorted({i['kind'] for i in cluster[1:] if i['kind'] not in ('wire', 'junction', 'no_connect')})
     if blockers:
         return 'unknown', (f'{rel}: {", ".join(blockers)} may touch {component["reference"]} '
