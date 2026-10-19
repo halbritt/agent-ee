@@ -199,9 +199,55 @@ def fields(record, required, optional=()):
         raise ValueError('declaration has missing or unsupported fields')
 
 
+# (kind, observable) -> scalar locator fields; nets follow the analysis kind.
+OBSERVABLES = {('transient', 'voltage'): ('at_s',), ('transient', 'voltage_change'): ('from_s', 'to_s'),
+               ('transient', 'voltage_minimum'): ('from_s', 'to_s'),
+               ('transient', 'voltage_maximum'): ('from_s', 'to_s'),
+               ('dc', 'voltage'): ('at_v',), ('dc', 'voltage_change'): ('from_v', 'to_v'),
+               ('ac', 'transfer_magnitude'): ('at_hz',)}
+BASE_FIELDS = ('contract', 'dialect', 'model_files', 'active_parts', 'ground_net', 'temperature_c', 'netlist_check')
+
+
+def validate_step(step, unit):
+    keys = (f'initial_{unit}', f'final_{unit}', 'delay_s', 'rise_s')
+    fields(step, keys)
+    for key in keys:
+        number(step[key], key, positive=key == 'rise_s')
+    number(step['delay_s'] + step['rise_s'], 'step end time', positive=True)
+    if step['delay_s'] < 0:
+        raise ValueError('step delay must be nonnegative')
+
+
+def validate_measurement(kind, meas, start, stop):
+    observable = meas.get('observable') if isinstance(meas, dict) else None
+    locators = OBSERVABLES.get((kind, observable), ())
+    nets = (('output_positive_net', 'output_negative_net', 'input_positive_net', 'input_negative_net')
+            if kind == 'ac' else ('positive_net', 'negative_net'))
+    fields(meas, ('name', 'observable', 'unit', *nets, *locators), ('min', 'max', 'informational'))
+    if any(not isinstance(meas[k], str) for k in nets):
+        raise ValueError('measurement nets must be explicit native names')
+    if not locators or meas['unit'] != ('V/V' if kind == 'ac' else 'V'):
+        raise ValueError('unsupported observable or wrong measurement unit')
+    points = [number(meas[k], k, positive=k in ('at_s', 'at_hz')) for k in locators]
+    if not all(start <= at <= stop for at in points):
+        raise ValueError('measurement lies outside analysis interval')
+    if observable in ('voltage_minimum', 'voltage_maximum') and not points[0] < points[1]:
+        raise ValueError('measurement window must be increasing')
+    bounds = [number(meas[key], key) for key in ('min', 'max') if key in meas]
+    if len(bounds) == 2 and bounds[0] > bounds[1]:
+        raise ValueError('reversed measurement bounds')
+    if not bounds and meas.get('informational') is not True:
+        raise ValueError('unbounded measurement must explicitly be informational')
+
+
 def validate_params(params):
-    fields(params, ('contract', 'dialect', 'model_files', 'active_parts', 'ground_net',
-                    'temperature_c', 'netlist_check', 'sources', 'analyses'), ('calibration_inputs',))
+    if isinstance(params, dict) and 'template' in params:
+        # Role-template mode: sources and analyses are generated from captured data.
+        fields(params, (*BASE_FIELDS, 'template'), ('calibration_inputs',))
+        from .spice_templates import validate_reference
+        validate_reference(params['template'])
+    else:
+        fields(params, (*BASE_FIELDS, 'sources', 'analyses'), ('calibration_inputs', 'current_sources'))
     if params['contract'] != 'active-spice/1' or params['dialect'] not in ('ngspice', 'ngspice-ps'):
         raise ValueError('requires active-spice/1 and explicit ngspice or ngspice-ps dialect')
     model_files = params['model_files']
@@ -225,6 +271,8 @@ def validate_params(params):
         raise ValueError('temperature outside supported range')
     if not isinstance(params['ground_net'], str) or not isinstance(params['netlist_check'], str):
         raise ValueError('ground_net and netlist_check must be explicit strings')
+    if 'template' in params:
+        return params
     named_list(params['sources'], 'sources', 64)
     for source in params['sources']:
         fields(source, ('id', 'positive_net', 'negative_net', 'dc_v'), ('ac_magnitude_v', 'step'))
@@ -234,15 +282,22 @@ def validate_params(params):
         if 'ac_magnitude_v' in source:
             number(source['ac_magnitude_v'], 'ac_magnitude_v', positive=True)
         if 'step' in source:
-            step = source['step']
-            fields(step, ('initial_v', 'final_v', 'delay_s', 'rise_s'))
-            for key in ('initial_v', 'final_v', 'delay_s', 'rise_s'):
-                number(step[key], key, positive=key == 'rise_s')
-            number(step['delay_s'] + step['rise_s'], 'step end time', positive=True)
-            if step['delay_s'] < 0:
-                raise ValueError('step delay must be nonnegative')
-            if source['dc_v'] != step['initial_v']:
+            validate_step(source['step'], 'v')
+            if source['dc_v'] != source['step']['initial_v']:
                 raise ValueError('step initial voltage must equal explicit DC bias')
+    if 'current_sources' in params:
+        named_list(params['current_sources'], 'current_sources', 64)
+        for source in params['current_sources']:
+            fields(source, ('id', 'positive_net', 'negative_net', 'dc_a'), ('step',))
+            if not all(isinstance(source[k], str) for k in ('positive_net', 'negative_net')):
+                raise ValueError('current source nets must be explicit native names')
+            number(source['dc_a'], 'dc_a')
+            if 'step' in source:
+                validate_step(source['step'], 'a')
+                if source['dc_a'] != source['step']['initial_a']:
+                    raise ValueError('step initial current must equal explicit DC bias')
+        if {s['id'] for s in params['sources']} & {s['id'] for s in params['current_sources']}:
+            raise ValueError('source identifiers must be unique across voltage and current sources')
     named_list(params['analyses'], 'analyses', 16)
     metric_names = set()
     for analysis in params['analyses']:
@@ -265,41 +320,46 @@ def validate_params(params):
                 raise ValueError('unsupported AC sweep')
             if not any('ac_magnitude_v' in s for s in params['sources']):
                 raise ValueError('AC analysis requires an explicit AC source')
+        elif kind == 'dc':
+            fields(analysis, ('id', 'kind', 'source', 'start_v', 'stop_v', 'points', 'measurements'))
+            start, stop = number(analysis['start_v'], 'start_v'), number(analysis['stop_v'], 'stop_v')
+            if (type(analysis['points']) is not int or not 2 <= analysis['points'] <= 100_001
+                    or not start < stop):
+                raise ValueError('unsupported DC sweep')
+            number((stop - start) / (analysis['points'] - 1), 'DC sweep step', positive=True)
+            if analysis['source'] not in {s['id'] for s in params['sources']}:
+                raise ValueError('DC sweep must name a declared voltage source')
         else:
-            raise ValueError('analysis must be transient or ac')
+            raise ValueError('analysis must be transient, ac or dc')
         named_list(analysis['measurements'], 'measurements', 64)
         for meas in analysis['measurements']:
-            locators = ('positive_net', 'negative_net', 'at_s') if kind == 'transient' else (
-                'output_positive_net', 'output_negative_net', 'input_positive_net', 'input_negative_net', 'at_hz')
-            fields(meas, ('name', 'observable', 'unit', *locators), ('min', 'max', 'informational'))
-            if any(not isinstance(meas[k], str) for k in locators if k.endswith('_net')):
-                raise ValueError('measurement nets must be explicit native names')
             if meas['name'] in metric_names:
                 raise ValueError('measurement names must be unique across analyses')
             metric_names.add(meas['name'])
-            expected = ('voltage', 'V', 'at_s') if kind == 'transient' else ('transfer_magnitude', 'V/V', 'at_hz')
-            if (meas['observable'], meas['unit']) != expected[:2]:
-                raise ValueError('unsupported observable or wrong measurement unit')
-            at = number(meas[expected[2]], expected[2], positive=True)
-            if not start <= at <= stop:
-                raise ValueError('measurement lies outside analysis interval')
-            bounds = [number(meas[key], key) for key in ('min', 'max') if key in meas]
-            if len(bounds) == 2 and bounds[0] > bounds[1]:
-                raise ValueError('reversed measurement bounds')
-            if not bounds and meas.get('informational') is not True:
-                raise ValueError('unbounded measurement must explicitly be informational')
+            validate_measurement(kind, meas, start, stop)
     return params
 
 
-def capability(params, files):
-    """Pure configuration capability for registry/baseline callers; no solver claim."""
+def capability(params, files, inputs=None, scope=None):
+    """Pure configuration capability for registry/baseline callers; no solver claim.
+
+    Role-template mode reads only captured template, architecture, target and
+    interface bytes. Unsupported template measurements contribute no predicate.
+    """
     try:
         validate_params(params)
     except (KeyError, TypeError) as exc:
         raise ValueError(f'invalid active SPICE configuration: {exc}') from exc
     if not set(params['model_files']) <= files.keys():
         raise ValueError('active SPICE model files are not captured')
-    return {'contract': 'active-spice/1', 'immutable_inputs': sorted(params['model_files']),
+    immutable = set(params['model_files'])
+    if 'template' in params:
+        from .spice_templates import expand
+        params, report = expand(params, scope, files, inputs)
+        immutable.update(report['immutable_inputs'])
+        if params is None:
+            return {'contract': 'active-spice/1', 'immutable_inputs': sorted(immutable), 'bounded_metrics': []}
+    return {'contract': 'active-spice/1', 'immutable_inputs': sorted(immutable),
             'bounded_metrics': [m['name'] for a in params['analyses'] for m in a['measurements']
                                 if 'min' in m or 'max' in m]}
 
@@ -398,7 +458,39 @@ def source_lines(params, nodes):
             points.append((step['delay_s'] + step['rise_s'], step['final_v']))
             line += ' PWL(' + ' '.join(f'{t:.17g} {v:.17g}' for t, v in points) + ')'
         lines.append(line)
+    for i, source in enumerate(params.get('current_sources', [])):
+        positive, negative = nodes[source['positive_net']], nodes[source['negative_net']]
+        if positive == negative:
+            raise ValueError('source terminals must be different native nets')
+        # SPICE current flows from the positive node through the source: a load sinks it.
+        line = f'I{i} {positive} {negative} DC {source["dc_a"]:.17g}'
+        if 'step' in source:
+            step = source['step']
+            points = [(0, step['initial_a'])]
+            if step['delay_s'] > 0:
+                points.append((step['delay_s'], step['initial_a']))
+            points.append((step['delay_s'] + step['rise_s'], step['final_a']))
+            line += ' PWL(' + ' '.join(f'{t:.17g} {v:.17g}' for t, v in points) + ')'
+        lines.append(line)
     return lines
+
+
+def sweep_source(params, analysis):
+    return f"V{[s['id'] for s in params['sources']].index(analysis['source'])}"
+
+
+def analysis_command(params, analysis):
+    if analysis['kind'] == 'transient':
+        return f'.tran {analysis["step_s"]:.17g} {analysis["stop_s"]:.17g}'
+    if analysis['kind'] == 'dc':
+        step = (analysis['stop_v'] - analysis['start_v']) / (analysis['points'] - 1)
+        return (f'.dc {sweep_source(params, analysis)} {analysis["start_v"]:.17g} '
+                f'{analysis["stop_v"]:.17g} {step:.17g}')
+    return f'.ac dec {analysis["points_per_decade"]} {analysis["start_hz"]:.17g} {analysis["stop_hz"]:.17g}'
+
+
+# ngspice names the swept source axis v(v-sweep) in DC transfer traces.
+AXES = {'transient': ('time', 'time'), 'ac': ('frequency', 'frequency'), 'dc': ('v(v-sweep)', 'voltage')}
 
 
 def read_trace(path, kind):
@@ -418,7 +510,7 @@ def read_trace(path, kind):
     complex_data = kind == 'ac'
     if field('Flags') != ('complex' if complex_data else 'real'):
         raise ValueError('wrong real/complex trace flags')
-    expected_plot = 'AC Analysis' if complex_data else 'Transient Analysis'
+    expected_plot = {'ac': 'AC Analysis', 'dc': 'DC transfer characteristic'}.get(kind, 'Transient Analysis')
     if field('Plotname') != expected_plot:
         raise ValueError('wrong raw analysis')
     nvars, npts = int(field('No. Variables')), int(field('No. Points'))
@@ -428,9 +520,10 @@ def read_trace(path, kind):
     if len(variables) != nvars or [int(v[0]) for v in variables] != list(range(nvars)):
         raise ValueError('invalid raw variable inventory')
     names = [v[1].lower() for v in variables]
-    if len(set(names)) != nvars or names[0] != ('frequency' if complex_data else 'time'):
+    axis_name, axis_type = AXES[kind]
+    if len(set(names)) != nvars or names[0] != axis_name:
         raise ValueError('invalid raw axis or duplicate vectors')
-    if variables[0][2] != ('frequency' if complex_data else 'time'):
+    if variables[0][2] != axis_type:
         raise ValueError('wrong raw axis units')
     if any(v[2] != 'voltage' for v in variables[1:]):
         raise ValueError('unexpected raw vector type')
@@ -467,10 +560,20 @@ def interpolate(axis, samples, at):
 def extract_metrics(path, analysis, nodes, condition):
     axis, columns = read_trace(path, analysis['kind'])
     expected = {f'v({n})' for n in nodes.values() if n != '0'}
-    if set(columns) - {'time', 'frequency'} != expected:
+    if set(columns) - {AXES[analysis['kind']][0]} != expected:
         raise ValueError('raw voltage vectors differ from complete native node inventory')
+    if analysis['kind'] == 'dc':
+        start, stop, count = analysis['start_v'], analysis['stop_v'], analysis['points']
+        step, tolerance = (stop - start) / (count - 1), 1e-9 * (stop - start)
+        if len(axis) != count or any(abs(v - (start + i * step)) > tolerance for i, v in enumerate(axis)):
+            raise ValueError('DC sweep samples differ from declared sweep')
+        # Accumulated solver rounding stays within tolerance; measure on the declared grid.
+        axis = [start + i * step for i in range(count - 1)] + [stop]
     if 'stop_s' in analysis and (axis[0] != 0 or not math.isclose(axis[-1], analysis['stop_s'], rel_tol=1e-9)):
         raise ValueError('incomplete transient trace interval')
+    if 'stop_s' in analysis:
+        # The final solver time rounds to within 1e-9 of stop_s; a declared at stop_s is in the trace.
+        axis = [*axis[:-1], analysis['stop_s']]
     if 'points_per_decade' in analysis:
         count = math.floor(math.log10(analysis['stop_hz'] / analysis['start_hz']) * analysis['points_per_decade'] + 1e-7) + 1
         if len(axis) != count or not math.isclose(axis[0], analysis['start_hz'], rel_tol=1e-9):
@@ -483,10 +586,21 @@ def extract_metrics(path, analysis, nodes, condition):
             node = nodes[net]
             return 0 if node == '0' else interpolate(axis, columns[f'v({node})'], at)
         return terminal(positive) - terminal(negative)
+    def window(positive, negative, low, high):
+        inside = [x for x in axis if low < x < high]
+        return [voltage(positive, negative, x) for x in (low, *inside, high)]
     metrics, limits = {}, {}
     for meas in analysis['measurements']:
-        if analysis['kind'] == 'transient':
-            value = voltage(meas['positive_net'], meas['negative_net'], meas['at_s'])
+        observable, nets = meas['observable'], (meas.get('positive_net'), meas.get('negative_net'))
+        if observable == 'voltage':
+            value = voltage(*nets, meas['at_s' if analysis['kind'] == 'transient' else 'at_v'])
+        elif observable == 'voltage_change':
+            low, high = ('from_s', 'to_s') if analysis['kind'] == 'transient' else ('from_v', 'to_v')
+            value = voltage(*nets, meas[high]) - voltage(*nets, meas[low])
+        elif observable in ('voltage_minimum', 'voltage_maximum'):
+            # Extremes of the linear interpolant lie at window ends or retained samples.
+            samples = window(*nets, meas['from_s'], meas['to_s'])
+            value = min(samples) if observable == 'voltage_minimum' else max(samples)
         else:
             at = meas['at_hz']
             output = voltage(meas['output_positive_net'], meas['output_negative_net'], at)
@@ -555,9 +669,21 @@ def native_prerequisite(ctx, nid):
 def check_active_spice(ctx):
     from .checks import CheckError, NGSPICE_FAIL_PATTERNS
     from .measurements import finish
+    report = None
     try:
         params = validate_params(ctx.params)
+        if 'template' in params:
+            from .spice_templates import expand
+            params, report = expand(params, ctx.scope, ctx.manifest['files'], ctx.inputs)
+            write_json(ctx.work / 'template-expansion.json', report)
+            ctx.evidence('template-expansion.json')
+            ctx.result['details']['template'] = report
+            if params is None:
+                raise ValueError(report['summary'])
         conn, inventory = native_prerequisite(ctx, params['netlist_check'])
+        if report is not None:
+            from .spice_templates import confirm_terminals
+            confirm_terminals(report, conn)
         models = capture_models(ctx.inputs, ctx.manifest['files'], params['model_files'])
         lines, binding = bind_design(conn, inventory, params, models)
         nodes = binding['node_map']
@@ -584,7 +710,7 @@ def check_active_spice(ctx):
     ctx.result['details'].update(binding=binding, models=manifest)
     ctx.result['limitations'].append(
         'Only declared captured models, connected complete native pin inventories, ideal R/C/L, '
-        'explicit sources and declared transient/AC scalar conditions are covered. No NC/multi-unit '
+        'explicit sources and declared transient/AC/DC scalar conditions are covered. No NC/multi-unit '
         'decomposition, tolerance, thermal, PCB parasitics, EMC or hardware qualification is inferred. '
         'Model provenance does not establish accuracy; effects absent from supplied models remain untested.')
     executable = Path('/usr/bin/ngspice')
@@ -601,13 +727,14 @@ def check_active_spice(ctx):
     metrics, limits, traces = {}, {}, {}
     configuration = {'temperature_c': params['temperature_c'], 'sources': params['sources'],
         'models': models['files'], 'active_parts': params['active_parts'], 'dialect': params['dialect']}
+    if 'current_sources' in params:
+        configuration['current_sources'] = params['current_sources']
+    if report is not None:
+        configuration['template'] = {key: report[key] for key in ('library', 'block', 'role')}
     for analysis in params['analyses']:
         directory = ctx.work / analysis['id']
         directory.mkdir()
-        if analysis['kind'] == 'transient':
-            command = f'.tran {analysis["step_s"]:.17g} {analysis["stop_s"]:.17g}'
-        else:
-            command = f'.ac dec {analysis["points_per_decade"]} {analysis["start_hz"]:.17g} {analysis["stop_hz"]:.17g}'
+        command = analysis_command(params, analysis)
         (directory / 'deck.cir').write_text('\n'.join([*common, command, '.end', '']))
         dialect = 'set ngbehavior=ps\n' if params['dialect'] == 'ngspice-ps' else ''
         (directory / 'control.sp').write_text('* coordinator control\n.control\nset num_threads=1\n'
@@ -654,3 +781,11 @@ def check_active_spice(ctx):
             raise CheckError('malformed', str(exc)) from exc
     else:
         ctx.result.update(execution='ok', outcome='info', summary='active SPICE analyses completed with informational measurements')
+    unsupported = [m['name'] for m in (report or {}).get('measurements', []) if m['execution'] == 'unsupported']
+    if unsupported and ctx.result['outcome'] != 'defect':
+        # A template measurement that could not be expanded is missing coverage; the
+        # completed ones cannot stand in for it. A complete bound violation stays a defect.
+        ctx.result.update(execution='unsupported', outcome='unknown',
+                          summary='template measurements unsupported: ' + ', '.join(unsupported))
+    elif unsupported:
+        ctx.result['summary'] += '; template measurements unsupported: ' + ', '.join(unsupported)

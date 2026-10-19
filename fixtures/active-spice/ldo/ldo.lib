@@ -1,0 +1,7 @@
+* Owned synthetic regulator model for software regression tests; not vendor qualification.
+* 3.3 V reference with 1 mV/V line sensitivity, 0.3 V dropout and 50 mohm output resistance.
+.subckt ldo IN GND OUT
+E1 REG GND VALUE={min(3.3+0.001*(V(IN,GND)-5), V(IN,GND)-0.3)}
+RO REG OUT 0.05
+RQ IN GND 100k
+.ends ldo

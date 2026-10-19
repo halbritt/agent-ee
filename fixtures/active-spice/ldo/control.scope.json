@@ -1,0 +1,104 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Owned regulator template control",
+  "scope": "Synthetic regulator mechanics for role-keyed SPICE templates; no vendor accuracy claim.",
+  "schematic": "design/ldo.kicad_sch",
+  "inputs": [
+    {
+      "path": ".",
+      "at": "design",
+      "include": [
+        "ldo.kicad_sch",
+        "ldo.lib",
+        "requirements.md",
+        "architecture.json",
+        "targets.json",
+        "interface.json"
+      ]
+    },
+    {
+      "path": "../../../src/agent_ee/data/spice-templates.json",
+      "at": "design/spice-templates.json"
+    }
+  ],
+  "checks": [
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "design/interface.json",
+        "netlist_check": "netlist"
+      }
+    },
+    {
+      "id": "regulator",
+      "kind": "active_spice",
+      "params": {
+        "contract": "active-spice/1",
+        "dialect": "ngspice",
+        "netlist_check": "netlist",
+        "ground_net": "/GND",
+        "temperature_c": 25,
+        "model_files": [
+          "design/ldo.lib"
+        ],
+        "active_parts": {
+          "U1": {
+            "model_file": "design/ldo.lib",
+            "subcircuit": "ldo",
+            "pin_map": {
+              "1": "IN",
+              "2": "GND",
+              "3": "OUT"
+            }
+          }
+        },
+        "template": {
+          "library": "design/spice-templates.json",
+          "architecture": "design/architecture.json",
+          "targets": "design/targets.json",
+          "interface": "design/interface.json",
+          "block": "ldo1"
+        }
+      }
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-interface",
+        "statement": "Regulator pins sit on the declared nets",
+        "source": {
+          "path": "design/requirements.md",
+          "locator": "R-interface"
+        },
+        "checks": [
+          "netlist",
+          "interface"
+        ]
+      },
+      {
+        "id": "R-regulation",
+        "statement": "Regulator line, load and ripple behavior meets targets",
+        "source": {
+          "path": "design/requirements.md",
+          "locator": "R-regulation"
+        },
+        "checks": [
+          "netlist",
+          "regulator"
+        ]
+      }
+    ],
+    "targets": [
+      "design/targets.json"
+    ],
+    "reference_architectures": [
+      "design/architecture.json"
+    ]
+  }
+}

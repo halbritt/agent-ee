@@ -48,18 +48,42 @@ explicitly inventoried as excluded. All other populated components need models.
 voltage must equal DC bias. This is a finite-rise, piecewise-linear step, not an
 instantaneous mathematical discontinuity. Supply names do not imply voltages.
 
+Optional `current_sources` declare loads with unique `id` (distinct from voltage
+source IDs), native `positive_net`/`negative_net` and finite `dc_a`. SPICE
+current flows from the positive net through the source, so a positive `dc_a`
+from an output to ground sinks load current. An optional `step` has
+`initial_a` (equal to `dc_a`), `final_a`, `delay_s` and `rise_s`, with the same
+finite-rise piecewise-linear meaning as a voltage step. Current sources carry no
+AC excitation.
+
 `analyses` has unique safe IDs (`models` and `version` are reserved) and at
 least one measurement per analysis:
 
 | Kind | Analysis fields | Supported measurement |
 | --- | --- | --- |
-| `transient` | Positive `step_s < stop_s`, at most one million nominal intervals | `observable: "voltage"`, explicit `positive_net`/`negative_net`, `at_s` in the simulated interval, `unit: "V"` |
+| `transient` | Positive `step_s < stop_s`, at most one million nominal intervals | `observable: "voltage"` with `at_s`; `"voltage_change"` (value at `to_s` minus value at `from_s`); `"voltage_minimum"`/`"voltage_maximum"` over `from_s < to_s`. Explicit `positive_net`/`negative_net`, times in the simulated interval, `unit: "V"` |
 | `ac` | `sweep: "dec"`, integer `points_per_decade` from 1 to 10000, positive `start_hz < stop_hz`, at most one million samples | `observable: "transfer_magnitude"`, explicit `output_positive_net`/`output_negative_net` and `input_positive_net`/`input_negative_net`, `at_hz` in the sweep, `unit: "V/V"` |
+| `dc` | `source` names a declared voltage source; finite `start_v < stop_v`; integer `points` from 2 to 100001 | `observable: "voltage"` with `at_v`, or `"voltage_change"` (value at `to_v` minus value at `from_v`). Explicit `positive_net`/`negative_net`, sweep values in the interval, `unit: "V"` |
+
+A DC sweep replaces the named source's DC value with the linear grid
+`start_v + i * (stop_v - start_v) / (points - 1)`. Each retained sweep sample
+must match its grid value to within 1e-9 of the span, and measurements use the
+declared grid. Window extremes are taken over the linear interpolant, that is,
+the window ends plus the retained samples inside it. Their accuracy between
+samples depends on the declared resolution. The final transient sample must
+match `stop_s` to within 1e-9 relative, and `stop_s` is then a valid time for a
+measurement.
 
 Measurement names are unique across the check. At least one finite `min` or
 `max` creates a criterion; reversed limits are refused. Unbounded measurements
 must explicitly set `informational: true`. An all-informational check returns
 `info`, not `pass`.
+
+[Role-keyed templates](spice-templates.md) can generate `sources`,
+`current_sources` and `analyses` from a captured library, reference
+architecture, targets and interface contract. A `template` object replaces
+those fields, and unparseable values make measurements unsupported, never
+substituted.
 
 ## Model containment and supported dialect
 

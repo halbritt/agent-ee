@@ -1,0 +1,120 @@
+{
+  "schema": "agent-ee.spice-templates/1",
+  "version": "2026-10-18.1",
+  "templates": {
+    "ldo": {
+      "description": "Linear regulator: line regulation DC sweep across the declared input range, load-step transient and ripple rejection (input-to-output AC transfer).",
+      "terminals": ["vin", "vout", "gnd"],
+      "sources": [
+        {"id": "vin", "positive_net": {"terminal": "vin"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "vin_nominal", "unit": "V"}, "ac_magnitude_v": 1}
+      ],
+      "current_sources": [
+        {"id": "load", "positive_net": {"terminal": "vout"}, "negative_net": {"terminal": "gnd"},
+         "dc_a": {"condition": "load_light", "unit": "A"},
+         "step": {"initial_a": {"condition": "load_light", "unit": "A"},
+                  "final_a": {"condition": "load_heavy", "unit": "A"},
+                  "delay_s": {"condition": "load_step_delay", "unit": "s"},
+                  "rise_s": {"condition": "load_step_rise", "unit": "s"}}}
+      ],
+      "analyses": [
+        {"id": "line", "kind": "dc", "source": "vin",
+         "start_v": {"condition": "vin_min", "unit": "V"}, "stop_v": {"condition": "vin_max", "unit": "V"},
+         "points": 101,
+         "measurements": [
+           {"name": "vout_at_vin_min", "observable": "voltage", "unit": "V",
+            "positive_net": {"terminal": "vout"}, "negative_net": {"terminal": "gnd"},
+            "at_v": {"condition": "vin_min", "unit": "V"},
+            "min": {"target": "vout_min", "unit": "V"}, "max": {"target": "vout_max", "unit": "V"}},
+           {"name": "vout_at_vin_max", "observable": "voltage", "unit": "V",
+            "positive_net": {"terminal": "vout"}, "negative_net": {"terminal": "gnd"},
+            "at_v": {"condition": "vin_max", "unit": "V"},
+            "min": {"target": "vout_min", "unit": "V"}, "max": {"target": "vout_max", "unit": "V"}},
+           {"name": "line_regulation", "observable": "voltage_change", "unit": "V",
+            "positive_net": {"terminal": "vout"}, "negative_net": {"terminal": "gnd"},
+            "from_v": {"condition": "vin_min", "unit": "V"}, "to_v": {"condition": "vin_max", "unit": "V"},
+            "min": {"target": "line_regulation_max", "unit": "V", "negate": true},
+            "max": {"target": "line_regulation_max", "unit": "V"}}
+         ]},
+        {"id": "load", "kind": "transient",
+         "step_s": {"condition": "load_step_resolution", "unit": "s"},
+         "stop_s": {"condition": "load_step_stop", "unit": "s"},
+         "measurements": [
+           {"name": "load_regulation", "observable": "voltage_change", "unit": "V",
+            "positive_net": {"terminal": "vout"}, "negative_net": {"terminal": "gnd"},
+            "from_s": {"condition": "load_step_delay", "unit": "s"},
+            "to_s": {"condition": "load_step_stop", "unit": "s"},
+            "min": {"target": "load_regulation_max", "unit": "V", "negate": true},
+            "max": {"target": "load_regulation_max", "unit": "V"}},
+           {"name": "load_step_minimum", "observable": "voltage_minimum", "unit": "V",
+            "positive_net": {"terminal": "vout"}, "negative_net": {"terminal": "gnd"},
+            "from_s": {"condition": "load_step_delay", "unit": "s"},
+            "to_s": {"condition": "load_step_stop", "unit": "s"},
+            "min": {"target": "vout_transient_min", "unit": "V"}}
+         ]},
+        {"id": "ripple", "kind": "ac", "sweep": "dec", "points_per_decade": 20, "start_hz": 1, "stop_hz": 10000000,
+         "measurements": [
+           {"name": "ripple_transfer", "observable": "transfer_magnitude", "unit": "V/V",
+            "output_positive_net": {"terminal": "vout"}, "output_negative_net": {"terminal": "gnd"},
+            "input_positive_net": {"terminal": "vin"}, "input_negative_net": {"terminal": "gnd"},
+            "at_hz": {"target": "ripple_frequency", "unit": "Hz"},
+            "max": {"target": "ripple_transfer_max", "unit": "V/V"}}
+         ]}
+      ]
+    },
+    "amplifier": {
+      "description": "Dual-supply voltage amplifier: small-signal gain at a declared frequency and remaining gain at the declared bandwidth frequency.",
+      "terminals": ["in", "out", "gnd", "vpos", "vneg"],
+      "sources": [
+        {"id": "input", "positive_net": {"terminal": "in"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "input_bias", "unit": "V"}, "ac_magnitude_v": 1},
+        {"id": "vpos", "positive_net": {"terminal": "vpos"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "supply_positive", "unit": "V"}},
+        {"id": "vneg", "positive_net": {"terminal": "vneg"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "supply_negative", "unit": "V"}}
+      ],
+      "analyses": [
+        {"id": "gain", "kind": "ac", "sweep": "dec", "points_per_decade": 20, "start_hz": 1, "stop_hz": 100000000,
+         "measurements": [
+           {"name": "gain", "observable": "transfer_magnitude", "unit": "V/V",
+            "output_positive_net": {"terminal": "out"}, "output_negative_net": {"terminal": "gnd"},
+            "input_positive_net": {"terminal": "in"}, "input_negative_net": {"terminal": "gnd"},
+            "at_hz": {"target": "gain_frequency", "unit": "Hz"},
+            "min": {"target": "gain_min", "unit": "V/V"}, "max": {"target": "gain_max", "unit": "V/V"}},
+           {"name": "bandwidth_gain", "observable": "transfer_magnitude", "unit": "V/V",
+            "output_positive_net": {"terminal": "out"}, "output_negative_net": {"terminal": "gnd"},
+            "input_positive_net": {"terminal": "in"}, "input_negative_net": {"terminal": "gnd"},
+            "at_hz": {"target": "bandwidth_frequency", "unit": "Hz"},
+            "min": {"target": "bandwidth_gain_min", "unit": "V/V"}}
+         ]}
+      ]
+    },
+    "filter": {
+      "description": "Supplied active filter: passband and stopband transfer magnitude at declared frequencies.",
+      "terminals": ["in", "out", "gnd", "vpos", "vneg"],
+      "sources": [
+        {"id": "input", "positive_net": {"terminal": "in"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "input_bias", "unit": "V"}, "ac_magnitude_v": 1},
+        {"id": "vpos", "positive_net": {"terminal": "vpos"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "supply_positive", "unit": "V"}},
+        {"id": "vneg", "positive_net": {"terminal": "vneg"}, "negative_net": {"terminal": "gnd"},
+         "dc_v": {"condition": "supply_negative", "unit": "V"}}
+      ],
+      "analyses": [
+        {"id": "response", "kind": "ac", "sweep": "dec", "points_per_decade": 100, "start_hz": 1, "stop_hz": 10000000,
+         "measurements": [
+           {"name": "passband_gain", "observable": "transfer_magnitude", "unit": "V/V",
+            "output_positive_net": {"terminal": "out"}, "output_negative_net": {"terminal": "gnd"},
+            "input_positive_net": {"terminal": "in"}, "input_negative_net": {"terminal": "gnd"},
+            "at_hz": {"target": "passband_frequency", "unit": "Hz"},
+            "min": {"target": "passband_gain_min", "unit": "V/V"}, "max": {"target": "passband_gain_max", "unit": "V/V"}},
+           {"name": "stopband_gain", "observable": "transfer_magnitude", "unit": "V/V",
+            "output_positive_net": {"terminal": "out"}, "output_negative_net": {"terminal": "gnd"},
+            "input_positive_net": {"terminal": "in"}, "input_negative_net": {"terminal": "gnd"},
+            "at_hz": {"target": "stopband_frequency", "unit": "Hz"},
+            "max": {"target": "stopband_gain_max", "unit": "V/V"}}
+         ]}
+      ]
+    }
+  }
+}

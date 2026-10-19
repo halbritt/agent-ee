@@ -533,7 +533,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             result['predicates'] = descriptor['predicates']
         elif kind == 'active_spice':
             from .active_spice import capability
-            descriptor = capability(params, files)
+            descriptor = capability(params, files, inputs, scope)
             prerequisite(params.get('netlist_check'), ('netlist',))
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)

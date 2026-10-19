@@ -1,0 +1,14 @@
+{
+  "schema": "agent-ee.spice-targets/1",
+  "blocks": {
+    "ldo1": {
+      "vout_min": "3.234 V",
+      "vout_max": "3.366 V",
+      "line_regulation_max": "5 mV",
+      "load_regulation_max": "10 mV",
+      "vout_transient_min": "3.2 V",
+      "ripple_frequency": "100 Hz",
+      "ripple_transfer_max": "-50 dB"
+    }
+  }
+}
