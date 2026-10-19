@@ -420,16 +420,16 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None):
     from .locking import writer_lock
     with writer_lock(out):
         return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
                            previous=previous, profile=profile, expected_baseline=expected_baseline, output_stream=output_stream,
                            max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context, stock_context=stock_context,
-                           review_roles=review_roles)
+                           review_roles=review_roles, routing_context=routing_context)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -469,6 +469,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                       expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
         from . import rf_review
+        # Candidate-bound routing adapter evidence for the RF review; absent or unverifiable is recorded so.
+        rf_review.capture_routing(run, m, routing_context)
         result["rf_review"] = rf_review.decide_run(run, m)
         if previous and (Path(previous) / "result.json").is_file():
             result["rf_invalidation"] = rf_review.invalidation(read_json(Path(previous) / "result.json"),
@@ -769,6 +771,8 @@ def main(argv=None):
     review.add_argument("--checks-only", action="store_true")
     review.add_argument("--profile", help="explicit agent-ee.profile/1 JSON file")
     review.add_argument("--roles", help="comma-separated profile roles for a targeted, always-incomplete review run")
+    review.add_argument("--routing-receipt", help="routing adapter receipt.json whose routed board is the reviewed "
+                        "board; verified and bound into the RF review (otherwise its evidence is missing)")
     for cmd in ("inspect", "verify"):
         p = sub.add_parser(cmd)
         p.add_argument("run")
@@ -887,8 +891,14 @@ def main(argv=None):
             from .campaign import run_campaign
             return run_campaign(args.config, args.out)
         if args.command == "review":
+            routing_context = None
+            if args.routing_receipt:
+                # Anchored at invocation; the receipt itself is re-verified by the routing adapter.
+                receipt = Path(args.routing_receipt).resolve()
+                routing_context = {"receipt": {"path": str(receipt), "sha256": digest(receipt)}}
             return run_review(args.scope, args.out, args.max_seconds, checks_only=args.checks_only, profile=args.profile,
-                              review_roles=args.roles.split(",") if args.roles else None)
+                              review_roles=args.roles.split(",") if args.roles else None,
+                              routing_context=routing_context)
         if args.command == "inspect":
             run = Path(args.run).resolve()
             result = read_json(run / "result.json")

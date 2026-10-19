@@ -159,6 +159,222 @@ class ApplicabilityTests(unittest.TestCase):
                          "sources_unchanged")
 
 
+# Original fixture in the shape of the captured pod RF source (AGENTEE-186): the RF
+# stackup statement is F.Cu over In1.Cu, repeated by two workflow records.
+RF_CAPTURE = {"status": "calculation_captured_impedance_unverified",
+              "continuation": {"known_inputs": {"signal_layer": "F.Cu", "reference_layer": "In1.Cu GND"}},
+              "w2_continuation": {"source_stackup": {"signal_layer": "F.Cu", "reference_layer": "In1.Cu"}}}
+POLICY = {"signal_layers": ["F.Cu", "B.Cu"], "pour_area_loss_pct": 5,
+          "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/ANT_RF"]}}
+
+
+def grade(continuity="pass"):
+    items = {"disallowed_tracks": {"status": "pass"}, "pour_integrity": {"status": "pass"},
+             "area_loss": {"status": "pass"}, "reference_continuity": {"status": continuity}}
+    return {"status": "defect" if continuity == "defect" else "unknown" if continuity == "unknown" else "pass",
+            "items": items}
+
+
+class RoutingEvidenceTests(unittest.TestCase):
+    """Candidate-bound routing adapter evidence (AGENTEE-231 semantics) in the RF binding.
+
+    The receipt's own verification is the routing adapter's (tested natively in
+    test_routing_campaign); here its verdict is stubbed so presence, absence,
+    tampering and staleness of the bound bytes are exercised offline."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="agent-ee-rf-routing-")
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.inputs = {"design/board.kicad_sch": RF_SCHEMATIC, "design/board.kicad_pcb": RF_BOARD,
+                       "design/rf-net-constraints.json": json.dumps(CONSTRAINTS),
+                       "design/rf-source-capture.json": json.dumps(RF_CAPTURE)}
+        self.files, _ = files_reader(self.inputs)
+        self.manifest = {"scope": {"schematic": "design/board.kicad_sch", "board": "design/board.kicad_pcb",
+                                   "checks": [{"id": "response"}]}, "files": self.files}
+        self.receipt = self.root / "receipt/receipt.json"
+        routing = self.receipt.parent / "run/routing"
+        (routing / "attempt").mkdir(parents=True)
+        from agent_ee.kicad_route_attempt import POLICY_FILE
+        (routing / "attempt" / POLICY_FILE).write_text('{"schema": "agent-ee.reference-continuity/2"}\n')
+        write_json(routing / "adapter-report.json", {"request": {"layer_policy": POLICY},
+                   "retained": {"attempt/" + POLICY_FILE: digest(routing / "attempt" / POLICY_FILE)}})
+        write_json(self.receipt, {"artifacts": {"routing/adapter-report.json": digest(routing / "adapter-report.json")}})
+        self.summary = {"classification": "complete", "backend": "krt", "layer_policy": grade(),
+                        "candidate_sha256": self.files["design/board.kicad_pcb"]}
+        self.runs = 0
+
+    def capture(self, context="receipt", summary=None, verifier=None):
+        self.runs += 1
+        run = self.root / f"run-{self.runs}"
+        run.mkdir()
+        if context == "receipt":
+            context = {"receipt": {"path": str(self.receipt), "sha256": digest(self.receipt)}}
+        stub = verifier or (lambda receipt_dir: self.summary if summary is None else summary)
+        with patch("agent_ee.routing_adapter.verify_campaign_receipt", side_effect=stub) as verify_receipt:
+            record = rf_review.capture_routing(run, self.manifest, context)
+        self.verified = verify_receipt.call_args_list
+        files, read = files_reader(self.inputs)
+        return run, record, rf_review.decide(self.manifest["scope"], files, read, rf_review.retained_routing(run))
+
+    def test_registered_kinds_only(self):
+        from agent_ee.checks import CHECK_FUNCS
+        self.assertLessEqual(set(rf_review.RF_EVIDENCE_KINDS) | set(rf_review.RF_EXPECTED_KINDS), set(CHECK_FUNCS))
+        evidence = rf_review.native_evidence([{"id": "nca", "kind": "net_class_assignment", "execution": "ok",
+                                               "outcome": "pass"}])
+        self.assertEqual(evidence["absent_kinds"], ["routing_rules", "geometry"])
+        self.assertNotIn("route_layer_policy", json.dumps(evidence))
+        self.assertEqual(evidence["routing_adapter"]["status"], "missing_evidence")
+
+    def test_present_verified_evidence_is_bound_by_sha256(self):
+        run, record, decision = self.capture()
+        self.assertEqual(record["status"], "verified", record["reason"])
+        self.assertEqual([c.args for c in self.verified], [(self.receipt.parent,)])
+        routing = decision["routing_adapter"]
+        self.assertEqual(routing["record_sha256"], digest(run / "work/rf-routing/evidence.json"))
+        self.assertEqual(routing["adapter_report"], {"path": "work/rf-routing/adapter-report.json",
+            "sha256": digest(self.receipt.parent / "run/routing/adapter-report.json")})
+        self.assertEqual(routing["reference_continuity"]["sha256"],
+                         digest(run / "work/rf-routing/reference-continuity.json"))
+        self.assertEqual(routing["layer_policy"]["items"]["reference_continuity"]["status"], "pass")
+        self.assertEqual(routing["declared_layer_policy"], POLICY)
+        self.assertFalse(any(m.startswith("routing adapter") for m in decision["missing"]))
+        packet_view = rf_review.native_evidence([], decision)["routing_adapter"]
+        self.assertEqual(packet_view["record_sha256"], routing["record_sha256"])
+        _, _, absent = self.capture(context=None)
+        self.assertNotEqual(absent["binding_sha256"], decision["binding_sha256"])
+        self.assertIn("routing_adapter", rf_review.changed_categories(absent, decision))
+
+    def test_absent_evidence_is_missing_never_pass(self):
+        for context, reason in ((None, "no routing adapter receipt was supplied"),
+                                ({"receipt": None}, "no adopted receipt")):
+            with self.subTest(context=context):
+                _, record, decision = self.capture(context=context)
+                self.assertEqual(record["status"], "missing_evidence")
+                self.assertIn(reason, record["reason"])
+                self.assertEqual(decision["routing_adapter"]["status"], "missing_evidence")
+                self.assertTrue(any("routing adapter evidence missing_evidence" in m for m in decision["missing"]))
+                self.assertEqual({r["status"] for r in decision["rf_layer_requirements"]}, {"unknown"})
+        _, record, decision = self.capture(verifier=lambda receipt_dir: None)
+        self.assertEqual((record["status"], record["reason"]), ("missing_evidence", "the routing attempt left no adapter report"))
+        # A run that never retained a record (pre-243 or removed) is missing too.
+        files, read = files_reader(self.inputs)
+        legacy = rf_review.decide(self.manifest["scope"], files, read, rf_review.retained_routing(self.root))
+        self.assertEqual(legacy["routing_adapter"]["status"], "missing_evidence")
+
+    def test_tampered_evidence_is_invalid(self):
+        report = self.receipt.parent / "run/routing/adapter-report.json"
+        from agent_ee.kicad_route_attempt import POLICY_FILE
+        continuity = self.receipt.parent / "run/routing/attempt" / POLICY_FILE
+        cases = {
+            "receipt_after_anchor": lambda: self.receipt.write_text(self.receipt.read_text() + " "),
+            "adapter_report": lambda: report.write_text(report.read_text() + " "),
+            "continuity_file": lambda: continuity.write_text("{}"),
+        }
+        for name, tamper in cases.items():
+            with self.subTest(name=name):
+                originals = {p: p.read_bytes() for p in (self.receipt, report, continuity)}
+                context = {"receipt": {"path": str(self.receipt), "sha256": digest(self.receipt)}}
+                tamper()
+                _, record, decision = self.capture(context=context)
+                self.assertEqual(record["status"], "invalid")
+                # An anchor mismatch stops before the receipt is even verified.
+                self.assertEqual(len(self.verified), 0 if name == "receipt_after_anchor" else 1)
+                self.assertEqual(decision["routing_adapter"]["status"], "invalid")
+                self.assertTrue(any("routing adapter evidence invalid" in m for m in decision["missing"]))
+                for path, data in originals.items():
+                    path.write_bytes(data)
+        _, record, _ = self.capture(verifier=lambda receipt_dir: (_ for _ in ()).throw(
+            ValueError("routing adapter report identity mismatch")))
+        self.assertEqual(record["status"], "invalid")
+        self.assertIn("identity mismatch", record["reason"])
+
+    def test_retained_copy_tampered_after_capture_changes_the_binding(self):
+        run, _, decision = self.capture()
+        for rel in ("adapter-report.json", "reference-continuity.json", "evidence.json"):
+            with self.subTest(rel=rel):
+                path = run / "work/rf-routing" / rel
+                original = path.read_bytes()
+                path.write_bytes(original.replace(b"{", b"{ ", 1))
+                files, read = files_reader(self.inputs)
+                after = rf_review.decide(self.manifest["scope"], files, read, rf_review.retained_routing(run))
+                self.assertNotEqual(after["binding_sha256"], decision["binding_sha256"])
+                if rel != "evidence.json":
+                    self.assertEqual(after["routing_adapter"]["status"], "invalid")
+                path.write_bytes(original)
+
+    def test_evidence_of_another_board_is_stale(self):
+        _, record, decision = self.capture(summary={**self.summary, "candidate_sha256": "0" * 64})
+        self.assertEqual(record["status"], "stale")
+        self.assertEqual(decision["routing_adapter"]["status"], "stale")
+        self.assertEqual({r["status"] for r in decision["rf_layer_requirements"]}, {"unknown"})
+        # A verified record replayed against a changed board is not evidence of it.
+        run, _, _ = self.capture()
+        changed = {**self.inputs, "design/board.kicad_pcb": RF_BOARD.replace("(width 0.335)", "(width 0.3)")}
+        files, read = files_reader(changed)
+        moved = rf_review.decide(self.manifest["scope"], files, read, rf_review.retained_routing(run))
+        self.assertEqual(moved["routing_adapter"]["status"], "invalid")
+
+    def test_reserved_evidence_directory_cannot_be_a_check(self):
+        run = self.root / "reserved"
+        run.mkdir()
+        manifest = {**self.manifest, "scope": {**self.manifest["scope"], "checks": [{"id": "rf-routing"}]}}
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            rf_review.capture_routing(run, manifest, None)
+
+    def test_per_net_layer_requirement_is_never_satisfied_by_global_policy(self):
+        _, _, decision = self.capture()
+        [requirement] = decision["rf_layer_requirements"]
+        self.assertEqual((requirement["signal_layer"], requirement["reference_layer"]), ("F.Cu", "In1.Cu"))
+        self.assertEqual(requirement["source"], "inputs/design/rf-source-capture.json")
+        self.assertEqual(requirement["locators"], ["/continuation/known_inputs", "/w2_continuation/source_stackup"])
+        self.assertEqual(requirement["nets"], ["/ANT_RF"])
+        # Global F.Cu/B.Cu permission and a reference continuity pass do not enforce F.Cu-only routing.
+        self.assertEqual(requirement["status"], "unknown")
+        self.assertEqual(requirement["related_evidence"]["global_signal_layers"], ["F.Cu", "B.Cu"])
+        self.assertEqual(requirement["related_evidence"]["reference_continuity"], "pass")
+        self.assertEqual(requirement["related_evidence"]["board_rf_copper_layers"], {"/ANT_RF": ["F.Cu"]})
+        self.assertTrue(any("RF layer requirement F.Cu over In1.Cu" in m and "unknown" in m
+                            for m in decision["missing"]))
+        _, _, defect = self.capture(summary={**self.summary, "layer_policy": grade("defect")})
+        self.assertEqual(defect["rf_layer_requirements"][0]["status"], "defect")
+        _, _, unknown = self.capture(summary={**self.summary, "layer_policy": grade("unknown")})
+        self.assertEqual(unknown["rf_layer_requirements"][0]["status"], "unknown")
+        self.assertTrue(any("reference_continuity: unknown" in m for m in unknown["missing"]))
+        _, _, absent = self.capture(context=None)
+        self.assertIsNone(absent["rf_layer_requirements"][0]["related_evidence"]["global_signal_layers"])
+
+    def test_assessment_cannot_support_unenforced_or_absent_evidence(self):
+        (self.root / "inputs/design").mkdir(parents=True)
+        (self.root / "inputs/design/board.kicad_pcb").write_text(RF_BOARD)
+        cite = [{"path": "inputs/design/board.kicad_pcb", "locator": "J1", "lines": [11, 17]}]
+
+        def assessment(decision, supported):
+            topics = [{"topic": t, "status": "supported" if t == supported else "missing_evidence",
+                       "summary": "s", "evidence": cite if t == supported else [],
+                       "missing_evidence": [] if t == supported else ["as-built field solution"]}
+                      for t in rf_review.TOPICS]
+            return {"binding_sha256": decision["binding_sha256"], "topics": topics, "qualification_claimed": False,
+                    "external_qualification": [{"method": m, "reason": "r", "scope": "s"}
+                                               for m in ("field_solver", "installed_gnss_measurement")]}
+
+        for name, context, summary, topic, error in (
+                ("absent", None, None, "ground_reference_continuity_return_paths", "verified routing reference"),
+                ("unknown", "receipt", {**self.summary, "layer_policy": grade("unknown")},
+                 "ground_reference_continuity_return_paths", "verified routing reference"),
+                ("layer", "receipt", None, "width_gap_layer_transitions_launches", "unenforced")):
+            with self.subTest(name=name):
+                _, _, decision = self.capture(context=context, summary=summary)
+                write_json(self.root / "packet.json", {"rf_review": decision})
+                with self.assertRaisesRegex(ValueError, error):
+                    rf_review.validate_assessment(assessment(decision, topic), [], self.root,
+                                                  require_structured=False)
+        _, _, decision = self.capture()
+        write_json(self.root / "packet.json", {"rf_review": decision})
+        rf_review.validate_assessment(assessment(decision, "ground_reference_continuity_return_paths"), [],
+                                      self.root, require_structured=False)
+
+
 class RoleTests(unittest.TestCase):
     def test_rf_role_is_a_dedicated_validated_profile_role(self):
         validate_profile(rf_profile())
@@ -335,6 +551,36 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         write_json(self.root / "run/result.json", forged)
         with self.assertRaisesRegex(ValueError, "RF review decision differs"):
             verify(self.root / "run")
+
+    @toolchain_test
+    def test_bound_routing_evidence_reaches_packet_and_verify_detects_tamper(self):
+        from agent_ee.kicad_route_attempt import POLICY_FILE
+        receipt = self.root / "receipt/receipt.json"
+        routing = receipt.parent / "run/routing"
+        (routing / "attempt").mkdir(parents=True)
+        (routing / "attempt" / POLICY_FILE).write_text("{}\n")
+        write_json(routing / "adapter-report.json", {"request": {"layer_policy": POLICY},
+                   "retained": {"attempt/" + POLICY_FILE: digest(routing / "attempt" / POLICY_FILE)}})
+        write_json(receipt, {"artifacts": {"routing/adapter-report.json": digest(routing / "adapter-report.json")}})
+        summary = {"classification": "complete", "backend": "krt", "layer_policy": grade(),
+                   "candidate_sha256": digest(self.source / "board.kicad_pcb")}
+        with patch("agent_ee.routing_adapter.verify_campaign_receipt", return_value=summary):
+            result = self.run_case(rf_profile(), "run", routing_context={
+                "receipt": {"path": str(receipt), "sha256": digest(receipt)}})
+        self.assertEqual(result["outcome"], "criteria_satisfied", result.get("error"))
+        run = self.root / "run"
+        bound = result["rf_review"]["routing_adapter"]
+        self.assertEqual(bound["status"], "verified")
+        self.assertEqual(bound["record_sha256"], digest(run / "work/rf-routing/evidence.json"))
+        packet = read_json(run / "packet.json")
+        self.assertEqual(packet["rf_native_evidence"]["routing_adapter"]["record_sha256"], bound["record_sha256"])
+        self.assertEqual(packet["rf_native_evidence"]["routing_adapter"]["adapter_report"], bound["adapter_report"])
+        self.assertIn(bound["record_sha256"], self.prompts["rf"])
+        verify(run)
+        # The retained copy is review evidence: the packet seal or the RF decision refuses its change.
+        (run / "work/rf-routing/adapter-report.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "evidence changed|RF review decision differs"):
+            verify(run)
 
     @toolchain_test
     def test_missing_rf_role_blocks_completion_without_dispatch(self):

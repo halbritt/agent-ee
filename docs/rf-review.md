@@ -46,10 +46,68 @@ Name-only matches, such as bias, enable, fault and UART nets, are listed as
 `rf_related_nets`. They are not treated as RF geometry.
 
 The packet carries the decision as `rf_review` and the RF-relevant native checks
-as `rf_native_evidence`. The relevant checks are DRC, geometry, routing rules,
-netlist and parity. They also include AGENTEE-231/232 kinds when declared:
-`net_class_assignment`, `reference_plane_coverage` and `route_layer_policy`.
-Absent kinds are listed and remain unknown, never pass.
+as `rf_native_evidence`. The relevant checks are registered kinds only: DRC,
+geometry, routing rules, `net_class_assignment`, netlist and parity. Absent
+`net_class_assignment`, `routing_rules` and `geometry` checks are listed in
+`absent_kinds` and remain unknown, never pass.
+
+### Routing adapter evidence
+
+Layer policy and RF reference continuity are not check kinds. They come from
+the routing adapter's AGENTEE-231 grade, `semantics.layer_policy`, which
+includes its `reference_continuity` item. Before the decision is computed, each
+run retains the routing evidence for its candidate in `work/rf-routing/`:
+
+- In a campaign, the evidence is the latest anchored receipt of the owned
+  routing step.
+- In a standalone review, it is the receipt named by
+  `agent-ee review --routing-receipt RECEIPT`.
+- With no receipt, the record is `missing_evidence`.
+
+A receipt passes only after three checks. Its anchored digest must still
+match. `routing_adapter.verify_campaign_receipt` must re-verify it. Its verified
+routed board must be the reviewed board.
+
+The adapter report and the reference-continuity measurement are copied into
+`work/rf-routing/`. Each copy must match the receipt artifact and the report's
+retained hash. The record then has one of four statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `verified` | All three checks passed. |
+| `missing_evidence` | No receipt was supplied, the step has no adopted receipt, or the attempt left no report. |
+| `invalid` | The anchor changed, verification failed, or a copy does not match. |
+| `stale` | The verified routed board is a different board. |
+
+The decision embeds the record as `routing_adapter` with its `record_sha256`.
+The `routing_adapter` entry in `category_sha256` binds it into `binding_sha256`.
+`retained_routing` re-hashes the retained copies. A changed copy, or a record
+replayed against another board, becomes `invalid`, which changes the binding,
+so `verify` refuses the run. `rf_native_evidence.routing_adapter` repeats the
+status, the hashes and the grade.
+
+When the review is required, the decision's `missing` list includes every
+non-`verified` status, an absent layer policy, and each grade item that is not
+`pass`. The check id `rf-routing` is reserved.
+
+### Per-net RF layer requirements
+
+Captured `rf_captures` JSON can state an RF stackup. Each object with both
+`signal_layer` and `reference_layer` becomes an entry in
+`rf_layer_requirements`, such as the pod's F.Cu over In1.Cu. Each entry records
+its source and JSON locators, the declared impedance nets, and related
+evidence:
+
+- the global signal-layer allowlist;
+- the matching reference-continuity grade, when the declared reference layer
+  and RF nets cover the requirement;
+- the board's observed RF copper layers.
+
+No registered check and no adapter grade enforces a per-net signal layer. A
+global F.Cu/B.Cu allowlist permits B.Cu, so it is not per-net enforcement.
+Each requirement is therefore `unknown`. It is `defect` when the verified
+reference-continuity grade reports a defect. It is never satisfied, and it is
+listed in `missing`.
 
 The `rf` reviewer's schema requires `rf_assessment.binding_sha256` to equal the
 decision's `binding_sha256`. The review's candidate, run and packet identity
@@ -59,8 +117,13 @@ are already bound. Validation then refuses:
 - a `supported` topic without structured citations;
 - a `missing_evidence` topic that does not name what is missing;
 - `qualification_claimed` other than `false`;
-- an RF finding without a citation to a bound `inputs/` source or to
-  check/experiment evidence;
+- an RF finding without a citation to a bound `inputs/` source, the retained
+  routing evidence, or check/experiment evidence;
+- a `supported` ground-reference topic
+  (`ground_reference_continuity_return_paths`) without `verified` routing
+  evidence whose reference continuity passed;
+- a `supported` layer-transition topic (`width_gap_layer_transitions_launches`)
+  while any RF layer requirement is not `pass`, which is always the case today;
 - an applicable review whose `external_qualification` omits field solving,
   TDR or VNA for declared controlled impedance, receiver or installed GNSS
   measurements for a GNSS path, or installed BLE measurement for a BLE module.
@@ -177,6 +240,9 @@ candidate: the native schematic and board from `pod-thermal-native-v1`, with the
 ee225 plane plan and the captured GNSS RF records. The model requested and
 observed was `claude-opus-5-5`. The call used no resubmission, the binding
 matched, and `verify` accepted the run. The result is incomplete by design.
+
+This run predates the routing evidence binding. Its subject was the pre-230
+`RF_IN` candidate, which had no RF routing, so it is historical evidence only.
 
 The review returned eight findings:
 

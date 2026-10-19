@@ -11,9 +11,9 @@ review, never RF qualification; this module records no measurement.
 import copy
 import json
 import re
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
-from .storage import identity
+from .storage import digest, identity, read_json, write_json
 
 ROLE = "rf"
 SCHEMA = "agent-ee.rf-review-decision/1"
@@ -34,10 +34,15 @@ QUALIFICATION_METHODS = (
     "field_solver", "matching_network_measurement", "vna", "tdr", "receiver_sensitivity_test",
     "installed_gnss_measurement", "installed_ble_measurement", "antenna_efficiency_measurement",
     "emissions_precompliance")
-# Native evidence kinds an RF reviewer consumes when present (AGENTEE-230/231/232
-# kinds included by name). Absence is recorded as missing, never as a pass.
-RF_EVIDENCE_KINDS = ("drc", "geometry", "routing_rules", "net_class_assignment",
-                     "reference_plane_coverage", "route_layer_policy", "netlist", "netlist_parity")
+# Registered check kinds an RF reviewer consumes when present. Absence is recorded
+# as missing, never as a pass. Layer policy and RF reference continuity are not
+# check kinds: they come from the routing adapter's verified AGENTEE-231 grade.
+RF_EVIDENCE_KINDS = ("drc", "geometry", "routing_rules", "net_class_assignment", "netlist", "netlist_parity")
+RF_EXPECTED_KINDS = ("net_class_assignment", "routing_rules", "geometry")
+# Under work/ so reviewers see it at /evidence/work/rf-routing and may cite it; the id is reserved.
+ROUTING_DIR = "work/rf-routing"
+ROUTING_SCHEMA = "agent-ee.rf-routing-evidence/1"
+ROUTING_STATUSES = ("verified", "missing_evidence", "invalid", "stale")
 CATEGORIES = ("schematic", "board", "stackup", "rf_constraints", "rf_captures", "planes",
               "antenna_and_module_sources", "datasheets")
 
@@ -223,12 +228,14 @@ def _declaration(scope):
     return declared
 
 
-def decide(scope, files, read):
+def decide(scope, files, read, routing=None):
     """Explicit applicability and exact source binding for one captured candidate.
 
     ``files`` maps captured relative paths to SHA-256; ``read(rel)`` returns their
     bytes. Detected RF indicators always make the review required: a declaration
-    cannot waive them. Without indicators the not-applicable basis is recorded."""
+    cannot waive them. Without indicators the not-applicable basis is recorded.
+    ``routing`` is the run's retained routing adapter evidence (``retained_routing``);
+    None is missing evidence."""
     declared = _declaration(scope)
     indicators, sources = [], {c: [] for c in CATEGORIES}
 
@@ -342,29 +349,237 @@ def decide(scope, files, read):
     missing = [f"{c}: no captured source bound" for c in CATEGORIES if not sources[c]]
     if board.get("parsed") and applicable and not any(z["filled"] for z in board.get("zones", [])):
         missing.append("planes: no filled copper zone in the captured board; plane continuity is unknown")
+    routing = _bound_routing(routing, scope, files)
+    if applicable:
+        missing += routing_missing(routing)
+    layer_requirements = _layer_requirements(sources["rf_captures"], read, impedance, rf_nets, board, routing)
+    missing += [f"RF layer requirement {r['signal_layer']} over {r['reference_layer']} for "
+                f"{', '.join(r['nets']) or 'undeclared RF nets'} ({r['source']}): {r['status']}; {r['reason']}"
+                for r in layer_requirements]
     decision = {"schema": SCHEMA, "role": ROLE, "applicable": applicable, "required": applicable,
                 "basis": basis, "declared": copy.deepcopy(declared), "indicators": indicators,
                 "rf_nets": sorted(rf_nets), "rf_related_nets": sorted(related), "impedance_declarations": impedance, "expects": expects,
-                "sources": sources, "board": board, "missing": missing,
-                "category_sha256": {c: identity(sources[c]) for c in CATEGORIES}}
+                "sources": sources, "board": board, "routing_adapter": routing,
+                "rf_layer_requirements": layer_requirements, "missing": missing,
+                "category_sha256": {**{c: identity(sources[c]) for c in CATEGORIES},
+                                    "routing_adapter": identity(routing)}}
     decision["binding_sha256"] = identity(decision)
     return decision
 
 
 def decide_run(run_dir, manifest):
-    return decide(manifest["scope"], manifest["files"], lambda rel: (run_dir / "inputs" / rel).read_bytes())
+    run_dir = Path(run_dir)
+    return decide(manifest["scope"], manifest["files"], lambda rel: (run_dir / "inputs" / rel).read_bytes(),
+                  retained_routing(run_dir))
 
 
-def native_evidence(checks):
+def native_evidence(checks, decision=None):
     """RF-relevant native evidence for the packet; absent kinds stay missing (unknown)."""
     present = [{"check": c["id"], "kind": c.get("kind"), "execution": c.get("execution"),
                 "outcome": c.get("outcome"), "path": f"checks/{c['id']}.json"}
                for c in checks if c.get("kind") in RF_EVIDENCE_KINDS]
     kinds = {c["kind"] for c in present}
-    absent = [k for k in ("net_class_assignment", "reference_plane_coverage", "route_layer_policy", "geometry")
-              if k not in kinds]
+    absent = [k for k in RF_EXPECTED_KINDS if k not in kinds]
+    routing = (decision or {}).get("routing_adapter") or _missing_routing("no RF decision bound to this packet")
     return {"present": present, "absent_kinds": absent,
-            "rule": "absent evidence is unknown, never pass; present native passes are inputs, not RF qualification"}
+            "routing_adapter": {k: routing.get(k) for k in ("status", "reason", "record_sha256", "adapter_report",
+                                                            "reference_continuity", "layer_policy")},
+            "rule": "absent evidence is unknown, never pass; present native passes and routing adapter grades are "
+                    "inputs, not RF qualification"}
+
+
+def _missing_routing(reason):
+    return {"schema": ROUTING_SCHEMA, "status": "missing_evidence", "reason": reason, "record_sha256": None}
+
+
+def _copy_bound(source, target):
+    """Copy a retained evidence file and return the SHA-256 of the bytes copied."""
+    source = Path(source)
+    if source.is_symlink() or not source.is_file():
+        raise ValueError(f"routing evidence file missing: {source.name}")
+    data = source.read_bytes()
+    target.write_bytes(data)
+    return digest(target)
+
+
+def capture_routing(run, manifest, context):
+    """Verify and retain the candidate-bound routing adapter evidence for the RF review.
+
+    ``context`` is None (no routing step supplied) or ``{"receipt": None | {"path",
+    "sha256"}}`` naming an anchored AGENTEE-95 routing receipt. The receipt is
+    re-verified with the routing adapter's own verifier; the adapter report and
+    reference-continuity measurement are copied into the run and bound by SHA-256.
+    Anything absent, unverifiable or of another board is recorded as such, never
+    as a pass."""
+    from .kicad_route_attempt import POLICY_FILE
+    if any(c.get("id") == PurePosixPath(ROUTING_DIR).name for c in manifest["scope"].get("checks", [])):
+        raise ValueError(f"check id {PurePosixPath(ROUTING_DIR).name} is reserved for RF routing evidence")
+    out = Path(run) / ROUTING_DIR
+    out.mkdir(parents=True)
+    board_rel = manifest["scope"]["board"]
+    record = {"schema": ROUTING_SCHEMA,
+              "board": {"path": "inputs/" + board_rel, "sha256": manifest["files"].get(board_rel)},
+              "receipt": None}
+
+    def finish(status, reason, **extra):
+        record.update(status=status, reason=reason, **extra)
+        write_json(out / "evidence.json", record)
+        return record
+
+    link = (context or {}).get("receipt")
+    if link is None:
+        return finish("missing_evidence", "no routing adapter receipt was supplied for this candidate"
+                      if context is None else "the declared routing step has no adopted receipt")
+    record["receipt"] = {"path": str(link["path"]), "sha256": link["sha256"]}
+    path = Path(link["path"])
+    try:
+        if path.is_symlink() or not path.is_file() or digest(path) != link["sha256"]:
+            raise ValueError("routing receipt changed since it was anchored")
+        from . import routing_adapter
+        summary = routing_adapter.verify_campaign_receipt(path.parent)
+        if summary is None:
+            return finish("missing_evidence", "the routing attempt left no adapter report")
+        receipt = read_json(path)
+        routing = path.parent / "run" / "routing"
+        report_sha = _copy_bound(routing / "adapter-report.json", out / "adapter-report.json")
+        if report_sha != receipt["artifacts"].get("routing/adapter-report.json"):
+            raise ValueError("adapter report differs from the receipt artifact")
+        report = read_json(out / "adapter-report.json")
+        continuity, retained = None, report["retained"].get("attempt/" + POLICY_FILE)
+        if retained is not None:
+            sha = _copy_bound(routing / "attempt" / POLICY_FILE, out / "reference-continuity.json")
+            if sha != retained:
+                raise ValueError("reference continuity measurement differs from the adapter report")
+            continuity = {"path": f"{ROUTING_DIR}/reference-continuity.json", "sha256": sha}
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
+        return finish("invalid", f"routing adapter evidence failed verification: {exc}")
+    extra = {"candidate_sha256": summary["candidate_sha256"], "classification": summary["classification"],
+             "backend": summary["backend"],
+             "adapter_report": {"path": f"{ROUTING_DIR}/adapter-report.json", "sha256": report_sha},
+             "reference_continuity": continuity,
+             "declared_layer_policy": report["request"].get("layer_policy"),
+             "layer_policy": summary.get("layer_policy")}
+    if summary["candidate_sha256"] != record["board"]["sha256"]:
+        return finish("stale", f"routing adapter evidence is of board {summary['candidate_sha256']}, "
+                               "not the reviewed board", **extra)
+    return finish("verified", "verified routing receipt whose routed board is the reviewed board", **extra)
+
+
+def retained_routing(run_dir):
+    """The run's retained routing evidence record, re-checked against its retained copies."""
+    run_dir = Path(run_dir)
+    path = run_dir / ROUTING_DIR / "evidence.json"
+    if path.is_symlink() or not path.is_file():
+        return _missing_routing("no routing adapter evidence record is retained in this run")
+    sha = digest(path)
+    try:
+        record = read_json(path)
+        if not isinstance(record, dict) or record.get("schema") != ROUTING_SCHEMA or \
+                record.get("status") not in ROUTING_STATUSES:
+            raise ValueError("malformed routing evidence record")
+        for key in ("adapter_report", "reference_continuity"):
+            entry = record.get(key)
+            if entry is not None:
+                copied = run_dir / entry["path"]
+                if (PurePosixPath(entry["path"]).parent != PurePosixPath(ROUTING_DIR) or copied.is_symlink() or
+                        not copied.is_file() or digest(copied) != entry["sha256"]):
+                    raise ValueError(f"retained {key} changed after capture")
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        return {"schema": ROUTING_SCHEMA, "status": "invalid", "reason": f"retained routing evidence: {exc}",
+                "record_sha256": sha}
+    return {**record, "record_sha256": sha}
+
+
+def _bound_routing(routing, scope, files):
+    """The routing evidence as bound to this candidate's captured board."""
+    if routing is None:
+        return _missing_routing("no routing adapter evidence was bound")
+    routing = copy.deepcopy(routing)
+    board = (routing.get("board") or {})
+    if routing["status"] in ("verified", "stale") and (
+            board.get("path") != "inputs/" + str(scope.get("board")) or board.get("sha256") != files.get(scope.get("board"))):
+        routing.update(status="invalid", reason="routing evidence record is bound to another captured board")
+    return routing
+
+
+def routing_missing(routing):
+    if routing["status"] != "verified":
+        return [f"routing adapter evidence {routing['status']}: {routing['reason']}; layer policy and RF reference "
+                "continuity are unknown"]
+    policy = routing.get("layer_policy")
+    if policy is None:
+        return ["routing adapter evidence: no layer policy was declared to the router; layer policy and RF "
+                "reference continuity are unknown"]
+    out = [f"routing adapter layer policy item {name}: {item['status']}"
+           for name, item in sorted(policy.get("items", {}).items()) if item.get("status") != "pass"]
+    if "reference_continuity" not in policy.get("items", {}):
+        out.append("routing adapter layer policy declares no RF reference; RF reference continuity is unknown")
+    return out
+
+
+def _stackup_statements(value, pointer=""):
+    if isinstance(value, dict):
+        if isinstance(value.get("signal_layer"), str) and isinstance(value.get("reference_layer"), str):
+            yield pointer or "/", value["signal_layer"], value["reference_layer"]
+        for key, item in value.items():
+            yield from _stackup_statements(item, f"{pointer}/{key}")
+    elif isinstance(value, list):
+        for n, item in enumerate(value):
+            yield from _stackup_statements(item, f"{pointer}/{n}")
+
+
+def _layer_requirements(captures, read, impedance, rf_nets, board, routing):
+    """Per-net RF signal/reference layer requirements stated in captured RF sources.
+
+    No registered check and no adapter grade enforces a per-net signal layer, and
+    a global signal-layer allowlist is not per-net enforcement, so a requirement is
+    never satisfied here: unknown, or defect when the verified reference continuity
+    grade for its reference layer reports one."""
+    nets = sorted({n for d in impedance if "impedance_ohm" in d for n in d["nets"]} or rf_nets)
+    policy = routing.get("layer_policy") if routing["status"] == "verified" else None
+    declared = routing.get("declared_layer_policy") if routing["status"] == "verified" else None
+    reference = (declared or {}).get("reference") or {}
+    found = {}
+    for entry in captures:
+        doc = _json(read, entry["path"][len("inputs/"):])
+        for pointer, signal, ref in _stackup_statements(doc or {}):
+            layer = ref.split()[0] if ref.split() else ref
+            found.setdefault((entry["path"], signal, layer), {"declared": ref, "locators": []})["locators"].append(pointer)
+    out = []
+    for (source, signal, layer), seen in sorted(found.items()):
+        continuity = None
+        if (policy is not None and layer in (reference.get("layers") or []) and nets and
+                set(nets) <= set(reference.get("rf_nets") or [])):
+            continuity = (policy.get("items") or {}).get("reference_continuity")
+        status = "defect" if (continuity or {}).get("status") == "defect" else "unknown"
+        out.append({"source": source, "locators": seen["locators"], "signal_layer": signal, "reference_layer": layer,
+                    "reference_declared": seen["declared"], "nets": nets, "status": status,
+                    "reason": ("the verified routing reference continuity grade reports a defect on this reference"
+                               if status == "defect" else
+                               "no registered check or routing adapter grade enforces this per-net signal layer; a "
+                               "global signal-layer allowlist is not per-net enforcement"),
+                    "related_evidence": {
+                        "global_signal_layers": (declared or {}).get("signal_layers"),
+                        "reference_continuity": None if continuity is None else continuity.get("status"),
+                        "board_rf_copper_layers": {n: (board.get("rf_copper") or {}).get(n, {}).get("layers")
+                                                   for n in nets}}})
+    return out
+
+
+def campaign_routing_context(root, state):
+    """The latest anchored receipt of the campaign's owned routing step; None without one."""
+    from .stage_done import _receipts
+    binding = state.get("routing_binding")
+    if binding is None:
+        return None
+    context = {"receipt": None}
+    for number in range(1, len(state["history"]) + 1):
+        work = Path(root) / "implementations" / str(number)
+        for k, sha, receipt in _receipts(root, state, str(number)):
+            if receipt["spec"] == binding["spec"]:
+                link = read_json(work / "stage-receipts.json")["receipts"][k - 1]
+                context["receipt"] = {"path": str(work / link["path"]), "sha256": sha}
+    return context
 
 
 def assessment_schema(binding_sha256):
@@ -393,7 +608,11 @@ def prompt(decision, evidence):
             "missing_evidence (list exactly what is missing) or not_applicable (summary states the basis); and "
             "external_qualification naming every remaining field-solver, matching, VNA/TDR, receiver or installed "
             "BLE/GNSS measurement still required. Every finding must cite at least one captured inputs/ source or "
-            "check/experiment evidence. RF binding: " + json.dumps({"rf_review": decision, "native_evidence": evidence}))
+            "check/experiment evidence. rf_review.routing_adapter is the routing adapter evidence bound to this "
+            "candidate by SHA-256 (status verified, missing_evidence, invalid or stale; only verified grades are "
+            "evidence, and a layer policy pass is never RF qualification). rf_review.rf_layer_requirements are "
+            "per-net signal/reference layer requirements from captured RF sources; none is enforced by a check, so "
+            "treat each as unknown (or defect where so graded), never satisfied. RF binding: " + json.dumps({"rf_review": decision, "native_evidence": evidence}))
 
 
 def validate_assessment(value, review_findings, run_dir, *, require_structured=True):
@@ -448,7 +667,22 @@ def validate_assessment(value, review_findings, run_dir, *, require_structured=T
             needed.append("at least one external RF qualification method")
         if needed:
             raise ValueError("rf_assessment omits required external qualification: " + "; ".join(needed))
+    # Supported needs bound evidence: never from absent routing evidence or an unenforced layer requirement.
+    by_topic = {t["topic"]: t["status"] for t in normalized}
+    continuity = (((decision.get("routing_adapter") or {}).get("layer_policy") or {}).get("items") or {}).get(
+        "reference_continuity") or {}
+    if (by_topic["ground_reference_continuity_return_paths"] == "supported" and
+            ((decision.get("routing_adapter") or {}).get("status") != "verified" or continuity.get("status") != "pass")):
+        raise ValueError("rf topic ground_reference_continuity_return_paths cannot be supported without a verified "
+                         "routing reference continuity pass")
+    if by_topic["width_gap_layer_transitions_launches"] == "supported" and any(
+            r["status"] != "pass" for r in decision.get("rf_layer_requirements", [])):
+        raise ValueError("rf topic width_gap_layer_transitions_launches cannot be supported while an RF layer "
+                         "requirement is unenforced")
     sources = {e["path"] for entries in decision["sources"].values() for e in entries}
+    sources |= {(decision.get("routing_adapter") or {}).get(k, {}).get("path")
+                for k in ("adapter_report", "reference_continuity")
+                if (decision.get("routing_adapter") or {}).get(k)}
     for finding in review_findings:
         cited = [e["path"] for e in finding["evidence"]]
         if not cited or not any(p in sources or p.startswith(("checks/", "work/", "review-work/")) for p in cited):
@@ -479,7 +713,7 @@ def gate(result):
 def changed_categories(old, new):
     """RF source categories whose captured bytes differ between two decisions."""
     old_c, new_c = (old or {}).get("category_sha256", {}), (new or {}).get("category_sha256", {})
-    return sorted(c for c in CATEGORIES if old_c.get(c) != new_c.get(c))
+    return sorted(c for c in (*CATEGORIES, "routing_adapter") if old_c.get(c) != new_c.get(c))
 
 
 def invalidation(previous_result, decision):
