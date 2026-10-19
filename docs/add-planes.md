@@ -112,6 +112,9 @@ defects, and board-only receipt adoption. The optional routing test uses the
 qualified pinned KRT backend and checks `pour_integrity` after actual signal
 routing. Its explicit empty schematic retains baseline parity findings: this
 test establishes routing/plane preservation, not schematic correctness.
+To keep the router off the planes, declare a routing
+[layer policy](routing-adapter.md#declared-layer-policy-agentee-231): allowed signal
+layers, an area-loss bound and, optionally, the reference plane under RF nets.
 
 Actual pod use still requires AGENTEE-177's captured board envelope and native
 antenna/mechanical rule areas, the accepted pod plane plan, and integration with

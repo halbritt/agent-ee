@@ -659,6 +659,172 @@ class RetainedVerificationTest(unittest.TestCase):
                 path.write_bytes(original)
 
 
+POLICY = {'signal_layers': ['F.Cu', 'B.Cu'], 'layer_costs': [1.0, 3.0], 'pour_area_loss_pct': 0.5}
+
+
+def policy_argv(policy=POLICY):
+    return REQUEST + ['--layer-policy', attempt.canonical_json(policy)]
+
+
+class LayerPolicyTest(unittest.TestCase):
+    """AGENTEE-231 declared layer policy against the fixture router: flags and grading only."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-policy-')
+        self.addCleanup(self.tmp.cleanup)
+        self.count = 0
+
+    def case(self, scenario, argv=None):
+        self.count += 1
+        with contextlib.redirect_stdout(io.StringIO()):
+            return Case(Path(self.tmp.name) / str(self.count), scenario).run(argv or policy_argv())
+
+    def test_policy_reaches_the_router_as_pinned_flags_and_expected_settings(self):
+        case = self.case('complete')
+        self.assertEqual(case.exit, 0, case.report['semantics'])
+        argv = case.report['process']['argv']
+        self.assertEqual(argv[argv.index('--pour-area-loss') + 1], '0.5')
+        self.assertEqual([a for a in argv if a.startswith('--backend-arg=')],
+                         ['--backend-arg=--layers', '--backend-arg=F.Cu', '--backend-arg=B.Cu',
+                          '--backend-arg=--layer-costs', '--backend-arg=1.0', '--backend-arg=3.0'])
+        settings = json.loads((case.work / 'routing/attempt/result.json').read_text())['settings']
+        self.assertEqual((settings['pour_area_loss_pct'], settings['backend_args']),
+                         (0.5, ['--layers', 'F.Cu', 'B.Cu', '--layer-costs', '1.0', '3.0']))
+        grade = case.report['semantics']['layer_policy']
+        self.assertEqual(grade['status'], 'pass', grade)
+        self.assertEqual({k: v['status'] for k, v in grade['items'].items()},
+                         {'disallowed_tracks': 'pass', 'pour_integrity': 'pass', 'area_loss': 'pass'})
+        summary = case.verify()
+        self.assertEqual((summary['proposal'], summary['layer_policy']), ('eligible', grade))
+
+    def test_undeclared_policy_keeps_the_fixed_argv_and_report(self):
+        case = self.case('complete', REQUEST)
+        self.assertEqual(case.exit, 0)
+        self.assertNotIn('layer_policy', case.report['semantics'])
+        self.assertNotIn('layer_policy', case.verify())
+        for flag in ('--pour-area-loss', '--layer-policy'):
+            self.assertNotIn(flag, case.report['process']['argv'])
+        self.assertFalse(any(a.startswith('--backend-arg') for a in case.report['process']['argv']))
+
+    def test_router_track_on_a_disallowed_layer_withholds_the_board(self):
+        tracks = [{'kind': 'segment', 'layer': 'F.Cu', 'net': '/IN', 'uuid': 'ok-1'},
+                  {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'cut-1'},
+                  {'kind': 'arc', 'layer': 'In2.Cu', 'net': '/OUT', 'uuid': 'old-1'}]
+        case = self.case({'name': 'complete', 'tracks': tracks,
+                          'reference_tracks': [{'kind': 'arc', 'layer': 'In2.Cu', 'net': '/OUT', 'uuid': 'old-1'}]})
+        self.assertEqual(case.exit, attempt.EXIT_POLICY, case.report['semantics'])
+        sem = case.report['semantics']
+        self.assertEqual((sem['classification'], sem['proposal']), ('policy_failed', 'none'))
+        item = sem['layer_policy']['items']['disallowed_tracks']
+        self.assertEqual(item['status'], 'defect')
+        self.assertEqual([t['uuid'] for t in item['tracks']], ['cut-1'])
+        self.assertEqual([t['uuid'] for t in item['preexisting']], ['old-1'])
+        self.assertFalse(os.path.lexists(case.work / 'routing/candidate'))
+        result = json.loads((case.work / 'routing/attempt/result.json').read_text())
+        self.assertEqual(case.report['rejected_candidate_sha256'], result['validation']['validated_board_sha256'])
+        summary = case.verify()
+        self.assertEqual((summary['classification'], summary['layer_policy']['status']), ('policy_failed', 'defect'))
+
+    def test_area_loss_beyond_the_bound_is_a_defect(self):
+        layers = [{'net_layer': 'GND@In1.Cu', 'area_mm2': [100.0, 97.0], 'area_delta_pct': -3.0},
+                  {'net_layer': 'GND@In2.Cu', 'area_mm2': [100.0, 100.0], 'area_delta_pct': 0.0}]
+        case = self.case({'name': 'complete', 'pour_layers': layers})
+        # The pin fails pour_integrity itself: exit 3, never a proposal.
+        self.assertEqual(case.exit, 3, case.report['semantics'])
+        grade = case.report['semantics']['layer_policy']
+        self.assertEqual(grade['status'], 'defect')
+        self.assertEqual(grade['items']['area_loss']['exceeded'], [layers[0]])
+        self.assertEqual(grade['items']['pour_integrity']['status'], 'defect')
+        self.assertEqual(case.verify()['layer_policy'], grade)
+
+    def test_unmeasured_items_are_unknown_and_never_pass(self):
+        for label, scenario, policy in (
+                ('no pour grade', {'name': 'complete', 'no_pour': True}, POLICY),
+                ('no pour at all', {'name': 'complete', 'pour_layers': []}, POLICY),
+                # Not a KiCad board: the reference measurement cannot produce a record.
+                ('reference unmeasured', 'complete', {**POLICY, 'reference': {
+                    'net': 'GND', 'layers': ['In1.Cu'], 'rf_nets': ['/RF']}})):
+            with self.subTest(label):
+                case = self.case(scenario, policy_argv(policy))
+                sem = case.report['semantics']
+                self.assertEqual((case.exit, sem['classification']), (attempt.EXIT_POLICY, 'policy_failed'), sem)
+                self.assertEqual(sem['layer_policy']['status'], 'unknown')
+                self.assertEqual(case.verify()['layer_policy']['status'], 'unknown')
+
+    def test_non_graded_outcomes_carry_an_unknown_grade(self):
+        case = self.case('backend_failure')
+        self.assertEqual(case.exit, 1)
+        self.assertEqual(case.report['semantics']['layer_policy']['status'], 'unknown')
+        self.assertEqual(case.verify()['layer_policy']['status'], 'unknown')
+
+    def test_forged_grades_and_facts_are_refused(self):
+        def honest():
+            return self.case('complete')
+
+        forgeries = {
+            'grade claims pass over a defect': dict(
+                files={'validate/candidate-facts.json': lambda v: v['tracks'].append(
+                    {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'hidden'})}),
+            'edited grade': dict(report=lambda r: r['semantics']['layer_policy'].update(status='defect')),
+            'dropped grade': dict(report=lambda r: r['semantics'].pop('layer_policy')),
+            'facts of another board': dict(files={'validate/candidate-facts.json': lambda v: v.update(sha256='0' * 64)}),
+            'different bound graded': dict(files={'validate/pour-integrity.json':
+                                                  lambda v: v.update(area_loss_limit_pct=50.0)}),
+        }
+        for label, change in forgeries.items():
+            with self.subTest(label):
+                case = honest()
+                forge(case, **change)
+                with self.assertRaises(ValueError):
+                    case.verify()
+        case = self.case('complete', REQUEST)
+        forge(case, report=lambda r: r['semantics'].update(layer_policy={'status': 'pass', 'items': {}}))
+        with self.assertRaisesRegex(ValueError, 'without a declared layer policy'):
+            case.verify()
+
+    def test_malformed_policies_are_refused_before_the_router_runs(self):
+        bad = {
+            'unknown key': {**POLICY, 'nets': ['/RF']},
+            'missing bound': {'signal_layers': ['F.Cu']},
+            'empty layers': {**POLICY, 'signal_layers': [], 'layer_costs': []},
+            'non-copper layer': {**POLICY, 'signal_layers': ['F.SilkS', 'B.Cu']},
+            'repeated layer': {**POLICY, 'signal_layers': ['F.Cu', 'F.Cu']},
+            'cost count': {**POLICY, 'layer_costs': [1.0]},
+            'forbidden cost': {**POLICY, 'layer_costs': [1.0, -1]},
+            'boolean bound': {**POLICY, 'pour_area_loss_pct': True},
+            'bound above 100': {**POLICY, 'pour_area_loss_pct': 101},
+            'reference keys': {**POLICY, 'reference': {'net': 'GND', 'layers': ['In1.Cu']}},
+            'reference is rf': {**POLICY, 'reference': {'net': 'GND', 'layers': ['In1.Cu'], 'rf_nets': ['GND']}},
+        }
+        for label, policy in bad.items():
+            with self.subTest(label):
+                case = self.case('complete', policy_argv(policy))
+                self.assertEqual(case.exit, attempt.EXIT_REQUEST)
+                self.assertFalse((case.work / 'routing').exists())
+        for label, argv in (('not canonical', REQUEST + ['--layer-policy', json.dumps(POLICY)]),
+                            ('freerouting', policy_argv() + ['--backend', 'freerouting']),
+                            ('diff pairs', policy_argv() + ['--diff-pairs', 'auto'])):
+            with self.subTest(label):
+                case = self.case('complete', argv)
+                self.assertEqual(case.exit, attempt.EXIT_REQUEST)
+
+    def test_declaration_carries_the_policy_into_the_step(self):
+        declaration = {'schema': 'agent-ee.routing-adapter/1', 'project': 'project', 'board': 'rc.kicad_pcb',
+                       'schematic': 'rc.kicad_sch', 'name': 'rc', 'label': 'routing', 'checkout': '/opt/kicad-route',
+                       'layer_policy': POLICY}
+        value = routing_adapter.validate_declaration(declaration)
+        self.assertEqual(value['layer_policy'], POLICY)
+        self.assertNotIn('layer_policy', routing_adapter.validate_declaration(
+            {k: v for k, v in declaration.items() if k != 'layer_policy'}))
+        with self.assertRaises(ValueError):
+            routing_adapter.validate_declaration({**declaration, 'layer_policy': {**POLICY, 'pour_area_loss_pct': -1}})
+        request = attempt.parse_request(routing_adapter._request_argv(
+            {'project': 'project', 'board': 'rc.kicad_pcb', 'schematic': 'rc.kicad_sch', 'name': 'rc',
+             'label': 'routing', 'budget_s': 5, 'timeout_s': 30, 'backend': 'krt', 'state': 'checkout',
+             'layer_policy': POLICY}))
+        self.assertEqual(request['layer_policy'], POLICY)
+
+
 class SandboxedAdapterTest(unittest.TestCase):
     """The same adapter under the production Bubblewrap executor and read-only mounts."""
 

@@ -2260,6 +2260,16 @@
     },
     {
       "paths": [
+        "tests/test_route_layer_policy.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original native layer-policy routing tests on the owned add-planes probe: invented signal pads, GND plane plan and a minimal empty schematic format literal. No copied design or library assets; the probe does not represent the telemetry pod."
+    },
+    {
+      "paths": [
         "tests/test_routing_campaign.py"
       ],
       "kind": "owned-source",

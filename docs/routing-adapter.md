@@ -58,7 +58,8 @@ does not.
 ## The step
 
 `routing_adapter.step(project=, board=, schematic=, name=, label=, checkout=,
-state=None, budget=300, timeout=None, backend='krt', diff_pairs=None)` returns:
+state=None, budget=300, timeout=None, backend='krt', diff_pairs=None,
+layer_policy=None)` returns:
 
 | Field | Value |
 | --- | --- |
@@ -84,7 +85,8 @@ config["routing_adapter"] = {
 }
 ```
 
-The declaration allows only the fields shown plus `state`, `timeout`, `backend` and opt-in `diff_pairs: "auto"`.
+The declaration allows only the fields shown plus `state`, `timeout`, `backend`, opt-in `diff_pairs: "auto"`
+and an opt-in [`layer_policy`](#declared-layer-policy-agentee-231).
 Defaults match `step()`: state is the checkout, backend is KRT, budget is 300 s,
 and timeout is twice the budget plus 300 s. No argv, mount, environment or pin override
 is accepted. The selected board and schematic must equal the scope's identities,
@@ -122,8 +124,81 @@ environment is rebuilt from constants: `PATH`, `HOME`/`TMPDIR`/XDG under
 `/work/routing`, `LANG`, `PYTHONDONTWRITEBYTECODE`, `PYTHONPYCACHEPREFIX`,
 `PYTHONNOUSERSITE`, `KICAD_ROUTE_STATE` set to the read-only mount, and
 `GIT_OPTIONAL_LOCKS=0` with no system or global git configuration. Nothing is
-inherited. `--backend-arg`, `--backend-env`, `--force`, `--canary`, `--rev`,
-`KICAD_ROUTE_LEDGER` and `KICAD_ROUTE_OUT` are never passed.
+inherited. `--backend-env`, `--force`, `--canary`, `--rev`,
+`KICAD_ROUTE_LEDGER` and `KICAD_ROUTE_OUT` are never passed. `--backend-arg` and
+`--pour-area-loss` are passed only for a declared layer policy, as described
+below.
+
+## Declared layer policy (AGENTEE-231)
+
+Without a policy, KRT routes on every copper layer at equal cost on a four-layer
+board, and kicad-route refills zones after routing, so signal tracks on In1/In2
+cut the reference planes. pour_integrity then fails only on lost pad contact,
+starved spokes or stranded pads. Area loss is reported but not failed.
+
+A coordinator can declare `layer_policy` in the step or campaign declaration:
+
+```json
+{"signal_layers": ["F.Cu", "B.Cu"], "layer_costs": [1.0, 3.0], "pour_area_loss_pct": 0.5,
+ "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/POD_GNSS_RF"]}}
+```
+
+`signal_layers` and `pour_area_loss_pct` (0 to 100) are required. `layer_costs`
+(one multiplier from 1 to 1000 per signal layer) and `reference` are optional.
+The attempt receives it as one canonical JSON argument, `--layer-policy`. The
+policy requires KRT. It cannot be combined with `diff_pairs`, because the pin
+refuses `--backend-arg` with `--diff-pairs`. Only flags the pin defines are used:
+
+| Policy field | Router argument |
+| --- | --- |
+| `signal_layers` | `--backend-arg=--layers --backend-arg=F.Cu ...` (KRT `--layers`) |
+| `layer_costs` | `--backend-arg=--layer-costs --backend-arg=1.0 ...` (KRT `--layer-costs`) |
+| `pour_area_loss_pct` | `--pour-area-loss PCT` (kicad-route pour_integrity `area_loss`) |
+
+KRT appends every board copper layer not listed at its FORBIDDEN cost. That layer
+stays an obstacle and through-vias may span it, but KRT places no track copper on
+it. The expected `result.json` settings change accordingly: `backend_args` is the
+KRT list above, and `pour_area_loss_pct` is the bound as a float. Any other value
+is a contradiction.
+
+The attempt grades the policy after routing, and `verify` grades it again from the
+retained bytes. The grade is `semantics.layer_policy`, and `verify` returns it as
+`layer_policy`:
+
+| Item | Source | Defect | Unknown |
+| --- | --- | --- | --- |
+| `disallowed_tracks` | the router's `validate/candidate-facts.json`, bound to the validated board hash, and `facts/reference-facts.json` | a track or arc not in the input that lies on a layer outside `signal_layers`, listed by UUID, layer and net; input tracks are listed as `preexisting` | facts missing, malformed or of another board |
+| `pour_integrity` | `validate/preservation.json` | the pin's check is FAIL | the check is missing |
+| `area_loss` | `validate/pour-integrity.json` | a net/layer lost more than the bound, listed under `exceeded` | no deltas, no pour, or a bound other than the declared one |
+| `reference_continuity` (when declared) | `attempt/agent-ee-reference-continuity.json`, measured by KiCad's Python on the validated candidate | an RF track whose footprint is not covered by the reference net's fill on a reference layer (`interrupted`, with the uncovered mm²) | a missing net, layer or fill, an RF track on its own reference layer, no RF track, a measurement of another board, or a board the router rejected |
+
+The continuity measurement subtracts each reference layer's filled polygons from
+every RF track's copper shape. It excludes the plane clearance around the RF
+net's own pads, holes and vias, plus a 0.05 mm margin. More than 0.0001 mm² left
+uncovered is an interruption. The measurement runs in the same sandbox, after the
+candidate binds and only for an eligible exit. Its record and log are retained
+beside the router's reports.
+
+The overall grade is `defect` if any item is a defect, otherwise `unknown` if any
+item is unknown, otherwise `pass`. An exit 0 or 2 whose grade is not `pass`
+becomes `policy_failed` (adapter exit 5). Its board is hashed as
+`rejected_candidate_sha256` and is never delivered, so the receipt is not adoptable.
+When the pin's own pour_integrity fails on the bound, the result is exit 3,
+`validation_failed`, and the grade records the defect. Classes that never graded
+a board carry an `unknown` grade. `verify` refuses a grade that differs from its
+own re-derivation, a grade without a declared policy, a delivered board whose grade
+is not `pass`, and a policy-failed board other than the validated one.
+
+Undeclared attempts are unchanged. Their argv, settings, report and verify summary
+have no policy fields.
+
+The native test [`test_route_layer_policy.py`](../tests/test_route_layer_policy.py)
+uses an original four-layer probe with GND planes on In1 and In2. An F.Cu/B.Cu
+allowlist delivers a board with no inner tracks, and its grade passes, including
+continuity under the routed net. A control that allows the inner layers at cost 1,
+with the outer layers at 1000, routes on the planes. The 0.01 % bound then gives
+exit 3 with an `area_loss` defect. A route across an owned In1/In2 fill keepout is
+`policy_failed`, with `reference_continuity` naming the interrupted track UUIDs.
 
 ## Router targets from the scaffold producer
 
@@ -170,8 +245,8 @@ working directory, and must land on the expected contained location.
 
 The numeric exit is never trusted alone. Each exit needs its exact status
 combination in a `result.json` and `attempt.json` of the pinned shape, plus the
-fixed settings (`protect: existing`, empty backend args and environment, all
-nets).
+fixed settings (`protect: existing`, empty backend environment, all nets, and
+backend args and pour bound exactly as the declared layer policy implies).
 
 | Router exit | Required observation | Classification | Proposal | Adapter exit |
 | --- | --- | --- | --- | --- |
@@ -180,6 +255,7 @@ nets).
 | 1 | process FAIL with no candidate, or no `result.json` (early failure) | `backend_failure` | none; coverage `missing_routing` | 1 |
 | 3 | process PASS, validation FAIL or NOT_RUN | `validation_failed` | none; the board is hashed as `rejected_candidate_sha256` and never copied | 3 |
 | 4 | no attempt directory, a `kicad-route/refusal/1` machine record, no `result.json` | `refused` | none; coverage `missing_routing` | 4 |
+| 0 or 2 | as `complete`/`incomplete`, but the declared layer policy grade is `defect` or `unknown` | `policy_failed` | none; the board is hashed as `rejected_candidate_sha256` and never copied | 5 |
 | anything else | for example exit 2 without a result (usage error), exit 0 with INCOMPLETE, unknown fields or statuses, an escaping or linked candidate | `contradiction` | none; coverage `unknown` | 65 |
 | — | the adapter's timeout or a cancellation (SIGTERM) | `timeout`, `cancelled` | none; the router's process group is killed | 75, 143 |
 | — | an unexpected fault in the adapter itself | no report | none; `verify()` refuses the attempt | 70 |

@@ -9,8 +9,9 @@ The adapter checks kicad-route's versioned result contract and the mounted
 code byte for byte against one qualified pin. Unknown schemas and changed
 code are refused. The router's argv and environment come from constants and
 coordinator-declared arguments matched against fixed patterns; nothing the
-writer controls reaches them, and ``--backend-arg``, ``--backend-env``,
-``--force``, ``--canary`` and ``--rev`` are never passed.
+writer controls reaches them, and ``--backend-env``, ``--force``, ``--canary``
+and ``--rev`` are never passed. ``--backend-arg`` carries only KRT's
+``--layers``/``--layer-costs`` built from a declared layer policy (AGENTEE-231).
 
 The report is provenance. It never makes a check pass: acceptance comes only
 from agent-ee's own fresh checks on the captured proposal.
@@ -112,6 +113,7 @@ DESIGN_SUFFIXES = ('.kicad_pcb', '.kicad_sch', '.kicad_pro', '.kicad_dru', '.kic
                    '.kicad_sym', '.kicad_mod', '.kicad_wks')
 JSON_LIMIT = 16 * 1024 * 1024
 EXIT_REQUEST, EXIT_CONTRADICTION, EXIT_ADAPTER_ERROR, EXIT_TIMEOUT, EXIT_CANCELLED = 64, 65, 70, 75, 143
+EXIT_POLICY = 5
 # classification -> (proposal, routing coverage, adapter exit)
 CLASSES = {
     'complete': ('eligible', 'routing_complete', 0),
@@ -119,6 +121,7 @@ CLASSES = {
     'backend_failure': ('none', 'missing_routing', 1),
     'validation_failed': ('none', 'missing_routing', 3),
     'refused': ('none', 'missing_routing', 4),
+    'policy_failed': ('none', 'missing_routing', EXIT_POLICY),
     'contradiction': ('none', 'unknown', EXIT_CONTRADICTION),
     'timeout': ('none', 'unknown', EXIT_TIMEOUT),
     'cancelled': ('none', 'unknown', EXIT_CANCELLED),
@@ -130,6 +133,83 @@ REPRODUCIBILITY = {'krt': 'deterministic backend, repeatability not qualified by
 
 class RequestError(ValueError):
     pass
+
+
+# Declared layer policy (AGENTEE-231): allowed KRT signal layers, optional KRT
+# cost multipliers in the same order, kicad-route's pour area-loss bound and an
+# optional reference plane whose fill must lie under the declared RF nets.
+COPPER_LAYER = re.compile(r'(F|B|In[1-9][0-9]?)\.Cu\Z')
+NET_NAME = re.compile(r'[^\x00-\x1f\x7f]{1,256}\Z')
+POLICY_KEYS = {'signal_layers', 'pour_area_loss_pct'}
+POLICY_OPTIONAL = {'layer_costs', 'reference'}
+REFERENCE_KEYS = {'net', 'layers', 'rf_nets'}
+POLICY_FILE = 'agent-ee-reference-continuity.json'
+# Uncovered area below this is polygon approximation, not a gap in the plane.
+CONTINUITY_TOLERANCE_MM2 = 0.0001
+# Margin beyond the plane clearance around the RF net's own pads and vias.
+CONTINUITY_MARGIN_MM = 0.05
+
+
+def canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+def _number(value, low, high):
+    return (type(value) in (int, float) and value == value and low <= value <= high)
+
+
+def _names(value, pattern, label):
+    if (not isinstance(value, list) or not value or len(value) != len(set(map(str, value))) or
+            any(not isinstance(v, str) or not pattern.match(v) for v in value)):
+        raise RequestError(f'{label} must be a nonempty list of distinct names matching {pattern.pattern}')
+    return value
+
+
+def validate_layer_policy(policy):
+    """The declared layer policy, unchanged, or RequestError."""
+    if (not isinstance(policy, dict) or not POLICY_KEYS <= set(policy) or
+            not set(policy) <= POLICY_KEYS | POLICY_OPTIONAL):
+        raise RequestError('layer policy must have signal_layers and pour_area_loss_pct, '
+                           'optionally layer_costs and reference')
+    _names(policy['signal_layers'], COPPER_LAYER, 'signal_layers')
+    if 'layer_costs' in policy:
+        costs = policy['layer_costs']
+        if (not isinstance(costs, list) or len(costs) != len(policy['signal_layers']) or
+                not all(_number(c, 1, 1000) for c in costs)):
+            raise RequestError('layer_costs must give one multiplier from 1 to 1000 per signal layer')
+    if not _number(policy['pour_area_loss_pct'], 0, 100):
+        raise RequestError('pour_area_loss_pct must be a number from 0 to 100')
+    if 'reference' in policy:
+        ref = policy['reference']
+        if not isinstance(ref, dict) or set(ref) != REFERENCE_KEYS:
+            raise RequestError('reference must have exactly net, layers and rf_nets')
+        if not isinstance(ref['net'], str) or not NET_NAME.match(ref['net']):
+            raise RequestError('reference net must be a net name')
+        _names(ref['layers'], COPPER_LAYER, 'reference layers')
+        _names(ref['rf_nets'], NET_NAME, 'reference rf_nets')
+        if ref['net'] in ref['rf_nets']:
+            raise RequestError('the reference net cannot be one of its RF nets')
+    return policy
+
+
+def parse_layer_policy(text):
+    try:
+        policy = json.loads(text)
+    except (TypeError, json.JSONDecodeError):
+        raise RequestError('layer policy must be JSON') from None
+    validate_layer_policy(policy)
+    if canonical_json(policy) != text:
+        raise RequestError('layer policy must be canonical JSON (sorted keys, no spaces)')
+    return policy
+
+
+def policy_backend_args(policy):
+    """KRT's own --layers/--layer-costs, as --backend-arg values. A board copper layer
+    not listed is appended by KRT at FORBIDDEN cost: an obstacle with no track copper."""
+    args = ['--layers', *policy['signal_layers']]
+    if 'layer_costs' in policy:
+        args += ['--layer-costs', *(repr(float(c)) for c in policy['layer_costs'])]
+    return args
 
 
 def digest(path):
@@ -245,7 +325,7 @@ def _bounded(value, label, low, high):
 def parse_request(argv):
     """The coordinator-declared request. No argparse: its usage exit 2 would read as partial."""
     known = {'--project', '--board', '--schematic', '--name', '--label', '--budget', '--timeout',
-             '--backend', '--state', '--diff-pairs'}
+             '--backend', '--state', '--diff-pairs', '--layer-policy'}
     if len(argv) % 2:
         raise RequestError('arguments must be --option value pairs')
     raw = {}
@@ -279,6 +359,11 @@ def parse_request(argv):
         if raw['--diff-pairs'] != 'auto' or request['backend'] != 'krt':
             raise RequestError('diff-pairs must be auto and requires the krt backend')
         request['diff_pairs'] = 'auto'
+    if '--layer-policy' in raw:
+        # The pin refuses --backend-arg with --diff-pairs; freerouting has no KRT layer costs.
+        if request['backend'] != 'krt' or '--diff-pairs' in raw:
+            raise RequestError('layer-policy requires the krt backend without diff-pairs')
+        request['layer_policy'] = parse_layer_policy(raw['--layer-policy'])
     if request['timeout_s'] <= request['budget_s']:
         raise RequestError('timeout must exceed the router budget')
     return request
@@ -300,7 +385,15 @@ def tool_argv(request, layout):
             '--board', request['board'], '--schematic', request['schematic'],
             '--name', request['name'], '--label', request['label'],
             '--protect', 'existing', '--budget', str(request['budget_s']),
-            *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else [])]
+            *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else []),
+            *policy_argv(request.get('layer_policy'))]
+
+
+def policy_argv(policy):
+    if policy is None:
+        return []
+    return (['--pour-area-loss', repr(float(policy['pour_area_loss_pct']))] +
+            [f'--backend-arg={arg}' for arg in policy_backend_args(policy)])
 
 
 def tool_env(layout):
@@ -323,6 +416,10 @@ def expected_settings(request, rule_floor, pairs=None):
             'mode': 'all', 'rule_floor_sha256': rule_floor}
     if request.get('diff_pairs') == 'auto':
         settings.update(diff_pairs='auto', pairs=pairs)
+    if request.get('layer_policy') is not None:
+        policy = request['layer_policy']
+        settings.update(pour_area_loss_pct=float(policy['pour_area_loss_pct']),
+                        backend_args=policy_backend_args(policy))
     return settings
 
 
@@ -559,6 +656,184 @@ def pair_coverage(request, result, record, classification):
     if all(p['status'] == 'reported_coupled' for p in coverage['pairs']):
         coverage['status'] = 'reported_coupled'
     return coverage
+
+
+# Run with KiCad's Python on the graded board: the reference net's native fill on
+# each reference layer must cover every RF track, outside the plane clearance
+# around the RF net's own pads and vias. Nothing is filled or saved.
+MEASURE_REFERENCE = r"""
+import hashlib, json, sys
+import pcbnew as k
+board_path, spec, out_path = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+sha = hashlib.sha256(open(board_path, 'rb').read()).hexdigest()
+b = k.LoadBoard(board_path)
+layers = {b.GetLayerName(l): l for l in b.GetEnabledLayers().CuStack()}
+err = k.FromMM(0.001)
+problems, tracks = [], []
+names = {str(n) for n in b.GetNetsByName().keys()}
+for net in [spec['net'], *spec['rf_nets']]:
+    if net not in names:
+        problems.append('net absent from the board: ' + net)
+fills, gaps = {}, {}
+for name in spec['layers']:
+    if name not in layers:
+        problems.append('reference layer not on the board: ' + name)
+        continue
+    layer, fill, gap = layers[name], k.SHAPE_POLY_SET(), 0
+    for z in b.Zones():
+        if z.GetIsRuleArea() or z.GetNetname() != spec['net'] or not z.IsOnLayer(layer):
+            continue
+        if not z.IsFilled():
+            problems.append('reference zone is not filled on ' + name)
+        fill.BooleanAdd(z.GetFilledPolysList(layer))
+        gap = max(gap, z.GetLocalClearance() or 0)
+    fills[name], gaps[name] = fill, gap
+margin = k.FromMM(spec['margin_mm'])
+own = [t for t in b.GetTracks() if t.GetClass() == 'PCB_VIA' and t.GetNetname() in spec['rf_nets']]
+pads = [p for fp in b.GetFootprints() for p in fp.Pads() if p.GetNetname() in spec['rf_nets']]
+for t in b.GetTracks():
+    if t.GetClass() not in ('PCB_TRACK', 'PCB_ARC') or t.GetNetname() not in spec['rf_nets']:
+        continue
+    for name in spec['layers']:
+        rec = {'uuid': t.m_Uuid.AsString(), 'net': t.GetNetname(), 'kind': t.GetClass(),
+               'layer': b.GetLayerName(t.GetLayer()), 'reference_layer': name}
+        if name not in fills:
+            rec.update(status='unmeasured', reason='reference layer not on the board')
+        elif rec['layer'] == name:
+            rec.update(status='unmeasured', reason='RF track on its own reference layer')
+        else:
+            layer = layers[name]
+            shape = k.SHAPE_POLY_SET()
+            t.TransformShapeToPolygon(shape, t.GetLayer(), 0, err, k.ERROR_INSIDE)
+            shape.BooleanSubtract(fills[name])
+            keep = k.SHAPE_POLY_SET()
+            for item in own + pads:
+                clear = max(gaps[name], item.GetOwnClearance(layer)) + margin
+                if item.IsOnLayer(layer):
+                    item.TransformShapeToPolygon(keep, layer, clear, err, k.ERROR_OUTSIDE)
+                if item.GetClass() == 'PAD' and item.HasHole():
+                    item.TransformHoleToPolygon(keep, clear, err, k.ERROR_OUTSIDE)
+            shape.BooleanSubtract(keep)
+            area = shape.Area() / 1e12
+            rec.update(uncovered_mm2=round(area, 6),
+                       status='interrupted' if area > spec['tolerance_mm2'] else 'continuous')
+        tracks.append(rec)
+json.dump({'schema': 'agent-ee.reference-continuity/1', 'board_sha256': sha, 'kicad': k.Version(),
+           'spec': spec, 'problems': problems, 'tracks': tracks}, open(out_path, 'w'), indent=1, sort_keys=True)
+"""
+
+
+def reference_spec(policy):
+    return {**policy['reference'], 'margin_mm': CONTINUITY_MARGIN_MM, 'tolerance_mm2': CONTINUITY_TOLERANCE_MM2}
+
+
+def measure_reference(policy, board, routing, env):
+    """KiCad's measurement of the declared reference plane under the RF nets, retained
+    beside the router's reports. A failed measurement leaves no file: unknown."""
+    out = routing / 'attempt' / POLICY_FILE
+    with open(out.with_suffix('.log'), 'wb') as log:
+        try:
+            subprocess.run([PYTHON, '-I', '-B', '-c', MEASURE_REFERENCE, str(board),
+                            canonical_json(reference_spec(policy)), str(out)],
+                           cwd=routing, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                           timeout=600, check=False)
+        except subprocess.TimeoutExpired:
+            log.write(b'reference measurement timed out\n')
+    if out.is_file() and not out.is_symlink():
+        return digest(out)
+    return None
+
+
+def _item(status, **detail):
+    return {'status': status, **detail}
+
+
+def layer_policy_grade(policy, attempt_dir, result, classification):
+    """Grade a declared layer policy from the retained reports alone.
+
+    Each item is pass, defect or unknown; anything unmeasured is unknown and the
+    whole grade is pass only when every item passes."""
+    if classification not in ('complete', 'incomplete', 'validation_failed', 'policy_failed'):
+        return {'status': 'unknown', 'items': {}, 'reason': f'{classification}: no routed board was graded'}
+    attempt_dir = Path(attempt_dir)
+
+    def read(rel):
+        path = attempt_dir / rel
+        return load_json(path, [], rel) if path.is_file() and not path.is_symlink() else None
+
+    validation = result.get('validation') if isinstance(result, dict) else None
+    sha = validation.get('validated_board_sha256') if isinstance(validation, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha):
+        return {'status': 'unknown', 'items': {}, 'reason': 'no validated board hash'}
+    items = {}
+    allowed = set(policy['signal_layers'])
+    cand, ref = read('validate/candidate-facts.json'), read('facts/reference-facts.json')
+    if (not isinstance(cand, dict) or not isinstance(cand.get('tracks'), list) or
+            not isinstance(ref, dict) or not isinstance(ref.get('tracks'), list)):
+        items['disallowed_tracks'] = _item('unknown', reason='candidate or reference board facts unavailable')
+    elif cand.get('sha256') != sha:
+        items['disallowed_tracks'] = _item('unknown', reason='candidate facts are not of the validated board')
+    elif not all(isinstance(t, dict) and isinstance(t.get('uuid'), str) and isinstance(t.get('layer'), str)
+                 for t in cand['tracks'] + ref['tracks']):
+        items['disallowed_tracks'] = _item('unknown', reason='malformed track facts')
+    else:
+        before = {(t['uuid'], t['layer']) for t in ref['tracks']}
+        off = sorted(({'uuid': t['uuid'], 'layer': t['layer'], 'net': t.get('net'), 'kind': t.get('kind')}
+                      for t in cand['tracks'] if t['layer'] not in allowed), key=lambda t: (t['layer'], t['uuid']))
+        new = [t for t in off if (t['uuid'], t['layer']) not in before]
+        items['disallowed_tracks'] = _item('defect' if new else 'pass', tracks=new,
+                                           preexisting=[t for t in off if t not in new])
+    checks = read('validate/preservation.json')
+    pour = [c for c in checks if isinstance(c, dict) and c.get('check') == 'pour_integrity'] \
+        if isinstance(checks, list) else []
+    if len(pour) != 1 or pour[0].get('status') not in ('PASS', 'FAIL'):
+        items['pour_integrity'] = _item('unknown', reason='pour_integrity was not graded')
+    else:
+        items['pour_integrity'] = _item('pass' if pour[0]['status'] == 'PASS' else 'defect',
+                                        detail=pour[0].get('detail'))
+    delta, bound = read('validate/pour-integrity.json'), float(policy['pour_area_loss_pct'])
+    layers = delta.get('layers') if isinstance(delta, dict) else None
+    if not isinstance(layers, list) or not all(
+            isinstance(r, dict) and isinstance(r.get('net_layer'), str) and
+            (r.get('area_delta_pct') is None or type(r.get('area_delta_pct')) in (int, float)) for r in layers):
+        items['area_loss'] = _item('unknown', reason='pour area deltas unavailable')
+    elif delta.get('area_loss_limit_pct') != bound:
+        items['area_loss'] = _item('unknown', reason='the router graded a different area-loss bound')
+    elif not layers:
+        items['area_loss'] = _item('unknown', reason='no copper pour was measured')
+    else:
+        rows = [{'net_layer': r['net_layer'], 'area_delta_pct': r['area_delta_pct'], 'area_mm2': r.get('area_mm2')}
+                for r in layers]
+        over = [r for r in rows if r['area_delta_pct'] is not None and -r['area_delta_pct'] > bound]
+        items['area_loss'] = _item('defect' if over else 'pass', limit_pct=bound, exceeded=over, layers=rows)
+    if 'reference' in policy:
+        items['reference_continuity'] = reference_grade(policy, read(POLICY_FILE), sha, classification)
+    statuses = {i['status'] for i in items.values()}
+    status = 'defect' if 'defect' in statuses else 'unknown' if 'unknown' in statuses else 'pass'
+    return {'status': status, 'items': items}
+
+
+def reference_grade(policy, measured, sha, classification):
+    if classification == 'validation_failed':
+        return _item('unknown', reason='the router rejected the board; continuity was not measured')
+    if (not isinstance(measured, dict) or measured.get('schema') != 'agent-ee.reference-continuity/1' or
+            not isinstance(measured.get('tracks'), list) or not isinstance(measured.get('problems'), list)):
+        return _item('unknown', reason='reference continuity measurement unavailable')
+    if measured.get('board_sha256') != sha or measured.get('spec') != reference_spec(policy):
+        return _item('unknown', reason='measurement is not of the validated board and declared reference')
+    tracks = measured['tracks']
+    if not all(isinstance(t, dict) and t.get('status') in ('continuous', 'interrupted', 'unmeasured')
+               for t in tracks):
+        return _item('unknown', reason='malformed continuity record')
+    interrupted = [t for t in tracks if t['status'] == 'interrupted']
+    unmeasured = [t for t in tracks if t['status'] == 'unmeasured']
+    detail = {'interrupted': interrupted, 'unmeasured': unmeasured, 'problems': measured['problems'],
+              'tracks_measured': len(tracks) - len(unmeasured)}
+    if interrupted:
+        return _item('defect', **detail)
+    if unmeasured or measured['problems'] or not tracks:
+        return _item('unknown', **detail, reason='no RF track measured' if not tracks else 'incomplete measurement')
+    return _item('pass', **detail)
 
 
 def load_json(path, problems, label):
@@ -904,6 +1179,24 @@ def attempt(request, layout, cancel=None):
         classification, reasons = 'contradiction', reasons + violations
     elif violations:
         reasons = reasons + violations
+    policy, grade = request.get('layer_policy'), None
+    if policy is not None:
+        if classification in ('complete', 'incomplete') and 'reference' in policy:
+            board = run_dir / attempt_record['candidate_dir'] / request['board']
+            # retain() copies only the router's named reports, so these names are agent-ee's.
+            if digest(board) == sha:
+                measure_reference(policy, board, routing, tool_env(layout))
+                for name in (POLICY_FILE, Path(POLICY_FILE).with_suffix('.log').name):
+                    path = routing / 'attempt' / name
+                    if path.is_file() and not path.is_symlink():
+                        report['retained'][f'attempt/{name}'] = digest(path)
+        grade = layer_policy_grade(policy, routing / 'attempt', result, classification)
+        if classification in ('complete', 'incomplete') and grade['status'] != 'pass':
+            failing = [f'{k} {v["status"]}' for k, v in grade['items'].items() if v['status'] != 'pass']
+            classification, reasons = 'policy_failed', reasons + [
+                f'declared layer policy {grade["status"]}: ' + ', '.join(failing)]
+            report['rejected_candidate_sha256'] = sha  # diagnostics only; never copied
+            report['candidate_files'], report['candidate_editor_state'] = {}, {}
     if classification in ('complete', 'incomplete'):
         dest = routing / 'candidate' / project / request['board']
         dest.parent.mkdir(parents=True)
@@ -915,6 +1208,8 @@ def attempt(request, layout, cancel=None):
             report['candidate'] = {'path': f'candidate/{project}/{request["board"]}', 'sha256': sha}
     report['semantics'] = {'classification': classification, 'reasons': reasons,
                            'exit_code': process['exit_code']}
+    if grade is not None:
+        report['semantics']['layer_policy'] = grade
     return _finish(report, routing)
 
 
@@ -929,6 +1224,10 @@ def _finish(report, routing):
     record = load_json(routing / 'attempt/attempt.json', [], 'attempt')
     report['semantics']['pair_coverage'] = pair_coverage(
         report['request'], result, record, report['semantics']['classification'])
+    policy = report['request'].get('layer_policy')
+    if policy is not None and 'layer_policy' not in report['semantics']:
+        report['semantics']['layer_policy'] = layer_policy_grade(
+            policy, routing / 'attempt', result, report['semantics']['classification'])
     return write_report(routing / 'adapter-report.json', report)
 
 
