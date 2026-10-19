@@ -242,14 +242,18 @@ def smd(number, x, y=0, layers='"F.Cu" "F.Paste" "F.Mask"', shape='rect', extra=
     return f'(pad "{number}" smd {shape} (at {x} {y}) (size 1 1) {extra}(layers {layers}))'
 
 
-def tht(number, x, y=0, kind='thru_hole', drill=0.3, layers='"*.Cu" "*.Mask"'):
-    return f'(pad "{number}" {kind} circle (at {x} {y}) (size 0.6 0.6) (drill {drill}) (layers {layers}))'
+def tht(number, x, y=0, kind='thru_hole', drill=0.3, layers='"*.Cu" "*.Mask"', extra=''):
+    return f'(pad "{number}" {kind} circle (at {x} {y}) (size 0.6 0.6) (drill {drill}) {extra}(layers {layers}))'
+
+
+HEATSINK = '(property pad_prop_heatsink) '
 
 
 # Owned land patterns for each declared case; none is copied from a stock library.
 CONN_MP = fixture('ConnMP', [smd(1, 0), smd(2, 1), smd('MP', -2, 2), smd('MP', 3, 2)])
 QFN_TV = fixture('QfnTV', [smd(n, n) for n in (1, 2, 3, 4)] + [smd(5, 2, 3, layers='"F.Cu" "F.Mask"'),
-                 tht(5, 1.5, 3), tht(5, 2.5, 3), smd('', 2, 3, layers='"F.Paste"')])
+                 tht(5, 1.5, 3, extra=HEATSINK), tht(5, 2.5, 3, extra=HEATSINK),
+                 smd('', 2, 3, layers='"F.Paste"')])
 MOUNTING_HOLE = fixture('MountingHole', [tht('', 0, kind='np_thru_hole', drill=3)],
                         '(attr exclude_from_pos_files exclude_from_bom)')
 MOUNTING_PAD = fixture('MountingPad', [tht(1, 0, drill=3)], '(attr exclude_from_pos_files exclude_from_bom)')
@@ -401,6 +405,28 @@ class DeclarationTests(unittest.TestCase):
         stale = owner_declarations([('Owned:QfnTV', dict(thermal_via_pads=['5', '1']))])
         self.assertEqual(self.check(['QfnTV'], pins, component, stale)['outcome'], 'unknown')
 
+    def test_declared_thermal_via_needs_native_type_neutral_property(self):
+        # AGENTEE-221: a plated via without a fabrication property makes KiCad type the
+        # footprint through-hole, so the declaration alone must not pass an SMD part.
+        component, pins = [dict(footprint='Owned:QfnTV')], ('1', '2', '3', '4', '5')
+        declared = owner_declarations([('Owned:QfnTV', dict(thermal_via_pads=['5']))])
+        original = FIXTURES['QfnTV']
+        try:
+            for text, expected in [(original.replace(HEATSINK, ''), 'unknown'),
+                                   (original.replace(HEATSINK, '', 1), 'unknown'),
+                                   (original.replace(HEATSINK, '(property pad_prop_bga) '), 'unknown'),
+                                   (original.replace(HEATSINK, HEATSINK + HEATSINK), 'unknown'),
+                                   (original.replace('pad_prop_heatsink', 'pad_prop_mechanical'), 'pass')]:
+                with self.subTest(text=text):
+                    FIXTURES['QfnTV'] = text
+                    result = self.check(['QfnTV'], pins, component, declared)
+                    self.assertEqual(result['outcome'], expected, result['findings'])
+                    if expected == 'unknown':
+                        self.assertEqual(result['execution'], 'failed')
+                        self.assertIn('footprint_type_mismatch', result['index']['findings'][0]['message'])
+        finally:
+            FIXTURES['QfnTV'] = original
+
     def test_attr_less_footprint_uses_declared_assembly_only(self):
         component = [dict(footprint='Owned:NoAttr')]
         pins = ('1', '2', '3')
@@ -448,6 +474,30 @@ def declarations_for(lib, components):
     return declaration
 
 
+# Owned SO-8 power-pad land pattern (AGENTEE-221 reproduction): eight leads, exposed pad 9
+# and eight plated thermal vias sharing number 9; authored here, not copied from a library.
+def power_pad(via_extra):
+    pads = [smd(n, -2.7 if n <= 4 else 2.7, (n - 2.5) * 1.27 if n <= 4 else (6.5 - n) * 1.27) for n in range(1, 9)]
+    pads.append(smd(9, 0, 0, layers='"F.Cu"'))
+    pads += [tht(9, x, y, layers='"*.Cu"', extra=via_extra) for x in (-0.65, 0.65) for y in (-1.95, -0.65, 0.65, 1.95)]
+    return fixture('So8Tv', pads)
+
+
+def power_pad_board(footprint):
+    placed = footprint.replace('(footprint "So8Tv"', '(footprint "Owned:So8Tv"', 1).replace(
+        '(attr smd)', '(at 50 50) (property "Reference" "U1" (at 0 -4 0) (layer "F.SilkS")) '
+        '(property "Value" "So8Tv" (at 0 4 0) (layer "F.Fab")) (attr smd)', 1)
+    layers = ' '.join(f'({i} "{n}" {k})' for i, n, k in (
+        (0, 'F.Cu', 'signal'), (2, 'B.Cu', 'signal'), (1, 'F.Mask', 'user'), (3, 'B.Mask', 'user'),
+        (13, 'F.Paste', 'user'), (15, 'B.Paste', 'user'), (5, 'F.SilkS', 'user'), (7, 'B.SilkS', 'user'),
+        (25, 'Edge.Cuts', 'user'), (31, 'F.CrtYd', 'user'), (29, 'B.CrtYd', 'user'),
+        (35, 'F.Fab', 'user'), (33, 'B.Fab', 'user')))
+    return (f'(kicad_pcb (version 20241229) (generator "pcbnew") (generator_version "9.0") '
+            f'(general (thickness 1.6)) (paper "A4") (layers {layers}) (setup (pad_to_mask_clearance 0)) '
+            f'{placed} (gr_rect (start 40 40) (end 60 60) (stroke (width 0.1) (type default)) '
+            '(fill none) (layer "Edge.Cuts")))\n')
+
+
 class NativePadTests(unittest.TestCase):
     def test_owned_native_inventory_matches_pcbnew(self):
         from toolchain import require_toolchain
@@ -471,6 +521,42 @@ class NativePadTests(unittest.TestCase):
                 self.assertEqual(indexed['execution'], 'ok')
                 self.assertEqual(sorted(p['number'] for p in indexed['footprints'][0]['pads']), actual)
                 self.assertEqual(indexed['footprints'][0]['electrical_numbers'], ['1', '2', '3'])
+
+    def test_thermal_via_property_keeps_smd_footprint_type_in_native_drc_and_cpl(self):
+        # AGENTEE-221 fail-before/pass-after: the agent-ee index and KiCad's own DRC agree.
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.executor import execute
+        from agent_ee.fab_export import board_facts, cpl_rows
+        declared = owner_declarations([('Owned:So8Tv', dict(thermal_via_pads=['9']))])
+        project = {'board': {'design_settings': {'rule_severities': {'footprint_type_mismatch': 'error'}}},
+                   'meta': {'filename': 'pod.kicad_pro', 'version': 3}}
+        script = ('kicad-cli pcb drc --format json --severity-all --units mm -o /work/drc.json /candidate/pod.kicad_pcb'
+                  ' && kicad-cli pcb export pos --side both --format csv --units mm --smd-only'
+                  ' -o /work/pos.csv /candidate/pod.kicad_pcb')
+        for extra, indexed, mismatches in (('', 'failed', 1), (HEATSINK, 'ok', 0)):
+            with self.subTest(heatsink=bool(extra)), tempfile.TemporaryDirectory() as tmp:
+                text = power_pad(extra)
+                manifest, files = capture(text, 'So8Tv')
+                self.assertEqual(index_footprints(manifest, files, declared)['execution'], indexed)
+                inputs, work = Path(tmp) / 'inputs', Path(tmp) / 'work'
+                inputs.mkdir()
+                board = power_pad_board(text)
+                (inputs / 'pod.kicad_pcb').write_text(board)
+                (inputs / 'pod.kicad_pro').write_text(json.dumps(project))
+                result = execute(inputs, work, ['/bin/sh', '-c', script], timeout=300)
+                self.assertEqual((result['execution'], result['exit_code']), ('ok', 0), result)
+                drc = json.loads((work / 'drc.json').read_text())
+                # The rule is active, so absence is a native pass, not an ignored check.
+                self.assertNotIn('footprint_type_mismatch', {c['key'] for c in drc['ignored_checks']})
+                found = [v for v in drc['violations'] if v['type'] == 'footprint_type_mismatch']
+                self.assertEqual(len(found), mismatches, found)
+                # Assembly semantics stay SMD either way: native SMD-only positions and the JLC CPL keep U1.
+                self.assertEqual(board_facts(board.encode())['footprints'][0]['attributes'], ['smd'])
+                self.assertEqual([r[0] for r in cpl_rows((work / 'pos.csv').read_text())], ['U1'])
 
     def test_declared_fixtures_match_pcbnew_pad_inventory(self):
         from toolchain import require_toolchain
