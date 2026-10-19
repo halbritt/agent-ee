@@ -66,16 +66,20 @@ jobs:
       # every test process and every tool sandbox; the containers below stay
       # --network none and receive them as read-only mounts.
       # FOME_MC_STORE is under build/, which .gitignore and .dockerignore exclude.
-      - name: Check out the pinned fome-mc object store (public, read-only)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: halbritt/fome-mc
-          ref: 1289f3149d2bcaa83a3b490a0bfbd11ed8a17589
-          path: build/external/fome-mc
-          fetch-depth: 0
-          persist-credentials: false
-          submodules: false
-          lfs: false
+      # A plain anonymous clone: no token, credential helper or extra header, and
+      # no global or system Git configuration, so no Authorization header is sent.
+      # A missing or private repository fails instead of prompting. Full history
+      # and every blob: the suite containers have no network, so a partial clone
+      # could not fetch the blobs the tests read.
+      - name: Fetch the pinned fome-mc object store (public, no credentials)
+        env:
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+        run: |
+          set -euo pipefail
+          git -c credential.helper= -c http.extraheader= clone --no-checkout https://github.com/halbritt/fome-mc "$FOME_MC_STORE"
+          git -C "$FOME_MC_STORE" checkout --quiet --detach "$FOME_MC_COMMIT"
 
       - name: Verify the fome-mc store is the pinned commit
         run: |

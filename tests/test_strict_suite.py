@@ -249,13 +249,20 @@ class WorkflowInputTests(unittest.TestCase):
         step = self.WORKFLOW.split('- name: Full test suite, strict toolchain mode, no skips', 1)[1]
         return step.split('\n      - name: ', 1)[0]
 
-    def test_fome_mc_checkout_is_the_tests_pin_without_credentials(self):
-        checkout = self.WORKFLOW.split('- name: Check out the pinned fome-mc object store', 1)[1]
-        checkout = checkout.split('\n      - name: ', 1)[0]
-        for line in ('repository: halbritt/fome-mc', f'ref: {toolchain.FOME_MC_COMMIT}', 'fetch-depth: 0',
-                     'persist-credentials: false', 'submodules: false', 'path: build/external/fome-mc'):
-            self.assertIn('\n          ' + line + '\n', checkout)
-        self.assertNotIn('token', checkout)
+    def test_fome_mc_fetch_is_the_tests_pin_without_credentials(self):
+        fetch = self.WORKFLOW.split('- name: Fetch the pinned fome-mc object store', 1)[1]
+        fetch = fetch.split('\n      - name: ', 1)[0]
+        # A plain anonymous full clone, not actions/checkout, which cannot run without a token.
+        for line in ("GIT_TERMINAL_PROMPT: '0'", 'GIT_CONFIG_GLOBAL: /dev/null', "GIT_CONFIG_NOSYSTEM: '1'"):
+            self.assertIn('\n          ' + line + '\n', fetch)
+        for line in ('git -c credential.helper= -c http.extraheader= clone --no-checkout '
+                     'https://github.com/halbritt/fome-mc "$FOME_MC_STORE"',
+                     'git -C "$FOME_MC_STORE" checkout --quiet --detach "$FOME_MC_COMMIT"'):
+            self.assertIn('\n          ' + line + '\n', fetch)
+        for absent in ('uses:', 'token', 'secrets.', 'Authorization', '--filter', '--depth', 'submodule'):
+            self.assertNotIn(absent, fetch)
+        # Only the agent-ee checkout uses actions/checkout, with the job's default token.
+        self.assertEqual(self.WORKFLOW.count('uses: actions/checkout@'), 1)
         self.assertIn(f'\n      FOME_MC_COMMIT: {toolchain.FOME_MC_COMMIT}\n', self.WORKFLOW)
         self.assertIn('\n      FOME_MC_STORE: build/external/fome-mc\n', self.WORKFLOW)
         self.assertIn('if [ "$head" != "$FOME_MC_COMMIT" ]; then', self.WORKFLOW)

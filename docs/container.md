@@ -193,7 +193,7 @@ repository. One job:
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
    executor before the suite. Failed setup also records host AppArmor diagnostics.
 3. Provisions the [required external inputs](#required-external-inputs) on the
-   runner: a credential-free checkout of the public fome-mc repository at the
+   runner: an anonymous clone of the public fome-mc repository at the
    pinned commit, verified before use, and the J1 manufacturer drawing, checked
    against its pinned SHA-256. A mismatch or failed download fails the job.
 4. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
@@ -263,16 +263,22 @@ Project CI provisions both inputs on the runner, outside the image build, the
 test processes and every tool sandbox. The owner's delegate authorized this
 on 2026-10-19.
 
-- **fome-mc store.** `actions/checkout` fetches the public repository
-  `halbritt/fome-mc` at `1289f3149d2bcaa83a3b490a0bfbd11ed8a17589`
-  (`FOME_MC_COMMIT`, equal to the constant in `tests/toolchain.py`), with full
-  history. It does not persist credentials or fetch submodules or LFS objects.
-  The checkout lives in `build/external/fome-mc`, which `.gitignore` and
-  `.dockerignore` exclude. The checkout action uses the job's read-only token
-  for the fetch only; it does not accept an empty token. A following step fails
-  the job unless `HEAD` is exactly the pinned commit and no credential is
-  configured in the checkout. Every commit the tests pin is an ancestor of
-  `1289f31`.
+- **fome-mc store.** A plain `git clone --no-checkout` fetches the public
+  repository `https://github.com/halbritt/fome-mc` anonymously, with full
+  history and every blob, and `git checkout --detach` then checks out
+  `1289f3149d2bcaa83a3b490a0bfbd11ed8a17589` (`FOME_MC_COMMIT`, equal to the
+  constant in `tests/toolchain.py`). The step sends no Authorization header: it
+  uses no token, clears the credential helper and `http.extraheader`, and reads
+  no global or system Git configuration (`GIT_CONFIG_GLOBAL=/dev/null`,
+  `GIT_CONFIG_NOSYSTEM=1`). `GIT_TERMINAL_PROMPT=0` makes a missing or private
+  repository fail rather than prompt. `actions/checkout` is not used here
+  because it cannot run with an empty token. The clone is not partial: the
+  suite containers have no network, so a lazily fetched blob would fail. No
+  submodules or LFS objects are fetched. The checkout lives in
+  `build/external/fome-mc`, which `.gitignore` and `.dockerignore` exclude. A
+  following step fails the job unless `HEAD` is exactly the pinned commit and
+  no credential is configured in the checkout. Every commit the tests pin
+  (`df304f3`, `e7f5ae3`, `c582b29`) is an ancestor of `1289f31`.
 - **J1 drawing.** A step downloads `https://www.farnell.com/cad/2916153.pdf`
   with `curl --fail --proto '=https' --retry 2 --max-time 90 --max-filesize
   10000000` into the runner's temporary directory, outside the checkout, and checks SHA-256
