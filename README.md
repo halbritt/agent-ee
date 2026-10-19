@@ -477,6 +477,10 @@ capture stays unverified; source reviews and actual pod qualification remain ope
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes
 captured library pin references and optional exact name/type expectations, as
 used by the [owned pod symbols](fixtures/telemetry-pod/symbols/README.md).
+The [symbol shortlist](docs/symbol-shortlist.md) picks candidate libraries,
+then symbols, through one subscription route. It keeps only names in the
+captured index, recording each dropped name with a reason. The list waits for
+an owner approval bound to its hash.
 The [native-bound mode](docs/native-binding.md)
 requires the declaration to match every native board component, its exact
 selection and its captured library pins; declared-only reports remain distinct.

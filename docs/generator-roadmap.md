@@ -454,6 +454,12 @@ fail closed.
 See [CPL integration](cpl-rotation.md#generator-fab-integration) for the input
 tree, evidence layout and the separate non-DNP header export limitation.
 
+AGENTEE-37 adds the [symbol shortlist](symbol-shortlist.md) for stage 2. A
+model picks libraries, then symbols from chunked index lines, and a
+deterministic gate keeps only names in the captured library index. The sealed
+list needs an owner approval bound to its hash before generation uses it. It is
+not yet wired into the rung-1 driver.
+
 AGENTEE-164 adds the [named-part path](approved-parts.md#named-ics-and-modules)
 for stage 2: ICs and modules can enter `parts/1` without extending the generic
 catalog categories. Per-LCSC records replay captured supplier identity and

@@ -3229,6 +3229,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-43 update helper and tests using the owned generation symbols. The resistor is authored from the owned passive fixture; malformed native text literals exercise failure boundaries. No upstream code, prose, library or design files are copied; the ticket mechanism reference is described in docs/schematic-regeneration.md."
+    },
+    {
+      "paths": [
+        "tests/test_symbol_shortlist.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-37 shortlist regression tests. The KiCad symbol-library literals are short owned snippets written here; the stock Device and power libraries are read from the installed toolchain at runtime and never embedded. SchGen's load_related_symbols (pick libraries, then symbols, chunked; filtered to existing names) is a mechanism reference only; no SchGen code, prompt text, dataset or kicad-skip material was copied."
     }
   ]
 }
