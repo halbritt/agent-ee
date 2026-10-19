@@ -326,6 +326,10 @@ native `/POD_GNSS_RF` net. Unmatched exact constraint nets refuse check and
 router setup with the missing names. The 50 ohm target remains recorded as unenforced. The pinned router probe passes
 the emitted width minimum and detects a narrower segment. Actual impedance and
 the pod RF maximum length remain unverified; the controls' 15 mm is test-only.
+A [dedicated RF reviewer](docs/rf-review.md) is required whenever captured sources
+carry RF parts, nets or constraint classes. Non-RF runs record an explicit
+not-applicable basis. Its findings join adjudication and correction closure;
+its review is never RF qualification.
 The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
 board-bound manifest offline. It requires identical assembled designators
 across the board and CSVs before completing the package. A declared

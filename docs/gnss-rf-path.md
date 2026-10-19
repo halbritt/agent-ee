@@ -13,6 +13,10 @@ Compilation puts it in scope limitations, outside executable acceptance
 requirements. `tests.test_requirement_map` verifies that distinction and the
 propagation of limitations into native run results and sealed evidence.
 
+The [dedicated RF review](rf-review.md) consumes this record, the captured
+calculation and native evidence as review inputs. Neither this page's controls
+nor that review are RF qualification.
+
 ## Exact native net binding (AGENTEE-230)
 
 `RF_IN` is the receiver's pin name, not the pod board's net name. The

@@ -22,7 +22,7 @@ from handled invocation/refusal errors go to stderr with an `agent-ee:` prefix.
 | `bench-review` | `RUN REPORT --out NEW [--max-seconds N]` | Capture physical samples and run calibrated checks plus fresh review |
 | `campaign-feedback` | `CAMPAIGN REPORT --out NEW [--max-seconds N]` | Start a calibrated epoch and continue within the remaining repair budget |
 | `doctor` | `[--checks-only]` | Probe prerequisite versions/imports and hash the probed binaries; no design or inference run |
-| `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only]` | Capture inputs and run checks, initial reviews and adjudication |
+| `review` | `SCOPE --out RUN [--profile FILE] [--max-seconds N] [--checks-only] [--roles R,...]` | Capture inputs and run checks, initial reviews and adjudication |
 | `view3d` | `SOURCE --out NEW [--port N] [--no-browser] [--export-only]` | Export a saved board or captured candidate into a local 3D browser viewer |
 | `render3d` | `SOURCE --out NEW [--models DIR] [--fetch-models] [--width N --height N] [--quality basic\|high] [--jobs N] [--timeout SECONDS]` | Ray trace top, bottom and isometric PNGs with native KiCad |
 | `diagnose` | `RUN_OR_CAMPAIGN [--json] [--snapshot-only]` | Report retained facts, unavailable evidence and ambiguous transitions without writes |
@@ -146,6 +146,11 @@ review discovers missing subscription access.
 the adversarial review incomplete and exits 1, including when every check
 passes. Its useful native evidence remains available. `resume` has no
 `--checks-only` flag and starts a full fresh review.
+
+`--roles` names profile reviewer roles for a targeted run, for example `--roles rf`
+for a fresh [RF review](rf-review.md). Only those roles are dispatched; the
+others keep `not_run` records and adjudication is skipped. The result is always
+incomplete. Every run records the [RF applicability decision](rf-review.md#applicability-is-always-recorded).
 
 `resume` uses the original scope file path stored in `candidate.json`, not a
 scope reconstructed from old captured bytes. If that path has moved, create
