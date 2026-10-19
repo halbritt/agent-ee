@@ -3272,6 +3272,27 @@
         "AE"
       ],
       "reviewed": "Original source-coordinate observations and native pad/courtyard registration facts retained byte-for-byte from the reviewed J1 geometry packet. Numeric measurements, pin identities and provenance hashes only; no vendor PDF text, drawing image or additional third-party CAD body is copied. Historical local paths are evidence locators, not test runtime dependencies. No source rights or physical qualification claim is changed."
+    },
+    {
+      "paths": [
+        "src/agent_ee/schematic_render.py",
+        "tests/test_schematic_render.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-71 implementation and tests using the existing owned schematic-lint fixture generator. SchGen and Konnect are mechanism references in the ticket only; no upstream code, text, rasteriser, design or library was consulted, copied or adapted. Owned bitmap glyphs, PNG encoding and grid overlay; KiCad and already-pinned Poppler invoked as separate processes."
+    },
+    {
+      "paths": [
+        "docs/schematic-renders.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-71 feature documentation. Names SchGen and Konnect and their ticket-supplied source locators solely to attribute mechanism references; no external project text or code is reproduced."
     }
   ]
 }

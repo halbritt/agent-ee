@@ -1030,8 +1030,10 @@ from .schematic_lint import check_schematic_lint
 from .pin_contracts import check_pin_contracts
 from .block_adaptation import check_block_provenance
 from .part_decisions import check_part_decisions
+from .schematic_render import check_schematic_render
 
 CHECK_FUNCS = {
+    "schematic_render": check_schematic_render,
     "part_decisions": check_part_decisions,
     'jlc_dfm': check_jlc_dfm, "design_rules": check_design_rules, 'jlc_cost_estimate': check_jlc_cost_estimate, "regeneration_determinism": check_regeneration_determinism, "interval_assertions": check_interval_assertions, "routing_equivalence": check_routing_equivalence, "net_names": check_net_names, "topology_rules": check_topology_rules, 'fab_package': check_fab_package, 'cpl_rotation': check_cpl_rotation, 'block_provenance': check_block_provenance, 'fab_roundtrip': check_fab_roundtrip, 'parts_subset': check_parts_subset, 'schematic_lint': check_schematic_lint, 'fab_consistency': check_fab_consistency, 'fab_export': check_fab_export, 'package_consistency': check_package_consistency, 'part_binding': check_part_binding, "catalog": check_catalog, "land_pattern": check_land_pattern, "part_selection": check_catalog, "netlist_extra": check_netlist_extra, "netlist_parity": check_netlist_parity, "routing_rules": check_routing_rules, "fab_profile": check_fab_profile, "symbol_pins": check_symbol_pins, "footprint_assignment": check_footprint_assignment, "netclass_completeness": check_netclass_completeness, "kicad_happy": check_kicad_happy, "kicad_happy_severity_gate": check_severity_gate, "hardware_interface": check_hardware_interface,
                "datasheet_facts": check_datasheet_facts, "pin_map": check_pin_map, "pin_contracts": check_pin_contracts,

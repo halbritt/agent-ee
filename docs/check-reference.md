@@ -1238,3 +1238,14 @@ their ordinary semantics. All block snapshots and sealed checks are revalidated
 before integrated checks run. Missing, defective or stale block evidence refuses
 publication of the proposed hierarchy; interface changes require a new block run.
 This adds no check kind and supplies no reviewer or campaign acceptance.
+
+## `schematic_render` — optional reviewer images
+
+The [schematic render reference](schematic-renders.md) describes deterministic
+PNG evidence with a 20 mm grid, native PDF/Poppler rasterisation and renderer-bound
+per-sheet changed-pixel percentages and bounding boxes. The only parameter is
+optional `baseline`, a captured directory containing a prior render manifest and
+its artifacts. Those inputs are immutable verification dependencies. The check
+always produces information or unknown coverage, never a pass or defect, and
+cannot satisfy scope/3 acceptance requirements. Failed rendering retains missing
+visual evidence without preventing review; malformed critique remains unusable.

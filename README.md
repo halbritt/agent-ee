@@ -105,6 +105,10 @@ The optional [pin-contract check](docs/pin-contracts.md) checks page-cited volta
 connection and capacitor/pull-up obligations against native connectivity. Missing
 contracts, unverified citations and ambiguous identities remain unknown coverage.
 
+Optional [schematic images](docs/schematic-renders.md) give reviewers a 20 mm
+coordinate grid and source-bound per-sheet pixel drift. Missing images and
+renderer changes remain unknown visual coverage.
+
 ## Beyond a single review
 
 | Capability | What it is for |

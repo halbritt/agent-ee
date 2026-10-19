@@ -45,7 +45,9 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
     baseline = compile_baseline(manifest['scope'], manifest.get('files', {}), inputs)
     tools, installations = {}, {}
     required_runtime = {'/usr/bin/python3', 'bwrap'}
-    native_requirements = {'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
+    # Optional schematic render tools are qualified by the check itself. Missing
+    # images must not prevent reviewer dispatch; only its Python wrapper is gated.
+    native_requirements = {'schematic_render': '/usr/bin/python3', 'erc': 'kicad-cli', 'drc': 'kicad-cli', 'netlist': 'kicad-cli',
                            'kicad_happy_severity_gate': '/usr/bin/python3',
                            'fab_export': 'kicad-cli', 'fab_package': 'kicad-cli',
                            'routing_equivalence': 'pcbnew', 'geometry': 'pcbnew', 'rc_transient': 'ngspice', 'active_spice': '/usr/bin/ngspice',

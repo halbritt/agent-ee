@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 from .storage import identity
 
 
-KINDS = frozenset(('part_decisions', 'jlc_dfm', 'fab_package', 'cpl_rotation', 'jlc_cost_estimate', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
+KINDS = frozenset(('schematic_render', 'part_decisions', 'jlc_dfm', 'fab_package', 'cpl_rotation', 'jlc_cost_estimate', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'pin_contracts', 'active_spice',
                    'kicad_happy', 'kicad_happy_severity_gate', 'hardware_interface', 'passive_corners', 'dc_path',
                    'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions', 'placement_congestion'))
@@ -232,6 +232,11 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     raise ValueError('only drc supports a declared projection')
                 require_later_full_drc(check_specs, spec)
                 result['predicates'] = [f"native:drc:{params['projection']}"]
+        elif kind == 'schematic_render':
+            from .schematic_render import parameters
+            captured(scope.get('schematic'))
+            for path in parameters(params, files):
+                captured(path, immutable=True)
         elif kind == 'geometry':
             captured(scope.get('board'))
             result['predicates'] = _geometry(params)
