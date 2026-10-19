@@ -63,6 +63,92 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(result['bbox_by_unit']['1']['bounds_nm'], [-4000000, -2000000, 4000000, 2000000])
         self.assertEqual(result['sources'][0]['sha256'], libraries()[0]['sha256'])
 
+    def test_private_properties_preserve_values_and_inherited_overrides(self):
+        data = LIBRARY.replace(b'(property "Description" "Owned amplifier")',
+            b'(property private "Description" "Owned amplifier") '
+            b'(property private "KLC_A" "line one\\nline two \\"quoted\\"") '
+            b'(property "private" "literal public key" (at 0 0 0))')
+        data = data.replace(b'(property "Description" "Owned child")',
+            b'(property private "Description" "Owned child") '
+            b'(property private "KLC_B" "" (at 0 0 0))')
+        result = self.context(data=data)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'info'))
+        self.assertEqual(result['properties'], {'Description': 'Owned child',
+            'KLC_A': 'line one\nline two "quoted"', 'KLC_B': '', 'private': 'literal public key'})
+        self.assertEqual(result['description'], 'Owned child')
+        self.assertEqual(result, self.context(data=data))
+        self.assertEqual([{k: v for k, v in p.items() if k != 'source'} for p in result['pins']],
+                         [{k: v for k, v in p.items() if k != 'source'} for p in self.context()['pins']])
+        self.assertTrue(all(p['source']['sha256'] == libraries(data)[0]['sha256'] for p in result['pins']))
+
+    def test_property_visibility_does_not_change_child_override(self):
+        for parent_private in (False, True):
+            for child_private in (False, True):
+                with self.subTest(parent_private=parent_private, child_private=child_private):
+                    data = LIBRARY
+                    for private, value in ((parent_private, b'Owned amplifier'), (child_private, b'Owned child')):
+                        if private:
+                            data = data.replace(b'(property "Description" "' + value + b'")',
+                                                b'(property private "Description" "' + value + b'")')
+                    result = self.context(data=data)
+                    self.assertEqual((result['execution'], result['outcome']), ('ok', 'info'))
+                    self.assertEqual(result['properties'], {'Description': 'Owned child'})
+                    self.assertEqual(result['description'], 'Owned child')
+
+    def test_duplicate_public_and_private_properties_are_refused_by_name(self):
+        for first in (b'(property "KEY" "one")', b'(property private "KEY" "one")'):
+            for second in (b'(property "KEY" "one")', b'(property private "KEY" "two")'):
+                with self.subTest(first=first, second=second):
+                    data = LIBRARY.replace(b'(property "Description" "Owned child")', first + second)
+                    result = self.context(data=data)
+                    self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+                    self.assertEqual(result['message'], 'ambiguous KEY property in Child')
+                    self.assertEqual(result['properties'], {})
+
+    def test_malformed_properties_are_unknown_without_losing_extra_atoms(self):
+        for prop in (b'(property)', b'(property "KEY")', b'(property private)',
+                     b'(property "KEY" (value "bad"))',
+                     b'(property private (key "KEY") "VALUE")',
+                     b'(property "KEY" "VALUE" "extra")',
+                     b'(property private "KEY" "VALUE" "extra")',
+                     b'(property "KEY" "VALUE" (at 0 0 0) "extra")',
+                     b'(property private "KEY" "VALUE" (at 0 0 0) "extra")'):
+            with self.subTest(prop=prop):
+                data = LIBRARY.replace(b'(property "Description" "Owned child")', prop)
+                result = self.context(data=data)
+                self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+                self.assertEqual(result['message'], 'invalid symbol property in Child')
+                self.assertEqual(result['properties'], {})
+
+    def test_stock_device_private_properties_survive_captured_subset(self):
+        from pathlib import Path
+        from agent_ee.symbol_capture import capture_symbols
+        from agent_ee.symbol_library import children, parse_library
+        # Use the same installed stock library as the context/shortlist tests.
+        # Pin its bytes and affected names so a library change cannot erase the regression.
+        raw = Path('/usr/share/kicad/symbols/Device.kicad_sym').read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         'd8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d')
+        names = ['Crystal_GND23', 'Crystal_GND23_Small', 'Crystal_GND24', 'Crystal_GND24_Small']
+        subset, receipt = capture_symbols(raw, names, library='Device')
+        self.assertEqual(receipt['source']['sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(subset.count(b'(property private '), 8)
+        libs = [dict(name='Device', path='Device.kicad_sym', sha256=hashlib.sha256(subset).hexdigest())]
+        captured_nodes = parse_library(subset)
+        for name in names:
+            with self.subTest(symbol=name):
+                result = build_context(libs, {'Device.kicad_sym': subset}, 'Device:' + name)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'info'), result)
+                # Compare every private value with the shared parser's source tree.
+                expected = {p[2]: p[3] for p in children(captured_nodes[name], 'property')
+                            if p[1] == 'private'}
+                self.assertEqual(len(expected), 2)
+                self.assertEqual({k: result['properties'][k] for k in expected}, expected)
+                self.assertNotIn('private', result['properties'])
+                self.assertEqual(result['sources'][-1]['sha256'], libs[0]['sha256'])
+                self.assertEqual(result['bbox_by_unit']['1']['coverage'], 'complete')
+                self.assertEqual(len(result['pins']), 4)
+
     def test_missing_pin_name_is_defect_without_substitution(self):
         result = check_pin_references(libraries(), {'owned.kicad_sym': LIBRARY},
             [dict(reference='U1', lib_id='Owned:Child', pin={'name': 'GND_typo'})])

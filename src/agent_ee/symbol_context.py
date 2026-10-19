@@ -20,10 +20,18 @@ def _metadata(sources, captured_files, cache):
         node = cache.symbols(captured_files[source['path']])[source['symbol']]
         keys = set()
         for prop in children(node, 'property'):
-            if len(prop) < 3 or any(not isinstance(x, str) for x in prop[1:3]) or prop[1] in keys:
-                raise LibraryError('ambiguous symbol properties')
-            keys.add(prop[1])
-            properties[prop[1]] = prop[2]
+            # Three leading atoms identify the private modifier; two still
+            # permit a public property whose literal name is "private".
+            start = 2 if len(prop) > 3 and prop[1] == 'private' and isinstance(prop[3], str) else 1
+            atoms = prop[start:start + 2]
+            if (len(atoms) != 2 or any(not isinstance(x, str) for x in atoms)
+                    or any(not isinstance(x, list) for x in prop[start + 2:])):
+                raise LibraryError('invalid symbol property in ' + source['symbol'])
+            key, value = atoms
+            if key in keys:
+                raise LibraryError(f'ambiguous {key} property in {source["symbol"]}')
+            keys.add(key)
+            properties[key] = value
         units.extend(children(node, 'symbol'))
     return properties, units
 
