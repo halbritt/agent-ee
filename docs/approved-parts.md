@@ -51,8 +51,8 @@ A **blob** is exactly `{path, sha256}`; a **located blob** adds `locator`.
 | --- | --- |
 | `schema` | `agent-ee.parts/1` |
 | `declaration_source` | Located blob identifying the captured allowlist/requirement source; no invented approving identity |
-| `catalog` | `snapshot` directory, `manifest_sha256`, `database_sha256`, `snapshot_date` |
-| `selection` | `requirements` blob and `result` blob for canonical `agent-ee.part-requirements/1` and the complete canonical selection-check result |
+| `catalog` | `snapshot` directory, `manifest_sha256`, `database_sha256`, `snapshot_date`; null for named-only manifests |
+| `selection` | `requirements` blob and `result` blob for canonical `agent-ee.part-requirements/1` and its complete result; null with a null catalog for named-only manifests |
 | `cad` | `manifest` blob, `assignments` blob, `members_sha256` |
 | `property_fields` | Distinct exact native property names under `lcsc`, `mpn`, `manufacturer`; no inferred aliases |
 | `population` | `native-dnp-optional-only/1` |
@@ -65,7 +65,7 @@ Each part has these required fields and the optional `pin_contract` field:
 | `id`, `role` | Nonempty logical identifier and descriptive role |
 | `required` | Boolean applying to every selector of this logical part |
 | `instances` | Nonempty list of exact `{sheet, reference}` selectors; each selector is unique across the entire manifest |
-| `selection_id` | Unique canonical selection allocation ID |
+| `selection_id` | Unique allocation ID; generic entries match a canonical selection requirement; named entries retain it as a logical allocation label |
 | `lib_id`, `footprint` | Exact `library:member` identities, matching captured CAD assignments |
 | `lcsc`, `mpn`, `manufacturer` | Exact nonempty catalog identities; LCSC uses `C` followed by a positive decimal integer |
 | `stock` | Historical integer quantity, or null for unknown; rederived from the captured row |
@@ -101,6 +101,85 @@ The catalog loader rederives normalized rows from stored raw attributes. An
 arbitrary rehashed selection record cannot replace this replay. Raw catalog
 volume provenance is retained by that canonical contract; this module does not
 fetch upstream sources or authenticate them.
+
+## Named ICs and modules
+
+An entry with a `selection` object uses exact captured identity replay. It keeps
+all ordinary part fields, adds a nonempty supplier `package` string, and declares:
+
+```json
+{
+  "kind": "named",
+  "lcsc": "C38695",
+  "part_record": "named/C38695/part-record.json",
+  "part_record_sha256": "<64 lowercase hex digits>",
+  "decision_ref": {
+    "path": "decisions/can-transceiver.txt",
+    "sha256": "<64 lowercase hex digits>",
+    "locator": "line 1"
+  }
+}
+```
+
+`decision_ref` is a captured located blob recording why this exact part was
+chosen. It conveys no approval authority. Unknown selection kinds, absent
+records and unavailable datasheets are refused. A mixed manifest's top-level
+catalog/selection contains exactly its generic allocations. A named-only
+manifest sets both fields to null. Generic ranking and category restrictions
+are unchanged. Named instance capacity comes from its explicit selectors;
+there is no invented parametric requirement or stock allocation.
+
+The [part-record producer](../src/agent_ee/part_record.py) consumes existing
+captures offline. It does not contact suppliers:
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.part_record --root build/parts \
+  --lcsc C38695 --catalog stock/catalog.json \
+  --datasheets datasheets/manifest.json --datasheet-id U1 \
+  --out named/C38695/part-record.json
+```
+
+The root and output parent must exist; output must be new. The producer prints
+the output SHA-256. `prepare_record(root, lcsc, catalog_blob, datasheets_blob,
+datasheet_id)` returns the same document without writing.
+`qualify_record(document, root)` replays it and returns its immutable dependency
+map. Both use the existing JLC capture validator and shared datasheet acquisition
+reader; there is no second catalog or CAD parser.
+
+`agent-ee.part-record/1` has exactly `schema`, `lcsc`, `mpn`, `manufacturer`,
+`package`, `category`, `library_tier`, `stock`, `fetched_at`, `response_sha256`,
+`datasheet_url`, `catalog`, `datasheets`, `datasheet_id`, `artifact`.
+`catalog` and `datasheets` are blobs; `artifact` is the acquired PDF blob.
+The JLC producer's `componentModelEn`, `componentBrandEn`,
+`componentSpecificationEn`, `firstSortName`, `componentLibraryType` and
+`preferredComponentFlag` supply MPN, manufacturer, package, category and tier.
+`stockCount` supplies historical stock. Request metadata supplies the fetch time
+and raw response SHA-256. Every summary is rederived from the retained response.
+Empty supplier identity, package or category refuses admission. Zero historical
+stock may identify a part; it does not satisfy assembly readiness.
+
+AGENTEE-155 does not retain a datasheet URL. `datasheet_url` therefore comes from
+the selected AGENTEE-33 acquisition record's original `url`. The full acquisition
+binding digest, PDF hash and envelope are replayed by the same reader used for
+facts/2. The part's `datasheet.artifact` must equal the record artifact; its
+provenance must name the acquisition manifest with locator
+`parts[id=DATASHEET_ID]`. This captures a source claim; it does not prove that
+the document applies to the part or that its contents are correct.
+
+Qualification checks exact LCSC, MPN, manufacturer, package and stock against
+the record, then runs ordinary captured CAD assignment qualification. The
+manifest closure freezes the record, decision, JLC catalog and retained
+responses, acquisition manifest and acquired PDFs. `parts_subset` and both
+scaffold modes consume this same closure. A changed record, response, PDF or
+decision cannot escape baseline immutability. The existing native predicate
+still compares the declared supplier and CAD identities, including rejecting an
+unlisted populated IC. No suitability inference is claimed.
+
+Named tests use original synthetic response/PDF/CAD captures, with real native
+KiCad execution and sealed networkless subset checks. They do not qualify the
+public endpoint's live response shape. That still requires an owner-run
+AGENTEE-155 capture. The RC-specific rung-1 property adapter remains limited to
+its existing generic R/C/header route.
 
 ## Outcomes and evidence
 
@@ -171,3 +250,12 @@ the AGENTEE-89 owner must bind a relevant sealed parts predicate to the block's
 actual native subject before upgrading that authority. A passing check for
 another subject is insufficient. AGENTEE-29/32 repairs and AGENTEE-33/40 metadata
 integration remain separately owned.
+
+## External hand-fitted identities
+
+AGENTEE-174 adds the explicit `external` selection variant to the same central
+parts manifest. It requires `NO_LCSC`, unknown stock, a rederived captured
+identity declaration, acquired datasheet and a pinned AGENTEE-167 hand-fit
+deviation. It does not create a JLCPCB catalog row. See
+[binding fill](binding-fill.md#external-parts-without-an-lcsc-number) for exact
+record fields, immutable dependency closure and requalification rules.

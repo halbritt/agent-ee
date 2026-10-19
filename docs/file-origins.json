@@ -2843,6 +2843,37 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-159 accounting example naming captured requirement IDs and component/interface facts. It copies no vendor text or third-party design/library bytes; explicit limitations are not owner waivers or acceptance."
+    },
+    {
+      "paths": [
+        "tests/test_approved_parts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic named-part response, decision and PDF-envelope literals for AGENTEE-164. Supplier IDs and MPNs are test labels; no vendor document, geometry or live supplier response is copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/binding_fill.py",
+        "tests/test_binding_fill.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-174 deterministic producer and synthetic captured-identity/native 130-component benchmark. Tests reuse owned native-binding and named-parts fixtures; MPN strings are labels, synthetic PDF envelopes are authored here, no vendor geometry/document or live supplier data is copied."
+    },
+    {
+      "paths": [
+        "docs/binding-fill.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-174 public contract and qualification limits."
     }
   ]
 }

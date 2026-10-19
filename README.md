@@ -270,6 +270,9 @@ board-bound manifest offline. It requires identical assembled designators
 across the board and CSVs before completing the package. A declared
 `JLCPCB_Assembly=not_assembled` rule leaves marked populated parts out of the
 BOM and CPL and lists them in the manifest.
+For recorded hand-fit parts, [assembly readiness](docs/assembly-readiness.md#declared-hand-fit-deviations)
+requires a purchase source, captured evidence and the assembly marker, reports
+them as declared deviations, and grades stock for the remaining BOM.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor
@@ -343,6 +346,11 @@ explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#fu
 uses a declared 600-second helper ceiling and retains sealed evidence in private
 scratch. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+[Named ICs and modules](docs/approved-parts.md#named-ics-and-modules) can enter
+`parts/1` through per-LCSC records derived offline from captured JLCPCB responses
+and datasheet acquisitions. The subset check and scaffold producer replay exact
+identity and freeze those sources; suitability and live stock need separate evidence.
+
 An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.
 The `parts_subset` check compares native symbol/footprint/supplier identities

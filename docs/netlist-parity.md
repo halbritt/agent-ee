@@ -135,7 +135,7 @@ anchor defects, witness sealing and policy immutability.
 
 Joint color refinement precedes bounded exact bijection search. `max_search`
 defaults to 100000 assignment attempts and may be reduced, never increased beyond
-that bound. Inputs are bounded to 8 MB, 128 components and 8192 physical terminals;
+that bound. Inputs are bounded to 8 MB, 256 components and 8192 physical terminals;
 raw-intent captured libraries have a combined 32 MiB byte limit. Native XML must
 use UTF-8.
 XML also has depth/node limits. Exhaustion produces unsupported execution and
@@ -173,3 +173,11 @@ renaming, reference exchange, port pin swap, label merge, a label displaced 1 mm
 a non-isomorphic same-part mutation and missing/extra parts. Pure tests cover
 symmetric correspondence, anchors and search exhaustion. These are software and
 native-connectivity checks, not physical validation or owner acceptance.
+
+
+AGENTEE-174 raises only the shared native/resolved component inventory ceiling
+from 128 to 256 to admit the required 130-component propagation benchmark.
+The 8192-terminal, XML-byte and bounded-search limits remain unchanged. Inputs
+above 256 still refuse, including before captured-intent resolution. The separate
+schematic decompiler retains its 128-symbol limit; this change does not qualify
+large-design decompilation.

@@ -187,7 +187,9 @@ each assertion's computed interval, witness and operand origins.
 ## Approved parts membership
 
 The [approved-parts manifest](approved-parts.md) uses `agent-ee.parts/1` and
-pins catalog, selection, CAD and datasheet provenance. The `parts_subset` check
+pins generic catalog selection or [named-part records](approved-parts.md#named-ics-and-modules),
+plus CAD and datasheet provenance. Named replay compares exact captured identity;
+it does not rank parts or infer IC suitability. The `parts_subset` check
 takes exactly `manifest`, `netlist_check` and `requirement_id`. Its requirement
 must point to the manifest's captured declaration source. The full dependency
 closure is immutable in scope/2 and scope/3.
@@ -874,6 +876,13 @@ host-side producer, one rate-limited request per LCSC id. When it is the
 catalog, the check re-derives every part from the captured raw responses. It
 requires the run's `as_of` and a declared staleness, and it fails a capture
 that is stale or lacks an observation for a populated id.
+Optional captured `deviations` uses `agent-ee.part-deviations/1`. Valid hand-fit
+records require an exact original MPN, purchase source, captured evidence,
+stock reason and native `JLCPCB_Assembly=not_assembled`. They appear in
+`declared_deviation`, outside stock and tier totals. Positive captured stock
+for that MPN or native LCSC ID refuses the exception; NO_LCSC without a
+declaration remains a defect. See the
+[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations).
 
 ## Schematic readability lint
 

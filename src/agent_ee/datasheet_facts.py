@@ -52,6 +52,61 @@ def load_facts(inputs, rel):
     return data['facts']
 
 
+def load_acquisition(inputs, locator, capture_bindings):
+    """Replay the shared AGENTEE-33 capture and all PDFs without network access."""
+    from .catalog import exact_fields, nonempty
+    from .datasheet_parts import captured_path, _hash
+    exact_fields(locator, ('path', 'sha256'))
+    source = captured_path(inputs, locator['path'])
+    if digest(source) != _hash(locator['sha256']):
+        raise ValueError('acquisition hash mismatch')
+    acquisition = read_json(source)
+    dependencies = {locator['path']}
+    by_id = {p['id']: p['datasheet_url'] for p in capture_bindings}
+    if len(by_id) != len(capture_bindings):
+        raise ValueError('duplicate acquisition binding')
+    exact_fields(acquisition, ('schema', 'bindings_sha256', 'outcome', 'parts'))
+    if acquisition['schema'] != 'agent-ee.datasheet-capture/1' or acquisition['bindings_sha256'] != identity(capture_bindings):
+        raise ValueError('acquisition binding identity mismatch')
+    if not isinstance(acquisition['parts'], list) or len(acquisition['parts']) != len(by_id):
+        raise ValueError('acquisition must cover every binding')
+    acquired, directory = {}, Path(locator['path']).parent
+    for record in acquisition['parts']:
+        exact_fields(record, ('id', 'url', 'final_url', 'fetched_at', 'sha256', 'path', 'missing', 'reason'))
+        ref = record['id']
+        if not isinstance(ref, str) or ref in acquired or ref not in by_id or record['url'] != by_id[ref]:
+            raise ValueError('acquisition reference/URL mismatch')
+        for key in ('final_url', 'fetched_at'):
+            if record[key] is not None and not isinstance(record[key], str):
+                raise ValueError(f'acquisition {key} must be text or null')
+        if type(record['missing']) is not bool:
+            raise ValueError('acquisition missing must be boolean')
+        if record['missing']:
+            if record['path'] is not None or record['sha256'] is not None:
+                raise ValueError('missing acquisition cannot claim a PDF')
+            nonempty(record['reason'])
+        else:
+            from .datasheet_capture import validate_url
+            validate_url(record['url'])
+            validate_url(record['final_url'])
+            nonempty(record['fetched_at'])
+            if record['reason'] is not None:
+                raise ValueError('successful acquisition cannot have missing reason')
+            pdf_rel = str(directory / str(safe_relative(record['path'])))
+            pdf = captured_path(inputs, pdf_rel)
+            if digest(pdf) != _hash(record['sha256']):
+                raise ValueError('successful acquisition PDF hash mismatch')
+            raw = pdf.read_bytes()
+            if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
+                raise ValueError('successful acquisition is not a PDF envelope')
+            dependencies.add(pdf_rel)
+        acquired[ref] = record
+    expected_outcome = 'missing' if any(r['missing'] for r in acquired.values()) else 'captured'
+    if acquisition['outcome'] != expected_outcome:
+        raise ValueError('acquisition outcome contradicts records')
+    return acquired, dependencies
+
+
 def load_obligations(inputs, rel, *, data=None):
     """Validate opt-in captured per-part obligations; facts/1 remains unchanged."""
     from .catalog import exact_fields, nonempty
@@ -91,48 +146,11 @@ def load_obligations(inputs, rel, *, data=None):
         if (not isinstance(ids, list) or not ids or any(not isinstance(fid, str) or not fid.strip() for fid in ids)
                 or len(ids) != len(set(ids))):
             raise ValueError('part needs distinct nonempty required facts')
-    acquisition = documents['acquisition']
-    exact_fields(acquisition, ('schema', 'bindings_sha256', 'outcome', 'parts'))
     capture_bindings = sorted([{'id': p['reference'], 'datasheet_url': p['datasheet_url']}
                                for p in bindings['parts']], key=lambda p: p['id'])
-    if acquisition['schema'] != 'agent-ee.datasheet-capture/1' or acquisition['bindings_sha256'] != identity(capture_bindings):
-        raise ValueError('acquisition binding identity mismatch')
-    if not isinstance(acquisition['parts'], list) or len(acquisition['parts']) != len(by_ref):
-        raise ValueError('acquisition must cover every binding')
-    acquired, directory = {}, Path(data['acquisition']['path']).parent
-    for record in acquisition['parts']:
-        exact_fields(record, ('id', 'url', 'final_url', 'fetched_at', 'sha256', 'path', 'missing', 'reason'))
-        ref = record['id']
-        if not isinstance(ref, str) or ref in acquired or ref not in by_ref or record['url'] != by_ref[ref]['datasheet_url']:
-            raise ValueError('acquisition reference/URL mismatch')
-        for key in ('final_url', 'fetched_at'):
-            if record[key] is not None and not isinstance(record[key], str):
-                raise ValueError(f'acquisition {key} must be text or null')
-        if type(record['missing']) is not bool:
-            raise ValueError('acquisition missing must be boolean')
-        if record['missing']:
-            if record['path'] is not None or record['sha256'] is not None:
-                raise ValueError('missing acquisition cannot claim a PDF')
-            nonempty(record['reason'])
-        else:
-            from .datasheet_capture import validate_url
-            validate_url(record['url'])
-            validate_url(record['final_url'])
-            nonempty(record['fetched_at'])
-            if record['reason'] is not None:
-                raise ValueError('successful acquisition cannot have missing reason')
-            pdf_rel = str(directory / str(safe_relative(record['path'])))
-            pdf = captured_path(inputs, pdf_rel)
-            if digest(pdf) != _hash(record['sha256']):
-                raise ValueError('successful acquisition PDF hash mismatch')
-            raw = pdf.read_bytes()
-            if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
-                raise ValueError('successful acquisition is not a PDF envelope')
-            dependencies.add(pdf_rel)
-        acquired[ref] = record
-    expected_outcome = 'missing' if any(r['missing'] for r in acquired.values()) else 'captured'
-    if acquisition['outcome'] != expected_outcome:
-        raise ValueError('acquisition outcome contradicts records')
+    acquired, acquisition_dependencies = load_acquisition(inputs, data['acquisition'], capture_bindings)
+    dependencies.update(acquisition_dependencies)
+    directory = Path(data['acquisition']['path']).parent
     # A cited fact must belong to an explicit part obligation and that part's PDF.
     declared = {fid for p in required for fid in p['required_facts']}
     for fact in data['facts']:

@@ -664,6 +664,52 @@ class NativeFabExportTests(unittest.TestCase):
         freeze_evidence(run, results)
         verify_evidence(run, results, required=True)
 
+    def test_pod_consigned_header_deviation_matches_sealed_bom_cpl_exclusion(self):
+        # MPN only: owned three-pin geometry is not an AMPSEAL footprint or pin map.
+        schematic_path = self.source / 'fab.kicad_sch'
+        schematic_path.write_text(schematic_path.read_text().replace('OFW-HDR3', '776228-1')
+                                 .replace('C900030', 'NO_LCSC'))
+        self.mark(unbind=False)
+        self.scope['checks'][1]['params']['assembly_exclusion'] = RULE
+        write_json(self.source / 'catalog.json', {'schema': 'agent-ee.catalog-snapshot/1',
+            'snapshot_date': '2026-10-18', 'stale_before': '2026-10-18', 'parts': [
+                {'lcsc': lcsc, 'stock': 1000, 'is_basic': True, 'last_seen': '2026-10-18'}
+                for lcsc in ('C900001', 'C900010', 'C900047')]})
+        (self.source / 'purchase.txt').write_text('Original synthetic hand-fit purchase list; not a supplier quote.\n')
+        write_json(self.source / 'deviations.json', {'schema': 'agent-ee.part-deviations/1', 'deviations': [{
+            'requirement_id': 'POD-AC-5', 'original': {'mpn': '776228-1', 'lcsc': None},
+            'assembly': 'consigned', 'reason': 'Hand-fitted after delivery',
+            'stock_deviation': {'reason': 'Not in synthetic assembly catalog'},
+            'purchase_source': 'Owned fixture purchase list, line 1',
+            'evidence_refs': [{'path': 'design/purchase.txt', 'locator': 'line 1'}]}]})
+        self.scope['checks'].append({'id': 'assembly', 'kind': 'assembly_readiness', 'params': {
+            'catalog': 'design/catalog.json', 'deviations': 'design/deviations.json',
+            'require_passive_ratings': False}})
+        self.scope['inputs'][0]['include'] += ['catalog.json', 'deviations.json', 'purchase.txt']
+        self.scope['baseline']['requirements'][0]['checks'].append('assembly')
+        run, result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        fab_result = read_json(run / 'checks/fab.json')
+        self.assertEqual((fab_result['execution'], fab_result['outcome']), ('ok', 'pass'), fab_result)
+        report = read_json(run / 'work/assembly/assembly-readiness.json')
+        self.assertEqual([(d['reference'], d['mpn']) for d in report['declared_deviation']], [('J1', '776228-1')])
+        self.assertEqual({ref for p in report['parts'].values() for ref in p['references']},
+                         {'C1', 'C2', 'C10', 'R1', 'R2'})
+        fab = run / 'work/fab/fab'
+        manifest = read_json(fab / 'manifest.json')
+        self.assertEqual(manifest['designators']['excluded'], [{'designator': 'J1', 'rule': RULE}])
+        bom = list(csv.reader(io.StringIO((fab / 'bom.csv').read_text())))[1:]
+        cpl = list(csv.reader(io.StringIO((fab / 'cpl.csv').read_text())))[1:]
+        self.assertEqual({ref for row in bom for ref in row[0].split(',')}, {row[0] for row in cpl})
+        self.assertNotIn('J1', {row[0] for row in cpl})
+        results = [read_json(run / 'checks' / (spec['id'] + '.json')) for spec in self.scope['checks']]
+        freeze_evidence(run, results)
+        verify_evidence(run, results, required=True)
+        report_path = run / 'work/assembly/assembly-readiness.json'
+        report_path.write_bytes(report_path.read_bytes() + b'\n')
+        with self.assertRaises(ValueError):
+            verify_evidence(run, results, required=True)
+
     def test_marked_part_without_rule_or_with_one_source_is_refused_before_export(self):
         schematic, board = self.source / 'fab.kicad_sch', self.source / 'fab.kicad_pcb'
         original_schematic, original_board = schematic.read_text(), board.read_text()
