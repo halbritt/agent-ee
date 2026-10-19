@@ -114,6 +114,13 @@ canonical row identity are checked last; it returns `manifest` and the rederived
 `rows`.
 
 The reader also accepts the exact original seven-category table/count layout.
+That layout pins the original global attribute vocabulary: `input_voltage_max`,
+`output_current`, `switching_frequency`, and `topology` remain raw unknown claims.
+Preexisting recognized attributes still normalize even outside their row category.
+The extended eight-category layout uses the extended vocabulary. Both layouts
+require exact raw/normalized/typed-cell rederivation; neither accepts forged
+normalized claims. The genuine old-producer regression capture is documented in
+[the legacy fixture](../fixtures/catalog-legacy/README.md).
 New captures include the switching-regulator table, even when empty. A partial
 table set or a switching-regulator row in the legacy layout fails closed;
 existing snapshots are never rewritten or silently re-pinned.

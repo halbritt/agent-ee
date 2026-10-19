@@ -2821,6 +2821,20 @@
         "AE"
       ],
       "reviewed": "Original synthetic named-part response, decision and PDF-envelope literals for AGENTEE-164. Supplier IDs and MPNs are test labels; no vendor document, geometry or live supplier response is copied."
+    },
+    {
+      "paths": [
+        "fixtures/catalog-legacy/README.md",
+        "fixtures/catalog-legacy/owned.csv",
+        "fixtures/catalog-legacy/provenance.json",
+        "fixtures/catalog-legacy/snapshot/catalog.sqlite3",
+        "fixtures/catalog-legacy/snapshot/manifest.json"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-165 original synthetic catalog claims captured with exact old agent-ee producer c3ec24c936296e2c55cc45924bc67a46b14ec8aa; code and input/output SHA256 in fixture provenance.json. No supplier rows, stock or suitability claims."
     }
   ]
 }

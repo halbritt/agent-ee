@@ -1,0 +1,2 @@
+lcsc,mfr,mpn,package,category,stock,price1,is_basic,is_preferred,last_seen,attributes
+C1,Owned probe,LDO1,SOIC-8,regulator,1000,0.1,0,0,2026-10-17,"{""input_voltage"": ""3 V .. 40 V"", ""output_current"": ""1 A"", ""topology"": ""sync"", ""resistance"": ""10 kohm"", ""input_voltage_max"": ""40 V"", ""switching_frequency"": ""400 kHz""}"

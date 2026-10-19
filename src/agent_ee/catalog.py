@@ -20,10 +20,11 @@ COLUMNS = ('lcsc', 'mfr', 'mpn', 'package', 'category', 'stock', 'price1',
            'is_basic', 'is_preferred', 'last_seen', 'attributes')
 LEGACY_CATEGORIES = ('resistor', 'capacitor', 'inductor', 'diode', 'led', 'connector', 'regulator')
 CATEGORIES = (*LEGACY_CATEGORIES, 'switching_regulator')
-UNITS = {'resistance': 'ohm', 'capacitance': 'F', 'inductance': 'H', 'voltage': 'V',
-         'power': 'W', 'temperature': 'degC', 'input_voltage': 'V',
-         'output_voltage': 'V', 'dropout': 'V', 'quiescent_current': 'A',
-         'input_voltage_max': 'V', 'output_current': 'A', 'switching_frequency': 'Hz'}
+LEGACY_UNITS = {'resistance': 'ohm', 'capacitance': 'F', 'inductance': 'H', 'voltage': 'V',
+                'power': 'W', 'temperature': 'degC', 'input_voltage': 'V',
+                'output_voltage': 'V', 'dropout': 'V', 'quiescent_current': 'A'}
+UNITS = {**LEGACY_UNITS, 'input_voltage_max': 'V', 'output_current': 'A',
+         'switching_frequency': 'Hz'}
 ENUM_ATTRIBUTES = {'topology': ('sync', 'async')}
 MAX_VOLUME_BYTES = 512 * 1024 * 1024
 MAX_TOTAL_BYTES = 1024 * 1024 * 1024
@@ -141,16 +142,19 @@ def _attribute_endpoints(text, unit, policy):
         return decimal_text(low), decimal_text(high)
 
 
-def normalized_attributes(attributes):
+def normalized_attributes(attributes, *, legacy=False):
+    # The exact table layout pins the vocabulary used by its producer. New
+    # attributes must stay unknown when replaying an original seven-category snapshot.
+    units = LEGACY_UNITS if legacy else UNITS
     normalized = {}
     for key, text in attributes.items():
-        if key in UNITS:
+        if key in units:
             try:
-                normalized[key] = attribute_interval(text, UNITS[key])
+                normalized[key] = attribute_interval(text, units[key])
             except ValueError:
                 # Preserve raw text; this attribute cannot support a constraint.
                 continue
-        elif key in ENUM_ATTRIBUTES and text in ENUM_ATTRIBUTES[key]:
+        elif not legacy and key in ENUM_ATTRIBUTES and text in ENUM_ATTRIBUTES[key]:
             normalized[key] = {'value': text}
     return normalized
 
@@ -170,7 +174,7 @@ def strict_json(text):
         raise ValueError('JSON nesting too deep') from exc
 
 
-def normalize_row(raw, provenance, snapshot_date):
+def normalize_row(raw, provenance, snapshot_date, *, legacy=False):
     exact_fields(raw, COLUMNS)
     row = dict(raw)
     for key in ('lcsc', 'mpn', 'package', 'category'):
@@ -201,7 +205,7 @@ def normalize_row(raw, provenance, snapshot_date):
     if not isinstance(attributes, dict) or any(not isinstance(k, str) or not k or not isinstance(v, str) for k, v in attributes.items()):
         raise ValueError('attributes must be a text mapping')
     row['attributes'] = attributes
-    row['normalized'] = normalized_attributes(attributes)
+    row['normalized'] = normalized_attributes(attributes, legacy=legacy)
     row['provenance'] = provenance
     return row
 
@@ -411,7 +415,7 @@ def capture_catalog(source_manifest, source_root, destination):
             shutil.rmtree(stage)
 
 
-def rederived_row(cells, manifest):
+def rederived_row(cells, manifest, *, legacy=False):
     """Rebuild the raw source row from retained fields and rerun the pinned normalization.
 
     Hashes only show the bytes are the pinned bytes; they do not show the derived
@@ -441,7 +445,7 @@ def rederived_row(cells, manifest):
             or not isinstance(provenance['raw_sha256'], str)
             or not re.fullmatch('[0-9a-f]{64}', provenance['raw_sha256'])):
         raise ValueError('snapshot row lacks valid raw source provenance')
-    row = normalize_row(raw, provenance, manifest['snapshot_date'])
+    row = normalize_row(raw, provenance, manifest['snapshot_date'], legacy=legacy)
     # Comparing the canonical rederivation to the retained text validates exact
     # JSON types as well as values, without decoding/encoding each full row twice.
     for key in DERIVED_COLUMNS:
@@ -471,7 +475,7 @@ def read_database(payload, manifest):
         # Sorting row references after validation avoids a SQLite external sort
         # of the entire wide table (including all retained upstream attributes).
         for cells in connection.execute('SELECT * FROM component_base'):
-            row = rederived_row(cells, manifest)
+            row = rederived_row(cells, manifest, legacy=categories == LEGACY_CATEGORIES)
             if row['category'] not in categories:
                 raise ValueError('row category outside snapshot table set')
             source = (row['provenance']['volume'], row['provenance']['row'])
