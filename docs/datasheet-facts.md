@@ -115,6 +115,9 @@ extractors. Facts and all referenced PDFs remain immutable verification inputs.
 This audit checks the declared contract; actual PDF extraction and native pin
 comparison must still execute successfully.
 
+[Datasheet-derived footprints](datasheet-footprint.md) bind every pad value to
+facts verified under these rules.
+
 PDFs can be prepared with the separate [capture module](datasheet-capture.md).
 Its URL records do not authenticate the document or replace citation verification.
 

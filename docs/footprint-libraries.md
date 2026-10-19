@@ -103,6 +103,8 @@ new. Pure `resolve_package` accepts a captured table with schema
 `Resistor_SMD:R_0805_2012Metric`. It returns both table and footprint hashes.
 Zero or multiple rows are unknown; an unavailable target fails, without fallback.
 No stock library, alias data or third-party assets are distributed with this check.
+[Datasheet-derived footprints](datasheet-footprint.md) use this parity check as
+their symbol/footprint publication gate.
 
 ## Converting pinned legacy footprints
 

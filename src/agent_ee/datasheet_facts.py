@@ -21,8 +21,16 @@ def load_facts(inputs, rel):
             data['schema'] != 'agent-ee.datasheet-facts/1' or
             not isinstance(data['facts'], list) or not data['facts']):
         raise ValueError('expected nonempty agent-ee.datasheet-facts/1')
+    validate_fact_records(data['facts'])
+    if opted_in:
+        load_obligations(inputs, rel, data=data)
+    return data['facts']
+
+
+def validate_fact_records(facts):
+    """Shape of every fact record; shared by captured files and retained extractions."""
     ids = set()
-    for fact in data['facts']:
+    for fact in facts:
         if not isinstance(fact, dict):
             raise ValueError('fact must be an object')
         for key in ('id', 'part_number', 'kind', 'value', 'conditions'):
@@ -47,9 +55,6 @@ def load_facts(inputs, rel):
         for key in ('locator', 'quote'):
             if not isinstance(source[key], str) or not source[key].strip():
                 raise ValueError(f'fact source needs {key}')
-    if opted_in:
-        load_obligations(inputs, rel, data=data)
-    return data['facts']
 
 
 def load_acquisition(inputs, locator, capture_bindings):
@@ -257,6 +262,25 @@ def value_in_quote(value, unit, quote):
     return False
 
 
+def split_pages(text):
+    """Poppler separates physical PDF pages with form feeds, including a final delimiter."""
+    pages = text.split('\f')
+    if pages and pages[-1] == '':
+        pages.pop()
+    return pages
+
+
+def page_support(source, pages):
+    """Status and reason of an exact quote on its cited physical page of extracted text."""
+    if source['page'] > len(pages):
+        return 'rejected', 'page_out_of_range'
+    if not pages[source['page'] - 1].strip():
+        return 'unsupported', 'page_has_no_text'
+    if source['quote'] not in pages[source['page'] - 1]:
+        return 'rejected', 'quote_absent_from_page'
+    return 'verified', 'exact_quote_and_value_supported'
+
+
 def verification_inputs(scope, inputs):
     """Only new fact checks opt in; historical baseline compilation is unchanged."""
     paths = set()
@@ -343,18 +367,8 @@ def check_datasheet_facts(ctx):
             ctx.evidence(f'page-{index}/page.txt')
             if not (work / 'page.txt').is_file():
                 raise CheckError('malformed', 'pdftotext wrote no page text')
-            # Poppler separates physical PDF pages with form feeds, including a final delimiter.
-            pages = (work / 'page.txt').read_text(encoding='utf-8').split('\f')
-            if pages and pages[-1] == '':
-                pages.pop()
-            if source['page'] > len(pages):
-                record['reason'] = 'page_out_of_range'
-            elif not pages[source['page'] - 1].strip():
-                record.update(status='unsupported', reason='page_has_no_text')
-            elif source['quote'] not in pages[source['page'] - 1]:
-                record['reason'] = 'quote_absent_from_page'
-            else:
-                record.update(status='verified', reason='exact_quote_and_value_supported')
+            status, reason = page_support(source, split_pages((work / 'page.txt').read_text(encoding='utf-8')))
+            record.update(status=status, reason=reason)
     try:
         verify_extractor(tool)
     except (ValueError, OSError) as exc:
