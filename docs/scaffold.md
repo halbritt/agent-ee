@@ -153,6 +153,76 @@ in the campaign protocol test are scripted; native tools and receipts are real.
 These tests establish generator mechanics, not physical component suitability,
 12 mm height, IMU isolation or a complete telemetry-pod campaign.
 
+### Explicit captured antenna CAD retention
+
+The optional `captured_rule_areas="retained.json"` argument to `content_step`
+(or CLI `--captured-rule-areas retained.json`) enables **generation only** from
+exact captured CAD. It does not qualify manufacturer clearance or satisfy a
+check/prerequisite. Without it, the legacy dynamic derivation remains refused.
+The existing envelope, facts-check reference and unresolved obligations are
+preserved. In particular, `board_envelope` `keepouts/1` remains **unknown** for
+the dynamic antenna declaration after successful construction.
+
+The input is strict JSON with exactly these fields:
+
+| Field | Value/contract |
+| --- | --- |
+| `schema` | `agent-ee.captured-rule-areas/1` |
+| `purpose` | `retain-captured-cad-only` |
+| `envelope` | `{path, sha256}` for the exact writer envelope |
+| `parts` | `{path, sha256}` for the exact qualified parts manifest |
+| `items` | Nonempty array covering every dynamic antenna item exactly once |
+
+Each item has exactly:
+
+| Field | Value/contract |
+| --- | --- |
+| `keepout_id` | Original dynamic envelope keepout ID |
+| `reference` | Its unique fixed native component reference |
+| `footprint` | Exact parts/CAD identity `RF_Module:ESP32-S3-WROOM-1` |
+| `pose` | `{anchor_mm, rotation_deg, side}` exactly as normalized by `board_envelope.validate` |
+| `source` | `{path, sha256}` of the unique captured footprint manifest member |
+| `rule_areas` | Complete `probe_rule_areas` result recomputed from that source, including original zone polygon, flags, layers and digest |
+| `policy` | Exact `esp32_s3_wroom_1_placement_policy("outside_board", pdf_path=...)` declaration |
+| `context` | Complete `antenna_placement_context` result recomputed using captured guideline bytes |
+
+This bounded path supports the actual front/zero-degree pose only. Other poses
+or policy cases refuse; they need separately reviewed generation coverage.
+The source must contain exactly one rule area. No selector may hide extra
+zones. Enabled copper-layer applicability and the forbid set must equal the
+original envelope declaration. The source can cover additional disabled
+copper layers; its full original layer set is retained. Every item, source,
+part membership, transform and context must match; extra fields (including
+minimum-clearance or accepted-status assertions), ambiguous or missing members,
+symlinks, changed bytes, weakened restrictions and incomplete coverage refuse.
+
+Capture the record, footprint, parts/CAD dependency closure and the exact pinned
+guideline PDF as ordinary immutable scope inputs. The stage step explicitly
+requires the record, and its receipt retains the entire input tree. The writer
+rechecks every retention dependency before publication and refuses collisions
+with its sole board write. No PDFs or stock vendor CAD are embedded in this
+repository. Test policy sources are explicitly synthetic and cannot establish
+real source qualification.
+
+Construction retains the footprint-owned source zone already loaded with the
+fixed component. It adds no derived antenna area or board-level duplicate,
+and never clips the polygon at Edge.Cuts. Before replacing the destination,
+it reloads the saved native board and compares the zone geometry, complete
+layer set, flags, ownership, FPID and pose with a separately loaded captured
+member at that pose. Geometry must survive native serialization exactly. This
+is CAD fidelity evidence; the source probe/context digests are not review seals
+or accepted check results.
+
+For the actual pod, reuse the bound intent's emitter layout so fixed components
+have the same native paths as subsequent forward annotation. A pathless preview
+board would duplicate fixed electrical parts. The expected eventual inventory
+is 108 electrical footprints plus four board-only mounting holes, not a claim
+that placement has completed. Normal netlist/parts/probe checks and receipts
+remain necessary. Source placement applicability, feed-point/corner geometry,
+housing clearance, physical overhang/containment, RF performance and bench
+obligations remain unresolved. The captured 48 x 21 mm polygon is not a
+manufacturer minimum, and the datasheet's pin label 15 is never a clearance.
+
 ## Stage-two producer
 
 `agent-ee scaffold ENVELOPE PARTS --plan PLAN --out DIR` (AGENTEE-141) derives

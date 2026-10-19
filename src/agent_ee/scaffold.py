@@ -211,7 +211,8 @@ def emission_paths(inputs, intent_rel, layout_rel, document):
 
 
 def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent_rel=None,
-                           layout_rel=None, imu_reference=None, antenna_facts_rel=None):
+                           layout_rel=None, imu_reference=None, antenna_facts_rel=None,
+                           captured_rule_areas_rel=None):
     """Stage three, in place on a run_step copy; no nets or schematic hole symbols.
 
     Parts and emitter inputs are captured authority for identities, not component
@@ -228,6 +229,12 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
     record = board_envelope.validate(raw)
     document = load_manifest(inputs, parts_rel)
     qualification = qualify_manifest(document, inputs)
+    retention = None
+    if captured_rule_areas_rel is not None:
+        from .scaffold_rule_areas import load_retention
+        retention = load_retention(inputs, captured_rule_areas_rel, envelope_rel, parts_rel, record, document)
+        if board_rel in retention['dependencies']:
+            raise ValueError('board output collides with a captured rule-area dependency')
     source = read_captured(inputs, board_rel)
     if board_rel in qualification['dependencies'] or board_rel in {
             envelope_rel, parts_rel, intent_rel, layout_rel, antenna_facts_rel}:
@@ -316,6 +323,9 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
         native.Add(fp)
 
     for area in record['keepouts']:
+        if retention is not None and area['id'] in retention['items']:
+            # Already loaded from the exact captured member. No derived/minimum zone.
+            continue
         if 'antenna' in area:
             if antenna_facts_rel is None:
                 raise ValueError('antenna keepout requires captured antenna facts')
@@ -353,6 +363,12 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
         staged = Path(tmp) / target.name
         if not pcbnew.SaveBoard(str(staged), native):
             raise ValueError('native envelope content save failed')
+        if retention is not None:
+            from .scaffold_rule_areas import verify_native_retention
+            for rel, pin in retention['dependencies'].items():
+                if hashlib.sha256(read_captured(inputs, rel)).hexdigest() != pin:
+                    raise ValueError('captured rule-area dependency changed during generation: ' + rel)
+            verify_native_retention(pcbnew.LoadBoard(str(staged)), retention['items'], inputs)
         if read_captured(inputs, board_rel) != source:
             raise ValueError('scaffold board changed during content generation')
         os.replace(staged, target)
@@ -380,9 +396,9 @@ def rule_area(parent, declaration, polygon, native, uid):
 
 
 def content_step(source_root, envelope, parts, board, *, intent=None, layout=None,
-                 imu_reference=None, antenna_facts=None):
+                 imu_reference=None, antenna_facts=None, captured_rule_areas=None):
     """ee139 pre-receipt declaration; the board is the sole in-place write."""
-    for path in (envelope, parts, board, intent, layout, antenna_facts):
+    for path in (envelope, parts, board, intent, layout, antenna_facts, captured_rule_areas):
         if path is not None and str(safe_relative(path)) != path:
             raise ValueError('board content paths must be canonical captured paths')
     argv = ['/usr/bin/python3', '-B', '-X', 'faulthandler', '-c',
@@ -390,12 +406,13 @@ def content_step(source_root, envelope, parts, board, *, intent=None, layout=Non
             "runpy.run_module('agent_ee.scaffold', run_name='__main__')",
             '--inputs', '/work/design', '--envelope', envelope, '--parts', parts, '--board', board]
     for key, value in (('intent', intent), ('layout', layout), ('imu-reference', imu_reference),
-                       ('antenna-facts', antenna_facts)):
+                       ('antenna-facts', antenna_facts), ('captured-rule-areas', captured_rule_areas)):
         if value is not None:
             argv.extend(['--' + key, value])
     return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='envelope-content', argv=argv,
                 mounts=[dict(source=str(Path(source_root).resolve() / 'src'), at='/tool/agent-ee')],
-                source='/tool/agent-ee', writes={board: 'design/' + board}, timeout_s=300)
+                source='/tool/agent-ee', writes={board: 'design/' + board}, timeout_s=300,
+                **({'inputs': [captured_rule_areas]} if captured_rule_areas is not None else {}))
 
 
 def library_tables(document, inputs, project):
@@ -845,13 +862,13 @@ def main(argv=None):
     parser.add_argument('--inputs', required=True, type=Path)
     for name in ('envelope', 'parts', 'board'):
         parser.add_argument('--' + name, required=True)
-    for name in ('intent', 'layout', 'imu-reference', 'antenna-facts'):
+    for name in ('intent', 'layout', 'imu-reference', 'antenna-facts', 'captured-rule-areas'):
         parser.add_argument('--' + name)
     args = parser.parse_args(argv)
     try:
         write_envelope_content(args.inputs, args.envelope, args.parts, args.board,
             intent_rel=args.intent, layout_rel=args.layout, imu_reference=args.imu_reference,
-            antenna_facts_rel=args.antenna_facts)
+            antenna_facts_rel=args.antenna_facts, captured_rule_areas_rel=args.captured_rule_areas)
     except (ValueError, OSError) as exc:
         parser.exit(2, f'envelope content refused: {exc}\n')
     return 0
