@@ -1,6 +1,6 @@
 {
   "work_item": "AGENTEE-160",
-  "status": "blocked",
+  "status": "superseded-by-envelope-2",
   "spec_record": {
     "path": "spec-record.json",
     "sha256": "58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250",
@@ -199,7 +199,7 @@
     "mounting_hole_count": 4,
     "fab_profile": {
       "name": "jlc04161h-7628",
-      "sha256": "d531b04cf39fb52003d6e8caea3e5fb9efa33a7760fb86f6da9eeb0358d7c31f"
+      "sha256": "71eeef06627f83d00f1a35a81d87231987d1a740b6298c0a7f77294786fd0238"
     },
     "stackup_layers": [
       {
@@ -279,10 +279,7 @@
     }
   },
   "unresolved": {
-    "stackup": "Published layers sum to 1.5862 mm; envelope/1 requires an exact 1.6 mm sum. No dielectric padding or nominal/physical equivalence is inferred.",
-    "mounting_holes": "Spec fixes four corners but does not give hole diameter, plating or inset. The ticket names M3 but gives no drilled clearance diameter/inset.",
-    "fixed_footprints": "Spec fixes connector identity and penetrations but supplies no footprint origins, edge anchors, inset, insertion axis or rotations. No coordinates are attributed to the owner.",
-    "antenna_polygon": "No module placement/rotation is pinned. A board-coordinate polygon cannot be derived solely from the module datasheet figure.",
-    "height": "Envelope/1 has no component-height field; the 12 mm maximum remains bound here to POD-ME-1, not executable envelope acceptance."
-  }
+    "mechanics": "AGENTEE-177/179 bind generator-selected hole sizes/positions, connector anchors and board-coordinate antenna keepout. Height and IMU separation remain check obligations."
+  },
+  "envelope": "envelope.json"
 }

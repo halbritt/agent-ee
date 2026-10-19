@@ -134,5 +134,17 @@
         "quote": "FR4 / 4-layer / maximum: 663 / 593 mm"
       }
     }
-  ]
+  ],
+  "finished_thickness_tolerance": {
+    "percent": 10,
+    "min_nominal_thickness_mm": 1,
+    "source": {
+      "path": "sources/jlcpcb-thickness.txt",
+      "sha256": "fae784b6527c2b2e641fddb26a09b7d93d3ae126c130a84ba2351f9470cbb25e",
+      "source": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "as_of": "2026-10-18",
+      "page": 1,
+      "quote": "nominal >= 1.0 mm / finished thickness: +/-10 %"
+    }
+  }
 }

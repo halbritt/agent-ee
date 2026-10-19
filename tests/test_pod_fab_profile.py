@@ -1,5 +1,7 @@
 """Recorded pod fabrication facts; unresolved mechanics must not become an envelope."""
 import copy
+import hashlib
+import subprocess
 import json
 import shutil
 import tempfile
@@ -7,9 +9,9 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 
-from agent_ee.board_envelope import load, source_inventory, validate, validate_stackup
+from agent_ee.board_envelope import baseline_envelope, derive_requirements, load, obligation_coverage, round_trip, source_inventory, validate, validate_stackup
 from agent_ee.datasheet_facts import load_facts
-from agent_ee.fab_profile import compile_profile, evaluate_geometry
+from agent_ee.fab_profile import capability, compile_profile, evaluate_geometry
 from agent_ee.scaffold import produced_rules
 from agent_ee.storage import digest
 
@@ -37,11 +39,14 @@ class PodFabProfileTests(unittest.TestCase):
         for source in manifest['recorded_sources'].values():
             self.assertEqual(digest(POD / source['path']), source['sha256'])
             self.assertEqual((POD / source['path']).stat().st_size, source['bytes'])
+        self.assertEqual(compiled['finished_thickness_tolerance']['execution'], 'ready')
+        self.assertEqual(compiled['finished_thickness_tolerance']['expected']['percent'], 10)
         self.assertEqual(set(compiled['immutable_inputs']),
                          {s['path'] for s in manifest['recorded_sources'].values()})
 
     def test_pod_profile_source_hash(self):
-        for source in {c['source']['path'] for c in self.profile['limits']}:
+        for source in ({c['source']['path'] for c in self.profile['limits']} |
+                       {self.profile['finished_thickness_tolerance']['source']['path']}):
             with self.subTest(source=source), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp) / 'pod'
                 shutil.copytree(POD, root)
@@ -51,6 +56,9 @@ class PodFabProfileTests(unittest.TestCase):
                 path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
                 for files in (inventory, source_inventory(root)[0]):
                     compiled = compile_profile(self.profile, files, root)
+                    tolerance = compiled['finished_thickness_tolerance']
+                    affected = tolerance['expected']['source']['path'] == source
+                    self.assertEqual(tolerance['execution'], 'unsupported' if affected else 'ready')
                     for record in compiled['constraints']:
                         affected = record['expected']['source']['path'] == source
                         self.assertEqual(record['execution'], 'unsupported' if affected else 'ready')
@@ -93,6 +101,190 @@ class PodFabProfileTests(unittest.TestCase):
                                                'copper_layer_names': [f'L{i}' for i in range(count)]})
             self.assertEqual(result['status'], expected)
 
+    def test_tolerance_descriptor_refuses_invalid_numbers_and_version_one(self):
+        for key, value in (('percent', True), ('percent', 0), ('percent', 100),
+                           ('percent', float('inf')), ('percent', '10'),
+                           ('min_nominal_thickness_mm', 0), ('min_nominal_thickness_mm', False)):
+            with self.subTest(key=key, value=value):
+                changed = copy.deepcopy(self.profile)
+                changed['finished_thickness_tolerance'][key] = value
+                with self.assertRaises(ValueError):
+                    compile_profile(changed, self.files, self.inputs)
+        changed = copy.deepcopy(self.profile)
+        changed['schema'] = 'agent-ee.fab-profile/1'
+        with self.assertRaises(ValueError):
+            compile_profile(changed, self.files, self.inputs)
+
+    def test_native_descriptor_requires_tolerance_source_without_claiming_thickness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'pod'
+            shutil.copytree(POD, root)
+            shutil.copyfile(POD.parents[1] / 'fixtures/fab-export/fab4.kicad_pcb', root / 'board.kicad_pcb')
+            scope = {'board': 'board.kicad_pcb', 'baseline': {'requirements': [{
+                'id': 'R-envelope-telemetry-pod-fab-profile', 'checks': ['fab'],
+                'source': {'path': 'fab-profile.json', 'locator': '/limits'}}]}}
+            inventory, _ = source_inventory(root)
+            good = capability({'fab_profile': 'fab-profile.json'}, scope, inventory, root, 'fab')
+            self.assertEqual(len(good['predicates']), 8)
+            self.assertIn('sources/jlcpcb-thickness.txt', good['immutable_inputs'])
+            path = root / 'sources/jlcpcb-thickness.txt'
+            original = path.read_bytes()
+            path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+            for files in (inventory, source_inventory(root)[0]):
+                with self.assertRaisesRegex(ValueError, 'tolerance source not verified'):
+                    capability({'fab_profile': 'fab-profile.json'}, scope, files, root, 'fab')
+
+
+class PodEnvelopeTests(unittest.TestCase):
+    def setUp(self):
+        self.envelope = json.loads((POD / 'envelope.json').read_text())
+        self.profile = (POD / 'fab-profile.json').read_bytes()
+        self.capture = source_inventory(POD)
+
+    def validate(self, envelope=None, profile=None):
+        return validate(json.dumps(envelope or self.envelope).encode(),
+                        profile=profile or self.profile, captured=self.capture)
+
+    def test_pod_envelope_accepts_honest_stackup_with_unbound_mechanics(self):
+        record = self.validate()
+        self.assertEqual(record['structural'], 'pass')
+        self.assertEqual(record['outcome'], 'unknown')
+        self.assertFalse(record['acceptance_ready'])
+        self.assertEqual(record['stackup']['thickness_mm'], '1.6')
+        self.assertEqual(record['stackup']['physical_thickness_mm'], '1.5862')
+        self.assertEqual(record['stackup']['finished_thickness_tolerance']['percent'], 10)
+        self.assertEqual({x['predicate'] for x in record['unresolved']},
+                         {'mechanical_' + i['id'] for i in self.envelope['obligations']})
+        self.assertEqual(record['mounting_holes'], [])
+        self.assertEqual(record['keepouts'], [])
+        self.assertEqual(record['fixed_footprints'], [])
+        spec = json.loads((POD / 'spec-record.json').read_text())
+        ids = {r['id'] for r in spec['requirements']}
+        for item in record['obligations']:
+            self.assertTrue(set(item['requirement_ids']) <= ids)
+            self.assertEqual(item['owner_items'], ['AGENTEE-177', 'AGENTEE-179'])
+        requirements = derive_requirements(record, 'envelope.json')
+        self.assertFalse(requirements['complete'])
+        obligations = [r for r in requirements['requirements'] if '/obligations/' in r['source']['locator']]
+        self.assertEqual(len(obligations), 5)
+        scope = {'schema': 'agent-ee.scope/3', 'checks': [{'id': 'mechanics', 'kind': 'board_envelope'}],
+                 'baseline': {'requirements': [{**r, 'checks': ['mechanics']} for r in obligations]}}
+        coverage = obligation_coverage(scope, requirements, record, {})
+        self.assertEqual({r['status'] for r in coverage if '/obligations/' in r['locator']}, {'unknown'})
+
+    def test_pod_outside_hole_and_keepout_are_refused(self):
+        for field, item, message in (
+                ('mounting_holes', {'id': 'outside', 'at': [81, 25], 'drill_mm': 3.2, 'plated': False},
+                 'not inside the outline'),
+                ('keepouts', {'id': 'outside', 'polygon': [[79, 1], [81, 1], [81, 7], [79, 7]],
+                              'layers': ['F.Cu'], 'forbid': ['tracks']}, 'not contained in the outline')):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(self.envelope)
+                changed[field] = [item]
+                with self.assertRaisesRegex(ValueError, message):
+                    self.validate(changed)
+
+    def test_physical_sum_remains_exact_and_old_schema_is_not_reinterpreted(self):
+        changed = copy.deepcopy(self.envelope)
+        changed['stackup']['physical_thickness_mm'] = 1.6
+        with self.assertRaisesRegex(ValueError, 'sum to 1.5862'):
+            self.validate(changed)
+        changed = copy.deepcopy(self.envelope)
+        changed['schema'] = 'agent-ee.envelope/1'
+        with self.assertRaises(ValueError):
+            self.validate(changed)
+
+    def test_tolerance_edges_and_applicability(self):
+        # Nominal is a request; hold every published physical layer unchanged.
+        for nominal, accepted in ((1.442, True), (1.441999, False),
+                                  (1.762444, True), (1.762445, False), (.9, False)):
+            with self.subTest(nominal=nominal):
+                changed = copy.deepcopy(self.envelope)
+                changed['stackup']['nominal_thickness_mm'] = nominal
+                if accepted:
+                    self.assertEqual(self.validate(changed)['structural'], 'pass')
+                else:
+                    with self.assertRaisesRegex(ValueError, 'captured.*tolerance|tolerance applicability'):
+                        self.validate(changed)
+
+    def test_missing_tolerance_and_layer_citations_never_pass(self):
+        profile = json.loads(self.profile)
+        for mutate in ('absent', 'source', 'quote', 'page', 'as_of', 'sha256'):
+            with self.subTest(mutate=mutate):
+                changed = copy.deepcopy(profile)
+                if mutate == 'absent':
+                    del changed['finished_thickness_tolerance']
+                elif mutate == 'source':
+                    changed['finished_thickness_tolerance']['source'] = None
+                else:
+                    changed['finished_thickness_tolerance']['source'][mutate] = {
+                        'quote': 'missing', 'page': 2, 'as_of': '2026-10-17', 'sha256': '0'*64}[mutate]
+                raw = json.dumps(changed).encode()
+                envelope = copy.deepcopy(self.envelope)
+                envelope['fab_profile']['sha256'] = hashlib.sha256(raw).hexdigest()
+                record = self.validate(envelope, raw)
+                self.assertIn('finished_thickness_tolerance', {u['predicate'] for u in record['unresolved']})
+                self.assertEqual(record['outcome'], 'unknown')
+        for index in range(7):
+            changed = copy.deepcopy(self.envelope)
+            del changed['stackup']['layers'][index]['source']
+            with self.assertRaises(ValueError):
+                self.validate(changed)
+            changed = copy.deepcopy(self.envelope)
+            changed['stackup']['layers'][index]['source']['sha256'] = '0'*64
+            record = self.validate(changed)
+            self.assertIn(f'stackup_layer_source_{index}', {u['predicate'] for u in record['unresolved']})
+
+    def test_scaffold_keeps_nominal_and_physical_layers(self):
+        from agent_ee.scaffold import board
+        from agent_ee.envelope_check import saved_structure, compare_saved
+        record = self.validate()
+        native = board(record, 'pod-envelope-test')
+        facts = saved_structure(native)
+        self.assertEqual(facts['stackup']['thickness_mm'], '1.6')
+        self.assertEqual(sum(Decimal(l['thickness_mm']) for l in facts['stackup']['layers']), Decimal('1.5862'))
+        comparison = compare_saved('stackup/1', record, facts)
+        self.assertEqual(comparison['status'], 'unknown')
+        self.assertEqual(comparison['defects'], [])
+        trip = round_trip((POD / 'envelope.json').read_bytes(), native)
+        fields = {f['field']: f['status'] for f in trip['fields']}
+        self.assertEqual(fields['/stackup/nominal_thickness_mm'], 'match')
+        self.assertEqual(fields['/obligations/0'], 'not_compared')
+        self.assertEqual(trip['outcome'], 'unknown')
+
+    def test_obligation_shape_cannot_claim_a_pass(self):
+        for key, value in (('status', 'pass'), ('requirement_ids', []),
+                           ('owner_items', ['AGENTEE-177', 'AGENTEE-177']), ('statement', '')):
+            changed = copy.deepcopy(self.envelope)
+            changed['obligations'][0][key] = value
+            with self.assertRaises(ValueError):
+                self.validate(changed)
+
+    def test_version_two_consumption_requires_baseline_declaration(self):
+        scope = {'schema': 'agent-ee.scope/3', 'board': 'board.kicad_pcb',
+                 'requirements': ['envelope.json'], 'checks': [], 'baseline': {'requirements': []}}
+        with self.assertRaisesRegex(ValueError, 'without a scope envelope declaration'):
+            baseline_envelope(scope, *self.capture)
+
+    def test_pod_scaffold_native_roundtrip_preserves_both_thicknesses(self):
+        from agent_ee.scaffold import board
+        from agent_ee.envelope_check import saved_structure
+        from tests.toolchain import require_toolchain
+        require_toolchain(native=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'pod.kicad_pcb'
+            path.write_bytes(board(self.validate(), 'pod-native-test'))
+            run = subprocess.run(['/usr/bin/python3', '-c',
+                                  'import pcbnew,sys; b=pcbnew.LoadBoard(sys.argv[1]); '
+                                  'print(b.GetDesignSettings().GetBoardThickness()); '
+                                  'pcbnew.SaveBoard(sys.argv[1],b)', str(path)],
+                                 capture_output=True, text=True, timeout=60)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertEqual(run.stdout.strip(), '1600000')
+            facts = saved_structure(path.read_bytes())['stackup']
+            self.assertEqual(facts['thickness_mm'], '1.6')
+            self.assertEqual(sum(Decimal(l['thickness_mm']) for l in facts['layers']), Decimal('1.5862'))
+
 
 class PodEnvelopeInputTests(unittest.TestCase):
     def setUp(self):
@@ -127,10 +319,9 @@ class PodEnvelopeInputTests(unittest.TestCase):
             validate_stackup({'thickness_mm': known['nominal_thickness_mm'], 'layers': layers}, 4)
 
     def test_partial_inputs_cannot_masquerade_as_an_envelope(self):
-        self.assertEqual(self.record['status'], 'blocked')
+        self.assertEqual(self.record['status'], 'superseded-by-envelope-2')
         self.assertIsNone(self.record['known']['antenna_module_frame']['board_transform'])
-        self.assertIn('fixed_footprints', self.record['unresolved'])
-        self.assertIn('mounting_holes', self.record['unresolved'])
+        self.assertIn('AGENTEE-177/179', self.record['unresolved']['mechanics'])
         with self.assertRaises(ValueError):
             validate((POD / 'envelope-inputs.json').read_bytes())
 

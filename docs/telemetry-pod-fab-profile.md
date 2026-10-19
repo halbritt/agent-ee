@@ -4,7 +4,9 @@ The [JLCPCB profile](../fixtures/telemetry-pod/fab-profile.json) records eight
 source-cited limits for JLC04161H-7628: four layers, nominal 1.6 mm, 1 oz outer
 and 0.5 oz inner copper. Its machine name is `jlc04161h-7628` because profile
 identifiers accept lowercase letters. It uses `agent-ee.fab-profile/2` and the
-existing compiler. No check, parser or schema has been added.
+existing compiler. Its additional source-bound finished-thickness tolerance is
+consumed by the envelope validator; it emits no native DRC rule or predicate.
+The fab-check descriptor also refuses an unverified tolerance citation.
 
 | Minimum | Captured value | Applicability |
 | --- | --- | --- |
@@ -14,6 +16,7 @@ existing compiler. No check, parser or schema has been added.
 | Hole to hole | 0.45 mm | Pad-hole rule applied conservatively to all holes; the via-only relaxation is omitted |
 | Maximum dimensions | 663 × 593 mm | Ordinary four-layer FR-4 option, thickness at least 0.8 mm, fixed saved axes |
 | Maximum layers | 4 | Specializes this profile to the named four-layer stackup |
+| Finished thickness tolerance | ±10% | Nominal thickness at least 1.0 mm; 1.6 mm example permits 1.44–1.76 mm |
 
 These are the published values observed on 2026-10-18, not a live quote or a
 complete DFM approval. The profile does not express the via annular-ring
@@ -44,7 +47,8 @@ new date and reviewed values; checks never access the network.
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_pod_fab_profile -v
 ```
 
-The tests compile all eight limits, change one byte of each source, refuse
+The tests compile all eight native/geometry limits and the tolerance, change
+one byte of each source, refuse
 missing/wrong citations, exercise the four-layer specialization and feed the
 profile through `scaffold.produced_rules`. All six project minima and the four
 Default netclass fields are present. There are no preferred limits, so Default
@@ -52,29 +56,51 @@ clearance is the 0.09 mm minimum with or without AGENTEE-153. That item's
 separate change controls preferred-clearance policy; this fixture changes no
 scaffold behavior.
 
-## Envelope remains unresolved
+## Nominal thickness and unbound mechanics
 
+[envelope.json](../fixtures/telemetry-pod/envelope.json) is an
+`agent-ee.envelope/2` record. It selects an 80 × 50 mm outline, four copper
+layers and the captured JLC04161H-7628 stack. It records the ordered
+`nominal_thickness_mm: 1.6` separately from `physical_thickness_mm: 1.5862`.
+Every physical layer has a citation, including copper weights. The seven
+thicknesses remain exactly as published; no dielectric padding is added.
+
+The validator requires the layers to sum exactly to the physical thickness,
+then checks that sum against the source-verified finished-thickness tolerance
+in the referenced profile. The compiler verifies the tolerance's source with
+the same path/hash/date/page/quote helper as native limits. Its applicability
+starts at 1.0 mm nominal. Missing or changed evidence leaves the validation
+outcome unknown; an out-of-tolerance physical sum is refused. The validated
+`stackup.thickness_mm` consumed by scaffold, native board thickness and fab
+remains the nominal 1.6 mm. A native pcbnew load/save test proves that both
+values survive without padding. Envelope/1 keeps its exact-sum contract and
+refuses the new shape; there is no silent migration.
+
+The coordinator's continuation records two decisions from agent-423 under the
+owner's standing direction on 2026-10-18: distinguish nominal and physical
+thickness using the published tolerance, and leave mechanical choices to the
+generator and checks. These decisions supersede the earlier blockers. They
+remain subject to owner correction.
+
+The envelope carries five `obligations`, bound by requirement IDs to revision 2:
+
+| Obligation | Requirement IDs | Remaining work |
+| --- | --- | --- |
+| Four corner mounting holes | POD-ME-1, POD-AC-7 | Generator selects drill, plating, inset and coordinates |
+| Height at most 12 mm | POD-ME-1 | Check component heights |
+| Harness connector on an edge | POD-CD-HARNESS-CONNECTOR, POD-ME-2 | Generator selects TE 776228-1 anchor and orientation |
+| Module antenna keepout | POD-CD-MCU-AND-RADIO, POD-AC-7 | Bind module transform and board-coordinate keepout |
+| IMU away from tall/heavy parts | POD-ME-4 | Generate and check separation |
+
+These remain unbound until AGENTEE-177/179. Empty geometry lists mean those
+choices have not been made. The validator returns `structural: pass`,
+`outcome: unknown`, `acceptance_ready: false`; deriving requirements preserves
+every obligation. Mapping one to an existing check cannot make it bound.
+Any declared hole or keepout outside the outline is still refused.
 [envelope-inputs.json](../fixtures/telemetry-pod/envelope-inputs.json) retains
-the spec's 80 × 50 mm maximum, four layers, four corner holes, 12 mm height,
-connector identities and the published stackup numbers. It binds those facts
-to the revision-2 [spec record](../fixtures/telemetry-pod/spec-record.json) by
-requirement ID, byte locator and SHA-256. It is blocked metadata, not an
-`agent-ee.envelope/1` record, and the envelope validator refuses it. There is no
-production `envelope.json` claiming that the missing values are settled.
-
-The seven published copper/dielectric layer thicknesses add to **1.5862 mm**,
-not the spec's nominal **1.6 mm**. `board_envelope.validate_stackup` requires
-exact equality. The tests reproduce that refusal. No extra dielectric thickness,
-soldermask layer or nominal-thickness tolerance has been inferred. Resolving
-this requires an explicit representation/authority decision; it must not weaken
-the existing exact-sum contract silently.
-
-The spec gives neither hole diameter/inset/plating nor fixed connector anchors,
-rotations and insertion directions. The ticket names M3 but does not settle the
-clearance drill or inset. The approved TE 776228-1 identity does not determine
-its board coordinates. These fields remain unresolved instead of becoming
-uncited owner decisions. Envelope/1 also has no height field, so the 12 mm
-obligation is retained here without claiming executable acceptance.
+the original spec-record hashes, requirement byte locators and module-relative
+antenna facts as supporting capture metadata. Its earlier blocked status is
+superseded by envelope/2; it remains invalid as an envelope input itself.
 
 ## Antenna citations
 
@@ -83,7 +109,9 @@ existing `agent-ee.datasheet-facts/1` format. It cites the 18 mm by 6 mm antenna
 area in physical/printed page 45, Figure 11-1 of the [ESP32-S3-WROOM-1 datasheet
 v1.8](https://documentation.espressif.com/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf).
 `envelope-inputs.json` records the resulting module-relative rectangle and its
-fact IDs. It has no board transform and is not a board keepout acceptance claim.
+fact IDs. The envelope antenna obligation cites the same page, figure, fact IDs
+and module rectangle. Neither supplies a board transform or claims board keepout
+acceptance.
 The vendor PDF is hashed in the source manifest but not committed. Supplying
 the captured PDF as `sources/esp32-module.pdf` in a candidate enables the existing
 networkless `datasheet_facts` check; without it the result stays unknown.
@@ -93,4 +121,4 @@ separately address base-board placement/cutouts and recommend 15 mm clearance
 in the housing. Their current PDF puts the keepout illustration in Figure 26,
 physical page 34 (printed 31). That housing recommendation is not substituted
 for a board polygon. A placed module and an explicit base-board keepout choice
-are still required for ticket criterion 4.
+remain explicit AGENTEE-177/179 obligations under the revised criterion 4.

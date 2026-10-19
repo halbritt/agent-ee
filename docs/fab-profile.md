@@ -18,7 +18,7 @@ limit; preferred limits only classify extra charges. Preflight requires both
 `kicad-cli` and `pcbnew`. No preset, network lookup, pricing service or default
 fabricator is selected implicitly. The [telemetry-pod fixture](telemetry-pod-fab-profile.md)
 records a dated subset of JLCPCB JLC04161H-7628 limits; it does not provide
-complete supplier DFM or a resolved pod envelope.
+complete supplier DFM or resolved pod mechanics.
 
 For example, an **owned synthetic assumption**, not a real fabricator's limit:
 
@@ -79,6 +79,24 @@ profile is read through this same compiler before generation. Its sourced
 minimum `max_layers` and `max_board_mm` limits are evaluated against the declared
 layer count and outline on the same fixed axes. Its profile obligation is covered
 only by a `fab_profile` check over the referenced bytes.
+
+## Finished-thickness tolerance
+
+A `/2` profile may also contain top-level `finished_thickness_tolerance` with
+exactly `percent`, `min_nominal_thickness_mm` and `source`. Percent must be
+finite and strictly between 0 and 100; minimum nominal thickness must be
+finite and positive. The source uses the same citation contract as every
+limit. The compiler retains its `execution` and `expected` fields and adds the
+source to `immutable_inputs`. Missing or changed evidence is unsupported,
+and the fab-check descriptor refuses it before native execution.
+A `/1` profile refuses this field.
+
+This bound is consumed by [envelope/2](board-envelope.md) when comparing the
+published physical layer sum to the ordered nominal thickness. It is not a
+native DRC rule, extra-charge rule or scope/3 predicate. The `fab_profile`
+check still grades only entries in `limits`; it makes no board-thickness
+acceptance claim. The envelope's independent stackup obligation remains
+unknown without qualified manufacturing authority and source coverage.
 
 ## Board outline qualification
 

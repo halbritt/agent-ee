@@ -175,8 +175,9 @@ those gaps.
 
 The [telemetry-pod fabrication inputs](docs/telemetry-pod-fab-profile.md) record
 eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.
-The envelope remains unresolved: the published layer sum differs from nominal
-thickness, and exact mechanical anchors are unspecified.
+The envelope records nominal 1.6 mm and physical 1.5862 mm thickness separately,
+with a cited ±10% tolerance. Generator-selected mechanics remain explicit
+unbound obligations for AGENTEE-177/179, so acceptance stays unknown.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, native netlist export
 with captured symbol-instance coverage in both directions,

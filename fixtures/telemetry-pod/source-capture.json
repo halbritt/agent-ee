@@ -37,6 +37,15 @@
       "bytes": 4193822,
       "captured_at": "2026-10-18T20:40:47.283838+00:00",
       "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-capabilities-thickness.html",
+      "url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "sha256": "37dbc95a7136138aff8691ffd876c7df533f9215ba601b348457f33fec4e9892",
+      "bytes": 136923,
+      "captured_at": "2026-10-18T22:48:45.139591+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
     }
   ],
   "raw_bytes_committed": false,
@@ -51,6 +60,11 @@
       "path": "sources/jlcpcb-stackup.txt",
       "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
       "bytes": 329
+    },
+    "jlcpcb-thickness.txt": {
+      "path": "sources/jlcpcb-thickness.txt",
+      "sha256": "fae784b6527c2b2e641fddb26a09b7d93d3ae126c130a84ba2351f9470cbb25e",
+      "bytes": 179
     }
   },
   "locators": {
@@ -60,7 +74,8 @@
     "holes": "PCB capabilities / Drilling / Pad Hole-to-Hole Spacing; used conservatively for every drilled-hole pair (via-only 0.2 mm relaxation not encoded)",
     "size": "PCB capabilities / PCB Specifications / Maximum Dimensions / FR4(4-layer), thickness >=0.8 mm, ordinary 663 x 593 option",
     "layers": "Impedance / 4-Layer Impedance Control Stackup / 1.6mm / 1oz outer / 0.5oz inner / 2) JLC04161H-7628 Stackup; max_layers=4 specializes this profile, not vendor-wide maximum",
-    "stackup": "Same stackup card; explicit thickness numbers preserved without adjustment"
+    "stackup": "Same stackup card; explicit thickness numbers preserved without adjustment",
+    "finished-thickness": "PCB Specifications / Thickness Tolerance (Thickness >= 1.0 mm); +/-10 percent, 1.6 mm example 1.44 to 1.76 mm"
   },
   "interpretation_limits": [
     "min_clearance_mm records only the track-spacing floor. Pair-specific pad/hole/copper constraints require additional DFM rules; this profile is not complete JLCPCB DFM acceptance.",
