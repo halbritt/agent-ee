@@ -1,0 +1,980 @@
+{
+  "allowed_edits": [],
+  "components": {},
+  "invariants": [
+    {
+      "id": "AMPSEAL-1:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-1",
+        "external_destination": "fome-mc J2-28 CAN1_H; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-CAN1",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 2,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "CAN_H"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_CAN_H"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-1"
+    },
+    {
+      "id": "AMPSEAL-1:mcu-net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-1",
+        "external_destination": "fome-mc J2-28 CAN1_H; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-CAN1",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 2,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "CAN_H"
+      },
+      "kind": "unresolved",
+      "reason": "row 2: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "AMPSEAL-2:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-2",
+        "external_destination": "fome-mc J2-29 CAN1_L; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-CAN1",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 3,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "CAN_L"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_CAN_L"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-2"
+    },
+    {
+      "id": "AMPSEAL-2:mcu-net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-2",
+        "external_destination": "fome-mc J2-29 CAN1_L; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-CAN1",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 3,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "CAN_L"
+      },
+      "kind": "unresolved",
+      "reason": "row 3: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "AMPSEAL-3:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-3",
+        "external_destination": "R/Y main-relay harness splice on circuit feeding J1-27; own 2 A inline fuse; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-POWER-IN"
+        ],
+        "row": 4,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "SWITCHED_12V_IN"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_12V_IN"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-3"
+    },
+    {
+      "id": "AMPSEAL-4:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-4",
+        "external_destination": "Chassis ground point on J1-34 CHASSIS_ECU_GND circuit; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-POWER-IN"
+        ],
+        "row": 5,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "CHASSIS_GND"
+      },
+      "kind": "named_net",
+      "names": [
+        "GND"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-4"
+    },
+    {
+      "id": "AMPSEAL-5:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-5",
+        "external_destination": "front fork linear potentiometer (0-130 mm) supply; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 6,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_FORK_5V"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_5V_SENSOR"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-5"
+    },
+    {
+      "id": "AMPSEAL-6:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-6",
+        "external_destination": "front fork linear potentiometer (0-130 mm) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 7,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_FORK_SIGNAL"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_FRONT_FORK_SIGNAL"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-6"
+    },
+    {
+      "id": "AMPSEAL-6:mcu-net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-6",
+        "external_destination": "front fork linear potentiometer (0-130 mm) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 7,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_FORK_SIGNAL"
+      },
+      "kind": "unresolved",
+      "reason": "row 7: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "AMPSEAL-7:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-7",
+        "external_destination": "front fork linear potentiometer (0-130 mm) return; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 8,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_FORK_RETURN"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_SENSOR_RETURN"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-7"
+    },
+    {
+      "id": "AMPSEAL-8:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-8",
+        "external_destination": "rear shock linear potentiometer (0-70 mm) supply; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 9,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_SHOCK_5V"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_5V_SENSOR"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-8"
+    },
+    {
+      "id": "AMPSEAL-9:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-9",
+        "external_destination": "rear shock linear potentiometer (0-70 mm) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 10,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_SHOCK_SIGNAL"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_REAR_SHOCK_SIGNAL"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-9"
+    },
+    {
+      "id": "AMPSEAL-9:mcu-net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-9",
+        "external_destination": "rear shock linear potentiometer (0-70 mm) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 10,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_SHOCK_SIGNAL"
+      },
+      "kind": "unresolved",
+      "reason": "row 10: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "AMPSEAL-10:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-10",
+        "external_destination": "rear shock linear potentiometer (0-70 mm) return; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 11,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_SHOCK_RETURN"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_SENSOR_RETURN"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-10"
+    },
+    {
+      "id": "AMPSEAL-11:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-11",
+        "external_destination": "front brake pressure transducer (0-100 bar) supply; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 12,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_BRAKE_5V"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_5V_SENSOR"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-11"
+    },
+    {
+      "id": "AMPSEAL-12:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-12",
+        "external_destination": "front brake pressure transducer (0-100 bar) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 13,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_BRAKE_SIGNAL"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_FRONT_BRAKE_SIGNAL"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-12"
+    },
+    {
+      "id": "AMPSEAL-12:mcu-net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-12",
+        "external_destination": "front brake pressure transducer (0-100 bar) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 13,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_BRAKE_SIGNAL"
+      },
+      "kind": "unresolved",
+      "reason": "row 13: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "AMPSEAL-13:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-13",
+        "external_destination": "front brake pressure transducer (0-100 bar) return; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 14,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FRONT_BRAKE_RETURN"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_SENSOR_RETURN"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-13"
+    },
+    {
+      "id": "AMPSEAL-14:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-14",
+        "external_destination": "rear brake pressure transducer (0-100 bar) supply; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 15,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_BRAKE_5V"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_5V_SENSOR"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-14"
+    },
+    {
+      "id": "AMPSEAL-15:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-15",
+        "external_destination": "rear brake pressure transducer (0-100 bar) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 16,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_BRAKE_SIGNAL"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_REAR_BRAKE_SIGNAL"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-15"
+    },
+    {
+      "id": "AMPSEAL-15:mcu-net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-15",
+        "external_destination": "rear brake pressure transducer (0-100 bar) signal; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-ANALOG-INPUTS",
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 16,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_BRAKE_SIGNAL"
+      },
+      "kind": "unresolved",
+      "reason": "row 16: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "AMPSEAL-16:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-16",
+        "external_destination": "rear brake pressure transducer (0-100 bar) return; pod-local sub-harness; docs/WIRING_SV650_K7.md blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106 section 7",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR",
+          "POD-IF-SENSOR-SUPPLY"
+        ],
+        "row": 17,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "REAR_BRAKE_RETURN"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_SENSOR_RETURN"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-16"
+    },
+    {
+      "id": "AMPSEAL-17:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-17",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 18,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-17"
+    },
+    {
+      "id": "AMPSEAL-18:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-18",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 19,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-18"
+    },
+    {
+      "id": "AMPSEAL-19:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-19",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 20,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-19"
+    },
+    {
+      "id": "AMPSEAL-20:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-20",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 21,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-20"
+    },
+    {
+      "id": "AMPSEAL-21:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-21",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 22,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-21"
+    },
+    {
+      "id": "AMPSEAL-22:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-22",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 23,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-22"
+    },
+    {
+      "id": "AMPSEAL-23:net",
+      "io_map": {
+        "connector_pin": "AMPSEAL-23",
+        "external_destination": "No connection; cavity plugged with TE 770678-1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-HARNESS-CONNECTOR"
+        ],
+        "row": 24,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "NO_CONNECT"
+      },
+      "kind": "no_connect",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "AMPSEAL-23"
+    },
+    {
+      "id": "BLE-RADIO:net",
+      "io_map": {
+        "connector_pin": "BLE-RADIO",
+        "external_destination": "RaceChrono Pro phone in tank bag or jacket pocket; docs/TELEMETRY_AND_RACECHRONO.md blob 3dafed620a10f8fba209c2707b8f832eec6f6303 section 4.1",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-BLUETOOTH-LE",
+          "POD-IF-PROGRAMMING-AND-DEBUG"
+        ],
+        "row": 25,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "BLE_RACECHRONO"
+      },
+      "kind": "unresolved",
+      "reason": "row 25: no electrical net declared (N/A)",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "GNSS-SMA-CENTER:net",
+      "io_map": {
+        "connector_pin": "GNSS-SMA-CENTER",
+        "external_destination": "External active GNSS antenna in cowl; upward facing; cable <=500 mm",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-GNSS-ANTENNA"
+        ],
+        "row": 26,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "GNSS_ACTIVE_ANTENNA"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_GNSS_RF"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "GNSS-SMA-CENTER"
+    },
+    {
+      "id": "GNSS-SMA-SHIELD:net",
+      "io_map": {
+        "connector_pin": "GNSS-SMA-SHIELD",
+        "external_destination": "External active GNSS antenna coax shield",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-GNSS-ANTENNA"
+        ],
+        "row": 27,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "GNSS_ANTENNA_SHIELD"
+      },
+      "kind": "named_net",
+      "names": [
+        "GND"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "GNSS-SMA-SHIELD"
+    },
+    {
+      "id": "DEBUG-UART-TX:net",
+      "io_map": {
+        "connector_pin": "DEBUG-UART-TX",
+        "external_destination": "Factory pogo-pin fixture UART receive",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-PROGRAMMING-AND-DEBUG"
+        ],
+        "row": 28,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FACTORY_UART_TX"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_UART_TX"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "DEBUG-UART-TX"
+    },
+    {
+      "id": "DEBUG-UART-TX:mcu-net",
+      "io_map": {
+        "connector_pin": "DEBUG-UART-TX",
+        "external_destination": "Factory pogo-pin fixture UART receive",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-PROGRAMMING-AND-DEBUG"
+        ],
+        "row": 28,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FACTORY_UART_TX"
+      },
+      "kind": "unresolved",
+      "reason": "row 28: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "DEBUG-UART-RX:net",
+      "io_map": {
+        "connector_pin": "DEBUG-UART-RX",
+        "external_destination": "Factory pogo-pin fixture UART transmit",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-PROGRAMMING-AND-DEBUG"
+        ],
+        "row": 29,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FACTORY_UART_RX"
+      },
+      "kind": "named_net",
+      "names": [
+        "POD_UART_RX"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "DEBUG-UART-RX"
+    },
+    {
+      "id": "DEBUG-UART-RX:mcu-net",
+      "io_map": {
+        "connector_pin": "DEBUG-UART-RX",
+        "external_destination": "Factory pogo-pin fixture UART transmit",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-PROGRAMMING-AND-DEBUG"
+        ],
+        "row": 29,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FACTORY_UART_RX"
+      },
+      "kind": "unresolved",
+      "reason": "row 29: unresolved MCU TBD:TBD; net or MCU_Path not established",
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      }
+    },
+    {
+      "id": "DEBUG-UART-RETURN:net",
+      "io_map": {
+        "connector_pin": "DEBUG-UART-RETURN",
+        "external_destination": "Factory pogo-pin fixture ground",
+        "path": "io-map.csv",
+        "requirements": [
+          "POD-IF-PROGRAMMING-AND-DEBUG"
+        ],
+        "row": 30,
+        "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+        "signal": "FACTORY_UART_GND"
+      },
+      "kind": "named_net",
+      "names": [
+        "GND"
+      ],
+      "requirement": "POD-AC-1",
+      "source": {
+        "locator": "Acceptance criteria / item 1",
+        "path": "spec.md"
+      },
+      "terminal": "DEBUG-UART-RETURN"
+    }
+  ],
+  "schema": "agent-ee.interface/1",
+  "terminals": {
+    "AMPSEAL-1": {
+      "unresolved": "row 2: unbound connector position AMPSEAL-1"
+    },
+    "AMPSEAL-10": {
+      "unresolved": "row 11: unbound connector position AMPSEAL-10"
+    },
+    "AMPSEAL-11": {
+      "unresolved": "row 12: unbound connector position AMPSEAL-11"
+    },
+    "AMPSEAL-12": {
+      "unresolved": "row 13: unbound connector position AMPSEAL-12"
+    },
+    "AMPSEAL-12:MCU:TBD": {
+      "unresolved": "row 13: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "AMPSEAL-13": {
+      "unresolved": "row 14: unbound connector position AMPSEAL-13"
+    },
+    "AMPSEAL-14": {
+      "unresolved": "row 15: unbound connector position AMPSEAL-14"
+    },
+    "AMPSEAL-15": {
+      "unresolved": "row 16: unbound connector position AMPSEAL-15"
+    },
+    "AMPSEAL-15:MCU:TBD": {
+      "unresolved": "row 16: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "AMPSEAL-16": {
+      "unresolved": "row 17: unbound connector position AMPSEAL-16"
+    },
+    "AMPSEAL-17": {
+      "unresolved": "row 18: unbound connector position AMPSEAL-17"
+    },
+    "AMPSEAL-18": {
+      "unresolved": "row 19: unbound connector position AMPSEAL-18"
+    },
+    "AMPSEAL-19": {
+      "unresolved": "row 20: unbound connector position AMPSEAL-19"
+    },
+    "AMPSEAL-1:MCU:TBD": {
+      "unresolved": "row 2: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "AMPSEAL-2": {
+      "unresolved": "row 3: unbound connector position AMPSEAL-2"
+    },
+    "AMPSEAL-20": {
+      "unresolved": "row 21: unbound connector position AMPSEAL-20"
+    },
+    "AMPSEAL-21": {
+      "unresolved": "row 22: unbound connector position AMPSEAL-21"
+    },
+    "AMPSEAL-22": {
+      "unresolved": "row 23: unbound connector position AMPSEAL-22"
+    },
+    "AMPSEAL-23": {
+      "unresolved": "row 24: unbound connector position AMPSEAL-23"
+    },
+    "AMPSEAL-2:MCU:TBD": {
+      "unresolved": "row 3: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "AMPSEAL-3": {
+      "unresolved": "row 4: unbound connector position AMPSEAL-3"
+    },
+    "AMPSEAL-4": {
+      "unresolved": "row 5: unbound connector position AMPSEAL-4"
+    },
+    "AMPSEAL-5": {
+      "unresolved": "row 6: unbound connector position AMPSEAL-5"
+    },
+    "AMPSEAL-6": {
+      "unresolved": "row 7: unbound connector position AMPSEAL-6"
+    },
+    "AMPSEAL-6:MCU:TBD": {
+      "unresolved": "row 7: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "AMPSEAL-7": {
+      "unresolved": "row 8: unbound connector position AMPSEAL-7"
+    },
+    "AMPSEAL-8": {
+      "unresolved": "row 9: unbound connector position AMPSEAL-8"
+    },
+    "AMPSEAL-9": {
+      "unresolved": "row 10: unbound connector position AMPSEAL-9"
+    },
+    "AMPSEAL-9:MCU:TBD": {
+      "unresolved": "row 10: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "DEBUG-UART-RETURN": {
+      "unresolved": "row 30: unbound connector position DEBUG-UART-RETURN"
+    },
+    "DEBUG-UART-RX": {
+      "unresolved": "row 29: unbound connector position DEBUG-UART-RX"
+    },
+    "DEBUG-UART-RX:MCU:TBD": {
+      "unresolved": "row 29: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "DEBUG-UART-TX": {
+      "unresolved": "row 28: unbound connector position DEBUG-UART-TX"
+    },
+    "DEBUG-UART-TX:MCU:TBD": {
+      "unresolved": "row 28: unresolved MCU TBD:TBD; net or MCU_Path not established"
+    },
+    "GNSS-SMA-CENTER": {
+      "unresolved": "row 26: unbound connector position GNSS-SMA-CENTER"
+    },
+    "GNSS-SMA-SHIELD": {
+      "unresolved": "row 27: unbound connector position GNSS-SMA-SHIELD"
+    }
+  }
+}

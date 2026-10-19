@@ -188,6 +188,11 @@ The envelope records nominal 1.6 mm and physical 1.5862 mm thickness separately,
 with a cited ±10% tolerance. Generator-selected mechanics remain explicit
 unbound obligations for AGENTEE-177/179, so acceptance stays unknown.
 
+The offline [io-map compiler](docs/io-map.md) turns a declared pinout CSV into
+a hardware-interface contract, preserving no-connects and unresolved pins.
+Concrete MCU rows require a declared direct conductor; indirect CAN transceiver
+and ADC paths are refused by the compiler.
+
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
 with captured symbol-instance coverage in both directions,

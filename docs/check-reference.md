@@ -727,6 +727,15 @@ complete analyzer rule coverage or electrical/EMC certification.
 
 ## Hardware interface invariants
 
+The offline [io-map compiler](io-map.md) produces `agent-ee.interface/1`
+contracts from pinout CSVs. `hardware_interface` binds their CSV hashes as
+immutable inputs, checks `no_connect` predicates against native connectivity,
+and keeps explicit unresolved terminals and predicates unknown. External
+destination text supplies traceability only.
+Concrete MCU rows require an explicit `MCU_Path=direct` declaration. Named
+indirect paths are refused with their CSV row and path name; TBD MCU rows keep
+an unresolved predicate without asserting MCU-to-connector net equality.
+
 `hardware_interface` requires `contract` and an earlier `netlist_check`. The
 [interface reference](hardware-interface.md) defines the captured normative
 schema, immutable inputs, supported predicates and unsupported mapping policy.
