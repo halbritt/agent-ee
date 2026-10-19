@@ -167,7 +167,13 @@ def _saved_judgment(output, plan):
         fp = actual[expected['uuid']]
         if fp['ref'] != expected['ref'] or fp['position_nm'] != expected['position_nm'] or (fp['rotation_deg']-expected['rotation_deg']) % 360:
             raise ValueError('native saved placement differs from planned transform')
-    return facts, judge(facts)
+    # Envelope-bound fixed-courtyard overhangs (AGENTEE-212) are judged as declared, nowhere else.
+    policy = plan['policy']
+    judgment = judge(facts, overhangs=policy.get('fixed_overhangs'))
+    if 'groups' in policy:
+        from .placement_groups import grade
+        judgment['group_grading'] = grade(facts, policy['groups'])
+    return facts, judgment
 
 
 def _board_only(board):
@@ -187,6 +193,8 @@ def _evaluate_proposal(board, output, plan, netlist_bytes):
     overlaps = _native_drc(output, output.parent)
     if judgment['verdict'] != 'pass' or overlaps:
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
+    if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
+        raise ValueError('saved-board placement failed its declared placement groups')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
             'status': 'placed', 'outcome': 'info', 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],

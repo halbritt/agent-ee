@@ -482,7 +482,12 @@ and refuses edits other than footprint translations, quarter turns and qualified
 side flips, including rigid movement of footprint-owned zone polygons. The placer
 keeps peer courtyards outside owned footprint keepouts. Envelope fixed footprints
 and mounting holes written by the scaffold are fixed references, and their
-exact courtyards are obstacles (AGENTEE-179). A declared captured
+exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
+bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
+outline only across envelope-declared edges and distances. Declared group
+regions and anchor distances are enforced and graded by `placement-groups/1`, and
+parts without courtyards are refused by name
+([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). A declared captured
 sub-layout also admits exactly the copper of whole reused groups. KiCad's
 unchanged custom-property font default is tolerated on resave. Fresh checks grade
 every proposal. These checks do not establish routing quality or a

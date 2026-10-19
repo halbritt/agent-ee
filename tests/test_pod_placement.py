@@ -181,6 +181,8 @@ class PodPlacementFixture(EnvelopeScaffoldFixture):
 
     # Board keepouts that forbid footprints, and envelope keepout checks with their outcomes.
     BOARD_KEEPOUTS = ['fixture-clearance']
+    # Extra outline-containment/1 params, such as the envelope that declares courtyard overhangs.
+    CONTAINMENT = {}
     KEEPOUT_CHECKS = {'keepout-fixture-clearance': 'pass', 'keepout-board-clearance': 'pass'}
 
     def place_and_grade(self):
@@ -250,7 +252,8 @@ class PodPlacementFixture(EnvelopeScaffoldFixture):
         # The registered checks judge the placed board as a captured candidate.
         source.write_bytes(placed.read_bytes())
         checks = self.envelope_checks(inputs)
-        checks += [dict(id=c, kind='placement', params=dict(criterion=c + '/1', drc_check='drc'))
+        checks += [dict(id=c, kind='placement', params=dict(criterion=c + '/1', drc_check='drc',
+                                                            **(self.CONTAINMENT if c == 'outline-containment' else {})))
                    for c in ('courtyard-overlap', 'outline-containment')]
         scope = read_json(self.root / 'content/scope.json')
         requirements = scope['baseline']['requirements']
@@ -336,6 +339,41 @@ class CapturedAntennaPodPlacementTests(PodPlacementFixture, CapturedAntennaFixtu
         antenna = results['keepout-antenna']
         self.assertEqual((antenna['execution'], antenna['outcome']), ('unsupported', 'unknown'))
         self.assertIn('antenna placement qualification unresolved', antenna['summary'])
+
+
+class OverhangPodPlacementTests(PodPlacementFixture, unittest.TestCase):
+    """AGENTEE-212: the SMA stand-in's courtyard leaves the right edge by a declared allowance.
+
+    The envelope declares the allowance for J2 alone; the coordinator-derived request carries
+    it, and outline-containment/1 reads it from the same captured envelope bytes."""
+    CONTAINMENT = {'envelope': 'envelope.json'}
+
+    def setUp(self):
+        super().setUp()
+        j2 = next(f for f in self.envelope['fixed_footprints'] if f['reference'] == 'J2')
+        j2.update(inset_mm=0.5, courtyard_overhangs=[dict(edge='right', max_mm=1.5)])
+        self.save()
+
+    def place(self, inputs, xml, policy_changes=None, name='placer'):
+        overhangs = pa.envelope_overhangs(self.envelope_record(inputs))
+        self.assertEqual([o['reference'] for o in overhangs], ['J2'])
+        return super().place(inputs, xml, {'fixed_overhangs': overhangs, **(policy_changes or {})}, name)
+
+    def test_declared_overhang_native(self):
+        results, probe = self.place_and_grade()
+        containment = results['outline-containment']['details']
+        self.assertEqual(containment['envelope']['path'], 'envelope.json')
+        declared = containment['declared_overhangs']
+        self.assertEqual(sorted(d['ref'] for d in declared), ['J2'])
+        self.assertGreater(declared[0]['overhang_area_mm2'], 0)
+
+    def test_undeclared_overhang_refused_by_name(self):
+        inputs, xml = self.annotated()
+        _, execution, work = PodPlacementFixture.place(self, inputs, xml)
+        result = read_json(work / 'result.json')
+        self.assertEqual((result['status'], result['outcome'], result['placements']), ('fixed_conflict', 'unknown', []))
+        self.assertIn('fixed placement J2 conflicts', result['reason'])
+        self.assertFalse((work / 'proposal').exists())
 
 
 if __name__ == '__main__':

@@ -12,11 +12,13 @@ import hashlib
 import math
 import re
 
-from .placement import area2, edges, intersection_area, intersects, judge, on_segment, qualified_polygons
+from .placement import (area2, boxes_meet, courtyard_bounds, edges, intersection_area, intersects, judge,
+                        on_segment, qualified_polygons)
 from .symbol_library import LibraryError, nanometres
 
 CRITERIA = ('courtyard-overlap/1', 'outline-containment/1', 'edge-clearance/1',
-            'footprint-keepout/1', 'connector-edge/1', 'ratsnest-mst/1', 'imu-axes/1')
+            'footprint-keepout/1', 'connector-edge/1', 'ratsnest-mst/1', 'imu-axes/1',
+            'placement-groups/1')
 SIDE_LAYER = {'F': 'F.Cu', 'B': 'B.Cu'}
 AXES = {'x+': (1, 0), 'x-': (-1, 0), 'y+': (0, 1), 'y-': (0, -1)}
 INSERTIONS = ('through_edge', 'from_top', 'from_bottom')
@@ -82,8 +84,11 @@ def ignored(report, kind):
 
 # ---------------------------------------------------------------- courtyards
 
-def courtyards(fp):
-    """Qualified courtyard polygons by side, or (None, reason) for unknown coverage."""
+def courtyards(fp, inner=False):
+    """Qualified courtyard polygons by side, or (None, reason) for unknown coverage.
+
+    The outer bound by default; ``inner`` selects the subset bound of a curved
+    courtyard (AGENTEE-212), the one that may prove a helper-side intersection."""
     records = fp.get('courtyards')
     if not isinstance(records, dict):
         return None, 'courtyard inventory missing'
@@ -96,7 +101,7 @@ def courtyards(fp):
         if side not in SIDE_LAYER:
             return None, 'unsupported courtyard side'
         try:
-            polygons[side] = qualified_polygons(record)
+            polygons[side] = courtyard_bounds(record)[1 if inner else 0]
         except ValueError as exc:
             return None, f'courtyard {side}: {exc}'
     return polygons, None
@@ -124,7 +129,7 @@ def courtyard_overlap(probe, report):
                             'uuid': item['uuid'], 'native': record})
     qualified = []
     for fp in sorted(probe['footprints'], key=lambda f: (f['ref'], f['uuid'])):
-        polygons, reason = courtyards(fp)
+        polygons, reason = courtyards(fp, inner=True)
         if polygons is None:
             if reason == 'courtyard missing on mounting side' or reason == 'unsupported footprint side':
                 unknown.append({'kind': 'courtyard_missing', 'ref': fp['ref'], 'uuid': fp['uuid'], 'reason': reason})
@@ -135,6 +140,8 @@ def courtyard_overlap(probe, report):
     for i, (fp, left) in enumerate(qualified):
         for other, right in qualified[i+1:]:
             for side in sorted(set(left) & set(right)):
+                if not boxes_meet(left[side], right[side]):
+                    continue
                 area = _overlap(left[side], right[side])
                 pair = frozenset((fp['uuid'], other['uuid']))
                 if area > 0 and pair not in native_pairs:
@@ -145,12 +152,20 @@ def courtyard_overlap(probe, report):
             'defects': defects, 'unknown': unknown, 'notes': disagreements}
 
 
-def outline_containment(probe):
-    """The reviewed 53 exact polygon judge, restricted to outside-outline area."""
-    report = judge(probe)
+def outline_containment(probe, overhangs=None):
+    """The reviewed 53 exact polygon judge, restricted to outside-outline area.
+
+    ``overhangs`` are envelope-bound fixed-courtyard overhang declarations
+    (``envelope_overhangs``): area inside a declared band is reported, area
+    beyond it, or for an undeclared reference, remains a defect."""
+    report = judge(probe, overhangs=overhangs)
     defects = [f for f in report['hard_failures'] if f['kind'] == 'outside_outline']
-    return {'criterion': 'outline-containment/1', 'status': verdict(defects, report['unknown']),
-            'defects': defects, 'unknown': report['unknown']}
+    unknown = [u for u in report['unknown'] if 'refs' not in u]
+    result = {'criterion': 'outline-containment/1', 'status': verdict(defects, unknown),
+              'defects': defects, 'unknown': unknown}
+    if overhangs is not None:
+        result['declared_overhangs'] = report['declared_overhangs']
+    return result
 
 
 # --------------------------------------------------------------- edge clearance
@@ -183,20 +198,31 @@ def edge_clearance(probe, minimum_nm):
         return {'criterion': 'edge-clearance/1', 'status': 'unknown', 'defects': [], 'measured': [],
                 'unknown': [{'kind': 'outline', 'reason': str(exc)}], 'minimum_mm': mm(minimum_nm)}
     defects, unknown, measured = [], [], []
+    def clearance(polygon):
+        outside = Fraction(abs(area2(polygon)), 2) - intersection_area(polygon, outline)
+        distance2 = min(segment_distance2(a, b, c, d) for a, b in edges(polygon) for c, d in edges(outline))
+        return outside, distance2, outside > 0 or distance2 < minimum_nm * minimum_nm
     for fp in sorted(probe['footprints'], key=lambda f: (f['ref'], f['uuid'])):
         polygons, reason = courtyards(fp)
         if polygons is None:
             unknown.append({'kind': 'courtyard', 'ref': fp['ref'], 'uuid': fp['uuid'], 'reason': reason})
             continue
+        inner, _ = courtyards(fp, inner=True)
         for side, contours in polygons.items():
-            for polygon in contours:
-                outside = Fraction(abs(area2(polygon)), 2) - intersection_area(polygon, outline)
-                distance2 = min(segment_distance2(a, b, c, d) for a, b in edges(polygon) for c, d in edges(outline))
+            for index, polygon in enumerate(contours):
+                outside, distance2, short = clearance(polygon)
                 record = {'ref': fp['ref'], 'uuid': fp['uuid'], 'side': side, 'inside_outline': outside == 0,
                           'distance_mm': round(math.sqrt(distance2) / 10**6, 6), 'minimum_mm': mm(minimum_nm)}
                 measured.append(record)
-                if outside > 0 or distance2 < minimum_nm * minimum_nm:
+                if not short:
+                    continue
+                # A curved courtyard's outer bound may be short only by its tolerance;
+                # the defect is proved on the inner bound, which lies within the true curve.
+                if clearance(inner[side][index])[2]:
                     defects.append({'kind': 'courtyard_edge_clearance', **record})
+                else:
+                    unknown.append({'kind': 'courtyard_approximation', 'ref': fp['ref'], 'uuid': fp['uuid'],
+                                    'side': side, 'reason': 'edge clearance lies between the declared curve bounds'})
     return {'criterion': 'edge-clearance/1', 'status': verdict(defects, unknown), 'defects': defects,
             'unknown': unknown, 'measured': measured, 'minimum_mm': mm(minimum_nm)}
 
@@ -244,7 +270,7 @@ def footprint_keepout(probe, report):
         here = [(a, p) for a, p in applicable if layer in a['layers']]
         hits = []
         if here:
-            polygons, reason = courtyards(fp)
+            polygons, reason = courtyards(fp, inner=True)
             if polygons is None:
                 unknown.append({'kind': 'courtyard', 'ref': fp['ref'], 'uuid': fp['uuid'], 'reason': reason})
             else:
@@ -257,6 +283,36 @@ def footprint_keepout(probe, report):
                             'reason': 'helper geometry intersects a footprint keepout but native DRC reported no item'})
     return {'criterion': 'footprint-keepout/1', 'status': verdict(defects, unknown), 'defects': defects,
             'unknown': unknown, 'rule_areas': inventory}
+
+
+def envelope_overhangs(validation):
+    """Fixed-courtyard overhang declarations of an AGENTEE-85 envelope validation record.
+
+    One entry per fixed footprint that declares ``courtyard_overhangs``: each
+    named outline edge in exact nanometres with its outward axis and maximum
+    distance, citing the envelope id, hash and field pointer (AGENTEE-212)."""
+    if not isinstance(validation, dict) or validation.get('schema') != 'agent-ee.envelope-validation/1':
+        raise ValueError('expected an agent-ee.envelope-validation/1 record')
+    named = {e['name']: e for e in validation['outline']['edges']}
+    out = []
+    for index, fixed in enumerate(validation['fixed_footprints']):
+        if 'courtyard_overhangs' not in fixed:
+            continue
+        edges = []
+        for overhang in fixed['courtyard_overhangs']:
+            edge = named[overhang['edge']]
+            try:
+                distance = nanometres(overhang['max_mm'])
+            except (LibraryError, TypeError) as exc:
+                raise ValueError('envelope numbers must be exact decimal text') from exc
+            edges.append({'name': edge['name'], 'start_nm': list(_point_nm(edge['start_mm'], 'edge start')),
+                          'end_nm': list(_point_nm(edge['end_mm'], 'edge end')), 'outward': edge['outward'],
+                          'max_nm': distance})
+        out.append({'reference': fixed['reference'], 'edges': edges,
+                    'source': {'envelope_id': validation['envelope_id'],
+                               'envelope_sha256': validation['envelope_sha256'],
+                               'pointer': f'/fixed_footprints/{index}/courtyard_overhangs'}})
+    return out
 
 
 # ------------------------------------------------------ connector edge/access

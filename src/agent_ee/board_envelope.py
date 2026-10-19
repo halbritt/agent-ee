@@ -569,7 +569,8 @@ def validate_fixed(footprints, vertices, edges):
     for footprint in footprints:
         ref = footprint['reference']
         fields(footprint, f'fixed footprint {ref}', ['reference', 'side', 'edge', 'position_mm', 'inset_mm',
-                                                     'rotation_deg', 'insertion', 'tolerance_mm'])
+                                                     'rotation_deg', 'insertion', 'tolerance_mm'],
+               ['courtyard_overhangs'])
         if footprint['side'] not in SIDES:
             raise ValueError(f'fixed footprint {ref} side must be front or back')
         if not isinstance(footprint['edge'], str) or footprint['edge'] not in edges:
@@ -595,14 +596,40 @@ def validate_fixed(footprints, vertices, edges):
         anchor = (sx + ux * position + ix * inset, sy + uy * position + iy * inset)
         if not inside(anchor, vertices):
             raise ValueError(f'fixed footprint {ref} anchor {mm_point(anchor)} is outside the outline')
-        records.append({'reference': ref, 'side': footprint['side'], 'layer': SIDES[footprint['side']],
-                        'edge': edge['name'], 'position_mm': mm(position), 'inset_mm': mm(inset),
-                        'anchor_mm': mm_point(anchor),
-                        'rotation_deg': degrees(rotation, f'fixed footprint {ref} rotation_deg'),
-                        'insertion': insertion,
-                        'mating_axis': edge['outward'] if insertion == 'through_edge' else
-                        ('z-' if insertion == 'from_top' else 'z+'),
-                        'tolerance_mm': mm(tolerance)})
+        record = {'reference': ref, 'side': footprint['side'], 'layer': SIDES[footprint['side']],
+                  'edge': edge['name'], 'position_mm': mm(position), 'inset_mm': mm(inset),
+                  'anchor_mm': mm_point(anchor),
+                  'rotation_deg': degrees(rotation, f'fixed footprint {ref} rotation_deg'),
+                  'insertion': insertion,
+                  'mating_axis': edge['outward'] if insertion == 'through_edge' else
+                  ('z-' if insertion == 'from_top' else 'z+'),
+                  'tolerance_mm': mm(tolerance)}
+        if 'courtyard_overhangs' in footprint:
+            record['courtyard_overhangs'] = courtyard_overhangs(footprint['courtyard_overhangs'], ref, edges)
+        records.append(record)
+    return records
+
+
+def courtyard_overhangs(value, ref, edges):
+    """Declared allowances for one fixed courtyard to leave the outline (AGENTEE-212).
+
+    A nonempty list of distinct axis-aligned outline edges, each with a positive
+    maximum distance beyond it. An allowance is never implied by a fixed
+    reference, a name or a footprint id."""
+    label = f'fixed footprint {ref} courtyard_overhangs'
+    if not isinstance(value, list) or not value:
+        raise ValueError(f'{label} must be a nonempty list')
+    records, seen = [], set()
+    for item in value:
+        fields(item, label + ' item', ['edge', 'max_mm'])
+        if not isinstance(item['edge'], str) or item['edge'] not in edges or item['edge'] in seen:
+            raise ValueError(f"{label} edge {item['edge']!r} is not a distinct outline edge name")
+        seen.add(item['edge'])
+        edge = edges[item['edge']]
+        if not edge['axis_aligned']:
+            raise ValueError(f"{label} edge {edge['name']} is oblique")
+        distance = length(item['max_mm'], f"{label} {edge['name']} max_mm", positive=True)
+        records.append({'edge': edge['name'], 'max_mm': mm(distance)})
     return records
 
 
@@ -724,7 +751,14 @@ def derive_requirements(record, source_path):
                               f"{fixed['edge']} and {fixed['inset_mm']} mm inward, at "
                               f"{point_text(fixed['anchor_mm'])} mm, rotation {fixed['rotation_deg']} deg, "
                               f"within {fixed['tolerance_mm']} mm; it is mated {fixed['insertion']} "
-                              f"(mating axis {fixed['mating_axis']}).", source_path, CHECK_KINDS['fixed_footprints']))
+                              f"(mating axis {fixed['mating_axis']})." + (
+                                  ' Its courtyard may extend beyond the outline only by at most ' +
+                                  '; '.join(f"{o['max_mm']} mm across edge {o['edge']}"
+                                            for o in fixed['courtyard_overhangs']) +
+                                  (', and into the corner between two adjacent declared edges.'
+                                   if len(fixed['courtyard_overhangs']) > 1 else '.')
+                                  if 'courtyard_overhangs' in fixed else ''),
+                              source_path, CHECK_KINDS['fixed_footprints']))
     for index, item in enumerate(record.get('obligations', [])):
         out.append(obligation(eid, f"obligation-{item['id']}", f'/obligations/{index}', item,
                               item['statement'] + f" Requirement IDs: {', '.join(item['requirement_ids'])}; "
