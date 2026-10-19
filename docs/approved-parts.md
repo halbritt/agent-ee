@@ -269,3 +269,7 @@ identity declaration, acquired datasheet and a pinned AGENTEE-167 hand-fit
 deviation. It does not create a JLCPCB catalog row. See
 [binding fill](binding-fill.md#external-parts-without-an-lcsc-number) for exact
 record fields, immutable dependency closure and requalification rules.
+
+## Manufactured probe features
+
+The parts/1 union also admits one required [bare copper probe feature](probe-features.md) kind with exact captured symbol, footprint, pin and native net identity. This variant has no catalog or purchased identity; the ordinary part schema is unchanged.

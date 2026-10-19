@@ -361,3 +361,9 @@ refusals and the D/F1/G1 fab-turn reachability shapes.
 Historical campaigns with a counted fab producer but no sealed step witness do
 not inherit this acceptance evidence. Start a fresh campaign to obtain it.
 Historical scopes without a counted fab producer keep their earlier behavior.
+
+## Required copper probes
+
+With `probe_manifest`, [bare copper probe features](probe-features.md) qualify against an immutable captured parts/1 declaration and the preceding native netlist. Saved board geometry, native flags and required presence are checked before BOM/CPL exclusion. `board_non_dnp` still includes probes; the native position inventory excludes these exact feature references. Copper and mask Gerbers retain their pads, and the fab manifest adds qualified `probe_features` records. Undeclared markers and ordinary non-DNP exclusions remain refused.
+
+Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.

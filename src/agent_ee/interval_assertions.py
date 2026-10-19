@@ -406,7 +406,7 @@ def capability(params, scope, files, inputs, cid):
         if (manifest['catalog']['snapshot'] != params['snapshot']
                 or manifest['catalog']['manifest_sha256'] != params['manifest_sha256']):
             raise ValueError('parts manifest pins a different catalog snapshot')
-        parts = {part['id'] for part in manifest['parts']}
+        parts = {part['id'] for part in manifest['parts'] if part.get('kind') != 'bare_copper_probe'}
     for name, parameter in compiled['parameters'].items():
         if parameter['source'] == 'catalog' and 'snapshot' not in params:
             raise ValueError(f'parameter {name} needs a pinned catalog snapshot')
@@ -589,7 +589,8 @@ def evaluate_inputs(root, params):
                 raise ValueError('parts manifest pins a different catalog snapshot')
             parts_input = {'path': params['parts_manifest'],
                            'sha256': hashlib.sha256(read_captured(root, params['parts_manifest'])).hexdigest()}
-            parts = {'input': parts_input, 'lcsc': {part['id']: part['lcsc'] for part in manifest['parts']}}
+            parts = {'input': parts_input, 'lcsc': {part['id']: part['lcsc'] for part in manifest['parts']
+                                                 if part.get('kind') != 'bare_copper_probe'}}
             report['inputs']['parts_manifest'] = parts_input
         for name, parameter in compiled['parameters'].items():
             if parameter['source'] == 'catalog' and rows is None:

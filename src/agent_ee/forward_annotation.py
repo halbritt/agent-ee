@@ -112,6 +112,20 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
                 stale_nets=[], counts={})
     try:
         inventory, elements = _inventory(xml_bytes)
+        from .probe_features import PROPERTY, parse_marker, native_component, footprint_signature
+        from .symbol_library import parse_sexpr
+        for ref, fields in _fields(elements).items():
+            if PROPERTY in fields:
+                record = parse_marker(fields[PROPERTY])
+                try:
+                    native_component(record, inventory['components'][ref], inventory)
+                    data = captured_footprints[record['footprint_source']['path']]
+                    if hashlib.sha256(data).hexdigest() != record['footprint_source']['sha256']:
+                        raise ValueError('probe captured footprint bytes changed')
+                    if footprint_signature(parse_sexpr(data), record['pin']['number']) != record['geometry']:
+                        raise ValueError('probe captured pad geometry changed')
+                except (ValueError, KeyError) as exc:
+                    raise AnnotationError('probe_feature_mismatch', str(exc), '/components/' + ref) from exc
         for ref in sorted(inventory['components'], key=_natural):
             # The reader's parsed flag: KiCad 10.0.7 exports on_board no as a
             # valueless exclude_from_board property, whatever its byte spelling.
@@ -303,11 +317,18 @@ def plan(board, xml, manifest, footprint_root, work):
         # An unreadable or escaping manifest member is missing coverage.
         return _failed(PLAN_SCHEMA, 'footprint_library_coverage', str(exc))
     try:
+        from .probe_features import PROPERTY, parse_marker, validate_board
+        _, elements = _inventory(xml_bytes)
+        probes = {ref: parse_marker(fields[PROPERTY]) for ref, fields in _fields(elements).items()
+                  if PROPERTY in fields}
+        validate_board(Path(board).read_bytes(), probes, require_all=False)
         facts = board_facts(board, work)
         if _sha256(board) != board_sha:
             raise AnnotationError('stale_input', 'board changed during planning')
     except AnnotationError as exc:
         return _failed(PLAN_SCHEMA, exc.code, str(exc), exc.location)
+    except ValueError as exc:
+        return _failed(PLAN_SCHEMA, 'probe_feature_mismatch', str(exc))
     return build_plan(xml_bytes, board_sha, facts, manifest, captures)
 
 
@@ -545,6 +566,14 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
             output = (work / 'apply' / 'board.kicad_pcb').read_bytes()
             if hashlib.sha256(output).hexdigest() != _sha256(work / 'verify' / 'facts-input' / 'board.kicad_pcb'):
                 raise AnnotationError('verification', 'saved board changed after verification')
+        from .probe_features import PROPERTY, parse_marker, validate_board
+        _, elements = _inventory(Path(xml).read_bytes())
+        probes = {ref: parse_marker(fields[PROPERTY]) for ref, fields in _fields(elements).items()
+                  if PROPERTY in fields}
+        try:
+            validate_board(output, probes)
+        except ValueError as exc:
+            raise AnnotationError('probe_feature_mismatch', str(exc)) from exc
         if hashlib.sha256(source).hexdigest() != plan_record['inputs']['board_sha256'] or \
                 _sha256(board) != plan_record['inputs']['board_sha256'] or \
                 hashlib.sha256(Path(xml).read_bytes()).hexdigest() != plan_record['inputs']['xml_sha256']:

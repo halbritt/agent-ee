@@ -260,6 +260,14 @@ def _outline(board, box):
 
 def _footprint(board, comp, path, nets):
     import pcbnew
+    from .probe_features import PROPERTY, parse_marker, footprint_signature
+    if PROPERTY in comp['fields']:
+        from .symbol_library import parse_sexpr
+        record = parse_marker(comp['fields'][PROPERTY])
+        if digest(path) != record['footprint_source']['sha256']:
+            raise BoardBuildError(comp['ref'] + ': probe captured footprint bytes changed')
+        if footprint_signature(parse_sexpr(path.read_bytes()), record['pin']['number']) != record['geometry']:
+            raise BoardBuildError(comp['ref'] + ': probe captured pad geometry changed')
     lib, name = comp['footprint'].split(':')
     fp = pcbnew.FootprintLoad(str(path.parent), name)
     if fp is None:
@@ -340,6 +348,13 @@ def construct(netlist, envelope, template, footprints, output, seed_hashes):
     # Project settings are written separately from the template's project.
     if not pcbnew.SaveBoard(str(output), board, True):
         raise BoardBuildError(f'pcbnew failed to save {output}')
+    from .probe_features import PROPERTY, parse_marker, validate_board
+    probes = {c['ref']: parse_marker(c['fields'][PROPERTY]) for c in netlist['components']
+              if PROPERTY in c['fields']}
+    try:
+        validate_board(output.read_bytes(), probes)
+    except ValueError as exc:
+        raise BoardBuildError(str(exc)) from exc
 
 
 def construct_isolated(spec, scratch, mode='--construct'):

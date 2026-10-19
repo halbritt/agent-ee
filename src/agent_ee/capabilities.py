@@ -460,6 +460,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'part_binding':
             from .part_binding import capability
             descriptor = capability(params, scope, files, inputs)
+            if 'probe_manifest' in params:
+                prerequisite(params['netlist_check'], ('netlist',))
+                from .probe_features import membership_check
+                prerequisite(membership_check(params, scope), ('parts_subset',))
             sch = params.get('schematic', scope.get('schematic'))
             pcb = params.get('board', scope.get('board'))
             if sch is not None:
@@ -479,6 +483,12 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'fab_export':
             from .fab_export import capability
             descriptor = capability(params)
+            from .probe_features import immutable_inputs
+            for path in immutable_inputs(params, files, inputs, scope):
+                captured(path, immutable=True)
+            if 'probe_manifest' in params:
+                from .probe_features import membership_check
+                prerequisite(membership_check(params, scope), ('parts_subset',))
             prerequisite(params['netlist_check'], ('netlist',))
             captured(scope.get('board'))
             captured(scope.get('schematic'))
