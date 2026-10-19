@@ -402,7 +402,8 @@
         "fixtures/fome-mc/inventory/capture/inventory-report.json",
         "fixtures/fome-mc/psu/capture/inventory-report.json",
         "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
-        "fixtures/fome-mc/rules/severities.json"
+        "fixtures/fome-mc/rules/severities.json",
+        "fixtures/fome-mc/pod-can/block/block.json"
       ]
     }
   },
@@ -2811,6 +2812,47 @@
         "AE"
       ],
       "reviewed": "Original regression tests with one owned KiCad 5 style footprint literal and short byte mutations of the captured fixture; no library or design text copied."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/pod-can/block/sheets/"
+      ],
+      "kind": "copied-design",
+      "origins": [
+        "T16"
+      ],
+      "note": "Byte copies of the admitted fome-mc wbo1 and psu sheets at df304f3321296f7e517e0d2e2aa52e1380d52993, read only from Git objects by reference_blocks.capture_block (AGENTEE-175). Combined upstream origin and licence in block.json and block-contract.json; common notice fixtures/fome-mc/LICENSE-NOTICE.md."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/pod-can/block/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "Reference-set block/contract, draft parts, native connectivity facts, interface contract and owned requirements for the two-sheet CAN composition (AGENTEE-175). Derived from admitted captures; no planning-document text. Upstream origins and licences are preserved; no source qualification claimed."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/pod-can/audit.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original capture helper and audit parent generator for AGENTEE-175. Native schematic and board string literals are authored here; the pinned source sheet bodies are captured separately through the existing Git API."
+    },
+    {
+      "paths": [
+        "tests/test_pod_can.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original tests for AGENTEE-175. Includes an owned native global-label literal and mutations of the admitted captures, source-identity assertions and checks against native exports; no vendor text or library copied."
     }
   ]
 }

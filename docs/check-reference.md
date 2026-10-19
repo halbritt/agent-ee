@@ -5,6 +5,11 @@ netlist export, `hardware_interface` and fresh `block_provenance`. Its coverage
 ledger keeps upstream parity, active behavior, parts and heater geometry unknown;
 its captured blocks remain unverified.
 
+The [pod CAN reference-set audit](pod-can.md) connects U307/C308 from `wbo1`
+to D4/R9 from `psu` and tests VCC/VIO separation with fresh native exports.
+It retains whole sheets and does not supply standalone composition or passing
+multi-instance `block_provenance` coverage; that adaptation is refused.
+
 For version-2 requirements, measurement/coupling interfaces, campaigns and bench
 feedback, see the [closed-loop contract and command reference](closed-loop.md).
 

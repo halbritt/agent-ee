@@ -124,8 +124,12 @@ remain fixed.
 ## Qualified scope
 
 The adapter supports a flat source block instantiated as one unique child-file
-occurrence in a captured hierarchy. It does not support nested blocks or repeated
-uses of the same child file. The strict native reader's component and terminal
+occurrence in a captured hierarchy. It refuses source blocks declaring multiple
+`instances`, before writing the child or instance record; exporting only their
+primary sheet cannot establish provenance for the other source instances.
+The [pod CAN capture](pod-can.md) exercises this refusal. It does not support
+nested blocks or repeated uses of the same child file. The strict native reader's
+component and terminal
 limits apply, including the temporary boundary probes. Native XML omits virtual power markers, so ERC and other declared
 board checks remain necessary. The semantic report covers native physical
 components and connectivity; it does not grade graphical layout or PCB geometry.

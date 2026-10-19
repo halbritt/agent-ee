@@ -37,6 +37,8 @@ def _source(root, block):
     # Referenced runs are deliberately not opened. They cannot qualify a board.
     validate_block(directory)
     record = _read(directory / 'block.json')
+    if len(record.get('instances', [])) > 1:
+        raise ValueError('multiple source instances are not supported by block adaptation')
     ast = parse_sexpr((directory / record['sheet']).read_bytes())
     if children(ast, 'sheet'):
         raise ValueError('nested source blocks are not supported')
