@@ -1067,6 +1067,18 @@
     "project_uploaded": false,
     "captcha_encountered": false,
     "raw_bytes_committed": false,
+    "committed_decoded_results": [
+      {
+        "path": "rf-w2-calc-4-result.json",
+        "raw_capture_file": "calc-4-result.json",
+        "bytes": 513,
+        "sha256": "d05e15b93f02b3cc12b9b967c093503c60a3c72338a2f35ddccd96d4998b89af",
+        "representation": "decoded_json",
+        "committed_by": "AGENTEE-264",
+        "origin": "Agent-ee's own capture of the JLCPCB impedance calculator result for agent-ee's W2 inputs (calculation 4 above): numbers and identifiers only, no vendor page, script, frame or design file.",
+        "use": "rf_geometry electrical_length.effective_permittivity_source binds /impedance_calc_result/dErEff by this SHA-256; reported only, impedance unverified."
+      }
+    ],
     "transport_limit": "All received frames/payloads and sent control frames are retained. A close frame was sent before closing the socket; no server close reply was awaited."
   }
 }

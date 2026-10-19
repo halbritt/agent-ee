@@ -12,3 +12,6 @@ fixtures/fome-mc/inventory/capture/** -text -whitespace
 # Legacy catalog source and snapshot are byte-pinned regression captures.
 fixtures/catalog-legacy/owned.csv -text -whitespace
 fixtures/catalog-legacy/snapshot/** -text
+
+# The captured W2 solver result (AGENTEE-264) must keep its committed bytes; rf-source-capture.json records its SHA-256.
+fixtures/telemetry-pod/rf-w2-calc-4-result.json -text -whitespace

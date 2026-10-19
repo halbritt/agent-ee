@@ -20,6 +20,31 @@ from agent_ee.storage import digest, write_json
 import rf_geometry_fixture as fx
 
 TRUNK_MM = 10 + 2 * math.sqrt(2) + 12
+POD = Path(__file__).resolve().parents[1] / 'fixtures/telemetry-pod'
+SOLVER = POD / 'rf-w2-calc-4-result.json'
+SOLVER_SHA256 = 'd05e15b93f02b3cc12b9b967c093503c60a3c72338a2f35ddccd96d4998b89af'
+ERR_EFF_POINTER = '/impedance_calc_result/dErEff'
+
+
+def bound_declaration(path='project/rf-w2-calc-4-result.json', sha256=SOLVER_SHA256, pointer=ERR_EFF_POINTER,
+                      **overrides):
+    """Owned declaration whose effective permittivity is read from the captured W2 solver record."""
+    doc = fx.declaration(**overrides)
+    doc['electrical_length'] = {'effective_permittivity_source': {'path': path, 'sha256': sha256,
+                                                                  'pointer': pointer},
+                                'frequency_hz': 1575420000, 'basis': 'captured W2 solver ErEff, reported only'}
+    return doc
+
+
+def parse_bound(doc, document=None):
+    """Parse against the committed solver record (or an altered document), hashed as captured."""
+    def load(rel):
+        if rel != 'project/rf-w2-calc-4-result.json':
+            raise ValueError(f'source must be a captured input: {rel!r}')
+        if document is None:
+            return {'document': json.loads(SOLVER.read_bytes()), 'sha256': digest(SOLVER)}
+        return {'document': document, 'sha256': SOLVER_SHA256}
+    return parse_declaration(json.dumps(doc).encode(), load)[1]
 
 
 def parse(doc, sources=None):
@@ -52,6 +77,49 @@ class DeclarationTests(unittest.TestCase):
                 parse(doc, sources)
         with self.assertRaisesRegex(ValueError, 'captured input'):
             parse(fx.sourced_declaration())
+
+    def test_permittivity_binds_the_captured_solver_record_by_sha256_and_pointer(self):
+        electrical = parse_bound(bound_declaration())['electrical_length']
+        self.assertEqual(electrical['effective_permittivity'], 2.94025199985)
+        self.assertEqual(electrical['source'], {'path': 'project/rf-w2-calc-4-result.json',
+                                                'sha256': SOLVER_SHA256, 'pointer': ERR_EFF_POINTER})
+        self.assertNotIn('status', electrical)
+        declared = fx.declaration(electrical_length={'effective_permittivity': 3.1, 'frequency_hz': 1575420000,
+                                                     'basis': 'declared ErEff'})
+        self.assertEqual(parse(declared)['electrical_length'],
+                         {'frequency_hz': 1575420000, 'basis': 'declared ErEff', 'effective_permittivity': 3.1})
+
+    def test_permittivity_hash_mismatch_and_malformed_bindings_refuse(self):
+        with self.assertRaisesRegex(ValueError, 'not the declared ' + '0' * 64):
+            parse_bound(bound_declaration(sha256='0' * 64))
+        both = bound_declaration()
+        both['electrical_length']['effective_permittivity'] = 2.94
+        neither = bound_declaration()
+        del neither['electrical_length']['effective_permittivity_source']
+        cases = {'both': both, 'neither': neither,
+                 'short hash': bound_declaration(sha256=SOLVER_SHA256[:63]),
+                 'upper hash': bound_declaration(sha256=SOLVER_SHA256.upper()),
+                 'pointer syntax': bound_declaration(pointer='impedance_calc_result/dErEff'),
+                 'nonnumeric': bound_declaration(pointer='/impedance_calc_mark'),
+                 'nonpositive': bound_declaration(pointer='/impedance_calc_status'),
+                 'uncaptured': bound_declaration(path='project/elsewhere.json')}
+        for name, doc in cases.items():
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                parse_bound(doc)
+        with self.assertRaisesRegex(ValueError, 'requires captured inputs'):
+            parse_declaration(json.dumps(bound_declaration()).encode())
+
+    def test_permittivity_absent_at_the_pointer_is_unknown(self):
+        recorded = json.loads(SOLVER.read_bytes())
+        nulled = copy.deepcopy(recorded)
+        nulled['impedance_calc_result']['dErEff'] = None
+        for name, (doc, document) in {'missing key': (bound_declaration(pointer='/impedance_calc_result/dEr'), None),
+                                      'missing parent': (bound_declaration(pointer='/result/dErEff'), None),
+                                      'null value': (bound_declaration(), nulled)}.items():
+            with self.subTest(name=name):
+                electrical = parse_bound(doc, document)['electrical_length']
+                self.assertEqual((electrical['effective_permittivity'], electrical['status']), (None, 'unknown'))
+                self.assertIn('absent', electrical['reason'])
 
     def test_structural_declaration_errors_refuse(self):
         stubs = fx.declaration()['topology']['stubs']
@@ -218,6 +286,21 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertEqual(self.branches(self.evaluate(doc))['esd'][0], 'pass')
         self.assertEqual(self.branches(self.evaluate(doc))['bias'][0], 'defect')
 
+    def test_bound_permittivity_reports_electrical_length_without_changing_verdicts(self):
+        plain = self.evaluate()
+        bound = evaluate(parse_bound(bound_declaration()), self.native(parse(fx.declaration())))
+        self.assertEqual(bound['status'], plain['status'])
+        self.assertEqual(self.branches(bound), self.branches(plain))
+        for branch in bound['sections']['topology']['branches']:
+            expected = 360 * branch['length_mm'] / 1000 * 1575420000 * math.sqrt(2.94025199985) / 299_792_458
+            self.assertAlmostEqual(branch['electrical_length_deg'], expected, places=3)
+        recorded = json.loads(SOLVER.read_bytes())
+        del recorded['impedance_calc_result']['dErEff']
+        absent = evaluate(parse_bound(bound_declaration(), recorded), self.native(parse(fx.declaration())))
+        self.assertEqual(absent['status'], plain['status'])
+        self.assertEqual(self.branches(absent), self.branches(plain))
+        self.assertEqual({b['electrical_length_deg'] for b in absent['sections']['topology']['branches']}, {None})
+
     def test_arc_bend_length_is_the_arc_not_the_chord(self):
         trunk = self.branches(self.evaluate(arc_bend=True))['trunk']
         self.assertAlmostEqual(trunk[1], 10 + math.pi + 12, delta=0.001)
@@ -273,11 +356,13 @@ class NativeCheckTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
-    def run_board(self, doc=None, **board):
+    def run_board(self, doc=None, solver=None, **board):
         source = self.root / 'source'
         source.mkdir()
         fx.make_board(source / 'board.kicad_pcb', **board)
         write_json(source / 'rf-calculation.json', fx.CALCULATION)
+        if solver is not None:
+            (source / 'rf-w2-calc-4-result.json').write_bytes(solver)
         write_json(source / 'rf-geometry.json', doc or fx.sourced_declaration())
         (source / 'requirements.md').write_text('R-rf: owned grounded-CPW geometry control')
         scope = {'schema': 'agent-ee.scope/2', 'inputs': [{'path': str(source), 'at': 'project'}],
@@ -335,6 +420,23 @@ class NativeCheckTests(unittest.TestCase):
             validate_witnesses(run, [{'requirement_id': 'R-rf', 'check_id': 'rf'}],
                                [{'path': 'checks/rf.json', 'locator': 'outcome'}])
 
+    def test_bound_permittivity_is_bound_to_the_captured_solver_record(self):
+        doc = bound_declaration(**{k: v for k, v in fx.sourced_declaration().items() if k in ('source', 'cpw')})
+        run, result = self.run_board(doc, solver=SOLVER.read_bytes())
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['summary'])
+        report = json.loads((run / 'work/rf/rf-geometry.json').read_text())
+        manifest = json.loads((run / 'candidate.json').read_text())
+        electrical = report['resolved']['electrical_length']
+        self.assertEqual(electrical['source']['sha256'], manifest['files']['project/rf-w2-calc-4-result.json'])
+        self.assertEqual(electrical['source']['sha256'], SOLVER_SHA256)
+        self.assertEqual(electrical['effective_permittivity'], 2.94025199985)
+        self.assertTrue(all(b['electrical_length_deg'] > 0 for b in report['sections']['topology']['branches']))
+
+    def test_altered_solver_record_refuses_capture(self):
+        altered = SOLVER.read_bytes().replace(b'2.94025199985', b'3.94025199985')
+        with self.assertRaisesRegex(ValueError, 'effective_permittivity_source .* has sha256'):
+            self.run_board(bound_declaration(), solver=altered)
+
     def test_uncaptured_source_refuses_capture(self):
         with self.assertRaisesRegex(ValueError, 'source must be a captured input'):
             self.run_board(fx.sourced_declaration(path='project/missing.json'))
@@ -358,6 +460,39 @@ class CapabilityTests(unittest.TestCase):
                 spec['params'] = params
                 self.assertEqual(describe_check(spec, check_specs=[spec], files=files, scope=scope,
                                                 inputs=inputs)['status'], 'unsupported', params)
+
+    def test_permittivity_source_is_an_immutable_input_and_mismatch_is_unsupported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = Path(tmp)
+            (inputs / 'board.kicad_pcb').write_text('(kicad_pcb)')
+            write_json(inputs / 'rf.json', bound_declaration(path='solver.json'))
+            (inputs / 'solver.json').write_bytes(SOLVER.read_bytes())
+            files = {name: digest(inputs / name) for name in ('board.kicad_pcb', 'rf.json', 'solver.json')}
+            spec = {'id': 'rf', 'kind': 'rf_geometry', 'params': {'declaration': 'rf.json'}}
+            scope = {'board': 'board.kicad_pcb', 'checks': [spec]}
+            result = describe_check(spec, check_specs=[spec], files=files, scope=scope, inputs=inputs)
+            self.assertEqual(result['status'], 'supported', result)
+            self.assertEqual(result['immutable_inputs'], ['rf.json', 'solver.json'])
+            write_json(inputs / 'rf.json', bound_declaration(path='solver.json', sha256='0' * 64))
+            files['rf.json'] = digest(inputs / 'rf.json')
+            result = describe_check(spec, check_specs=[spec], files=files, scope=scope, inputs=inputs)
+            self.assertEqual(result['status'], 'unsupported', result)
+
+
+class PodSolverCaptureTests(unittest.TestCase):
+    def test_committed_solver_record_is_the_recorded_w2_capture(self):
+        self.assertEqual(digest(SOLVER), SOLVER_SHA256)
+        w2 = json.loads((POD / 'rf-source-capture.json').read_text())['w2_continuation']
+        raw, = [c for c in w2['raw_captures'] if c['file'] == 'calc-4-result.json']
+        committed, = w2['committed_decoded_results']
+        self.assertEqual((raw['sha256'], raw['bytes']), (SOLVER_SHA256, len(SOLVER.read_bytes())))
+        self.assertEqual((committed['path'], committed['raw_capture_file'], committed['sha256'], committed['bytes']),
+                         (SOLVER.name, raw['file'], raw['sha256'], raw['bytes']))
+        recorded = json.loads(SOLVER.read_bytes())
+        self.assertEqual((recorded['impedance_calc_status'], recorded['impedance_calc_result']['dResultValid']),
+                         (0, 1))
+        self.assertEqual(recorded['uuid'], w2['calculation']['uuid'])
+        self.assertEqual(recorded['impedance_calc_result']['jBackCalc'], w2['calculation']['geometry_mil'])
 
 
 if __name__ == '__main__':
