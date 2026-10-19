@@ -1,0 +1,100 @@
+{
+  "schema": "agent-ee.interface/1",
+  "components": {
+    "D4": {
+      "locations": [
+        {
+          "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+          "reference": "D4"
+        }
+      ],
+      "symbols": [
+        "Device:D_TVS_x2_AAC"
+      ]
+    },
+    "U4": {
+      "locations": [
+        {
+          "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+          "reference": "U4"
+        }
+      ],
+      "symbols": [
+        "Interface_CAN_LIN:MCP2551-I-SN"
+      ]
+    }
+  },
+  "terminals": {
+    "psu:CANH": {
+      "component": "D4",
+      "pin": "2"
+    },
+    "psu:CANL": {
+      "component": "D4",
+      "pin": "1"
+    },
+    "psu:RXDCAN": {
+      "component": "U4",
+      "pin": "4"
+    },
+    "psu:TXDCAN": {
+      "component": "U4",
+      "pin": "1"
+    }
+  },
+  "allowed_edits": [],
+  "invariants": [
+    {
+      "id": "pin:psu:CANH",
+      "requirement": "FOMEMC-22-psu",
+      "source": {
+        "path": "docs/SHEET_CONTRACTS.md",
+        "locator": "sheet:psu.kicad_sch"
+      },
+      "kind": "named_net",
+      "terminal": "psu:CANH",
+      "names": [
+        "/CAN+"
+      ]
+    },
+    {
+      "id": "pin:psu:CANL",
+      "requirement": "FOMEMC-22-psu",
+      "source": {
+        "path": "docs/SHEET_CONTRACTS.md",
+        "locator": "sheet:psu.kicad_sch"
+      },
+      "kind": "named_net",
+      "terminal": "psu:CANL",
+      "names": [
+        "/CAN-"
+      ]
+    },
+    {
+      "id": "pin:psu:RXDCAN",
+      "requirement": "FOMEMC-22-psu",
+      "source": {
+        "path": "docs/SHEET_CONTRACTS.md",
+        "locator": "sheet:psu.kicad_sch"
+      },
+      "kind": "named_net",
+      "terminal": "psu:RXDCAN",
+      "names": [
+        "/mcu/CAN_RX"
+      ]
+    },
+    {
+      "id": "pin:psu:TXDCAN",
+      "requirement": "FOMEMC-22-psu",
+      "source": {
+        "path": "docs/SHEET_CONTRACTS.md",
+        "locator": "sheet:psu.kicad_sch"
+      },
+      "kind": "named_net",
+      "terminal": "psu:TXDCAN",
+      "names": [
+        "/mcu/CAN_TX"
+      ]
+    }
+  ]
+}

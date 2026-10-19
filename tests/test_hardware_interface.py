@@ -69,6 +69,13 @@ class InterfaceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'invariants'):
             validate_contract(self.contract)
 
+    def test_component_free_contract_requires_cited_unknown_obligations(self):
+        contract = dict(schema='agent-ee.interface/1', components={}, terminals={}, allowed_edits=[],
+                        invariants=[dict(id='pending', kind='unresolved', reason='Not yet bound',
+                                         requirement='interface', source=self.contract['invariants'][0]['source'])])
+        with self.assertRaisesRegex(ValueError, 'component-free contract'):
+            validate_contract(contract)
+
     def test_external_block_citations_cannot_supply_board_requirement_authority(self):
         from agent_ee.hardware_interface import capability
         source = dict(kind='pinned-external', repository='owned', commit='a' * 40,

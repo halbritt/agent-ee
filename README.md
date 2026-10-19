@@ -173,6 +173,11 @@ remains unavailable: stackup lacks qualified copper-weight authority, and holes,
 keepouts and multiple fixed connectors lack individual bindings. Capture refuses
 those gaps.
 
+The offline [io-map compiler](docs/io-map.md) turns a declared pinout CSV into
+a hardware-interface contract, preserving no-connects and unresolved pins.
+Concrete MCU rows require a declared direct conductor; indirect CAN transceiver
+and ADC paths are refused by the compiler.
+
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
 with captured symbol-instance coverage in both directions,

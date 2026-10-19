@@ -31,7 +31,7 @@ def validate_contract(contract):
     if contract['schema'] != 'agent-ee.interface/1':
         raise ValueError('unsupported interface schema')
     components, terminals = contract['components'], contract['terminals']
-    if not isinstance(components, dict) or not components or not isinstance(terminals, dict):
+    if not isinstance(components, dict) or not isinstance(terminals, dict):
         raise ValueError('expected component and terminal mappings')
     locations = set()
     for cid, component in components.items():
@@ -49,6 +49,10 @@ def validate_contract(contract):
     terminal_keys = set()
     for tid, terminal in terminals.items():
         text(tid)
+        if isinstance(terminal, dict) and 'unresolved' in terminal:
+            exact_keys(terminal, 'unresolved')
+            text(terminal['unresolved'])
+            continue
         exact_keys(terminal, 'component pin')
         if terminal['component'] not in components:
             raise ValueError('unknown terminal component')
@@ -74,10 +78,26 @@ def validate_contract(contract):
     for invariant in invariants:
         kind = invariant.get('kind') if isinstance(invariant, dict) else None
         fields = {'component': 'component populated', 'value': 'component equals',
-                  'same_net': 'terminals', 'different_net': 'terminals', 'named_net': 'terminal names'}
+                  'same_net': 'terminals', 'different_net': 'terminals', 'named_net': 'terminal names',
+                  'no_connect': 'terminal', 'unresolved': 'reason'}
         if kind not in fields:
             raise ValueError('unknown invariant kind')
-        exact_keys(invariant, 'id requirement source kind ' + fields[kind])
+        exact_keys(invariant, 'id requirement source kind ' + fields[kind] +
+                   (' io_map' if 'io_map' in invariant else ''))
+        if 'io_map' in invariant:
+            citation = invariant['io_map']
+            exact_keys(citation, 'path sha256 row connector_pin signal external_destination requirements')
+            safe_relative(citation['path'])
+            if not isinstance(citation['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', citation['sha256']):
+                raise ValueError('invalid io_map sha256')
+            if type(citation['row']) is not int or citation['row'] < 2:
+                raise ValueError('invalid io_map row')
+            for field in ('connector_pin', 'signal', 'external_destination'):
+                text(citation[field])
+            if citation['requirements']:
+                strings(citation['requirements'])
+            elif citation['requirements'] != []:
+                raise ValueError('io_map requirements must be a list')
         iid = text(invariant['id'])
         if iid in ids:
             raise ValueError('duplicate invariant id')
@@ -91,7 +111,9 @@ def validate_contract(contract):
             exact_keys(source, 'path locator')
             safe_relative(source['path'])
             text(source['locator'])
-        if kind in ('component', 'value'):
+        if kind == 'unresolved':
+            text(invariant['reason'])
+        elif kind in ('component', 'value'):
             if invariant['component'] not in components:
                 raise ValueError('unknown invariant component')
             if kind == 'component' and type(invariant['populated']) is not bool:
@@ -99,16 +121,19 @@ def validate_contract(contract):
             if kind == 'value':
                 text(invariant['equals'])
                 protected_values.add(invariant['component'])
-        elif kind == 'named_net':
+        elif kind in ('named_net', 'no_connect'):
             if invariant['terminal'] not in terminals:
                 raise ValueError('unknown terminal')
-            strings(invariant['names'])
+            if kind == 'named_net':
+                strings(invariant['names'])
         else:
             strings(invariant['terminals'])
             if len(invariant['terminals']) != 2 or any(t not in terminals for t in invariant['terminals']):
                 raise ValueError('relation requires two declared terminals')
     if not edited <= protected_values:
         raise ValueError('allowed value edit requires a protected value predicate')
+    if not components and not all('io_map' in invariant for invariant in invariants):
+        raise ValueError('component-free contract requires cited unresolved io_map obligations')
     return contract
 
 
@@ -145,7 +170,15 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
         if (not req or invariant['source'] != req['source'] or check_id not in req['checks'] or
                 (external and not block_sources) or (not external and invariant['source']['path'] not in files)):
             raise ValueError('interface invariant requires exact captured requirement source and check mapping')
-    return {'contract': contract, 'immutable_inputs': [rel],
+    immutable = {rel}
+    for invariant in contract['invariants']:
+        citation = invariant.get('io_map')
+        if citation:
+            path = citation['path']
+            if path not in files or digest(Path(inputs) / path) != citation['sha256']:
+                raise ValueError('io_map CSV must be captured with matching sha256')
+            immutable.add(path)
+    return {'contract': contract, 'immutable_inputs': sorted(immutable),
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 
@@ -473,7 +506,7 @@ def declared_pins(contract, inventory):
     """Native (reference, pin) of every declared terminal with a resolved component."""
     resolved = resolve_components(contract, inventory)
     return {(resolved[t['component']]['reference'], t['pin']) for t in contract['terminals'].values()
-            if resolved[t['component']] and 'error' not in resolved[t['component']]}
+            if 'unresolved' not in t and resolved[t['component']] and 'error' not in resolved[t['component']]}
 
 
 def resolve_components(contract, inventory):
@@ -499,7 +532,14 @@ def evaluate(contract, inventory):
                   'actual': {}, 'locators': []}
         records.append(record)
         kind = invariant['kind']
-        tids = invariant.get('terminals', [invariant['terminal']] if kind == 'named_net' else [])
+        if kind == 'unresolved':
+            record['actual']['reason'] = invariant['reason']
+            continue
+        tids = invariant.get('terminals', [invariant['terminal']] if kind in ('named_net', 'no_connect') else [])
+        pending = [contract['terminals'][t]['unresolved'] for t in tids if 'unresolved' in contract['terminals'][t]]
+        if pending:
+            record['actual']['reason'] = '; '.join(pending)
+            continue
         cids = [contract['terminals'][t]['component'] for t in tids] if tids else [invariant['component']]
         natives = [resolved[c] for c in cids]
         record['actual']['components'] = dict(zip(cids, natives))
@@ -535,7 +575,12 @@ def evaluate(contract, inventory):
             unresolved = [inventory['unresolved'][k] for k in keys if k in inventory['unresolved']]
             connected = all(code is not None and k not in inventory['disconnected']
                             for k, code in zip(keys, codes))
-            if kind == 'named_net':
+            if kind == 'no_connect':
+                if unresolved:
+                    record['actual']['reason'] = '; '.join(unresolved)
+                    continue
+                satisfied = not connected
+            elif kind == 'named_net':
                 satisfied = connected and inventory['nets'][codes[0]] in invariant['names']
             elif kind == 'same_net':
                 satisfied = connected and codes[0] == codes[1]

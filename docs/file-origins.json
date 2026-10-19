@@ -2811,6 +2811,37 @@
         "AE"
       ],
       "reviewed": "Original regression tests with one owned KiCad 5 style footprint literal and short byte mutations of the captured fixture; no library or design text copied."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/io-map.csv"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Owner-authorized AGENTEE-188 input from owner repository fome-mc; commit e33c0e1c55e0a71678decd23d3ae70719a6ebc88, path telemetry-pod/io-map.csv, blob 0ed95d2db05038ba6650d695ffaf6958da2fc007. Byte-exact Git-object capture, no vendor text."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/fome-mc-can1.interface.json"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Owner-authorized AGENTEE-188 input from owner repository fome-mc; commit d31a690ab169290131b377057c41fe7d82d74bc4, path contracts/psu.interface.json, blob 17fb7ededf81607ec5cbdbc8dd842b637777b1c7. Derived excerpt: four CAN1 named_net invariants and their component/terminal declarations only; no design or library bytes."
+    },
+    {
+      "paths": [
+        "src/agent_ee/io_map.py",
+        "tests/test_io_map.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original CSV compiler and original probe tests; textual owner-repository contract cross-check only; no donor code or symbols copied."
     }
   ]
 }

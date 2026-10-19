@@ -32,10 +32,14 @@ evidence (AGENTEE-96 to AGENTEE-99).
 | --- | --- | --- | --- |
 | 1 | RC filter; [fixtures/rc](../fixtures/rc/PROVENANCE.md) is the hand-made reference | 3 footprints, 2 layers | AGENTEE-96. Rung 1 evidence: see `build/rung1-evidence-index-2026-10-17.md` (gitignored; AGENTEE-20) and Plane AGENTEE-96 |
 | 2 | One FOME-MC sheet as a standalone board: `sheets/psu.kicad_sch` or `sheets/wbo1.kicad_sch` | One block plus a connector | AGENTEE-97 |
-| 3 | Standalone wideband controller board | Power, wideband channel, MCU core and CAN blocks | AGENTEE-98 |
+| 3 | Telemetry pod | Power, MCU/radio, CAN, IMU, GNSS and analog front end | AGENTEE-98 |
 | 4 | FOME-MC itself | 15 sheets, 4 layers, about 492 footprints | AGENTEE-99 |
 
 What must exist at each stage before a rung can run:
+
+The pod's pinout CSV now compiles through the [io-map compiler](io-map.md)
+(AGENTEE-188). Its pinned fixture retains unresolved MCU pins and native
+bindings, so it establishes traceability without claiming schematic acceptance.
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
