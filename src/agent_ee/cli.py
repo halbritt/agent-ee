@@ -420,16 +420,17 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None, baseline_view=None):
     from .locking import writer_lock
     with writer_lock(out):
         return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
-                           previous=previous, profile=profile, expected_baseline=expected_baseline, output_stream=output_stream,
+                           previous=previous, profile=profile, expected_baseline=expected_baseline,
+                           baseline_view=baseline_view, output_stream=output_stream,
                            max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context, stock_context=stock_context,
                            review_roles=review_roles, routing_context=routing_context)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None, baseline_view=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -455,7 +456,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         validate_scope(m["scope"])
         if expected_baseline is not None:
             from .baseline import load_baseline
-            if load_baseline(run) != expected_baseline:
+            # A campaign may compare the candidate's sealed view (coordinator rating provenance removed).
+            if (baseline_view or load_baseline)(run) != expected_baseline:
                 raise ValueError("candidate changed the campaign baseline before verification")
         if m["scope"].get("review_profile"):
             from .profiles import validate_profile

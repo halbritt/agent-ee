@@ -622,6 +622,58 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
                             for c in record['stages'][0]['checks']))
         self.assertFalse((self.root/'run/campaign').exists())
 
+    def use_rating_check(self, sealed=False):
+        # binding-fill --ratings feeding an assembly_readiness check (AGENTEE-256); the step itself never runs here.
+        from test_assembly_readiness import _write_sqlite_catalog
+        (self.source/'assembly-catalog').mkdir()
+        _write_sqlite_catalog(self.source/'assembly-catalog',[{'lcsc':'C1','stock':1}])
+        params={'catalog':'assembly-catalog/catalog-manifest.json'}
+        if sealed:
+            (self.source/'old').mkdir()
+            write_json(self.source/'old/binding-fill.receipt.json',{'test':'borrowed receipt'})
+            write_json(self.source/'old/binding-fill.json',{'test':'borrowed report'})
+            params['rating_provenance']=dict(receipt='old/binding-fill.receipt.json',report='old/binding-fill.json',
+                receipt_sha256=digest(self.source/'old/binding-fill.receipt.json'))
+        self.scope['checks'].insert(-1,dict(id='assembly',kind='assembly_readiness',stage='verification',params=params))
+        self.scope['baseline']['requirements'][0]['checks'].insert(-1,'assembly')
+        self.plan['implementation_steps'][0]['argv']=['/usr/bin/false','--ratings','ratings.json']
+        self.save()
+
+    def test_rating_step_with_assembly_check_opts_into_coordinator_provenance(self):
+        from agent_ee import campaign
+        self.use_rating_check()
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            receipt=self.build()
+        config=read_json(self.root/'run/campaign.json')
+        self.assertEqual(config['rating_provenance'],pod.RATING_PROVENANCE)
+        self.assertEqual(receipt['validation']['rating_provenance'],pod.RATING_PROVENANCE)
+        # The prepared scope stays sealed: the campaign derives the declaration per candidate.
+        assembly=next(c for c in read_json(self.root/'run/scope.json')['checks'] if c['id']=='assembly')
+        self.assertNotIn('rating_provenance',assembly['params'])
+        self.start_campaign()
+        # Dropping the opt-in is not silently accepted by the campaign either.
+        del config['rating_provenance']
+        config['implementation_steps'][0]['argv']=['/usr/bin/false']
+        write_json(self.root/'run/campaign.json',config)
+        self.start_campaign(name='without')
+        config['rating_provenance']=pod.RATING_PROVENANCE
+        write_json(self.root/'run/campaign.json',config)
+        with self.assertRaisesRegex(ValueError,'--ratings'):
+            campaign.run_campaign(self.root/'run/campaign.json',self.root/'refused-campaign')
+        self.assertFalse((self.root/'refused-campaign').exists())
+
+    def test_sealed_rating_provenance_is_refused_before_output(self):
+        self.use_rating_check(sealed=True)
+        with self.assertRaisesRegex(ValueError,'sealed scope cannot declare rating_provenance'):
+            self.build('refused')
+        self.assertFalse((self.root/'refused').exists())
+
+    def test_plan_without_ratings_keeps_campaign_configuration(self):
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            receipt=self.build()
+        self.assertNotIn('rating_provenance',read_json(self.root/'run/campaign.json'))
+        self.assertNotIn('rating_provenance',receipt['validation'])
+
 
 if __name__=='__main__':
     unittest.main()

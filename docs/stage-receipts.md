@@ -251,6 +251,54 @@ Rewriting the retained tool hashes, receipt identity and state anchor cannot upd
 configuration digest. This is integrity within the campaign's existing trust boundary,
 not an external signature or a retained copy of the tool binaries.
 
+## Coordinator rating provenance
+
+A campaign whose `binding-fill` step runs with `--ratings` writes `AGENT_EE_Ratings`
+fields that `assembly_readiness` grades `unknown` without
+[receipt-bound provenance](assembly-readiness.md#receipt-bound-rating-provenance)
+(AGENTEE-242). The sealed scope cannot name that receipt before the step runs. The
+optional `agent-ee.campaign/1` field `rating_provenance` (AGENTEE-256) names one
+top-level candidate directory, for example `"rating-provenance"`, that only the
+coordinator writes. The [pod driver](pod-driver.md) sets it whenever a
+`binding-fill --ratings` step feeds an `assembly_readiness` check. Start refuses the
+field without an `assembly_readiness` check or a declared `binding-fill` step with
+`--ratings`, when a captured input already lies under that directory, and when the
+sealed scope already declares `rating_provenance`. A sealed declaration would be
+borrowed, not derived from the campaign's lineage.
+
+When an implementation adopts a `binding-fill --ratings` receipt, the coordinator:
+
+1. selects that implementation's last adoptable `binding-fill --ratings` receipt from
+   its anchored receipt index, revalidates it with its implementation binding, and
+   requires its recorded `out/binding-fill.json` artifact hash to equal the retained
+   `run/out/binding-fill.json`;
+2. copies those two files into
+   `implementations/N/rating-provenance/<directory>/binding-fill.receipt.json` and
+   `binding-fill.json`, and computes `receipt_sha256` from the copied bytes. The
+   copy must equal the anchored receipt digest. No hash or field written by the
+   writer or the tool is used;
+3. writes the new `proposal.scope.json`, which captures that directory in place of
+   any inherited copy. The declaration is added to every `assembly_readiness`
+   check. The sealed campaign scope and earlier proposals are never edited.
+
+An implementation that does not run the step leaves the inherited directory and
+declaration unchanged. The writer cannot edit or add them, because they are outside
+`mutable_inputs` and the inventory is frozen. The first candidate has none.
+
+Verification re-derives the declaration owed to every run. Run 1 is owed none. A run
+captured from implementation N's proposal is owed N's adopted receipt when the step
+ran. Any other run, including a bench-transition run, inherits the previous run's
+declaration and capture bytes exactly. A different pin, a receipt from another
+candidate or campaign, an inherited declaration after a new adoption, or changed
+receipt or report bytes refuses `record_iteration` and `verify-campaign`. The derived
+candidate's own `baseline.json` includes the declaration and the two pinned files. The
+campaign compares the candidate's baseline recompiled without the declaration with the
+sealed campaign baseline. Every other criterion, requirement and immutable input
+therefore stays exactly as sealed. Receipt-index verification compares the captured
+proposal with the delivered design outside this directory only. The directory itself
+is verified by the lineage rule above. `assembly_readiness` still validates the receipt,
+pin and report itself, so a tampered capture stays `unknown`, never `pass`.
+
 ## Done through declared steps
 
 Decision 1's done (every check passes on one captured candidate and, for a generation scope, the

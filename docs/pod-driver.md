@@ -92,6 +92,15 @@ remain owned by that adapter. The owned `binding_fill.configuration` producer
 must use its separate `output` form: the writer intent is its declared input and
 the bound intent is the coordinator output that emission reads.
 
+When the `binding-fill` step passes `--ratings` and the scope has an
+`assembly_readiness` check, the driver records `rating_provenance:
+"rating-provenance"` in the receipt's validation and in `campaign.json`
+(AGENTEE-256). The campaign then captures the adopted receipt and report into
+each derived candidate scope; see
+[coordinator rating provenance](stage-receipts.md#coordinator-rating-provenance).
+The sealed scope must not declare `rating_provenance` itself, and preparation
+refuses one that does.
+
 All generic producers adopt exit 0 only. Their complete argv, mounts, outputs
 and timeouts are supplied by the owned producer modules, not guessed by the
 driver. On routing turns the dedicated `routing_adapter` follows `add-planes`.

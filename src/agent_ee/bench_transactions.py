@@ -496,7 +496,6 @@ def finish_campaign(out, request, terminal):
     context = request.get('campaign')
     if context is None:
         return
-    from .baseline import load_baseline
     from .convergence import advance
     from .campaign import verify_campaign
     root, target = Path(context['root']), Path(terminal['out'])
@@ -504,7 +503,8 @@ def finish_campaign(out, request, terminal):
             digest(root / 'profile.json') != context['profile_sha256']):
         raise TransactionError('conflict', 'campaign configuration changed', out=out)
     state = copy.deepcopy(context['state'])
-    if load_baseline(target) != state['baseline']:
+    from .rating_lineage import sealed_baseline
+    if sealed_baseline(target, read_json(root / 'config.json')) != state['baseline']:
         raise TransactionError('conflict', 'feedback review changed immutable campaign baseline', out=out)
     verify_campaign(root)
     config = read_json(root / 'config.json')

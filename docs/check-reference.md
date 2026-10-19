@@ -1385,6 +1385,8 @@ receipt, its pinned sha256 and its `binding-fill.json` artifact. Each
 hierarchical path (`/A/R101`, AGENTEE-252); an unrepresented instance stays
 `invalid_rating_provenance`. See
 [receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
+Campaigns derive the declaration from the adopted receipt through the
+[coordinator rating binding](stage-receipts.md#coordinator-rating-provenance) (AGENTEE-256).
 
 ## Saved native net-class assignment
 
