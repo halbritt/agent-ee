@@ -22,6 +22,14 @@ class DatasheetCaptureTests(unittest.TestCase):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 owner.requests.append(self.path)
+                if self.path == '/identified':
+                    if self.headers.get('User-Agent') != 'agent-ee/1 (public datasheet acquisition)':
+                        self.send_error(403, 'Identify the acquisition client')
+                        return
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(owner.pdf)
+                    return
                 if self.path == '/slow':
                     import time
                     time.sleep(0.6)
@@ -50,6 +58,21 @@ class DatasheetCaptureTests(unittest.TestCase):
             self.server.shutdown()
             self.server.server_close()
             self.thread.join()
+
+    def test_identified_client_downloads_pdf_from_user_agent_gated_source(self):
+        import urllib.error
+        import urllib.request
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+                self.url + '/identified', timeout=3)
+        self.assertEqual(refused.exception.code, 403)
+        result = capture_datasheets(
+            [{'id': 'U1', 'datasheet_url': self.url + '/identified'}],
+            self.root / 'identified')
+        self.assertEqual(result['outcome'], 'captured')
+        record = result['parts'][0]
+        self.assertEqual((self.root / 'identified' / record['path']).read_bytes(), self.pdf)
+        self.assertEqual(record['sha256'], hashlib.sha256(self.pdf).hexdigest())
 
     def test_cancellation_reaps_owned_child_and_allows_retry(self):
         import os
