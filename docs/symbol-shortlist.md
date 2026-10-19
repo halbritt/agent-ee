@@ -50,6 +50,12 @@ inherits these through its `extends` chain. KiCad's `(property private "KEY"
 control character refuses the whole index. No ambient KiCad library path is
 consulted.
 
+The index keeps its property-only reader after AGENTEE-214's context fix:
+it checks duplicate names only for those three indexed fields and resolves no
+pins or graphics. Context rejects duplicate names for every property and also
+requires the shared electrical inventory. Replacing the index reader with context
+would therefore change its refusal behavior and sealed index results.
+
 ## Stages
 
 1. **Libraries.** The prompt lists every captured library with its symbol

@@ -845,6 +845,10 @@ changed hash gives failed/unknown. The libraries are immutable inputs. See
 [symbol context](symbol-context.md) for the query schema and the offline
 `find-symbol`, `list-pins` and `find-footprint` tools.
 
+Context preserves public and KiCad 10 private property names and values. Duplicate
+names within a symbol, including public/private collisions, give failed/unknown
+coverage with the conflicting name; inherited child overrides remain supported.
+
 Number selectors may include `expected` with exact `name` and `electrical_type`
 attributes. Attribute mismatches are defects, including swapped pins whose
 numbers still exist. Such a query is immutable alongside its libraries and adds

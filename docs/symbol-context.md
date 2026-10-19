@@ -16,6 +16,20 @@ malformed libraries, changed hashes and unsupported inheritance fail with an
 unknown outcome. Queries are literal strings, never shell expressions or fuzzy
 substitutions. No ambient KiCad library path is consulted.
 
+Public `(property "KEY" "VALUE" ...)` and KiCad 10 private
+`(property private "KEY" "VALUE" ...)` fields both retain their exact decoded
+names and values in `properties`. The modifier is not a property name. A public
+field named `private` remains valid. Additional scalar atoms or missing name/value
+fields give failed/unknown coverage. Repeated names within one symbol are refused
+by name, including public/private collisions with identical values. Child values
+override inherited values regardless of visibility.
+
+`tests.test_symbol_context` captures the four private-property symbols from the
+installed stock `Device.kicad_sym`, pinned by SHA-256
+`d8cd2847723eef0397104b8647872c80147795358312230604a502750f87023d`,
+and verifies all eight private values, pins, bounds and source hashes. The capture
+is made during the test; no upstream library bytes are committed.
+
 Bounding boxes are per-unit for body style 1, including common unit/body
 primitives. They bound local graphic centrelines and complete pin segments;
 rendered text, labels and stroke thickness are excluded. Rectangles, polylines,
