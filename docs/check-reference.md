@@ -276,7 +276,9 @@ step receipts. These are provenance and performance changes, with no new check
 kind or acceptance credit. See [emitter cost and benchmark](schematic-emitter.md#library-subsets-and-emission-cost).
 
 The opt-in [functional presentation](schematic-emitter.md#functional-presentation)
-(AGENTEE-222) groups flat schematics and draws short local wires. Its internal
+(AGENTEE-222) groups flat schematics and draws short local wires; AGENTEE-241
+fans crowded edge-pin labels and packs frames tighter, with the same native
+netlist and ERC on the real pod. Its internal
 connectivity guard is diagnostic; native ERC, exact netlist parity and rendered
 review remain required on the captured output. It adds no check kind or
 acceptance credit, and preserves symbol and pin UUIDs across presentation modes.
