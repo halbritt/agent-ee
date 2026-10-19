@@ -153,6 +153,10 @@ mismatched volumes before publication, exercise real HTTP byte/deadline failures
 and query 1 kΩ 0603 resistors in an isolated network namespace. Supplier data is
 kept private; it is never used as a committed test fixture.
 
+Non-generic MPN identity lookup uses the separate
+[catalog identity index](catalog-identity.md); it does not change this schema,
+its tables or its row hashes.
+
 All availability and prices are **as of `snapshot_date`**. No result establishes
 live inventory, order-time price, datasheet correctness, or assembly acceptance.
 
