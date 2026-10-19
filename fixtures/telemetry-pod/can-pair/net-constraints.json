@@ -1,0 +1,1 @@
+{"schema":"agent-ee.net-constraints/1","classes":[{"name":"CAN","requirement":"can-probe-routing","nets":["CAN+","CAN-"],"track_width_mm":0.25,"clearance_mm":0.2,"diff_pair":{"gap_mm":0.35}}]}

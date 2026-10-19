@@ -472,3 +472,11 @@ Independent pin review remains the coordinator's responsibility.
   tests normalized copper geometry equality and records byte differences
   without failing them. The native repeat test compares two real KRT outputs
   and identifies a moved segment.
+
+### CAN pair coverage
+
+The additive `semantics.pair_coverage` diagnostic distinguishes reported coupled
+native routing from missing, preserved, rejected or single-ended geometry.
+Replay rederives it; it never changes routing adoption or grants acceptance.
+See the [CAN native probe](pod-can-routing.md) for captured class/gap settings,
+independent native length/skew checks and the controlled five-millimetre negative.

@@ -355,7 +355,11 @@ def _verify(run, report, inputs, receipt, layout):
         raise ValueError('routing backend identity differs from the retained result.json')
     if receipt is not None:
         _receipt_agrees(receipt, report, request, routing, backend)
+    pairs = attempt.pair_coverage(request, result, record, classification)
+    if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
+        raise ValueError('pair coverage differs from retained routing evidence')
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
+            'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
             'backend': backend, 'tool_version': dict(attempt.TOOL_VERSION),
             'reproducibility': attempt.REPRODUCIBILITY[request['backend']]}

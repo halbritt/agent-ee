@@ -445,7 +445,11 @@ class RetainedVerificationTest(unittest.TestCase):
             with self.subTest(scenario):
                 case = self.case(scenario)
                 result = json.loads((case.work / 'routing/attempt/result.json').read_text())
-                self.assertEqual(case.verify(), {
+                summary = case.verify()
+                pairs = summary.pop('pair_coverage')
+                self.assertEqual(pairs['status'], 'unknown')
+                self.assertFalse(pairs['acceptance_ready'])
+                self.assertEqual(summary, {
                     'classification': scenario, 'proposal': proposal, 'coverage': coverage, 'router_exit': code,
                     'candidate_sha256': result['validation']['validated_board_sha256'],
                     'backend': {'status': 'reported', 'reason': None, 'value': result['backend']},

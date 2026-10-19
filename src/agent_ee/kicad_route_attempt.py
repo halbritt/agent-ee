@@ -512,6 +512,55 @@ def pair_binding(plans, record, result):
     return True
 
 
+def pair_coverage(request, result, record, classification):
+    """Describe retained pair evidence, never replace fresh board acceptance checks.
+
+    In particular routing completeness cannot imply coupled routing, and preserved
+    input connectivity cannot claim this invocation created a differential pair.
+    """
+    limitations = ['Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.']
+    coverage = {'status': 'unknown', 'pairs': [], 'limitations': limitations, 'acceptance_ready': False}
+    if request.get('diff_pairs') != 'auto':
+        scope = record.get('scope', {}) if isinstance(record, dict) else {}
+        nets = scope.get('nets', []) if isinstance(scope, dict) else []
+        if (isinstance(nets, list) and all(isinstance(n, str) for n in nets) and
+                any(n.rsplit('/', 1)[-1] == 'CAN+' and n[:-1] + '-' in nets for n in nets)):
+            completed = (classification in ('complete', 'incomplete') or
+                         (classification == 'validation_failed' and isinstance(result, dict) and
+                          result.get('routing', {}).get('status') == 'COMPLETE' and
+                          result.get('process', {}).get('status') == 'PASS'))
+            limitations.append('CAN pair routed single-ended' if completed else
+                                'CAN pair coupling unavailable; single-ended attempt did not complete routing')
+            if classification not in ('complete', 'incomplete'):
+                limitations.append('Single-ended attempt did not produce an eligible board')
+        else:
+            limitations.append('Differential pair routing was not requested; pair geometry is unqualified')
+        return coverage
+    if (classification not in ('complete', 'incomplete') or not isinstance(result, dict) or
+            not isinstance(record, dict) or not pair_binding(result.get('settings', {}).get('pairs'), record, result)):
+        limitations.append('Requested differential pair capability or eligible native pair evidence is unavailable')
+        return coverage
+    reports = result['pairs']
+    if not reports:
+        limitations.append('No differential pairs were detected; no pair geometry is qualified')
+        return coverage
+    for pair in reports:
+        measured = all(type(pair.get(k)) in (int, float) and 0 <= pair[k] < float('inf')
+                       for k in ('length_p', 'length_n', 'skew'))
+        measured = measured and abs(abs(pair['length_p'] - pair['length_n']) - pair['skew']) <= .000002
+        coupled = (pair.get('backend_status') == 'COUPLED' and pair.get('status') == 'ROUTED' and
+                   pair.get('routed') is True and type(pair.get('gap_violations')) is int and
+                   pair['gap_violations'] == 0 and measured)
+        coverage['pairs'].append({'p': pair['p'], 'n': pair['n'],
+            'status': 'reported_coupled' if coupled else 'unknown'})
+        if not coupled:
+            limitations.append(f"{pair['p']}/{pair['n']}: coupled geometry is unqualified "
+                               f"(backend status {pair.get('backend_status')})")
+    if all(p['status'] == 'reported_coupled' for p in coverage['pairs']):
+        coverage['status'] = 'reported_coupled'
+    return coverage
+
+
 def load_json(path, problems, label):
     if not path.is_file() or path.is_symlink():
         return None
@@ -876,6 +925,10 @@ def _finish(report, routing):
     report['retained'] = dict(sorted(report['retained'].items()))
     proposal, coverage, code = CLASSES[report['semantics']['classification']]
     report['semantics'].update(proposal=proposal, coverage=coverage, adapter_exit=code)
+    result = load_json(routing / 'attempt/result.json', [], 'result')
+    record = load_json(routing / 'attempt/attempt.json', [], 'attempt')
+    report['semantics']['pair_coverage'] = pair_coverage(
+        report['request'], result, record, report['semantics']['classification'])
     return write_report(routing / 'adapter-report.json', report)
 
 
