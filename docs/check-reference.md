@@ -104,6 +104,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `netlist_parity` | Coordinator compares full native XML with captured intent/libraries or a golden netlist; qualified virtual power markers omitted by XML are listed in the report ([details](netlist-parity.md)) | Enclosing run deadline |
 
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
+| `part_decisions` | Coordinator compares source-bound choices and captured deviations against the earlier native netlist ([details](part-decisions.md)) | Enclosing run deadline |
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
 | `regeneration_determinism` | Coordinator compares two captured boards, schematics, netlists or JSON probe outputs after removing IDs; no additional tool launched ([details](design-diff.md)) | Enclosing run deadline |
 | `design_rules` | Coordinator grades the enforced cards of a captured rule pack against the earlier native netlist, owner role bindings and verified datasheet facts; no additional tool launched ([details](design-rules.md)) | Enclosing run deadline |
@@ -404,6 +405,15 @@ with `severity=warning`, including `/a/SDA` and `/b/SDA`. These warnings retain
 `status=informational` and cannot supply a defect witness. A shared global net
 has one native ID and produces no island warning. The check covers direct-net
 equivalence; it does not trace geometric wire paths, copper or impedance.
+
+`part_decisions` requires `netlist_check`, `decisions`, `spec_record`, `spec`,
+and nullable `deviations`. The [captured projection](part-decisions.md) becomes
+immutable; deviations remain mutable. Exact native Partnumber/LCSC identities
+must be present on populated, on-board symbols. An explicit substitution needs
+a reason, captured evidence references, and a present replacement. Unresolved
+part-decision exclusions withhold pass; explicitly evidenced non-part
+constraints remain visible outside the predicate. Neither display values nor writer claims
+are native part identity evidence.
 
 `net_names` requires `netlist_check`, `policy` and `levels`. The immutable
 [owner policy](net-names.md) declares required names with exported
