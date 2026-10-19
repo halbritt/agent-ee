@@ -94,7 +94,8 @@ hierarchical fome-mc board; its expectations and reports live in a private
 Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository. The public corpus records a
 verified dependency closure, deterministic control false-alarm bounds and native
-rerun comparisons; owner review and any publication remain outstanding.
+rerun comparisons. The closure audit exits 1 whenever tool or font licence
+evidence is unverified; owner review and any publication remain outstanding.
 
 The [false-positive calibration](docs/fp-calibration.md) measures the reviewers
 themselves. It shows each profile reviewer pairs made from a design and its seeded
