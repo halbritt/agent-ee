@@ -396,6 +396,9 @@ The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
 `a132899` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 with read-only state, retains hashed attempt diagnostics, and verifies routing
 semantics before adopting a proposal. Fresh checks determine acceptance.
+Its optional [per-net layer policy](docs/routing-adapter.md#per-net-signal-layers-agentee-258)
+rejects disallowed tracks and via spans and can require reference-plane fill
+under the declared nets' routed length.
 The [fab profile check](docs/fab-profile.md) runs captured, source-cited
 fabrication limits through the same native rules. It also compares layer count
 and outline size with the saved board and lists legal surcharged features
