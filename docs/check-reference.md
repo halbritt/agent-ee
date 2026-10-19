@@ -592,7 +592,10 @@ primitive identities, values, limits, statuses and coverage counts alongside the
 raw probe report. With `net_constraints`, each primitive's limit is the larger of
 `min_track_width_mm` and its net's recorded netclass minimum. The record must
 pass, and the captured board-sibling `.kicad_pro` must carry its classes and exact
-patterns. Both are immutable inputs; a missing or mismatched binding is
+patterns. Every recorded net must exist in the saved board, including nets in
+classes that declare only clearance or impedance. Missing names appear in the
+refusal. DRC setup also refuses unmatched emitted literal assignments. Both
+policy files are immutable inputs; a missing or mismatched binding is
 `unsupported/unknown` ([net constraints](net-constraints.md)). Vias remain separate; zones, pads and graphic copper shapes
 are outside this routing-width criterion. See [coverage](coverage.md) for the
 complete class/count contract. Opting in changes the scope/2 baseline identity;
@@ -600,7 +603,8 @@ existing baseline criteria keep their historical meaning.
 
 The [GNSS RF controls](gnss-rf-path.md) exercise per-net width binding and
 native maximum length. A single authorized W2 calculation returned valid geometry
-after three failed W1 calculations. RF_50 declares lower W1 width 0.334416796875 mm
+after three failed W1 calculations. RF_50 binds `/POD_GNSS_RF`, from NEO-M9N
+U3 pin 11 through the recorded source/native naming adaptation, and declares lower W1 width 0.334416796875 mm
 and selected gap 0.2032 mm; upper W2 width 0.321716796875 mm stays source metadata.
 The existing emitter rounds the minimum up to 0.335 mm. A pinned-router probe
 passes this minimum and fails after one segment is narrowed to 0.334999 mm.

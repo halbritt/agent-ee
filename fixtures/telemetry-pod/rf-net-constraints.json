@@ -5,7 +5,7 @@
       "name": "RF_50",
       "requirement": "POD-RF-WIDTH",
       "nets": [
-        "RF_IN"
+        "/POD_GNSS_RF"
       ],
       "track_width_mm": 0.334416796875,
       "clearance_mm": 0.2032,

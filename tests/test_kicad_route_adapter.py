@@ -393,7 +393,8 @@ class AdapterPolicyTest(unittest.TestCase):
         self.assertEqual(attempt.parse_request(spec['argv'][4:])['state'], 'checkout')
         self.assertEqual(spec['mounts'], [
             {'source': str(routing_adapter.ADAPTER_SOURCE), 'at': routing_adapter.ADAPTER_AT},
-            {'source': str(case.checkout.resolve()), 'at': '/opt/kicad-route'}])
+            {'source': str(case.checkout.resolve()), 'at': '/opt/kicad-route'},
+            *routing_adapter.BINDING_MOUNTS])
         self.assertEqual(spec['writes'], {'project/rc.kicad_pcb': 'routing/candidate/project/rc.kicad_pcb'})
         self.assertEqual(spec['adoptable_exits'], [0, 2])
         self.assertNotIn('version_argv', spec)

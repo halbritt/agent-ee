@@ -314,8 +314,9 @@ clearance, differential-pair and impedance declarations into native netclasses
 and DRC width rules. Widths for declared currents come from an IPC-2152 fit, and
 `copper-width/1` reads the per-net minimums. Impedance is recorded, not computed.
 The [GNSS RF controls](docs/gnss-rf-path.md) exercise width and length separately;
-a captured W2 calculation now supplies RF_50 width and clearance, while the
-50 ohm target remains recorded as unenforced. The pinned router probe passes
+a captured W2 calculation supplies RF_50 width and clearance on the source-backed
+native `/POD_GNSS_RF` net. Unmatched exact constraint nets refuse check and
+router setup with the missing names. The 50 ohm target remains recorded as unenforced. The pinned router probe passes
 the emitted width minimum and detects a narrower segment. Actual impedance and
 the pod RF maximum length remain unverified; the controls' 15 mm is test-only.
 The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
