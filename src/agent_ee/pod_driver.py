@@ -22,6 +22,8 @@ ORDER = ['schematic', 'placement', 'routing', 'verification']
 STEPS = [('binding-fill', 'schematic'), ('emit-schematic', 'schematic'),
          ('forward-annotate', 'schematic'), ('place-board', 'placement'),
          ('add-planes', 'routing')]
+# Coordinator capture directory of the adopted binding-fill --ratings receipt (AGENTEE-256).
+RATING_PROVENANCE = 'rating-provenance'
 # Optional envelope-content inputs; envelope, parts and board are the plan's and scope's own.
 CONTENT_PATHS = ('intent', 'layout', 'antenna_facts', 'captured_rule_areas')
 SOURCE = Path(__file__).resolve().parents[1]
@@ -160,6 +162,7 @@ def validate_configuration(plan, scope, files, inputs):
             _validate_policy(policy, set(declaration['subjects'].get('placement', {}).get('references', [])))
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise ValueError(f'invalid pod placement policy {placement["policy"]}: {exc}') from exc
+    rating = _rating_provenance(scope, normalized)
     from .routing_adapter import campaign_spec, validate_campaign_step
     from .campaign import validate_routing_predecessors
     validate_routing_predecessors(normalized, scope)
@@ -187,7 +190,20 @@ def validate_configuration(plan, scope, files, inputs):
                 mutable_inputs=sorted(mutable), writer_inputs=sorted(writer),
                 coordinator_outputs=sorted(written), max_iterations=iterations,
                 max_seconds=seconds, implementation_steps=normalized, routing_step=route,
-                **({'placement_adapter': placement} if placer else {}))
+                **({'placement_adapter': placement} if placer else {}),
+                **({'rating_provenance': rating} if rating else {}))
+
+
+def _rating_provenance(scope, steps):
+    """The coordinator rating capture when binding-fill --ratings feeds assembly_readiness checks.
+
+    AGENTEE-242 grades AGENT_EE_Ratings unknown without receipted provenance, which a sealed
+    scope cannot name before the step runs; the campaign derives it per candidate instead."""
+    from .rating_lineage import rating_step, validate_campaign
+    if not any(rating_step(s) for s in steps) or not any(c['kind'] == 'assembly_readiness' for c in scope['checks']):
+        return None
+    validate_campaign({'rating_provenance': RATING_PROVENANCE}, scope, steps)
+    return RATING_PROVENANCE
 
 
 def _scope_for_inputs(scope, inputs):
@@ -410,6 +426,7 @@ def build(plan_path, out, *, dry_run=False):
                   implementation_steps=validation['implementation_steps'], pre_receipts=links,
                   routing_adapter=plan['routing_adapter'],
                   **({'placement_adapter': plan['placement_adapter']} if 'placement_adapter' in plan else {}),
+                  **({'rating_provenance': validation['rating_provenance']} if 'rating_provenance' in validation else {}),
                   max_iterations=validation['max_iterations'], max_seconds=validation['max_seconds'],
                   max_schema_resubmissions=1)
     write_json(out / 'scope.json', final_scope)

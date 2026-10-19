@@ -1380,6 +1380,8 @@ receipt, its pinned sha256 and its `binding-fill.json` artifact. Each
 `AGENT_EE_Ratings` field when no `rating_provenance` is declared
 (`undeclared_rating_provenance`). See
 [receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
+Campaigns derive the declaration from the adopted receipt through the
+[coordinator rating binding](stage-receipts.md#coordinator-rating-provenance) (AGENTEE-256).
 
 ## Saved native net-class assignment
 

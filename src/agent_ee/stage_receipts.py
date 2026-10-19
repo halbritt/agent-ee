@@ -1011,7 +1011,9 @@ def verify_campaign_receipts(root, state, steps=None, plans=None):
         if number < len(history):
             proposal = read_json(Path(history[number]['run']) / 'candidate.json')
             if proposal.get('scope_path') == str(work / 'proposal.scope.json'):
-                captured = proposal['files']
+                from .rating_lineage import delivered_view
+                # The coordinator rating capture is verified against its lineage, not the delivered design.
+                captured = delivered_view(config, proposal['files'], read_json(work / 'stage-receipts.json')['delivered'])
         expected = steps if plans is None else plans[name]
         verify_implementation(work, anchor, number, source['candidate_id'], captured=captured, steps=expected,
                               complete=plans is not None and (work / 'proposal.scope.json').exists())

@@ -306,11 +306,15 @@ with the native `Power`/`Voltage` properties, and a disagreement stays an
 `invalid_rating_provenance` defect. A well-formed field it cannot resolve is an
 unknown `undeclared_rating_provenance` finding, so the outcome is `unknown`,
 never `pass` (AGENTEE-242). A design whose passives carry no `AGENT_EE_Ratings`
-is unaffected. Pod and campaign scopes that run `binding-fill --ratings` must
-therefore declare `rating_provenance` on their `assembly_readiness` check and
+is unaffected. A candidate whose fields come from `binding-fill --ratings` must
+therefore declare `rating_provenance` on its `assembly_readiness` check and
 capture the adopted `binding-fill` stage `receipt.json` and its
 `run/out/binding-fill.json` as candidate inputs, with the coordinator-pinned
-`receipt_sha256`. The check does not discover campaign stage receipts itself.
+`receipt_sha256`. The check does not discover campaign stage receipts itself. A
+sealed campaign scope cannot name a receipt that does not exist yet, so campaigns
+opt into the [coordinator rating binding](stage-receipts.md#coordinator-rating-provenance)
+(AGENTEE-256), which writes this declaration into each derived candidate scope.
+The pod driver enables it automatically.
 Declaring the provenance binds each field to the full record:
 
 ```json

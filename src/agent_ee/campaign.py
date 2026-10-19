@@ -6,7 +6,6 @@ import shutil
 import time
 from pathlib import Path
 
-from .baseline import load_baseline
 from .convergence import advance
 from .locking import writer_lock
 from .profiles import validate_profile
@@ -280,8 +279,9 @@ def _implement_once(root, previous, definition, state, deadline, *, retry=None):
             check_proposal(design, manifest, state)
     elif plan:
         raise ValueError("campaign predates stage receipts; start a fresh campaign to run implementation steps")
-    scope = copy.deepcopy(manifest["scope"])
-    scope["inputs"] = [{"path": str(p), "at": p.name} for p in sorted(design.iterdir())]
+    from .rating_lineage import proposal_scope
+    # A newly adopted binding-fill --ratings receipt is captured into a new derived scope.
+    scope = proposal_scope(manifest["scope"], design, work, root, state, config)
     path = work / "proposal.scope.json"
     write_json(path, scope)
     return path
@@ -476,6 +476,8 @@ def run_campaign(config_path, out):
         if any(spec["stage"] == "placement" for spec in steps):
             # One placement writer path per iteration: never run the same helper twice.
             raise ValueError("placement_adapter cannot be combined with placement implementation_steps")
+    from .rating_lineage import validate_campaign as validate_rating_provenance
+    validate_rating_provenance(config, scope, [validate_step(s, host=False) for s in steps])
     # Reuse the subscription route validator for the implementation definition.
     validate_profile({**profile, "adjudicator": config["implementation"]})
     root = Path(out).resolve()
@@ -510,7 +512,9 @@ def record_iteration(root, state, run, config):
             result.get('max_schema_resubmissions') != state['max_schema_resubmissions']):
         raise ValueError('review resubmission bound differs from campaign configuration')
     manifest = read_json(run / "candidate.json")
-    baseline = load_baseline(run)
+    from .rating_lineage import sealed_baseline, verify_candidate
+    baseline = sealed_baseline(run, config)
+    verify_candidate(root, state, config, len(state["history"]) + 1, manifest)
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
@@ -594,8 +598,10 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
                 context = campaign_context(root, state, config, read_json(scope_path))
                 from .assembly_readiness import campaign_stock_context
                 stock_context = campaign_stock_context(root, state, config, read_json(scope_path))
+                from .rating_lineage import sealed_baseline
                 run_review(scope_path, run, deadline - time.monotonic(), profile=root / "profile.json",
                            expected_baseline=state.get("baseline"),
+                           baseline_view=lambda captured: sealed_baseline(captured, config),
                            max_schema_resubmissions=config.get("max_schema_resubmissions", 1), fab_context=context,
                            stock_context=stock_context)
             initial_run = None
@@ -695,8 +701,10 @@ def verify_campaign_records(root, *, observations=None):
             if index == len(state["history"]):
                 feedback_seen = True
         manifest = read_json(run / "candidate.json")
-        if load_baseline(run) != state["baseline"]:
+        from .rating_lineage import sealed_baseline, verify_candidate
+        if sealed_baseline(run, config) != state["baseline"]:
             raise ValueError("campaign history baseline changed")
+        verify_candidate(root, {**state, 'history': history}, config, index, manifest)
         empirical = manifest["scope"].get("empirical")
         calibration_id = manifest["files"].get(empirical) if empirical else None
         if stored["calibration_id"] != calibration_id:
