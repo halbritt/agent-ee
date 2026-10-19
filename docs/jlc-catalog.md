@@ -91,7 +91,9 @@ The response envelope requires `code: 200` and
 `componentCode == lcsc` for `found`; none means `not_found`; ambiguous rows,
 missing stock, unknown library types and malformed responses fail. Extra
 vendor response fields are allowed, but only the fields above are read. The
-summary cannot override the verified bytes. `source_url`, `request_body`,
+summary cannot override the verified bytes. A response row's `dataManualUrl`
+is not a part key; it is read from the verified bytes only by the
+[datasheet URL cross-check](catalog-identity.md#captured-jlcpcb-datasheet-urls). `source_url`, `request_body`,
 `checked_at` and `response_sha256` are represented by the source/request
 fields above, not accepted as additional part keys.
 
