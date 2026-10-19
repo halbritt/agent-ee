@@ -22,12 +22,15 @@ hashes are enforced by the test loader and production derivation. Fixture hashes
 
 From the checkout root, run this explicit acquisition step on the outer host.
 The PDF stays outside the checkout. A transport or hash failure stops the step;
-do not replace the expected hash with the downloaded hash.
+do not replace the expected hash with the downloaded hash. The distributor
+stalls requests that carry curl's default User-Agent, so the command sends the
+same browser-style one as project CI and no other header or credential.
 
 ```sh
 set -eu
 J1_INPUT_DIR=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/agent-ee-j1.XXXXXX")
-curl --fail --location --retry 2 --max-time 90 --max-filesize 10000000 \
+curl --fail --location --proto '=https' --retry 2 --max-time 90 --max-filesize 10000000 \
+  --user-agent 'Mozilla/5.0 (X11; Linux x86_64)' \
   https://www.farnell.com/cad/2916153.pdf \
   --output "$J1_INPUT_DIR/te-776228-1.pdf"
 printf '%s  %s\n' \

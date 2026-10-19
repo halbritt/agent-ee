@@ -5,8 +5,8 @@ Every tests/test_*.py module runs in its own interpreter, loaded with the same
 ``discover("tests", pattern=...)`` semantics as the serial suite, through a
 pool of --jobs workers with a private TMPDIR each. The run passes only when
 every module reports a successful result with no skip. A failure, error, skip,
-unexpected success, or a module that exits without a valid result fails the
-run; unknown is never pass. A test that failed because a required input
+expected failure, unexpected success, or a module that exits without a valid
+result fails the run; unknown is never pass. A test that failed because a required input
 partition is absent (tests/toolchain.py REQUIRED_INPUTS, docs/container.md) is
 listed by partition as not executed, on stderr, as a GitHub error annotation
 and in the optional --summary file; it fails the run like any other failure.
@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / 'tests'
 # tests/toolchain.py REQUIRED_INPUTS and MISSING_INPUT (tests/test_strict_suite.py keeps them equal).
-REQUIRED_INPUTS = ('fome-mc-store', 'pod-retained-inputs')
+REQUIRED_INPUTS = ('fome-mc-store',)
 MISSING = re.compile(r'AGENT_EE_REQUIRE_TOOLCHAIN=1: required input (?P<gap>%s) missing: (?P<reason>[^\n]*)'
                      % '|'.join(map(re.escape, REQUIRED_INPUTS)))
 CHILD = r'''
@@ -92,6 +92,8 @@ def judge(records):
                 else:
                     problems.append(f'{kind[:-1].upper()}: {test}')
         problems += [f'UNEXPECTED SUCCESS: {test}' for test in result['unexpected_successes']]
+        # unittest counts an expected failure as success; the strict gate does not.
+        problems += [f'EXPECTED FAILURE refused in strict mode: {test}' for test in result['expected_failures']]
         problems += [f'SKIP refused in strict mode: {test}: {reason}' for test, reason in result['skipped']]
         if record['exit'] != 0 and not (result['failures'] or result['errors'] or result['unexpected_successes']):
             problems.append(f"{record['module']}: exit {record['exit']} with a successful result")

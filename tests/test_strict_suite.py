@@ -1,13 +1,14 @@
 """Strict-suite judging and required-input partitions (AGENTEE-16 hosted CI).
 
 The strict run passes only when every test executed and passed: any skip,
-failure, missing result or unexpected success fails it, including a test that
-could not execute because a required input (fome-mc store, retained pod
-captures) is absent. No environment setting turns that into a pass.
+failure, expected failure, missing result or unexpected success fails it,
+including a test that could not execute because a required input (the fome-mc
+store) is absent. No environment setting turns that into a pass.
 """
 import contextlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -66,6 +67,13 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(problems, ['FAILURE: test_x.T.a', 'ERROR: test_x.T.b', 'UNEXPECTED SUCCESS: test_x.T.c',
                                     'test_y: no valid result; exit -9'])
 
+    def test_expected_failure_is_refused(self):
+        # unittest counts an expected failure as success; a strict gate must not.
+        problems, missing = strict_suite.judge([record(expected_failures=['test_x.T.e'])])
+        self.assertEqual(missing, [])
+        self.assertEqual(problems, ['EXPECTED FAILURE refused in strict mode: test_x.T.e'])
+        self.assertTrue(strict_suite.verdict([record()], problems, missing).startswith('strict suite FAILED'))
+
     def test_nonzero_exit_with_a_successful_result_fails(self):
         problems, _ = strict_suite.judge([record(exit=3)])
         self.assertEqual(problems, ['test_x: exit 3 with a successful result'])
@@ -106,15 +114,20 @@ class MainTests(unittest.TestCase):
                 def test_former_declared_gap(self):
                     raise unittest.SkipTest({DECLARED!r})
             """,
+        'test_expected_failure': """
+            import unittest
+            class T(unittest.TestCase):
+                @unittest.expectedFailure
+                def test_known_broken(self):
+                    self.fail('known broken')
+            """,
         'test_inputs': f"""
             import sys, unittest
             sys.path.insert(0, {str(ROOT / 'tests')!r})
-            from toolchain import fome_mc_store, unavailable
+            from toolchain import fome_mc_store
             class T(unittest.TestCase):
                 def test_store(self):
                     fome_mc_store('/nonexistent/agent-ee-strict-suite-store', 'HEAD')
-                def test_pod_capture(self):
-                    unavailable('pod-retained-inputs', 'exact retained J1 source absent: /nonexistent')
             """,
     }
 
@@ -141,23 +154,31 @@ class MainTests(unittest.TestCase):
         self.assertIn('strict suite passed: 1 modules, 1 tests, no skips', err)
         self.assertIn('strict suite passed', summary)
 
+    def test_expected_failure_fails_the_run(self):
+        code, out, err, summary = self.run_main(['test_passing', 'test_expected_failure'])
+        self.assertEqual(code, 1, out + err)
+        for text in (err, summary):
+            self.assertNotIn('passed', text)
+        self.assertIn('EXPECTED FAILURE refused in strict mode: test_expected_failure.T.test_known_broken', err)
+        self.assertIn('strict suite FAILED: 2 modules, 2 tests, 1 problem(s)', err)
+        self.assertIn('- `EXPECTED FAILURE refused in strict mode: test_expected_failure.T.test_known_broken`',
+                      summary)
+
     def test_skipped_or_unexecuted_required_tests_fail_with_and_without_declared_gaps(self):
-        for env in ({}, {'AGENT_EE_DECLARED_GAPS': 'fome-mc-store,pod-retained-inputs'}):
+        for env in ({}, {'AGENT_EE_DECLARED_GAPS': 'fome-mc-store'}):
             with self.subTest(env=env):
                 code, out, err, summary = self.run_main(['test_passing', 'test_skipping', 'test_inputs'], **env)
                 self.assertEqual(code, 1, out + err)
                 for text in (out, err, summary):
                     self.assertNotIn('passed', text)
-                self.assertIn('strict suite FAILED: 3 modules, 5 tests, 3 problem(s), 2 required test(s) '
+                self.assertIn('strict suite FAILED: 3 modules, 4 tests, 2 problem(s), 1 required test(s) '
                               'not executed for missing inputs, 1 other problem(s)', err)
                 self.assertIn(f'SKIP refused in strict mode: test_skipping.T.test_former_declared_gap: {DECLARED}',
                               err)
                 self.assertIn('NOT EXECUTED, required input fome-mc-store missing: test_inputs.T.test_store', err)
-                self.assertIn('::error title=required input pod-retained-inputs missing::'
-                              'test_inputs.T.test_pod_capture not executed', out)
+                self.assertIn('::error title=required input fome-mc-store missing::'
+                              'test_inputs.T.test_store not executed', out)
                 self.assertIn('### Required input `fome-mc-store` missing: 1 required test(s) not executed',
-                              summary)
-                self.assertIn('### Required input `pod-retained-inputs` missing: 1 required test(s) not executed',
                               summary)
 
 
@@ -170,15 +191,18 @@ class RequiredInputTests(unittest.TestCase):
     def test_absent_required_input_skips_and_always_fails_strict(self):
         with self.env(), self.assertRaisesRegex(unittest.SkipTest, '^absent$'):
             toolchain.unavailable('fome-mc-store', 'absent')
-        for declared in ({}, {'AGENT_EE_DECLARED_GAPS': 'fome-mc-store,pod-retained-inputs'}):
+        for declared in ({}, {'AGENT_EE_DECLARED_GAPS': 'fome-mc-store'}):
             for gap in toolchain.REQUIRED_INPUTS:
                 with self.env(AGENT_EE_REQUIRE_TOOLCHAIN='1', **declared), self.assertRaisesRegex(
                         AssertionError, f'^AGENT_EE_REQUIRE_TOOLCHAIN=1: required input {gap} missing: absent$'):
                     toolchain.unavailable(gap, 'absent')
 
     def test_unknown_partition_is_refused(self):
-        with self.env(), self.assertRaisesRegex(ValueError, 'unknown required-input partition: toolchain'):
-            toolchain.unavailable('toolchain', 'absent')
+        # pod-retained-inputs was removed once the J1 tests read AGENT_EE_J1_DRAWING directly.
+        for gap in ('toolchain', 'pod-retained-inputs'):
+            with self.env(), self.assertRaisesRegex(ValueError, f'unknown required-input partition: {gap}'):
+                toolchain.unavailable(gap, 'absent')
+        self.assertEqual(toolchain.REQUIRED_INPUTS, ('fome-mc-store',))
 
     def test_fome_mc_store_requires_every_pinned_revision(self):
         env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1')
@@ -249,6 +273,19 @@ class WorkflowInputTests(unittest.TestCase):
         self.assertIn(f"\n      J1_DRAWING_SHA256: {decision['sources']['drawing']['sha256']}\n", self.WORKFLOW)
         self.assertIn('| sha256sum --check --strict', self.WORKFLOW)
         self.assertIn('--max-time 90 --max-filesize 10000000', self.WORKFLOW)
+
+    def test_j1_readme_acquisition_matches_the_workflow(self):
+        # The distributor stalls curl's default User-Agent; the documented command must send CI's.
+        readme = (ROOT / 'fixtures/telemetry-pod/j1/README.md').read_text()
+        command = readme.split('```sh\n', 1)[1].split('```', 1)[0]
+        user_agent = "--user-agent 'Mozilla/5.0 (X11; Linux x86_64)'"
+        self.assertIn(user_agent, self.WORKFLOW)
+        self.assertIn('\n      J1_DRAWING_URL: https://www.farnell.com/cad/2916153.pdf\n', self.WORKFLOW)
+        decision = 'fixtures/telemetry-pod/electrical/j1-placement-exclusion.json'
+        sha256 = json.loads((ROOT / decision).read_text())['sources']['drawing']['sha256']
+        for fragment in (user_agent, '--fail', "--proto '=https'", '--max-time 90 --max-filesize 10000000',
+                         'https://www.farnell.com/cad/2916153.pdf', sha256, '| sha256sum --check --strict'):
+            self.assertIn(fragment, command)
 
     def test_strict_suite_mounts_both_inputs_read_only_and_no_pod_override(self):
         step = self.suite_step()

@@ -253,8 +253,11 @@ runner reports each such failure as a required test not executed, by partition,
 in an error annotation and in the job summary. The run still fails. A present
 store whose pinned file does not verify also fails. The J1 tests fail directly,
 with their loader's message, and the strict runner reports them as ordinary
-errors. No test uses the second partition, `pod-retained-inputs`, now. It stays
-in the strict runner's list.
+errors. `fome-mc-store` is the only partition; the former `pod-retained-inputs`
+partition was removed once the J1 tests read `AGENT_EE_J1_DRAWING` directly,
+and `unavailable` refuses it as unknown. The strict runner also refuses an
+expected failure (`unittest.expectedFailure`), which unittest itself counts as
+a success.
 
 Project CI provisions both inputs on the runner, outside the image build, the
 test processes and every tool sandbox. The owner's delegate authorized this
@@ -318,7 +321,8 @@ image with `AGENT_EE_FOME_MC_CHECKOUT` unset:
   run) read its retained captures from fixed host `/tmp` directories and failed
   everywhere else. agent-463's portability fix (`25a9737`) replaced them with
   committed fixtures and the `AGENT_EE_J1_DRAWING` prerequisite above; 16c's
-  interim `pod-retained-inputs` guard for these tests was dropped in the merge.
+  interim `pod-retained-inputs` guard for these tests was dropped in the merge,
+  and the partition itself in 16e.
 - `test_tree_hygiene` ran `git ls-files` in `/opt/agent-ee`, which has no `.git`
   because the build context excludes it. Without `.git` it now scans every file
   of the copied tree; a checkout whose Git fails still fails. The host-side
