@@ -172,6 +172,54 @@ class PassiveRatingTests(unittest.TestCase):
         self.assertEqual(fields['Power'], '1/10W')
         self.assertEqual(self.provenance(fields)['ratings']['Power']['si'], '0.1')
 
+    def reuse(self, instances):
+        """Declare the intent's R1 as the child-sheet symbol behind ``instances``."""
+        self.part['instances'] = [{'sheet': '/A/', 'reference': 'R101'}, {'sheet': '/B/', 'reference': 'R201'}]
+        self.refs['components']['pod/R9'] = {'part_ref': 'resistor', 'instances': instances}
+
+    def test_reused_child_sheet_instances_get_per_path_records(self):
+        # AGENTEE-252: one child-sheet symbol, two hierarchical instances, one part record each.
+        self.reuse([{'sheet': '/A/', 'reference': 'R101'}, {'sheet': '/B/', 'reference': 'R201'}])
+        intent, report = self.fill()
+        fields = intent['components'][0]['part_binding']
+        self.assertEqual(set(report['ratings']['derived']), {'/A/R101', '/B/R201'})
+        for key in ('/A/R101', '/B/R201'):
+            self.assertEqual(self.provenance(fields, ref=key)['part'], {'id': 'resistor', 'lcsc': 'C38695', 'mpn': MPN})
+        self.assertEqual(report['components'][0]['instances'], self.refs['components']['pod/R9']['instances'])
+        # A root-sheet component keeps its bare-reference key and component record shape.
+        self.setUp()
+        _, root = self.fill()
+        self.assertEqual(set(root['ratings']['derived']), {'R1'})
+        self.assertNotIn('instances', root['components'][0])
+        # An absent rating is recorded per instance too.
+        self.rebuild(None)
+        self.reuse([{'sheet': '/A/', 'reference': 'R101'}, {'sheet': '/B/', 'reference': 'R201'}])
+        missing = self.fill()[1]['ratings']
+        self.assertEqual((missing['derived'], set(missing['missing'])), ({}, {'/A/R101', '/B/R201'}))
+
+    def test_declared_child_instances_must_be_allocated_and_unique(self):
+        allocated = {'sheet': '/A/', 'reference': 'R101'}
+        for instances, message in (
+                ([], 'nonempty list'), ({'sheet': '/A/'}, 'nonempty list'),
+                ([{'sheet': '/C/', 'reference': 'R301'}], 'outside the part'),
+                ([{'sheet': '/', 'reference': 'R1'}], 'outside the part'),
+                ([{**allocated, 'unit': 1}], 'fields'),
+                ([allocated, allocated], 'claimed twice')):
+            with self.subTest(instances=instances):
+                self.setUp()
+                self.reuse(instances)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.fill()
+        # Undeclared, the root-sheet rule still refuses a child-sheet-only allocation.
+        self.setUp()
+        self.reuse(None)
+        del self.refs['components']['pod/R9']['instances']
+        with self.assertRaisesRegex(ValueError, 'outside part instance allocation'):
+            self.fill()
+        self.refs['components']['pod/R9'] = {'part_ref': 'resistor', 'extra': []}
+        with self.assertRaisesRegex(ValueError, 'fields'):
+            self.fill()
+
     def test_resolved_kind_limits_attributes(self):
         from agent_ee.passive_ratings import derive
         self.assertEqual(derive(self.root, self.part, 'C'),
@@ -666,3 +714,96 @@ class ReceiptBoundRatingProvenanceTests(unittest.TestCase):
                                 ({'report': self.provenance['receipt']}, 'distinct'), ({'extra': 1}, '')):
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, message):
                 validate_params({**self.params, 'rating_provenance': {**self.provenance, **change}})
+
+
+class ReusedChildSheetRatingProvenanceTests(unittest.TestCase):
+    """AGENTEE-252: a child sheet reused twice resolves each instance by its hierarchical path."""
+
+    def test_reused_child_sheet_instances_resolve_end_to_end(self):
+        from agent_ee import binding_fill, executor
+        from agent_ee.assembly_readiness import evaluate_assembly_readiness
+        from agent_ee.checks import sheet_instances
+        from agent_ee.parts_manifest import qualify_manifest
+        from agent_ee.stage_receipts import adopt, run_step
+        from test_assembly_readiness import _uuid, _write_sqlite_catalog, part, schematic
+        from toolchain import require_toolchain
+        require_toolchain(native=True, tools=('kicad-cli',))
+        helper = PassiveRatingTests()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        root = helper.root
+        # The child's R1 is annotated R101 under sheet A and R201 under sheet B.
+        helper.reuse([{'sheet': '/A/', 'reference': 'R101'}, {'sheet': '/B/', 'reference': 'R201'}])
+        for name, value in [('intent.json', helper.intent), ('parts.json', helper.parts), ('refs.json', helper.refs),
+                            ('deviations.json', helper.deviations), ('ratings.json', helper.ratings)]:
+            write_json(root / name, value)
+        spec = binding_fill.configuration(Path(__file__).resolve().parents[1] / 'src', intent='intent.json',
+            manifest='parts.json', part_refs='refs.json', deviations='deviations.json', captures='.',
+            dependencies=sorted(qualify_manifest(helper.parts, root)['dependencies']), ratings='ratings.json')
+        step = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'bind'
+        receipt = run_step(step, root, spec, {'implementation': 1, 'source_candidate_id': 'reused', 'receipt_index': 1})
+        self.assertEqual(receipt['status'], 'completed', (step / 'run/console.log').read_text())
+        adopt(step, receipt, root)
+        (root / 'provenance').mkdir()
+        shutil.copyfile(step / 'receipt.json', root / 'provenance/binding-fill.receipt.json')
+        shutil.copyfile(step / 'run/out/binding-fill.json', root / 'provenance/binding-fill.json')
+        self.assertEqual(set(read_json(root / 'provenance/binding-fill.json')['ratings']['derived']),
+                         {'/A/R101', '/B/R201'})
+        bound = read_json(root / 'intent.json')['components'][0]['part_binding']
+        (root / 'assembly-catalog').mkdir()
+        _write_sqlite_catalog(root / 'assembly-catalog', [{'lcsc': 'C38695', 'mpn': MPN, 'stock': 1000}])
+        params = {'catalog': 'assembly-catalog/catalog-manifest.json', 'rating_provenance': {
+            'receipt': 'provenance/binding-fill.receipt.json',
+            'receipt_sha256': digest(root / 'provenance/binding-fill.receipt.json'),
+            'report': 'provenance/binding-fill.json'}}
+        exports = []
+
+        def evaluate(fields, sheets='AB', fresh=True):
+            """Export a top sheet reusing one child file per letter in ``sheets``; check it natively."""
+            escaped = {k: v.replace('\\', '\\\\').replace('"', '\\"') for k, v in fields.items()}
+            top_uuid = _uuid('sheet-top')
+            uuids = [(letter, _uuid('inst-' + letter)) for letter in sheets]
+            design = root / f'design{len(exports)}'
+            design.mkdir()
+            (design / 'stage.kicad_sch').write_text(schematic('stage', [part(
+                'R1', lcsc=fields['LCSC'], manufacturer=fields['Manufacturer'],
+                part_number=('Partnumber', fields['Partnumber']), rating=None,
+                extra={k: v for k, v in escaped.items() if k in ('Power', 'AGENT_EE_Ratings')})],
+                instance_paths=[(f'/{top_uuid}/{u}', i) for i, (_, u) in enumerate(uuids, 1)]), encoding='utf-8')
+            (design / 'top.kicad_sch').write_text(schematic('top', [], sheets=[
+                (letter, 'stage.kicad_sch', u, top_uuid) for letter, u in uuids]), encoding='utf-8')
+            work = root.parent / f'{root.name}-export{len(exports)}'
+            work.mkdir()
+            self.addCleanup(shutil.rmtree, work, True)
+            exports.append(work)
+            record = executor.execute(root, work, ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                                   '-o', '/work/design.xml', f'/candidate/{design.name}/top.kicad_sch'],
+                                      timeout=120)
+            self.assertEqual(record['execution'], 'ok', record)
+            files, instances, missing = sheet_instances(root, f'{design.name}/top.kicad_sch')
+            self.assertEqual(missing, [])
+            return evaluate_assembly_readiness(root, work / 'design.xml', params, expected_sheets=instances,
+                                               hierarchy_files=files)
+
+        def defects(result):
+            return [(f['code'], f['reference'], f['sheet']) for f in result['findings'] if f['severity'] == 'defect']
+
+        result = evaluate(bound)
+        self.assertEqual(result['outcome'], 'pass', result['findings'])
+        self.assertEqual(sorted((c['reference'], c['sheet'], c['rating_provenance'], c['rating_record'])
+                                for c in result['components']),
+                         [('R101', '/A/', 'source_backed', 'receipt_bound'),
+                          ('R201', '/B/', 'source_backed', 'receipt_bound')])
+        self.assertEqual(result['rating_provenance']['records'], 2)
+        # A third instance the report does not represent still fails closed; the others stay bound.
+        third = evaluate(bound, 'ABC')
+        self.assertEqual(third['outcome'], 'defect')
+        self.assertEqual(defects(third), [('invalid_rating_provenance', 'R301', '/C/')])
+        self.assertIn('names no receipted rating record for R301', ' '.join(third['findings'][0]['problems']))
+        # Drift on the shared child symbol is a defect on every instance.
+        drifted = evaluate({**bound, 'Power': '250mW'})
+        self.assertEqual(sorted(defects(drifted)), [('invalid_rating_provenance', 'R101', '/A/'),
+                                                     ('invalid_rating_provenance', 'R201', '/B/')])
+        # Another part's identity cannot borrow an instance record.
+        other = evaluate({**bound, 'Partnumber': 'OTHER-MPN'})
+        self.assertIn(('invalid_rating_provenance', 'R101', '/A/'), defects(other))

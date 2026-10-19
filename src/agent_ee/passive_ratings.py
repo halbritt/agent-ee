@@ -294,9 +294,16 @@ def load_provenance(root, declaration):
     return ratings['derived']
 
 
-def resolve_record(props, ref, derived):
-    """Problems binding a native rating field to the receipted record of ``ref``."""
+def resolve_record(props, ref, derived, sheet='/'):
+    """Problems binding a native rating field to the receipted record of ``ref``.
+
+    A component outside the root sheet resolves first by its hierarchical path
+    (native sheet names plus reference, e.g. ``/amp_a/R101``), the key binding fill
+    gives each declared child-sheet instance (AGENTEE-252).
+    """
     raw = props.get(PROPERTY)
+    if sheet not in (None, '/') and sheet + ref in derived:
+        ref = sheet + ref
     entry = derived.get(ref)
     if raw is None:
         return [] if entry is None else [f'receipted rating record for {ref} is absent from the component']
