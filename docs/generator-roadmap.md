@@ -35,6 +35,12 @@ evidence (AGENTEE-96 to AGENTEE-99).
 | 3 | Standalone wideband controller board | Power, wideband channel, MCU core and CAN blocks | AGENTEE-98 |
 | 4 | FOME-MC itself | 15 sheets, 4 layers, about 492 footprints | AGENTEE-99 |
 
+The telemetry pod's [CAN reference-set capture](pod-can.md) binds the two
+pinned source instances. A selected-reference composition plan now emits four
+parts with eight native ports and grades provenance against both source exports.
+AGENTEE-176 may consume that producer; source-review qualification and actual pod
+acceptance remain separate open gates.
+
 What must exist at each stage before a rung can run:
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |

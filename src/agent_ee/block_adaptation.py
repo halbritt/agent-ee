@@ -32,11 +32,19 @@ def _local(root, value):
     return path
 
 
-def _source(root, block):
+def _source(root, block, composition=None):
     directory = _local(root, block)
     # Referenced runs are deliberately not opened. They cannot qualify a board.
     validate_block(directory)
     record = _read(directory / 'block.json')
+    if composition is not None:
+        from .block_composition import validate
+        plan = _read(_local(root, composition))
+        record['boundary_ports'] = validate(plan, record)
+        record['_composition'] = plan
+        return record
+    if len(record.get('instances', [])) > 1:
+        raise ValueError('multiple source instances are not supported by block adaptation')
     ast = parse_sexpr((directory / record['sheet']).read_bytes())
     if children(ast, 'sheet'):
         raise ValueError('nested source blocks are not supported')
@@ -47,7 +55,11 @@ def _source(root, block):
 
 def _instance(root, rel):
     record = _read(_local(root, rel))
-    exact_keys(record, 'schema id block block_id version sha256 sheet instance_path bindings requirements')
+    if record.get('schema') == 'agent-ee.flat-block-instance/1':
+        from .block_flat import read_instance
+        return read_instance(root, record)
+    exact_keys(record, 'schema id block block_id version sha256 sheet instance_path bindings requirements' +
+               (' composition' if 'composition' in record else ''))
     if record['schema'] != INSTANCE_SCHEMA:
         raise ValueError('unknown block instance schema')
     from .findings import safe_id
@@ -59,7 +71,14 @@ def _instance(root, rel):
     segments = record['instance_path'].strip('/').split('/')
     if not all(str(uuid.UUID(s)) == s for s in segments):
         raise ValueError('instance_path requires canonical UUIDs')
-    source = _source(root, record['block'])
+    composition = record.get('composition')
+    if composition is not None:
+        exact_keys(composition, 'path sha256 emitted_sha256')
+        if digest(_local(root, composition['path'])) != composition['sha256']:
+            raise ValueError('composition plan hash differs')
+        from .reference_blocks import _hash
+        _hash(composition['emitted_sha256'])
+    source = _source(root, record['block'], composition['path'] if composition else None)
     if (record['block_id'], record['version'], record['sha256']) != (
             source['id'], source['version'], source['files'][source['sheet']]):
         raise ValueError('block identity differs from instance record')
@@ -68,10 +87,28 @@ def _instance(root, rel):
         raise ValueError('every boundary port needs exactly one immutable binding')
     for net in bindings.values():
         text(net)
+    if '_composition' in source:
+        for port in source['_composition']['ports']:
+            if bindings[port['name']] != bindings[port['net_name']]:
+                raise ValueError('composition port alias binding differs')
+        canonical = [p['name'] for p in source['_composition']['ports'] if p['alias_of'] is None]
+        if len({bindings[p] for p in canonical}) != len(canonical):
+            raise ValueError('composition bindings cannot merge distinct source nets')
     mapping = record['requirements']
     if not isinstance(mapping, dict) or set(mapping) != {r['id'] for r in source['requirements']}:
         raise ValueError('every block requirement needs a board check mapping')
     return record, source
+
+
+def _requirement_intent(source, requirement):
+    # A captured netlist-only source requirement is informational by contract.
+    # Preserve this distinction when composing a block; it cannot become a
+    # synthetic acceptance witness just because it was instantiated.
+    if '_composition' in source:
+        kinds = {c['id']: c['kind'] for c in source.get('check_set', [])}
+        if requirement['checks'] and all(kinds.get(c) == 'netlist' for c in requirement['checks']):
+            return 'informational'
+    return 'acceptance'
 
 
 def capability(params, scope, files, inputs, check_id):
@@ -80,8 +117,12 @@ def capability(params, scope, files, inputs, check_id):
     if inputs is None or rel not in files:
         raise ValueError('instance record must be captured')
     record, source = _instance(inputs, rel)
+    if 'composition' in record and scope.get('schema') != 'agent-ee.scope/3':
+        raise ValueError('selected-reference composition requires scope/3')
     dependencies = [rel, str(PurePosixPath(record['block']) / 'block.json')]
     dependencies += [str(PurePosixPath(record['block']) / p) for p in source['files']]
+    if 'composition' in record:
+        dependencies.append(record['composition']['path'])
     for p in dependencies:
         if p not in files or files[p] != digest(_local(inputs, p)):
             raise ValueError('block dependency not captured or changed: ' + p)
@@ -103,11 +144,19 @@ def capability(params, scope, files, inputs, check_id):
             'source': {'path': str(PurePosixPath(record['block']) / 'block.json'),
                        'locator': 'requirements/' + req['id']}, 'checks': checks}
         if scope.get('schema') == 'agent-ee.scope/3':
-            expected['intent'] = 'acceptance'
+            expected['intent'] = _requirement_intent(source, req)
+            if expected['intent'] == 'informational' and any(
+                    next(s['kind'] for s in specs if s['id'] == c) != 'netlist' for c in checks):
+                raise ValueError('native source requirement must map to fresh native netlist checks')
         if expected not in requirements:
             raise ValueError('block requirement mapping differs from board baseline')
+    predicates = ['block-boundary:' + p['name'] for p in source['boundary_ports']]
+    if '_composition' in source:
+        predicates += (['block-flat:component-adaptations', 'block-flat:pin-net-adaptations']
+                       if record['schema'] == 'agent-ee.flat-block-instance/1' else
+                       ['block-composition:components', 'block-composition:pin-nets'])
     return {'instance': record, 'block': source, 'immutable_inputs': dependencies,
-            'predicates': ['block-boundary:' + p['name'] for p in source['boundary_ports']]}
+            'predicates': predicates}
 
 
 def instantiate(root, scope, request):
@@ -116,11 +165,14 @@ def instantiate(root, scope, request):
     The caller owns the scaffold and is its only writer. Source blocks must
     already be present beneath root. No campaign, evidence store or run is made.
     """
-    exact_keys(request, 'id block sheet instance_path bindings requirements record provenance_check netlist_check')
+    exact_keys(request, 'id block sheet instance_path bindings requirements record provenance_check netlist_check' +
+               (' composition' if 'composition' in request else ''))
     root = Path(root)
     if scope.get('schema') not in ('agent-ee.scope/2', 'agent-ee.scope/3'):
         raise ValueError('block instances require an immutable scope/2 or scope/3 baseline')
-    source = _source(root, request['block'])
+    source = _source(root, request['block'], request.get('composition'))
+    if 'composition' in request and scope['schema'] != 'agent-ee.scope/3':
+        raise ValueError('selected-reference composition requires scope/3')
     sheet = _local(root, request['sheet'])
     old = sheet.read_bytes()
     ast = parse_sexpr(old)
@@ -153,10 +205,12 @@ def instantiate(root, scope, request):
                        'locator': 'requirements/' + req['id']},
             'checks': copy.deepcopy(request['requirements'].get(req['id']))}
         if result['schema'] == 'agent-ee.scope/3':
-            mapped['intent'] = 'acceptance'
+            mapped['intent'] = _requirement_intent(source, req)
         baseline['requirements'].append(mapped)
     bound = {'id': request['id'] + '-boundary', 'statement': 'Preserve the captured block boundary bindings',
         'source': {'path': request['record'], 'locator': 'bindings'}, 'checks': [cid]}
+    if '_composition' in source:
+        bound['statement'] = 'Preserve selected source component identities, pin connectivity and captured block boundary bindings'
     if result['schema'] == 'agent-ee.scope/3':
         bound['intent'] = 'acceptance'
     baseline['requirements'].append(bound)
@@ -164,8 +218,15 @@ def instantiate(root, scope, request):
     mutable = result.setdefault('mutable_inputs', [p for p in (result.get('board'), result['schematic']) if p])
     if request['sheet'] not in mutable:
         mutable.append(request['sheet'])
+    raw = (_local(root, request['block']) / source['sheet']).read_bytes()
+    if 'composition' in request:
+        from .block_composition import produce
+        from hashlib import sha256
+        raw = produce(root, request['block'], source['_composition'], matches[0], PurePosixPath(scope['schematic']).stem)
+        record['composition'] = {'path': request['composition'],
+            'sha256': digest(_local(root, request['composition'])), 'emitted_sha256': sha256(raw).hexdigest()}
     try:
-        sheet.write_bytes((_local(root, request['block']) / source['sheet']).read_bytes())
+        sheet.write_bytes(raw)
         write_json(record_path, record)
         files = {p.relative_to(root).as_posix(): digest(p) for p in root.rglob('*') if p.is_file()}
         from .baseline import compile_baseline
@@ -297,6 +358,9 @@ def check_block_provenance(ctx):
     try:
         descriptor = capability(ctx.params, ctx.scope, ctx.manifest['files'], ctx.inputs, ctx.cid)
         record, block = descriptor['instance'], descriptor['block']
+        if record['schema'] == 'agent-ee.flat-block-instance/1':
+            from .block_flat import check
+            return check(ctx, descriptor)
         xml = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'design.xml')
         connectivity = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'connectivity.json')
         actual = read_native_inventory(xml)
@@ -312,8 +376,16 @@ def check_block_provenance(ctx):
         occurrence = matches[0]
         if children(occurrence['tree'], 'sheet'):
             raise ValueError('nested adapted blocks are not supported')
-        source = _export(ctx, 'source', '/candidate/' + str(PurePosixPath(record['block']) / block['sheet']))
-        component_changes, net_changes = semantic_diff(source, actual, occurrence, record['bindings'], block)
+        composition = block.get('_composition')
+        if composition is None:
+            source = _export(ctx, 'source', '/candidate/' + str(PurePosixPath(record['block']) / block['sheet']))
+            component_changes, net_changes = semantic_diff(source, actual, occurrence, record['bindings'], block)
+        else:
+            from .block_composition import models, compare
+            selected = models(ctx.inputs / record['block'], composition,
+                lambda i, path: _export(ctx, 'source-' + str(i),
+                    '/candidate/' + str(PurePosixPath(record['block']) / path)))
+            component_changes, net_changes = compare(selected, actual, occurrence, record['bindings'])
         ports = hierarchy_ports((ctx.inputs / record['sheet']).read_bytes())
         parent_path = '/' + '/'.join(record['instance_path'].strip('/').split('/')[:-1])
         parent_path = parent_path.rstrip('/') + '/'
@@ -365,24 +437,46 @@ def check_block_provenance(ctx):
                 reason='' if connected and name == port['expected_net'] else 'boundary binding missing or rebound')
         report = {'schema': 'agent-ee.block-provenance/1', 'candidate_id': ctx.manifest['candidate_id'],
             'instance': record, 'component_changes': component_changes, 'net_changes': net_changes,
-            'boundary': boundary, 'same_bytes': digest(ctx.inputs / record['sheet']) == record['sha256'],
+            'boundary': boundary, 'same_bytes': digest(ctx.inputs / record['sheet']) ==
+                (record['composition']['emitted_sha256'] if composition else record['sha256']),
             'source_evidence': 'provenance_only', 'native_xml_sha256': digest(xml)}
+        if composition:
+            report['composition'] = {'plan': record['composition'], 'sources': composition['sources'],
+                'ports': composition['ports'], 'source_commit': block['source']['commit']}
         report = json.loads(json.dumps(report))
         write_json(ctx.work / 'provenance.json', report)
         ctx.evidence('provenance.json')
         ctx.result['details'].update(report)
         defects = [p for p in boundary if p['status'] == 'violation']
+        if composition:
+            defects += component_changes + net_changes
         same = report['same_bytes']
         summary = (f"same as block v{record['version']}, sha256 {record['sha256']}" if same else
                    f"adapted block v{record['version']}: {len(component_changes)} component and {len(net_changes)} net changes")
+        if composition:
+            summary = (f"selected-reference composition from {len(composition['sources'])} captured instances; "
+                       f"{len(component_changes)} component and {len(net_changes)} pin-net changes")
         ctx.result.update(execution='ok', outcome='defect' if defects else 'pass',
-                          summary=summary + f'; {len(defects)} boundary defects')
+                          summary=summary + f'; {len(defects)} ' + ('provenance/boundary defects' if composition else 'boundary defects'))
         ctx.result['limitations'].append('Provenance and boundary bindings only; source runs supply no board acceptance. '
             'Flat source blocks and one child-file occurrence only. Board requirements need fresh checks.')
+        if composition:
+            ctx.result['limitations'].append('Selected-reference composition preserves declared source nets, '
+                'including explicit aliases; no source-review or block-verification gate is satisfied by provenance.')
     except CheckError:
         raise
     except (OSError, ValueError, KeyError, TypeError, StopIteration, ParseError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
+
+
+def compose_flat(root, intent, blocks, bindings, *, captured_libraries):
+    """Return intent/1, captured libraries and immutable block-instance sidecars.
+
+    Does not publish files. All block sources must already be captured under root.
+    The completed board intent, including real surrounding terminals, must resolve.
+    """
+    from .block_flat import compose
+    return compose(root, intent, blocks, bindings, captured_libraries)
 
 
 def main(argv=None):
