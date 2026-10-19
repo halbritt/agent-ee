@@ -376,11 +376,17 @@ class GroupRegionTest(unittest.TestCase):
         # The same plan without groups puts the probes elsewhere: the groups did the work.
         free = {p['ref']: p['position_nm'] for p in pack(board, request(fixed_refs=[]))['placements']}
         self.assertNotEqual((free['TP1'], free['TP2'], free['R9']), (at['TP1'], at['TP2'], at['R9']))
-        # A region too small for a probe is a bounded search failure, never a defect.
+        # A region too narrow for a probe, with room for its area, is a bounded search
+        # failure, never a defect.
         small = copy.deepcopy(self.GROUPS)
-        small[1]['region'] = {'polygons': [box(20, 2, 21.5, 3.5)]}
+        small[1]['region'] = {'polygons': [box(20, 2, 21.5, 17.5)]}
         report = pack(board, request(fixed_refs=[], groups=small))
         self.assertEqual((report['status'], report['outcome']), ('packing_search_exhausted', 'unknown'))
+        # One smaller than the probes' inner-bound courtyard area is proven too small (AGENTEE-212).
+        small[1]['region'] = {'polygons': [box(20, 2, 21.5, 3.5)]}
+        report = pack(board, request(fixed_refs=[], groups=small))
+        self.assertEqual((report['status'], report['outcome'], report['proof']['kind'], report['proof']['group']),
+                         ('packing_infeasible', 'defect', 'region_capacity', 'probes'))
 
     def test_grade_reports_region_and_anchor_defects_and_unknowns(self):
         from agent_ee.placer import transform
