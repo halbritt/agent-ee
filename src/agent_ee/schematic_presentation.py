@@ -11,12 +11,17 @@ connected:
   pin on a rail) hangs perpendicular to the pin's wire, so several decoupling
   parts form a comb; a series part sits in line and its far pin can carry a
   further chain. Every placement is checked against every connection point,
-  wire and visual reservation already in its cluster; a satellite that does not
-  fit within ``MAX_STEPS`` grid steps stays a labelled loose part.
+  wire and visual reservation already in its cluster. Satellites that do not
+  fit are retried while a sweep places any; a shunt part may then continue an
+  anchor pin in line; one that does not fit within ``MAX_STEPS`` grid steps
+  stays a labelled loose part.
 - Every net keeps at least one label carrying its intent name: the target pin
-  keeps its label, only a wired satellite's attach pin drops its own.
-- Each group gets a dashed frame and a title; groups flow left to right in
-  layout order and wrap onto the smallest landscape paper that holds them.
+  keeps its label, only a wired satellite's attach pin drops its own. Runs of
+  adjacent labelled pins on an anchor's top or bottom edge fan out to staggered
+  horizontal labels at the end of short wires (AGENTEE-241).
+- Each group gets a dashed frame and a title, packed at its tightest aspect;
+  groups flow left to right in layout order and wrap onto the smallest
+  landscape paper that holds them.
 
 Before any bytes are written, ``verify`` rebuilds connectivity from the drawn
 pins, wires and labels and refuses unless it equals the intent partition
@@ -103,21 +108,28 @@ def _text_box(cx, cy, text):
     return [cx - half, cy - FONT * 3 // 4, cx + half, cy + FONT * 3 // 4]
 
 
-def _autoplace(item, geo, horizontal):
+def _autoplace(item, geo, horizontal, side=None):
     """Reference and Value beside a satellite body, horizontal and centred.
 
     A horizontal part (pins left and right, on a wire line) carries Reference
-    above and Value below its body; a vertical part carries both to its right.
-    Returns the anchor-relative ``fields`` and the matching ``shapes``.
+    above and Value below its body, or both stacked on one ``side`` ('above'
+    or 'below') so a wire arriving from the other side stays clear of the
+    text; a vertical part carries both to its right. Returns the
+    anchor-relative ``fields`` and the matching ``shapes``.
     """
     x0, y0, x1, y1 = geo['shapes'][0]
     cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
     texts = {'Reference': item['comp']['reference'], 'Value': item['comp']['value']}
     visible = [p[1] for p in item['properties'] if p[1] in texts and not children(p, 'hide')]
     fields, shapes = {}, [geo['shapes'][0]]
+    # Reference reads above Value on either side.
+    rows = [n for n in {'above': ('Value', 'Reference'), 'below': ('Reference', 'Value')}.get(side, ()) if n in visible]
     for name in visible:
         text = texts[name]
-        if horizontal:
+        if side:  # Stacked one text row (1.6 em) apart, nearest row against the body.
+            step = FONT + rows.index(name) * FONT * 8 // 5
+            at = (cx, y0 - step) if side == 'above' else (cx, y1 + step)
+        elif horizontal:
             at = (cx, y0 - FONT) if name == 'Reference' else (cx, y1 + FONT)
         else:
             at = (x1 + FONT + len(text) * TEXT_ADVANCE // 2 + FONT // 2,
@@ -135,10 +147,11 @@ class _Cluster:
         self.parts = [(item, (0, 0))]
         self.boxes = list(item['shapes'])
         self.points, self.segments, self.wires, self.junctions = set(), [], [], []
-        self.targets = []
+        self.targets, self.label_boxes, self.moved = [], {}, {}
         for pin, net, x, y, away in item['labels']:
             self.points.add((x, y))
             if net is not None:
+                self.label_boxes.setdefault((x, y), []).append(len(self.boxes))
                 self.boxes.append(label_box(x, y, away, net['name'], is_global(net)))
                 self._target(item, pin['number'], net, (x, y), away, False)
 
@@ -163,16 +176,20 @@ class _Cluster:
                 return False
         return True
 
-    def attach(self, item, target, a, b, inline):
+    def attach(self, item, target, a, b, inline, last=False):
         """Place a satellite on ``target``; return its placed copy, or None when nothing fits.
 
         A shunt part hangs perpendicular to the target's wire (down or right
         first). A series part (``inline``) prefers to continue the wire, but
-        hangs like a shunt part when that fits at a nearer step.
+        hangs like a shunt part when that fits at a nearer step. ``last`` is
+        the fallback for a part that fits nowhere else: it only continues the
+        wire, which closes the target to further parts.
         """
         ux, uy = DIRS[target['away']]
         wanted = [(0, 1), (0, -1)] if ux else [(1, 0), (-1, 0)]
-        if inline:
+        if last:
+            wanted = [(ux, uy)]
+        elif inline:
             wanted.insert(0, (ux, uy))
         options = []
         for direction in wanted:
@@ -181,8 +198,9 @@ class _Cluster:
                 (ax, ay, _), (bx, by, b_away) = geo['ends'][a], geo['ends'][b]
                 length = abs(bx - ax) + abs(by - ay)
                 if length and (bx - ax, by - ay) == (direction[0] * length, direction[1] * length):
-                    options.append((dict(geo, **_autoplace(item, geo, bx != ax)), (ax, ay), (bx, by), b_away,
-                                    direction == (ux, uy)))
+                    for side in (None, 'above', 'below') if bx != ax else (None,):
+                        options.append((dict(geo, **_autoplace(item, geo, bx != ax, side)), (ax, ay), (bx, by),
+                                        b_away, direction == (ux, uy)))
                     break
         ex0, ey0 = target['end']
         for step in range(1, MAX_STEPS + 1):
@@ -211,6 +229,58 @@ class _Cluster:
                 self._target(placed, b, item['nets'][b], far, b_away, True)
                 return placed
         return None
+
+    def fan(self):
+        """Fan each run of adjacent labelled pins on a top or bottom edge.
+
+        Labels on vertical pins one grid apart read as one crowded column of
+        text against the pin numbers. Each pin of a run instead gets a short
+        wire straight out, staggered one grid per pin, and a horizontal label:
+        the left half of the run points left, the right half right, the
+        outermost pins nearest the body. A pin already wired to a satellite
+        keeps its place in the run and is not moved. A run is fanned whole or
+        not at all.
+        """
+        item = self.parts[0][0]
+        wired = {t['point'] for t in self.targets if t['satellite'] or t['end'] != t['point']}
+        edges, seen = {}, set()
+        for pin, net, x, y, away in item['labels']:
+            if net is None or away not in (90, 270) or (x, y) in seen:
+                continue
+            seen.add((x, y))  # Stacked pins share one label.
+            edges.setdefault((away, y), []).append((x, pin['number'], net, (x, y) in wired))
+        for (away, y), pins in sorted(edges.items()):
+            pins.sort(key=lambda p: p[0])
+            run = [pins[0]]
+            for pin in pins[1:] + [None]:
+                if pin and pin[0] - run[-1][0] <= GRID:
+                    run.append(pin)
+                    continue
+                if len(run) > 1 and not all(p[3] for p in run):
+                    self._fan_run(item, away, y, run)
+                run = [pin]
+
+    def _fan_run(self, item, away, y, run):
+        saved = list(self.boxes), set(self.points), list(self.segments), list(self.wires)
+        drop = {i for x, _, _, fixed in run if not fixed for i in self.label_boxes[x, y]}
+        self.boxes = [b for i, b in enumerate(self.boxes) if i not in drop]
+        uy = -1 if away == 90 else 1
+        moved = {}
+        for i, (x, number, net, fixed) in enumerate(run):
+            if fixed:
+                continue
+            side, height = (180, i + 1) if i < len(run) // 2 else (0, len(run) - i)
+            end = (x, y + uy * height * GRID)
+            box = label_box(end[0], end[1], side, net['name'], self.is_global(net))
+            if not self.free([box], ((x, y), end), [end]):
+                self.boxes, self.points, self.segments, self.wires = saved
+                return
+            self.boxes += [box, _box([(x, y), end])]
+            self.points.add(end)
+            self.segments.append(((x, y), end))
+            self.wires.append(((x, y), end, ('fan', item['comp']['id'], item['unit'], number)))
+            moved[number] = (*end, side)
+        self.moved.update(moved)
 
     def box(self):
         return _union(self.boxes)
@@ -313,11 +383,8 @@ def _groups(units, resolved, global_nets, spec):
         for number, net in sorted(unit['nets'].items(), key=lambda kv: _natural(kv[0])):
             if net is not None:
                 by_net.setdefault(net['id'], []).append(unit)
-    level = {}
     queue = [u for u in order if u['comp']['id'] in member]
     queue.sort(key=lambda u: (member[u['comp']['id']], roles[u['comp']['id'], u['unit']] != 'anchor'))
-    for unit in queue:
-        level[unit['comp']['id'], unit['unit']] = 0
     while queue:
         following = []
         for unit in queue:
@@ -331,7 +398,6 @@ def _groups(units, resolved, global_nets, spec):
                     if other['comp']['id'] in member or roles[key] == 'anchor':
                         continue
                     member[other['comp']['id']] = member[unit['comp']['id']]
-                    level[key] = level[unit['comp']['id'], unit['unit']] + 1
                     following.append(other)
         queue = following
     # Parts reachable only through rails (decoupling, bulk capacitors, flags,
@@ -351,8 +417,33 @@ def _groups(units, resolved, global_nets, spec):
             if hosts:
                 best = min(set(hosts), key=lambda cid: (-hosts.count(cid), member[cid]))
                 member[unit['comp']['id']] = member[best]
-                level[unit['comp']['id'], unit['unit']] = 1
                 break
+    # Attachment order: hops from the group's own anchors over non-rail nets
+    # inside the group, so a divider leg is tried after the series part whose
+    # far pin it hangs from, even when the layout lists both.
+    level = {}
+    queue = [u for u in order if u['comp']['id'] in member and roles[u['comp']['id'], u['unit']] == 'anchor']
+    for unit in queue:
+        level[unit['comp']['id'], unit['unit']] = 0
+    while queue:
+        following = []
+        for unit in queue:
+            if roles[unit['comp']['id'], unit['unit']] == 'marker':
+                continue
+            for number, net in sorted(unit['nets'].items(), key=lambda kv: _natural(kv[0])):
+                if net is None or rail(net):
+                    continue
+                for other in by_net[net['id']]:
+                    key = other['comp']['id'], other['unit']
+                    if key in level or roles[key] == 'anchor' or \
+                            member.get(other['comp']['id']) != member[unit['comp']['id']]:
+                        continue
+                    level[key] = level[unit['comp']['id'], unit['unit']] + 1
+                    following.append(other)
+        queue = following
+    for unit in order:  # Reached only through rails: decoupling and bulk parts.
+        if unit['comp']['id'] in member and roles[unit['comp']['id'], unit['unit']] != 'anchor':
+            level.setdefault((unit['comp']['id'], unit['unit']), 1)
     leftovers = [u for u in order if u['comp']['id'] not in member]
     if leftovers:
         groups.append(dict(key=('unassigned',), title='Unassigned parts', components=[], items=[]))
@@ -385,14 +476,19 @@ def _loose_box(unit, is_global):
 
 
 def arrange(units, resolved, global_nets, spec, namespace):
-    """Placements, omitted attach pins and drawn nodes for one flat sheet."""
+    """Placements, relabelled pins and drawn nodes for one flat sheet.
+
+    ``relabel`` maps a placed unit to its pins whose label is not drawn at the
+    pin: ``None`` for a wired satellite's attach pin (no label), or the
+    unit-local ``(x, y, angle)`` of a fanned label at the end of its wire.
+    """
     groups, roles, level, rail, fanout = _groups(units, resolved, global_nets, spec)
 
     def is_global(net):
         return net['id'] in global_nets
 
     prepared = []
-    omit = {}
+    relabel = {}
     for group in groups:
         anchors = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'anchor']
         clusters = [_Cluster(u, i, is_global) for i, u in enumerate(anchors)]
@@ -413,7 +509,8 @@ def arrange(units, resolved, global_nets, spec, namespace):
 
         satellites.sort(key=lambda u: (level.get((u['comp']['id'], u['unit']), MAX_STEPS), inline(u), *hint(u),
                                        _natural_ref(u['comp']['reference'])))
-        for sat in satellites:
+
+        def place(sat, fallback):
             options = []
             for number, net in sat['nets'].items():
                 other = next(n for n in sat['nets'] if n != number)
@@ -422,19 +519,44 @@ def arrange(units, resolved, global_nets, spec, namespace):
                         if target['net']['id'] == net['id'] and not target['closed']:
                             options.append((preference(net, target, cluster), cluster, target, number, other))
             options.sort(key=lambda o: o[0])
-            for _, cluster, target, a, b in options:
-                if cluster.attach(sat, target, a, b, inline(sat)):
-                    omit.setdefault((sat['comp']['id'], sat['unit']), set()).add(a)
+            # The fallback: a shunt part that cannot hang beside any target
+            # continues an anchor pin in line instead.
+            tries = [(o, False) for o in options]
+            if fallback and not inline(sat):
+                tries += [(o, True) for o in options if not o[2]['satellite']]
+            for (_, cluster, target, a, b), last in tries:
+                if cluster.attach(sat, target, a, b, inline(sat), last):
+                    relabel.setdefault((sat['comp']['id'], sat['unit']), {})[a] = None
+                    return True
+            return False
+
+        # Sweep until nothing more fits: a part whose target is the far pin of
+        # a later part gets another try; the in-line fallback comes last.
+        pending, fallback = satellites, False
+        while pending:
+            remaining = [sat for sat in pending if not place(sat, fallback)]
+            if len(remaining) == len(pending):
+                if fallback:
                     break
-            else:
-                loose.append(sat)
+                fallback = True
+            pending = remaining
+        loose += pending
+        for cluster in clusters:
+            cluster.fan()
+            if cluster.moved:
+                item = cluster.parts[0][0]
+                relabel.setdefault((item['comp']['id'], item['unit']), {}).update(cluster.moved)
         entries = [(('cluster', c.index), c.box()) for c in clusters]
         entries += [(('loose', i), _loose_box(u, is_global)) for i, u in enumerate(loose)]
         prepared.append((group, clusters, loose, entries))
+    # Every frame at the aspect that gives it the least area (least whitespace
+    # inside it), then one shared aspect at a time; the first set that fits
+    # the smallest paper wins.
+    shared = [[_block(*parts, aspect) for parts in prepared] for aspect in ASPECTS]
+    tightest = [min(column, key=lambda b: b['size'][0] * b['size'][1]) for column in zip(*shared)]
     for paper, width, height in PAPERS:
         usable_w, usable_h = width - 2 * BORDER, height - 2 * BORDER - TITLE_RESERVE
-        for aspect in ASPECTS:
-            blocks = [_block(*parts, aspect) for parts in prepared]
+        for blocks in [tightest, *shared]:
             offsets, (right, bottom) = _skyline([b['size'] for b in blocks], usable_w)
             if right <= usable_w and bottom <= usable_h:
                 break
@@ -466,11 +588,11 @@ def arrange(units, resolved, global_nets, spec, namespace):
                       ['effects', ['font', ['size', TITLE_FONT, TITLE_FONT], ['thickness', '0.508'], ['bold', 'yes']],
                        ['justify', 'left', 'bottom']],
                       ['uuid', Q(_uuid(namespace, 'group_title', *group['key']))]])
-    verify(placed, omit, wires, resolved)
-    return paper, placed, omit, drawn
+    verify(placed, relabel, wires, resolved)
+    return paper, placed, relabel, drawn
 
 
-def verify(placed, omit, wires, resolved):
+def verify(placed, relabel, wires, resolved):
     """Rebuild connectivity from drawn pins, wires and labels; refuse unless it equals the intent."""
     parent = {}
 
@@ -486,7 +608,7 @@ def verify(placed, omit, wires, resolved):
 
     pins, points, labelled, ncs = {}, set(), [], []
     for item, anchor in placed:
-        skipped = omit.get((item['comp']['id'], item['unit']), set())
+        moved = relabel.get((item['comp']['id'], item['unit']), {})
         for pin, net, x, y, _ in item['labels']:
             point = (anchor[0] + x, anchor[1] + y)
             points.add(point)
@@ -494,8 +616,11 @@ def verify(placed, omit, wires, resolved):
                 ncs.append(point)
                 continue
             pins[item['comp']['id'], pin['number']] = point
-            if pin['number'] not in skipped:
+            if pin['number'] not in moved:
                 labelled.append((point, net['name']))
+            elif moved[pin['number']]:
+                labelled.append(((anchor[0] + moved[pin['number']][0], anchor[1] + moved[pin['number']][1]),
+                                 net['name']))
     ends = {p for wire in wires for p in wire}
     for a, b in wires:
         if any(_inside(p, a, b) for p in points | ends):

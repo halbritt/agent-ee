@@ -17,11 +17,12 @@ import sys
 import tempfile
 import unittest
 import uuid
+from unittest import mock
 from pathlib import Path
 
 from agent_ee import schematic_presentation as presentation
 from agent_ee.connectivity_ir import resolve_intent
-from agent_ee.schematic_emitter import EmissionError, _plan, transformed_pin
+from agent_ee.schematic_emitter import EmissionError, _geometry, _plan, transformed_pin
 from agent_ee.symbol_library import ParsedLibraries, children, nanometres, parse_sexpr
 from test_schematic_emitter import PROJECT, captures, emit, load, native_netlist, native_project, run_native, tables
 from toolchain import require_toolchain
@@ -196,6 +197,85 @@ class PresentationRulesTests(unittest.TestCase):
             self.assertNotIn(points['C3', pin], ends)
             self.assertIn(points['C3', pin], [p for _, _, p in labels])
 
+    def test_listed_divider_leg_is_wired_after_its_series_part(self):
+        # AGENTEE-241: listing the leg (C5, OUT_F to GND) before the series
+        # part (C4) whose far pin it hangs from must not leave it loose.
+        intent, layout = load('presentation.intent.json'), load('presentation.layout.json')
+        layout['groups'][1]['components'] = ['reg', 'c_filter', 'c_series']
+        data = functional(layout=layout)['presentation.kicad_sch']
+        _, symbols, labels, wires, *_ = sheet(data)
+        points = endpoints(intent, data)
+        ends = {p for w in wires for p in w}
+        self.assertIn(points['C4', '1'], ends)
+        self.assertIn(points['C5', '1'], ends)
+        self.assertNotIn(points['C5', '1'], [p for _, _, p in labels])
+        self.assertEqual(functional(layout=layout)['presentation.kicad_sch'], data)
+
+    def fanned(self):
+        layout = load('presentation.layout.json')
+        layout['transforms'] = {'j_in': {'rotation': 90, 'mirror': None}}  # J1's three pins on one edge
+        return layout
+
+    def test_dense_edge_pins_fan_out_to_staggered_horizontal_labels(self):
+        intent = load('presentation.intent.json')
+        data = functional(layout=self.fanned())['presentation.kicad_sch']
+        root, symbols, labels, wires, *_ = sheet(data)
+        self.assertEqual(symbols['J1']['rotation'], 90)
+        points = endpoints(intent, data)
+        angles = {(n[1], at(n)): int(children(n, 'at')[0][3])
+                  for n in children(root, 'label') + children(root, 'global_label')}
+        # J1 pin 1 carries the C1/C2 comb: it keeps its wire and its label at
+        # the pin, and its free neighbours fan away from it to the right.
+        self.assertIn(('VIN', points['J1', '1']), angles)
+        self.assertTrue(any(points['J1', '1'] in w for w in wires))
+        fan = []
+        for pin, name in (('2', 'GND'), ('3', 'SENSE')):
+            start = points['J1', pin]
+            wire = [w for w in wires if start in w]
+            self.assertEqual(len(wire), 1, pin)
+            end = wire[0][1] if wire[0][0] == start else wire[0][0]
+            self.assertEqual(end[0], start[0], 'fan wires leave the edge straight')
+            self.assertNotIn((name, start), angles, 'the label moved off the pin')
+            fan.append((start[0], angles[name, end], end[1] - start[1]))
+        # Horizontal labels, staggered one grid apart, the outermost pin nearest the edge.
+        self.assertEqual([f[1:] for f in sorted(fan)], [(0, 5080000), (0, 2540000)])
+        self.assertEqual(functional(layout=self.fanned())['presentation.kicad_sch'], data)
+
+    def test_shunt_part_continues_an_anchor_pin_in_line_only_as_the_fallback(self):
+        _, _, units = self.units()
+        reg, cap = (next(u for u in units if u['comp']['reference'] == r) for r in ('U1', 'C3'))
+        for last, along in ((False, False), (True, True)):
+            cluster = presentation._Cluster(reg, 0, lambda net: False)
+            target = next(t for t in cluster.targets if t['key'][2] == '3')
+            placed = cluster.attach(cap, target, '1', '2', False, last)
+            self.assertIsNotNone(placed)
+            (_, anchor), = [p for p in cluster.parts if p[0] is placed]
+            ends = [(anchor[0] + x, anchor[1] + y) for p, _, x, y, _ in placed['labels']]
+            # VOUT leaves U1 to the right: in line keeps both C3 pins on the pin's row.
+            self.assertEqual(all(y == target['point'][1] for _, y in ends), along, last)
+            self.assertEqual(target['closed'], along)
+
+    def test_stacked_fields_sit_on_one_side_reference_first(self):
+        _, _, units = self.units()
+        cap = next(u for u in units if u['comp']['reference'] == 'C3')
+        geo = _geometry(cap, 90, None)
+        top, bottom = geo['shapes'][0][1], geo['shapes'][0][3]
+        for side in ('above', 'below'):
+            fields = presentation._autoplace(cap, geo, True, side)['fields']
+            self.assertLess(fields['Reference'][1], fields['Value'][1], side)
+            self.assertEqual(fields['Reference'][0], fields['Value'][0])
+            for _, y in fields.values():
+                self.assertTrue(y < top if side == 'above' else y > bottom, side)
+
+    def test_frames_take_their_tightest_aspect(self):
+        def area(data):
+            _, *_, frames, _ = sheet(data)
+            return sum((b[0] - a[0]) * (b[1] - a[1]) for a, b in frames)
+        tight = area(functional()['presentation.kicad_sch'])
+        for aspect in presentation.ASPECTS:
+            with mock.patch.object(presentation, 'ASPECTS', (aspect,)):
+                self.assertLessEqual(tight, area(functional()['presentation.kicad_sch']), aspect)
+
     def test_explicit_and_automatic_groups_have_distinct_drawing_identities(self):
         # Authored IDs may match an unlisted anchor ID or the fallback name.
         layout = load('presentation.layout.json')
@@ -245,11 +325,14 @@ class PresentationRulesTests(unittest.TestCase):
         self.assertIsNone(files)
         self.assertIn('rows presentation only', json.dumps(result['findings']))
 
-    def plan(self):
+    def units(self):
         intent = load('presentation.intent.json')
         cache, captured = ParsedLibraries(), captures(intent)
         resolved = resolve_intent(intent, captured, _library_cache=cache)
-        units, global_nets = _plan(resolved, captured, intent['libraries'], {}, cache, {})
+        return resolved, *_plan(resolved, captured, intent['libraries'], {}, cache, {})[::-1]
+
+    def plan(self):
+        resolved, global_nets, units = self.units()
         layout = load('presentation.layout.json')
         paper, placed, omit, drawn = presentation.arrange(units, resolved, global_nets, layout['groups'],
                                                           uuid.UUID(layout['namespace']))
@@ -344,6 +427,24 @@ class PresentationNativeTests(unittest.TestCase):
             with self.subTest(predicate=predicate):
                 self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
         # KiCad's own forced re-save reproduces wires, junctions, frames and titles.
+        shutil.copytree(project, work / 'resave' / 'copy')
+        run_native(project, work / 'resave', 'kicad-cli', 'sch', 'upgrade', '--force',
+                   '/work/copy/presentation.kicad_sch')
+        native = (work / 'resave/copy/presentation.kicad_sch').read_bytes()
+        self.assertEqual(native.replace(b'(generator "eeschema")', b'(generator "agent-ee-schematic-emitter")', 1),
+                         files['presentation.kicad_sch'])
+
+    def test_fanned_labels_keep_native_connectivity_and_resave(self):
+        """AGENTEE-241: fan wires and moved labels change nothing native but their drawing."""
+        transforms = {'j_in': {'rotation': 90, 'mirror': None}}
+        files = functional(layout=dict(load('presentation.layout.json'), transforms=transforms), **tables())
+        self.assertEqual(len(children(parse_sexpr(files['presentation.kicad_sch']), 'wire')), 7)
+        project, work, erc = self.native(files, 'fanned')
+        self.assertEqual([v for s in erc['sheets'] for v in s['violations']], [])
+        rows_files = emit('presentation', layout=dict(rows_layout(), transforms=transforms), **tables())[1]
+        _, rows_work, rows_erc = self.native(rows_files, 'rows')
+        self.assertEqual([v for s in rows_erc['sheets'] for v in s['violations']], [])
+        self.assertEqual(native_netlist(work / 'netlist/design.xml'), native_netlist(rows_work / 'netlist/design.xml'))
         shutil.copytree(project, work / 'resave' / 'copy')
         run_native(project, work / 'resave', 'kicad-cli', 'sch', 'upgrade', '--force',
                    '/work/copy/presentation.kicad_sch')
