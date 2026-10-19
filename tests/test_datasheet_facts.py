@@ -147,6 +147,50 @@ class DatasheetFactsTests(unittest.TestCase):
             with self.subTest(value=value, quote=quote):
                 self.assertIs(value_in_quote(value, unit, quote), expected)
 
+    def test_quote_must_start_and_end_at_page_token_boundaries(self):
+        from agent_ee.datasheet_facts import page_support
+        cases = [
+            ('Pad pitch e 0.9', 'Pad pitch e 0.95', False),
+            ('95 mm', '0.95 mm', False), ('5 V', '-5 V', False),
+            ('CAN 6', 'XCAN 6', False), ('CAN', 'CANL', False),
+            ('CAN', 'CAN\u0332', False), ('CAN', '\u0332CAN', False),
+            ('Pitch 5', 'Pitch 5E+3', False), ('Pitch 5', 'Pitch 5.5', False),
+            ('Pitch 5', 'Pitch 5\u00b5A', False),
+            ('Pad pitch e 0.95', 'Pad pitch e 0.95', True),
+            ('0.95', 'Pitch (0.95) mm', True), ('CAN', 'CAN bus', True),
+            ('5', 'Limit 5. V', True), ('-5', 'Limit -5 V', True),
+            # A truncated occurrence must not hide a later complete occurrence.
+            ('CAN', 'CANL CAN bus', True), ('CAN', 'CANL XCAN', False),
+            ('CAN', 'CANL\nCAN', True),
+            (' CAN ', 'XCAN CAN CANL', True), ('\nCAN\n', 'XCAN\nCAN\nCANL', True),
+            (' 0.9', 'Pitch 0.95', False), ('95 ', '0.95 mm', False),
+        ]
+        for quote, page, expected in cases:
+            with self.subTest(quote=quote, page=page):
+                self.assertEqual(page_support(dict(page=1, quote=quote), [page]),
+                    ('verified', 'exact_quote_and_value_supported') if expected else
+                    ('rejected', 'quote_truncates_a_page_token'))
+
+    def test_actual_pdf_truncated_quote_is_not_verified(self):
+        self.pdf = self.root / 'pitch.pdf'
+        text_pdf(self.pdf, ['Pad pitch e 0.95', 'XCAN 6'])
+        facts = [self.cited('truncated-last', '0.9', 'mm', 'Pad pitch e 0.9'),
+                 self.cited('truncated-first', 'CAN', '', 'CAN 6', pin='6'),
+                 self.cited('complete', '0.95', 'mm', 'Pad pitch e 0.95'),
+                 self.cited('edge-space', '0.95', 'mm', ' e 0.95')]
+        result = self.run_fact(facts=facts)
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertEqual(self.outcomes(result), {
+            'truncated-last': ('rejected', 'quote_truncates_a_page_token'),
+            'truncated-first': ('rejected', 'quote_truncates_a_page_token'),
+            'complete': ('verified', 'exact_quote_and_value_supported'),
+            'edge-space': ('verified', 'exact_quote_and_value_supported')})
+        page = (self.run / 'work/facts/page-0/page.txt').read_text(encoding='utf-8')
+        self.assertIn('Pad pitch e 0.95', page)
+        freeze_evidence(self.run, self.results)
+        verify_evidence(self.run, self.results, required=True)
+        self.assertEqual(self.run_fact(facts=[facts[-1]])['execution'], 'ok')
+
     def test_complete_numeric_and_symbol_lexemes(self):
         from agent_ee.datasheet_facts import value_in_quote
         for value, unit, quote, expected in [

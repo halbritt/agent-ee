@@ -33,7 +33,7 @@ import uuid
 from pathlib import Path, PurePosixPath
 
 from .candidate import safe_relative
-from .datasheet_facts import (EXTRACTOR, ends_token, page_support, split_pages, starts_token, validate_extractor,
+from .datasheet_facts import (EXTRACTOR, page_support, split_pages, validate_extractor,
                               validate_fact_records, value_in_quote, verify_extractor)
 from .storage import identity, json_bytes, read_json, rename_noreplace, write_json
 
@@ -427,16 +427,6 @@ def _first_line(work):
     return lines[0] if lines else ''
 
 
-def _bounded(quote, page):
-    """A dimension quote must not cut a printed page token (0.9 is not support from 0.95)."""
-    start = page.find(quote)
-    while start >= 0:
-        if starts_token(page, start, quote) and ends_token(page, start + len(quote), quote):
-            return True
-        start = page.find(quote, start + 1)
-    return False
-
-
 def verify_facts(request, extractions, inputs, work):
     """pdftotext verification of every cited fact (shared token/page rules); raises on tool failure."""
     tool = request['extractor']
@@ -462,8 +452,6 @@ def verify_facts(request, extractions, inputs, work):
                 status, reason = 'rejected', 'pdf_hash_mismatch'
             else:
                 status, reason = page_support(fact['source'], pages)
-                if status == 'verified' and not _bounded(fact['source']['quote'], pages[fact['source']['page'] - 1]):
-                    status, reason = 'rejected', 'quote_truncates_a_page_token'
             results[(label, fact_id)] = dict(extraction=label, id=fact_id, status=status, reason=reason)
     return results
 
