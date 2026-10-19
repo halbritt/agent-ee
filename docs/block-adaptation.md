@@ -124,8 +124,12 @@ remain fixed.
 ## Qualified scope
 
 The adapter supports a flat source block instantiated as one unique child-file
-occurrence in a captured hierarchy. It does not support nested blocks or repeated
-uses of the same child file. The strict native reader's component and terminal
+occurrence in a captured hierarchy. It refuses source blocks declaring multiple
+`instances`, before writing the child or instance record; exporting only their
+primary sheet cannot establish provenance for the other source instances.
+The [pod CAN capture](pod-can.md) exercises this refusal. It does not support
+nested blocks or repeated uses of the same child file. The strict native reader's
+component and terminal
 limits apply, including the temporary boundary probes. Native XML omits virtual power markers, so ERC and other declared
 board checks remain necessary. The semantic report covers native physical
 components and connectivity; it does not grade graphical layout or PCB geometry.
@@ -138,3 +142,29 @@ These controls use original synthetic fixtures, native KiCad exports and ngspice
 They establish software contracts and the ideal RC response, not physical-board
 qualification or third-party publication rights. No owner evidence store is
 created.
+
+## Explicit selected-reference composition (AGENTEE-175)
+
+A scope/3 request may additionally name a captured `composition` JSON path.
+Its `agent-ee.block-composition/1` plan covers every captured source instance,
+selected reference and native net; it declares source hashes, source-to-delivered
+reference/net maps, eight or other explicitly enumerated ports, and reasons.
+The [pod CAN plan](../fixtures/fome-mc/pod-can/composition.json) is the supported
+native example. The plan must be captured as an immutable input. The existing
+instance/1 record adds `composition: {path, sha256, emitted_sha256}`; absent means
+legacy copying. No source block schema or verified status changes.
+
+Only flat, explicit single-unit symbols with resolved visible pins are supported.
+The source-native net map is injective within each source; cross-source joins are
+explicit shared destinations. Port aliases must name a canonical port, and their
+board bindings must agree. Distinct canonical ports cannot share a board binding.
+Source netlist-only requirements remain informational and must map to fresh native
+netlist checks. All other source requirements still need fresh acceptance checks.
+The producer performs native source exports before writing the child; subsequent
+baseline failures restore the empty child and remove the new instance record.
+
+Composition provenance grades selected physical/pin differences as defects and
+retains both source exports. Legacy single-source adaptations continue reporting
+component/net changes as information. Multi-source requests without an explicit
+plan remain unsupported. Neither mode supplies source qualification or electrical
+suitability from provenance alone.
