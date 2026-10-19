@@ -28,6 +28,8 @@ A feature entry has exactly these fields:
 
 The example hashes are placeholders. `net` is the exact intent label;
 `native_net` is the exact expected KiCad export name, including any sheet prefix.
+The saved board pad carries its [board form](forward-annotation.md#native-net-name-encoding-agentee-220):
+a literal slash outside the sheet prefix is saved as `{slash}`.
 The qualifier never matches basenames or infers global/local aliases. Symbols
 and footprints must also be exact members of the manifest's existing CAD
 assignments and dependency closure. Each selector is unique and required.

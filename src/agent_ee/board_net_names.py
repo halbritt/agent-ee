@@ -25,13 +25,29 @@ def from_xml(root):
         name = net.get('name')
         if not name:
             raise ValueError('missing native net name for board net encoding')
-        prefix = max((p for p in paths if name.startswith(p)), key=len, default='')
-        suffix = name[len(prefix):]
-        if prefix and '/' in suffix:
-            raise ValueError('ambiguous local net slash in XML; escaped native netlist required: ' + repr(name))
-        encoded = prefix + suffix.replace('/', '{slash}')
+        encoded = encode_net(name, paths)
         if encoded in owners and owners[encoded] != name:
             raise ValueError('native net names collide after board encoding: ' + repr(name))
         owners[encoded] = name
         result[name] = encoded
     return result
+
+
+def encode_net(name, paths=None):
+    """Return the PCB name of one raw XML net name: the rule `from_xml` applies.
+
+    `paths` are the declared sheet name paths. A name without a leading
+    separator has every slash encoded. A local name keeps its sheet prefix;
+    with `paths` an extra slash after the most specific prefix is refused.
+    Without `paths` (a consumer holding only one declared XML name) the
+    structure is unknown, so a local name is taken verbatim: an unambiguous
+    one has no literal slash, and an ambiguous one cannot match the board
+    form KiCad writes, so the comparison still fails closed.
+    """
+    if paths is None:
+        return name if name.startswith('/') else name.replace('/', '{slash}')
+    prefix = max((p for p in paths if name.startswith(p)), key=len, default='')
+    suffix = name[len(prefix):]
+    if prefix and '/' in suffix:
+        raise ValueError('ambiguous local net slash in XML; escaped native netlist required: ' + repr(name))
+    return prefix + suffix.replace('/', '{slash}')

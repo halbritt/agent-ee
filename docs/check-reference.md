@@ -1261,5 +1261,6 @@ cannot satisfy scope/3 acceptance requirements. Failed rendering retains missing
 visual evidence without preventing review; malformed critique remains unusable.
 
 The board producers apply [native net-name encoding](forward-annotation.md#native-net-name-encoding-agentee-220)
-to XML names before writing PCB nets (AGENTEE-220). This does not normalize the
+to XML names before writing PCB nets (AGENTEE-220); the placer's netlist binding
+and probe pad validation compare saved pads with the same encoding. This does not normalize the
 XML inventory used by `netlist_parity`, or waive native DRC schematic parity.

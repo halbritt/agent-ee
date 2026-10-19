@@ -212,6 +212,27 @@ class NativeBoardBuildTest(unittest.TestCase):
         pads = {(f['ref'], p['number']): p['net'] for f in extract(board)['footprints'] for p in f['pads']}
         self.assertEqual(pads, EXPECTED)
 
+    def test_slash_global_net_builds_places_and_passes_native_schematic_parity(self):
+        """AGENTEE-220: the board carries OUT{slash}2 while the placer reads the raw XML OUT/2."""
+        from agent_ee.placement_probe import extract
+        sch = self.project / 'rc_filter.kicad_sch'
+        raw = sch.read_bytes()
+        self.assertIn(b'(label "OUT"', raw)
+        sch.write_bytes(raw.replace(b'(label "OUT"', b'(global_label "OUT/2" (shape input)'))
+        exported = subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
+                                   '-o', str(self.netlist), str(sch)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(exported.returncode, 0, exported.stderr)
+        (self.project / 'rc_filter.kicad_prl').unlink(missing_ok=True)
+        expected = {k: 'OUT/2' if v == '/OUT' else v for k, v in EXPECTED.items()}
+        self.assertEqual(self.xml_terminals(), expected)
+        receipt = self.build('slashed', self.placeholders)
+        self.assertEqual(receipt['unplaced']['parity']['schematic_parity'], 0)
+        self.assertEqual(receipt['status'], 'placed', receipt.get('placement'))
+        self.assertEqual(receipt['placed']['parity']['schematic_parity'], 0)
+        board = self.root / 'slashed/placed/rc_filter.kicad_pcb'
+        pads = {(f['ref'], p['number']): p['net'] for f in extract(board)['footprints'] for p in f['pads']}
+        self.assertEqual(pads, {k: 'OUT{slash}2' if v == 'OUT/2' else v for k, v in expected.items()})
+
     def test_identical_inputs_give_byte_identical_boards_in_process_and_in_sandbox(self):
         from agent_ee.executor import execute
         first = self.build('one', self.placeholders)

@@ -77,8 +77,10 @@ class PodPlacementFixture(EnvelopeScaffoldFixture):
         self.assert_completed(path, receipt)
         return inputs
 
-    def annotated(self):
-        """Scaffold content, then native forward annotation that adds the movable parts."""
+    def annotated(self, edit=None):
+        """Scaffold content, then native forward annotation that adds the movable parts.
+
+        `edit` rewrites the emitted schematic bytes before the native export."""
         from agent_ee import forward_annotation as fa
         from agent_ee.executor import execute
         from agent_ee.schematic_emitter import emit_schematic
@@ -86,7 +88,7 @@ class PodPlacementFixture(EnvelopeScaffoldFixture):
         result, files = emit_schematic(self.intent, {'Owned.kicad_sym': (inputs / 'Owned.kicad_sym').read_bytes()},
                                        read_json(inputs / 'layout.json'))
         self.assertEqual(result['execution'], 'ok', result)
-        (inputs / 'project/design.kicad_sch').write_bytes(files['design.kicad_sch'])
+        (inputs / 'project/design.kicad_sch').write_bytes((edit or bytes)(files['design.kicad_sch']))
         record = execute(inputs, self.root / 'xml', ['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml',
                          '-o', '/work/native.xml', '/candidate/project/design.kicad_sch'])
         self.assertEqual(record['execution'], 'ok', record)
@@ -279,6 +281,26 @@ class PodPlacementTests(PodPlacementFixture, unittest.TestCase):
     def test_fixed_from_envelope_native(self):
         """Fixed parts and holes keep their saved transforms; registered placement checks pass."""
         self.place_and_grade()
+
+    def test_slash_pin_name_no_connect_annotates_and_places(self):
+        """AGENTEE-220: a pod-like no-connect pin named SDA/~{SPI_CS} (real U3 pin 18).
+
+        Annotation writes the KiCad board form; the sandboxed placer binds the raw
+        XML export to that saved board instead of refusing its terminal nets."""
+        from agent_ee.native_netlist import read_native_inventory
+        from agent_ee.placement_probe import extract
+        def edit(data):
+            assert b'(name "P2"' in data
+            return data.replace(b'(name "P2"', b'(name "SDA/~{SPI_CS}"', 1)
+        inputs, xml = self.annotated(edit)
+        raw = [n['name'] for n in read_native_inventory(xml)['nets'].values() if 'SDA/~{SPI_CS}' in n['name']]
+        self.assertTrue(raw and all(n.startswith('unconnected-(') for n in raw), raw)
+        board = {p['net'] for f in extract(inputs / 'project/design.kicad_pcb')['footprints'] for p in f['pads']}
+        self.assertEqual({n.replace('/', '{slash}') for n in raw} - board, set())
+        self.assertEqual(set(raw) & board, set())
+        _, execution, work = self.place(inputs, xml, name='slash-placer')
+        self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text()[-2000:])
+        self.assertEqual(read_json(work / 'result.json')['status'], 'placed')
 
     def test_fixed_move_refused(self):
         """A writer move of the AMPSEAL stand-in is refused by name, even when unlocked."""

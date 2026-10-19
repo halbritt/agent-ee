@@ -177,6 +177,17 @@ class ForwardAnnotationTests(unittest.TestCase):
             self.assertEqual(layers(before[key]), layers(after[key]))
         self.assertEqual(self.drc(project, 'escaping')['schematic_parity'], [])
         self.assertEqual({p['net'] for p in plan['pads']}, expected)
+        # The placer binds the raw XML export to the annotated board's encoded pad nets.
+        from agent_ee.placement_probe import extract
+        from agent_ee.placer_runner import _netlist_binding
+        facts = extract(project / 'regulator.kicad_pcb')
+        _netlist_binding(xml.read_bytes(), facts)
+        for fp in facts['footprints']:
+            for pad in fp['pads']:
+                if pad['net'] and '{slash}' in pad['net']:
+                    pad['net'] = pad['net'].replace('{slash}', '/')
+        with self.assertRaisesRegex(ValueError, 'terminal nets differ'):
+            _netlist_binding(xml.read_bytes(), facts)
         again = fa.plan(project / 'regulator.kicad_pcb', xml, self.manifest, PROJECT, self.tmp / 'escape-again')
         self.assertEqual(again['execution'], 'ok', again['findings'])
         self.assertEqual((again['renames'], again['new_nets'], again['counts']['pad_changes']), ([], [], 0))
@@ -243,6 +254,25 @@ class ForwardAnnotationTests(unittest.TestCase):
             with self.assertRaisesRegex(BoardBuildError, message):
                 read_netlist(data)
         self.assertEqual((project / 'regulator.kicad_pcb').read_bytes(), BOARD.read_bytes())
+
+    def test_single_name_encoding_agrees_with_xml_projection(self):
+        """One declared XML name (probe records) takes the board form `from_xml` gives."""
+        import xml.etree.ElementTree as ET
+        from agent_ee.board_net_names import encode_net, from_xml
+        names = ['A/B {C} D:E', 'unconnected-(U3-SDA/~{SPI_CS}-Pad18)', 'unconnected-(U3-SCL/SPI_CLK-Pad19)',
+                 '/VOUT', '/Sub/X', 'GND', 'A{slash}C', '~{RESET}/X']
+        root = ET.fromstring('<export><design><sheet name="/" tstamps="/"/><sheet name="/Sub/" tstamps="/1/"/>'
+            '</design><components/><nets>' + ''.join(
+                '<net code="%d" name=%s/>' % (i, json.dumps(n)) for i, n in enumerate(names)) + '</nets></export>')
+        projected = from_xml(root)
+        self.assertEqual(projected['unconnected-(U3-SDA/~{SPI_CS}-Pad18)'], 'unconnected-(U3-SDA{slash}~{SPI_CS}-Pad18)')
+        self.assertEqual(projected['/Sub/X'], '/Sub/X')
+        self.assertEqual({n: encode_net(n) for n in names}, projected)
+        self.assertEqual({n: encode_net(n, {'/', '/Sub/'}) for n in names}, projected)
+        # Without sheet paths an extra local slash stays literal, so it cannot match KiCad's board form.
+        self.assertEqual(encode_net('/A/B'), '/A/B')
+        with self.assertRaisesRegex(ValueError, 'ambiguous local net slash'):
+            encode_net('/A/B', {'/'})
 
     def test_adding_one_component_preserves_layout_and_reapply_is_a_noop(self):
         def add(i):

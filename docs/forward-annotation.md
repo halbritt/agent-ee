@@ -205,10 +205,34 @@ and schematic label text keep their original representation. Scaffold writes
 no schematic nets and needs no conversion. The emitter continues to accept its
 existing safe-label grammar; generated NC names are produced by KiCad itself.
 
+Every consumer that compares raw XML net names with saved PCB pad nets applies
+the same rule rather than its own conversion: `placer_runner` binds the XML
+export to the saved board through `from_xml`, so placement after forward
+annotation and the placement step inside `board_build.build` accept the board
+form. `probe_features.validate_board` compares a probe's saved pad net with
+`board_net_names.encode_net(native_net)`: the declared `native_net` stays the
+exact XML name, and only the board side is encoded. With one declared name and
+no sheet table, a local name is taken verbatim; an ambiguous local slash then
+cannot match the `{slash}` form KiCad saves, so the check still refuses it.
+Consumers that read only XML (`netlist_parity`, probe native identity, part
+bindings) or only the board (DRC, fab inventory, constraint binding) compare
+names within one domain and need no conversion. Declared names checked against
+the board, such as net-constraint nets and placement `ground_nets`, are board
+names and must already use `{slash}` for a literal slash.
+
 `test_native_net_name_escaping_matches_native_export_and_parity` modifies only
 an original owned fixture's emitted NC pin name and global label. It compares
 native XML and S-expression exports, applies both board producers, reloads their
 outputs in fresh processes, checks pad copper layers, and requires zero native
 schematic-parity mismatches. Reannotation has no net changes. Refusal tests cover
 encoding collisions and ambiguous local slashes; the hierarchical fixture checks
-that declared sheet separators match the native exporter.
+that declared sheet separators match the native exporter. After annotation the
+same test binds the raw XML to the saved board with the placer's binding and
+refuses a board carrying literal slashes. `test_slash_global_net_builds_places_and_passes_native_schematic_parity`
+(`tests/test_board_build.py`) runs the whole build and placement with a global
+`OUT/2` net; `test_slash_pin_name_no_connect_annotates_and_places`
+(`tests/test_pod_placement.py`) annotates a pod-like no-connect pin named
+`SDA/~{SPI_CS}` and places the result in the sandbox; and
+`test_saved_pad_net_is_the_board_form_of_the_declared_native_net`
+(`tests/test_probe_features.py`) covers probe pads on global, local and
+no-connect names.

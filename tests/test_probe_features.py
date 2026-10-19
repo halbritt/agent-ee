@@ -97,6 +97,38 @@ class ProbeContractTests(unittest.TestCase):
             else:
                 self.assertEqual(comp['part_binding']['LCSC'], 'C38695')
 
+    def test_saved_pad_net_is_the_board_form_of_the_declared_native_net(self):
+        """AGENTEE-220: KiCad saves a literal slash as {slash}; sheet separators stay literal."""
+        import xml.etree.ElementTree as ET
+        from agent_ee.board_net_names import from_xml
+        from agent_ee.scaffold import sexpr
+        from agent_ee.schematic_emit import Quoted as Q
+        base = pf.declarations(self.parts, self.root)['TP1']
+        for declared, saved, accepted in [('A/B', 'A{slash}B', True), ('A/B', 'A/B', False),
+                                          ('/POD/TX', '/POD/TX', True), ('/POD/TX', '/POD{slash}TX', False),
+                                          ('unconnected-(TP1-SDA/~{SPI_CS}-Pad1)',
+                                           'unconnected-(TP1-SDA{slash}~{SPI_CS}-Pad1)', True)]:
+            record = dict(base, native_net=declared)
+            if accepted:
+                root = ET.fromstring('<export><design><sheet name="/POD/" tstamps="/1/"/></design><components/>'
+                                     '<nets><net code="1" name=%s/></nets></export>' % json.dumps(declared))
+                self.assertEqual(from_xml(root)[declared], saved)
+            prop = lambda name, value, layer: ['property', Q(name), Q(value), ['at', '0', '0', '0'], ['layer', Q(layer)]]
+            board = sexpr(['kicad_pcb', ['version', '20260206'], ['generator', Q('pcbnew')],
+                ['footprint', Q('PodFeatures:PogoPad_D1.5mm'), ['layer', Q('F.Cu')],
+                 prop('Reference', 'TP1', 'F.SilkS'), prop('Value', 'PogoPad', 'F.Fab'),
+                 prop('Footprint', 'PodFeatures:PogoPad_D1.5mm', 'F.Fab'),
+                 prop(pf.PROPERTY, pf.marker(record), 'F.Fab'),
+                 ['attr', 'smd', 'exclude_from_bom', 'exclude_from_pos_files'],
+                 ['pad', Q('1'), 'smd', 'circle', ['at', '0', '0'], ['size', '1.5', '1.5'],
+                  ['layers', Q('F.Cu'), Q('F.Mask')], ['solder_mask_margin', '0.05'], ['net', '1', Q(saved)]]]])
+            with self.subTest(declared=declared, saved=saved):
+                if accepted:
+                    self.assertEqual(pf.validate_board(board, {'TP1': record}), {'TP1'})
+                else:
+                    with self.assertRaisesRegex(ValueError, 'probe saved pad net differs'):
+                        pf.validate_board(board, {'TP1': record})
+
     def test_purchased_part_masquerading_as_probe_feature_refused(self):
         for name, value in [('lcsc', 'C123'), ('lcsc', 'NO_LCSC'), ('stock', 1), ('datasheet', {}),
                             ('selection', {}), ('required', False)]:

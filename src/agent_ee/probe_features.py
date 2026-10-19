@@ -1,4 +1,5 @@
 """Captured, required bare copper probes; no purchased identity or inferred exemption."""
+from .board_net_names import encode_net
 from .catalog import exact_fields, nonempty, strict_json
 from .storage import canonical, identity
 from .symbol_library import children, field, parse_library, parse_sexpr, resolve_symbol, nanometres
@@ -231,7 +232,7 @@ def validate_board(data, records, *, require_all=True):
         if footprint_signature(fp, r['pin']['number']) != r['geometry']:
             raise ValueError(ref + ': probe saved pad geometry changed')
         nets = _one(children(fp, 'pad')[0], 'net')
-        if (len(nets) not in (1, 2) or nets[-1] != r['native_net'] or
+        if (len(nets) not in (1, 2) or nets[-1] != encode_net(r['native_net']) or
                 (len(nets) == 2 and not nets[0].isdigit())):
             raise ValueError(ref + ': probe saved pad net differs')
         pad = children(fp, 'pad')[0]
