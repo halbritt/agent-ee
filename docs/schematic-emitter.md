@@ -217,23 +217,32 @@ component IDs, and a component belongs to at most one group. Implementation:
   satellite's far pin, and every pin that is not wired, keeps its label as in
   `rows`. Pins on global power nets are never extended by a satellite wire,
   because the global label's flag sits on the connection line.
-- **Pin-label fan (AGENTEE-241).** On an anchor's top or bottom edge, a run of
+- **Pin-label fan (AGENTEE-241, AGENTEE-255).** On an anchor's top or bottom edge, a run of
   labelled pins one grid (2.54 mm) apart would read as one crowded column of
-  vertical text against the pin numbers. Each unwired pin of such a run gets a
-  short straight wire out of the edge and a horizontal label at its end: the
-  left half of the run points left, the right half right, staggered one grid
-  per pin with the outermost pins nearest the body. A pin already wired to a
-  satellite keeps its place and label. A run is fanned whole or not at all,
-  under the same collision rules as a satellite. The label keeps its UUID and
-  net name; only its position and angle change.
+  vertical text against the pin numbers. Each pin of such a run that has not
+  already been wired in the primary sweep gets a short straight wire out of the
+  edge and a horizontal label at its end: the left half of the run points left,
+  the right half right, staggered one grid per pin with the outermost pins
+  nearest the body. Fanning runs before the in-line shunt fallback lets a
+  fallback shunt continue from the fanned endpoint rather than past a vertical
+  label, and each fanned run drops its original vertical label boxes by object
+  identity so multiple runs on one anchor keep exact overlap reservations. A
+  pin already wired to a satellite in the primary sweep keeps its place and
+  label. A run is fanned whole or not at all, under the same collision rules as
+  a satellite. The label keeps its UUID and net name; only its position and
+  angle change.
 - **Fail closed.** A placement is tried at up to 24 grid steps (2.54 mm) from the
   pin. It is refused if its wire would pass through any connection point,
   overlap another wire, or land on an existing point, or if its body, text or
   label would overlap anything already drawn in that cluster. Satellites that
   do not fit are retried in further sweeps while any sweep places one, since a
-  later part may create their target. A shunt part that still fits nowhere may
-  then continue an anchor pin's wire in line, which closes that pin to further
-  parts. A satellite that fits nowhere stays a labelled loose part in its group. Before any bytes are
+  later part may create their target. After dense edge runs fan out, a shunt
+  part that still fits nowhere may continue an anchor pin's wire in line, which
+  closes that pin to further parts. If any satellites in the group still remain
+  unplaced (for example, when an earlier shunt hung across a neighbour pin's
+  ray), the group sweep is retried with those unplaced satellites promoted
+  ahead while the unplaced count strictly decreases (AGENTEE-255). A satellite
+  that fits nowhere stays a labelled loose part in its group. Before any bytes are
   produced, `verify` rebuilds connectivity from the drawn pin endpoints, wires
   and labels and refuses (`presentation_conflict`) unless it equals the intent
   partition exactly. No-connect pins must touch nothing.
@@ -266,19 +275,18 @@ refuse the functional presentation (`layout_schema`).
 The real telemetry-pod intent (113 components, 62 nets) was re-emitted
 read-only from the prepared inputs, without adoption. The `rows` emission is
 byte-identical to the reviewed candidate, so it renders to the same PNG.
-After AGENTEE-241, the authored 12-group layout wires all 85 satellites (80
-before; R2, R4, R18, D2 and C40 were loose) and automatic grouping wires 82
-(80 before). Five dense edge pins are fanned (U3 pins 23, 22 and 7; U4 pins 14
-and 12). Total frame area drops from 1323 to 1166 cm² (authored) and from 1234
-to 1096 cm² (automatic). Both fit A2 instead of A1. Native ERC gives the same 221 warnings
-as before, all of them library-table warnings from the sandbox. The exported
-netlist is identical (116 native nets, including the 54 no-connect
-singletons), and AGENTEE-41 topology and components parity pass. In automatic
-grouping, R10, R13 and R26 stay loose: each one's only same-group target pin is
-blocked by its neighbours, and its other net continues in another group, which
-the presentation never wires across. Remaining visual limits: loose parts and
-markers keep `rows` label placement, a wired pin keeps its vertical label next
-to its pin number (U4 pin 13), and group membership comes from structure or the
+After AGENTEE-241 and AGENTEE-255, both the authored 12-group layout and
+automatic grouping wire all 85 satellites (including R10, R13 and R26 in
+automatic grouping). Six dense edge pins are fanned (U3 pins 23, 22 and 7; U4
+pins 14, 13 and 12), with C40 continuing U4 pin 13 in line from its fanned
+horizontal `SENSOR_REF_2V5` label. Total frame area drops from 1323 to 1148 cm²
+(authored) and from 1234 to 1033 cm² (automatic). Both fit A2 instead of A1.
+Native ERC gives the same 221 warnings as before, all of them library-table
+warnings from the sandbox. The exported netlist is identical (116 native nets,
+including the 54 no-connect singletons), and AGENTEE-41 topology and components
+parity pass. Remaining visual limits: loose parts and markers keep `rows` label
+placement, a pin wired to a perpendicular comb in the primary sweep keeps its
+label at the pin (U4 pin 7), and group membership comes from structure or the
 layout, not from datasheet roles.
 
 ## Hierarchy
@@ -410,10 +418,14 @@ executor with networking unshared:
   hanging filter capacitor are asserted, along with three non-overlapping titled
   frames that contain their members. An island with no anchor lands in
   `Unassigned parts`. Ten malformed layouts, a hierarchical intent and stable
-  regeneration are refused. AGENTEE-241 adds: a divider leg listed before its
+  regeneration are refused. AGENTEE-241 and AGENTEE-255 add: a divider leg listed before its
   series part is still wired; a rotated connector's free edge pins fan out to
   staggered horizontal labels beside a wired pin, with 0 native ERC
-  violations, a netlist equal to `rows` and a byte-identical forced re-save; the
+  violations, a netlist equal to `rows` and a byte-identical forced re-save; two
+  fanned edge runs on one anchor remove their own vertical label boxes and
+  preserve every fanned horizontal label reservation; an edge run fans before an
+  in-line fallback shunt capacitor attaches; a group sweep retries with unplaced
+  series satellites promoted ahead of blocking shunts; the
   in-line shunt placement happens only as the fallback; stacked fields keep
   Reference above Value; and the chosen frames are never larger than any
   single shared aspect gives. The self-check refuses a drawn short, a split, a
@@ -468,8 +480,9 @@ executor with networking unshared:
   so existing callers, hashes and stable regeneration are unchanged. Its text
   extents are estimates (about 0.9 em per glyph), not measured font metrics.
   Loose parts and markers keep `rows` label placement. Adjacent labels on an
-  anchor's left or right side, and a satellite-wired pin's own label, keep
-  `rows` placement; only top and bottom edge runs are fanned. Roles come from reference
+  anchor's left or right side (already on separate horizontal rows), and a pin
+  wired to a perpendicular comb in the primary sweep, keep `rows` placement;
+  top and bottom edge runs fan before the in-line fallback. Roles come from reference
   prefixes and net structure, and group membership from the layout or from
   structure, never from datasheet semantics. It wires only satellites to
   anchor pins or satellite pins; it never routes nets between anchors.
