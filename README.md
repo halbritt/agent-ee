@@ -325,7 +325,9 @@ across the board and CSVs before completing the package. A declared
 BOM and CPL and lists them in the manifest.
 For recorded hand-fit parts, [assembly readiness](docs/assembly-readiness.md#declared-hand-fit-deviations)
 requires a purchase source, captured evidence and the assembly marker, reports
-them as declared deviations, and grades stock for the remaining BOM.
+them as declared deviations, and grades stock for the remaining BOM. Stock
+exceptions and the [owner hand-fit policy](docs/assembly-readiness.md#owner-hand-fit-policy)
+are distinct classes.
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor

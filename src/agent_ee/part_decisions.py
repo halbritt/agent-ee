@@ -15,6 +15,9 @@ from .spec_record import verify, write_new
 from .storage import digest, json_bytes, write_json
 
 SCHEMA = 'agent-ee.part-decisions/1'
+# Assembly deviation classes beyond stock unavailability. The class only names the
+# authority; assembly_readiness admits it solely against the scope's captured owner decision.
+ASSEMBLY_POLICIES = ('owner_hand_fit',)
 
 
 def part(value):
@@ -25,6 +28,11 @@ def part(value):
         raise ValueError('expected LCSC C followed by a positive integer')
     if value['mpn'] is None and value['lcsc'] is None:
         raise ValueError('part needs an MPN or LCSC identity')
+
+
+def names_identity(identity, source):
+    """True when an exact part string occurs in source text as a whole token."""
+    return re.search(r'(?<![A-Za-z0-9_/-])' + re.escape(identity) + r'(?![A-Za-z0-9_/-])', source) is not None
 
 
 def key(row):
@@ -68,8 +76,7 @@ def compile_decisions(record_raw, spec_raw, declaration):
             if decision['mpn'] is None:
                 raise ValueError('normalization requires an MPN')
         for identity in (source_mpn, decision['lcsc']):
-            if identity is not None and not re.search(
-                    r'(?<![A-Za-z0-9_/-])' + re.escape(identity) + r'(?![A-Za-z0-9_/-])', cells['Decision']):
+            if identity is not None and not names_identity(identity, cells['Decision']):
                 raise ValueError('part identity is absent from source Decision cell')
         if key(decision) in seen:
             raise ValueError('duplicate decision')
@@ -152,6 +159,8 @@ def validate_deviation(deviation):
     fields += (' original assembly stock_deviation purchase_source' if assembly else ' replacement')
     if not assembly and 'original' in deviation:
         fields += ' original'
+    if assembly and 'policy' in deviation:
+        fields += ' policy'
     exact_keys(deviation, fields)
     text(deviation['requirement_id'])
     text(deviation['reason'])
@@ -170,6 +179,8 @@ def validate_deviation(deviation):
         exact_keys(deviation['stock_deviation'], 'reason')
         text(deviation['stock_deviation']['reason'])
         text(deviation['purchase_source'])
+        if 'policy' in deviation and deviation['policy'] not in ASSEMBLY_POLICIES:
+            raise ValueError(f'unsupported assembly deviation policy; expected one of {list(ASSEMBLY_POLICIES)}')
     return assembly
 
 

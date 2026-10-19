@@ -154,6 +154,12 @@ enforces the assembly marker and stock exclusion. Configure both checks with
 the same deviations file. The declarations do not authorize a purchase or
 prove the supplier's inventory.
 
+An assembly record may add `"policy": "owner_hand_fit"`; no other value is
+accepted, and a substitution record cannot carry it. Here the field only names
+the class. [Assembly readiness](assembly-readiness.md#owner-hand-fit-policy)
+admits the class solely against its scope's captured owner-decision citation,
+so the mutable deviations file cannot grant itself the exception.
+
 ## Results and limits
 
 `work/<check-id>/part_decisions.json` is normal coordinator evidence, sealed by

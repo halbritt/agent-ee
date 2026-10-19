@@ -1040,8 +1040,12 @@ records require an exact original MPN, purchase source, captured evidence,
 stock reason and native `JLCPCB_Assembly=not_assembled`. They appear in
 `declared_deviation`, outside stock and tier totals. Positive captured stock
 for that MPN or native LCSC ID refuses the exception; NO_LCSC without a
-declaration remains a defect. See the
-[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations).
+declaration remains a defect. A record with `policy: owner_hand_fit` is
+admitted regardless of stock only for an exact identity listed in the scope's
+`hand_fit_policy`, a pinned captured owner decision cited by SHA-256, line and
+exact quote; the identity still needs a fresh, known-stock catalog row. See the
+[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations) and
+[owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy).
 
 ## Schematic readability lint
 

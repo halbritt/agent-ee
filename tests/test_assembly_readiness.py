@@ -386,6 +386,185 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual({d['mpn'] for d in report['declared_deviation']}, {'NEO-M9N', 'OWNED-SMA'})
         self.assertEqual(report['missing_lcsc_refs'], [])
 
+    # ------------------------------------------------------------------ owner hand-fit policy (AGENTEE-239)
+    DECISION = ('Owned synthetic owner decision record; not a copy of any project specification.\n'
+                'Decision 7: the 776228-1 header is hand-fitted after delivery whatever JLCPCB stocks.\n')
+    QUOTE = 'the 776228-1 header is hand-fitted after delivery whatever JLCPCB stocks.'
+
+    def policy_case(self, *, stock=260, policy=True, identities=None, lcsc='C90099', last_seen='2026-10-15'):
+        """J1-like exact identity with positive captured stock, declared under the cited owner decision."""
+        declaration = self.handfit(lcsc=lcsc)
+        declaration['stock_deviation'] = {'reason': 'Owner hand-fit policy; not a stock exception.'}
+        if policy:
+            declaration['policy'] = 'owner_hand_fit'
+        netlist, params = self.handfit_case([declaration], lcsc=lcsc or 'NO_LCSC', stock=stock)
+        if last_seen != '2026-10-15':
+            doc = read_json(self.root / 'catalog.json')
+            doc['parts'][-1]['last_seen'] = last_seen
+            write_json(self.root / 'catalog.json', doc)
+        (self.root / 'decision.md').write_text(self.DECISION)
+        params['hand_fit_policy'] = {
+            'source': 'decision.md', 'sha256': digest(self.root / 'decision.md'), 'line': 2, 'quote': self.QUOTE,
+            'identities': [{'mpn': '776228-1', 'lcsc': 'C90099'}] if identities is None else identities}
+        return netlist, params
+
+    def test_owner_hand_fit_policy_admits_stocked_exact_identity(self):
+        for stock in (260, 0):
+            with self.subTest(stock=stock):
+                netlist, params = self.policy_case(stock=stock)
+                report = self.evaluate(netlist, params)
+                self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+                entry, = report['declared_deviation']
+                self.assertEqual((entry['reference'], entry['mpn'], entry['lcsc'], entry['stock_state'],
+                                  entry['policy']), ('J1', '776228-1', 'C90099', 'owner_hand_fit', 'owner_hand_fit'))
+                self.assertEqual(entry['catalog_observation']['stock'], stock)
+                self.assertEqual(entry['policy_citation'], {'source': 'decision.md', 'line': 2, 'quote': self.QUOTE,
+                                                            'sha256': digest(self.root / 'decision.md')})
+                self.assertEqual(report['hand_fit_policy']['identities'], [{'mpn': '776228-1', 'lcsc': 'C90099'}])
+                self.assertNotIn('C90099', report['parts'])
+                self.assertEqual(report['parts']['C25804']['references'], ['R1'])
+                self.assertEqual({c['reference']: c['lcsc_status'] for c in report['components']}['J1'],
+                                 'declared_deviation')
+
+    def test_stocked_identity_without_policy_citation_is_refused(self):
+        # The deviation omits the class: today's stock-unavailable refusal applies unchanged.
+        netlist, params = self.policy_case(policy=False)
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['declared_deviation'], [])
+        self.assertIn('stocked part refused', report['findings'][0]['message'])
+        # The deviations file alone cannot assert the class without the scope's captured citation.
+        netlist, params = self.policy_case()
+        del params['hand_fit_policy']
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['declared_deviation'], [])
+        self.assertIn('cannot assert it', report['findings'][0]['message'])
+        self.assertIsNone(report['hand_fit_policy'])
+
+    def test_policy_for_an_identity_the_decision_does_not_name_is_refused(self):
+        for identities in ([{'mpn': '776228-1', 'lcsc': 'C90100'}], [{'mpn': '776228-1', 'lcsc': None}]):
+            with self.subTest(identities=identities):
+                netlist, params = self.policy_case(identities=identities)
+                report = self.evaluate(netlist, params)
+                self.assertEqual(report['outcome'], 'defect')
+                self.assertEqual(report['declared_deviation'], [])
+                self.assertIn('not named by the owner hand-fit policy', report['findings'][0]['message'])
+        # A scope citation cannot list an identity its exact quote does not name.
+        netlist, params = self.policy_case(identities=[{'mpn': 'NEO-M9N', 'lcsc': None}])
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'does not name') as caught:
+            self.evaluate(netlist, params)
+        self.assertEqual(caught.exception.execution, 'unsupported')
+
+    def test_neo_like_stocked_part_claiming_unavailability_still_refused_with_policy_configured(self):
+        declaration = self.handfit('NEO-M9N', 'hand_soldered', lcsc='C90098')
+        netlist, params = self.policy_case()
+        write_json(self.root / 'deviations.json', {'schema': 'agent-ee.part-deviations/1', 'deviations': [declaration]})
+        doc = read_json(self.root / 'catalog.json')
+        doc['parts'].append({'lcsc': 'C90098', 'mpn': 'NEO-M9N', 'stock': 40, 'is_basic': False,
+                             'last_seen': '2026-10-15'})
+        write_json(self.root / 'catalog.json', doc)
+        netlist = self.export('neo.kicad_sch', schematic('neo', [part('R1'),
+            part('U1', 'U', lcsc='C90098', part_number=('Partnumber', 'NEO-M9N'), rating=None,
+                 extra={'JLCPCB_Assembly': 'not_assembled'})]))
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertEqual(report['declared_deviation'], [])
+        self.assertIn('stocked part refused', report['findings'][0]['message'])
+        declaration['policy'] = 'owner_hand_fit'
+        write_json(self.root / 'deviations.json', {'schema': 'agent-ee.part-deviations/1', 'deviations': [declaration]})
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report['declared_deviation'], [])
+        self.assertIn('not named by the owner hand-fit policy', report['findings'][0]['message'])
+
+    def test_policy_still_requires_marker_fresh_known_stock_exact_catalog_identity_and_supported_class(self):
+        netlist, params = self.policy_case()
+        declarations = read_json(self.root / 'deviations.json')
+        for name, mutate, message in (
+                ('unsupported class', lambda d: d.update(policy='owner_any'), 'unsupported assembly deviation policy'),
+                ('no purchase source', lambda d: d.update(purchase_source=' '), 'nonempty text'),
+                ('no evidence', lambda d: d.update(evidence_refs=[]), 'captured evidence')):
+            with self.subTest(name):
+                declaration = copy.deepcopy(declarations['deviations'][0])
+                mutate(declaration)
+                write_json(self.root / 'deviations.json', {**declarations, 'deviations': [declaration]})
+                report = self.evaluate(netlist, params)
+                self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []))
+                self.assertIn(message, report['findings'][0]['message'])
+        for name, kwargs, message in (('null stock', {'stock': 0}, 'unknown stock telemetry'),
+                                      ('stale stock', {'last_seen': '2026-10-01'}, 'stale or unverified'),
+                                      ('no catalog row', {'lcsc': 'C90100', 'identities': [
+                                          {'mpn': '776228-1', 'lcsc': 'C90100'}]}, 'no captured catalog')):
+            with self.subTest(name):
+                netlist, params = self.policy_case(**kwargs)
+                if name == 'null stock':
+                    doc = read_json(self.root / 'catalog.json')
+                    doc['parts'][-1]['stock'] = None
+                    write_json(self.root / 'catalog.json', doc)
+                report = self.evaluate(netlist, params)
+                self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []))
+                self.assertIn(message, report['findings'][0]['message'])
+        netlist, params = self.policy_case()
+        doc = read_json(self.root / 'catalog.json')
+        doc['parts'][-1]['mpn'] = '776228-2'
+        write_json(self.root / 'catalog.json', doc)
+        report = self.evaluate(netlist, params)
+        self.assertIn('differs from the policy identity', report['findings'][0]['message'])
+        # The marker is required and an unlisted lcsc-less identity cannot cover a catalog MPN.
+        netlist, params = self.policy_case()
+        netlist = self.export('unmarked.kicad_sch', schematic('unmarked', [part('R1'),
+            part('J1', 'J', lcsc='C90099', part_number=('Partnumber', '776228-1'), rating=None)]))
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []))
+        self.assertIn('JLCPCB_Assembly=not_assembled', report['findings'][0]['message'])
+        netlist, params = self.policy_case(lcsc=None, identities=[{'mpn': '776228-1', 'lcsc': None}])
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []))
+        self.assertIn('must name its LCSC', report['findings'][0]['message'])
+
+    def test_policy_citation_is_pinned_captured_immutable_and_exact(self):
+        from agent_ee.assembly_readiness import capability
+        netlist, params = self.policy_case()
+        files = {'catalog.json': {}, 'deviations.json': {}}
+        with self.assertRaisesRegex(ValueError, 'hand_fit_policy.source must be a captured input'):
+            capability(params, files, self.root)
+        desc = capability(params, {**files, 'decision.md': {}}, self.root)
+        self.assertIn('decision.md', desc['immutable_inputs'])
+        self.assertNotIn('deviations.json', desc['immutable_inputs'])
+        for name, change, execution, message in (
+                ('hash', {'sha256': '0' * 64}, 'failed', 'sha256 mismatch'),
+                ('line', {'line': 1}, 'failed', 'quote is absent'),
+                ('past end', {'line': 9}, 'failed', 'quote is absent'),
+                ('paraphrase', {'quote': 'the 776228-1 header is hand-fitted.'}, 'failed', 'quote is absent'),
+                ('mutable source', {'source': 'deviations.json'}, 'unsupported', 'mutable deviations'),
+                ('missing source', {'source': 'absent.md'}, 'failed', 'missing hand_fit_policy source'),
+                ('extra key', {'class': 'owner_hand_fit'}, 'unsupported', 'expected fields'),
+                ('duplicate', {'identities': [{'mpn': '776228-1', 'lcsc': 'C90099'}] * 2}, 'unsupported',
+                 'duplicate'),
+                ('empty', {'identities': []}, 'unsupported', 'at least one'),
+                ('multi-line quote', {'quote': self.QUOTE + '\nmore'}, 'unsupported', 'one source line')):
+            with self.subTest(name):
+                changed = dict(params, hand_fit_policy={**params['hand_fit_policy'], **change})
+                with self.assertRaisesRegex(AssemblyReadinessExecutionError, message) as caught:
+                    self.evaluate(netlist, changed)
+                self.assertEqual(caught.exception.execution, execution)
+        (self.root / 'decision.md').write_text(self.DECISION.replace('whatever', 'regardless of what'))
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'sha256 mismatch'):
+            self.evaluate(netlist, params)
+
+    def test_policy_with_raw_jlc_capture_admits_positive_stock_and_still_gates_freshness(self):
+        netlist, params = self.policy_case()
+        doc = self.jlc_capture(self.root, {'C25804': (200, search(row('C25804', 500))),
+                                          'C90099': (200, search(row('C90099', 260, componentModelEn='776228-1')))},
+                               ['C25804', 'C90099'])
+        params.update(catalog='jlc/catalog.json', as_of=self.shifted(doc['as_of'], 1), max_age_hours=12)
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+        self.assertEqual(report['declared_deviation'][0]['catalog_observation']['stock'], 260)
+        params.update(as_of=self.shifted(doc['as_of'], 13))
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'stale'):
+            self.evaluate(netlist, params)
+
     def test_native_bom_exclusion_cannot_hide_an_undeclared_no_lcsc_part(self):
         netlist, params = self.handfit_case([])
         netlist = self.export('excluded.kicad_sch', schematic('excluded', [part('R1'),
