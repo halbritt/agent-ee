@@ -3,7 +3,9 @@
 `agent_ee.schematic_emitter` (AGENTEE-40) writes wire-free KiCad 10
 schematics and a project file from captured connectivity intent: one file for
 a flat design, or one file per sheet for a hierarchical design (see
-[Hierarchy](#hierarchy)). It is a helper of the sole implementation writer, not
+[Hierarchy](#hierarchy)). A flat design can instead request the
+[functional presentation](#functional-presentation) (AGENTEE-222): titled
+groups with short local wires. It is a helper of the sole implementation writer, not
 a check: its receipt is diagnostic, and native ERC, netlist export and parity
 checks on the captured output decide whether the output is correct.
 
@@ -108,7 +110,9 @@ KiCad 10.0):
 - Every connected pin endpoint gets a net label at the exact transformed pin
   coordinate. Nets driven by a global `power_in` power symbol use global labels;
   other nets use local labels. Explicit no-connect pins get no-connect markers.
-  No wires are drawn.
+  No wires are drawn in the default `rows` presentation; the
+  [functional presentation](#functional-presentation) replaces some labels
+  with short wires.
 - Stacked pins (distinct pins of one unit on one connection point, as stock
   MCU symbols stack their VSS pins) are emitted only when the intent puts them
   all on one net. KiCad joins them natively, so one label serves the stack.
@@ -155,6 +159,98 @@ References, positions, input order and design hashes do not, so adding a
 component leaves every existing symbol, pin and root UUID unchanged. Instance
 paths are `/<root uuid>`. Repeating an emission, or emitting from reordered
 input, gives identical bytes.
+
+## Functional presentation
+
+`presentation: "functional"` selects titled groups and short local wires for a
+flat design (AGENTEE-222). It changes placement and drawing geometry while
+preserving intent connectivity:
+
+```json
+{
+  "schema": "agent-ee.schematic-layout/1",
+  "namespace": "3b1f6c52-8a7e-5d2b-9c41-7e0d2a6b5f18",
+  "project": "presentation",
+  "presentation": "functional",
+  "groups": [
+    {"id": "input", "title": "Input connector", "components": ["j_in", "flag_vin"]},
+    {"id": "regulator", "title": "Regulator and output filter", "components": ["reg"]}
+  ]
+}
+```
+
+`presentation` is `rows` (the default; bytes are unchanged from before
+AGENTEE-222) or `functional`. `groups` is optional and needs `functional`. Each
+group has a unique safe `id`, a 1-64 character `title` and a nonempty list of
+component IDs, and a component belongs to at most one group. Implementation:
+`agent_ee.schematic_presentation`.
+
+- **Roles.** A *satellite* is a single-unit, non-power part with exactly two
+  connected pins on two different nets and a reference prefix `R`, `C`, `L`,
+  `D`, `FB`, `F` or `Y`, without an explicit transform. A *marker* is a power
+  symbol, flag or other single-pin part, such as a test point, or a two-pin part
+  with such a prefix that cannot be a satellite. A marker is never re-oriented
+  or wired. Every other unit is an *anchor*. A net is a *rail* when it has at least six terminals,
+  carries a power symbol or flag, or is a global power net.
+- **Groups.** Listed groups come first, in layout order, and then one group per
+  remaining anchor, titled with its reference and value. Unlisted satellites
+  and markers join the group that reaches them first, breadth-first over
+  non-rail nets through other satellites. Parts that touch only rails (bulk
+  and decoupling capacitors, flags, test points) join the anchor with the most
+  pins on their lowest-fanout net. A part that no anchor reaches is placed in
+  an `Unassigned parts` group; it is never silently attached elsewhere.
+- **Local wires.** Each satellite is drawn beside the pin it serves and joined
+  to it by one straight wire. A shunt part (one pin on a rail) hangs
+  perpendicular to that wire, so several decoupling parts form a comb with a
+  junction at each tap. A series part continues the wire in line when that fits
+  nearest, so its far pin can carry a further chain. Satellites are oriented
+  automatically; their Reference and Value are placed beside the body,
+  horizontal and centred, never on the wire. Shunt parts are placed lowest pin
+  first, so downward combs form a staircase rather than blocking the next pin.
+- **Labels.** The target pin keeps its label, so every net keeps a label with
+  its intent name. Only a wired satellite's attach pin drops its label. The
+  satellite's far pin, and every pin that is not wired, keeps its label as in
+  `rows`. Pins on global power nets are never extended by a wire, because the
+  global label's flag sits on the connection line.
+- **Fail closed.** A placement is tried at up to 24 grid steps (2.54 mm) from the
+  pin. It is refused if its wire would pass through any connection point,
+  overlap another wire, or land on an existing point, or if its body, text or
+  label would overlap anything already drawn in that cluster. A satellite that
+  fits nowhere stays a labelled loose part in its group. Before any bytes are
+  produced, `verify` rebuilds connectivity from the drawn pin endpoints, wires
+  and labels and refuses (`presentation_conflict`) unless it equals the intent
+  partition exactly. No-connect pins must touch nothing.
+- **Frames and page.** Each group gets a dashed frame and a bold title. Clusters
+  and loose parts inside a group, and the groups on the page, are packed
+  bottom-left on a skyline in order, so the flow runs left to right in layout
+  order. Group widths are tried at several aspect ratios on each paper. The
+  smallest landscape paper from A4 to A0 that fits any of them is used.
+- **Identity.** Symbol, pin, label and no-connect UUIDs, references, values,
+  footprints and embedded symbols are exactly those of the `rows`
+  presentation. Wires are `["wire", id, unit, attach pin]`, junctions
+  `["junction", id, unit, attach pin]`, frames `["group_frame", kind, group]` and
+  titles `["group_title", kind, group]`, where `kind` distinguishes `explicit`
+  from automatic `component` groups. Fallback frames use
+  `["group_frame", "unassigned"]` and titles use `["group_title", "unassigned"]`. Output is deterministic and independent of
+  input order. A KiCad 10.0.7 forced re-save reproduces the bytes apart from the
+  generator name.
+
+Hierarchical intents and [stable regeneration](schematic-regeneration.md)
+refuse the functional presentation (`layout_schema`).
+
+### Real pod check
+
+The real telemetry-pod intent (113 components, 62 nets) was re-emitted
+read-only from the prepared inputs, without adoption. The `rows` emission is
+byte-identical to the reviewed candidate, so it renders to the same PNG.
+Automatic grouping wires 80 of 85 satellites, and an authored 12-group layout
+does the same; both fit A2 instead of A1. Native ERC gives the same 221 warnings
+as before, all of them library-table warnings from the sandbox. The exported
+netlist is identical (116 native nets, including the 54 no-connect
+singletons), and AGENTEE-41 topology and components parity
+pass. Remaining visual limits: loose parts and markers keep `rows` label
+placement, and group membership comes from structure or the layout, not from
+datasheet roles.
 
 ## Hierarchy
 
@@ -211,7 +307,7 @@ Generation either succeeds completely or writes nothing:
 | --- | --- |
 | `resolution_*` | The resolver rejected the intent: unknown symbol or library, duplicate component or reference, unknown or unaccounted pin, missing or changed captured library (execution `failed`), or a version 1 intent with hierarchy (execution `unsupported`) |
 | `resolved_mismatch` | A supplied resolved record differs from the fresh resolution |
-| `layout_schema` | Malformed layout or table rows, or a transform for an unknown component |
+| `layout_schema` | Malformed layout or table rows, or a transform for an unknown component; an unknown `presentation`, `groups` without `functional`, a malformed or duplicate group, an unknown or twice-grouped member, or `functional` for a hierarchical intent |
 | `unsupported_symbol_node`, `unsupported_graphic` | An unknown top-level symbol node, or unit bounds the [symbol context](symbol-context.md) cannot compute (such as degenerate arcs or `bezier`) |
 | `unlocatable_pin` | Pin geometry differs from the symbol context, or a pin endpoint is not exactly representable on the native 100 nm lattice |
 | `impossible_pin_endpoint` | Two pins would share one connection point, other than stacked pins of one unit on one net |
@@ -219,6 +315,7 @@ Generation either succeeds completely or writes nothing:
 | `malformed_reference`, `malformed_value`, `malformed_footprint` | References need a number and a `#` prefix exactly for power symbols; values refuse control characters, backslashes and `${`; footprints are empty or `Library:Name` |
 | `power_net_mismatch`, `unsupported_power_symbol` | A `power_in` power symbol's value must equal its net's name; power symbols have one connected pin |
 | `paper_overflow` | The content does not fit on A0 |
+| `presentation_conflict` | The functional arrangement's drawn pins, wires and labels do not reproduce the intent partition exactly, a wire passes through a connection point, or a no-connect pin touches a drawn connection (an internal guard; no output is written) |
 
 ## Evidence
 
@@ -273,6 +370,23 @@ executor with networking unshared:
   `on_board no`, the bounded reader leaves C1 out while KiCad's XML still lists
   it, so every staged check is `unknown` because the probe refuses (`bounded
   inventory disagrees with native reader`).
+- `tests/test_schematic_presentation.py` (AGENTEE-222) uses the owned
+  `presentation.*` fixture. `rows` bytes for the regulator, transforms and dual
+  fixtures equal hashes taken from main 9cb4f12, and an explicit `rows` equals
+  the default. Functional output is byte-identical when repeated and when
+  components, nets and terminals are shuffled. Symbol and pin UUIDs, embedded
+  symbols and no-connect identities equal the `rows` emission. Exact
+  label counts per net, axis-aligned wires that end only on pins, junctions or
+  other wires, a junction only at a comb tap, an in-line series capacitor and a
+  hanging filter capacitor are asserted, along with three non-overlapping titled
+  frames that contain their members. An island with no anchor lands in
+  `Unassigned parts`. Ten malformed layouts, a hierarchical intent and stable
+  regeneration are refused. The self-check refuses a drawn short, a split, a
+  wire through a pin and a wire onto a no-connect pin. A `python -m` CLI run
+  writes the API bytes. Native: zero ERC violations, the same XML netlist as
+  `rows` and the hand-written nets, AGENTEE-41 topology, components and instance
+  parity, a byte-identical forced re-save, and a changed native netlist when one
+  wire end is moved onto ground.
 - `tests/test_schematic_hierarchy.py` emits an original two-level design
   (`two_level.*`): a root connector and capacitor, and a `filter` child with
   three capacitors. It has two shared nets, an internal `LOCAL_SAME` net on each
@@ -313,7 +427,15 @@ executor with networking unshared:
   flag and explicit no/no instance flags. An ordinary part renamed with a `#`
   prefix is also refused, even when marked no/no, because KiCad would silently
   omit it from the native netlist. See [stage gate evidence](staged-campaign.md#gate-evidence).
-- Label packing is conservative, not a visual-quality claim. The emitter does
+- Label packing is conservative, not a visual-quality claim. In `rows` the emitter does
   not draw wires, route, or choose parts or units.
+- The functional presentation is flat-only and opt-in; `rows` stays the default,
+  so existing callers, hashes and stable regeneration are unchanged. Its text
+  extents are estimates (about 0.9 em per glyph), not measured font metrics.
+  Loose parts and markers keep `rows` label placement, and adjacent anchor-pin
+  labels can still crowd each other as in `rows`. Roles come from reference
+  prefixes and net structure, and group membership from the layout or from
+  structure, never from datasheet semantics. It wires only satellites to
+  anchor pins or satellite pins; it never routes nets between anchors.
 - Writing the project file is a scaffold concern (AGENTEE-87). A campaign
   repair cannot add files or change immutable project files.

@@ -1,0 +1,299 @@
+{
+  "schema": "agent-ee.connectivity-intent/1",
+  "libraries": [
+    {
+      "name": "OwnedGen",
+      "path": "lib/Owned_Gen.kicad_sym",
+      "sha256": "f2b516fbad524dee4997574a8ad7f569e4788d420af5c7baac2c1f976cc593b1"
+    },
+    {
+      "name": "OwnedPower",
+      "path": "lib/Owned_Power.kicad_sym",
+      "sha256": "c3c0f5cb73a8758558121214b8c508208d8bc8865c91b7e83efdae71fd8459ce"
+    }
+  ],
+  "components": [
+    {
+      "id": "j_in",
+      "reference": "J1",
+      "lib_id": "OwnedGen:CONN3",
+      "value": "CONN3",
+      "footprint": "OwnedFP:CONN_1x3",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "reg",
+      "reference": "U1",
+      "lib_id": "OwnedGen:REG3",
+      "value": "REG3",
+      "footprint": "OwnedFP:REG_4PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "c_in",
+      "reference": "C1",
+      "lib_id": "OwnedGen:CAP",
+      "value": "10u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "c_in_hf",
+      "reference": "C2",
+      "lib_id": "OwnedGen:CAP",
+      "value": "100n",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "c_out",
+      "reference": "C3",
+      "lib_id": "OwnedGen:CAP",
+      "value": "22u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "c_series",
+      "reference": "C4",
+      "lib_id": "OwnedGen:CAP",
+      "value": "1u",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "c_filter",
+      "reference": "C5",
+      "lib_id": "OwnedGen:CAP",
+      "value": "1n",
+      "footprint": "OwnedFP:CAP_2PAD",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "j_out",
+      "reference": "J2",
+      "lib_id": "OwnedGen:CONN3",
+      "value": "CONN3",
+      "footprint": "OwnedFP:CONN_1x3",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "gnd",
+      "reference": "#PWR01",
+      "lib_id": "OwnedPower:GND",
+      "value": "GND",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "flag_vin",
+      "reference": "#FLG01",
+      "lib_id": "OwnedPower:PWR_FLAG",
+      "value": "PWR_FLAG",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    },
+    {
+      "id": "flag_gnd",
+      "reference": "#FLG02",
+      "lib_id": "OwnedPower:PWR_FLAG",
+      "value": "PWR_FLAG",
+      "footprint": "",
+      "units": [
+        1
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "id": "vin",
+      "name": "VIN",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "reg",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "c_in",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "c_in_hf",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "flag_vin",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gnd",
+      "name": "GND",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "reg",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_in",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_in_hf",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_out",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_filter",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "j_out",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "gnd",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "flag_gnd",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "vout",
+      "name": "VOUT",
+      "terminals": [
+        {
+          "component": "reg",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "c_out",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "c_series",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "out_f",
+      "name": "OUT_F",
+      "terminals": [
+        {
+          "component": "c_series",
+          "pin": {
+            "number": "2"
+          }
+        },
+        {
+          "component": "c_filter",
+          "pin": {
+            "number": "1"
+          }
+        },
+        {
+          "component": "j_out",
+          "pin": {
+            "number": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sense",
+      "name": "SENSE",
+      "terminals": [
+        {
+          "component": "j_in",
+          "pin": {
+            "number": "3"
+          }
+        },
+        {
+          "component": "j_out",
+          "pin": {
+            "number": "3"
+          }
+        }
+      ]
+    }
+  ],
+  "no_connects": [
+    {
+      "component": "reg",
+      "pin": {
+        "number": "4"
+      }
+    }
+  ]
+}

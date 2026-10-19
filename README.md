@@ -247,7 +247,10 @@ its node limit, such as `MCU_ST_STM32H7`, are first copied into a
 that would short distinct local nets are rejected. Repeated sheet files and
 multi-sheet global power remain unsupported. The [native emitter](docs/schematic-emitter.md)
 produces flat and supported hierarchical schematics from that captured intent,
-including inherited pins and units of captured `extends` symbols.
+including inherited pins and units of captured `extends` symbols. A flat
+layout can opt into the [functional presentation](docs/schematic-emitter.md#functional-presentation):
+titled groups, decoupling and series parts wired next to their pins, and the
+same netlist and identities.
 Generator and rung-1 drivers capture only selected symbols and their ancestors
 by default; the emitter parses each library once per emission. The
 [130-component benchmark](docs/schematic-emitter.md#library-subsets-and-emission-cost)

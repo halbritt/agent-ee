@@ -116,7 +116,10 @@ one-connection repairs with zero ERC violations and exact exported terminals.
 schematic/state adoption, repeated updates, native forward annotation and
 failure without output adoption.
 
-Regeneration supports flat intent/1 emissions. Units of one component must
+Regeneration supports flat intent/1 emissions in the default `rows`
+presentation. A layout that selects the AGENTEE-222
+[functional presentation](schematic-emitter.md#functional-presentation) is
+refused (`layout_schema`), because its wires and frames are not retained. Units of one component must
 share an orientation; different unit positions are retained. Hand-wired or
 hierarchical schematics, changed library captures, arbitrary graphic edits and
 library/unit replacement fail closed. This report is not a registered check or
