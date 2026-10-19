@@ -13,6 +13,7 @@ product's hardware qualification.
 | Declare stage gates and interpret absent design content | [Staged campaigns](staged-campaign.md) |
 | Configure single-writer repair and interpret convergence stops | [Campaign guide](campaign-guide.md) |
 | Prepare captured pod inputs and inspect a checks-only scaffold | [Pod campaign driver](pod-driver.md) |
+| See how far the actual pod inputs compose, and what is missing | [Pod composition record](pod-composition.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
 | Simulate captured active models; derive regulator/amplifier/filter testbenches from targets | [Active SPICE](active-spice.md), [SPICE templates](spice-templates.md) |

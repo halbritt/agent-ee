@@ -44,7 +44,8 @@ def validate_plan(plan):
                 'writer_inputs', 'implementation_steps', 'review_profile', 'implementation',
                 'routing_adapter', 'routing_budget_s', 'review_budget_s'}
     if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
-            not required <= plan.keys() or set(plan) - required - {'max_iterations', 'max_seconds'}):
+            not required <= plan.keys() or
+            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter'}):
         raise ValueError('expected agent-ee.pod-plan/1 fields')
     if not isinstance(plan['scope'], str) or not plan['scope']:
         raise ValueError('scope must name a planning scope file')
@@ -62,6 +63,9 @@ def validate_plan(plan):
         raise ValueError('intent and deviations must be different files')
     if any(Path(p).suffix != '.json' for p in paths):
         raise ValueError('writer inputs must be captured JSON records')
+    if 'placement_adapter' in plan:
+        from .placement_adapter import validate_declaration as placement_declaration
+        placement_declaration(plan['placement_adapter'])
     validate_profile(plan['review_profile'])
     validate_profile({**plan['review_profile'], 'adjudicator': plan['implementation']})
     iterations = _integer(plan.get('max_iterations', 10), 'max_iterations', 8, 100)
@@ -100,10 +104,13 @@ def validate_configuration(plan, scope, files, inputs):
     if not isinstance(raw_steps, list):
         raise ValueError('implementation_steps must be a list')
     normalized = [stage_receipts.validate_step(s) for s in raw_steps]
-    expected = STEPS
+    # The owned placement adapter replaces the generic placement step; the campaign forbids both.
+    placer = 'placement_adapter' in plan
+    expected = [s for s in STEPS if not (placer and s[0] == 'place-board')]
     if [(s['step'], s['stage']) for s in normalized] != expected:
-        raise ValueError('pod requires binding-fill, emit-schematic, forward-annotate, place-board, '
-                         'add-planes in that order; routing uses the owned routing_adapter')
+        raise ValueError('pod requires ' + ', '.join(name for name, _ in expected) + ' in that order; '
+                         'routing uses the owned routing_adapter' +
+                         ('; placement uses the declared placement_adapter' if placer else ''))
     written = set()
     for step in normalized:
         writes = set(step['writes'])
@@ -116,8 +123,13 @@ def validate_configuration(plan, scope, files, inputs):
         raise ValueError('mutable_inputs may contain only intent/deviations and declared coordinator outputs')
     for name, path in [('emit-schematic', scope['schematic']), ('forward-annotate', scope['board']),
                        ('place-board', scope['board']), ('add-planes', scope['board'])]:
-        if path not in next(s for s in normalized if s['step'] == name)['writes']:
+        step = next((s for s in normalized if s['step'] == name), None)
+        if step is not None and path not in step['writes']:
             raise ValueError(f'{name} must produce its native design output')
+    placement = None
+    if placer:
+        from .placement_adapter import bind_declaration
+        placement = bind_declaration(plan['placement_adapter'], {'scope': scope, 'files': files}, sorted(mutable))
     from .routing_adapter import campaign_spec, validate_campaign_step
     from .campaign import validate_routing_predecessors
     validate_routing_predecessors(normalized, scope)
@@ -144,7 +156,8 @@ def validate_configuration(plan, scope, files, inputs):
     return dict(baseline_id=baseline['baseline_id'], stage_policy_id=identity(declaration),
                 mutable_inputs=sorted(mutable), writer_inputs=sorted(writer),
                 coordinator_outputs=sorted(written), max_iterations=iterations,
-                max_seconds=seconds, implementation_steps=normalized, routing_step=route)
+                max_seconds=seconds, implementation_steps=normalized, routing_step=route,
+                **({'placement_adapter': placement} if placer else {}))
 
 
 def _scope_for_inputs(scope, inputs):
@@ -263,6 +276,7 @@ def build(plan_path, out, *, dry_run=False):
                   writer_editable=validation['writer_inputs'],
                   implementation_steps=validation['implementation_steps'], pre_receipts=[link],
                   routing_adapter=plan['routing_adapter'],
+                  **({'placement_adapter': plan['placement_adapter']} if 'placement_adapter' in plan else {}),
                   max_iterations=validation['max_iterations'], max_seconds=validation['max_seconds'],
                   max_schema_resubmissions=1)
     write_json(out / 'scope.json', final_scope)

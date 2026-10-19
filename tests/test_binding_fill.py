@@ -140,6 +140,43 @@ class BindingFillTests(unittest.TestCase):
             adopt(step, receipt, self.root)
         self.assertEqual(digest(self.root / 'intent.json'), before)
 
+    def test_separate_output_keeps_read_intent_unwritten(self):
+        from agent_ee.binding_fill import configuration
+        from agent_ee.parts_manifest import qualify_manifest
+        from agent_ee.stage_receipts import run_step, validate_receipt, adopt
+        from toolchain import require_toolchain
+        import shutil
+        require_toolchain(native=True)
+        (self.root / 'captures').mkdir()
+        shutil.copyfile(self.root / 'Owned.kicad_sym', self.root / 'captures/Owned.kicad_sym')
+        for path, value in [('intent.json', self.intent), ('intent.bound.json', {}), ('refs.json', self.refs),
+                            ('deviations-current.json', self.deviations)]:
+            write_json(self.root / path, value)
+        before = digest(self.root / 'intent.json')
+        kwargs = dict(intent='intent.json', manifest='parts.json', part_refs='refs.json',
+                      deviations='deviations-current.json', captures='captures',
+                      dependencies=qualify_manifest(self.parts, self.root)['dependencies'])
+        source = Path(__file__).resolve().parents[1] / 'src'
+        spec = configuration(source, output='intent.bound.json', **kwargs)
+        self.assertEqual(spec['writes'], {'intent.bound.json': 'out/intent.json'})
+        self.assertIn('intent.json', spec['inputs'])
+        self.assertEqual(configuration(source, **kwargs)['writes'], {'intent.json': 'out/intent.json'})
+        with self.assertRaisesRegex(ValueError, 'output intent'):
+            configuration(source, **{**kwargs, 'output': 'refs.json'})
+        self.assertIn('.', configuration(source, **{**kwargs, 'captures': '.'})['argv'])
+        for unsafe in ('..', '/captures', './captures'):
+            with self.subTest(captures=unsafe), self.assertRaises(ValueError):
+                configuration(source, **{**kwargs, 'captures': unsafe})
+        # Libraries captured at the candidate root, as in the actual pod intent.
+        spec = configuration(source, output='intent.bound.json', **{**kwargs, 'captures': '.'})
+        step = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'separate'
+        receipt = run_step(step, self.root, spec, {'implementation': 1, 'source_candidate_id': 'synthetic', 'receipt_index': 1})
+        self.assertEqual(validate_receipt(step), receipt)
+        self.assertEqual(receipt['status'], 'completed', (step / 'run/console.log').read_text())
+        adopt(step, receipt, self.root)
+        self.assertEqual(digest(self.root / 'intent.json'), before)
+        self.assertEqual(read_json(self.root / 'intent.bound.json'), self.fill()[0])
+
 
 class ExternalBindingTests(BindingFillTests):
     def setUp(self):
