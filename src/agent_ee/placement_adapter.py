@@ -177,11 +177,20 @@ def bind_declaration(declaration, manifest, mutable_inputs):
     return {**declaration, 'board': board, 'schematic': schematic}
 
 
+def envelope_references(record):
+    """References an envelope fixes: its fixed footprints and its mounting holes.
+
+    The scaffold writes each hole as a board-only footprint whose reference is the hole id
+    (AGENTEE-177), so a declared hole stays fixed even if its source footprint is unlocked."""
+    return sorted({f['reference'] for f in record['fixed_footprints']} |
+                  {h['id'] for h in record['mounting_holes']})
+
+
 def envelope_fixed(manifest, inputs, mutable_inputs):
     """Fixed references of every captured envelope that a placement check consumes.
 
     Read from the captured envelope bytes, never from an authored list, so an incomplete
-    fixed_footprints declaration cannot leave an envelope-fixed connector movable."""
+    fixed_footprints declaration cannot leave an envelope-fixed connector or hole movable."""
     from .board_envelope import validate
     found = {}
     for spec in manifest['scope'].get('checks', []):
@@ -196,7 +205,7 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
             raise ValueError(f'captured placement envelope {rel!r} changed')
         record = validate(path.read_bytes())
         found[rel] = {'path': rel, 'sha256': manifest['files'][rel], 'envelope_id': record['envelope_id'],
-                      'references': sorted(f['reference'] for f in record['fixed_footprints'])}
+                      'references': envelope_references(record)}
     return [found[rel] for rel in sorted(found)]
 
 

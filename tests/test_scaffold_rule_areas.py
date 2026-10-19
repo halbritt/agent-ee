@@ -254,10 +254,10 @@ class CapturedRuleAreaContractTests(unittest.TestCase):
 from tests.test_scaffold import EnvelopeScaffoldFixture
 
 
-class CapturedRuleAreaContentTests(EnvelopeScaffoldFixture, unittest.TestCase):
+class CapturedAntennaFixture(EnvelopeScaffoldFixture):
+    """The pod fixture with U2's captured antenna zone retained, never derived."""
     def setUp(self):
         super().setUp()
-        from agent_ee.board_envelope import validate
         from agent_ee.storage import read_json, identity
         self.envelope['keepouts'][0] = dict(id='antenna',
             antenna=dict(reference='U2',facts_check='facts'),
@@ -280,12 +280,20 @@ class CapturedRuleAreaContentTests(EnvelopeScaffoldFixture, unittest.TestCase):
             key=lambda m:m['path']))
         write_json(self.source/'parts.json',self.parts)
         self.save()
-        native_envelope = validate((self.source/'envelope.json').read_bytes())
         policy_bytes = b'%PDF-1.4\nOwned synthetic policy source.\n'
         (self.source/'guideline.pdf').write_bytes(policy_bytes)
         patcher = patch.object(fl,'ESP32_GUIDELINES_SHA256',hashlib.sha256(policy_bytes).hexdigest())
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.write_retention()
+
+    def write_retention(self):
+        """Recompute the record from the current source bytes; rerun after changing them."""
+        from agent_ee.board_envelope import validate
+        self.save()
+        native_envelope = validate((self.source/'envelope.json').read_bytes())
+        source = 'RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod'
+        policy_bytes = (self.source/'guideline.pdf').read_bytes()
         policy = fl.esp32_s3_wroom_1_placement_policy('outside_board',pdf_path='guideline.pdf')
         item = dict(keepout_id='antenna',reference='U2',footprint=fl.ESP32_FOOTPRINT_ID,
             pose={k:native_envelope['fixed_footprints'][-1][k] for k in ('anchor_mm','rotation_deg','side')},
@@ -306,6 +314,8 @@ class CapturedRuleAreaContentTests(EnvelopeScaffoldFixture, unittest.TestCase):
             intent_rel='intent.json',layout_rel='layout.json',captured_rule_areas_rel='retained.json')
         return inputs
 
+
+class CapturedRuleAreaContentTests(CapturedAntennaFixture, unittest.TestCase):
     def test_full_native_writer_preserves_outside_zone_and_unknown(self):
         from agent_ee import envelope_probe
         from agent_ee.envelope_check import keepout_verdict

@@ -480,7 +480,9 @@ copy and validates the saved result with native tools. On placement turns of a s
 sealed placement findings, can run the placer as a receipted coordinator step,
 and refuses edits other than footprint translations, quarter turns and qualified
 side flips, including rigid movement of footprint-owned zone polygons. The placer
-keeps peer courtyards outside owned footprint keepouts. A declared captured
+keeps peer courtyards outside owned footprint keepouts. Envelope fixed footprints
+and mounting holes written by the scaffold are fixed references, and their
+exact courtyards are obstacles (AGENTEE-179). A declared captured
 sub-layout also admits exactly the copper of whole reused groups. KiCad's
 unchanged custom-property font default is tolerated on resave. Fresh checks grade
 every proposal. These checks do not establish routing quality or a
