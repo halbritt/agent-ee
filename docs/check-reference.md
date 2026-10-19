@@ -157,6 +157,14 @@ prefers Basic, then Preferred, then Extended, followed by known price, lower
 price, higher available stock and numeric LCSC ID. The report records matched
 intervals, rejection reasons, exclusion counts and the deciding rank key.
 
+The `switching_regulator` category supports SI input-voltage maximum, output
+current, switching frequency and temperature constraints plus exact
+`topology: {"kind":"equals","value":"sync"}` (or `async`) and the captured
+package string. Only declared constraints affect eligibility; missing typed
+claims exclude rows with per-attribute `unknown_attribute` reasons. The
+[switching-regulator example](part-selection.md) and native DC-DC mapping use
+the same snapshot reader, immutable baseline and sealed receipt path.
+
 An empty selection returns `execution: ok`, `outcome: unknown`, `chosen: null`
 and reason `no candidate`. Invalid requirements or snapshots return
 `execution: failed`, `outcome: unknown`. An unparseable attribute excludes its
@@ -187,7 +195,9 @@ each assertion's computed interval, witness and operand origins.
 ## Approved parts membership
 
 The [approved-parts manifest](approved-parts.md) uses `agent-ee.parts/1` and
-pins catalog, selection, CAD and datasheet provenance. The `parts_subset` check
+pins generic catalog selection or [named-part records](approved-parts.md#named-ics-and-modules),
+plus CAD and datasheet provenance. Named replay compares exact captured identity;
+it does not rank parts or infer IC suitability. The `parts_subset` check
 takes exactly `manifest`, `netlist_check` and `requirement_id`. Its requirement
 must point to the manifest's captured declaration source. The full dependency
 closure is immutable in scope/2 and scope/3.

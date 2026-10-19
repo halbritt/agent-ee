@@ -176,6 +176,29 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         self.assertIn('templates/native.kicad_pro', manifest['files'])
         self.assertNotIn('templates/native.kicad_pro', manifest['scope']['mutable_inputs'])
 
+    def test_scaffold_producer_named_parts(self):
+        from test_approved_parts import named_fixture
+        from agent_ee.parts_manifest import qualify_manifest
+        named_fixture(self.source, self.parts, lcsc='C2913202', mpn='ESP32-S3-WROOM-1-N8',
+                      package='Synthetic module package')
+        self.write()
+        record = self.build()
+        scope = read_json(self.root / 'produced/scope.json')
+        self.assertEqual(scope['checks'][2]['kind'], 'parts_subset')
+        self.assertEqual(scope['stages']['subjects']['schematic']['references'], ['C1', 'J1', 'R1'])
+        project = read_json(self.root / 'produced/inputs/project/design.kicad_pro')
+        self.assertEqual(project['net_settings']['classes'][0]['clearance'], 0.15)
+        self.assertTrue(record['derivation']['rules'])
+        run = self.root / 'named-capture'
+        run.mkdir()
+        capture(self.root / 'produced/scope.json', run)
+        baseline = read_json(run / 'baseline.json')
+        for path in ('named/C2913202/part-record.json', 'named/C2913202/decision.txt',
+                     'named/C2913202/responses/C2913202.json'):
+            self.assertIn(path, baseline['files'])
+        # The generic capacitor/header still use canonical selection replay.
+        self.assertIsNotNone(qualify_manifest(self.parts, self.source)['selection'])
+
     def test_fome_severity_template(self):
         record = self.use_fome_template()
         receipt = self.build()

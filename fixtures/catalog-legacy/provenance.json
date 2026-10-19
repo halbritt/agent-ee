@@ -1,0 +1,10 @@
+{
+  "producer_commit": "c3ec24c936296e2c55cc45924bc67a46b14ec8aa",
+  "producer_path": "src/agent_ee/catalog.py",
+  "producer_sha256": "332415f62a42b12ea4b3eae6011b18904fbd2afd6f0b574cade901612e2ee32b",
+  "files": {
+    "owned.csv": "8a32295a34ecb6007d67faf02117189a190a561b4ddd400958701a669c870fd9",
+    "snapshot/manifest.json": "5f8ace9cbdac796653b1c03aad0c15b92a40b523e863eeced1f00d3bb4ede31a",
+    "snapshot/catalog.sqlite3": "a72bfe61b683054bec5edb366dee3aba10102ea1b5afb5122be400724a2b42bb"
+  }
+}

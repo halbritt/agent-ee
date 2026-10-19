@@ -38,6 +38,40 @@ class CatalogIntegrationTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 capability('part_selection', self.params, scope, self.files, self.root, 'select')
 
+    def test_switching_receipts_through_sandbox_and_public_seal(self):
+        from toolchain import require_toolchain
+        require_toolchain()
+        from agent_ee.cli import run_review, verify
+        from agent_ee.storage import read_json
+        for eligible in (True, False):
+            with self.subTest(eligible=eligible):
+                self.root = Path(self.tmp.name) / str(eligible)
+                self.root.mkdir()
+                fixture = test_part_selection.SelectionTests()
+                fixture.root = self.root
+                row = fixture.switching_row('C2')
+                row['attributes'] = '{}'
+                rows = [row, fixture.switching_row('C3', topology='async')]
+                if eligible:
+                    rows.append(fixture.switching_row('C1'))
+                fixture.snapshot(rows)
+                write_json(self.root / 'parts.json', fixture.switching_requirements())
+                self.params['manifest_sha256'] = digest(self.root / 'snapshot/manifest.json')
+                write_json(self.root / 'scope.json', self.scope_document())
+                run = self.root / 'run'
+                run_review(self.root / 'scope.json', run, 60, checks_only=True)
+                check = read_json(run / 'checks/select.json')
+                self.assertEqual((check['execution'], check['outcome']),
+                                 ('ok', 'pass' if eligible else 'unknown'), check)
+                report = check['details']['report']
+                part = report['parts'][0]
+                self.assertEqual([r['row']['lcsc'] for r in part['ranked']], ['C1'] if eligible else [])
+                self.assertEqual(part['exclusion_counts'], {'constraint_mismatch': 1, 'unknown_attribute': 3})
+                self.assertEqual(part['rejected'][0]['lcsc'], 'C2')
+                self.assertTrue(all(r['unknown'] for r in part['rejected'][0]['reasons']))
+                self.assertEqual(report, read_json(run / 'work/select/catalog.json'))
+                verify(run)
+
     def scope_document(self):
         for name in ('board', 'schematic', 'target', 'reference'):
             (self.root / name).write_text('Owned fixture ' + name)

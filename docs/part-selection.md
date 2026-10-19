@@ -37,7 +37,7 @@ KiCad package aliases. Attribute names and units follow the catalog contract,
 and constraints must be applicable to the declared generic category. Selection
 does not infer a device function, pin contract, footprint mapping or IC suitability.
 
-Each constraint explicitly declares its interval relation:
+Numeric constraints explicitly declare their interval relation:
 
 | Kind | Candidate must satisfy |
 | --- | --- |
@@ -55,6 +55,29 @@ nonzero tolerance/range: a bare nominal catalog value is unknown, not a
 zero-tolerance part. Other absent or unparseable catalog attributes exclude the
 row as unknown. A minimum-voltage requirement uses the catalog rating's **lower**
 endpoint, so `25 V .. 100 V` cannot establish a 50 V minimum rating.
+
+For `switching_regulator`, this constraint mapping requires a 40 V input maximum
+rating, at least 1 A output rating, and synchronous rectification:
+
+```json
+{
+  "input_voltage_max": {"kind": "at_least", "min": "40 V"},
+  "output_current": {"kind": "at_least", "min": "1 A"},
+  "topology": {"kind": "equals", "value": "sync"}
+}
+```
+
+Use it as `constraints` with `category: "switching_regulator"` and an exact
+captured `package`. `topology` accepts only `equals` with `sync` or `async`;
+numeric relations and other enum values are invalid requirements. Optional
+`switching_frequency` and `temperature` constraints use the numeric relations
+above. Undeclared attributes do not filter or rank candidates. Missing or
+unparseable constrained attributes produce `unknown_attribute` reasons naming
+the attribute and excluded LCSC row, with `unknown: true`; a known mismatching
+enum produces `constraint_mismatch`. The receipt retains the matched enum value
+alongside matched numeric intervals. An all-unknown slice returns no candidate.
+These constraints do not establish buck conversion, circuit suitability, or
+the day-of-generation stock required by the pod spec.
 
 The minimum available stock is `max(build_quantity * quantity_per_board,
 stock_floor)`. Unknown stock excludes a row; known low stock is a definite
@@ -95,7 +118,7 @@ constraints. It does not grant engineering acceptance. An empty candidate set
 has `outcome: unknown`, reason `no candidate`, and null `chosen`. The
 `selection_check` adapter maps invalid requirements and missing, corrupt or
 semantically invalid snapshots to `execution: failed, outcome: unknown` with an
-error and no fallback choice. Selection uses only intervals that `load_catalog`
+error and no fallback choice. Selection uses only typed claims that `load_catalog`
 has rederived from each row's retained raw attributes. A repinned snapshot whose
 stored intervals disagree with its raw claims is never used to select a part.
 The direct `select_parts` API raises the underlying input error. The integration

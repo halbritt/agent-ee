@@ -337,12 +337,19 @@ board thickness, leaves that rule unknown.
 that derived quantities match retained raw attributes. A pinned jlcparts feed
 has a bounded host downloader and a native stocked-parts adapter; raw data stays
 in private scratch. [Part selection](docs/part-selection.md)
-compares declared intervals and stock within that snapshot. Both now have checks
+compares declared intervals, switching-regulator rectification and stock within
+that snapshot. The DC-DC importer retains raw claims and typed ratings; missing
+constrained attributes exclude a row with a reason in the receipt. Both have checks
 that use the captured baseline, sandbox and coordinator seal; selection binds one
 explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#full-feed-runtime-qualification)
 uses a declared 600-second helper ceiling and retains sealed evidence in private
 scratch. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+[Named ICs and modules](docs/approved-parts.md#named-ics-and-modules) can enter
+`parts/1` through per-LCSC records derived offline from captured JLCPCB responses
+and datasheet acquisitions. The subset check and scaffold producer replay exact
+identity and freeze those sources; suitability and live stock need separate evidence.
+
 An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.
 The `parts_subset` check compares native symbol/footprint/supplier identities

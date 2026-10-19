@@ -31,6 +31,106 @@ class CatalogTests(unittest.TestCase):
                     volumes=[dict(path=path.name, sha256=digest(path),
                                   size_bytes=path.stat().st_size, format='csv')])
 
+    def test_original_seven_category_snapshot_still_loads(self):
+        # Frozen output of c3ec24c, not a current capture with a table removed.
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/catalog-legacy'
+        provenance = json.loads((fixture / 'provenance.json').read_text())
+        for name, expected in provenance['files'].items():
+            self.assertEqual(digest(fixture / name), expected)
+        snapshot = fixture / 'snapshot'
+        loaded = load_catalog(snapshot, digest(snapshot / 'manifest.json'))
+        row = loaded['rows'][0]
+        self.assertEqual(row['attributes'], {
+            'input_voltage': '3 V .. 40 V', 'output_current': '1 A', 'topology': 'sync',
+            'input_voltage_max': '40 V', 'switching_frequency': '400 kHz',
+            'resistance': '10 kohm'})
+        self.assertEqual(row['normalized'], {
+            'input_voltage': dict(min='3', max='40', unit='V'),
+            'resistance': dict(min='10000', max='10000', unit='ohm')})
+        self.assertEqual(set(loaded['manifest']['row_counts']), {
+            'component_base', 'resistor', 'capacitor', 'inductor', 'diode', 'led', 'connector', 'regulator'})
+
+    def test_extended_capture_of_legacy_source_uses_extended_vocabulary(self):
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/catalog-legacy'
+        with (fixture / 'owned.csv').open(newline='') as stream:
+            source = self.source(list(csv.DictReader(stream)))
+        snapshot = self.root / 'extended'
+        capture_catalog(source, self.root, snapshot)
+        loaded = load_catalog(snapshot, digest(snapshot / 'manifest.json'))
+        self.assertIn('switching_regulator', loaded['manifest']['row_counts'])
+        self.assertEqual(loaded['rows'][0]['normalized'], {
+            'input_voltage': dict(min='3', max='40', unit='V'),
+            'resistance': dict(min='10000', max='10000', unit='ohm'),
+            'input_voltage_max': dict(min='40', max='40', unit='V'),
+            'output_current': dict(min='1', max='1', unit='A'),
+            'switching_frequency': dict(min='400000', max='400000', unit='Hz'),
+            'topology': {'value': 'sync'}})
+
+    def test_legacy_rederivation_refuses_coherent_repinned_forgeries(self):
+        import shutil
+        from catalog_repin import repin, set_derived
+        from agent_ee.catalog import catalog_check
+        fixture = Path(__file__).resolve().parents[1] / 'fixtures/catalog-legacy/snapshot'
+        original = load_catalog(fixture, digest(fixture / 'manifest.json'))['rows'][0]['normalized']
+        for name, replacement in {
+            'known quantity': {'input_voltage': dict(min='3', max='41', unit='V')},
+            'outside category': {'resistance': dict(min='20000', max='20000', unit='ohm')},
+            'new quantity': {'output_current': dict(min='1', max='1', unit='A')},
+            'new enum': {'topology': {'value': 'sync'}},
+        }.items():
+            with self.subTest(name=name):
+                snapshot = self.root / name
+                shutil.copytree(fixture, snapshot)
+                # Forge both JSON copies and typed cells, then recompute every pin.
+                # Preserve the original layout; the generic repinner adds the new count.
+                pin = repin(snapshot,
+                    lambda c: set_derived(c, 'C1', {**original, **replacement}),
+                    lambda m: m['row_counts'].pop('switching_regulator'))
+                result = catalog_check(snapshot, pin)
+                self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+                self.assertIn('rederivation', result['details']['error'])
+
+    def test_switching_typed_cells_and_repinned_claims_are_rederived(self):
+        import sqlite3
+        from catalog_repin import repin
+        from agent_ee.catalog import catalog_check
+        source = self.source([dict(lcsc='C1', mfr='Owned fixture', mpn='SW1', package='SOIC-8',
+            category='switching_regulator', stock='123', price1='0.01', is_basic='1',
+            is_preferred='0', last_seen='2026-10-17', attributes=json.dumps({
+                'input_voltage_max': '40 V', 'output_current': '1 A', 'topology': 'sync',
+                'switching_frequency': '400 kHz', 'temperature': '-40 degC .. 125 degC'}))])
+        for name, sql in {
+            'typed enum': "UPDATE switching_regulator SET topology='async'",
+            'typed quantity': "UPDATE switching_regulator SET output_current_min='2'",
+            'forged enum': "UPDATE component_base SET normalized=replace(normalized,'sync','async')",
+            'omitted table': 'DROP TABLE switching_regulator',
+        }.items():
+            with self.subTest(name=name):
+                snapshot = self.root / name
+                capture_catalog(source, self.root, snapshot)
+                with sqlite3.connect(snapshot / 'catalog.sqlite3') as connection:
+                    self.assertEqual(connection.execute(
+                        'SELECT input_voltage_max_min, output_current_min, topology, switching_frequency_min '
+                        'FROM switching_regulator').fetchall(), [('40', '1', 'sync', '400000')])
+                pin = repin(snapshot, lambda c: c.execute(sql))
+                result = catalog_check(snapshot, pin)
+                self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+
+    def test_legacy_table_set_cannot_conceal_a_switching_row(self):
+        from catalog_repin import repin
+        from agent_ee.catalog import catalog_check
+        from agent_ee.storage import write_json
+        snapshot = self.root / 'legacy'
+        capture_catalog(self.source(), self.root, snapshot)
+        repin(snapshot, lambda c: (c.execute('DROP TABLE switching_regulator'), c.execute(
+            "UPDATE component_base SET category='switching_regulator'")))
+        manifest = json.loads((snapshot / 'manifest.json').read_text())
+        del manifest['row_counts']['switching_regulator']
+        write_json(snapshot / 'manifest.json', manifest)
+        result = catalog_check(snapshot, digest(snapshot / 'manifest.json'))
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+        self.assertIn('outside snapshot table set', result['details']['error'])
+
     def test_capture_query_is_reproducible_and_as_of(self):
         source = self.source()
         first = self.root / 'first'
