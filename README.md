@@ -467,6 +467,15 @@ reports per-part hash verdicts. It refuses a capture that is
 stale or lacks an observation for a populated id. Its response mapping is not
 yet qualified against a live JLCPCB response.
 
+[DigiKey capture](docs/digikey-capture.md) is the owner-run Stage 2 producer
+for external parts without an LCSC code. It needs owner-provided DigiKey
+API v4 client credentials and an explicit `--allow-network`. It retains each raw
+response with its hash and UTC time. An offline validator re-derives every
+field. An adapter projects a found part into an
+`agent-ee.external-part-identity/1` declaration, a datasheet binding and
+hand-fit purchase-source evidence. Its response mapping is not yet qualified
+against a live DigiKey response.
+
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit without Git transports or replacement refs, and checks
 declared ports against the native sheet. Missing captured blobs are refused;
