@@ -122,11 +122,45 @@ found on the native-v5 pod criterion-4 run):
 These errors stay blocking. They are recorded known limitations, never a pass:
 no disposition waives an error, and the pod circuit is not changed to silence
 them. The [owned reproducer](../fixtures/kicad-happy/ac4-false-positives/EXPECTATIONS.md)
-triggers each mechanism plus real violations that must keep failing.
+triggers each mechanism plus real violations that must keep failing, including
+the two agent-469 adversarial controls: a P-MOSFET gate divider with a competing
+pull-up to the source, and an I2C device whose chip-select has both a passive
+pull-up and an MCU GPIO.
+
 `tests.test_happy_ac4_false_positives` asserts the pinned errors through the
-real gate. It also asserts that a proposed correction clears only the false
-positives. That correction is an exact commit recorded in the fixture's
-`expected.json`, exported read-only from the `AGENT_EE_KICAD_HAPPY` object
-store, or named by `AGENT_EE_KICAD_HAPPY_CORRECTED`. It is not adopted.
-Adopting it changes the analyzer pin and requires requalification plus a
-criterion-4 rerun.
+real gate. It also asserts what a proposed correction does with them. The
+correction is an exact kicad-happy commit recorded in the fixture's
+`expected.json`. It is conservative: unknown is never pass.
+
+- A PP-001 pin it sources only through another component's `power_out` pin
+  (whose owner must itself be powered) or through a P-MOSFET whose gate the
+  netlist holds at ground becomes an `info` finding. Its `assumptions` list
+  names what is trusted, not proven: `power_out` regulation, `|VGS(th)|` and
+  clamp margins.
+- A competing gate pull-up or a driven gate keeps the error and names the
+  unresolved conduction (with the divider ratio when values are known).
+- A dual-mode device counts as SPI only with a driven chip-select and SPI
+  clock and data pins of other components on its SCL/SDA nets. Otherwise its
+  I2C pull-up errors stay, next to an `info` note that the mode is unresolved.
+
+The earlier proposal (b8ab8b4) cleared both controls and is recorded as
+superseded.
+
+The correction reuses a PP-001 limitation's finding ID for its info note
+(same rule and component, new severity). This is safe in the gate: only
+`warning` findings take dispositions, so a stale disposition naming such an ID
+attaches to nothing and is listed in `unused_disposition_ids`. The test
+asserts this. A future change that turned a reused ID into a warning would need
+a fresh review of its dispositions.
+
+The test exports the correction read-only from the `AGENT_EE_KICAD_HAPPY` Git
+object store. It is on this host because the kicad-happy work tree shares that
+store. Alternatively, `AGENT_EE_KICAD_HAPPY_CORRECTED` names a checkout of
+exactly that commit. Both are held to the recorded installation identity. If
+the commit is missing (another host, or the branch was deleted and
+garbage-collected), the test fails under `AGENT_EE_REQUIRE_TOOLCHAIN=1` with
+the commit, branch and store in the message; it never skips. To fix it, fetch
+that commit into the store or set `AGENT_EE_KICAD_HAPPY_CORRECTED`.
+
+The correction is not adopted. Adopting it changes the analyzer pin and
+requires requalification plus a criterion-4 rerun.

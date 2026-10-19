@@ -4,8 +4,11 @@ Every symbol, pin list, net name and coordinate here is written for this
 fixture; no third-party design, symbol library or footprint bytes are copied.
 Values such as ``LSM6DSO32`` are part-number facts used only so the analyzer's
 keyword classifier engages exactly as it does on the real pod. The schematic
-is the full reproducer: three PP-001 and one PR-001 false-positive mechanisms
-plus one real PP-001 and one real PR-001 violation that must stay reported.
+is the full reproducer: three PP-001 and one PR-001 false-positive mechanisms,
+one real PP-001 and one real PR-001 violation that must stay reported, and the
+two agent-469 adversarial controls (a P-MOSFET gate divider with a competing
+pull-up to the source, and an I2C device whose chip-select carries both a
+passive pull-up and an MCU GPIO) that must stay reported too.
 """
 import json
 from pathlib import Path
@@ -27,10 +30,13 @@ SYMBOLS = {
                                    ('3', 'GND', 'power_in')]),
     'OwnedLoad': ('U', 'OwnedLoad', [('1', 'VIN', 'power_in'), ('2', 'GND', 'power_in')]),
     'OwnedMCU': ('U', 'OwnedMCU', [('1', 'VDD', 'power_in'), ('2', 'GND', 'power_in')]
-                 + [(str(2 + i), f'IO{i}', 'bidirectional') for i in range(1, 7)]),
+                 + [(str(2 + i), f'IO{i}', 'bidirectional') for i in range(1, 12)]),
     'OwnedIMU': ('U', 'LSM6DSO32', [('1', 'VDD', 'power_in'), ('2', 'GND', 'power_in'),
                                     ('3', 'CS', 'input'), ('4', 'SCL', 'input'),
                                     ('5', 'SDA', 'bidirectional')]),
+    'OwnedSpiAdc': ('U', 'OwnedSpiAdc', [('1', 'VDD', 'power_in'), ('2', 'GND', 'power_in'),
+                                         ('3', 'CS', 'input'), ('4', 'CLK', 'input'),
+                                         ('5', 'DIN', 'input'), ('6', 'DOUT', 'output')]),
     'Q_PMOS_Owned': ('Q', 'OwnedPMOS', [('1', 'G', 'input'), ('2', 'D', 'passive'),
                                         ('3', 'S', 'passive')]),
     'OwnedConn2': ('J', 'OwnedConn2', [('1', 'Pin_1', 'passive'), ('2', 'Pin_2', 'passive')]),
@@ -58,11 +64,15 @@ PARTS = [
     ('D1', 'OwnedZener', 'OwnedZener', ['PROT_NODE', 'GATE_NODE']),
     ('C3', 'OwnedC', '4.7uF', ['PROT_NODE', 'GND']),
     ('U5', 'OwnedLoad', 'OwnedLoad', ['PROT_NODE', 'GND']),
-    # Finding (b): dual-mode IMU wired for SPI (chip select driven by the MCU).
+    # Finding (b): dual-mode IMU wired for SPI: chip select driven by the MCU
+    # and an SPI peripheral's CLK/DIN on the same clock and data nets.
     ('U6', 'OwnedMCU', 'OwnedMCU', ['+3V3', 'GND', 'SPI_MOSI', 'SPI_SCK', 'IMU_CS',
-                                    'I2C_SDA', 'I2C_SCL', 'GATE_CTRL']),
+                                    'I2C_SDA', 'I2C_SCL', 'GATE_CTRL', 'SPI_MISO',
+                                    'ADC_CS', 'I2C2_SDA', 'I2C2_SCL', 'CS_NODE']),
     ('U7', 'OwnedIMU', 'LSM6DSO32', ['+3V3', 'GND', 'IMU_CS', 'SPI_SCK', 'SPI_MOSI']),
     ('R2', 'OwnedR', '10k', ['IMU_CS', '+3V3']),
+    ('U13', 'OwnedSpiAdc', 'OwnedSpiAdc', ['+3V3', 'GND', 'ADC_CS', 'SPI_SCK', 'SPI_MOSI',
+                                           'SPI_MISO']),
     # Control (PP-001): supply pin only AC-coupled to +12V; a real violation.
     ('C4', 'OwnedC', '100nF', ['+12V', 'AC_NODE']),
     ('C5', 'OwnedC', '100nF', ['AC_NODE', 'GND']),
@@ -73,6 +83,18 @@ PARTS = [
     ('Q2', 'Q_PMOS_Owned', 'OwnedPMOS', ['GATE_CTRL', 'IN_RAW', 'SWITCHED_NODE']),
     ('C6', 'OwnedC', '4.7uF', ['SWITCHED_NODE', 'GND']),
     ('U10', 'OwnedLoad', 'OwnedLoad', ['SWITCHED_NODE', 'GND']),
+    # agent-469 control (1): gate divider, 100 ohm to the source rail against
+    # 1 Mohm to ground, holds VGS near zero; conduction is not proven.
+    ('J2', 'OwnedConn2', 'OwnedConn2', ['IN_RAW2', 'GND']),
+    ('Q3', 'Q_PMOS_Owned', 'OwnedPMOS', ['GATE_DIV', 'PROT_DIV', 'IN_RAW2']),
+    ('R3', 'OwnedR', '1M', ['GATE_DIV', 'GND']),
+    ('R4', 'OwnedR', '100', ['GATE_DIV', 'IN_RAW2']),
+    ('C7', 'OwnedC', '1uF', ['PROT_DIV', 'GND']),
+    ('U11', 'OwnedLoad', 'OwnedLoad', ['PROT_DIV', 'GND']),
+    # agent-469 control (2): I2C-named bus, CS with a passive 10k pull-up and
+    # an MCU GPIO, no SPI topology: the missing pull-ups stay errors.
+    ('U12', 'OwnedIMU', 'LSM6DSO32', ['+3V3', 'GND', 'CS_NODE', 'I2C2_SCL', 'I2C2_SDA']),
+    ('R5', 'OwnedR', '10k', ['CS_NODE', '+3V3']),
 ]
 
 
