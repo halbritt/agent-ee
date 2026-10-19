@@ -1,0 +1,4 @@
+{
+  "schema": "agent-ee.image-context/1",
+  "outer_host_tools": ["docker"]
+}

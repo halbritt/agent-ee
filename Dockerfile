@@ -121,6 +121,11 @@ COPY --from=kicad-route-build /opt/kicad-route.install.json /opt/kicad-route.ins
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
 
+# Image context record: with Docker's /.dockerenv and the pinned runtime hashes,
+# the seeded-benchmark closure verifier's positive evidence that it runs inside
+# the image, where the outer-host docker CLI is absent (docs/seeded-benchmark.md).
+COPY docker/image-context.json /usr/local/share/agent-ee/image-context.json
+
 # Source-launcher installation, as in docs/installation.md: the launcher uses
 # /usr/bin/python3 (which imports pcbnew) and locates src/ from its checkout.
 COPY . /opt/agent-ee
