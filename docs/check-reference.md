@@ -905,8 +905,11 @@ unverified axis facts are unknown. See [IMU axes](placement.md#imu-axes) for the
 required parameters, qualified text and evidence limits.
 
 `keep-apart/1` consumes declared `policy.keep_apart` pairs and minimum distances
-from `placement-policy/1`. It grades exact projected courtyard separation,
-including opposite sides; missing courtyards are unknown. It retains per-pair
+from `placement-policy/1`. It grades projected courtyard separation,
+including opposite sides. Outer-bound distance at least the minimum proves pass;
+inner-bound distance below the minimum proves defect. A minimum between the
+curve bounds yields `courtyard_approximation` naming the pair; missing or unproven
+courtyards are unknown. Exact straight-polygon equality passes. It retains per-pair
 verdicts and supplies `placement:keep-apart/1`. The pod spec gives no numeric
 minimum: [keep-apart declarations](placement.md#keep-tall-and-heavy-parts-apart)
 must supply it as an input.

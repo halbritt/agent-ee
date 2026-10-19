@@ -1,5 +1,6 @@
 """Mechanical placement criteria with real saved-board probes, DRC and PDF verification."""
 import copy
+from fractions import Fraction
 import subprocess
 import time
 import unittest
@@ -20,8 +21,7 @@ class KeepApartTests(unittest.TestCase):
         return dict(schema='agent-ee.placement-policy/1', keep_apart=[
             dict(ref='IMU', others=['SMA'], min_distance_mm=15)])
 
-    def test_keep_apart(self):
-        """Actual saved courtyards separated by 5 mm fail the declared 15 mm minimum."""
+    def native_apart(self, center_distance_nm=7000000, circle=False, minimum_mm=15):
         from tests.test_placement_gates_native import NativePlacementGates, placement
         helper = NativePlacementGates()
         helper.setUp()
@@ -38,22 +38,29 @@ for fp in b.GetFootprints():
     fp.SetOrientationDegrees(0)
     fp.SetPosition(k.VECTOR2I(0,0))
     shape=k.PCB_SHAPE(fp)
-    shape.SetShape(k.SHAPE_T_RECT)
+    shape.SetShape(k.SHAPE_T_CIRCLE if sys.argv[3]=='circle' else k.SHAPE_T_RECT)
     shape.SetLayer(k.F_CrtYd)
-    shape.SetStart(k.VECTOR2I(-1000000,-1000000))
-    shape.SetEnd(k.VECTOR2I(1000000,1000000))
+    shape.SetStart(k.VECTOR2I(0,0) if sys.argv[3]=='circle' else k.VECTOR2I(-1000000,-1000000))
+    shape.SetEnd(k.VECTOR2I(1000000,0) if sys.argv[3]=='circle' else k.VECTOR2I(1000000,1000000))
     shape.SetWidth(50000)
     fp.Add(shape)
-    fp.SetPosition(k.VECTOR2I(100000000 if fp.GetReference()=='IMU' else 107000000,100000000))
+    fp.SetPosition(k.VECTOR2I(100000000 if fp.GetReference()=='IMU' else 100000000+int(sys.argv[2]),100000000))
 k.SaveBoard(sys.argv[1],b)
 '''
-        process = subprocess.run(['/usr/bin/python3', '-B', '-c', edit, str(board)],
+        process = subprocess.run(['/usr/bin/python3', '-B', '-c', edit, str(board),
+                                  str(center_distance_nm), 'circle' if circle else 'rect'],
                                  capture_output=True, text=True, timeout=60)
         self.assertEqual(process.returncode, 0, process.stderr)
         schematic = source / 'project/rc_filter.kicad_sch'
         schematic.write_text(schematic.read_text().replace('"J1"', '"SMA"').replace('"R1"', '"IMU"'))
-        run, results = helper.run_scope(source, [dict(id='drc', kind='drc'),
-            placement('apart', 'keep-apart/1', drc='drc', policy=self.policy())])
+        policy = self.policy()
+        policy['keep_apart'][0]['min_distance_mm'] = minimum_mm
+        return helper.run_scope(source, [dict(id='drc', kind='drc'),
+            placement('apart', 'keep-apart/1', drc='drc', policy=policy)])
+
+    def test_keep_apart(self):
+        """Actual saved courtyards separated by 5 mm fail the declared 15 mm minimum."""
+        run, results = self.native_apart()
         self.assertEqual(results['drc']['execution'], 'ok', results['drc'])
         result = results['apart']
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
@@ -62,6 +69,80 @@ k.SaveBoard(sys.argv[1],b)
         self.assertIn('work/apart/placement-judgment.json', result['evidence'])
         baseline = read_json(run / 'baseline.json')
         self.assertEqual(baseline['coverage']['checks']['apart']['predicates'], ['placement:keep-apart/1'])
+
+    def test_keep_apart_native_circle_bounds(self):
+        for distance, status, execution in ((12000000, 'unknown', 'unsupported'),
+                                             (12020000, 'pass', 'ok'), (11990000, 'defect', 'ok')):
+            with self.subTest(center_distance_nm=distance):
+                run, results = self.native_apart(distance, circle=True, minimum_mm=10)
+                result = results['apart']
+                self.assertEqual(results['drc']['execution'], 'ok', results['drc'])
+                self.assertEqual((result['execution'], result['outcome']), (execution, status), result)
+                facts = read_json(run / 'work/apart/placement-probe.json')
+                selected = [fp for fp in facts['footprints'] if fp['ref'] in ('IMU', 'SMA')]
+                self.assertEqual(len(selected), 2)
+                for fp in selected:
+                    courtyard = fp['courtyards']['F']
+                    self.assertEqual(courtyard['status'], 'proven')
+                    self.assertIn('inner_polygons', courtyard)
+                    self.assertEqual([p['kind'] for p in courtyard['primitives']], ['circle'])
+                self.assert_curve_bounds(result['details'], status)
+                self.assertIn('work/apart/placement-judgment.json', result['evidence'])
+                if status == 'unknown':
+                    self.assertNotIn('gate_findings', result['details'])
+
+    def assert_curve_bounds(self, result, status):
+        self.assertEqual(result['status'], status, result)
+        measured, = result['measured']
+        self.assertEqual(measured['status'], status)
+        outer = Fraction(**measured['distance_squared_nm'])
+        inner = Fraction(**measured['inner_distance_squared_nm'])
+        self.assertLess(outer, inner)
+        if status == 'pass':
+            self.assertGreaterEqual(outer, 10000000**2)
+            self.assertEqual(result['defects'], [])
+            self.assertEqual(result['unknown'], [])
+        elif status == 'defect':
+            self.assertLess(inner, 10000000**2)
+            self.assertEqual(result['defects'][0]['refs'], ['IMU', 'SMA'])
+            self.assertEqual(result['unknown'], [])
+        else:
+            self.assertLess(outer, 10000000**2)
+            self.assertGreater(inner, 10000000**2)
+            self.assertEqual(result['defects'], [])
+            entry, = result['unknown']
+            self.assertEqual(entry['kind'], 'courtyard_approximation')
+            self.assertEqual(entry['refs'], ['IMU', 'SMA'])
+
+    def test_keep_apart_curve_bounds(self):
+        from agent_ee.placement_predicates import keep_apart
+        from agent_ee.placement_probe import prove_contours
+        from tests.test_placement_predicates import probe, part
+        policy = self.policy()
+        policy['keep_apart'][0]['min_distance_mm'] = 10
+        for distance, status in ((12000000, 'unknown'), (12020000, 'pass'), (11990000, 'defect')):
+            for side in ('F', 'B'):
+                with self.subTest(center_distance_nm=distance, side=side):
+                    parts = [part('IMU', 0, 0), part('SMA', distance / 1000000, 0, side=side)]
+                    for fp, x in zip(parts, (0, distance)):
+                        fp['courtyards'][fp['side']] = prove_contours([
+                            dict(kind='circle', center=[x, 0], end=[x+1000000, 0])],
+                            'courtyard_missing', 'courtyard_unproven', curves_allowed=True)
+                    self.assert_curve_bounds(keep_apart(probe(parts), policy), status)
+
+    def test_keep_apart_unproven_curve_is_unknown(self):
+        from agent_ee.placement_predicates import keep_apart
+        from tests.test_placement_predicates import probe, part
+        for record in (dict(status='courtyard_unproven', reason='unsupported primitive'),
+                       dict(status='proven', polygons=[[[0, 0], [1, 0], [0, 1]]],
+                            inner_polygons=[[[0, 0], [1, 0], [0, 1]]])):
+            with self.subTest(record=record):
+                parts = [part('IMU', 0, 0), part('SMA', 1, 0)]
+                parts[1]['courtyards']['F'] = record
+                result = keep_apart(probe(parts), self.policy())
+                self.assertEqual(result['status'], 'unknown')
+                self.assertEqual(result['defects'], [])
+                self.assertEqual(result['unknown'][0]['reference'], 'SMA')
 
     def test_keep_apart_boundaries_and_unknowns(self):
         from agent_ee.placement_predicates import keep_apart

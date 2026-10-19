@@ -186,6 +186,12 @@ def segment_distance2(a, b, c, d):
 def keep_apart(probe, policy):
     """Minimum projected courtyard separation, including opposite board sides."""
     from .placement import keep_apart_rules
+
+    def separation2(left, right):
+        return (Fraction(0) if _overlap(left, right) else
+                min(segment_distance2(a, b, c, d) for p in left for q in right
+                    for a, b in edges(p) for c, d in edges(q)))
+
     rules = keep_apart_rules(policy)
     defects, unknown, measured = [], [], []
     if not rules:
@@ -194,7 +200,7 @@ def keep_apart(probe, policy):
         minimum = exact_nm(rule['min_distance_mm'], 'min_distance_mm')
         for other in rule['others']:
             record = {'ref': rule['ref'], 'other': other, 'minimum_mm': mm(minimum)}
-            polygons = []
+            polygons, inner_polygons = [], []
             for ref in (rule['ref'], other):
                 matches = [fp for fp in probe['footprints'] if fp['ref'] == ref]
                 if len(matches) != 1:
@@ -205,19 +211,29 @@ def keep_apart(probe, policy):
                     unknown.append({**record, 'kind': 'courtyard', 'reference': ref, 'reason': reason})
                     break
                 polygons.append([p for contours in sides.values() for p in contours])
+                inner, _ = courtyards(matches[0], inner=True)
+                inner_polygons.append([p for contours in inner.values() for p in contours])
             if len(polygons) != 2:
                 continue
-            left, right = polygons
-            distance2 = (Fraction(0) if _overlap(left, right) else
-                         min(segment_distance2(a, b, c, d) for p in left for q in right
-                             for a, b in edges(p) for c, d in edges(q)))
+            # Outer separation is a lower bound; inner separation is an upper
+            # bound. Only the corresponding side can prove pass or defect.
+            distance2 = separation2(*polygons)
+            inner_distance2 = separation2(*inner_polygons)
+            status = ('pass' if distance2 >= minimum**2 else
+                      'defect' if inner_distance2 < minimum**2 else 'unknown')
             record.update(distance_mm=math.sqrt(distance2) / 10**6,
                           distance_squared_nm={'numerator': distance2.numerator,
                                                'denominator': distance2.denominator},
-                          status='defect' if distance2 < minimum**2 else 'pass')
+                          inner_distance_mm=math.sqrt(inner_distance2) / 10**6,
+                          inner_distance_squared_nm={'numerator': inner_distance2.numerator,
+                                                     'denominator': inner_distance2.denominator},
+                          status=status)
             measured.append(record)
             if record['status'] == 'defect':
                 defects.append({'kind': 'keep_apart', 'refs': [rule['ref'], other], **record})
+            elif record['status'] == 'unknown':
+                unknown.append({'kind': 'courtyard_approximation', 'refs': [rule['ref'], other], **record,
+                                'reason': 'separation lies between the declared curve bounds'})
     return {'criterion': 'keep-apart/1', 'status': verdict(defects, unknown),
             'defects': defects, 'unknown': unknown, 'measured': measured, 'policy': policy}
 

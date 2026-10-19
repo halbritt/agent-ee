@@ -136,7 +136,7 @@ Every check names an earlier `drc` check in `drc_check`:
 | `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; native check ignored |
 | `connector-edge/1` | `envelope`, `reference` (required for several fixed footprints) | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
 | `imu-axes/1` | `envelope`, `imu_ref`, `graphic_id` or `marker_ref`, `forward_axis`, `side`, `max_distance_mm`, `marker_rotation_deg`, `facts_check`, `axis_fact` | IMU side/rotation or mapped axes disagree; marker missing, wrong layer, rotation or distance | missing/ambiguous IMU, unverified/inapplicable axis fact, incomplete marker inventory, ambiguous or unreadable marking |
-| `keep-apart/1` | `policy` with nonempty declared `keep_apart` rules | exact projected courtyard separation below `min_distance_mm` | missing/ambiguous reference or unqualified courtyard |
+| `keep-apart/1` | `policy` with nonempty declared `keep_apart` rules | projected courtyard separation proved below `min_distance_mm` on the inner bounds | missing/ambiguous reference, unqualified courtyard or minimum between curve bounds |
 | `ratsnest-mst/1` | optional `max_manhattan_mm`, `max_euclidean_mm` | proved total above a declared maximum | Euclidean interval straddles a maximum; no netted pads |
 | `placement-groups/1` | `groups` (captured `agent-ee.placement-groups/1`, or a packing policy with `groups`) | a member courtyard (inner bound) outside its group region (`outside_group_region`); a member origin farther than `max_distance_nm` from its anchor (`group_anchor_distance`) | member or anchor reference missing or duplicated; member without a qualified courtyard where a region applies; region boundary only between curve bounds |
 
@@ -186,13 +186,22 @@ only `schema` and `keep_apart`; advisory scoring still needs its full declaratio
 
 Separation is the minimum Euclidean distance between all qualified projected
 courtyard polygons, including opposite board sides. Overlap or containment has
-zero separation; exact equality with the minimum passes. Squared distances are
+zero separation; exact straight-polygon equality with the minimum passes. Squared distances are
 compared as exact rationals; rounded display distances never decide a verdict.
+For curved courtyards, outer-bound separation at least the minimum proves pass;
+inner-bound separation below the minimum proves defect. Otherwise the pair is
+unknown with a `courtyard_approximation` entry naming both references. The
+existing `distance_mm` and `distance_squared_nm` fields measure the outer bounds
+(a lower bound on true separation); `inner_distance_mm` and
+`inner_distance_squared_nm` measure the inner bounds (an upper bound).
 Missing/ambiguous footprints and missing or unsupported courtyards are unknown.
 Each measured pair retains references, the declared minimum, distance and
 verdict in `placement-judgment.json`; proved violations also carry gate findings.
 `KeepApartTests.test_keep_apart` runs native DRC and the sandboxed probe on an
 original SMA/IMU fixture with a 5 mm gap and proves failure against 15 mm.
+`KeepApartTests.test_keep_apart_native_circle_bounds` exercises saved `fp_circle`
+courtyards of radius 1 mm against a 10 mm minimum: 12 mm center spacing is
+unknown, 12.02 mm proves pass, and 11.99 mm proves defect.
 
 The standalone advisory score does not grade `keep_apart`; declare the registered
 criterion to obtain acceptance evidence. Component height is a separate
