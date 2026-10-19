@@ -125,7 +125,8 @@ By default the intent is filled in place. Pass a distinct captured `output=PATH`
 to keep the read intent writer-owned: the step then reads `intent` as a declared
 input and writes the bound projection only to `output`. Point the schematic
 stage's `intent` at that output. The [pod driver](pod-driver.md) requires this
-form, because a writer-editable file cannot also be a step output.
+form, because a writer-editable file cannot also be a step output. `captures`
+may be `.` when the intent's library paths are relative to the candidate root.
 
 Place this step before `schematic_stage.configuration`'s emit and annotate
 steps. `intent.json` is published in the step work directory only after complete

@@ -163,6 +163,12 @@ class BindingFillTests(unittest.TestCase):
         self.assertEqual(configuration(source, **kwargs)['writes'], {'intent.json': 'out/intent.json'})
         with self.assertRaisesRegex(ValueError, 'output intent'):
             configuration(source, **{**kwargs, 'output': 'refs.json'})
+        self.assertIn('.', configuration(source, **{**kwargs, 'captures': '.'})['argv'])
+        for unsafe in ('..', '/captures', './captures'):
+            with self.subTest(captures=unsafe), self.assertRaises(ValueError):
+                configuration(source, **{**kwargs, 'captures': unsafe})
+        # Libraries captured at the candidate root, as in the actual pod intent.
+        spec = configuration(source, output='intent.bound.json', **{**kwargs, 'captures': '.'})
         step = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'separate'
         receipt = run_step(step, self.root, spec, {'implementation': 1, 'source_candidate_id': 'synthetic', 'receipt_index': 1})
         self.assertEqual(validate_receipt(step), receipt)

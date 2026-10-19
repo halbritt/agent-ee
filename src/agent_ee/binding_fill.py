@@ -168,8 +168,10 @@ def configuration(source_root, *, intent, manifest, part_refs, deviations, captu
     writer-owned and makes the bound projection a coordinator output (pod campaigns)."""
     from .stage_receipts import validate_step
     output = intent if output is None else output
-    for path in (intent, output, manifest, part_refs, deviations, captures, *dependencies):
+    for path in (intent, output, manifest, part_refs, deviations, *dependencies):
         _path(path)
+    if captures != '.':  # '.' is the candidate root, as fill and the schematic stage accept
+        _path(captures)
     if output in {manifest, part_refs, deviations, *dependencies}:
         raise ValueError('binding source cannot be the output intent')
     if intent in {manifest, part_refs, deviations, *dependencies}:
