@@ -1,0 +1,186 @@
+"""Captured plane-plan producer; only planned top-level zone bytes may change."""
+import argparse
+import hashlib
+import math
+from pathlib import Path
+import shutil
+import uuid
+
+from . import benchmark, stage_receipts
+from .catalog import strict_json
+from .executor import execute
+from .storage import digest, identity, read_json, write_json
+
+SCHEMA = 'agent-ee.plane-plan/1'
+RESULT = 'agent-ee.add-planes/1'
+NAMESPACE = uuid.UUID('ac798940-3e63-57eb-9fe4-72405f8101df')
+SIBLINGS = ('.kicad_pro', '.kicad_prl', '.kicad_dru')
+
+
+def _number(value, name, low, high):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+        raise ValueError(f'{name} must be finite and within [{low}, {high}]')
+    return value
+
+
+def validate_plan(plan):
+    if not isinstance(plan, dict) or set(plan) != {'schema', 'zones'} or plan['schema'] != SCHEMA:
+        raise ValueError('expected agent-ee.plane-plan/1 with zones')
+    if not isinstance(plan['zones'], list) or not 1 <= len(plan['zones']) <= 64:
+        raise ValueError('plane plan requires 1..64 zones')
+    for zone in plan['zones']:
+        required = {'net', 'layer', 'outline', 'clearance_mm', 'min_width_mm', 'thermal', 'priority', 'island_removal'}
+        if not isinstance(zone, dict) or set(zone) != required:
+            raise ValueError('plane zone has unknown or missing fields')
+        if not isinstance(zone['net'], str) or not zone['net'].strip() or '\x00' in zone['net']:
+            raise ValueError('plane net must be an explicit nonempty name')
+        if not isinstance(zone['layer'], str) or zone['layer'] not in {'F.Cu', 'B.Cu', *(f'In{i}.Cu' for i in range(1, 31))}:
+            raise ValueError('plane layer must name one copper layer')
+        _number(zone['clearance_mm'], 'clearance_mm', .001, 100)
+        _number(zone['min_width_mm'], 'min_width_mm', .001, 100)
+        if isinstance(zone['priority'], bool) or not isinstance(zone['priority'], int) or not 0 <= zone['priority'] <= 100:
+            raise ValueError('plane priority must be an integer in [0, 100]')
+        if zone['island_removal'] not in ('always', 'never'):
+            raise ValueError('island_removal must explicitly be always or never')
+        thermal = zone['thermal']
+        if not isinstance(thermal, dict) or set(thermal) != {'connection', 'gap_mm', 'spoke_width_mm'}:
+            raise ValueError('thermal requires connection, gap_mm and spoke_width_mm')
+        if thermal['connection'] not in ('solid', 'thermal', 'tht_thermal'):
+            raise ValueError('unsupported plane pad connection')
+        _number(thermal['gap_mm'], 'thermal gap_mm', .001, 100)
+        _number(thermal['spoke_width_mm'], 'thermal spoke_width_mm', .001, 100)
+        outline = zone['outline']
+        if outline != 'board':
+            if not isinstance(outline, dict) or set(outline) != {'polygon_mm'}:
+                raise ValueError('outline must be board or an explicit polygon_mm')
+            points = outline['polygon_mm']
+            if not isinstance(points, list) or not 3 <= len(points) <= 4096:
+                raise ValueError('polygon needs 3..4096 vertices')
+            for point in points:
+                if not isinstance(point, list) or len(point) != 2:
+                    raise ValueError('polygon vertices must be [x_mm, y_mm]')
+                for value in point:
+                    _number(value, 'polygon coordinate', -10000, 10000)
+            if len({tuple(p) for p in points}) != len(points):
+                raise ValueError('polygon vertices must be distinct; closure is implicit')
+    return plan
+
+
+def zone_ids(plan):
+    return [str(uuid.uuid5(NAMESPACE, f'{identity(plan)}/{i}')) for i in range(len(plan['zones']))]
+
+
+def step(source_root, *, board, plan):
+    for path in (board, plan):
+        stage_receipts._relative(path, 'plane input')
+    return stage_receipts.validate_step(dict(schema='agent-ee.stage-step/1', step='add-planes', stage='routing',
+        argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P', '-m',
+              'agent_ee.add_planes', '--board', board, '--plan', plan],
+        mounts=[dict(source=str(Path(source_root).absolute()), at='/tool/agent-ee')], source='/tool/agent-ee',
+        version_argv=['/usr/bin/kicad-cli', 'version'], writes={board:'out/board.kicad_pcb'},
+        artifacts=['out'], adoptable_exits=[0], timeout_s=600))
+
+
+def splice_zones(original, generated, planned):
+    """Use existing span parser: retain every byte outside the named zone expressions."""
+    before, after = benchmark.parse(original), benchmark.parse(generated)
+    if benchmark.tag(before) != 'kicad_pcb' or benchmark.tag(after) != 'kicad_pcb':
+        raise ValueError('expected native KiCad boards')
+    replacements = {}
+    for node in benchmark.children(after, 'zone'):
+        uid = benchmark.uid(node)
+        if uid in planned:
+            if uid in replacements:
+                raise ValueError('duplicate planned zone UUID')
+            replacements[uid] = generated[node.start:node.end]
+    if set(replacements) != set(planned):
+        raise ValueError('native producer did not save the exact planned zone inventory')
+    edits = []
+    for node in benchmark.children(before, 'zone'):
+        uid = benchmark.uid(node)
+        if uid in replacements:
+            edits.append((node.start, node.end, replacements.pop(uid)))
+    # No whitespace outside zone spans is added or normalized.
+    if replacements:
+        edits.append((before.end - 1, before.end - 1, ''.join(replacements[u] for u in planned if u in replacements)))
+    return benchmark.replace_spans(original, edits)
+
+
+def _child(inputs, work, argv, timeout=180):
+    record = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.add_planes_probe', *argv], timeout=timeout)
+    if record['execution'] != 'ok' or record['exit_code'] != 0:
+        raise ValueError(f'native plane child {record["execution"]} exit {record["exit_code"]}: ' +
+                         (work/'console.log').read_text(errors='replace')[-2000:])
+    return record
+
+
+def _verify_inputs(candidate, board, plan, generated, out):
+    root = out/'verify-input'
+    for rel in [board, plan, *(str(Path(board).with_suffix(s)) for s in SIBLINGS)]:
+        source = candidate/rel
+        if not source.exists():
+            continue
+        target = root/rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    (root/board).write_text(generated, encoding='utf-8')
+    return root
+
+
+def generate(candidate, board, plan_path, out):
+    candidate, out = Path(candidate).resolve(), Path(out).absolute()
+    for path in (board, plan_path):
+        stage_receipts._relative(path, 'plane input')
+    plan = validate_plan(strict_json((candidate/plan_path).read_bytes()))
+    original = (candidate/board).read_bytes()
+    if out.exists() or out.is_symlink() or candidate in out.resolve().parents:
+        raise ValueError('plane output must be new and outside captured inputs')
+    out.mkdir(parents=True)
+    report = dict(schema=RESULT, execution='failed', outcome='unknown', plan_sha256=digest(candidate/plan_path),
+                  board_before=hashlib.sha256(original).hexdigest(), planned_zone_ids=zone_ids(plan), findings=[])
+    try:
+        _child(candidate, out/'native', ['apply', '/candidate/'+board, '/candidate/'+plan_path, '/work/board.kicad_pcb'])
+        raw = (out/'native/board.kicad_pcb').read_text(encoding='utf-8')
+        proposed = splice_zones(original.decode('utf-8'), raw, zone_ids(plan))
+        verified = _verify_inputs(candidate, board, plan_path, proposed, out)
+        _child(verified, out/'verify', ['inspect', '/candidate/'+board, '/candidate/'+plan_path, '/work/facts.json'])
+        facts = read_json(out/'verify/facts.json')
+        drc = execute(verified, out/'drc', ['/usr/bin/kicad-cli', 'pcb', 'drc', '--format', 'json',
+                      '--severity-all', '-o', '/work/report.json', '/candidate/'+board], timeout=180)
+        if drc['execution'] != 'ok' or drc['exit_code'] != 0:
+            raise ValueError('native plane DRC execution failed')
+        checks = read_json(out/'drc/report.json')
+        violations = checks.get('violations') if isinstance(checks, dict) else None
+        if (not isinstance(violations, list) or
+                any(not isinstance(v, dict) or not isinstance(v.get('items'), list) or
+                    any(not isinstance(item, dict) for item in v['items']) for v in violations)):
+            raise ValueError('native plane DRC report is malformed')
+        zone_errors = [v for v in violations if v.get('severity') == 'error' and
+                       any(item.get('uuid') in zone_ids(plan) for item in v.get('items', []))]
+        report.update(pcbnew_version=facts['pcbnew_version'], zones=facts['zones'],
+                      drc=dict(violations=len(violations), planned_zone_errors=zone_errors,
+                               report_sha256=digest(out/'drc/report.json')))
+        if zone_errors:
+            raise ValueError('native DRC found an error involving a planned zone')
+        if (candidate/board).read_bytes() != original or digest(candidate/plan_path) != report['plan_sha256']:
+            raise ValueError('captured plane inputs changed during production')
+        (out/'board.kicad_pcb').write_bytes(proposed.encode('utf-8'))
+        report.update(execution='ok', outcome='info', board_after=digest(out/'board.kicad_pcb'),
+                      limitation='Plane production is not electrical acceptance; full post-routing DRC and pour integrity remain required.')
+    except (OSError, ValueError) as exc:
+        report['findings'].append(dict(code='plane_production_refused', message=str(exc)))
+    write_json(out/'planes.json', report)
+    return report
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--board', required=True)
+    parser.add_argument('--plan', required=True)
+    args = parser.parse_args(argv)
+    report = generate('/candidate', args.board, args.plan, '/work/out')
+    return 0 if report['execution'] == 'ok' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
