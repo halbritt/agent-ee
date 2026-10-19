@@ -68,9 +68,11 @@ A receipt passes only after three checks. Its anchored digest must still
 match. `routing_adapter.verify_campaign_receipt` must re-verify it. Its verified
 routed board must be the reviewed board.
 
-The adapter report and the reference-continuity measurement are copied into
-`work/rf-routing/`. Each copy must match the receipt artifact and the report's
-retained hash. The record then has one of four statuses:
+The adapter report, the reference-continuity measurement and the router's
+native board facts (`validate/candidate-facts.json`, AGENTEE-258) are copied
+into `work/rf-routing/` as `adapter-report.json`, `reference-continuity.json`
+and `native-facts.json`. Each copy must match the receipt artifact and the
+report's retained hash. The record then has one of four statuses:
 
 | Status | Meaning |
 | --- | --- |
@@ -100,14 +102,38 @@ evidence:
 
 - the global signal-layer allowlist;
 - the matching reference-continuity grade, when the declared reference layer
-  and RF nets cover the requirement;
+  and RF nets cover the requirement, and its reference net;
+- the requirement's own per-net grade (`per_net_signal_layers`) and the
+  router's per-net item, when it declared one;
 - the board's observed RF copper layers.
 
-No registered check and no adapter grade enforces a per-net signal layer. A
-global F.Cu/B.Cu allowlist permits B.Cu, so it is not per-net enforcement.
-Each requirement is therefore `unknown`. It is `defect` when the verified
-reference-continuity grade reports a defect. It is never satisfied, and it is
-listed in `missing`.
+The requirement is graded with its own layers, never the router's declaration.
+`routing_adapter`'s per-net grader (`per_net_layer_grade`, AGENTEE-258) runs
+with `{net: [signal_layer]}` for each requirement net on the retained native
+facts of a `verified` record. Those facts must name the reviewed board's
+SHA-256. A global F.Cu/B.Cu allowlist, or a looser router declaration, never
+satisfies it. The status is:
+
+- `pass` only when all of the following hold. The grade passes: every segment,
+  arc and full via span of the net lies on the signal layer, so any via fails.
+  The verified layer policy declares a ground reference net on the reference
+  layer, covering the requirement nets. A net the statement names, such as
+  `GND` in `In1.Cu GND`, must equal that net, with a leading `/` ignored. Its
+  AGENTEE-231 `reference_continuity` item passes. The retained measurement, of
+  the same board, has a `continuous` record on that layer for every routed
+  track UUID of the net in the native facts.
+- `defect` when the grade finds copper off the signal layer, or the verified
+  reference-continuity grade reports a defect.
+- `unknown` otherwise. This covers absent, `missing_evidence`, `invalid` or
+  `stale` routing evidence; no retained facts; facts or a measurement of
+  another board; no routed copper; an undeclared or non-ground reference; a
+  reference on another layer; and an unknown continuity grade.
+
+A requirement that is not `pass` is listed in `missing`. A `pass` is layer and
+reference-plane evidence only. It establishes no impedance, coplanar gap,
+stitching, branch length (AGENTEE-261) or RF qualification. A board that the
+router withheld (`policy_failed`) is never delivered. The review then sees the
+unrouted candidate, so the receipt is `stale` and the requirement is `unknown`.
 
 The `rf` reviewer's schema requires `rf_assessment.binding_sha256` to equal the
 decision's `binding_sha256`. The review's candidate, run and packet identity
@@ -123,7 +149,7 @@ are already bound. Validation then refuses:
   (`ground_reference_continuity_return_paths`) without `verified` routing
   evidence whose reference continuity passed;
 - a `supported` layer-transition topic (`width_gap_layer_transitions_launches`)
-  while any RF layer requirement is not `pass`, which is always the case today;
+  while any RF layer requirement is not `pass`;
 - an applicable review whose `external_qualification` omits field solving,
   TDR or VNA for declared controlled impedance, receiver or installed GNSS
   measurements for a GNSS path, or installed BLE measurement for a BLE module.
@@ -262,4 +288,24 @@ contains captured vendor documents.
 
 ```sh
 PYTHONPATH=src:tests python3 -m unittest tests.test_rf_review -v
+AGENT_EE_KICAD_ROUTE_CHECKOUT=/path/to/kicad-route-a132899 \
+  PYTHONPATH=src python3 -m unittest tests.test_rf_layer_wiring -v
 ```
+
+[`test_rf_layer_wiring.py`](../tests/test_rf_layer_wiring.py) routes an
+original four-layer probe natively under declared layer and reference
+policies. It captures each receipt in a full `review` run with scripted
+reviewers, then replays the run with `verify`. Its requirement is SIGNAL on
+F.Cu over In1.Cu GND.
+
+- A compliant route passes, and the layer topic may be `supported`. An edited
+  `native-facts.json` copy fails `verify`.
+- A B.Cu route and a via to B.Cu were delivered under a global-only policy.
+  Both are `defect`.
+- A route without a declared reference is `unknown`.
+- A reference void makes the router withhold the board, so the requirement is
+  `unknown` (`stale`).
+- The clean receipt applied to another board is `stale`.
+- Facts edited inside the receipt make it `invalid`.
+
+Every non-`pass` case refuses a `supported` layer topic.

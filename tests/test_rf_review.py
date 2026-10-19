@@ -375,6 +375,150 @@ class RoutingEvidenceTests(unittest.TestCase):
                                       self.root, require_structured=False)
 
 
+class PerNetLayerEvidenceTests(unittest.TestCase):
+    """AGENTEE-259: the requirement's own layers graded on the verified receipt's native facts.
+
+    As in RoutingEvidenceTests only the receipt verifier's verdict is stubbed; the
+    native routed-board path is test_rf_layer_wiring."""
+    setUp = RoutingEvidenceTests.setUp
+
+    def capture(self, **kwargs):
+        run, record, _ = RoutingEvidenceTests.capture(self, **kwargs)
+        files, read = files_reader(self.inputs)
+        routing = rf_review.retained_routing(run)
+        return run, record, rf_review.decide(self.manifest["scope"], files, read, routing,
+                                             rf_review.retained_evidence(run, routing))
+
+    def evidence(self, tracks=None, vias=(), measured=None, policy=POLICY, facts_sha=None):
+        from agent_ee.kicad_route_attempt import POLICY_FILE
+        sha = self.files["design/board.kicad_pcb"]
+        self.track = {"uuid": "t1", "kind": "segment", "net": "/ANT_RF", "layer": "F.Cu", "width": 335000,
+                      "start": [10000000, 10000000], "end": [30000000, 10000000]}
+        tracks = [self.track] if tracks is None else tracks
+        facts = {"sha256": facts_sha or sha, "tracks": tracks, "vias": list(vias),
+                 "copper_layers": [{"name": n} for n in ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")]}
+        if measured is None:
+            measured = {"schema": "agent-ee.reference-continuity/2", "board_sha256": sha, "problems": [], "vias": [],
+                        "tracks": [{"uuid": t["uuid"], "net": t["net"], "layer": t["layer"],
+                                    "reference_layer": "In1.Cu", "status": "continuous"} for t in tracks]}
+        routing = self.receipt.parent / "run/routing"
+        (routing / "attempt/validate").mkdir(parents=True, exist_ok=True)
+        write_json(routing / "attempt" / rf_review.FACTS_FILE, facts)
+        write_json(routing / "attempt" / POLICY_FILE, measured)
+        write_json(routing / "adapter-report.json", {"request": {"layer_policy": policy}, "retained": {
+            "attempt/" + POLICY_FILE: digest(routing / "attempt" / POLICY_FILE),
+            "attempt/" + rf_review.FACTS_FILE: digest(routing / "attempt" / rf_review.FACTS_FILE)}})
+        write_json(self.receipt, {"artifacts": {"routing/adapter-report.json": digest(routing / "adapter-report.json")}})
+
+    def requirement(self, **capture):
+        run, record, decision = self.capture(**capture)
+        [requirement] = decision["rf_layer_requirements"]
+        return requirement, decision, run
+
+    def test_verified_facts_and_continuity_satisfy_the_requirement(self):
+        self.evidence()
+        requirement, decision, run = self.requirement()
+        self.assertEqual(requirement["status"], "pass", requirement)
+        grade = requirement["related_evidence"]["per_net_signal_layers"]
+        self.assertEqual((grade["declared"], grade["board_sha256"]),
+                         ({"/ANT_RF": ["F.Cu"]}, self.files["design/board.kicad_pcb"]))
+        self.assertEqual(decision["routing_adapter"]["native_facts"],
+                         {"path": "work/rf-routing/native-facts.json",
+                          "sha256": digest(run / "work/rf-routing/native-facts.json")})
+        self.assertFalse(any("RF layer requirement" in m for m in decision["missing"]))
+        self.assertIn("not impedance qualification", requirement["reason"])
+
+    def test_wrong_layer_and_via_are_defects_on_verified_facts(self):
+        via = {"uuid": "v1", "net": "/ANT_RF", "layers": ["F.Cu", "B.Cu"], "via_type": "through",
+               "position": [20000000, 10000000], "diameter": 600000, "drill": 300000}
+        for name, change in (("back", {"tracks": [{"layer": "B.Cu"}]}), ("via", {"vias": [via]})):
+            with self.subTest(name=name):
+                self.evidence()
+                tracks = [dict(self.track, **change["tracks"][0])] if "tracks" in change else None
+                self.evidence(tracks=tracks, vias=change.get("vias", ()))
+                requirement, decision, _ = self.requirement()
+                self.assertEqual(requirement["status"], "defect", requirement)
+                self.assertTrue(any("RF layer requirement" in m and "defect" in m for m in decision["missing"]))
+        # A global allowlist covering B.Cu and a passing continuity grade do not excuse it.
+        self.assertEqual(requirement["related_evidence"]["reference_continuity"], "pass")
+
+    def test_incomplete_or_unbound_evidence_stays_unknown(self):
+        sha = self.files["design/board.kicad_pcb"]
+        other = dict(POLICY, reference=dict(POLICY["reference"], layers=["In2.Cu"]))
+        cases = {
+            "facts_of_another_board": dict(facts_sha="0" * 64),
+            "untracked_segment": dict(measured={"schema": "agent-ee.reference-continuity/2", "board_sha256": sha,
+                                                "problems": [], "vias": [], "tracks": []}),
+            "measurement_of_another_board": dict(measured={"schema": "agent-ee.reference-continuity/2",
+                "board_sha256": "0" * 64, "problems": [], "vias": [], "tracks": [{"uuid": "t1", "net": "/ANT_RF",
+                "layer": "F.Cu", "reference_layer": "In1.Cu", "status": "continuous"}]}),
+            "reference_on_another_layer": dict(policy=other),
+            "reference_not_ground": dict(policy=dict(POLICY, reference=dict(POLICY["reference"], net="/VCC"))),
+            "reference_other_named_net": dict(policy=dict(POLICY, reference=dict(POLICY["reference"], net="/AGND"))),
+            "no_reference_declared": dict(policy={k: v for k, v in POLICY.items() if k != "reference"}),
+            "no_routed_copper": dict(tracks=[]),
+        }
+        for name, change in cases.items():
+            with self.subTest(name=name):
+                self.evidence(**change)
+                requirement, decision, _ = self.requirement()
+                self.assertEqual(requirement["status"], "unknown", requirement)
+                self.assertTrue(any("RF layer requirement" in m and "unknown" in m for m in decision["missing"]))
+        self.evidence()
+        for name, capture in (("continuity_unknown", dict(summary={**self.summary, "layer_policy": grade("unknown")})),
+                              ("stale", dict(summary={**self.summary, "candidate_sha256": "0" * 64})),
+                              ("absent", dict(context=None))):
+            with self.subTest(name=name):
+                self.assertEqual(self.requirement(**capture)[0]["status"], "unknown")
+        self.assertEqual(self.requirement(summary={**self.summary, "layer_policy": grade("defect")})[0]["status"],
+                         "defect")
+
+    def test_tampered_facts_are_invalid_and_change_the_binding(self):
+        self.evidence()
+        facts = self.receipt.parent / "run/routing/attempt" / rf_review.FACTS_FILE
+        original = facts.read_bytes()
+        facts.write_bytes(original.replace(b'"F.Cu"', b'"B.Cu"', 1))
+        _, record, decision = self.capture()
+        self.assertEqual(record["status"], "invalid")
+        self.assertIn("native board facts differ", record["reason"])
+        self.assertEqual(decision["rf_layer_requirements"][0]["status"], "unknown")
+        facts.write_bytes(original)
+        run, _, decision = self.capture()
+        copied = run / "work/rf-routing/native-facts.json"
+        copied.write_bytes(copied.read_bytes().replace(b'"F.Cu"', b'"B.Cu"', 1))
+        files, read = files_reader(self.inputs)
+        routing = rf_review.retained_routing(run)
+        after = rf_review.decide(self.manifest["scope"], files, read, routing, rf_review.retained_evidence(run, routing))
+        self.assertEqual(after["routing_adapter"]["status"], "invalid")
+        self.assertEqual(after["rf_layer_requirements"][0]["status"], "unknown")
+        self.assertNotEqual(after["binding_sha256"], decision["binding_sha256"])
+
+    def test_layer_topic_is_supported_only_on_a_passing_requirement(self):
+        (self.root / "inputs/design").mkdir(parents=True)
+        (self.root / "inputs/design/board.kicad_pcb").write_text(RF_BOARD)
+        cite = [{"path": "inputs/design/board.kicad_pcb", "locator": "RF segment", "lines": [21, 21]}]
+
+        def assessment(decision):
+            topics = [{"topic": t, "status": "supported" if t == "width_gap_layer_transitions_launches"
+                       else "missing_evidence", "summary": "s",
+                       "evidence": cite if t == "width_gap_layer_transitions_launches" else [],
+                       "missing_evidence": [] if t == "width_gap_layer_transitions_launches" else ["bench"]}
+                      for t in rf_review.TOPICS]
+            return {"binding_sha256": decision["binding_sha256"], "topics": topics, "qualification_claimed": False,
+                    "external_qualification": [{"method": m, "reason": "r", "scope": "s"}
+                                               for m in ("field_solver", "installed_gnss_measurement")]}
+        for tracks, ok in ((None, True), ([{"uuid": "t1", "kind": "segment", "net": "/ANT_RF", "layer": "B.Cu",
+                             "width": 335000, "start": [0, 0], "end": [1000000, 0]}], False)):
+            self.evidence(tracks=tracks)
+            run, _, decision = self.capture()
+            write_json(self.root / "packet.json", {"rf_review": decision})
+            if ok:
+                rf_review.validate_assessment(assessment(decision), [], self.root, require_structured=False)
+            else:
+                with self.assertRaisesRegex(ValueError, "unenforced"):
+                    rf_review.validate_assessment(assessment(decision), [], self.root, require_structured=False)
+
+
 class RoleTests(unittest.TestCase):
     def test_rf_role_is_a_dedicated_validated_profile_role(self):
         validate_profile(rf_profile())

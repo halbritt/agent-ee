@@ -264,12 +264,16 @@ hash with the candidate it assesses. `routing_adapter.verify` regrades the item
 from the retained facts, so an edited item fails replay. A board whose copper
 layers do not use the canonical `F.Cu`, `In<n>.Cu`, `B.Cu` names is unknown.
 
+The [RF review](rf-review.md#per-net-rf-layer-requirements) retains these native facts with
+a verified receipt. It grades the captured requirement's own layers with this function.
+Satisfaction also needs passing reference continuity over every routed track.
+
 `per_net_layer_grade(policy, facts, validated_board_sha256)` returns unknown when
 the per-net declaration is absent. A global allowlist is never evidence for an
 undeclared per-net requirement. To preserve existing global-only verdicts, the
 adapter adds this item to its overall policy grade only when declared; consumers
 must treat a missing item as unknown for any per-net requirement. There is no new
-scope check kind or automatic RF requirement satisfaction. AGENTEE-257 owns the
+scope check kind, and the adapter grade alone satisfies no RF requirement. AGENTEE-257 owns the
 pod's policy determination and campaign adoption; this mechanism does not choose
 those values. Frozen adapter bindings must be recaptured after this change.
 

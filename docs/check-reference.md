@@ -386,6 +386,10 @@ checks plane fill under the full routed length. Defect or unknown grades withhol
 the routed candidate. An absent per-net declaration is unknown for that obligation;
 a passing global layer grade does not satisfy it. The item records the graded
 board's `board_sha256` for candidate binding. This adds no scope check kind.
+The [RF review](rf-review.md#per-net-rf-layer-requirements) grades a captured
+per-net signal/reference requirement's own layers on the verified receipt's
+retained native facts. It is `pass` only with passing reference continuity under
+every routed track of the reviewed board; otherwise it is `defect` or `unknown`.
 
 The [routing check](routing-rules.md) accepts a captured `params.routing_rules`
 JSON document. It compiles explicit bounds into isolated native custom-rule
