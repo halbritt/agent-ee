@@ -42,3 +42,10 @@ authors an isolated U3/C2/U4 schematic with this generator and proves that an
 exact disposition can pass while a mismatched ID fails. These synthetic test
 entries are not real-pod adjudications. Plain info remains unrestricted and a
 disposition on plain info stays unused.
+
+The test reconstructs the correction from `correction.patch`, the exact diff
+between the pinned and proposed commits (including the upstream tests and
+notes). `correction-LICENSE.txt` retains Andrew Klofas's MIT notice. The source
+schematic remains an owned fixture; the patch is separately attributed software.
+Both installation identities in `expected.json` are checked before any corrected
+analyzer runs; no corrected Git objects or alternate checkout are required.

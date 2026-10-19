@@ -1,0 +1,1077 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 5f28700..4735af7 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -82,6 +82,9 @@ jobs:
+       - name: search_lcsc unit tests
+         run: python3 -m unittest skills/lcsc/scripts/test_search_lcsc.py
+ 
++      - name: PP-001 / PR-001 classification unit tests
++        run: python3 -m unittest skills/kicad/scripts/test_power_and_bus_classification.py
++
+       - name: datasheet_verify v1.4 cache round-trip smoke
+         run: python3 skills/datasheets/scripts/_smoke_v14_roundtrip.py
+ 
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1a34453..2e78c00 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,19 @@ This project follows [Semantic Versioning](https://semver.org/). Each release is
+ 
+ ---
+ 
++## Unreleased
++
++### Fixed
++
++- PR-001 no longer accepts I2C-capable peers' CLK/DO-like pin aliases as SPI proof. The clock/data pair must share one peer with no I2C role on those distinct nets. Unrelated clock/data peers and a single clock/data net remain unresolved.
++- PP-001 recognizes ANODE/CATHODE and explicit pin-function polarity metadata for two-pin gate diodes. Numeric pin numbers alone, conflicting metadata and unknown polarity retain errors.
++
++
++- PP-001 (`audit_power_pin_dc_paths`) no longer reports a pin as AC-coupled when the netlist sources it under stated assumptions, and never clears it silently. A pin that reaches no named rail or connector is re-walked: another component's `power_out` pin counts as a source once that component is itself powered (a least fixed point, so regulators cannot vouch for each other in a loop), and a P-MOSFET is crossed drain↔source only when its gate is a ground net or has a resistor to ground with no competing pull-up (a capacitor, a gate-source clamp diode or an anode-on-gate diode to ground is allowed). Such a pin gets an `info` PP-001 finding whose `assumptions` list names the trusted `power_out` regulation (transitively) and the unproven `|VGS(th)|`/clamp margins. A competing gate pull-up (the divider ratio is reported), a driven gate, a gate on a rail, a floating gate or a diode that can pull the gate up keeps the error and names the unresolved conduction in `unresolved`. An unpowered `power_out` owner, the audited IC's own `power_out`, N-channel FETs, gate-net paths and capacitor-only supplies stay reported.
++- PR-001 (`validate_i2c_bus`) classifies a dual-mode device's SDA/SCL pins as SPI only on positive topology evidence: its chip-select is driven by another component's output/bidirectional/tri-state pin AND other components carry SPI-only pin names (SCK/CLK/SPC on the clock net, MOSI/SDI/DIN/… on the data net). An `info` finding records the evidence. A driven chip-select without that topology leaves the mode unresolved: an `info` finding says so and the missing-pull-up errors stay. Both notes name the evidence components, so they never take a pull-up error's finding identity.
++
++---
++
+ ## v2.3.1 — 2026-10-06
+ 
+ **Theme: maintenance — one field-recognition gap from the field, six v2.3.0 follow-ups, two regressions the corpus gate caught before the tag, and three defects a fresh-eyes soak found on a real board. Every change gated over the full corpus; the one output change that is not additive is the MPN re-ranking.**
+diff --git a/skills/kicad/scripts/README.md b/skills/kicad/scripts/README.md
+index dbb2ed4..89f910e 100644
+--- a/skills/kicad/scripts/README.md
++++ b/skills/kicad/scripts/README.md
+@@ -387,3 +387,23 @@ The harness is the authoritative validation layer. For the legacy `batchtest` di
+ - **Vout estimation**: Feedback divider Vout uses hardcoded Vref guesses (0.6, 0.8, 1.0, 1.22, 1.25V) without a component database
+ - **Regulator output_rail**: Switching regulators sometimes show null output_rail when the power net is on the inductor output side
+ - **Eagle files**: Not parseable — output 0 components
++
++### PP-001 / PR-001 conservative topology boundaries
++
++PP-001 records `power_out` trust and held-low P-MOSFET threshold/clamp margins
++in explicit `assumptions` (`source_path: assumed`). An info severity does not
++establish conduction or regulation; consumers must require an evidence-backed
++disposition before using such a finding for acceptance. Competing or unknown
++gate paths retain errors. Diode polarity uses A/K, ANODE/CATHODE, or explicit
++`pin_function` metadata on net pins/component pins; numeric pin numbers alone
++never establish orientation. Conflicting or missing polarity and multi-pin
++diodes remain unresolved.
++
++PR-001 requires an actively driven chip-select plus a clock/data pin pair on
++one peer, on distinct nets. Peers with I2C aliases (including composite
++SCL/SPC, SDA/SDI/SDO, I2C_CLK and SDA_DO) or known I2C part roles cannot establish
++SPI. A clock token on one part and a data token on an unrelated part do not
++establish SPI. Ambiguous mode retains I2C missing-pull-up errors.
++
++Run the owned contract regressions with:
++`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest skills/kicad/scripts/test_power_and_bus_classification.py -v`.
+diff --git a/skills/kicad/scripts/signal_detectors.py b/skills/kicad/scripts/signal_detectors.py
+index 8233c6f..53dde75 100644
+--- a/skills/kicad/scripts/signal_detectors.py
++++ b/skills/kicad/scripts/signal_detectors.py
+@@ -2890,6 +2890,25 @@ def detect_opamp_circuits(ctx: AnalysisContext) -> list[dict]:
+     return opamp_circuits
+ 
+ 
++def _is_pchannel_fet(comp: dict) -> bool:
++    """True if lib_id, ki_keywords, value or description name a P-channel FET."""
++    lib_lower = (comp.get("lib_id") or "").lower()
++    if any(k in lib_lower for k in
++           ("pmos", "p-channel", "p_channel", "pchannel", "q_pmos", "p_jfet")):
++        return True
++    kw_lower = (comp.get("keywords") or "").lower()
++    if any(k in kw_lower for k in
++           ("p-channel", "pchannel", "pmos", "p-mos", "p-mosfet")):
++        return True
++    val_lower = (comp.get("value") or "").lower()
++    if any(k in val_lower for k in
++           ("pmos", "p-channel", "p_channel", "pchannel", "dmp")):
++        return True
++    desc_lower = (comp.get("description") or "").lower()
++    return any(k in desc_lower for k in
++               ("p-channel", "p-mosfet", "pmos", "p-mos"))
++
++
+ def detect_bridge_circuits(ctx: AnalysisContext) -> tuple[list[dict], set, dict]:
+     """Detect gate driver / bridge topology.
+ 
+@@ -3055,19 +3074,7 @@ def detect_transistor_circuits(ctx: AnalysisContext, matched_fets: set, fet_pins
+         # Detect P-channel vs N-channel from lib_id, ki_keywords, and value
+         lib_lower = comp.get("lib_id", "").lower()
+         val_lower = comp.get("value", "").lower()
+-        kw_lower = comp.get("keywords", "").lower()
+-        is_pchannel = any(k in lib_lower for k in
+-                         ("pmos", "p-channel", "p_channel", "pchannel", "q_pmos", "p_jfet"))
+-        if not is_pchannel:
+-            is_pchannel = any(k in kw_lower for k in
+-                             ("p-channel", "pchannel", "pmos", "p-mos", "p-mosfet"))
+-        if not is_pchannel:
+-            is_pchannel = any(k in val_lower for k in
+-                             ("pmos", "p-channel", "p_channel", "pchannel", "dmp"))
+-        if not is_pchannel:
+-            desc_lower = comp.get("description", "").lower()
+-            is_pchannel = any(k in desc_lower for k in
+-                             ("p-channel", "p-mosfet", "pmos", "p-mos"))
++        is_pchannel = _is_pchannel_fet(comp)
+ 
+         # Gate drive analysis
+         gate_comps = _get_net_components(ctx, gate_net, ref) if gate_net else []
+@@ -4482,8 +4489,17 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+       - inductors / ferrite beads                       (bridge)
+       - fuses / polyfuses                               (bridge)
+       - solder jumpers with default_state='bridged'    (bridge)
+-    and REJECT crossing capacitors. If no named power rail is reachable
++    and REJECT crossing capacitors. A net counts as sourced when it is a
++    named power rail or carries a connector. If no source is reachable
+     within 2 hops, emit PP-001 at severity=high.
++
++    A pin that fails that walk is re-walked under stated assumptions: a
++    power_out pin of another component that is itself powered counts as a
++    source, and a P-MOSFET whose gate the netlist holds at ground is
++    crossed drain<->source. A pin sourced only that way gets an info
++    PP-001 finding listing the assumptions instead of the error. A
++    P-MOSFET whose conduction the netlist cannot prove (competing gate
++    pull-up, driven gate) is not crossed and is named in the error.
+     """
+     findings: list[dict] = []
+     nets = ctx.nets or {}
+@@ -4549,7 +4565,264 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+                 nets_with_connector.add(net_name_c)
+                 break
+ 
++    # A pin declared power_out by another real component (regulator output,
++    # switch node, reference buffer) can source its net, but only once that
++    # component is itself shown to be powered (all of its non-ground power_in
++    # pins reach a source). The declared pin type and the regulation are
++    # trusted, never proven, so a pin cleared this way is reported as an
++    # info finding that names the assumption. The audited IC's own power_out
++    # pins and virtual '#' symbols (PWR_FLAG) are never sources.
++    power_out_pins: dict[str, list[tuple[str, str]]] = {}
++    for net_name_o, net_info_o in nets.items():
++        for p in net_info_o.get("pins", []):
++            oref = p.get("component") or ""
++            if oref and not oref.startswith("#") and p.get("pin_type") == "power_out":
++                label = f"{oref}.{p.get('pin_number', '')}"
++                if p.get("pin_name"):
++                    label += f" ({p.get('pin_name')})"
++                power_out_pins.setdefault(net_name_o, []).append((oref, label))
++
++    # P-MOSFET switch conduction. The channel (drain <-> source, never the
++    # gate) is crossed only when the netlist holds the gate at ground: the
++    # gate is a ground net, or has a resistor to ground with no competing
++    # DC path that can pull it toward another net. A competing pull-up makes
++    # VGS a divider ratio of the source rail; without VGS(th) evidence that
++    # conduction is unresolved, and the finding says so. ICs, transistors or
++    # connectors on the gate (a controlled switch), a gate on a rail, a
++    # floating gate and diodes of unknown orientation are also unresolved.
++    fet_roles: dict[str, dict[str, set[str]]] = {}
++    for net_name_f, net_info_f in nets.items():
++        for p in net_info_f.get("pins", []):
++            fref = p.get("component") or ""
++            if (components.get(fref) or {}).get("type") != "transistor":
++                continue
++            pn = (p.get("pin_name") or "").upper()
++            base = pn.rstrip("0123456789").rstrip("_")
++            role = ("gate" if "GATE" in pn or base == "G" else
++                    "drain" if "DRAIN" in pn or base == "D" else
++                    "source" if "SOURCE" in pn or base == "S" else None)
++            if role:
++                fet_roles.setdefault(fref, {}).setdefault(role, set()).add(net_name_f)
++
++    def _ohms(ref: str) -> float | None:
++        return parse_value((components.get(ref) or {}).get("value", ""),
++                           component_type="resistor")
++
++    def _diode_polarity(pin: dict, diode: dict) -> str | None:
++        """Read explicit polarity names/functions, never infer from pin numbers."""
++        labels = [pin.get("pin_name"), pin.get("pin_function")]
++        for cp in diode.get("pins", []):
++            if str(cp.get("number")) == str(pin.get("pin_number")):
++                labels.extend((cp.get("name"), cp.get("pin_function")))
++        roles = {role for label in labels
++                 if (role := {"A": "A", "ANODE": "A", "K": "K", "CATHODE": "K"}
++                     .get((label or "").strip().upper()))}
++        return next(iter(roles)) if len(roles) == 1 else None
++
++    def _pmos_conduction(ref: str) -> tuple[set[str], str, str] | None:
++        """(channel nets, assumption, unresolved reason) for a P-MOSFET.
++
++        Exactly one of assumption / unresolved reason is non-empty. None
++        when ``ref`` is not a P-MOSFET with one gate, drain and source net.
++        """
++        c = components.get(ref) or {}
++        if not _is_pchannel_fet(c) or "jfet" in (c.get("lib_id") or "").lower():
++            return None
++        roles = fet_roles.get(ref, {})
++        if any(len(roles.get(r, ())) != 1 for r in ("gate", "drain", "source")):
++            return None
++        (gate,), (drain,), (source,) = (roles["gate"], roles["drain"],
++                                        roles["source"])
++        if len({gate, drain, source}) != 3:
++            return None
++        channel = {drain, source}
++        threshold = (f"conduction assumes the {source!r} rail exceeds "
++                     f"|VGS(th)| of {ref} (no threshold in the netlist)")
++        if ctx.is_ground(gate):
++            return channel, f"{ref} gate tied to ground; {threshold}", ""
++        if ctx.is_power_net(gate):
++            return channel, "", f"{ref} gate is on rail {gate!r}"
++        pulldowns: list[str] = []
++        competing: list[str] = []
++        clamps: list[str] = []
++        for gp in nets.get(gate, {}).get("pins", []):
++            gref = gp.get("component") or ""
++            if not gref or gref == ref:
++                continue
++            gtype = ((components.get(gref) or {}).get("type") or "").lower()
++            far = {n for _pn, n, _pt in ref_pins.get(gref, []) if n != gate}
++            if gtype == "capacitor":
++                continue
++            if gtype == "resistor":
++                if far and all(ctx.is_ground(n) for n in far):
++                    pulldowns.append(gref)
++                else:
++                    competing.append(gref)
++                continue
++            if gtype == "diode":
++                # Anode on the gate: the diode only sinks gate current
++                # toward ground, or clamps |VGS| at its breakdown voltage
++                # when its cathode is the source. Cathode on the gate with
++                # the anode at ground never conducts in operation. Any
++                # other orientation or target can pull the gate up.
++                diode = components.get(gref) or {}
++                diode_pins = [p for ni in nets.values() for p in ni.get("pins", [])
++                              if p.get("component") == gref]
++                own = _diode_polarity(gp, diode)
++                opposite = [p for p in diode_pins if p is not gp]
++                if (len(diode_pins) != 2 or len(opposite) != 1 or own is None
++                        or _diode_polarity(opposite[0], diode) != {"A": "K", "K": "A"}[own]):
++                    competing.append(gref)
++                    continue
++                if own == "A" and far and all(n == source or ctx.is_ground(n)
++                                              for n in far):
++                    if source in far:
++                        clamps.append(gref)
++                    continue
++                if own == "K" and far and all(ctx.is_ground(n) for n in far):
++                    continue
++                competing.append(gref)
++                continue
++            return channel, "", (f"{ref} gate is driven by {gref} "
++                                 f"({gtype or 'unknown type'}); a controlled "
++                                 f"switch's conduction is not proven")
++        if competing:
++            detail = "values or pull-up targets unknown"
++            ups = [r for r in competing
++                   if (components.get(r) or {}).get("type") == "resistor"]
++            if (ups == competing and pulldowns
++                    and all(_ohms(r) for r in ups + pulldowns)
++                    and all({n for _pn, n, _pt in ref_pins.get(r, [])} == {gate, source}
++                            for r in ups)):
++                r_up = 1.0 / sum(1.0 / _ohms(r) for r in ups)
++                r_down = 1.0 / sum(1.0 / _ohms(r) for r in pulldowns)
++                detail = (f"divider {'/'.join(ups)} to source over "
++                          f"{'/'.join(pulldowns)} to ground implies "
++                          f"VGS ~ -{r_up / (r_up + r_down):.3g} x V({source})")
++            return channel, "", (
++                f"{ref} gate {gate!r} has a competing pull-up "
++                f"({', '.join(sorted(competing))}): {detail}; no VGS(th) "
++                f"evidence in the netlist, so conduction is unresolved")
++        if not pulldowns:
++            return channel, "", f"{ref} gate {gate!r} has no resistor to ground"
++        assumption = f"{ref} gate held at ground by {', '.join(sorted(pulldowns))}; {threshold}"
++        if clamps:
++            assumption += (f" and that the gate-source clamp {', '.join(sorted(clamps))} "
++                           f"breaks down above |VGS(th)|")
++        return channel, assumption, ""
++
++    pmos = {r: res for r in fet_roles if (res := _pmos_conduction(r))}
++
++    def _walk(start_net: str, ref: str, extended: bool,
++              trusted: dict[str, list[str]]):
++        """Walk ≤MAX_HOPS DC bridges from start_net looking for a source.
++
++        Returns (reached, saw_capacitor, visited, assumptions, unresolved).
++        ``extended`` False is the plain rule: named rails and connectors
++        only. True also accepts power_out pins of ``trusted`` components and
++        crosses P-MOSFETs whose gate the netlist holds at ground; each such
++        step, and the assumptions a trusted component is powered under, is
++        returned as an assumption.
++        """
++        assumptions: list[str] = []
++        unresolved: list[str] = []
++
++        def sourced(net: str, start: bool) -> bool:
++            if ctx.is_power_net(net) and not ctx.is_ground(net):
++                return True
++            if not start and net in nets_with_connector:
++                return True
++            if extended:
++                for oref, label in power_out_pins.get(net, []):
++                    if oref != ref and oref in trusted:
++                        note = (f"{label} is declared power_out and {oref} is "
++                                f"powered in the netlist; its output "
++                                f"regulation is trusted, not verified")
++                        for upstream in [note] + trusted[oref]:
++                            if upstream not in assumptions:
++                                assumptions.append(upstream)
++                        return True
++            return False
++
++        frontier: set[str] = {start_net}
++        visited: set[str] = {start_net}
++        reached = sourced(start_net, True)
++        # Track whether any capacitor blocked the walk — only emit PP-001
++        # when a cap-only path exists (not just "no source declared").
++        # That distinguishes the AC-coupling bug from missing-PWR_FLAG
++        # which RS-001 already covers.
++        saw_capacitor = False
++        for _hop in range(MAX_HOPS):
++            if reached:
++                break
++            next_frontier: set[str] = set()
++            for cur_net in frontier:
++                for cp in nets.get(cur_net, {}).get("pins", []):
++                    cref = cp.get("component") or ""
++                    if not cref or cref == ref:
++                        continue
++                    if _is_capacitor(cref):
++                        saw_capacitor = True
++                        continue
++                    hop_note = ""
++                    if extended and cref in pmos:
++                        channel, assumption, why = pmos[cref]
++                        # Channel only: drain <-> source, never via gate.
++                        if cur_net not in channel:
++                            continue
++                        if why:
++                            if why not in unresolved:
++                                unresolved.append(why)
++                            continue
++                        hop_nets, hop_note = channel, assumption
++                    elif _bridges_dc(cref):
++                        hop_nets = {n for _pn, n, _pt in ref_pins.get(cref, [])}
++                    else:
++                        continue
++                    for other_net in sorted(hop_nets):
++                        if other_net == cur_net or other_net in visited:
++                            continue
++                        visited.add(other_net)
++                        next_frontier.add(other_net)
++                        if hop_note and hop_note not in assumptions:
++                            assumptions.append(hop_note)
++                        if sourced(other_net, False):
++                            reached = True
++            frontier = next_frontier
++            if not frontier:
++                break
++        return reached, saw_capacitor, visited, assumptions, unresolved
++
+     MAX_HOPS = 2
++
++    def _supply_pins(ref: str) -> list[str]:
++        return [n for _pn, n, pt in ref_pins.get(ref, [])
++                if pt == "power_in" and not ctx.is_ground(n)]
++
++    # Least fixed point of "powered" power_out owners: a component joins
++    # only when every non-ground power_in pin reaches a source through
++    # components already admitted, so no loop can vouch for itself.
++    trusted: dict[str, list[str]] = {}
++    owners = sorted({o for pins in power_out_pins.values() for o, _l in pins})
++    changed = True
++    while changed:
++        changed = False
++        for oref in owners:
++            supply = _supply_pins(oref)
++            if oref in trusted or not supply:
++                continue
++            upstream: list[str] = []
++            for n in supply:
++                if n in nets_with_connector:
++                    continue
++                reached, _c, _v, assumed, _u = _walk(n, oref, True, trusted)
++                if not reached:
++                    break
++                upstream += [a for a in assumed if a not in upstream]
++            else:
++                trusted[oref] = upstream
++                changed = True
++
+     # Track (ref, pin) pairs already checked to avoid duplicate findings.
+     seen: set[tuple[str, str]] = set()
+ 
+@@ -4579,46 +4852,8 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+                 continue
+             seen.add(key)
+ 
+-            frontier: set[str] = {net_name}
+-            visited: set[str] = {net_name}
+-            # A power_in pin directly on a named power rail already has DC.
+-            reached_rail = (ctx.is_power_net(net_name)
+-                            and not ctx.is_ground(net_name))
+-            # Track whether any capacitor blocked the walk — only emit PP-001
+-            # when a cap-only path exists (not just "no source declared").
+-            # That distinguishes the AC-coupling bug from missing-PWR_FLAG
+-            # which RS-001 already covers.
+-            saw_capacitor_on_path: bool = False
+-            for _hop in range(MAX_HOPS):
+-                if reached_rail:
+-                    break
+-                next_frontier: set[str] = set()
+-                for cur_net in frontier:
+-                    cur_info = nets.get(cur_net, {})
+-                    for cp in cur_info.get("pins", []):
+-                        cref = cp.get("component") or ""
+-                        if not cref or cref == ref:
+-                            continue
+-                        if _is_capacitor(cref):
+-                            saw_capacitor_on_path = True
+-                            continue
+-                        if not _bridges_dc(cref):
+-                            continue
+-                        for _other_pn, other_net, _pt in ref_pins.get(cref, []):
+-                            if other_net == cur_net:
+-                                continue
+-                            if other_net in visited:
+-                                continue
+-                            visited.add(other_net)
+-                            next_frontier.add(other_net)
+-                            if ((ctx.is_power_net(other_net)
+-                                    and not ctx.is_ground(other_net))
+-                                    or other_net in nets_with_connector):
+-                                reached_rail = True
+-                frontier = next_frontier
+-                if not frontier:
+-                    break
+-
++            reached_rail, saw_capacitor_on_path, visited, _a, _u = _walk(
++                net_name, ref, False, trusted)
+             if reached_rail:
+                 continue
+             # Only emit if a capacitor was present on the path — this is the
+@@ -4631,6 +4866,43 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+             pin_label = f"{ref}.{pin_num}"
+             if pin_name:
+                 pin_label += f" ({pin_name})"
++
++            reached_ext, _cap, visited_ext, assumptions, unresolved = _walk(
++                net_name, ref, True, trusted)
++            if reached_ext:
++                findings.append({
++                    "detector": "audit_power_pin_dc_paths",
++                    "rule_id": "PP-001",
++                    "severity": "info",
++                    "confidence": "heuristic",
++                    "evidence_source": "topology",
++                    "category": "power",
++                    "summary": (f"IC power pin {pin_label} is sourced only "
++                                f"under stated assumptions (net {net_name!r})"),
++                    "description": (
++                        f"Pin {pin_label} reaches no named power rail or "
++                        f"connector through plain DC bridges. It is sourced "
++                        f"only if these assumptions hold: "
++                        + "; ".join(assumptions) + "."),
++                    "assumptions": list(assumptions),
++                    "components": [ref],
++                    "nets": sorted(visited_ext)[:10],
++                    "pins": [pin_label],
++                    "start_net": net_name,
++                    "visited_nets": sorted(visited_ext),
++                    "source_path": "assumed",
++                    "recommendation": (
++                        "Confirm each assumption against the datasheets "
++                        "(declared power_out regulation, P-MOSFET VGS(th) "
++                        "and clamp voltage)."),
++                    "report_context": {
++                        "section": "Power — DC Continuity",
++                        "impact": "",
++                        "standard_ref": "",
++                    },
++                    "provenance": make_provenance("pp_dc_path_audit", "heuristic", [ref]),
++                })
++                continue
+             # Module-internal LDO rails (VDDPLL_*, VDDA_INT_*, VDDCORE_*, etc.)
+             # are driven by an INTERNAL regulator inside the IC — they don't
+             # need an external DC source, only decoupling. Demote to info.
+@@ -4644,7 +4916,10 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+                 f"IC power pin {pin_label} has no DC path to a "
+                 f"power rail (net {net_name!r})"
+             )
+-            findings.append({
++            _unresolved_note = (
++                " Unresolved P-MOSFET conduction: " + "; ".join(unresolved) + "."
++                if unresolved else "")
++            finding = {
+                 "detector": "audit_power_pin_dc_paths",
+                 "rule_id": "PP-001",
+                 "severity": _severity,
+@@ -4663,10 +4938,12 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+                     f"{net_name!r}. Graph walk (≤{MAX_HOPS} "
+                     f"hops, rejecting capacitor edges, "
+                     f"accepting resistors≤1Ω, inductors, "
+-                    f"ferrite beads, bridged solder jumpers) "
+-                    f"did not reach a named power rail. The pin "
++                    f"ferrite beads, bridged solder jumpers, "
++                    f"held-on P-MOSFETs) did not reach a named "
++                    f"power rail, connector or power_out pin. The pin "
+                     f"is likely AC-coupled to ground only — "
+-                    f"the IC will not power up reliably."),
++                    f"the IC will not power up reliably."
++                    + _unresolved_note),
+                 "components": [ref],
+                 "nets": sorted(visited)[:10],
+                 "pins": [pin_label],
+@@ -4693,7 +4970,10 @@ def audit_power_pin_dc_paths(ctx: AnalysisContext,
+                     "standard_ref": "",
+                 },
+                 "provenance": make_provenance("pp_dc_path_audit", "deterministic", [ref]),
+-            })
++            }
++            if unresolved:
++                finding["unresolved"] = list(unresolved)
++            findings.append(finding)
+ 
+     return findings
+ 
+diff --git a/skills/kicad/scripts/test_power_and_bus_classification.py b/skills/kicad/scripts/test_power_and_bus_classification.py
+new file mode 100644
+index 0000000..b3a96fa
+--- /dev/null
++++ b/skills/kicad/scripts/test_power_and_bus_classification.py
+@@ -0,0 +1,401 @@
++#!/usr/bin/env python3
++"""Unit tests for PP-001 source recognition and PR-001 bus classification.
++
++Covers two analyzer false-positive classes and their controls:
++
++* PP-001 (``audit_power_pin_dc_paths``) re-walks a pin that reaches no
++  named rail or connector under stated assumptions: another component's
++  ``power_out`` pin counts as a source once that component is itself
++  powered, and a P-MOSFET is crossed only when the netlist holds its gate
++  at ground with no competing pull-up. A pin cleared that way gets an info
++  finding that lists the assumptions; it is never silently cleared. A
++  competing gate pull-up, a driven gate, an unpowered power_out owner and
++  a capacitor-only supply keep the error, and unresolved P-MOSFET
++  conduction is named in it.
++* PR-001 (``validate_i2c_bus``) classifies a dual-mode I2C/SPI device as
++  SPI only on positive topology evidence: a chip-select driven by another
++  component AND SPI-only pin names of other components on both its clock
++  and data nets. A driven chip-select without that topology is reported as
++  unresolved and the missing-pull-up errors stay. A chip-select tied to a
++  rail stays on the I2C bus.
++
++Every netlist here is authored for this test. Run with:
++    python3 -m unittest skills/kicad/scripts/test_power_and_bus_classification.py
++"""
++
++import os
++import sys
++import unittest
++
++SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
++if SCRIPT_DIR not in sys.path:
++    sys.path.insert(0, SCRIPT_DIR)
++
++from kicad_types import AnalysisContext  # noqa: E402
++from signal_detectors import audit_power_pin_dc_paths  # noqa: E402
++from validation_detectors import validate_i2c_bus  # noqa: E402
++
++
++def context(parts):
++    """parts: [(ref, type, value, lib_id, [(number, name, pin_type, net)])]."""
++    components, nets, pin_net = [], {}, {}
++    for ref, kind, value, lib_id, pins in parts:
++        components.append({
++            "reference": ref, "type": kind, "value": value, "lib_id": lib_id,
++            "pins": [{"number": n, "name": name} for n, name, _t, _net in pins]})
++        for number, name, pin_type, net in pins:
++            nets.setdefault(net, {"name": net, "pins": []})["pins"].append({
++                "component": ref, "pin_number": number, "pin_name": name,
++                "pin_type": pin_type})
++            pin_net[(ref, number)] = (net, name)
++    return AnalysisContext(components=components, nets=nets, lib_symbols={},
++                           pin_net=pin_net)
++
++
++def cap(ref, a, b):
++    return (ref, "capacitor", "1uF", "Device:C",
++            [("1", "~", "passive", a), ("2", "~", "passive", b)])
++
++
++def res(ref, value, a, b):
++    return (ref, "resistor", value, "Device:R",
++            [("1", "~", "passive", a), ("2", "~", "passive", b)])
++
++
++def load(ref, net):
++    return (ref, "ic", "OwnedLoad", "Owned:Load",
++            [("1", "VIN", "power_in", net), ("2", "GND", "power_in", "GND")])
++
++
++def pmos(ref, gate, drain, source, lib_id="Owned:Q_PMOS"):
++    return (ref, "transistor", "OwnedFET", lib_id,
++            [("1", "G", "input", gate), ("2", "D", "passive", drain),
++             ("3", "S", "passive", source)])
++
++
++def mcu(ref, nets):
++    pins = [("1", "VDD", "power_in", "+3V3"), ("2", "GND", "power_in", "GND")]
++    pins += [(str(3 + i), f"IO{i}", "bidirectional", n) for i, n in enumerate(nets)]
++    return (ref, "ic", "OwnedMCU", "Owned:MCU", pins)
++
++
++def imu(ref, cs, scl, sda):
++    return (ref, "ic", "LSM6DSO32", "Owned:IMU",
++            [("1", "VDD", "power_in", "+3V3"), ("2", "GND", "power_in", "GND"),
++             ("3", "CS", "input", cs), ("4", "SCL", "input", scl),
++             ("5", "SDA", "bidirectional", sda)])
++
++
++def pp001(parts, severity):
++    return [f for f in audit_power_pin_dc_paths(context(parts))
++            if f["rule_id"] == "PP-001" and f["severity"] == severity]
++
++
++def pp001_refs(parts):
++    return sorted(f["components"][0] for f in pp001(parts, "error"))
++
++
++def adc(ref, cs, clk, din, dout):
++    return (ref, "ic", "OwnedADC", "Owned:ADC",
++            [("1", "VDD", "power_in", "+3V3"), ("2", "GND", "power_in", "GND"),
++             ("3", "CS", "input", cs), ("4", "CLK", "input", clk),
++             ("5", "Din", "input", din), ("6", "Dout", "output", dout)])
++
++
++class PowerPinSourceTests(unittest.TestCase):
++    def test_power_out_through_inductor_is_a_source(self):
++        parts = [
++            ("U1", "ic", "OwnedBuck", "Owned:Buck",
++             [("1", "VIN", "power_in", "+12V"), ("2", "SW", "power_out", "SW_NODE")]),
++            ("L1", "inductor", "15uH", "Device:L",
++             [("1", "1", "passive", "SW_NODE"), ("2", "2", "passive", "MID_NODE")]),
++            cap("C1", "MID_NODE", "GND"), load("U2", "MID_NODE")]
++        self.assertEqual(pp001_refs(parts), [])
++
++    def test_power_out_on_same_net_is_a_source(self):
++        parts = [
++            ("U3", "ic", "OwnedBuffer", "Owned:Buffer",
++             [("1", "OUT", "power_out", "REF_BUF"), ("2", "V+", "power_in", "+3V3")]),
++            cap("C2", "REF_BUF", "GND"), load("U4", "REF_BUF")]
++        self.assertEqual(pp001_refs(parts), [])
++
++    def test_power_out_clearance_is_an_info_assumption_not_silence(self):
++        parts = [
++            ("U3", "ic", "OwnedBuffer", "Owned:Buffer",
++             [("1", "OUT", "power_out", "REF_BUF"), ("2", "V+", "power_in", "+3V3")]),
++            cap("C2", "REF_BUF", "GND"), load("U4", "REF_BUF")]
++        info = pp001(parts, "info")
++        self.assertEqual([f["components"] for f in info], [["U4"]])
++        self.assertIn("U3.1 (OUT) is declared power_out", info[0]["assumptions"][0])
++
++    def test_unpowered_power_out_owner_is_not_a_source(self):
++        # The regulator's own input is only AC-coupled: its output proves nothing.
++        parts = [cap("C4", "+12V", "AC_IN"), cap("C5", "AC_IN", "GND"),
++                 ("U1", "ic", "OwnedReg", "Owned:Reg",
++                  [("1", "IN", "power_in", "AC_IN"), ("2", "OUT", "power_out", "REG_OUT"),
++                   ("3", "GND", "power_in", "GND")]),
++                 cap("C6", "REG_OUT", "GND"), load("U2", "REG_OUT")]
++        self.assertEqual(pp001_refs(parts), ["U1", "U2"])
++
++    def test_power_out_owner_without_supply_pin_is_not_a_source(self):
++        parts = [("U1", "ic", "OwnedDriver", "Owned:Driver",
++                  [("1", "OUT", "power_out", "DRV_NODE")]),
++                 cap("C6", "DRV_NODE", "GND"), load("U2", "DRV_NODE")]
++        self.assertEqual(pp001_refs(parts), ["U2"])
++
++    def test_power_out_loop_does_not_vouch_for_itself(self):
++        parts = [("U1", "ic", "OwnedReg", "Owned:Reg",
++                  [("1", "IN", "power_in", "NODE_B"), ("2", "OUT", "power_out", "NODE_A")]),
++                 ("U2", "ic", "OwnedReg", "Owned:Reg",
++                  [("1", "IN", "power_in", "NODE_A"), ("2", "OUT", "power_out", "NODE_B")]),
++                 cap("C1", "NODE_A", "GND"), cap("C2", "NODE_B", "GND")]
++        self.assertEqual(pp001_refs(parts), ["U1", "U2"])
++
++    def test_own_power_out_is_not_a_source(self):
++        parts = [("U4", "ic", "OwnedLoad", "Owned:Load",
++                  [("1", "VIN", "power_in", "LOOP_NODE"),
++                   ("2", "OUT", "power_out", "LOOP_NODE")]),
++                 cap("C2", "LOOP_NODE", "GND")]
++        self.assertEqual(pp001_refs(parts), ["U4"])
++
++    def test_control_capacitor_only_supply_is_still_reported(self):
++        parts = [cap("C4", "+12V", "AC_NODE"), cap("C5", "AC_NODE", "GND"),
++                 load("U8", "AC_NODE")]
++        self.assertEqual(pp001_refs(parts), ["U8"])
++
++
++class SwitchConductionTests(unittest.TestCase):
++    def protection(self, gate_parts, fet=None):
++        return ([("J1", "connector", "OwnedConn", "Owned:Conn",
++                  [("1", "Pin_1", "passive", "IN_RAW"), ("2", "Pin_2", "passive", "GND")]),
++                 fet or pmos("Q1", "GATE_NODE", "IN_RAW", "PROT_NODE"),
++                 cap("C3", "PROT_NODE", "GND"), load("U5", "PROT_NODE")] + gate_parts)
++
++    def test_pmos_with_gate_pulled_to_ground_conducts(self):
++        zener = ("D1", "diode", "OwnedZener", "Device:D_Zener",
++                 [("1", "K", "passive", "PROT_NODE"), ("2", "A", "passive", "GATE_NODE")])
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND"), zener])
++        self.assertEqual(pp001_refs(parts), [])
++        (info,) = pp001(parts, "info")
++        self.assertEqual(info["components"], ["U5"])
++        self.assertIn("Q1 gate held at ground by R1", info["assumptions"][0])
++        self.assertIn("|VGS(th)|", info["assumptions"][0])
++        self.assertIn("clamp D1", info["assumptions"][0])
++
++    def test_diode_polarity_names_and_numeric_pin_function_metadata(self):
++        for names, metadata in ((('CATHODE', 'ANODE'), None),
++                                (('1', '2'), 'net'), (('~', '~'), 'net'),
++                                (('1', '2'), 'component')):
++            with self.subTest(names=names, metadata=metadata):
++                diode = ("D1", "diode", "OwnedZener", "Device:D_Zener",
++                         [("1", names[0], "passive", "PROT_NODE"),
++                          ("2", names[1], "passive", "GATE_NODE")])
++                ctx = context(self.protection([res("R1", "100k", "GATE_NODE", "GND"), diode]))
++                if metadata == 'component':
++                    for component in ctx.components:
++                        if component['reference'] == 'D1':
++                            for pin in component['pins']:
++                                pin['pin_function'] = ('CATHODE' if pin['number'] == '1' else 'ANODE')
++                if metadata == 'net':
++                    for net in ctx.nets.values():
++                        for pin in net['pins']:
++                            if pin['component'] == 'D1':
++                                pin['pin_function'] = ('Cathode' if pin['pin_number'] == '1'
++                                                       else 'Anode')
++                findings = audit_power_pin_dc_paths(ctx)
++                self.assertFalse([f for f in findings if f['severity'] == 'error'])
++                (info,) = [f for f in findings if f['rule_id'] == 'PP-001']
++                self.assertEqual(info['source_path'], 'assumed')
++                self.assertIn('clamp D1', info['assumptions'][0])
++
++    def test_ambiguous_or_reversed_diode_polarity_keeps_error(self):
++        for names in (('1', '2'), ('~', '~'), ('ANODE', 'CATHODE'), ('K', '~')):
++            with self.subTest(names=names):
++                diode = ("D1", "diode", "OwnedZener", "Device:D_Zener",
++                         [("1", names[0], "passive", "PROT_NODE"),
++                          ("2", names[1], "passive", "GATE_NODE")])
++                parts = self.protection([res("R1", "100k", "GATE_NODE", "GND"), diode])
++                self.assertEqual(pp001_refs(parts), ['U5'])
++
++    def test_conflicting_diode_function_and_pin_name_keep_error(self):
++        diode = ("D1", "diode", "OwnedZener", "Device:D_Zener",
++                 [("1", 'K', "passive", "PROT_NODE"), ("2", 'A', "passive", "GATE_NODE")])
++        ctx = context(self.protection([res("R1", "100k", "GATE_NODE", "GND"), diode]))
++        for pin in ctx.nets['GATE_NODE']['pins']:
++            if pin['component'] == 'D1':
++                pin['pin_function'] = 'CATHODE'
++        self.assertEqual([f['components'] for f in audit_power_pin_dc_paths(ctx)
++                          if f['severity'] == 'error'], [['U5']])
++
++    def test_control_gate_divider_to_source_keeps_the_error(self):
++        # agent-469 adversarial control (1): 100 ohm to the source rail
++        # against 1 Mohm to ground holds VGS near zero.
++        parts = self.protection([res("R1", "1M", "GATE_NODE", "GND"),
++                                 res("R2", "100", "GATE_NODE", "IN_RAW")],
++                                fet=pmos("Q1", "GATE_NODE", "PROT_NODE", "IN_RAW"))
++        (err,) = pp001(parts, "error")
++        self.assertEqual(err["components"], ["U5"])
++        self.assertEqual(pp001(parts, "info"), [])
++        (why,) = err["unresolved"]
++        self.assertIn("competing pull-up (R2)", why)
++        self.assertIn("VGS ~ -0.0001 x V(IN_RAW)", why)
++        self.assertIn("conduction is unresolved", err["description"])
++
++    def test_competing_pull_up_with_unknown_value_is_unresolved(self):
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND"),
++                                 res("R2", "DNP", "GATE_NODE", "PROT_NODE")])
++        (err,) = pp001(parts, "error")
++        self.assertIn("values or pull-up targets unknown", err["unresolved"][0])
++
++    def test_pull_up_to_another_rail_is_unresolved(self):
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND"),
++                                 res("R2", "10k", "GATE_NODE", "+5V")])
++        self.assertEqual(pp001_refs(parts), ["U5"])
++
++    def test_diode_that_can_pull_the_gate_up_is_unresolved(self):
++        diode = ("D1", "diode", "OwnedDiode", "Device:D",
++                 [("1", "K", "passive", "GATE_NODE"), ("2", "A", "passive", "IN_RAW")])
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND"), diode])
++        self.assertEqual(pp001_refs(parts), ["U5"])
++
++    def test_pmos_with_gate_on_ground_conducts(self):
++        parts = self.protection([], fet=pmos("Q1", "GND", "IN_RAW", "PROT_NODE"))
++        self.assertEqual(pp001_refs(parts), [])
++
++    def test_power_out_owner_assumptions_carry_downstream(self):
++        # The buck is powered only through the held-on P-MOSFET; a load on
++        # its output inherits that assumption.
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND")]) + [
++            ("U1", "ic", "OwnedBuck", "Owned:Buck",
++             [("1", "VIN", "power_in", "PROT_NODE"), ("2", "SW", "power_out", "SW_NODE")]),
++            ("L1", "inductor", "15uH", "Device:L",
++             [("1", "1", "passive", "SW_NODE"), ("2", "2", "passive", "MID_NODE")]),
++            cap("C1", "MID_NODE", "GND"), load("U2", "MID_NODE")]
++        self.assertEqual(pp001_refs(parts), [])
++        (info,) = [f for f in pp001(parts, "info") if f["components"] == ["U2"]]
++        self.assertIn("U1.2 (SW) is declared power_out", info["assumptions"][0])
++        self.assertIn("Q1 gate held at ground by R1", info["assumptions"][1])
++
++    def test_controller_driven_gate_does_not_prove_conduction(self):
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND"),
++                                 mcu("U6", ["GATE_NODE"])])
++        self.assertEqual(pp001_refs(parts), ["U5"])
++        self.assertIn("driven by U6", pp001(parts, "error")[0]["unresolved"][0])
++
++    def test_floating_gate_does_not_prove_conduction(self):
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "OTHER_NODE")])
++        self.assertEqual(pp001_refs(parts), ["U5"])
++
++    def test_nmos_is_not_crossed(self):
++        parts = self.protection([res("R1", "100k", "GATE_NODE", "GND")],
++                                fet=pmos("Q1", "GATE_NODE", "IN_RAW", "PROT_NODE",
++                                         lib_id="Owned:Q_NMOS"))
++        self.assertEqual(pp001_refs(parts), ["U5"])
++
++    def test_gate_net_is_never_a_conduction_path(self):
++        # Load hangs off the gate net: the channel does not feed the gate.
++        parts = [("J1", "connector", "OwnedConn", "Owned:Conn",
++                  [("1", "Pin_1", "passive", "IN_RAW"), ("2", "Pin_2", "passive", "GND")]),
++                 pmos("Q1", "GATE_NODE", "IN_RAW", "PROT_NODE"),
++                 res("R1", "100k", "GATE_NODE", "GND"),
++                 cap("C3", "GATE_NODE", "GND"), load("U5", "GATE_NODE")]
++        self.assertEqual(pp001_refs(parts), ["U5"])
++
++
++def i2c_errors(parts):
++    return sorted(f["summary"] for f in validate_i2c_bus(context(parts))
++                  if f["severity"] == "error")
++
++
++class BusClassificationTests(unittest.TestCase):
++    def test_driven_chip_select_with_spi_topology_selects_spi(self):
++        parts = [mcu("U6", ["SPI_MOSI", "SPI_SCK", "IMU_CS", "SPI_MISO", "ADC_CS"]),
++                 imu("U7", "IMU_CS", "SPI_SCK", "SPI_MOSI"),
++                 adc("U4", "ADC_CS", "SPI_SCK", "SPI_MOSI", "SPI_MISO"),
++                 res("R2", "10k", "IMU_CS", "+3V3")]
++        findings = validate_i2c_bus(context(parts))
++        self.assertEqual([f for f in findings if f["severity"] == "error"], [])
++        (info,) = [f for f in findings if f["severity"] == "info"]
++        self.assertIn("classified as SPI (chip-select IMU_CS driven by U6.IO2; "
++                      "SPI clock U4.CLK, SPI data U4.Din)", info["summary"])
++        # The evidence components keep the note off a pull-up error's identity.
++        self.assertEqual(info["components"], ["U7", "U4", "U6"])
++
++    def test_i2c_peers_with_spi_aliases_never_prove_spi(self):
++        for value, clock, data in (('LSM6DSO32', 'SCL/SPC', 'SDA/SDI/SDO'),
++                                    ('OwnedI2C', 'I2C_CLK', 'SDA_DO'),
++                                    ('OwnedMCU', 'PA5/I2C_CLK', 'PA6/I2C_DI'),
++                                    ('LSM6DSO32', 'CLK', 'DO')):
++            with self.subTest(value=value, clock=clock, data=data):
++                peer = ('U10', 'ic', value, 'Owned:Peer',
++                        [('1', clock, 'input', 'I2C_SCL'),
++                         ('2', data, 'bidirectional', 'I2C_SDA'),
++                         ('3', 'CS', 'input', '+3V3')])
++                parts = [mcu('U6', ['I2C_SDA', 'I2C_SCL', 'CS_NODE']),
++                         imu('U9', 'CS_NODE', 'I2C_SCL', 'I2C_SDA'), peer]
++                findings = validate_i2c_bus(context(parts))
++                self.assertEqual(len([f for f in findings if f['severity'] == 'error']), 2)
++                self.assertTrue(any('U9 interface mode unresolved' in f['summary'] for f in findings))
++                self.assertFalse(any('classified as SPI' in f['summary'] for f in findings))
++
++    def test_unrelated_spi_clock_and_data_peers_do_not_prove_spi(self):
++        parts = [mcu('U6', ['I2C_SDA', 'I2C_SCL', 'CS_NODE']),
++                 imu('U9', 'CS_NODE', 'I2C_SCL', 'I2C_SDA'),
++                 adc('U3', 'ADC_CS', 'I2C_SCL', 'OTHER_IN', 'OTHER_OUT'),
++                 adc('U4', 'ADC_CS', 'OTHER_CLK', 'I2C_SDA', 'OTHER_OUT')]
++        self.assertEqual(len(i2c_errors(parts)), 2)
++
++    def test_single_net_cannot_be_spi_clock_and_data(self):
++        parts = [mcu('U6', ['BUS', 'CS_NODE']), imu('U9', 'CS_NODE', 'BUS', 'BUS'),
++                 adc('U4', 'ADC_CS', 'BUS', 'BUS', 'OTHER_OUT')]
++        findings = validate_i2c_bus(context(parts))
++        self.assertFalse(any('classified as SPI' in f['summary'] for f in findings))
++        self.assertTrue(any('interface mode unresolved' in f['summary'] for f in findings))
++
++    def test_driven_chip_select_alone_is_unresolved_and_keeps_errors(self):
++        # Only generic MCU GPIOs on the bus: no SPI evidence beyond CS.
++        parts = [mcu("U6", ["SPI_MOSI", "SPI_SCK", "IMU_CS"]),
++                 imu("U7", "IMU_CS", "SPI_SCK", "SPI_MOSI"),
++                 res("R2", "10k", "IMU_CS", "+3V3")]
++        findings = validate_i2c_bus(context(parts))
++        self.assertEqual(len([f for f in findings if f["severity"] == "error"]), 2)
++        (info,) = [f for f in findings if f["severity"] == "info"]
++        self.assertIn("U7 interface mode unresolved", info["summary"])
++
++    def test_spi_clock_without_spi_data_is_unresolved(self):
++        parts = [mcu("U6", ["I2C_SDA", "I2C_SCL", "CS_NODE"]),
++                 imu("U9", "CS_NODE", "I2C_SCL", "I2C_SDA"),
++                 adc("U4", "+3V3", "I2C_SCL", "ADC_DIN", "ADC_DOUT")]
++        self.assertEqual(len(i2c_errors(parts)), 2)
++
++    def test_control_gpio_and_passive_pull_up_on_chip_select_keeps_errors(self):
++        # agent-469 adversarial control (2): a passive 10k CS pull-up plus an
++        # MCU GPIO on CS does not prove SPI; the I2C errors stay.
++        parts = [mcu("U6", ["I2C_SDA", "I2C_SCL", "CS_NODE"]),
++                 imu("U9", "CS_NODE", "I2C_SCL", "I2C_SDA"),
++                 res("R3", "10k", "CS_NODE", "+3V3")]
++        findings = validate_i2c_bus(context(parts))
++        self.assertEqual(sorted(f["summary"] for f in findings if f["severity"] == "error"),
++                         ["I2C bus I2C_SDA/I2C_SCL: SCL missing pull-up",
++                          "I2C bus I2C_SDA/I2C_SCL: SDA missing pull-up"])
++        (info,) = [f for f in findings if f["severity"] == "info"]
++        self.assertIn("chip-select CS_NODE driven by U6.IO2", info["summary"])
++
++    def test_control_rail_tied_chip_select_stays_i2c(self):
++        parts = [mcu("U6", ["I2C_SDA", "I2C_SCL"]), imu("U9", "+3V3", "I2C_SCL", "I2C_SDA")]
++        self.assertEqual(i2c_errors(parts), ["I2C bus I2C_SDA/I2C_SCL: SCL missing pull-up",
++                                             "I2C bus I2C_SDA/I2C_SCL: SDA missing pull-up"])
++
++    def test_passively_pulled_chip_select_stays_i2c(self):
++        parts = [mcu("U6", ["I2C_SDA", "I2C_SCL"]), imu("U9", "CS_NODE", "I2C_SCL", "I2C_SDA"),
++                 res("R3", "10k", "CS_NODE", "+3V3")]
++        self.assertEqual(len(i2c_errors(parts)), 2)
++
++    def test_pulled_up_i2c_bus_is_clean(self):
++        parts = [mcu("U6", ["I2C_SDA", "I2C_SCL"]), imu("U9", "+3V3", "I2C_SCL", "I2C_SDA"),
++                 res("R4", "4.7k", "I2C_SDA", "+3V3"), res("R5", "4.7k", "I2C_SCL", "+3V3")]
++        self.assertEqual(i2c_errors(parts), [])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/skills/kicad/scripts/validation_detectors.py b/skills/kicad/scripts/validation_detectors.py
+index 1c985b6..a5003c5 100644
+--- a/skills/kicad/scripts/validation_detectors.py
++++ b/skills/kicad/scripts/validation_detectors.py
+@@ -722,6 +722,92 @@ _USB_DP_NAMES = ('D+', 'DP', 'USB_DP', 'USB_D+', 'USBDP', 'D_P')
+ _USB_DM_NAMES = ('D-', 'DM', 'USB_DM', 'USB_D-', 'USBDM', 'D_N')
+ 
+ 
++def _driven_chip_select(ctx: AnalysisContext, ref: str) -> tuple[str, str, str] | None:
++    """Return (cs_net, 'REF.PIN', REF) when ``ref``'s chip-select pin is driven.
++
++    A chip-select pin on a signal net (not a power or ground rail) that
++    another component drives from an output, bidirectional or tri-state pin.
++    A CS tied to a rail, or reached only through passives, is not driven.
++    """
++    cs_net = _get_pin_net(ctx, ref, _SPI_CS_NAMES)
++    if not cs_net or cs_net not in ctx.nets:
++        return None
++    if ctx.is_power_net(cs_net) or ctx.is_ground(cs_net):
++        return None
++    for p in ctx.nets[cs_net].get('pins', []):
++        other = p.get('component') or ''
++        if not other or other == ref or other.startswith('#'):
++            continue
++        if p.get('pin_type') in ('output', 'bidirectional', 'tri_state'):
++            return cs_net, f"{other}.{p.get('pin_name') or p.get('pin_number')}", other
++    return None
++
++
++# Candidate SPI tokens; I2C aliases/roles are excluded by _spi_peer.
++_SPI_CLOCK_TOKENS = frozenset(('SCK', 'SPC', 'CLK', 'SPICLK'))
++_SPI_DATA_TOKENS = frozenset(('MOSI', 'MISO', 'SDI', 'SDO', 'DIN', 'DOUT',
++                              'DI', 'DO', 'SI', 'SO', 'COPI', 'CIPO'))
++
++
++def _spi_peer(ctx: AnalysisContext, ref: str, clock_net: str,
++              data_net: str) -> tuple[str, str, str] | None:
++    """Clock/data pin pair on one peer without an I2C role on this bus.
++
++    Composite I2C/SPI aliases and I2C_CLK/I2C_DO names cannot prove SPI.
++    Generic tokens on unrelated components or on a single net cannot either.
++    """
++    if clock_net == data_net:
++        return None
++    for p in ctx.nets.get(clock_net, {}).get('pins', []):
++        other = p.get('component') or ''
++        if not other or other == ref or other.startswith('#'):
++            continue
++        bus_pins = [pin for net in (clock_net, data_net)
++                    for pin in ctx.nets.get(net, {}).get('pins', [])
++                    if pin.get('component') == other]
++        names = [set(re.split(r'[^A-Z0-9]+', (pin.get('pin_name') or '').upper()))
++                 for pin in bus_pins]
++        if any(any(t.startswith(('I2C', 'TWI')) or t in _I2C_SDA_NAMES + _I2C_SCL_NAMES
++                   for t in name) for name in names):
++            continue
++        component = next((c for c in ctx.components if c.get('reference') == other), {})
++        if match_ic_keywords(component, _I2C_IC_KEYWORDS):
++            continue
++        clock_name = set(re.split(r'[^A-Z0-9]+', (p.get('pin_name') or '').upper()))
++        if not clock_name & _SPI_CLOCK_TOKENS:
++            continue
++        for data in ctx.nets.get(data_net, {}).get('pins', []):
++            if data.get('component') != other:
++                continue
++            data_name = set(re.split(r'[^A-Z0-9]+', (data.get('pin_name') or '').upper()))
++            if data_name & _SPI_DATA_TOKENS:
++                return f"{other}.{p.get('pin_name')}", f"{other}.{data.get('pin_name')}", other
++    return None
++
++
++def _bus_mode(ctx: AnalysisContext, ref: str, sda_net: str, scl_net: str):
++    """Classify a dual-mode device's SDA/SCL pins from captured topology.
++
++    Returns (mode, cs_net, evidence, evidence_refs) with mode 'spi' or
++    'unresolved', or None (I2C). Pin names do not select the bus: SPI needs
++    positive evidence, a chip-select driven by another component AND
++    an SPI clock/data pair on one peer without an I2C role on distinct
++    clock (SCL) and data (SDA) nets. A driven chip-select without that
++    topology leaves the mode unresolved; the caller keeps the I2C requirement and says so.
++    """
++    driven = _driven_chip_select(ctx, ref)
++    if not driven:
++        return None
++    cs_net, driver, driver_ref = driven
++    peer = _spi_peer(ctx, ref, scl_net, sda_net) if cs_net not in (scl_net, sda_net) else None
++    if peer:
++        clock, data, peer_ref = peer
++        refs = sorted({driver_ref, peer_ref})
++        return ('spi', cs_net, f'chip-select {cs_net} driven by {driver}; '
++                f'SPI clock {clock}, SPI data {data}', refs)
++    return 'unresolved', cs_net, driver, [driver_ref]
++
++
+ def validate_i2c_bus(ctx: AnalysisContext) -> list[dict]:
+     """PR-001: Validate I2C bus integrity — pull-ups, values, address conflicts."""
+     findings: list[dict] = []
+@@ -737,6 +823,38 @@ def validate_i2c_bus(ctx: AnalysisContext) -> list[dict]:
+         scl_net = _get_pin_net(ctx, ref, _I2C_SCL_NAMES)
+         if not sda_net or not scl_net:
+             continue
++        mode = _bus_mode(ctx, ref, sda_net, scl_net)
++        # The evidence components join the device in ``components`` so the
++        # note never takes the identity (rule_id + components) of a pull-up
++        # error on the same device.
++        if mode and mode[0] == 'spi':
++            _kind, cs_net, evidence, evidence_refs = mode
++            findings.append(make_finding(
++                detector='validate_i2c_bus', rule_id='PR-001', category='protocol_integrity',
++                summary=f'{ref} SDA/SCL pins classified as SPI ({evidence})',
++                description=(f'{ref} has I2C-named pins on {sda_net}/{scl_net}, but the captured '
++                             f'topology selects SPI: {evidence}. No I2C pull-up requirement is '
++                             f'applied to these nets for {ref}.'),
++                severity='info', confidence='heuristic', evidence_source='topology',
++                components=[ref] + evidence_refs, nets=[sda_net, scl_net, cs_net],
++                recommendation='Confirm the interface-mode selection against the device datasheet.',
++                provenance=make_provenance('pr_i2c_spec', 'heuristic'),
++                source=ctx.source,))
++            continue
++        if mode:
++            _kind, cs_net, driver, evidence_refs = mode
++            findings.append(make_finding(
++                detector='validate_i2c_bus', rule_id='PR-001', category='protocol_integrity',
++                summary=f'{ref} interface mode unresolved (chip-select {cs_net} driven by {driver})',
++                description=(f'{ref} has I2C-named pins on {sda_net}/{scl_net} and its chip-select '
++                             f'{cs_net} is driven by {driver}, but no SPI clock and data topology '
++                             f'was captured. The mode is unresolved, so {ref} stays on the I2C bus '
++                             f'and its pull-up requirement still applies.'),
++                severity='info', confidence='heuristic', evidence_source='topology',
++                components=[ref] + evidence_refs, nets=[sda_net, scl_net, cs_net],
++                recommendation='Confirm the interface-mode selection against the device datasheet.',
++                provenance=make_provenance('pr_i2c_spec', 'heuristic'),
++                source=ctx.source,))
+         bus_key = f'{sda_net}:{scl_net}'
+         bus = i2c_buses.setdefault(bus_key, {'sda_net': sda_net, 'scl_net': scl_net, 'devices': []})
+         bus['devices'].append(ref)

@@ -2,17 +2,15 @@
 
 The pinned analyzer's false positives are recorded known limitations, never a
 pass: the real severity gate still reports them as errors (a defect). The
-proposed correction (an exact commit in the kicad-happy object store, not
-adopted) must turn exactly those errors into evidence-bearing info notes, never
-silence, while the real violations and both agent-469 adversarial controls
+proposed correction (an exact, vendored MIT patch, not adopted) must turn
+exactly those errors into evidence-bearing info notes, never silence, while the real violations and both agent-469 adversarial controls
 keep failing.
 """
-import io
 import importlib.util
 import os
 import subprocess
 import sys
-import tarfile
+import shutil
 import tempfile
 import time
 import unittest
@@ -40,32 +38,28 @@ def missing_input(reason):
     raise unittest.SkipTest(reason)
 
 
-def corrected_checkout(destination, store=PINNED):
-    """The proposed correction's exact bytes, read-only from the pinned store.
+def corrected_checkout(destination, store=PINNED, patch=FIXTURE / 'correction.patch'):
+    """Reconstruct the proposed installation without a Git store or network.
 
-    AGENT_EE_KICAD_HAPPY_CORRECTED may name a checkout; otherwise the recorded
-    commit is exported from the Git object store of ``store``
-    (AGENT_EE_KICAD_HAPPY). Both are held to the recorded installation
-    identity. A missing commit fails under AGENT_EE_REQUIRE_TOOLCHAIN=1.
+    Check both identities: a cleanly applying patch alone does not prove the
+    original installation or the resulting analyzer bytes are the qualified ones.
+    git apply is available in the CI image and rejects missing/conflicting hunks.
     """
-    explicit = os.environ.get('AGENT_EE_KICAD_HAPPY_CORRECTED')
-    if explicit:
-        return Path(explicit)
-    corrected = EXPECTED['corrected']
-    commit = corrected['commit']
-    probe = subprocess.run(['git', '-C', str(store), 'cat-file', '-e', commit + '^{commit}'],
-                           capture_output=True)
-    if probe.returncode:
-        missing_input(
-            f"corrected kicad-happy commit {commit} (branch {corrected['branch']}) is not in the "
-            f"Git object store of AGENT_EE_KICAD_HAPPY={store}. Fetch that commit into the store, "
-            f"or set AGENT_EE_KICAD_HAPPY_CORRECTED to a checkout of exactly that commit; see "
-            f"docs/happy-severity-gate.md#known-analyzer-limitations-pinned-231")
-    archive = subprocess.run(['git', '-C', str(store), 'archive', '--format=tar', commit,
-                              'skills', '.claude-plugin'], capture_output=True, check=True)
-    with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
-        tar.extractall(destination, filter='data')
-    return Path(destination)
+    if installation(store)['sha256'] != EXPECTED['pinned']['installation_sha256']:
+        raise AssertionError(f'pinned kicad-happy bytes differ from the recorded identity: {store}')
+    destination = Path(destination)
+    shutil.copytree(store, destination,
+                    ignore=shutil.ignore_patterns('.git', '__pycache__', '.pytest_cache'))
+    patch = Path(patch).resolve()
+    for flags in (['--check'], []):
+        result = subprocess.run(['git', 'apply', *flags, str(patch)], cwd=destination,
+                                capture_output=True, text=True, timeout=60)
+        if result.returncode:
+            raise AssertionError(f'kicad-happy correction patch failed ({patch}): '
+                                 f'{result.stderr.strip()}')
+    if installation(destination)['sha256'] != EXPECTED['corrected']['installation_sha256']:
+        raise AssertionError(f'corrected kicad-happy bytes differ from the recorded identity: {destination}')
+    return destination
 
 
 def analyze(root, work):
@@ -103,23 +97,45 @@ class FixtureTests(unittest.TestCase):
         self.assertFalse(notes & VIOLATIONS)
         self.assertEqual(set(EXPECTED['corrected_unresolved']) - VIOLATIONS, set())
 
-    def test_missing_corrected_commit_fails_actionably_in_strict_mode(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-store-') as store:
-            subprocess.run(['git', 'init', '-q', store], check=True)
-            environment = {k: v for k, v in os.environ.items()
-                           if k != 'AGENT_EE_KICAD_HAPPY_CORRECTED'}
-            with mock.patch.dict(os.environ, dict(environment, AGENT_EE_REQUIRE_TOOLCHAIN='1'),
-                                 clear=True):
-                with self.assertRaises(AssertionError) as raised:
-                    corrected_checkout(Path(store) / 'out', store=Path(store))
-            message = str(raised.exception)
-            for needed in (EXPECTED['corrected']['commit'], store, 'AGENT_EE_KICAD_HAPPY_CORRECTED',
-                           'Fetch that commit'):
-                self.assertIn(needed, message)
-            environment.pop('AGENT_EE_REQUIRE_TOOLCHAIN', None)
-            with mock.patch.dict(os.environ, environment, clear=True):
-                with self.assertRaises(unittest.SkipTest):
-                    corrected_checkout(Path(store) / 'out', store=Path(store))
+    def test_gitless_installation_reconstructs_exact_correction(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-portable-') as tmp:
+            root = Path(tmp)
+            store = root / 'gitless'
+            # Match the image: installed tree, no .git or corrected-checkout env.
+            shutil.copytree(PINNED, store, ignore=shutil.ignore_patterns(
+                '.git', '__pycache__', '.pytest_cache'))
+            self.assertFalse((store / '.git').exists())
+            corrected = corrected_checkout(root / 'out', store=store)
+            self.assertEqual(installation(corrected)['sha256'],
+                             EXPECTED['corrected']['installation_sha256'])
+            self.assertEqual(installation(store)['sha256'],
+                             EXPECTED['pinned']['installation_sha256'])
+
+    def test_missing_or_invalid_patch_fails_loudly_even_without_strict_mode(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-patch-') as tmp:
+            root = Path(tmp)
+            invalid = root / 'invalid.patch'
+            invalid.write_text('not a patch\n')
+            conflict = root / 'conflict.patch'
+            conflict.write_text((FIXTURE / 'correction.patch').read_text().replace(
+                'diff --git a/skills/', 'diff --git a/absent/').replace(
+                '--- a/skills/', '--- a/absent/').replace(
+                '+++ b/skills/', '+++ b/absent/'))
+            with mock.patch.dict(os.environ, {'AGENT_EE_REQUIRE_TOOLCHAIN': '0'}):
+                for patch in (root / 'missing.patch', invalid, conflict):
+                    with self.subTest(patch=patch.name):
+                        with self.assertRaisesRegex(AssertionError, 'correction patch failed'):
+                            corrected_checkout(root / patch.stem, patch=patch)
+
+    def test_unqualified_base_or_result_fails_identity_check(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-ac4-identity-') as tmp:
+            root = Path(tmp)
+            for name in ('pinned', 'corrected'):
+                with self.subTest(identity=name):
+                    expected = {**EXPECTED, name: {**EXPECTED[name], 'installation_sha256': '0' * 64}}
+                    with mock.patch.dict(EXPECTED, expected):
+                        with self.assertRaisesRegex(AssertionError, name + ' kicad-happy bytes differ'):
+                            corrected_checkout(root / name)
 
 
 class AnalyzerTests(unittest.TestCase):

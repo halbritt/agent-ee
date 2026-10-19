@@ -3,6 +3,7 @@
   "ticket": "AGENTEE-219",
   "pinned": {
     "version": "2.3.1",
+    "commit": "06840467ad0f5d76af45f64449b1f5ecb10f052f",
     "installation_sha256": "ba9f02f12de12b1567d28208092ed8be360673b311d2b62bb313ecfd9e925562",
     "status": "known_analyzer_limitation"
   },

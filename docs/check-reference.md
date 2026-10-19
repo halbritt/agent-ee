@@ -760,6 +760,12 @@ using `agent-ee.happy-dispositions/1`; every warning or assumption-bearing findi
 record with `disposition: accepted_risk|false_positive`, `rationale` and
 `recorded_by`. No disposition can waive an error.
 
+The AC4 false-positive regression reconstructs its proposed analyzer from a
+retained MIT patch against the verified pinned installation and verifies the
+resulting identity; it requires no host-only correction checkout or Git objects.
+The installed v2.3.1 limitations remain blocking; see the
+[limitation record](happy-severity-gate.md#known-analyzer-limitations-pinned-231).
+
 Every error is `ok/defect`. A warning, or any severity with nonempty native
 `assumptions` or `source_path: assumed`, is also a defect without an exact-ID
 disposition. Assumption-bearing info accepts dispositions; plain info does not

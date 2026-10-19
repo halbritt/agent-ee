@@ -172,14 +172,20 @@ adjudication by the pod lane before AC4 can pass with the proposed analyzer:
 The two SPI pull-up errors clear only by positive topology evidence. This is
 not pin adoption or a passing pod acceptance run.
 
-The test exports the correction read-only from the `AGENT_EE_KICAD_HAPPY` Git
-object store. It is on this host because the kicad-happy work tree shares that
-store. Alternatively, `AGENT_EE_KICAD_HAPPY_CORRECTED` names a checkout of
-exactly that commit. Both are held to the recorded installation identity. If
-the commit is missing (another host, or the branch was deleted and
-garbage-collected), the test fails under `AGENT_EE_REQUIRE_TOOLCHAIN=1` with
-the commit, branch and store in the message; it never skips. To fix it, fetch
-that commit into the store or set `AGENT_EE_KICAD_HAPPY_CORRECTED`.
+The test copies the pinned installation into a temporary directory and applies
+[the retained MIT correction patch](../fixtures/kicad-happy/ac4-false-positives/correction.patch).
+It checks the base installation identity before applying the patch and the
+corrected installation identity afterwards, using the same `installation()`
+function as production. Both identities were computed from the real commits
+recorded in `expected.json`. Missing patches, rejected hunks and identity
+mismatches fail loudly. No corrected checkout, Git object store, network or
+`AGENT_EE_KICAD_HAPPY_CORRECTED` override is needed, including in the CI image
+whose pinned installation has no `.git` directory. The patch and its upstream
+MIT notice are classified in `docs/file-origins.json`.
+
+Numeric or `~` diode pin names without explicit `pin_function` metadata remain
+unresolved. The raw schematic parser does not populate that metadata; this
+portability change does not qualify those cases.
 
 The correction is not adopted. Adopting it changes the analyzer pin and
 requires requalification plus a criterion-4 rerun.
