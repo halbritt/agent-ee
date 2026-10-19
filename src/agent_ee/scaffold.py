@@ -321,6 +321,17 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
         pad.SetLayerSet(layers)
         pad.SetPosition(fp.GetPosition())
         fp.Add(pad)
+        # Straight courtyards on both sides, the square around the pad circle, make the
+        # hole a fixed occupant for the placer and courtyard checks (AGENTEE-179). No
+        # fastener head or standoff size is declared, so none is reserved.
+        half, at = (size + 1) // 2, fp.GetPosition()
+        for layer in (pcbnew.F_CrtYd, pcbnew.B_CrtYd):
+            courtyard = pcbnew.PCB_SHAPE(fp, pcbnew.SHAPE_T_RECT)
+            courtyard.SetLayer(layer)
+            courtyard.SetStart(pcbnew.VECTOR2I(at.x - half, at.y - half))
+            courtyard.SetEnd(pcbnew.VECTOR2I(at.x + half, at.y + half))
+            courtyard.SetWidth(50000)
+            fp.Add(courtyard)
         _stable_uuids(fp, 'board-only:' + seed + ':' + hole['id'])
         native.Add(fp)
 

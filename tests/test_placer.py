@@ -301,3 +301,146 @@ def test_edge_margin():
 def test_edge_mounted_exempt():
     PlacerTest('test_edge_mounted_exempt').test_edge_mounted_exempt()
 
+
+class EnvelopeFixedTest(unittest.TestCase):
+    """AGENTEE-179: the request fixes envelope parts and holes; their courtyards are exact obstacles."""
+    GAP = 500000
+
+    def pod(self):
+        import json
+        from fractions import Fraction
+        from pathlib import Path
+        from agent_ee.board_envelope import validate
+        from test_placement import MM, rectangle
+        envelope = json.loads((Path(__file__).resolve().parents[1] / 'fixtures/telemetry-pod/envelope.json').read_text())
+        envelope['obligations'] = []  # Only declared mechanics are this fixture's scope.
+        envelope['mounting_holes'] = [dict(id=f'H{i}', at=[x, y], drill_mm=3.2, plated=False, tolerance_mm=0)
+                                      for i, (x, y) in enumerate(((4, 4), (76, 4), (76, 46), (4, 46)), 1)]
+        # J1 stands for the AMPSEAL header, J2 for the SMA and U1 for the IMU.
+        envelope['fixed_footprints'] = [dict(reference=ref, side=side, edge=edge, position_mm=along, inset_mm=inset,
+                                             rotation_deg=0, insertion=insertion, tolerance_mm=0)
+                                        for ref, side, edge, along, inset, insertion in (
+                                            ('J1', 'front', 'left', 30, 2, 'through_edge'),
+                                            ('J2', 'back', 'right', 15, 1, 'through_edge'),
+                                            ('U1', 'front', 'top', 50, 30, 'from_top'))]
+        record = validate(json.dumps(envelope).encode())
+        shapes = {'J1': (-1, -8, 9, 16), 'J2': (-6, -3, 6.5, 6), 'U1': (-1.5, -1.5, 3, 3)}
+        fixed = []
+        for item in record['fixed_footprints']:
+            x, y = map(Fraction, item['anchor_mm'])  # Exact decimal text from the validator.
+            dx, dy, w, h = shapes[item['reference']]
+            fp = part(item['reference'], x, y, side=item['side'][0].upper(), shape=rectangle(x+dx, y+dy, w, h))
+            fixed.append(fp)
+        for hole in record['mounting_holes']:
+            x, y = map(Fraction, hole['at_mm'])
+            square = rectangle(x-Fraction('1.6'), y-Fraction('1.6'), Fraction('3.2'), Fraction('3.2'))
+            fp = part(hole['id'], x, y, shape=square)
+            fp['courtyards']['B'] = {'status': 'proven', 'polygons': [square]}
+            fixed.append(fp)
+        nets = {'C1': 'CAN_H', 'C2': 'CAN_L', 'R1': 'IMU_INT', 'R2': 'IMU_INT', 'B1': 'RF'}
+        movable = [part(ref, 60, 40, side='B' if ref == 'B1' else 'F') for ref in nets]
+        board = capture(fixed + movable, rectangle(0, 0, 80, 50))
+        board['pcbnew_version'] = '10.0.7'
+        anchors = {'CAN_H': ('J1', 0), 'CAN_L': ('J1', 2), 'IMU_INT': ('U1', 0), 'RF': ('J2', 0)}
+        by_ref = {fp['ref']: fp for fp in board['footprints']}
+        for ref, net in nets.items():
+            owner, offset = anchors[net]
+            x, y = by_ref[owner]['position_nm']
+            by_ref[owner]['pads'].append({'number': str(len(by_ref[owner]['pads'])+1), 'net': net,
+                                          'position_nm': [x, y + offset*MM], 'shape': 1, 'rotation_deg': 0})
+            by_ref[ref]['pads'] = [{'number': '1', 'net': net, 'position_nm': list(by_ref[ref]['position_nm']),
+                                    'shape': 1, 'rotation_deg': 0}]
+        return record, board
+
+    def test_fixed_from_envelope(self):
+        import copy
+        from agent_ee import placement_adapter as pa
+        from agent_ee.placer import transform
+        record, board = self.pod()
+        original = copy.deepcopy(board)
+        refs = pa.envelope_references(record)
+        self.assertEqual(refs, ['H1', 'H2', 'H3', 'H4', 'J1', 'J2', 'U1'])
+        policy = pa.helper_request(b'', request(fixed_refs=[], step_budget=200000), refs)['policy']
+        plan = pack(board, policy)
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        self.assertEqual(plan['judgment']['verdict'], 'pass')
+        self.assertEqual(board, original)
+        at = {p['ref']: p for p in plan['placements']}
+        fixed = {fp['ref']: fp for fp in board['footprints'] if fp['ref'] in refs}
+        for ref, fp in fixed.items():
+            self.assertEqual((at[ref]['position_nm'], at[ref]['rotation_deg'], at[ref]['fixed']),
+                             (fp['position_nm'], fp['rotation_deg'], True), ref)
+        # Independent axis-aligned separation: every courtyard here is a rectangle.
+        def box(points):
+            return [min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points),
+                    max(p[1] for p in points)]
+        for fp in board['footprints']:
+            if fp['ref'] in refs:
+                continue
+            placed = transform(fp, at[fp['ref']]['position_nm'], at[fp['ref']]['rotation_deg'])
+            for side, courtyard in placed['courtyards'].items():
+                a = box(courtyard['polygons'][0])
+                for other in fixed.values():
+                    if side not in other['courtyards']:
+                        continue
+                    b = box(other['courtyards'][side]['polygons'][0])
+                    dx, dy = max(b[0]-a[2], a[0]-b[2], 0), max(b[1]-a[3], a[1]-b[3], 0)
+                    self.assertGreaterEqual(dx*dx + dy*dy, self.GAP*self.GAP, (fp['ref'], other['ref'], side))
+        # Without the derived request the same unlocked parts are free to move.
+        free = pack(board, request(fixed_refs=[], step_budget=200000))
+        self.assertEqual(free['status'], 'planned', free.get('reason'))
+        self.assertTrue(any(p['position_nm'] != fixed[p['ref']]['position_nm']
+                            for p in free['placements'] if p['ref'] in fixed))
+
+    def test_fixed_courtyard_is_a_polygon_not_its_bounding_box(self):
+        from test_placement import polygon, rectangle
+        # The fixed L's bounding box is the whole board; only its notch is free.
+        shape = polygon([(0, 0), (8, 0), (8, 5), (5, 5), (5, 8), (0, 8)])
+        board = capture([part('U1', 0, 0, shape=shape), part('C1', 1, 1)], rectangle(0, 0, 8, 8))
+        plan = pack(board, request())
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        cap = next(p for p in plan['placements'] if p['ref'] == 'C1')
+        x, y = cap['position_nm']
+        self.assertTrue(5_500_000 <= x <= 6_000_000 and 5_500_000 <= y <= 6_000_000, cap)
+        # The gap still holds against the exact polygon: a 3 mm notch cannot take 2 mm plus 1.5 mm.
+        self.assertEqual(pack(board, request(gap_nm=1_500_000))['status'], 'packing_search_exhausted')
+
+    def test_fixed_courtyard_conflict_names_the_reference(self):
+        from test_placement import rectangle
+        record, board = self.pod()
+        from agent_ee import placement_adapter as pa
+        refs = pa.envelope_references(record)
+        by_ref = {fp['ref']: fp for fp in board['footprints']}
+        # The IMU stand-in now reaches within the gap of hole H1's courtyard.
+        by_ref['U1']['courtyards']['F']['polygons'] = [rectangle(5.8, 5.8, 3, 3)]
+        plan = pack(board, request(fixed_refs=refs))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']), ('fixed_conflict', 'unknown', []))
+        # Fixed parts are checked in capture order; the later part of the pair is named.
+        self.assertIn('fixed placement H1 conflicts', plan['reason'])
+
+
+class BoardOnlyNetlistTest(unittest.TestCase):
+    """AGENTEE-179: scaffold holes are board-only footprints absent from the native export."""
+    XML = ('<export><components><comp ref="U1"/><comp ref="C1"/></components><nets>'
+           '<net name="SIG"><node ref="U1" pin="1"/><node ref="C1" pin="1"/></net></nets></export>')
+
+    def facts(self, hole_net=''):
+        board = capture([part('U1', 2, 2), part('C1', 6, 2), part('H1', 10, 10)])
+        for fp in board['footprints']:
+            fp['pads'] = [{'number': '' if fp['ref'] == 'H1' else '1',
+                           'net': hole_net if fp['ref'] == 'H1' else 'SIG'}]
+        return board
+
+    def test_board_only_holes_are_exempt_only_without_nets_or_symbols(self):
+        from agent_ee.placer_runner import _netlist_binding
+        _netlist_binding(self.XML, self.facts(), frozenset({'H1'}))
+        with self.assertRaisesRegex(ValueError, 'component inventory differs'):
+            _netlist_binding(self.XML, self.facts())
+        with self.assertRaisesRegex(ValueError, 'board-only footprint has a net'):
+            _netlist_binding(self.XML, self.facts('SIG'), frozenset({'H1'}))
+        with self.assertRaisesRegex(ValueError, 'board-only footprint has a net or a native netlist component'):
+            _netlist_binding(self.XML, self.facts(), frozenset({'H1', 'C1'}))
+
+
+def test_fixed_from_envelope():
+    EnvelopeFixedTest('test_fixed_from_envelope').test_fixed_from_envelope()

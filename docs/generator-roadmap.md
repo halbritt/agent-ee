@@ -256,7 +256,9 @@ run pinned helpers as processes: forward annotation onto a staging grid
 (AGENTEE-52), the greedy packer (AGENTEE-54) and plan-then-apply placers
 (AGENTEE-55). In a placement iteration only footprint transforms may change;
 outline, zones, rules, copper and envelope-fixed connectors are refused, as
-inventory changes are today (AGENTEE-91). The writer's summary is not evidence.
+inventory changes are today (AGENTEE-91). Envelope mounting holes are protected
+the same way, and the packer treats fixed courtyards as exact obstacles
+(AGENTEE-179). The writer's summary is not evidence.
 [Sub-layout reuse](sublayout-reuse.md) (AGENTEE-56) copies a captured module
 layout's placement and group-local copper into new instances. A placement
 iteration admits that copper only when the declaration names the captured

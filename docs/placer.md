@@ -28,8 +28,9 @@ aligned to board vertices (shifted inward by `min_courtyard_edge_mm`) and
 inflated reserved courtyard boxes. It chooses the
 smallest integer Manhattan same-net pad distance to already placed parts,
 excluding explicitly declared ground nets, with position and rotation tie
-breaks. Boxes conservatively reserve a minimum gap; the full polygon judge
-checks the complete proposal. No random numbers, wall-clock stopping rule, new
+breaks. Boxes conservatively reserve a minimum gap around parts the search
+places; fixed courtyards and declared obstacles are exact polygons (below). The
+full polygon judge checks the complete proposal. No random numbers, wall-clock stopping rule, new
 runtime dependency or third-party implementation is used.
 
 The plan records budget and actual steps. Only a complete plan contains
@@ -78,6 +79,47 @@ positive peer-in-keepout DRC control and fixed/moving-owner placement runs in
 the networkless sandbox. Committed fixtures are original; the adapter also tests
 the installed ESP32-S3-WROOM-1 at runtime without retaining its design files.
 
+### Envelope fixed footprints and holes (AGENTEE-179)
+
+A fixed footprint (in `fixed_refs` or locked) reserves its courtyard polygons on
+each side it declares, never their bounding box; declared `obstacles` are the
+same kind of exact obstacle. A placed courtyard must not overlap one and must
+stay at least `gap_nm` away from it, by exact Euclidean edge distance. Boxes only
+prefilter the comparison and supply search anchors, so the notch of a concave
+fixed courtyard stays usable. Fixed parts must fit the outline and stay clear
+of each other, the obstacles and keepouts by the same rule. Otherwise the plan
+is `fixed_conflict`, `outcome=unknown`, naming the later part of the pair.
+
+The coordinator derives the request from the envelope. The placement adapter
+adds every `fixed_footprints[].reference` and `mounting_holes[].id` of a captured
+envelope to `fixed_refs` (`placement_adapter.envelope_references`). The scaffold
+writes the AMPSEAL, SMA, IMU and radio as locked footprints at their declared
+transforms and each hole as a locked board-only footprint with a square
+courtyard on both sides (see [scaffold](scaffold.md)). A writer move of any
+of them is refused by name in the adapter's write scope.
+
+The native writer accepts that scaffold board. A board-only footprint (native
+`IsBoardOnly`) is not in the XML export; it is left out of the inventory
+comparison only when none of its pads has a net and the export does not name
+it. Board-level rule areas are admitted like footprint-owned ones: board
+footprint keepouts are already stationary obstacles. Board copper zones are
+still refused. `tests/test_pod_placement.py` runs the scaffold, forward
+annotation, the sandboxed writer and the registered checks on the pod probe
+board. It uses authored stand-in courtyards. The fixed parts and holes keep
+their saved geometry, and `courtyard-overlap/1`, `outline-containment/1`,
+`connector-edge/1` and `mounting-holes/1` pass. Every rule area survives the
+writer unchanged, and a fresh-process reload of the placed board gives the
+same exact pad layer sets (copper and `F.Mask`/`B.Mask`) as the annotated
+source. The generic run uses the fixture's ordinary explicit board keepout.
+A second run takes the radio's antenna zone only from the explicit
+[captured-CAD retention input](scaffold.md#explicit-captured-antenna-cad-retention)
+(AGENTEE-211). The placer treats that module-owned zone as an obstacle, and
+`keepouts/1` stays `unknown` for the antenna. Minimum edge clearance
+(`min_courtyard_edge_mm`, AGENTEE-180) still applies to movable parts only:
+fixed parts and holes are exempt by reference, but they remain exact
+obstacles. No fastener head, standoff or IMU isolation distance is declared,
+so none is reserved.
+
 ### Pad shapes (AGENTEE-109)
 
 Pad outlines never enter the search or the judge: the packer uses pad centres
@@ -125,9 +167,9 @@ The request contains `policy` plus explicit `authorization` with schema
 `agent-ee.placement-write/1`, `single_design_writer: true`, exact
 `source_sha256`, and an existing resolved `writable_root`. Destination must be
 a fresh direct child of that isolated scratch directory, and the source must
-be outside it. The writer refuses existing board tracks/vias/zones,
-footprint-owned copper zones and footprint-owned board edges. Footprint-owned
-rule areas are admitted. It acquires the repository's nonblocking writer lease, stages a new board, applies only movable footprint positions/rotations,
+be outside it. The writer refuses existing board tracks/vias/copper zones,
+footprint-owned copper zones and footprint-owned board edges. Board and
+footprint-owned rule areas are admitted. It acquires the repository's nonblocking writer lease, stages a new board, applies only movable footprint positions/rotations,
 then reloads the saved bytes. Static positions, rotations and native identities
 are checked against the plan; netlist terminal assignments are checked again.
 
