@@ -379,6 +379,14 @@ on replay. Exits 1, 3 and 4 produce no proposal. Fresh DRC (including parity and
 unconnected items), `copper-width/1` and configured routing constraints still
 determine the captured board's outcome.
 
+The adapter's opt-in [per-net layer grade](routing-adapter.md#per-net-signal-layers-agentee-258)
+checks all tracks, arcs and full via spans against declared per-net signal layers,
+using the validated board's native inventory. Its existing `reference` declaration
+checks plane fill under the full routed length. Defect or unknown grades withhold
+the routed candidate. An absent per-net declaration is unknown for that obligation;
+a passing global layer grade does not satisfy it. The item records the graded
+board's `board_sha256` for candidate binding. This adds no scope check kind.
+
 The [routing check](routing-rules.md) accepts a captured `params.routing_rules`
 JSON document. It compiles explicit bounds into isolated native custom-rule
 runs. Scope/2 and scope/3 bind exactly one requirement per routing check and

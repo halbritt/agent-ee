@@ -139,11 +139,12 @@ class RequestError(ValueError):
 
 # Declared layer policy (AGENTEE-231): allowed KRT signal layers, optional KRT
 # cost multipliers in the same order, kicad-route's pour area-loss bound and an
-# optional reference plane whose fill must lie under the declared RF nets.
+# optional reference plane whose fill must lie under the declared RF nets, and
+# optional per-net allowed signal layers (AGENTEE-258), graded on the routed board.
 COPPER_LAYER = re.compile(r'(F|B|In[1-9][0-9]?)\.Cu\Z')
 NET_NAME = re.compile(r'[^\x00-\x1f\x7f]{1,256}\Z')
 POLICY_KEYS = {'signal_layers', 'pour_area_loss_pct'}
-POLICY_OPTIONAL = {'layer_costs', 'reference'}
+POLICY_OPTIONAL = {'layer_costs', 'reference', 'per_net_signal_layers'}
 REFERENCE_KEYS = {'net', 'layers', 'rf_nets'}
 POLICY_FILE = 'agent-ee-reference-continuity.json'
 # Uncovered area below this is boolean rounding, not a gap in the plane: the
@@ -186,8 +187,18 @@ def validate_layer_policy(policy):
     if (not isinstance(policy, dict) or not POLICY_KEYS <= set(policy) or
             not set(policy) <= POLICY_KEYS | POLICY_OPTIONAL):
         raise RequestError('layer policy must have signal_layers and pour_area_loss_pct, '
-                           'optionally layer_costs and reference')
+                           'optionally layer_costs, reference and per_net_signal_layers')
     _names(policy['signal_layers'], COPPER_LAYER, 'signal_layers')
+    if 'per_net_signal_layers' in policy:
+        nets = policy['per_net_signal_layers']
+        if not isinstance(nets, dict) or not nets:
+            raise RequestError('per_net_signal_layers must map net names to allowed layers')
+        for net, layers in nets.items():
+            if not isinstance(net, str) or not NET_NAME.fullmatch(net):
+                raise RequestError('per_net_signal_layers keys must be net names')
+            _names(layers, COPPER_LAYER, 'per-net signal layers')
+            if not set(layers) <= set(policy['signal_layers']):
+                raise RequestError('per-net signal layers must be within global signal_layers')
     if 'layer_costs' in policy:
         costs = policy['layer_costs']
         if (not isinstance(costs, list) or len(costs) != len(policy['signal_layers']) or
@@ -844,9 +855,91 @@ def layer_policy_grade(policy, attempt_dir, result, classification, board):
         items['area_loss'] = area_loss(policy, layers, bound)
     if 'reference' in policy:
         items['reference_continuity'] = reference_grade(policy, read(POLICY_FILE), sha, classification)
+    if 'per_net_signal_layers' in policy:
+        items['per_net_signal_layers'] = per_net_layer_grade(policy, cand, sha)
     statuses = {i['status'] for i in items.values()}
     status = 'defect' if 'defect' in statuses else 'unknown' if 'unknown' in statuses else 'pass'
     return {'status': status, 'items': items}
+
+
+def per_net_layer_grade(policy, facts, sha):
+    """All routed copper of declared nets, including input copper and full via spans.
+
+    Reuse the pinned native board inventory; no pre-existing-copper exemption.
+    An absent declaration is unknown, never implied by the global allowlist. Every
+    graded item names the validated board hash it is evidence for (board_sha256)
+    and the declaration it graded, so a consumer binds it to one candidate.
+    """
+    declared = policy.get('per_net_signal_layers')
+    if declared is None:
+        return _item('unknown', board_sha256=sha, reason='per-net signal layers were not declared')
+
+    def item(status, **detail):
+        return _item(status, board_sha256=sha, declared=declared, **detail)
+
+    if not isinstance(facts, dict) or facts.get('sha256') != sha:
+        return item('unknown', reason='native facts are not of the validated board')
+    copper = facts.get('copper_layers')
+    if (not isinstance(copper, list) or not all(isinstance(c, dict) and
+            isinstance(c.get('name'), str) and COPPER_LAYER.fullmatch(c['name']) for c in copper)):
+        return item('unknown', reason='native copper stack unavailable')
+    stack = [c['name'] for c in copper]
+    expected = ['F.Cu', *sorted((n for n in stack if n.startswith('In')),
+                               key=lambda n: int(n[2:-3])), 'B.Cu']
+    if len(stack) != len(set(stack)) or stack != expected:
+        return item('unknown', reason='native copper stack malformed')
+    tracks, vias = facts.get('tracks'), facts.get('vias')
+    if not isinstance(tracks, list) or not isinstance(vias, list):
+        return item('unknown', reason='native track or via inventory unavailable')
+    problems, violations, measured = [], [], {net: 0 for net in declared}
+    for net, allowed in declared.items():
+        if not set(allowed) <= set(stack):
+            problems.append(f'{net}: declared layer absent from board')
+
+    def point(value):
+        return isinstance(value, list) and len(value) == 2 and all(_is_int(n) for n in value)
+
+    for kind, records in (('track', tracks), ('via', vias)):
+        for rec in records:
+            if not isinstance(rec, dict) or not isinstance(rec.get('net'), str):
+                problems.append('unparseable native net identity')
+                continue
+            net = rec['net']
+            if net not in declared:
+                continue
+            if not isinstance(rec.get('uuid'), str) or not rec['uuid']:
+                problems.append(f'{net}: missing copper UUID')
+                continue
+            if kind == 'track':
+                layers = [rec.get('layer')]
+                valid = (rec.get('kind') in ('segment', 'arc') and layers[0] in stack and
+                         _is_int(rec.get('width')) and rec['width'] > 0 and
+                         point(rec.get('start')) and point(rec.get('end')) and
+                         (rec['kind'] != 'arc' or point(rec.get('mid'))))
+            else:
+                pair = rec.get('layers')
+                valid = (isinstance(pair, list) and len(pair) == 2 and all(n in stack for n in pair) and
+                         pair[0] != pair[1] and point(rec.get('position')) and
+                         rec.get('via_type') in ('through', 'blind', 'buried', 'micro') and
+                         _is_int(rec.get('diameter')) and _is_int(rec.get('drill')) and
+                         0 < rec['drill'] < rec['diameter'])
+                layers = []
+                if valid:
+                    start, end = sorted(stack.index(n) for n in pair)
+                    layers = stack[start:end + 1]
+                    if rec['via_type'] == 'through' and layers != stack:
+                        valid = False
+            if not valid:
+                problems.append(f'{net}: unparseable {kind} geometry ({rec["uuid"]})')
+                continue
+            measured[net] += 1
+            disallowed = [n for n in layers if n not in declared[net]]
+            if disallowed:
+                violations.append({'uuid': rec['uuid'], 'net': net, 'kind': kind,
+                                   'layers': layers, 'disallowed_layers': disallowed})
+    problems += [f'{net}: no routed copper measured' for net, count in measured.items() if not count]
+    return item('defect' if violations else 'unknown' if problems else 'pass',
+                violations=violations, problems=problems, copper_measured=measured)
 
 
 def disallowed_tracks(allowed, cand, ref, snapshot, board):
