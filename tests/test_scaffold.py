@@ -6,6 +6,7 @@ these tests do not establish model quality, component suitability or release.
 import contextlib
 import copy
 import io
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -520,6 +521,49 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         other,other_path,other_receipt = self.content('other')
         self.assert_completed(other_path,other_receipt)
         self.assertEqual(pcb.read_bytes(),(other / 'project/design.kicad_pcb').read_bytes())
+
+    def test_pad_layers_survive_fresh_process_reload(self):
+        """LSET.AllCuMask() is shared native state; a producer that mutates it
+        makes KiCad fold *.Mask into *.Cu on save. Only a reload in a new process
+        shows the loss, so producer, reload and expectation never share one."""
+        inputs,path,receipt = self.content()
+        self.assert_completed(path,receipt)
+        direct = self.root / 'direct/inputs'
+        self.build('direct')
+        env = dict(os.environ,PYTHONPATH=str(ROOT / 'src'))
+        produce = ("import json,sys,pcbnew\n"
+            "from agent_ee.scaffold import write_envelope_content\n"
+            "before=list(pcbnew.LSET.AllCuMask().Seq())\n"
+            "write_envelope_content(sys.argv[1],'envelope.json','parts.json','project/design.kicad_pcb',"
+            "intent_rel='intent.json',layout_rel='layout.json',imu_reference='U1',antenna_facts_rel='facts.json')\n"
+            "json.dump(dict(before=before,after=list(pcbnew.LSET.AllCuMask().Seq())),open(sys.argv[2],'w'))\n")
+        subprocess.run(['/usr/bin/python3','-B','-c',produce,str(direct),str(self.root / 'mask.json')],
+                       env=env,capture_output=True,check=True)
+        pcb = inputs / 'project/design.kicad_pcb'
+        self.assertEqual((direct / 'project/design.kicad_pcb').read_bytes(),pcb.read_bytes())
+        reload = ("import json,sys,pcbnew\n"
+            "board=pcbnew.LoadBoard(sys.argv[1])\n"
+            "json.dump({fp.GetReference()+'.'+p.GetNumber():sorted(pcbnew.BOARD.GetStandardLayerName(l)"
+            " for l in p.GetLayerSet().Seq()) for fp in board.GetFootprints() for p in fp.Pads()},open(sys.argv[2],'w'))\n")
+        subprocess.run(['/usr/bin/python3','-B','-c',reload,str(pcb),str(self.root / 'pads.json')],
+                       env=env,capture_output=True,check=True)
+        copper = ['F.Cu','B.Cu',*[f'In{i}.Cu' for i in range(1,31)]]
+        through = sorted([*copper,'F.Mask','B.Mask'])
+        # Sorted names coincide with KiCad's serialized order for the SMD sides.
+        expected = {**{f'J1.{n}':through for n in '123'},**{f'H{i}.':through for i in range(1,5)},
+                    **{f'{ref}.{n}':['F.Cu','F.Mask','F.Paste'] for ref in ('U1','U2') for n in '12'},
+                    **{f'J2.{n}':['B.Cu','B.Mask','B.Paste'] for n in '12'}}
+        self.assertEqual(read_json(self.root / 'pads.json'),expected)
+        serialized = {}
+        for fp in children(parse_sexpr(pcb.read_bytes()),'footprint'):
+            ref = next(p[2] for p in children(fp,'property') if p[1]=='Reference')
+            for pad in children(fp,'pad'):
+                serialized[ref+'.'+pad[1]] = children(pad,'layers')[0][1:]
+        self.assertEqual(serialized,{key:['*.Cu','*.Mask'] if value is through else value
+                                     for key,value in expected.items()})
+        mask = read_json(self.root / 'mask.json')
+        self.assertEqual(mask['after'],mask['before'])
+        self.assertEqual(len(mask['before']),32)
 
     def test_forward_annotation_retains_fixed(self):
         from agent_ee import forward_annotation as fa
