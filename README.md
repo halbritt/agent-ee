@@ -219,8 +219,9 @@ unbound obligations for AGENTEE-177/179, so acceptance stays unknown.
 
 The offline [io-map compiler](docs/io-map.md) turns a declared pinout CSV into
 a hardware-interface contract, preserving no-connects and unresolved pins.
-Concrete MCU rows require a declared direct conductor; indirect CAN transceiver
-and ADC paths are refused by the compiler.
+Concrete MCU rows require a declared direct conductor or a declared indirect
+path through named intermediate parts. Each conductor segment and part identity
+is then checked on the native netlist; transfer behavior is not claimed.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export

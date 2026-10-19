@@ -26,6 +26,42 @@ def strings(values):
         raise ValueError('duplicate text identity')
 
 
+PATH_DIRECTIONS = ('toward_mcu', 'toward_connector', 'bidirectional')
+PATH_DISCLAIMER = ('Declared indirect MCU paths prove topology only: each conductor segment, intermediate '
+                   'identity and pin role/type on the native schematic. No transceiver, amplifier, divider or ADC '
+                   'transfer, accuracy or stability, CAN bit rate, firmware or BLE behavior is claimed.')
+
+
+def validate_path(invariant, components, terminals):
+    """Ordered connector -> (enter, exit)* -> MCU terminals with typed intermediate devices."""
+    tids, names, devices, directions = (invariant[k] for k in ('terminals', 'pin_names', 'devices', 'directions'))
+    strings(tids)
+    if len(tids) < 4 or len(tids) % 2 or any(t not in terminals for t in tids):
+        raise ValueError('indirect_path requires declared connector, device enter/exit pairs and MCU terminals')
+    # Exact native pin names; unnamed passive pins are the empty string.
+    if not isinstance(names, list) or len(names) != len(tids) or any(not isinstance(n, str) for n in names):
+        raise ValueError('indirect_path requires one native pin name per terminal')
+    if not isinstance(devices, list) or len(devices) != len(tids) // 2 - 1:
+        raise ValueError('indirect_path requires one declared device per enter/exit pair')
+    if not isinstance(directions, list) or len(directions) != len(devices) + 1 or any(
+            d not in PATH_DIRECTIONS for d in directions):
+        raise ValueError('indirect_path requires one declared direction per conductor segment')
+    hops = set()
+    for index, device in enumerate(devices):
+        exact_keys(device, 'component value role')
+        text(device['value'])
+        text(device['role'])
+        if device['component'] not in components:
+            raise ValueError('undeclared intermediate device')
+        hops.add(device['component'])
+        for tid in tids[1 + 2 * index:3 + 2 * index]:
+            if 'unresolved' not in terminals[tid] and terminals[tid]['component'] != device['component']:
+                raise ValueError('indirect_path device pins must belong to the declared device')
+    for tid in (tids[0], tids[-1]):
+        if 'unresolved' not in terminals[tid] and terminals[tid]['component'] in hops:
+            raise ValueError('indirect_path endpoint cannot be an intermediate device')
+
+
 def validate_contract(contract):
     exact_keys(contract, 'schema components terminals allowed_edits invariants')
     if contract['schema'] != 'agent-ee.interface/1':
@@ -79,7 +115,8 @@ def validate_contract(contract):
         kind = invariant.get('kind') if isinstance(invariant, dict) else None
         fields = {'component': 'component populated', 'value': 'component equals',
                   'same_net': 'terminals', 'different_net': 'terminals', 'named_net': 'terminal names',
-                  'no_connect': 'terminal', 'unresolved': 'reason'}
+                  'no_connect': 'terminal', 'unresolved': 'reason',
+                  'indirect_path': 'terminals pin_names devices directions'}
         if kind not in fields:
             raise ValueError('unknown invariant kind')
         exact_keys(invariant, 'id requirement source kind ' + fields[kind] +
@@ -121,6 +158,8 @@ def validate_contract(contract):
             if kind == 'value':
                 text(invariant['equals'])
                 protected_values.add(invariant['component'])
+        elif kind == 'indirect_path':
+            validate_path(invariant, components, terminals)
         elif kind in ('named_net', 'no_connect'):
             if invariant['terminal'] not in terminals:
                 raise ValueError('unknown terminal')
@@ -130,6 +169,9 @@ def validate_contract(contract):
             strings(invariant['terminals'])
             if len(invariant['terminals']) != 2 or any(t not in terminals for t in invariant['terminals']):
                 raise ValueError('relation requires two declared terminals')
+    paths = {frozenset((i['terminals'][0], i['terminals'][-1])) for i in invariants if i['kind'] == 'indirect_path'}
+    if any(i['kind'] == 'same_net' and frozenset(i['terminals']) in paths for i in invariants):
+        raise ValueError('same_net cannot be asserted across a declared indirect path')
     if not edited <= protected_values:
         raise ValueError('allowed value edit requires a protected value predicate')
     if not components and not all('io_map' in invariant for invariant in invariants):
@@ -192,7 +234,7 @@ def read_inventory(path):
                    for s in sheets)):
         raise ValueError('missing or ambiguous native hierarchy inventory')
     parts, components, refs, memberships, nets = {}, {}, {}, {}, {}
-    pin_names = {}
+    pin_names, pin_types = {}, {}
     uuids = set()
     disconnected = set()
     for part in root.findall('./libparts/libpart'):
@@ -202,6 +244,7 @@ def read_inventory(path):
             raise ValueError('missing or ambiguous symbol pin inventory')
         parts[key] = set(pins)
         pin_names[key] = {p.get('num'): p.get('name') for p in part.findall('./pins/pin')}
+        pin_types[key] = {p.get('num'): p.get('type') for p in part.findall('./pins/pin')}
     for comp in root.findall('./components/comp'):
         ref, sheet, lib = text(comp.get('ref')), comp.find('sheetpath'), comp.find('libsource')
         if sheet is None or lib is None:
@@ -219,7 +262,7 @@ def read_inventory(path):
             raise ValueError('missing or ambiguous native component value')
         components[key] = {'sheet': sheet_id, 'reference': ref, 'uuid': uuid,
             'symbol': ':'.join(symbol), 'pins': sorted(parts[symbol]),
-            'pin_names': pin_names[symbol],
+            'pin_names': pin_names[symbol], 'pin_types': pin_types[symbol],
             'populated': not any(p.get('name') == 'dnp' for p in comp.findall('property')),
             'value': values[0].text or ''}
         refs[ref] = key
@@ -555,6 +598,69 @@ def resolve_components(contract, inventory):
     return resolved
 
 
+DRIVES = frozenset('output bidirectional tri_state passive open_collector open_emitter'.split())
+RECEIVES = frozenset('input bidirectional passive'.split())
+PIN_TYPES = DRIVES | RECEIVES | frozenset('free unspecified power_in power_out no_connect'.split())
+
+
+def evaluate_path(invariant, record, natives, pins, codes, keys, inventory):
+    """Every segment, identity, pin role and direction proven; a contradiction anywhere is a violation."""
+    tids, names = invariant['terminals'], invariant['pin_names']
+    violations, unknown = [], []
+    nets = [inventory['nets'].get(code) for code in codes]
+    live = [code is not None and key not in inventory['disconnected'] for code, key in zip(codes, keys)]
+    def where(i):
+        return f'{tids[i]} ({keys[i][0]}:{keys[i][1]}, net {nets[i]!r})'
+    segments = []
+    for k, direction in enumerate(invariant['directions']):
+        a, b = 2 * k, 2 * k + 1
+        joined = live[a] and live[b] and codes[a] == codes[b]
+        types = [natives[i].get('pin_types', {}).get(pins[i]) for i in (a, b)]
+        driver, receiver = (types if direction == 'toward_mcu' else types[::-1])
+        allowed = ((DRIVES, RECEIVES) if direction != 'bidirectional'
+                   else (DRIVES & RECEIVES, DRIVES & RECEIVES))
+        segments.append(dict(terminals=[tids[a], tids[b]], direction=direction, pin_types=types,
+                             net_names=[nets[a], nets[b]], same_net=joined))
+        if not joined:
+            violations.append(f'segment {where(a)} -> {where(b)} is not one native conductor')
+        for pin_type, permitted, end in ((driver, allowed[0], 'driver'), (receiver, allowed[1], 'receiver')):
+            if pin_type not in PIN_TYPES or pin_type in ('free', 'unspecified'):
+                unknown.append(f'segment {tids[a]} -> {tids[b]}: native {end} pin type {pin_type!r} '
+                               f'cannot establish {direction}')
+            elif pin_type not in permitted:
+                violations.append(f'segment {tids[a]} -> {tids[b]}: native {end} pin type {pin_type} '
+                                  f'contradicts declared {direction}')
+    devices = []
+    for k, device in enumerate(invariant['devices']):
+        enter, leave = 2 * k + 1, 2 * k + 2
+        native = natives[enter]
+        devices.append(dict(component=device['component'], role=device['role'], reference=native['reference'],
+                            value=native['value'], populated=native['populated']))
+        if native['value'] != device['value'] or not native['populated']:
+            violations.append(f'intermediate {native["reference"]} is {native["value"]!r} '
+                              f'(populated={native["populated"]}), declared {device["value"]!r}')
+        if live[enter] and live[leave] and codes[enter] == codes[leave]:
+            violations.append(f'intermediate {native["reference"]} pins {pins[enter]} and {pins[leave]} share '
+                              'one conductor; the declared device is bypassed')
+    for i, (native, pin, name) in enumerate(zip(natives, pins, names)):
+        actual = native.get('pin_names', {}).get(pin)
+        if actual is None:
+            unknown.append(f'{tids[i]}: native pin name unavailable')
+        elif actual != name:
+            violations.append(f'{tids[i]}: native pin {pin} is {actual!r}, declared {name!r}')
+    if live[0] and live[-1] and codes[0] == codes[-1]:
+        violations.append(f'connector {tids[0]} and MCU {tids[-1]} share one conductor; '
+                          'the declared path is not indirect')
+    record['actual'].update(segments=segments, devices=devices, disclaimer=PATH_DISCLAIMER)
+    if violations:
+        record['actual']['reason'] = '; '.join(violations)
+        return 'violation'
+    if unknown:
+        record['actual']['reason'] = '; '.join(unknown)
+        return 'not_evaluated'
+    return 'satisfied'
+
+
 def evaluate(contract, inventory):
     resolved = resolve_components(contract, inventory)
     records = []
@@ -613,6 +719,12 @@ def evaluate(contract, inventory):
                 satisfied = not connected
             elif kind == 'named_net':
                 satisfied = connected and inventory['nets'][codes[0]] in invariant['names']
+            elif kind == 'indirect_path':
+                status = evaluate_path(invariant, record, natives, pins, codes, keys, inventory)
+                if status == 'not_evaluated' or (status == 'satisfied' and unresolved):
+                    record['actual'].setdefault('reason', '; '.join(unresolved))
+                    continue
+                satisfied = status == 'satisfied'
             elif kind == 'same_net':
                 satisfied = connected and codes[0] == codes[1]
             else:
@@ -674,6 +786,8 @@ def check_hardware_interface(ctx):
     ctx.result['location'] = ', '.join(violations)
     ctx.result['limitations'].append('Only declared schematic identities and direct conductors are protected; '
         'undeclared topology, PCB routing, physical access and electrical transfer are outside coverage.')
+    if any(i['kind'] == 'indirect_path' for i in descriptor['contract']['invariants']):
+        ctx.result['limitations'].append(PATH_DISCLAIMER)
     ctx.result.update(execution='ok' if complete else 'unsupported',
         outcome=('defect' if violations else 'pass') if complete else 'unknown',
         summary=f'{len(violations)} interface violation(s); complete={complete}')

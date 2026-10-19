@@ -808,9 +808,13 @@ contracts from pinout CSVs. `hardware_interface` binds their CSV hashes as
 immutable inputs, checks `no_connect` predicates against native connectivity,
 and keeps explicit unresolved terminals and predicates unknown. External
 destination text supplies traceability only.
-Concrete MCU rows require an explicit `MCU_Path=direct` declaration. Named
-indirect paths are refused with their CSV row and path name; TBD MCU rows keep
-an unresolved predicate without asserting MCU-to-connector net equality.
+Concrete MCU rows require an explicit `MCU_Path=direct` declaration or the IDs
+of declared [indirect paths](io-map.md#indirect-mcu-paths). Undeclared path names
+are refused with their CSV row; TBD MCU rows keep an unresolved predicate without
+asserting MCU-to-connector net equality. An `indirect_path` invariant passes only
+when every conductor segment, intermediate part value, pin name and declared
+direction is proven on the native netlist; it never asserts connector-to-MCU
+`same_net` and makes no transfer, CAN-rate, firmware or BLE claim.
 
 `hardware_interface` requires `contract` and an earlier `netlist_check`. The
 [interface reference](hardware-interface.md) defines the captured normative

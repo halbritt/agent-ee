@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 
-from .hardware_interface import text, unique_object, validate_contract
+from .hardware_interface import exact_keys, text, unique_object, validate_contract
 from .storage import write_json
 
 REQUIRED = ('Connector_Pin', 'Signal_Name', 'Net', 'MCU_Ref', 'MCU_Pin', 'External_Destination')
@@ -46,15 +46,33 @@ def read_rows(raw):
     return rows
 
 
-def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None):
+PATH_FIELDS = 'terminals pin_names devices directions'
+
+
+def read_paths(paths):
+    """Owner-declared indirect paths; shape is checked again in the compiled contract."""
+    exact_keys(paths, 'schema paths')
+    if paths['schema'] != 'agent-ee.io-map-paths/1' or not isinstance(paths['paths'], dict) or not paths['paths']:
+        raise ValueError('expected agent-ee.io-map-paths/1 with declared paths')
+    for pid, path in paths['paths'].items():
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', pid) or pid in ('direct', 'TBD'):
+            raise ValueError(f'invalid indirect path id {pid!r}')
+        exact_keys(path, PATH_FIELDS)
+    return paths['paths']
+
+
+def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None, paths=None):
     """Bindings borrow components/terminals from a validated interface/1 contract.
 
     Connector terminal IDs equal Connector_Pin; MCU IDs are MCU_Ref:MCU_Pin.
     Missing bindings and TBD identities remain explicitly unresolved. Concrete
-    MCU pins require MCU_Path=direct; named indirect paths are refused.
+    MCU pins require MCU_Path=direct or ';'-separated IDs of declared indirect
+    paths, one per ';'-separated MCU_Pin; anything else is refused.
     """
     rows = read_rows(raw)
     bindings = validate_contract(copy.deepcopy(bindings)) if bindings is not None else {'components': {}, 'terminals': {}}
+    paths = read_paths(copy.deepcopy(paths)) if paths is not None else None
+    used_paths = set()
     contract = dict(schema='agent-ee.interface/1', components={}, terminals={}, allowed_edits=[], invariants=[])
     coverage = {}
     sha = hashlib.sha256(raw).hexdigest()
@@ -74,6 +92,40 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
     def invariant(iid, kind, citation, **fields):
         contract['invariants'].append(dict(id=iid, kind=kind, requirement=requirement,
                                           source=copy.deepcopy(source), io_map=citation, **fields))
+
+    def indirect(number, row, citation, path):
+        position, ref = row['Connector_Pin'], row['MCU_Ref']
+        pids, pins = path.split(';'), row['MCU_Pin'].split(';')
+        undeclared = [p for p in pids if p not in paths]
+        if undeclared:
+            raise ValueError(f'row {number}: undeclared indirect MCU_Path {undeclared} for {row["Signal_Name"]}')
+        if 'TBD' in (ref, *pins) or row['Net'] in ('N/A', 'TBD', 'N/C') or position not in contract['terminals']:
+            raise ValueError(f'row {number}: indirect MCU_Path requires concrete MCU pins and a connector net')
+        if len(pids) != len(pins) or len(set(pids)) != len(pids) or used_paths & set(pids):
+            raise ValueError(f'row {number}: indirect MCU_Path must name one unused path per MCU_Pin')
+        for pid, pin in zip(pids, pins):
+            declared = copy.deepcopy(paths[pid])
+            tids = declared['terminals']
+            if not isinstance(tids, list) or len(tids) < 4 or tids[0] != position or tids[-1] != f'{ref}:{pin}':
+                raise ValueError(f'row {number}: path {pid} must run from {position} to MCU {ref}:{pin}')
+            used_paths.add(pid)
+            for tid in tids:
+                if not isinstance(tid, str):
+                    raise ValueError(f'row {number}: path {pid} terminal IDs must be text')
+                terminal(tid, f'row {number}: path {pid} has unbound terminal {tid}')
+            if not isinstance(declared['devices'], list):
+                raise ValueError(f'row {number}: path {pid} devices must be a list')
+            for device in declared['devices']:
+                cid = device.get('component') if isinstance(device, dict) else None
+                if cid not in bindings['components']:
+                    raise ValueError(f'row {number}: path {pid} names undeclared intermediate device {cid!r}')
+                contract['components'][cid] = copy.deepcopy(bindings['components'][cid])
+            mapped = contract['terminals'][tids[-1]]
+            if 'component' in mapped:
+                locations = contract['components'][mapped['component']]['locations']
+                if mapped['pin'] != pin or any(loc['reference'] != ref for loc in locations):
+                    raise ValueError(f'row {number}: MCU binding disagrees with {ref}:{pin}')
+            invariant(f'{position}:mcu-path:{pid}', 'indirect_path', citation, **declared)
 
     for number, row, nc in rows:
         position = row['Connector_Pin']
@@ -98,7 +150,10 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
         mid = f'{position}:MCU:TBD' if pending else f'{ref}:{pin}'
         path = row.get('MCU_Path')
         if path not in (None, 'TBD', 'direct'):
-            raise ValueError(f'row {number}: unsupported indirect MCU_Path {path!r} for {row["Signal_Name"]}')
+            if paths is None:
+                raise ValueError(f'row {number}: unsupported indirect MCU_Path {path!r} for {row["Signal_Name"]}')
+            indirect(number, row, citation, path)
+            continue
         if not pending and path != 'direct':
             raise ValueError(f'row {number}: {row["Signal_Name"]} requires explicit MCU_Path=direct; '
                              'MCU-to-connector connectivity cannot be inferred through intermediate parts')
@@ -119,13 +174,16 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
         invariant(position + ':mcu-net', 'named_net', citation, terminal=mid, names=[row['Net']])
         if position in contract['terminals']:
             invariant(position + ':same-net', 'same_net', citation, terminals=[position, mid])
+    if paths is not None and set(paths) - used_paths:
+        raise ValueError(f'unused indirect paths: {sorted(set(paths) - used_paths)}')
     extra = set(bindings['terminals']) - used_bindings
     if extra:
         raise ValueError(f'unused terminal bindings: {sorted(extra)}')
     for cid in contract['components']:
         citation = next(i['io_map'] for i in contract['invariants']
             if any(contract['terminals'][tid].get('component') == cid
-                   for tid in i.get('terminals', [i['terminal']] if 'terminal' in i else [])))
+                   for tid in i.get('terminals', [i['terminal']] if 'terminal' in i else []))
+            or any(d['component'] == cid for d in i.get('devices', [])))
         contract['invariants'].append(dict(id=cid + ':populated', kind='component', component=cid,
             populated=True, requirement=requirement, source=copy.deepcopy(source), io_map=citation))
     if spec_record is not None:
@@ -145,6 +203,7 @@ def main(argv=None):
     parser.add_argument('--locator', required=True)
     parser.add_argument('--bindings', help='interface/1 contract supplying explicit terminal bindings')
     parser.add_argument('--spec-record', help='require complete POD-IF-* row traceability')
+    parser.add_argument('--paths', help='agent-ee.io-map-paths/1 declaring indirect MCU paths')
     parser.add_argument('--out', required=True)
     args = parser.parse_args(argv)
     def load(path):
@@ -152,7 +211,7 @@ def main(argv=None):
     try:
         contract = compile_io_map(Path(args.csv).read_bytes(), csv_path=args.csv_path,
             requirement=text(args.requirement), source=dict(path=args.source, locator=args.locator),
-            bindings=load(args.bindings), spec_record=load(args.spec_record))
+            bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths))
         write_json(args.out, contract)
     except (OSError, ValueError, UnicodeError) as exc:
         parser.exit(2, f'io-map: {exc}\n')

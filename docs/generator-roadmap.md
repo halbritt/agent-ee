@@ -51,6 +51,8 @@ What must exist at each stage before a rung can run:
 The pod's pinout CSV now compiles through the [io-map compiler](io-map.md)
 (AGENTEE-188). Its pinned fixture retains unresolved MCU pins and native
 bindings, so it establishes traceability without claiming schematic acceptance.
+Declared [indirect MCU paths](io-map.md#indirect-mcu-paths) (AGENTEE-240) cover
+the CAN transceiver and ADC rows by topology only.
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |

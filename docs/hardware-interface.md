@@ -63,6 +63,7 @@ The supported kinds and additional fields are:
 | `different_net` | Two unique `terminals` | Both known terminals belong to distinct native conductors. |
 | `no_connect` | `terminal` | Known terminal has no conductor; ambiguous singleton classification is unknown. |
 | `unresolved` | Nonempty `reason` | Always `not_evaluated`; records an obligation that cannot yet be checked. |
+| `indirect_path` | Ordered `terminals`, `pin_names`, `devices`, `directions` | Every declared segment and intermediate part identity holds natively; see [below](#declared-indirect-paths). |
 
 The offline [io-map compiler](io-map.md) emits these predicates from a CSV.
 Invariants may carry its strict `io_map` citation object, including a captured
@@ -83,6 +84,46 @@ exact native terminal/name agreement and one node, after duplicate/unknown-node
 validation.
 Local named nets retain their sheet-qualified names. Connected anonymous nets
 retain membership; a name prefix alone never removes a conductor.
+
+### Declared indirect paths
+
+An `indirect_path` invariant declares a route from a connector terminal to an MCU
+terminal through active or passive parts. It never treats a part as a short:
+
+- `terminals` is an ordered list: connector, then an enter and exit terminal for
+  each intermediate part, then the MCU terminal. All are declared terminals.
+- `pin_names` gives the exact native library pin name of each terminal. Unnamed
+  passive pins use the empty string.
+- `devices` has one `{component, value, role}` per enter/exit pair. Both of
+  that pair's terminals must belong to `component`. The endpoints cannot be
+  intermediate parts. `value` must exactly equal the native component value; `role` is text.
+- `directions` has one entry per conductor segment (connector to the first
+  enter terminal, each exit to the next enter, last exit to MCU):
+  `toward_mcu`, `toward_connector` or `bidirectional`.
+
+The path is `satisfied` only when all of the following hold:
+
+- Each segment's two terminals are connected members of one native net.
+- Each intermediate part is populated with its declared value.
+- Each pin name matches.
+- Each part's enter and exit pins are on different nets, so the part is not bypassed.
+- The connector and MCU terminals are on different nets.
+- The native library electrical pin types agree with each declared direction.
+  A driver must be `output`, `bidirectional`, `tri_state`, `passive`,
+  `open_collector` or `open_emitter`. A receiver must be `input`,
+  `bidirectional` or `passive`. Both ends of a `bidirectional` segment must be
+  `bidirectional` or `passive`.
+
+Any contradiction is a `violation` with each failed element named. These include
+a severed segment, a wrong value or pin name, a bypassed part, connector-MCU
+continuity or a contradicted direction. Omitting an intermediate part therefore
+fails as a severed segment. An unresolved terminal, an unsupported symbol mapping,
+a `free`/`unspecified`/missing native pin type or an absent pin name stays
+`not_evaluated`. A contract that also asserts `same_net` between a declared path's
+endpoints is refused. Records add
+`segments`, `devices` and this disclaimer, which is also a check limitation:
+topology only; no transceiver, amplifier, divider or ADC transfer, accuracy or
+stability, CAN bit rate, firmware or BLE behavior is claimed.
 
 ### Global labels spelled like generated no-connect names
 
