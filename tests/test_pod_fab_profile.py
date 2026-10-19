@@ -84,9 +84,10 @@ class PodFabProfileTests(unittest.TestCase):
                     self.assertEqual(refused['execution'], 'unsupported')
 
     def test_pod_profile_produces_all_six_scaffold_minima(self):
-        compiled, requirement, rules, netclass = produced_rules(
+        compiled, requirement, rules, netclass, targets = produced_rules(
             {'fab_profile': 'fab-profile.json'}, self.files, self.inputs)
         self.assertEqual(requirement, 'R-envelope-telemetry-pod-fab-profile')
+        self.assertEqual(targets, [])  # the fab profile alone declares no preferred per-net targets (AGENTEE-184)
         self.assertEqual(len(rules), 6)
         self.assertEqual(len(compiled['constraints']), 8)
         self.assertEqual({n['setting'].rsplit('.', 1)[1]: n['value'] for n in netclass},
