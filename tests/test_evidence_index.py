@@ -19,7 +19,8 @@ def publish(run, checks, *, state='complete'):
     result = {'run_id': 'synthetic-index-fixture', 'candidate_id': manifest['candidate_id'],
               'state': state, 'policy_files': policy_files(), 'runtime_files': runtime_files(),
               'checks': checks, 'reviews': [], 'review_executions': [], 'findings': [],
-              'adjudicated': False, 'limitations': ['Synthetic fixture; no live review or board qualification.']}
+              'adjudicated': False, 'limitations': [*manifest['scope'].get('limitations', []),
+                  'Synthetic fixture; no live review or board qualification.']}
     result['launch_expectation'] = capture_expectation(result, manifest, [], inputs=run / 'inputs')
     freeze_evidence(run, checks)
     save_result(run, result)
@@ -92,6 +93,33 @@ class EvidenceIndexTests(unittest.TestCase):
         row = self.index()['criteria'][0]
         self.assertEqual(row['status'], 'not_met')
         self.assertIn('check1: failed/unknown', row['reasons'])
+
+    def test_captured_limitations_survive_completion_and_cannot_be_removed(self):
+        limitations = ['POD-IF-SENSOR-SUPPLY: NOT CHECKED: regulator accuracy and ratiometry.',
+                       'POD-IF-POWER-IN: NOT CHECKED: automotive transient survival.',
+                       'POD-IF-BLUETOOTH-LE: NOT CHECKED: installed radio range.',
+                       'POD-AC-8: BENCH REQUIRED: CAN timing and firmware function.',
+                       'POD-AC-9: BENCH REQUIRED: RaceChrono on the built board.']
+        self.scope['limitations'] = limitations
+        self.run = self.root / 'limited-run'
+        self.capture()
+        result = read_json(self.run / 'result.json')
+        self.assertEqual(result['state'], 'complete')
+        self.assertEqual(result['limitations'][:len(limitations)], limitations)
+        index = self.index()
+        self.assertEqual(index['limitations'][:len(limitations)], limitations)
+        for text in limitations:
+            self.assertIn(text, render_index(index))
+        for changed in (limitations[1:], ['rewritten'] + limitations[1:],
+                        list(reversed(limitations)), [], 'not a list', None):
+            with self.subTest(changed=changed):
+                write_json(self.run / 'result.json', {**result, 'limitations': changed})
+                with self.assertRaisesRegex(ValueError, 'captured scope limitations'):
+                    verify(self.run, current_source=False)
+                with self.assertRaisesRegex(ValueError, 'captured scope limitations'):
+                    self.index()
+        write_json(self.run / 'result.json', result)
+        self.assertEqual(verify(self.run, current_source=False)['limitations'], result['limitations'])
 
     def test_reads_only_sealed(self):
         unsealed = self.run / 'writer-says-everything-passes.json'
@@ -178,6 +206,12 @@ class CampaignReceiptIndexTests(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         scope_path = fixture.root / 'scope.json'
         scope = read_json(scope_path)
+        limits = ['POD-IF-SENSOR-SUPPLY: NOT CHECKED: 5.00 V accuracy and ratiometry.',
+                  'POD-IF-POWER-IN: NOT CHECKED: ISO 7637-2 transient survival.',
+                  'POD-IF-BLUETOOTH-LE: NOT CHECKED: installed range.',
+                  'POD-AC-8: BENCH REQUIRED: CAN timing and firmware function.',
+                  'POD-AC-9: BENCH REQUIRED: physical RaceChrono validation.']
+        scope['limitations'] = limits
         scope['baseline']['targets'].append('design/pod-criteria.json')
         write_json(scope_path, scope)
         mapping = {str(i): ['R1'] if i == 1 else [] for i in range(1, 10)}
@@ -187,6 +221,12 @@ class CampaignReceiptIndexTests(unittest.TestCase):
         self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
         first = build_index(fixture.root / 'campaign/runs/1', 'design/pod-criteria.json')
         final = build_index(Path(state['history'][-1]['run']), 'design/pod-criteria.json')
+        result = read_json(Path(state['history'][-1]['run']) / 'result.json')
+        self.assertEqual(result['outcome'], 'criteria_satisfied')
+        self.assertEqual(result['limitations'][:len(limits)], limits)
+        self.assertEqual(final['limitations'][:len(limits)], limits)
+        for text in limits:
+            self.assertIn(text, render_index(final))
         self.assertEqual(len(first['receipts']), 1)
         self.assertEqual(len(final['receipts']), 2)
         self.assertEqual(first['criteria'][0]['status'], 'not_met')
