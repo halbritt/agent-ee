@@ -286,6 +286,46 @@ full DRC:
   obligation;
 - once the stand-in is gone, the same retained run fails baseline verification.
 
+### RC envelope on the recorded JLCPCB 2-layer profile
+
+[rc-jlc-2layer.envelope.json](../fixtures/board-envelope/rc-jlc-2layer.envelope.json)
+is the RC envelope with one change: `fab_profile` references the recorded
+[JLCPCB 2-layer profile](../fixtures/board-envelope/jlc-2layer/fab-profile.json)
+(`jlc-2layer-fr4-1oz`, AGENTEE-85). The profile follows the
+[telemetry-pod capture pattern](telemetry-pod-fab-profile.md#sources-and-replay).
+It cites one original numbers-only record and eight 2-layer minima: trace and
+spacing 0.10 mm, via drill and diameter 0.15/0.25 mm, routed copper-to-edge
+0.2 mm, hole-to-hole 0.45 mm, two layers and 670 × 600 mm. It also cites the ±10%
+finished-thickness tolerance. Its [capture manifest](../fixtures/board-envelope/jlc-2layer/source-capture.json)
+records the URLs, UTC times and response hashes of the host capture on
+2026-10-19. The raw responses stayed in the worker's scratch directory.
+
+With the captured sources, the variant validates with `outcome: pass`: both
+layer count and board size are supported. JLCPCB publishes 1 oz (35 µm) outer
+copper and a single FR-4 dielectric for 2-layer boards, but no dielectric
+thickness. Its stackup page and impedance calculator hold 4- and 6-layer
+templates only. The profile therefore declares **no** `stackup`. Deriving the
+core as nominal minus copper would treat the physical thickness as equal to the
+nominal one, which the fabricator does not state. The RC's 0.035/1.53/0.035 mm
+split stays an owned assumption, and stackup authority stays unknown.
+
+`tests.test_board_envelope` covers this:
+
+- `RcJlcProfileTests` compiles the profile, checks the recorded source hashes,
+  refuses a four-layer variant and derives byte-identical, field-citing
+  requirements;
+- with real bindings only, outline, layer count, J1 and the profile bind, and
+  capture is refused naming only `R-envelope-rc-filter-stackup`;
+- the native coordinator-path test uses real `outline/1`, `layers/1`,
+  `connector-edge/1` and `fab_profile` checks, with a stand-in for stackup
+  alone. The saved, routed RC board meets all eight minima. Moving J1 3 mm on an
+  unrouted candidate is a defect naming `left` and 3.0 mm, and its DRC-backed
+  minima stay unknown without a rule-loading witness. Once the stand-in is
+  removed, the retained run fails verification on stackup.
+
+Production capture of the RC envelope needs a fabricator-stated 2-layer
+dielectric thickness. That needs a new source or an owner decision.
+
 ## Native envelope check
 
 `board_envelope` takes `criterion` and `envelope`. The hole and keepout criteria
@@ -542,7 +582,8 @@ The record states obligations; acceptance requires their registered checks.
 Arcs, cutouts, slots, multiple outlines and oblique connector edges are not
 supported by this envelope format. The diagnostic round trip does not replace
 the native hole, keepout or component-height predicates.
-Stackup acceptance needs captured manufacturing authority; several fixed
+Stackup acceptance needs captured manufacturing authority; JLCPCB publishes
+no 2-layer dielectric thickness, so the RC stackup has none yet. Several fixed
 footprints need separate reference selectors. Capture reads only
 consumed paths for envelope authority, so an envelope a scope never cites stays
 unenforced. To make an envelope binding, declare it. Profile support means only that the typed, source-quoted minimum

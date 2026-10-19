@@ -1,0 +1,15 @@
+JLCPCB / FR-4 / 2-layer / 1 oz / 1.6 mm / 2026-10-19
+
+Agent-ee recorded facts (numbers and names only).
+layers: 2
+1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm
+2-layer / via / drill / diameter: 0.15 / 0.25 mm
+routed / copper / edge: 0.2 mm
+pad / hole / hole: 0.45 mm
+FR4 / 2-layer / maximum: 670 / 600 mm
+FR4 / thickness options: 0.4 / 0.6 / 0.8 / 1.0 / 1.2 / 1.6 / 2.0 mm
+nominal >= 1.0 mm / finished thickness: +/-10 %
+nominal 1.6 mm / finished thickness: 1.44 to 1.76 mm
+2-layer / finished outer copper: 1 / 2 / 2.5 / 3.5 / 4.5 oz
+1 oz / copper thickness: 35 um
+2-layer / copper layers: 2 x 1 oz (35 um) / dielectric: 1 x FR-4

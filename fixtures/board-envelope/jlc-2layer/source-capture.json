@@ -1,0 +1,136 @@
+{
+  "work_item": "AGENTEE-85",
+  "as_of": "2026-10-19",
+  "raw_captures": [
+    {
+      "file": "jlc-capabilities.html",
+      "url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "sha256": "6964a1b487f36aecf4b45071e8b3b03c9420b2ddcdc15cb4ad27a54a7806187e",
+      "bytes": 136908,
+      "captured_at": "2026-10-19T15:25:09.737111+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-custom-pcb.html",
+      "url": "https://jlcpcb.com/resources/custom-pcb",
+      "resolved_url": "https://jlcpcb.com/resources/custom-pcb",
+      "sha256": "26e0694622aeee6069dcb8b3d65c14c41af797c14c81ee14a8cf272436d468a0",
+      "bytes": 98536,
+      "captured_at": "2026-10-19T15:25:45.234895+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-copper-weight.html",
+      "url": "https://jlcpcb.com/help/article/jlcpcb-copper-weight",
+      "resolved_url": "https://jlcpcb.com/help/article/jlcpcb-copper-weight",
+      "sha256": "b1600950734fc7c19fde26c452f2722daff773bb7bd5f94fbb61c8d30250fbf9",
+      "bytes": 112623,
+      "captured_at": "2026-10-19T15:25:46.932986+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-stackup.html",
+      "url": "https://jlcpcb.com/impedance",
+      "resolved_url": "https://jlcpcb.com/impedance",
+      "sha256": "e4d71aec283ce5fe5ba56120e32398ee3a3245f78359bd37024ff9a40d989641",
+      "bytes": 319813,
+      "captured_at": "2026-10-19T15:25:08.754841+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-impcalc-cart.html",
+      "url": "https://cart.jlcpcb.com/client/template/placeOrder/impedanceCalculation.html",
+      "resolved_url": "https://cart.jlcpcb.com/client/template/placeOrder/impedanceCalculation.html",
+      "sha256": "4581f0c230a7f583ca2eaf0234885c149ecb0d6f0ab04326ee11bbbad50bcdf7",
+      "bytes": 22321,
+      "captured_at": "2026-10-19T15:26:17.205855+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-impcalc.html",
+      "url": "https://jlcpcb.com/pcb-impedance-calculator",
+      "resolved_url": "https://jlcpcb.com/pcb-impedance-calculator",
+      "sha256": "3c9029997dd1eb000816204a6b1d8e0e88d0470296ac5a60a367762a189f92ed",
+      "bytes": 76247,
+      "captured_at": "2026-10-19T15:26:19.285591+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-impedance-guide.html",
+      "url": "https://jlcpcb.com/help/article/User-Guide-to-the-JLCPCB-Impedance-Calculator",
+      "resolved_url": "https://jlcpcb.com/help/article/user-guide-to-the-jlcpcb-impedance-calculator",
+      "sha256": "7d67d73d17cb1e41fe6c03af0953adfa08c4f799b14f8f824b81452a6812c730",
+      "bytes": 112830,
+      "captured_at": "2026-10-19T15:25:48.661134+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-laminated.html",
+      "url": "https://jlcpcb.com/help/article/multi-layer-pcb-standard-laminated-structures",
+      "resolved_url": "https://jlcpcb.com/help/article/multi-layer-pcb-standard-laminated-structures",
+      "sha256": "1e4b9d19078165fb0a26bf87e4cb321c9426d7d67bc8548b3107aab2dc7f321b",
+      "bytes": 117828,
+      "captured_at": "2026-10-19T15:25:46.129576+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-thickness-blog.html",
+      "url": "https://jlcpcb.com/blog/standard-pcb-thickness",
+      "resolved_url": "https://jlcpcb.com/blog/standard-pcb-thickness",
+      "sha256": "5faccac93841d59db52c46f7e24af78e99d5dfc2ba6dee5a106a41b71de1b55a",
+      "bytes": 209786,
+      "captured_at": "2026-10-19T15:25:47.775431+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlc-qa-333.html",
+      "url": "https://jlcpcb.com/help/answers/detail/333-Impedance-Calculator,-Coplanar-or-non-coplanar",
+      "resolved_url": "https://jlcpcb.com/help/answers/detail/333-Impedance-Calculator,-Coplanar-or-non-coplanar",
+      "sha256": "79422c36f16243f0cd118f89d437e2a31c749bb34624648dac9e0de4e5c61b57",
+      "bytes": 67970,
+      "captured_at": "2026-10-19T15:26:20.057843+00:00",
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    }
+  ],
+  "raw_bytes_committed": false,
+  "retention": "Raw vendor responses are worker scratch only, not an owner evidence store. Only original numeric/name records and source identities are committed.",
+  "recorded_sources": {
+    "jlcpcb-2layer.txt": {
+      "path": "sources/jlcpcb-2layer.txt",
+      "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+      "bytes": 639
+    }
+  },
+  "locators": {
+    "layers": "jlc-capabilities.html / PCB Specifications / Maximum Dimensions / FR4(2-layer); max_layers=2 specializes this profile to the 2-layer FR-4 option, not the vendor-wide 1-32 layer range",
+    "trace-clearance": "jlc-capabilities.html / Traces / Min. track width and spacing (1 oz) / 1- and 2-layer",
+    "via": "jlc-capabilities.html / Drilling / Min. Via hole size/diameter / 2-layer (not the <=1 mm special process)",
+    "edge": "jlc-capabilities.html / Outline / Routed (not V-Cut)",
+    "holes": "jlc-capabilities.html / Drilling / Pad Hole-to-Hole Spacing; used conservatively for every drilled-hole pair (via-only 0.2 mm relaxation not encoded)",
+    "size": "jlc-capabilities.html / PCB Specifications / Maximum Dimensions / FR4(2-layer), thickness >= 0.8 mm, ordinary 670 x 600 option (the 1020 x 600 extended option is not encoded)",
+    "thickness": "jlc-capabilities.html / PCB Specifications / Thickness (FR4 options) and Thickness Tolerance (Thickness >= 1.0 mm)",
+    "outer-copper": "jlc-capabilities.html / Finished Outer Layer Copper / 2-layer",
+    "copper-thickness": "jlc-copper-weight.html / 1 oz = 35 um; jlc-custom-pcb.html / Standard 2-Layer Custom PCB Stackup: two 1 oz (35 um) copper layers and one FR-4 dielectric"
+  },
+  "stackup_authority": {
+    "status": "unpublished",
+    "missing": "per-layer dielectric thickness of the 2-layer 1.6 mm FR-4 board",
+    "searched": [
+      "jlc-stackup.html embeds 4- and 6-layer stackup templates only (JLC04161H-*, JLC06161H-*); no 2-layer template",
+      "jlc-impcalc-cart.html offers 4-layer and 6-layer buttons only",
+      "jlc-custom-pcb.html names one FR-4 dielectric without a thickness",
+      "jlc-thickness-blog.html says a 2-layer 1.6 mm board uses a single thick core, without a thickness",
+      "jlc-laminated.html covers 4-32 layer laminate structures only"
+    ],
+    "consequence": "The profile declares no stackup. A per-layer stackup would require a dielectric thickness the fabricator does not publish; deriving it as nominal minus copper would assume physical equals nominal thickness. board_envelope stackup/1 therefore stays unknown for envelopes referencing this profile."
+  },
+  "interpretation_limits": [
+    "min_clearance_mm records only the track-spacing floor. Pair-specific pad/hole/copper constraints require additional DFM rules; this profile is not complete JLCPCB DFM acceptance.",
+    "Via annular-ring relation (pad >= drill + 0.1 mm) is not expressible in scalar profile limits.",
+    "No surcharge, assembly, impedance or stock acceptance is claimed.",
+    "Source verification proves occurrence in this recorded fixture; it does not authenticate a vendor response or interpret its applicability. Raw response hashes are provenance identities, not offline replay evidence."
+  ],
+  "capture_runtime": "Python 3.12.3",
+  "recording_method": "Worker reviewed host HTML table rows and retained numbers/names in an original UTF-8 record; no vendor prose, graphics or executable content retained."
+}

@@ -1,0 +1,150 @@
+{
+  "schema": "agent-ee.fab-profile/2",
+  "name": "jlc-2layer-fr4-1oz",
+  "as_of": "2026-10-19",
+  "limits": [
+    {
+      "id": "trace",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "min_trace_mm",
+      "value": 0.1,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm"
+      }
+    },
+    {
+      "id": "clearance",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "min_clearance_mm",
+      "value": 0.1,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "1 and 2-layer / 1 oz / trace / spacing: 0.10 / 0.10 mm"
+      }
+    },
+    {
+      "id": "via-drill",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "min_via_drill_mm",
+      "value": 0.15,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "2-layer / via / drill / diameter: 0.15 / 0.25 mm"
+      }
+    },
+    {
+      "id": "via-pad",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "min_via_pad_mm",
+      "value": 0.25,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "2-layer / via / drill / diameter: 0.15 / 0.25 mm"
+      }
+    },
+    {
+      "id": "edge",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "min_edge_clearance_mm",
+      "value": 0.2,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "routed / copper / edge: 0.2 mm"
+      }
+    },
+    {
+      "id": "holes",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "min_hole_to_hole_mm",
+      "value": 0.45,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "pad / hole / hole: 0.45 mm"
+      }
+    },
+    {
+      "id": "layers",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "max_layers",
+      "value": 2,
+      "unit": "count",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "layers: 2"
+      }
+    },
+    {
+      "id": "size",
+      "requirement": "R-envelope-rc-filter-fab-profile",
+      "key": "max_board_mm",
+      "value": [
+        670,
+        600
+      ],
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "sources/jlcpcb-2layer.txt",
+        "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+        "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "FR4 / 2-layer / maximum: 670 / 600 mm"
+      }
+    }
+  ],
+  "finished_thickness_tolerance": {
+    "percent": 10,
+    "min_nominal_thickness_mm": 1,
+    "source": {
+      "path": "sources/jlcpcb-2layer.txt",
+      "sha256": "cfb95439d5d4a6df47042981134e2b704e88e7bdad6abbb9e151613236e837e7",
+      "source": "Agent-ee recorded numeric facts from https://jlcpcb.com/capabilities/pcb-capabilities",
+      "as_of": "2026-10-19",
+      "page": 1,
+      "quote": "nominal >= 1.0 mm / finished thickness: +/-10 %"
+    }
+  }
+}
