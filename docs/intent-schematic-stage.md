@@ -77,6 +77,13 @@ standalone emitter; this adapter refuses multiple schematic outputs so the
 campaign inventory and declared write scope remain exact. Placement, routing,
 fabrication and the telemetry pod's full acceptance scope are separate work.
 
+For [stable regeneration](schematic-regeneration.md), pass `regeneration_intent`
+to `configuration` and pre-create that captured file with the last emitted
+intent. The emission step then adopts both the updated schematic and its final
+intent state. Annotation verifies a repeated update against the adopted state;
+it does not repack retained symbols. Conflicting native edits return findings
+and no outputs. The existing writer guard protects both step-owned files.
+
 Tests use original regulator fixtures and scripted model responses with actual
 KiCad XML exports, sandbox receipts and forward annotation:
 
