@@ -956,9 +956,12 @@ band is computed from that probability on read. Proved pad, courtyard or outline
 geometry, or a region above a declared `max_failure_probability`, is a `defect`.
 A defect carries `gate_findings` with a `move` or `rotate` `suggested_fix`.
 Otherwise the outcome is `info`; the check never passes. The capability has no
-predicate, so only `informational` requirements may map it. A failed or unusable
-probe is unknown. See [placement congestion](placement-congestion.md) for
-parameters, the clearance and congestion model, and validation.
+predicate, so only `informational` requirements may map it. In a full review the
+adjudicator accepts its defect from the cited sealed result, with no requirement
+witness. The finding is marked `authority: advisory` and the review still fails
+([defects in a full review](placement-congestion.md#defects-in-a-full-review)).
+A failed or unusable probe is unknown. See [placement congestion](placement-congestion.md)
+for parameters, the clearance and congestion model, and validation.
 
 ## Board envelope predicates
 

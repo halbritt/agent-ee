@@ -285,6 +285,8 @@ def render(run, result):
     lines += ["", "## Findings and dispositions", ""]
     for f in result.get("findings", []):
         lines += [f"### {f['id']}: {f['title']}", "", f"Disposition: **{finding_status(f)}**.", "",
+                  *(["Authority: advisory check; the defect is confirmed but witnesses no requirement.", ""]
+                    if f.get("authority") == "advisory" else []),
                   f"Location: {f.get('location', '')}. Condition: {f.get('condition', '')}.", "",
                   f.get("mechanism", f.get("summary", "")), "", f.get("reasoning", "")]
         decision = f.get("decision", {})

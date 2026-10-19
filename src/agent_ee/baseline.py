@@ -319,10 +319,7 @@ def validate_witnesses(run, witnesses, evidence):
     validate_witness_shape(witnesses)
     if not witnesses:
         raise ValueError("accepted defect requires requirement/check witnesses")
-    seal = read_json(run / "work/verification/evidence.json")
-    manifest = read_json(run / "candidate.json")
-    if seal["baseline_id"] != baseline["baseline_id"] or seal["candidate_id"] != manifest["candidate_id"]:
-        raise ValueError("evidence identity differs from baseline/candidate")
+    seal = _evidence_seal(run, baseline)
     requirements = {r["id"]: r for r in baseline["requirements"]}
     cited = {e["path"] for e in evidence}
     for witness in witnesses:
@@ -335,15 +332,45 @@ def validate_witnesses(run, witnesses, evidence):
             coverage = baseline["coverage"]["requirements"][rid]
             if coverage["intent"] != "acceptance" or cid not in coverage["acceptance_checks"]:
                 raise ValueError("witness requires audited acceptance capability")
-        path = f"checks/{cid}.json"
-        receipt = seal["checks"][cid]
-        if path not in cited or digest(run / path) != receipt["result"]:
-            raise ValueError("witness needs an unchanged cited check result")
-        check = read_json(run / path)
-        if check["execution"] != "ok" or check["outcome"] != "defect":
-            raise ValueError("witness must establish a freshly failed criterion")
-        if not receipt["artifacts"]:
-            raise ValueError("witness has no reproducible tool evidence")
-        for rel, sha in receipt["artifacts"].items():
-            if digest(run / rel) != sha:
-                raise ValueError("witness tool evidence changed")
+        _sealed_defect(run, seal, cid, cited)
+
+
+def advisory_check(baseline, cid):
+    """True when the audited scope/3 coverage gives ``cid`` no acceptance predicate or mapping."""
+    if baseline is None or baseline["schema"] != "agent-ee.baseline/2":
+        return False
+    coverage = baseline["coverage"]
+    return (cid in coverage["checks"] and not coverage["checks"][cid]["can_evaluate_bound"] and
+            not any(cid in r["acceptance_checks"] for r in coverage["requirements"].values()))
+
+
+def validate_advisory_defect(run, cid, evidence):
+    """Confirm an advisory check's sealed defect; it witnesses no requirement (AGENTEE-217)."""
+    run = Path(run)
+    baseline = load_baseline(run)
+    if not advisory_check(baseline, cid):
+        raise ValueError("advisory defect requires an audited check with no acceptance mapping")
+    _sealed_defect(run, _evidence_seal(run, baseline), cid, {e["path"] for e in evidence})
+
+
+def _evidence_seal(run, baseline):
+    seal = read_json(run / "work/verification/evidence.json")
+    manifest = read_json(run / "candidate.json")
+    if seal["baseline_id"] != baseline["baseline_id"] or seal["candidate_id"] != manifest["candidate_id"]:
+        raise ValueError("evidence identity differs from baseline/candidate")
+    return seal
+
+
+def _sealed_defect(run, seal, cid, cited):
+    path = f"checks/{cid}.json"
+    receipt = seal["checks"][cid]
+    if path not in cited or digest(run / path) != receipt["result"]:
+        raise ValueError("witness needs an unchanged cited check result")
+    check = read_json(run / path)
+    if check["execution"] != "ok" or check["outcome"] != "defect":
+        raise ValueError("witness must establish a freshly failed criterion")
+    if not receipt["artifacts"]:
+        raise ValueError("witness has no reproducible tool evidence")
+    for rel, sha in receipt["artifacts"].items():
+        if digest(run / rel) != sha:
+            raise ValueError("witness tool evidence changed")

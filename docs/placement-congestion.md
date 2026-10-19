@@ -35,6 +35,24 @@ references or values. A requirement that maps this check must be
 `informational`. The capability has no predicate, so an `acceptance` mapping is
 refused with `no executable bound`.
 
+## Defects in a full review
+
+In a full `review`, a congestion defect becomes the finding `check/<id>`. The
+adjudicator accepts it by citing `checks/<id>.json` (AGENTEE-217). It needs no
+requirement witness because none exists. The coordinator checks the baseline
+coverage: the check must have no acceptance predicate and no acceptance mapping.
+The sealed result must be unchanged, executed and a defect, and its tool
+evidence must be unchanged. The accepted finding and its decision event are
+marked `"authority": "advisory"`.
+
+The finding is never acceptance evidence. `validate_witnesses` still refuses it
+for every requirement. A defect check outcome keeps the review at
+`defects_or_unresolved`. Like any check defect, it cannot be noted, deferred or
+dismissed. An acceptance check defect cannot be marked a duplicate of an
+advisory finding, because the advisory finding would then stand in for a
+requirement failure. The reverse duplicate is allowed. The accepted finding
+reaches the repair writer as context, like other accepted check findings.
+
 ## Execution
 
 The only tool execution is the read-only saved-board
@@ -185,6 +203,14 @@ routed outcomes, and the router remains the authority.
 - A corrupt board makes the probe fail, and the outcome is unknown.
 - Quarter-turn pad transforms match pcbnew, and the suggested `rotate R1 180°`
   restores the control pads.
+- A full `cli.run_review` with passing ERC as the only acceptance check, the
+  overlap as the only defect and scripted agent transport completes. The
+  adjudicated advisory finding fails the review (`defects_or_unresolved`) and
+  is refused as a requirement witness.
+
+`tests.test_baseline.AdvisoryDefectTests` covers the adjudication refusals: an
+uncited, changed or non-failed result, deferral, noting, dismissal, and an
+acceptance defect marked a duplicate of an advisory finding.
 
 ## Sources
 
