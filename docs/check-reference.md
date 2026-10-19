@@ -458,7 +458,10 @@ is a captured `agent-ee.rf-geometry/1` record for one RF net. It may hold a
 grounded-CPW section (width, gap and tolerance targets, read directly or by JSON
 pointer from a captured calculation record in `mm` or `mil`), a stitching
 section (pitch and band) and an explicit trunk/stub topology with per-branch
-length bounds. The sandboxed pcbnew probe records facts only. The coordinator
+length bounds. A reported-only electrical length may take its effective
+permittivity from a captured solver record, bound by path, SHA-256 and JSON
+pointer. A hash mismatch refuses, and a value absent at the pointer is unknown.
+The sandboxed pcbnew probe records facts only. The coordinator
 grades:
 
 - exact track width;

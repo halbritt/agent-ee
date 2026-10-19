@@ -91,7 +91,12 @@ URLs, UTC timestamps, tools, raw hashes, fresh request identities, all received
 socket frames/payloads and sent control frames. Its `w2_continuation` binds the
 single new result, upper/lower/gap mapping and constraint-file hash. Earlier
 records remain historical. Raw vendor bytes stay in worker scratch; no owner
-evidence store or vendor code/text is committed. Hashes establish byte identity,
+evidence store or vendor code/text is committed. The one exception is the
+513-byte decoded W2 result (`calc-4-result.json`), committed byte-for-byte as
+[rf-w2-calc-4-result.json](../fixtures/telemetry-pod/rf-w2-calc-4-result.json)
+and listed under `committed_decoded_results` (AGENTEE-264). It holds only the
+calculator's numbers and identifiers for agent-ee's own inputs, so `rf_geometry`
+can bind its `dErEff` by SHA-256 and JSON pointer. Hashes establish byte identity,
 not vendor authentication or committed offline replay. Checks use no network.
 
 The RF maximum length remains a scope limitation until a design bound is

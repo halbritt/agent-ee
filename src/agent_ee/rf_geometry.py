@@ -17,6 +17,11 @@ ground net, the signal and reference layers and any of three sections:
   routed copper graph must realise exactly that tree, and each branch's routed
   track length is graded against its declared bound.
 
+An optional `electrical_length` section is reported only. Its effective
+permittivity is either a declared number or read by JSON pointer from a captured
+solver record bound by SHA-256: a hash mismatch refuses, and a value absent at the
+pointer leaves every branch's electrical length unknown (null).
+
 The sandboxed pcbnew probe (`python3 -m agent_ee.rf_geometry`) emits judgment-free
 native facts: the RF net's tracks, pads and vias, ground vias and united copper
 polygons (ground on the signal and reference layers, other copper on the signal
@@ -29,6 +34,7 @@ import argparse
 import heapq
 import json
 import math
+import re
 from pathlib import Path, PurePosixPath
 
 from .storage import digest, write_json
@@ -48,7 +54,10 @@ STITCH_OPTIONAL = {'branches'}
 TRUNK_KEYS = {'from', 'to', 'max_length_mm'}
 STUB_KEYS = {'name', 'terminal', 'max_length_mm'}
 STUB_OPTIONAL = {'from'}
-ELECTRICAL_KEYS = {'effective_permittivity', 'frequency_hz', 'basis'}
+ELECTRICAL_KEYS = {'frequency_hz', 'basis'}
+ELECTRICAL_OPTIONAL = {'effective_permittivity', 'effective_permittivity_source'}
+PERMITTIVITY_SOURCE_KEYS = {'path', 'sha256', 'pointer'}
+SHA256 = re.compile(r'[0-9a-f]{64}')
 DEFAULT_STEP_MM = 0.05
 DEFAULT_SEARCH_MM = 1.0
 ARC_SAGITTA_NM = 100.0
@@ -215,14 +224,49 @@ def parse_declaration(raw, load_source=None):
                                  'band_mm': list(band), 'branches': list(selected)}
     if 'electrical_length' in doc:
         electrical = doc['electrical_length']
-        _keys(electrical, ELECTRICAL_KEYS, set(), 'electrical_length')
+        _keys(electrical, ELECTRICAL_KEYS, ELECTRICAL_OPTIONAL, 'electrical_length')
         if 'topology' not in doc:
             raise ValueError('electrical_length reports branch lengths and requires topology')
+        if len(ELECTRICAL_OPTIONAL & set(electrical)) != 1:
+            raise ValueError('electrical_length requires exactly one of effective_permittivity or '
+                             'effective_permittivity_source')
         resolved['electrical_length'] = {
-            'effective_permittivity': _number(electrical['effective_permittivity'], 'effective_permittivity'),
             'frequency_hz': _number(electrical['frequency_hz'], 'frequency_hz'),
             'basis': _text(electrical['basis'], 'electrical_length basis')}
+        if 'effective_permittivity' in electrical:
+            resolved['electrical_length']['effective_permittivity'] = _number(
+                electrical['effective_permittivity'], 'effective_permittivity')
+        else:
+            resolved['electrical_length'].update(_bound_permittivity(
+                electrical['effective_permittivity_source'], load_source))
     return doc, resolved
+
+
+def _bound_permittivity(binding, load_source):
+    """Effective permittivity read by JSON pointer from a captured record bound by SHA-256.
+
+    A hash mismatch refuses; a pointer that does not resolve, or resolves to null, is unknown."""
+    _keys(binding, PERMITTIVITY_SOURCE_KEYS, set(), 'effective_permittivity_source')
+    if not isinstance(binding['sha256'], str) or not SHA256.fullmatch(binding['sha256']):
+        raise ValueError('effective_permittivity_source sha256 must be 64 lowercase hex digits')
+    path = binding['pointer']
+    if not isinstance(path, str) or not path.startswith('/'):
+        raise ValueError('effective_permittivity_source pointer must start with /')
+    if load_source is None:
+        raise ValueError('effective_permittivity_source requires captured inputs')
+    captured = load_source(binding['path'])
+    if captured['sha256'] != binding['sha256']:
+        raise ValueError(f"effective_permittivity_source {binding['path']} has sha256 {captured['sha256']}, "
+                         f"not the declared {binding['sha256']}")
+    source = {'path': binding['path'], 'sha256': captured['sha256'], 'pointer': path}
+    try:
+        value = pointer(captured['document'], path)
+    except ValueError:
+        value = None
+    if value is None:
+        return {'effective_permittivity': None, 'source': source, 'status': 'unknown',
+                'reason': 'effective permittivity is absent from the captured record at the pointer'}
+    return {'effective_permittivity': _number(value, 'source effective_permittivity'), 'source': source}
 
 
 def predicates(resolved):
@@ -275,7 +319,7 @@ def capability(params, scope, files, inputs):
         return {'document': document, 'sha256': digest(root / rel)}
 
     doc, resolved = parse_declaration((root / declaration).read_bytes(), load_source)
-    return {'immutable_inputs': sorted(immutable), 'predicates': predicates(resolved),
+    return {'immutable_inputs': sorted(set(immutable)), 'predicates': predicates(resolved),
             'declaration': doc, 'resolved': resolved}
 
 
@@ -1019,7 +1063,9 @@ def evaluate_topology(resolved, native):
                       {'at_nm': [round(v) for v in chain[0]] if chain else None},
                       via_transitions=sum(1 for n in nodes if n in via_roots),
                       tracks=sorted({pieces[e]['track'] for e in edges}))
-        if electrical:
+        if electrical and electrical['effective_permittivity'] is None:
+            record['electrical_length_deg'] = None
+        elif electrical:
             record['electrical_length_deg'] = round(
                 360 * (length / 1e9) * electrical['frequency_hz'] * math.sqrt(electrical['effective_permittivity'])
                 / LIGHT_M_PER_S, 4)

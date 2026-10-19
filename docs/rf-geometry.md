@@ -26,8 +26,9 @@ graded as microstrip instead.
 
 `params` must contain only `declaration`, the candidate-relative path to a
 captured `agent-ee.rf-geometry/1` record. The declaration is an immutable input.
-So is the calculation record named by `source.path`, which is bound to its
-captured SHA-256. A source that is not a captured input refuses capture. Launch
+So are the calculation record named by `source.path`, which is bound to its
+captured SHA-256, and the solver record named by
+`electrical_length.effective_permittivity_source.path`. A source that is not a captured input refuses capture. Launch
 preflight requires `pcbnew`.
 
 The handler writes `rf-request.json` and runs this command in the sandbox
@@ -90,8 +91,34 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
   `0 <= inner < outer`. Optional `branches` limits the check to the named
   branches.
 - `electrical_length` is reported only. Each branch gets an electrical length
-  in degrees from the declared effective permittivity and frequency. No
-  verdict is drawn from it.
+  in degrees from the effective permittivity and `frequency_hz`. No verdict is
+  drawn from it. It needs exactly one of:
+  - `effective_permittivity`, a declared positive number;
+  - `effective_permittivity_source`, a binding to a captured solver record:
+    `{"path": ..., "sha256": ..., "pointer": ...}`. `path` must be a captured
+    input. `sha256` is the record's declared SHA-256 (64 lowercase hex digits);
+    if the captured bytes hash differently, capture refuses. `pointer` is an RFC
+    6901 JSON pointer. A non-numeric or non-positive value refuses. A pointer
+    that does not resolve, or resolves to `null`, makes the value unknown:
+    `resolved.electrical_length` then has `effective_permittivity: null`,
+    `status: "unknown"` and a reason, and every branch reports
+    `electrical_length_deg: null`. Branch and check verdicts are unchanged
+    either way.
+
+  The pod's captured W2 solver record is
+  [rf-w2-calc-4-result.json](../fixtures/telemetry-pod/rf-w2-calc-4-result.json).
+  It is bound like this:
+
+  ```json
+  "electrical_length": {"effective_permittivity_source": {
+                          "path": "project/rf-w2-calc-4-result.json",
+                          "sha256": "d05e15b93f02b3cc12b9b967c093503c60a3c72338a2f35ddccd96d4998b89af",
+                          "pointer": "/impedance_calc_result/dErEff"},
+                        "frequency_hz": 1575420000, "basis": "captured W2 solver ErEff"}
+  ```
+
+  This resolves to 2.94025199985. It is the solver's modelled value for its own
+  geometry, not a measurement of the routed board.
 
 Coverage predicates are `rf-geometry:cpw-structure`, `rf-geometry:cpw-reference`,
 `rf-geometry:cpw-width`, `rf-geometry:cpw-gap`, `rf-geometry:stitching-pitch`,
