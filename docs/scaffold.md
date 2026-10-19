@@ -98,7 +98,10 @@ and BOM/position-file exclusions. They have no netlist path or schematic symbol.
 `Mechanical:MountingHole` has no pins: putting it in connectivity intent still
 produces `empty_pins`; this preparation step does not relax the resolver.
 NPTH pad size equals drill size. Declared PTH holes receive a 0.3 mm annulus;
-fabrication checks still judge that generated choice. The pod contract fixture
+fabrication checks still judge that generated choice. Each hole pad carries every
+copper layer plus F.Mask and B.Mask, built on an owned copy of KiCad's shared
+`LSET.AllCuMask()`: mutating that static set in place makes later saves fold
+`*.Mask` into `*.Cu`, so pads reload without solder-mask openings. The pod contract fixture
 uses four 3.2 mm NPTH holes at a 4 mm inset, the owner-authorized default; a
 production generator must retain that default as a recorded deviation.
 
@@ -136,7 +139,8 @@ and use the stage receipt for campaign binding.
 
 [test_scaffold.py](../tests/test_scaffold.py) exercises original mechanical
 stand-ins for AMPSEAL, SMA, IMU and radio on the pod envelope, native hole and
-keepout checks, front/back transforms, byte identity, forward annotation with a
+keepout checks, front/back transforms, byte identity, exact pad layer sets
+(copper and mask) after a fresh-process reload, forward annotation with a
 real KiCad XML export, and campaign pre-receipt verification. Model responses
 in the campaign protocol test are scripted; native tools and receipts are real.
 These tests establish generator mechanics, not physical component suitability,

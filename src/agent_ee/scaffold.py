@@ -272,7 +272,9 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
         pad.SetDrillSize(pcbnew.VECTOR2I(drill, drill))
         size = drill + (600000 if hole['plated'] else 0)
         pad.SetSize(pcbnew.VECTOR2I(size, size))
-        layers = pcbnew.LSET.AllCuMask()
+        # AllCuMask() is KiCad's shared static set; mutating it in place makes
+        # every later save fold *.Mask into *.Cu, dropping pad masks on reload.
+        layers = pcbnew.LSET(pcbnew.LSET.AllCuMask())
         layers.AddLayer(pcbnew.F_Mask)
         layers.AddLayer(pcbnew.B_Mask)
         pad.SetLayerSet(layers)
