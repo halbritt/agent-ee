@@ -57,6 +57,12 @@ adding a check kind. Answers that exceed the JSON decoder's recursion limit
 produce `outcome: unknown` and an `answers_too_deep` finding, retain the raw
 answers and their hash, and produce no derived requirements (CLI exit 1).
 
+The routing-stage [plane producer](add-planes.md) adds no check kind. Its native
+DRC gate refuses errors citing planned zones and `isolated_copper` violations
+citing planned `always` zones at any severity, with exact zone UUIDs retained in
+the refusal. Planned `never` zones retain isolated-copper warnings for later
+campaign checks.
+
 ## Execution and engineering result
 
 Every result separates `execution` from `outcome`. A tool can run successfully

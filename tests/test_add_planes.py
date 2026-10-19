@@ -126,6 +126,65 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
         self.assertIn('no native filled copper',str(report['findings']))
         self.assertFalse((self.root/'run/board.kicad_pcb').exists())
 
+    def test_wholly_unconnected_zone_refuses_always_but_preserves_never(self):
+        before = stage_receipts.file_tree(self.source)
+        for policy in ('always', 'never'):
+            with self.subTest(policy=policy):
+                self.plan['zones'] = [dict(self.plan['zones'][0], island_removal=policy,
+                    outline={'polygon_mm': [[35,11],[49,11],[49,30],[35,30]]})]
+                self.save()
+                name = 'isolated-' + policy
+                report = self.run_plan(name)
+                uid = planes.zone_ids(self.plan)[0]
+                # The producer's inspect child reloads the saved fill in a fresh process.
+                facts = read_json(self.root/name/'verify/facts.json')
+                self.assertEqual(facts['zones'][0]['uuid'], uid)
+                self.assertGreater(facts['zones'][0]['filled_area_mm2'], 0)
+                native = read_json(self.root/name/'drc/report.json')
+                isolated = [v for v in native['violations'] if v['type']=='isolated_copper'
+                            and any(i['uuid']==uid for i in v['items'])]
+                self.assertTrue(isolated, native)
+                self.assertTrue(all(v['severity']=='warning' for v in isolated))
+                if policy == 'always':
+                    self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+                    self.assertEqual(report['drc']['planned_zone_errors'], isolated)
+                    self.assertIn(uid, str(report['findings']))
+                    self.assertFalse((self.root/name/'board.kicad_pcb').exists())
+                else:
+                    self.assert_ok(report)
+                    self.assertEqual(report['drc']['planned_zone_errors'], [])
+                    self.assertTrue((self.root/name/'board.kicad_pcb').is_file())
+        # Only the explicitly rewritten plan changes in the captured inputs.
+        after = stage_receipts.file_tree(self.source)
+        self.assertEqual({p for p in before[0] if before[0][p]!=after[0][p]}, {self.plan_path})
+
+    def test_split_zone_removes_secondary_island_only_under_always(self):
+        prepare = r"""
+import pcbnew as k
+b=k.LoadBoard('/candidate/project/pod.kicad_pcb')
+z=k.ZONE(b);z.SetIsRuleArea(True);z.SetDoNotAllowZoneFills(True);z.SetLayer(k.In1_Cu)
+z.Outline().NewOutline()
+for x,y in [(29,9),(31,9),(31,51),(29,51)]:z.Outline().Append(k.FromMM(x),k.FromMM(y))
+b.Add(z)
+assert k.SaveBoard('/work/pod.kicad_pcb',b)
+"""
+        rec = execute(self.source, self.root/'split', ['/usr/bin/python3','-B','-c',prepare], timeout=120)
+        self.assertEqual(rec['exit_code'], 0, (self.root/'split/console.log').read_text()[-2000:])
+        shutil.copyfile(self.root/'split/pod.kicad_pcb', self.source/self.board)
+        fills = {}
+        for policy, polygons in [('always', 1), ('never', 2)]:
+            with self.subTest(policy=policy):
+                self.plan['zones'] = [dict(self.plan['zones'][0], island_removal=policy)]
+                self.save()
+                before = stage_receipts.file_tree(self.source)
+                report = self.run_plan('split-' + policy)
+                self.assert_ok(report)
+                self.assertEqual(stage_receipts.file_tree(self.source), before)
+                self.assertEqual(report['drc']['planned_zone_errors'], [])
+                fills[policy] = report['zones'][0]
+                self.assertEqual(fills[policy]['fill_polygons'], polygons)
+        self.assertGreater(fills['never']['filled_area_mm2'], fills['always']['filled_area_mm2'])
+
     def test_drc_execution_failure_never_publishes_board(self):
         original=planes.execute
         def broken(inputs,work,argv,**kw):
@@ -208,6 +267,31 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
                        lambda p:p['zones'][0].update(island_removal='guess')):
             plan=copy.deepcopy(self.plan);mutate(plan)
             with self.assertRaises(ValueError):planes.validate_plan(plan)
+
+
+class PlannedZoneClassificationTests(unittest.TestCase):
+    def test_isolated_copper_is_policy_and_zone_specific_at_every_severity(self):
+        always = '10000000-0000-0000-0000-000000000001'
+        never = '10000000-0000-0000-0000-000000000002'
+        unrelated = '10000000-0000-0000-0000-000000000003'
+        for severity in ('warning', 'exclusion', 'error'):
+            for uid in (always, never, unrelated):
+                for kind in ('isolated_copper', 'unconnected_items'):
+                    with self.subTest(severity=severity, uid=uid, kind=kind):
+                        violation = dict(type=kind, severity=severity, items=[dict(uuid=uid)])
+                        native = dict(included_severities=['error','warning','exclusion'], violations=[violation])
+                        expected = ([violation] if (severity=='error' and uid in (always,never)) or
+                                    (kind=='isolated_copper' and uid==always) else [])
+                        self.assertEqual(planes._planned_zone_errors(native, [always,never], {always}), expected)
+
+    def test_isolated_copper_unknown_attribution_refuses_with_always_policy(self):
+        uid = '10000000-0000-0000-0000-000000000001'
+        for items in ([], [{}], [dict(uuid='invalid')]):
+            with self.subTest(items=items):
+                native = dict(included_severities=['error','warning','exclusion'],
+                    violations=[dict(type='isolated_copper', severity='warning', items=items)])
+                with self.assertRaises(ValueError):
+                    planes._planned_zone_errors(native, [uid], {uid})
 
 
 class AddPlanesRoutingTests(PlaneFixture, unittest.TestCase):

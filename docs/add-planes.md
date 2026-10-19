@@ -44,7 +44,13 @@ Island removal is explicitly `always` or `never`. This matters before routing:
 an isolated inner-layer region may have no connection yet. The producer never
 changes the policy to make a fill pass. A selected policy that leaves any planned
 zone without filled copper is a refusal. Engineering must choose the intended
-policy in the captured plan.
+policy in the captured plan. In KiCad 10, `always` removes disconnected secondary
+islands when the zone has a connected main pour. A wholly unconnected zone can
+retain its fill and emit native DRC `isolated_copper` warnings instead. The
+producer refuses any `isolated_copper` violation attributed to a planned
+`always` zone, including warnings and exclusions, and reports the exact zone
+UUIDs. `never` retains disconnected copper; its isolated-copper warnings remain
+in the native report without causing this policy refusal.
 
 Zone UUIDs are deterministic from the complete plan and list index. The same
 plan can refill its own zones on later routing turns. A changed plan does not
@@ -90,10 +96,13 @@ including footprints, pads, tracks, vias, rule areas, outlines and metadata.
 A second native child opens the delivered form and checks zone inventory,
 settings, outlines and nonempty actual fill. Native DRC then checks that form
 without refilling or saving it. Execution failure, malformed DRC output, or an
-error citing a planned zone prevents publication of `out/board.kicad_pcb`.
+error citing a planned zone or `isolated_copper` citing a planned `always` zone
+prevents publication of `out/board.kicad_pcb`.
 The report must include all native severities; each violation must have a known
 severity, nonempty type, and well-formed item UUIDs. An error without item
-attribution is unknown and refuses publication, rather than being classified as
+attribution is unknown and refuses publication. An `isolated_copper` violation
+without attribution also refuses when any planned zone uses `always`. Such
+records cannot be classified as
 unrelated to the planes.
 The report retains the whole native DRC and counts other findings; existing
 unconnected items and unrelated defects remain subject to later campaign checks.
@@ -108,7 +117,10 @@ stage receipt binds all captured inputs, tool source, output bytes and artifacts
 Native tests use an original four-layer probe with In1 GND and two In2 power
 regions. They exercise byte preservation, repeated fills, native footprint
 keepouts, unplanned-zone/missing-net refusal, saved fill validation, native DRC
-defects, and board-only receipt adoption. The optional routing test uses the
+defects, and board-only receipt adoption. Native island-policy regressions check
+wholly unconnected zone refusal under `always`, its retained fill under `never`,
+and a split zone whose secondary island is removed only under `always`, with
+saved fills inspected in fresh processes. The optional routing test uses the
 qualified pinned KRT backend and checks `pour_integrity` after actual signal
 routing. Its explicit empty schematic retains baseline parity findings: this
 test establishes routing/plane preservation, not schematic correctness.
