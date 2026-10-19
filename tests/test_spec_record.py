@@ -207,6 +207,63 @@ class RefusalTests(unittest.TestCase):
         short = SMALL.replace('| --- | --- |', '| --- |')
         self.assert_cli_refused(short, short.encode().index(b'| --- |'))
 
+    def test_table_without_leading_pipes_refused(self):
+        for trailing in (False, True):
+            for newline in ('\n', '\r\n'):
+                for indent in ('', '   '):
+                    with self.subTest(trailing=trailing, newline=repr(newline), indent=len(indent)):
+                        lines = []
+                        for line in SMALL.replace('# Board', '# Board µ').splitlines():
+                            if line.startswith('|'):
+                                line = indent + line[1:].lstrip()
+                                if not trailing:
+                                    line = line[:-1].rstrip()
+                            lines.append(line)
+                        text = newline.join(lines) + newline
+                        byte = text.encode().index((indent + '--- | ---').encode())
+                        findings = self.assert_cli_refused(text, byte)
+                        self.assertIn('table delimiter', findings[0]['message'])
+
+    def test_table_delimiter_without_leading_pipe_refused(self):
+        for delimiter in ('--- | --- |', ':--- | ---:'):
+            with self.subTest(delimiter=delimiter):
+                text = SMALL.replace('| --- | --- |', delimiter)
+                findings = self.assert_cli_refused(text, text.encode().index(delimiter.encode()))
+                self.assertEqual(findings[0]['code'], 'table')
+                self.assertIn('does not begin with |', findings[0]['message'])
+
+    def test_table_without_leading_pipes_inside_list_refused(self):
+        text = SMALL.replace('- Second bullet', '- Second bullet\n  Name | Requirement\n  --- | ---\n  CAN1 | bus')
+        byte = text.encode().index(b'  --- | ---')
+        findings = self.assert_cli_refused(text, byte)
+        self.assertEqual(findings[0]['code'], 'list')
+        self.assertIn('table inside a list', findings[0]['message'])
+
+    def test_pipe_prose_and_single_column_table_capture(self):
+        text = '# Interfaces\n\nCAN1 | CAN2 are bus names.\nKeep both.\n\n| Name |\n| :---: |\n| CAN1 |\n'
+        record = capture(text.encode(), 'P', {'Interfaces': 'IF'})
+        self.assertEqual([p['text'] for p in record['prose']], ['CAN1 | CAN2 are bus names.\nKeep both.'])
+        self.assertEqual([r['cells'] for r in record['requirements']], [{'Name': 'CAN1'}])
+
+    def test_record_hash_depends_on_spec_filename(self):
+        first = capture(SMALL.encode(), 'P', SMALL_CODES, 'spec.md')
+        renamed = capture(SMALL.encode(), 'P', SMALL_CODES, 'renamed.md')
+        self.assertEqual(first['spec']['sha256'], renamed['spec']['sha256'])
+        self.assertNotEqual(hashlib.sha256(json_bytes(first)).hexdigest(),
+                            hashlib.sha256(json_bytes(renamed)).hexdigest())
+        renamed['spec']['name'] = first['spec']['name']
+        self.assertEqual(first, renamed)
+
+    def test_ids_follow_first_cell_and_bullet_position(self):
+        before = capture(SMALL.encode(), 'P', SMALL_CODES)
+        text = SMALL.replace('| CAN1 |', '| CAN2 |').replace('- First bullet', '- Inserted bullet\n- First bullet')
+        after = capture(text.encode(), 'P', SMALL_CODES)
+        self.assertEqual([r['id'] for r in after['requirements'] if r['kind'] == 'table_row'],
+                         ['P-IF-CAN2', 'P-IF-POWER-IN'])
+        for record, expected in ((before, 'P-CK-2'), (after, 'P-CK-3')):
+            self.assertEqual(next(r['id'] for r in record['requirements'] if r['text'] == 'Second bullet'),
+                             expected)
+
     def test_duplicate_id_refused(self):
         text = SMALL.replace('| Power in |', '| can1 |')  # slug CAN1 collides with the first row
         findings = self.assert_cli_refused(text, text.encode().index(b'can1'))

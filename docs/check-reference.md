@@ -50,7 +50,8 @@ Limitations and bench obligations appear in the scope and run limitations,
 never as passing checks; pod acceptance items 8 and 9 are bench-only.
 [Spec capture](spec-record.md) records a markdown spec's table rows, bullets and
 numbered items as requirement IDs with byte-exact locators; it adds no check
-kind either.
+kind either. Tables that omit outer pipes are refused with a byte offset rather
+than captured as prose.
 Offline [decision capture](design-dialog.md) also prepares requirements without
 adding a check kind. Answers that exceed the JSON decoder's recursion limit
 produce `outcome: unknown` and an `answers_too_deep` finding, retain the raw
