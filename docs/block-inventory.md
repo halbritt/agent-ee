@@ -219,9 +219,9 @@ so it needs neither fome-mc nor KiCad. It checks the following:
 - every planned block validates as unverified with no runs;
 - every catalogue heading of the plan has an entry (the plan is read from the
   pinned blob in `AGENT_EE_FOME_MC_CHECKOUT` or `~/git/fome-mc`; when that
-  object store lacks the commit this one test skips, fails under
-  `AGENT_EE_REQUIRE_TOOLCHAIN=1`, or is reported as the declared
-  [`fome-mc-store` gap](container.md#declared-prerequisite-gaps));
+  object store lacks the commit this one test skips, or fails under
+  `AGENT_EE_REQUIRE_TOOLCHAIN=1` as the named
+  [`fome-mc-store` required input](container.md#required-external-inputs));
 - every copied file equals its recorded SHA-256 and Git blob id;
 - every requirement, pending requirement and interface invariant cites a
   planning document by its pinned identity, the identity equals the report's

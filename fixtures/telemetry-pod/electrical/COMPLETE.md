@@ -28,8 +28,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
 
 Roots can point to relocated retained captures; every source byte is hash
 checked. `tests/test_pod_j1_courtyard.py` reads the same captures through
-`AGENT_EE_POD_INPUTS` and `AGENT_EE_POD_J1_GEOMETRY`; without them it is the
-declared `pod-retained-inputs` gap in hosted CI ([container](../../../docs/container.md#declared-prerequisite-gaps)). Keep whole acquisition/catalog batches and their recorded failures.
+`AGENT_EE_POD_INPUTS` and `AGENT_EE_POD_J1_GEOMETRY`; without them it fails strict runs as the
+`pod-retained-inputs` required input, including hosted CI ([container](../../../docs/container.md#required-external-inputs)). Keep whole acquisition/catalog batches and their recorded failures.
 Vendor PDFs, stock libraries and both CAN source instances remain external.
 The recipes and numerical metadata do not grant new redistribution rights.
 

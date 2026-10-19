@@ -73,30 +73,22 @@ def require_toolchain(*, native=False, tools=()):
         raise unittest.SkipTest(reason)
 
 
-# Prerequisite partitions a strict run may declare as named, reported gaps.
-DECLARABLE_GAPS = ('fome-mc-store', 'pod-retained-inputs')
-DECLARED_GAP = 'declared gap '
-
-
-def declared_gaps():
-    names = {n.strip() for n in os.environ.get('AGENT_EE_DECLARED_GAPS', '').split(',') if n.strip()}
-    unknown = sorted(names.difference(DECLARABLE_GAPS))
-    if unknown:
-        raise AssertionError('AGENT_EE_DECLARED_GAPS names unknown gap(s): ' + ', '.join(unknown))
-    return names
+# Named partitions of required inputs that this repository does not carry.
+# Under AGENT_EE_REQUIRE_TOOLCHAIN=1 an absent one always fails the test; the
+# strict runner names those failures, and no setting turns them into a pass.
+REQUIRED_INPUTS = ('fome-mc-store', 'pod-retained-inputs')
+MISSING_INPUT = 'AGENT_EE_REQUIRE_TOOLCHAIN=1: required input {gap} missing: '
 
 
 def unavailable(gap, reason):
-    """An absent prerequisite of the named partition: a skip, or a failure under
-    AGENT_EE_REQUIRE_TOOLCHAIN=1 unless that run declares the gap in
-    AGENT_EE_DECLARED_GAPS; a declared gap skips with a reason naming it so the
-    runner reports it (docs/container.md). Never a pass."""
+    """An absent required input of the named partition: a skip, or a failure
+    under AGENT_EE_REQUIRE_TOOLCHAIN=1 whose message names the partition so the
+    strict runner reports it as not executed (docs/container.md). Never a pass."""
+    if gap not in REQUIRED_INPUTS:
+        raise ValueError(f'unknown required-input partition: {gap}')
     if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1':
         raise unittest.SkipTest(reason)
-    if gap in declared_gaps():
-        raise unittest.SkipTest(f'{DECLARED_GAP}{gap}: {reason}')
-    raise AssertionError(f'AGENT_EE_REQUIRE_TOOLCHAIN=1: {reason} '
-                         f'(a strict run may only declare it: AGENT_EE_DECLARED_GAPS={gap})')
+    raise AssertionError(MISSING_INPUT.format(gap=gap) + reason)
 
 
 def fome_mc_store(repository, *revisions):

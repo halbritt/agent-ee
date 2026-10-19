@@ -36,6 +36,7 @@ jobs:
           echo "SANDBOX_OPTS=--network none --security-opt seccomp=unconfined --security-opt apparmor=$profile --security-opt systempaths=unconfined" >> "$GITHUB_ENV"
 
       - name: Build the image from the checkout
+        id: build
         run: docker build -t "$IMAGE" .
 
       - name: Doctor (native toolchain versions and binary hashes)
@@ -51,19 +52,17 @@ jobs:
           sysctl kernel.apparmor_restrict_unprivileged_userns || true
           sudo -n journalctl -k --since '10 minutes ago' --grep='apparmor|RTM_NEWADDR|userns' --no-pager || true
 
-      # Every module runs, four at a time, in strict mode; any skip fails the step
-      # except one naming a declared gap. Fetching the owner's fome-mc repository
-      # here awaits an owner decision, and the pod's retained external captures
-      # (vendor drawings, geometry) are not committed, so the tests reading them
-      # are listed in the job summary as not executed (docs/container.md). Host
-      # gates with those inputs run them.
-      - name: Full test suite, strict toolchain mode, no undeclared skips
+      # The required full gate. Every module runs, four at a time, in strict mode;
+      # any failure or skip fails the step. Tests whose required inputs are absent
+      # (the owner's fome-mc object store, the pod's retained external captures)
+      # fail and are named in the job summary as not executed; this step stays
+      # red until those inputs are provisioned (docs/container.md).
+      - name: Full test suite, strict toolchain mode, no skips
         run: |
           summary=$(mktemp -d "$RUNNER_TEMP/agent-ee-suite-XXXXXX")
           chmod 0777 "$summary"
           status=0
-          docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 -e PYTHONPATH=src \
-            -e AGENT_EE_DECLARED_GAPS=fome-mc-store,pod-retained-inputs -v "$summary:/summary" \
+          docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 -e PYTHONPATH=src -v "$summary:/summary" \
             -w /opt/agent-ee "$IMAGE" python3 scripts/strict_suite.py --jobs 4 \
             --summary /summary/strict-suite.md || status=$?
           if [ -f "$summary/strict-suite.md" ]; then
@@ -74,9 +73,13 @@ jobs:
           fi
           exit "$status"
 
+      # The checks below also run after a failed suite step so that their own
+      # results are reported; any failed step still fails the job.
       - name: Documentation check
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: docker run --rm --network none -w /opt/agent-ee "$IMAGE" python3 scripts/check_docs.py
       - name: Refuse committed merge-conflict markers
+        if: ${{ !cancelled() }}
         run: sh scripts/check_conflict_markers.sh
 
       # Run directories hold copies of the candidate inputs, including third-party
@@ -85,6 +88,7 @@ jobs:
       # no run payload while publication rights for that material are unresolved,
       # so it does not call action.yml, which always uploads the run directory.
       - name: RC control and seeded fixtures, checks-only, judged in place
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           # GitHub runs bash with -e; review and verify exit statuses are
           # recorded and judged by the gate, not treated as step failures.

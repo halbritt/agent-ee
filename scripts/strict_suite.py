@@ -4,16 +4,18 @@
 Every tests/test_*.py module runs in its own interpreter, loaded with the same
 ``discover("tests", pattern=...)`` semantics as the serial suite, through a
 pool of --jobs workers with a private TMPDIR each. The run passes only when
-every module reports a successful result and every skip names a gap declared
-in AGENT_EE_DECLARED_GAPS (tests/toolchain.py, docs/container.md). A module
-that exits without its result file, a malformed result or an unexpected success
-fails the run; unknown is never pass. Declared-gap skips are listed by name on
-stderr, as GitHub warning annotations and in the optional --summary file.
+every module reports a successful result with no skip. A failure, error, skip,
+unexpected success, or a module that exits without a valid result fails the
+run; unknown is never pass. A test that failed because a required input
+partition is absent (tests/toolchain.py REQUIRED_INPUTS, docs/container.md) is
+listed by partition as not executed, on stderr, as a GitHub error annotation
+and in the optional --summary file; it fails the run like any other failure.
 """
 import argparse
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -23,7 +25,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTS = ROOT / 'tests'
-DECLARED_GAP = 'declared gap '  # tests/toolchain.py DECLARED_GAP
+# tests/toolchain.py REQUIRED_INPUTS and MISSING_INPUT (tests/test_strict_suite.py keeps them equal).
+REQUIRED_INPUTS = ('fome-mc-store', 'pod-retained-inputs')
+MISSING = re.compile(r'AGENT_EE_REQUIRE_TOOLCHAIN=1: required input (?P<gap>%s) missing: (?P<reason>[^\n]*)'
+                     % '|'.join(map(re.escape, REQUIRED_INPUTS)))
 CHILD = r'''
 import json, sys, unittest
 from pathlib import Path
@@ -67,40 +72,51 @@ def run_module(module, scratch, timeout):
     return record
 
 
-def judge(records, declared):
-    """Return (problems, gaps) over every module record; any problem fails the run."""
-    problems, gaps = [], []
+def judge(records):
+    """Return (problems, missing) over every module record; any problem fails the run.
+
+    missing lists (partition, test, reason) for failures caused by an absent
+    required input; each of them is also a problem."""
+    problems, missing = [], []
     for record in records:
         if 'problem' in record:
             problems.append(f"{record['module']}: {record['problem']}")
             continue
         result = record['result']
         for kind in ('failures', 'errors'):
-            problems += [f'{kind[:-1].upper()}: {test}' for test, _ in result[kind]]
+            for test, text in result[kind]:
+                found = MISSING.search(text)
+                if found:
+                    missing.append((found['gap'], test, found['reason']))
+                    problems.append(f"NOT EXECUTED, required input {found['gap']} missing: {test}")
+                else:
+                    problems.append(f'{kind[:-1].upper()}: {test}')
         problems += [f'UNEXPECTED SUCCESS: {test}' for test in result['unexpected_successes']]
-        for test, reason in result['skipped']:
-            gap = reason[len(DECLARED_GAP):].split(':', 1)[0] if reason.startswith(DECLARED_GAP) else None
-            if gap and gap in declared:
-                gaps.append((gap, test, reason))
-            else:
-                problems.append(f'SKIP refused in strict mode: {test}: {reason}')
+        problems += [f'SKIP refused in strict mode: {test}: {reason}' for test, reason in result['skipped']]
         if record['exit'] != 0 and not (result['failures'] or result['errors'] or result['unexpected_successes']):
             problems.append(f"{record['module']}: exit {record['exit']} with a successful result")
-    return problems, gaps
+    return problems, missing
 
 
-def summary_markdown(records, problems, gaps, declared):
+def verdict(records, problems, missing):
     run = sum(r['result']['run'] for r in records if 'result' in r)
-    lines = ['## Strict suite', '',
-             f"{len(records)} modules, {run} tests; {'FAILED' if problems else 'passed'}; "
-             f'{len(gaps)} test(s) not executed as declared gaps.', '']
-    if problems:
-        lines += ['### Problems', ''] + [f'- `{p}`' for p in problems] + ['']
-    for gap in sorted(declared):
-        named = [(test, reason) for g, test, reason in gaps if g == gap]
-        lines += [f'### Declared gap `{gap}`: {len(named)} test(s) not executed', '']
-        lines += [f'- `{test}`: {reason}' for test, reason in named] or ['- none: every prerequisite was present']
-        lines.append('')
+    if not problems:
+        return f'strict suite passed: {len(records)} modules, {run} tests, no skips'
+    return (f'strict suite FAILED: {len(records)} modules, {run} tests, {len(problems)} problem(s), '
+            f'{len(missing)} required test(s) not executed for missing inputs, '
+            f'{len(problems) - len(missing)} other problem(s)')
+
+
+def summary_markdown(records, problems, missing):
+    lines = ['## Strict suite (required full gate)', '', verdict(records, problems, missing) + '.', '']
+    for gap in REQUIRED_INPUTS:
+        named = [(test, reason) for g, test, reason in missing if g == gap]
+        if named:
+            lines += [f'### Required input `{gap}` missing: {len(named)} required test(s) not executed', '']
+            lines += [f'- `{test}`: {reason}' for test, reason in named] + ['']
+    other = [p for p in problems if not p.startswith('NOT EXECUTED, required input ')]
+    if other:
+        lines += ['### Other problems', ''] + [f'- `{p}`' for p in other] + ['']
     return '\n'.join(lines)
 
 
@@ -113,9 +129,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1':
         parser.error('strict suite requires AGENT_EE_REQUIRE_TOOLCHAIN=1')
-    sys.path.insert(0, str(TESTS))
-    from toolchain import declared_gaps
-    declared = declared_gaps()
     selected = args.modules or modules()
     unknown = sorted(set(selected).difference(modules()))
     if unknown:
@@ -132,18 +145,18 @@ def main(argv=None):
                       f'[{len(records)}/{len(selected)}]', flush=True)
                 print(record['log'], end='' if record['log'].endswith('\n') else '\n', flush=True)
     records.sort(key=lambda r: r['module'])
-    problems, gaps = judge(records, declared)
-    run = sum(r['result']['run'] for r in records if 'result' in r)
-    for gap, test, reason in gaps:
-        print(f'::warning title=declared gap {gap}::{test} not executed: {reason}')
+    problems, missing = judge(records)
+    if len(records) != len(selected):
+        problems.append(f'{len(records)} module records for {len(selected)} selected modules')
+    for gap, test, reason in missing:
+        print(f'::error title=required input {gap} missing::{test} not executed: {reason}')
     for problem in problems:
         print(problem, file=sys.stderr)
-    print(f'strict suite: {len(records)} modules, {run} tests, {len(problems)} problem(s), '
-          f'{len(gaps)} declared-gap skip(s) {sorted(declared) or "[]"}', file=sys.stderr)
+    print(verdict(records, problems, missing), file=sys.stderr)
     if args.summary:
         with args.summary.open('a') as stream:
-            stream.write(summary_markdown(records, problems, gaps, declared) + '\n')
-    return 1 if problems or len(records) != len(selected) else 0
+            stream.write(summary_markdown(records, problems, missing) + '\n')
+    return 1 if problems else 0
 
 
 if __name__ == '__main__':

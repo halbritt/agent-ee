@@ -13,8 +13,10 @@ strict tests, no skips, documentation checks and both native RC gates. See the
 [retained CI result](https://github.com/halbritt/agent-ee/actions/runs/39050160054).
 Hosted CI then failed on every push from 2026-10-18 (last green `18c2d97`); see
 [Hosted CI restore](#hosted-ci-restore-2026-10-18) for the causes and the
-correction, which has been replayed locally in the image but not yet observed on
-a hosted runner. Other architectures and container engines have not been demonstrated. The first
+corrections, which have been replayed locally in the image but not yet observed
+on a hosted runner. The required strict suite step stays red on hosted runners
+until the [required external inputs](#required-external-inputs) are provisioned
+there. Other architectures and container engines have not been demonstrated. The first
 hosted run exposed an AppArmor user-namespace requirement, handled below.
 
 ## Pinned toolchain
@@ -192,10 +194,13 @@ repository. One job:
    executor before the suite. Failed setup also records host AppArmor diagnostics.
 3. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
-   a time, and fails if any test fails, errors or is skipped, except a skip that
-   names a declared gap, `fome-mc-store` or `pod-retained-inputs` (below). The step appends the module
-   and test counts and every declared-gap test to the job summary.
-4. Runs `scripts/check_docs.py` in the image.
+   a time. This is the required full gate: it fails if any test fails, errors or
+   is skipped, or if any module produces no valid result. Its job summary gives
+   the module and test counts and names every test that did not execute because a
+   [required external input](#required-external-inputs) is absent.
+4. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
+   check and step 5 also run after a failed suite step, so that their own results
+   are reported. Any failed step still fails the job.
 5. Runs checks-only reviews of the RC control and seeded fixtures directly in
    the image, with `--network none` and the runner's non-root UID, then
    `agent-ee verify` on each run. The same gate script the action uses judges
@@ -216,35 +221,35 @@ must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user
 namespace, the installed kicad-happy or the pinned kicad-route is missing. CI also refuses any skip on its own, so a skip cannot pass
 unnoticed whatever the test suite's skip behavior.
 
-### Declared prerequisite gaps
+### Required external inputs
 
 A few tests read pinned objects from the owner's fome-mc Git object store
-(`AGENT_EE_FOME_MC_CHECKOUT`, default `~/git/fome-mc`): recapture and
+(`AGENT_EE_FOME_MC_CHECKOUT`, default `~/git/fome-mc`). They are recapture and
 reparse regressions over fome-mc design files that this repository cites but
-does not republish. They use `fome_mc_store` in
-[tests/toolchain.py](../tests/toolchain.py). Without the store or a pinned
-revision such a test skips by default and fails under
-`AGENT_EE_REQUIRE_TOOLCHAIN=1`. A strict run may instead list the partition in
-`AGENT_EE_DECLARED_GAPS=fome-mc-store`; those tests then skip with a reason that
-starts `declared gap fome-mc-store:`. The strict runner accepts only such skips,
-prints each as a warning annotation and lists them in the job summary as not
-executed. A declared gap is never a pass, an unknown gap name fails the run, and
-a present store whose pinned file does not verify still fails.
-
-The second partition, `pod-retained-inputs`, covers
+does not republish, and they use `fome_mc_store` in
+[tests/toolchain.py](../tests/toolchain.py). This is the `fome-mc-store`
+partition. The second partition, `pod-retained-inputs`, covers
 [test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py). Its J1 courtyard
-recipe is pinned to retained external captures: the vendor drawing PDF and the
-geometry and registration records, which are not committed
+recipe is pinned to retained external captures that are not committed: the
+vendor drawing PDF and the geometry and registration records
 (`AGENT_EE_POD_INPUTS` and `AGENT_EE_POD_J1_GEOMETRY`, defaulting to the
-preparing host's retained directories). An absent capture follows the same
-skip, strict-failure or declared-gap rule.
+preparing host's retained directories).
 
-Project CI declares both gaps. The image has no fome-mc store, and fetching the
-owner's fome-mc repository in the workflow, although that repository is public,
-waits for an owner decision on using fome-mc design material in hosted CI. The
-retained pod captures include a vendor PDF, which this repository does not
-republish. Host gates run with
-`AGENT_EE_FOME_MC_CHECKOUT` set and declare no gap, so those tests execute there.
+These tests are required. Without the input, a test skips by default. Under
+`AGENT_EE_REQUIRE_TOOLCHAIN=1` it always fails, with a message naming the
+partition; no environment setting turns it into a skip or a pass. The strict
+runner reports each such failure as a required test not executed, by partition,
+in an error annotation and in the job summary. The run still fails. A present
+store whose pinned file does not verify also fails.
+
+The image has no fome-mc store, and the pod captures are not in the repository,
+so the strict suite step fails on hosted runners. Fetching the owner's fome-mc
+repository in the workflow waits for an owner decision on using fome-mc design
+material in hosted CI, even though that repository is public. The retained pod
+captures include a vendor PDF, which this repository does not republish. Host
+gates run with `AGENT_EE_FOME_MC_CHECKOUT` set and the retained captures present,
+so these tests execute there. A run with any of them not executed does not
+satisfy the required full gate.
 
 ### Hosted CI restore (2026-10-18)
 
@@ -254,14 +259,16 @@ image with `AGENT_EE_FOME_MC_CHECKOUT` unset:
 - Tests that needed the fome-mc store failed or errored (`test_pod_ampseal`,
   `test_pod_can`, `test_generate`, `test_rung1_qualified`) or skipped in strict
   mode (`test_block_inventory`, `test_fab_roundtrip`, `test_rule_severities`).
-  All now use the fail-closed declared gap above.
+  They now share the fail-closed `fome-mc-store` partition above. They fail
+  under strict mode, never skip.
 - `test_scaffold`'s campaign test needed a host Codex installation for the
   real launch preflight, although its inference is scripted and the executable
   never runs. The test now supplies its own native stand-in through
   `AGENT_EE_CODEX_BINARY`; fingerprinting and preflight remain real.
 - `test_pod_j1_courtyard` (added at `485ed56`, after the last analysed hosted
   run) read its retained captures from fixed host `/tmp` directories and failed
-  everywhere else. It now uses the `pod-retained-inputs` gap.
+  everywhere else. It now uses the `pod-retained-inputs` partition, with the
+  geometry root configurable.
 - `test_tree_hygiene` ran `git ls-files` in `/opt/agent-ee`, which has no `.git`
   because the build context excludes it. Without `.git` it now scans every file
   of the copied tree; a checkout whose Git fails still fails. The host-side

@@ -1,13 +1,18 @@
-"""Strict-suite judging and declared prerequisite gaps (AGENTEE-16 hosted CI).
+"""Strict-suite judging and required-input partitions (AGENTEE-16 hosted CI).
 
-A declared gap is reported by name and never counted as a pass; every other
-skip, missing result or unexpected success fails the strict run.
+The strict run passes only when every test executed and passed: any skip,
+failure, missing result or unexpected success fails it, including a test that
+could not execute because a required input (fome-mc store, retained pod
+captures) is absent. No environment setting turns that into a pass.
 """
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -20,7 +25,10 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('strict_suite', ROOT / 'scripts/strict_suite.py')
 strict_suite = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(strict_suite)
-GAP = 'declared gap fome-mc-store: fome-mc object store with df304f332129 not available at /absent'
+MISSING = ('Traceback (most recent call last):\nAssertionError: AGENT_EE_REQUIRE_TOOLCHAIN=1: required input '
+           'fome-mc-store missing: fome-mc object store with df304f332129 not available at /absent\n')
+# The skip reason a5e5ca4's runner accepted as a declared gap; it must now fail.
+DECLARED = 'declared gap fome-mc-store: fome-mc object store with df304f332129 not available at /absent'
 
 
 def record(module='test_x', exit=0, **result):
@@ -31,32 +39,35 @@ def record(module='test_x', exit=0, **result):
 
 
 class JudgeTests(unittest.TestCase):
-    def test_declared_gap_skip_is_reported_not_passed_silently(self):
-        problems, gaps = strict_suite.judge([record(skipped=[['test_x.T.t', GAP]])], {'fome-mc-store'})
-        self.assertEqual(problems, [])
-        self.assertEqual(gaps, [('fome-mc-store', 'test_x.T.t', GAP)])
-        text = strict_suite.summary_markdown([record(skipped=[['test_x.T.t', GAP]])], problems, gaps,
-                                             {'fome-mc-store'})
-        self.assertIn('### Declared gap `fome-mc-store`: 1 test(s) not executed', text)
+    def test_missing_required_input_is_named_and_fails(self):
+        records = [record(exit=1, failures=[['test_x.T.t', MISSING]])]
+        problems, missing = strict_suite.judge(records)
+        self.assertEqual(problems, ['NOT EXECUTED, required input fome-mc-store missing: test_x.T.t'])
+        self.assertEqual(missing, [('fome-mc-store', 'test_x.T.t',
+                                    'fome-mc object store with df304f332129 not available at /absent')])
+        text = strict_suite.summary_markdown(records, problems, missing)
+        self.assertIn('strict suite FAILED', text)
+        self.assertNotIn('passed', text)
+        self.assertIn('### Required input `fome-mc-store` missing: 1 required test(s) not executed', text)
         self.assertIn('`test_x.T.t`', text)
 
-    def test_gap_skip_without_declaration_and_plain_skip_are_refused(self):
-        for declared, reason in ((set(), GAP), ({'fome-mc-store'}, 'toolchain prerequisite: bwrap not found'),
-                                 ({'fome-mc-store'}, 'declared gap other: reason')):
-            problems, gaps = strict_suite.judge([record(skipped=[['test_x.T.t', reason]])], declared)
-            self.assertEqual(gaps, [])
+    def test_every_skip_is_refused_including_a_former_declared_gap(self):
+        for reason in (DECLARED, 'toolchain prerequisite: bwrap not found', 'declared gap other: reason'):
+            problems, missing = strict_suite.judge([record(skipped=[['test_x.T.t', reason]])])
+            self.assertEqual(missing, [])
             self.assertEqual(problems, [f'SKIP refused in strict mode: test_x.T.t: {reason}'])
+            self.assertTrue(strict_suite.verdict([record()], problems, missing).startswith('strict suite FAILED'))
 
     def test_failures_errors_unexpected_success_and_missing_result_fail(self):
         missing = dict(module='test_y', exit=-9, seconds=1.0, log='', problem='no valid result; exit -9')
         problems, _ = strict_suite.judge([
             record(exit=1, failures=[['test_x.T.a', 'tb']], errors=[['test_x.T.b', 'tb']],
-                   unexpected_successes=['test_x.T.c']), missing], set())
+                   unexpected_successes=['test_x.T.c']), missing])
         self.assertEqual(problems, ['FAILURE: test_x.T.a', 'ERROR: test_x.T.b', 'UNEXPECTED SUCCESS: test_x.T.c',
                                     'test_y: no valid result; exit -9'])
 
     def test_nonzero_exit_with_a_successful_result_fails(self):
-        problems, _ = strict_suite.judge([record(exit=3)], set())
+        problems, _ = strict_suite.judge([record(exit=3)])
         self.assertEqual(problems, ['test_x: exit 3 with a successful result'])
 
     def test_module_process_result_is_read_back(self):
@@ -65,33 +76,109 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(outcome['exit'], 0, outcome['log'])
         self.assertEqual(outcome['result']['module'], 'test_tree_hygiene')
         self.assertGreaterEqual(outcome['result']['run'], 1)
-        self.assertEqual(strict_suite.judge([outcome], set()), ([], []))
+        self.assertEqual(strict_suite.judge([outcome]), ([], []))
 
     def test_every_suite_module_is_selected(self):
         self.assertEqual(strict_suite.modules(), sorted(p.stem for p in (ROOT / 'tests').glob('test_*.py')))
         self.assertIn('test_strict_suite', strict_suite.modules())
 
+    def test_runner_recognises_exactly_the_toolchain_partitions(self):
+        self.assertEqual(strict_suite.REQUIRED_INPUTS, toolchain.REQUIRED_INPUTS)
+        for gap in toolchain.REQUIRED_INPUTS:
+            text = toolchain.MISSING_INPUT.format(gap=gap) + 'absent'
+            self.assertEqual(strict_suite.MISSING.search(text).group('gap', 'reason'), (gap, 'absent'))
 
-class DeclaredGapTests(unittest.TestCase):
+
+class MainTests(unittest.TestCase):
+    """main() over an owned miniature tree, run as real per-module processes."""
+    MODULES = {
+        'test_passing': """
+            import unittest
+            class T(unittest.TestCase):
+                def test_passes(self):
+                    pass
+            """,
+        'test_skipping': f"""
+            import unittest
+            class T(unittest.TestCase):
+                def test_passes(self):
+                    pass
+                def test_former_declared_gap(self):
+                    raise unittest.SkipTest({DECLARED!r})
+            """,
+        'test_inputs': f"""
+            import sys, unittest
+            sys.path.insert(0, {str(ROOT / 'tests')!r})
+            from toolchain import fome_mc_store, unavailable
+            class T(unittest.TestCase):
+                def test_store(self):
+                    fome_mc_store('/nonexistent/agent-ee-strict-suite-store', 'HEAD')
+                def test_pod_capture(self):
+                    unavailable('pod-retained-inputs', 'exact retained J1 source absent: /nonexistent')
+            """,
+    }
+
+    def run_main(self, modules, **env):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-main-') as tmp:
+            tree = Path(tmp) / 'tree'
+            (tree / 'tests').mkdir(parents=True)
+            for name, source in self.MODULES.items():
+                (tree / 'tests' / f'{name}.py').write_text(textwrap.dedent(source))
+            summary = Path(tmp) / 'summary.md'
+            clean = {k: v for k, v in os.environ.items()
+                     if k not in ('AGENT_EE_REQUIRE_TOOLCHAIN', 'AGENT_EE_DECLARED_GAPS')}
+            out, err = io.StringIO(), io.StringIO()
+            with patch.dict(os.environ, {**clean, 'AGENT_EE_REQUIRE_TOOLCHAIN': '1',
+                                         'PYTHONPATH': str(ROOT / 'src'), **env}, clear=True), \
+                    patch.object(strict_suite, 'ROOT', tree), patch.object(strict_suite, 'TESTS', tree / 'tests'), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = strict_suite.main(['--jobs', '2', '--summary', str(summary), *modules])
+            return code, out.getvalue(), err.getvalue(), summary.read_text()
+
+    def test_all_passing_modules_pass(self):
+        code, out, err, summary = self.run_main(['test_passing'])
+        self.assertEqual(code, 0, out + err)
+        self.assertIn('strict suite passed: 1 modules, 1 tests, no skips', err)
+        self.assertIn('strict suite passed', summary)
+
+    def test_skipped_or_unexecuted_required_tests_fail_with_and_without_declared_gaps(self):
+        for env in ({}, {'AGENT_EE_DECLARED_GAPS': 'fome-mc-store,pod-retained-inputs'}):
+            with self.subTest(env=env):
+                code, out, err, summary = self.run_main(['test_passing', 'test_skipping', 'test_inputs'], **env)
+                self.assertEqual(code, 1, out + err)
+                for text in (out, err, summary):
+                    self.assertNotIn('passed', text)
+                self.assertIn('strict suite FAILED: 3 modules, 5 tests, 3 problem(s), 2 required test(s) '
+                              'not executed for missing inputs, 1 other problem(s)', err)
+                self.assertIn(f'SKIP refused in strict mode: test_skipping.T.test_former_declared_gap: {DECLARED}',
+                              err)
+                self.assertIn('NOT EXECUTED, required input fome-mc-store missing: test_inputs.T.test_store', err)
+                self.assertIn('::error title=required input pod-retained-inputs missing::'
+                              'test_inputs.T.test_pod_capture not executed', out)
+                self.assertIn('### Required input `fome-mc-store` missing: 1 required test(s) not executed',
+                              summary)
+                self.assertIn('### Required input `pod-retained-inputs` missing: 1 required test(s) not executed',
+                              summary)
+
+
+class RequiredInputTests(unittest.TestCase):
     def env(self, **values):
         clean = {k: v for k, v in os.environ.items()
                  if k not in ('AGENT_EE_REQUIRE_TOOLCHAIN', 'AGENT_EE_DECLARED_GAPS')}
         return patch.dict(os.environ, {**clean, **values}, clear=True)
 
-    def test_absent_prerequisite_skips_fails_strict_and_names_a_declared_gap(self):
+    def test_absent_required_input_skips_and_always_fails_strict(self):
         with self.env(), self.assertRaisesRegex(unittest.SkipTest, '^absent$'):
             toolchain.unavailable('fome-mc-store', 'absent')
-        with self.env(AGENT_EE_REQUIRE_TOOLCHAIN='1'), \
-                self.assertRaisesRegex(AssertionError, 'AGENT_EE_REQUIRE_TOOLCHAIN=1: absent'):
-            toolchain.unavailable('fome-mc-store', 'absent')
-        with self.env(AGENT_EE_REQUIRE_TOOLCHAIN='1', AGENT_EE_DECLARED_GAPS='fome-mc-store'), \
-                self.assertRaisesRegex(unittest.SkipTest, '^declared gap fome-mc-store: absent$'):
-            toolchain.unavailable('fome-mc-store', 'absent')
+        for declared in ({}, {'AGENT_EE_DECLARED_GAPS': 'fome-mc-store,pod-retained-inputs'}):
+            for gap in toolchain.REQUIRED_INPUTS:
+                with self.env(AGENT_EE_REQUIRE_TOOLCHAIN='1', **declared), self.assertRaisesRegex(
+                        AssertionError, f'^AGENT_EE_REQUIRE_TOOLCHAIN=1: required input {gap} missing: absent$'):
+                    toolchain.unavailable(gap, 'absent')
 
-    def test_unknown_declared_gap_is_refused(self):
-        with self.env(AGENT_EE_REQUIRE_TOOLCHAIN='1', AGENT_EE_DECLARED_GAPS='fome-mc-store,toolchain'), \
-                self.assertRaisesRegex(AssertionError, 'unknown gap\\(s\\): toolchain'):
-            toolchain.unavailable('fome-mc-store', 'absent')
+    def test_unknown_partition_is_refused(self):
+        with self.env(), self.assertRaisesRegex(ValueError, 'unknown required-input partition: toolchain'):
+            toolchain.unavailable('toolchain', 'absent')
 
     def test_fome_mc_store_requires_every_pinned_revision(self):
         env = dict(os.environ, GIT_CONFIG_GLOBAL='/dev/null', GIT_CONFIG_NOSYSTEM='1')
