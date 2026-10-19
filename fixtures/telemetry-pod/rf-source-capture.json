@@ -1,7 +1,7 @@
 {
   "work_item": "AGENTEE-186",
   "as_of": "2026-10-19",
-  "status": "calculation_not_captured",
+  "status": "calculation_failed",
   "raw_captures": [
     {
       "file": "calculator.html",
@@ -30,13 +30,790 @@
   "raw_bytes_committed": false,
   "retention": "Raw responses remain worker scratch only, not an owner evidence store. Only original source identities and capture observations are committed.",
   "observations": [
-    "The fetched calculator HTML contains no JLC04161H-7628 calculation result.",
-    "The referenced public JavaScript declares POST /jlcTools/impedance/calc. This endpoint was not called.",
-    "No width, gap or calculated impedance was extracted or entered as vendor data."
+    "Historical raw_captures and continuation describe the earlier workers, before decision a2.",
+    "Decision a2 authorized the anonymous model recipe, supporting endpoints, calculation POST and WebSocket workflow.",
+    "The workflow completed three accepted calculation POSTs, but all solver results failed; no width/gap was extracted."
   ],
-  "blocked_need": "A host-side calculator calculation and capture beyond an ordinary HTTPS public-page fetch. The assignment only authorizes that fetch; no calculation POST, login, interactive automation or paid service was attempted.",
+  "blocked_need": "Three authorized anonymous host calculations were HTTP-accepted but each UUID/accessId-bound WebSocket outcome reported solver status 6 and null result. No successful calculated width/gap exists. The response suggests missing or invalid parameters; no exact cause, authentication requirement or service outage is established. Further calculation diagnosis needs a new bounded plan; no fourth request was submitted.",
   "interpretation_limits": [
-    "Response hashes identify fetched raw bytes; they do not authenticate a vendor response or establish calculator output.",
-    "There is no source-derived RF_50 constraint document. Synthetic test dimensions are not vendor data."
-  ]
+    "HTTP success confirms submission only; solver status 6 with null geometry is not a successful impedance calculation.",
+    "Raw hashes identify bytes, not vendor authentication or committed offline replay. Raw vendor bytes remain worker scratch only, not an owner evidence store.",
+    "No source-derived RF_50 constraints exist. Native control dimensions remain synthetic.",
+    "RF maximum length remains unbound without a captured design bound; 15 mm is test-only. Impedance remains unverified."
+  ],
+  "previous_get_only_blocker": "A host-side calculator calculation and capture beyond an ordinary HTTPS public-page fetch. The assignment only authorizes that fetch; no calculation POST, login, interactive automation or paid service was attempted.",
+  "continuation": {
+    "work_item": "AGENTEE-186",
+    "base": "54a01df665f7590d2ee0f17bb9423bffccaf15a6",
+    "status": "request_preflight_blocked",
+    "authority": "agent-463 delegated amendment, 2026-10-18 19:26: bounded public calculation POST only; no login, payment, upload, private data, cookie/session/captcha/token.",
+    "raw_captures": [
+      {
+        "file": "calculator.html",
+        "url": "https://jlcpcb.com/pcb-impedance-calculator/",
+        "resolved_url": "https://jlcpcb.com/pcb-impedance-calculator/",
+        "http_status": 200,
+        "bytes": 76255,
+        "sha256": "1556a64eb3ba4e8edd478f7e09b9fccb854c404ab36d101aaf6ce2bb30943280",
+        "captured_at": "2026-10-19T02:29:46.516384+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "stackup.html",
+        "url": "https://jlcpcb.com/impedance",
+        "resolved_url": "https://jlcpcb.com/impedance",
+        "http_status": 200,
+        "bytes": 319813,
+        "sha256": "a1ad8700cfa05f6b914c5b03dfc2f50881de153f80a68f830613ccd96a9b4ba4",
+        "captured_at": "2026-10-19T02:29:47.485423+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "calculator.js",
+        "url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+        "http_status": 200,
+        "bytes": 78804,
+        "sha256": "29bba50d37ada0c4d9397c316b805844fd4ee10fc28358dfd742198055c05ed0",
+        "captured_at": "2026-10-19T02:30:01.525846+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "common.js",
+        "url": "https://jlcpcb.com/ssr/js/dd532eaa660d895e7232.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/dd532eaa660d895e7232.js",
+        "http_status": 200,
+        "bytes": 8139,
+        "sha256": "5451905e2269edae5a0eb7e1f39f09626a54708e501bf6f73962bf7668f2b321",
+        "captured_at": "2026-10-19T02:30:01.026047+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "app.js",
+        "url": "https://jlcpcb.com/ssr/js/8c38ca5d0b718cd89d53.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/8c38ca5d0b718cd89d53.js",
+        "http_status": 200,
+        "bytes": 8281,
+        "sha256": "cc1e2f21198c5894ff6a146c367fc2e1437e4d24a516f2f02369544e0acacdc2",
+        "captured_at": "2026-10-19T02:30:07.363922+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      }
+    ],
+    "raw_capture_directory": "/tmp/agent-ee-burndown-20261017/workers/ee186c-gnss-rf-capture/scratch",
+    "calculation_post_attempted": false,
+    "candidate_geometries_submitted": [],
+    "request_body": null,
+    "calculation_response": null,
+    "extracted_geometry": null,
+    "request_preflight": {
+      "calculator_endpoint_path": "/jlcTools/impedance/calc",
+      "model_recipe_endpoint_path": "/jlcTools/impedance/selectPageImpedancePicture",
+      "model_recipe_method": "POST",
+      "client_request_fields": [
+        "accessId",
+        "impedance_calc_mark",
+        "paramMd5",
+        "impedance_calc_arg",
+        "uuid"
+      ],
+      "missing_source_bound_inputs": [
+        "impedancePicInfo.impedanceType",
+        "impedancePicInfo.parameterData"
+      ],
+      "client_result_transport": "wss://tools.jlc.com/jlcTools/webSocket/{uuid}",
+      "server_requirements_tested": false,
+      "additional_protocol_operations_attempted": false,
+      "reason": "Preflight cannot form a source-bound calculation request from the captured public pages: the client obtains impedanceType and parameterData through POST /jlcTools/impedance/selectPageImpedancePicture, which the calc-only amendment does not authorize. The captured client also receives results over a UUID-bound WebSocket at wss://tools.jlc.com/jlcTools/webSocket/. No model-catalog POST, WebSocket session or calculation POST was attempted; no claim is made that the server requires authentication or lacks a synchronous alternative."
+    },
+    "known_inputs": {
+      "stackup_identity": "JLC04161H-7628",
+      "signal_layer": "F.Cu",
+      "reference_layer": "In1.Cu GND",
+      "fab_profile_path": "fab-profile.json",
+      "fab_profile_sha256": "02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632",
+      "outer_copper_thickness_mm": 0.035,
+      "reference_copper_thickness_mm": 0.0152,
+      "prepreg_thickness_mm": 0.2104,
+      "prepreg_dielectric_constant": 4.4,
+      "dielectric_constant_capture": "stackup.html",
+      "dielectric_constant_locator": "Prepreg dielectric constant / 7628",
+      "impedance_target_ohm": 50
+    },
+    "rf_maximum_length": {
+      "status": "unbound",
+      "design_bound": null,
+      "native_control_max_mm": 15,
+      "native_control_is_design_bound": false
+    },
+    "interpretation_limits": [
+      "This is an offline audit of captured client code and public numeric facts, not a server refusal or a calculation result.",
+      "No incomplete or synthetic calculation request was submitted. No width or gap is inferred from these inputs.",
+      "A model-catalog POST and an anonymous WebSocket result session are additional protocol operations beyond the calc-only amendment; no authentication requirement is established.",
+      "Raw responses are retained only in the named worker scratch; no owner evidence store was created."
+    ]
+  },
+  "anonymous_workflow": {
+    "authority": "Decision a2, agent-463 under owner delegated authority, 2026-10-18 19:38; bounded anonymous public calculator workflow.",
+    "base": "39537b941f0371c7402b9dd48af5e6673198e474",
+    "status": "captured_solver_failure",
+    "raw_capture_directory": "/tmp/agent-ee-burndown-20261017/workers/ee186d-gnss-rf-capture/scratch",
+    "raw_captures": [
+      {
+        "file": "196f8b9064a915a25905.js",
+        "bytes": 1746586,
+        "sha256": "fa4904672131544f28c387507c1201be863339f596cf2e7e8fbe682dcc84114a",
+        "captured_at": "2026-10-19T02:41:07.696621+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/196f8b9064a915a25905.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/196f8b9064a915a25905.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "2992bae.js",
+        "bytes": 14747,
+        "sha256": "7993ebd8ba38c93c53b1ff7a3aa317437e7fe92be07e483f5e576376ab32c2ee",
+        "captured_at": "2026-10-19T02:41:03.966103+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/2992bae.js",
+        "resolved_url": "https://jlcpcb.com/ssr/2992bae.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "300502ca9c383a576596.js",
+        "bytes": 784926,
+        "sha256": "1ae0e92206d0424d838b70f610824a6949276e6cc2184383f469a8bdc577c59d",
+        "captured_at": "2026-10-19T02:41:06.234915+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/300502ca9c383a576596.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/300502ca9c383a576596.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "40742994ef978708fc43.js",
+        "bytes": 1534600,
+        "sha256": "0c9173cf4ef1b806b64fd71d5a055ef1719085ead33198e3f52db28055fda061",
+        "captured_at": "2026-10-19T02:41:06.982357+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/40742994ef978708fc43.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/40742994ef978708fc43.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "5164550de9f6c4318dc0.js",
+        "bytes": 78804,
+        "sha256": "29bba50d37ada0c4d9397c316b805844fd4ee10fc28358dfd742198055c05ed0",
+        "captured_at": "2026-10-19T02:41:04.997023+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "52fd64da9403eb0921ae.js",
+        "bytes": 1355,
+        "sha256": "2aa030bcd989014191233fdcbc95cbd5d526756fcefd43775a84c5bef090c037",
+        "captured_at": "2026-10-19T02:41:05.307440+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/52fd64da9403eb0921ae.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/52fd64da9403eb0921ae.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "8c38ca5d0b718cd89d53.js",
+        "bytes": 8281,
+        "sha256": "cc1e2f21198c5894ff6a146c367fc2e1437e4d24a516f2f02369544e0acacdc2",
+        "captured_at": "2026-10-19T02:41:04.277354+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/8c38ca5d0b718cd89d53.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/8c38ca5d0b718cd89d53.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "bcc7d2bb795a733ec50b.js",
+        "bytes": 3760,
+        "sha256": "e873a247cb0f24a66fe42a7ccfdb22e028ab131f74806e5e6757fa56434d6f64",
+        "captured_at": "2026-10-19T02:41:05.640520+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/bcc7d2bb795a733ec50b.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/bcc7d2bb795a733ec50b.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-1-result.json",
+        "bytes": 442,
+        "sha256": "86dd5026421eedf587730e2b4265f83a29641ca82aa7311b39e69d648fdf6947",
+        "captured_at": "2026-10-19T02:42:57.692415+00:00",
+        "tool": "Python 3.12.3 ssl/socket result JSON serialization (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "representation": "decoded_json_not_original_message_bytes"
+      },
+      {
+        "file": "calc-1.json",
+        "bytes": 62,
+        "sha256": "0d051687fa479a00fca4f10e2b426a932c3ee835d10143dc51afd44f4e477c1f",
+        "captured_at": "2026-10-19T02:42:57.303430+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-1.json.request.json",
+        "bytes": 429,
+        "sha256": "f393473703805388a223698be77b67edd4acd13f2efafa0b024db141534ae957",
+        "captured_at": "2026-10-19T02:42:56.846299+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-2-result.json",
+        "bytes": 442,
+        "sha256": "2bbb460555580acbd55b25f8fd34e7eecc0caa16c9861b532b5d0b0982cae61e",
+        "captured_at": "2026-10-19T02:43:32.505325+00:00",
+        "tool": "Python 3.12.3 ssl/socket result JSON serialization (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "representation": "decoded_json_not_original_message_bytes"
+      },
+      {
+        "file": "calc-2.json",
+        "bytes": 62,
+        "sha256": "0d051687fa479a00fca4f10e2b426a932c3ee835d10143dc51afd44f4e477c1f",
+        "captured_at": "2026-10-19T02:43:32.220724+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-2.json.request.json",
+        "bytes": 450,
+        "sha256": "178a2724ef43b18866ffad3d66723f241e797206f4019d214864a1a2118dc796",
+        "captured_at": "2026-10-19T02:43:31.351476+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-3-result.json",
+        "bytes": 443,
+        "sha256": "8aad9112856ce62becc280a91e759cf8b12e14c95290c2c2c2dd1b9151b73e90",
+        "captured_at": "2026-10-19T02:44:03.699341+00:00",
+        "tool": "Python 3.12.3 ssl/socket result JSON serialization (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "representation": "decoded_json_not_original_message_bytes"
+      },
+      {
+        "file": "calc-3.json",
+        "bytes": 62,
+        "sha256": "0d051687fa479a00fca4f10e2b426a932c3ee835d10143dc51afd44f4e477c1f",
+        "captured_at": "2026-10-19T02:44:03.418852+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-3.json.request.json",
+        "bytes": 402,
+        "sha256": "05328670b2cd18dc96e4a6761430ed56aac3206af0ce0de09db9db86f449aa4e",
+        "captured_at": "2026-10-19T02:44:02.098069+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calculator.html",
+        "bytes": 76255,
+        "sha256": "eb401f812a43c452affc37a713a810f568f66d5a2c86cf558df3e137adb79546",
+        "captured_at": "2026-10-19T02:41:02.742790+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/pcb-impedance-calculator/",
+        "resolved_url": "https://jlcpcb.com/pcb-impedance-calculator/",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "copper-trace-width.json",
+        "bytes": 1670,
+        "sha256": "140cf6c528668b23c764f9fe9e6053ff979eea93b0555e25b726c24b5c11a3ca",
+        "captured_at": "2026-10-19T02:41:24.948051+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/impedance-config/copper-trace-width/list",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/impedance-config/copper-trace-width/list",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "copper-trace-width.json.request.json",
+        "bytes": 2,
+        "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "captured_at": "2026-10-19T02:41:24.302597+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/impedance-config/copper-trace-width/list",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "coverlay.json",
+        "bytes": 1877,
+        "sha256": "602179dd694026db26dfb326a83f71fd9e66920539b73a86101210695814de1b",
+        "captured_at": "2026-10-19T02:41:24.302293+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/impedance-config/coverlay/list",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/impedance-config/coverlay/list",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "coverlay.json.request.json",
+        "bytes": 2,
+        "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "captured_at": "2026-10-19T02:41:23.323125+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/impedance-config/coverlay/list",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "dd532eaa660d895e7232.js",
+        "bytes": 8139,
+        "sha256": "5451905e2269edae5a0eb7e1f39f09626a54708e501bf6f73962bf7668f2b321",
+        "captured_at": "2026-10-19T02:41:04.603193+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/ssr/js/dd532eaa660d895e7232.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/dd532eaa660d895e7232.js",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ranges.json",
+        "bytes": 8659,
+        "sha256": "926130a81d5f4db8968b0df0029a07815fb8a12f8a3b9c3858d24ffe8c8006b4",
+        "captured_at": "2026-10-19T02:41:25.599412+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/selectImpedanceDefaultValue",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/selectImpedanceDefaultValue",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ranges.json.request.json",
+        "bytes": 44,
+        "sha256": "7af91dfc309c15489e2d0b3939e55a8206682ee51926b9caabd61227e1d25497",
+        "captured_at": "2026-10-19T02:41:24.948373+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/selectImpedanceDefaultValue",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "recipe.json",
+        "bytes": 45857,
+        "sha256": "20721a7d7f51e4eca1861d8c0d21700e2b18fc8e41dd28399da51a5482fdbd43",
+        "captured_at": "2026-10-19T02:41:21.960115+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/selectPageImpedancePicture",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/selectPageImpedancePicture",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "recipe.json.request.json",
+        "bytes": 62,
+        "sha256": "51cecec9c1b74ad76e097f63f5a68cda22adeac05e53879272f0a32511c11b85",
+        "captured_at": "2026-10-19T02:41:20.826377+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/selectPageImpedancePicture",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "second-ws-001-received.frame",
+        "bytes": 438,
+        "sha256": "27036d92ceedc0f7ec4907d4fb0295060799f63ead30e3e0d773b54cc6eacc5e",
+        "captured_at": "2026-10-19T02:43:32.504851+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "second-ws-001-received.payload",
+        "bytes": 434,
+        "sha256": "18acfe9e89cc84ba6fdaf8802c29738c63f00ecde002497bb2af5fc42fe7a7b6",
+        "captured_at": "2026-10-19T02:43:32.505130+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "second-ws-002-sent.frame",
+        "bytes": 8,
+        "sha256": "52f382c495dd59b54b06026f588dbe0eea3bd47107a7708e3da53537eb62df4c",
+        "captured_at": "2026-10-19T02:43:32.505499+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "direction": "sent",
+        "opcode": 8,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "second-ws-handshake.request",
+        "bytes": 235,
+        "sha256": "eef8347bceab7f3ed6ea69ad9e3ddacd3350c4549bcde5da49fb643db34ac94c",
+        "captured_at": "2026-10-19T02:43:30.653963+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "direction": "sent",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "second-ws-handshake.response",
+        "bytes": 412,
+        "sha256": "c37700ba83391fe0e1b9ea7316a9197a8e71ebd1118196f14d08d4e69ffb07b5",
+        "captured_at": "2026-10-19T02:43:31.351151+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "direction": "received",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "stackup.html",
+        "bytes": 319811,
+        "sha256": "eb901e1d7523bf52dc81c901c2b8cf2840f2333dcf9810b5585842d6f27cf792",
+        "captured_at": "2026-10-19T02:41:03.640110+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/impedance",
+        "resolved_url": "https://jlcpcb.com/impedance",
+        "http_status": 200,
+        "method": "GET",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "templates.json",
+        "bytes": 304799,
+        "sha256": "426822f1aed11dd4bfe16db2acab040092aa24f56480b0b32dd67be8b17efd35",
+        "captured_at": "2026-10-19T02:41:23.322734+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/selectPageImpedanceDefaultTemplate",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/selectPageImpedanceDefaultTemplate",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "templates.json.request.json",
+        "bytes": 148,
+        "sha256": "6fa78fc9e45b3a4b4432d00a842ae0e73d34e3c387f89aceff811daff2ad6131",
+        "captured_at": "2026-10-19T02:41:21.960463+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/selectPageImpedanceDefaultTemplate",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "third-ws-001-received.frame",
+        "bytes": 439,
+        "sha256": "eb7ca317619a2ec6a710ecc141a178e2f5d2f524e720ae061114d57387d5da35",
+        "captured_at": "2026-10-19T02:44:03.698738+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "third-ws-001-received.payload",
+        "bytes": 435,
+        "sha256": "bcad62a1d0aa85b0652578a357c23eda78029b8850e9042b26ba0a2143ed1a38",
+        "captured_at": "2026-10-19T02:44:03.699049+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "third-ws-002-sent.frame",
+        "bytes": 8,
+        "sha256": "615a812130dbc00b6785b557e14ffc9b78d40e0d1bd5f9fcc7046a076d72c75a",
+        "captured_at": "2026-10-19T02:44:03.699539+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "direction": "sent",
+        "opcode": 8,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "third-ws-handshake.request",
+        "bytes": 235,
+        "sha256": "ee4f6c95c6279bdd499bc70d0b7775a253210e34845563ebc8fc8ec0db585104",
+        "captured_at": "2026-10-19T02:44:01.372640+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "direction": "sent",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "third-ws-handshake.response",
+        "bytes": 418,
+        "sha256": "432c4da0e7dafd0d9e0ca08311744514ca4a300dd2639b62f8e91638867e6120",
+        "captured_at": "2026-10-19T02:44:02.097685+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "direction": "received",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ws-001-received.frame",
+        "bytes": 438,
+        "sha256": "6851a2d46720ee322c49109cf72aa706a204734b35991c27d675792fe5211125",
+        "captured_at": "2026-10-19T02:42:57.692014+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ws-001-received.payload",
+        "bytes": 434,
+        "sha256": "c81b8909b1734bec0bc801c3f037608bec64a950aab52ff1a1f721ea24963bba",
+        "captured_at": "2026-10-19T02:42:57.692218+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ws-002-sent.frame",
+        "bytes": 8,
+        "sha256": "5c3846962f8cda7b27875d18b36f8575f77ee58e671c462bd62b8ec5283b9006",
+        "captured_at": "2026-10-19T02:42:57.692615+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "direction": "sent",
+        "opcode": 8,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ws-handshake.request",
+        "bytes": 235,
+        "sha256": "4a119aff9b6d2277171fd49818efd975aac9f51182e2c643d5cdab01e1911cd2",
+        "captured_at": "2026-10-19T02:42:56.222145+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "direction": "sent",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "ws-handshake.response",
+        "bytes": 413,
+        "sha256": "8187ff1d0947157f03499f9165e9f2f03523f97344e25e8113bab1bb858cce26",
+        "captured_at": "2026-10-19T02:42:56.843022+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "direction": "received",
+        "representation": "raw_bytes"
+      }
+    ],
+    "source_stackup": {
+      "name": "JLC04161H-7628",
+      "profile_path": "fab-profile.json",
+      "profile_sha256": "02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632",
+      "template_id": "30726297697b4c18a0946278a48fb7d8",
+      "signal_layer": "F.Cu",
+      "reference_layer": "In1.Cu",
+      "reference_net": "GND",
+      "dielectric_mm": 0.2104,
+      "dielectric_constant": 4.4,
+      "signal_copper_mm": 0.035,
+      "reference_copper_mm": 0.0152
+    },
+    "input_precision": "mm-to-mil conversion at public client four-decimal precision: H1=8.2835, T1=1.3780. T1 models the profile 0.035 mm, not the client plated-copper config default 1.6 mil. Mask and taper values come from fetched recipe/configs.",
+    "client_param_md5": "The exact captured public I(object) function was evaluated offline in Node; it returns the MD5 of empty input. Requests preserve that client behavior. Server result paramMd5 differs; it is not used as an acceptance witness.",
+    "calculation_post_count": 3,
+    "calculations": [
+      {
+        "id": 1,
+        "request_body_file": "calc-1.json.request.json",
+        "response_file": "calc-1.json",
+        "result_message_file": "ws-001-received.payload",
+        "access_id": "eb81f286-8af1-4303-bec7-52d7e76b0662",
+        "uuid": "1de63a0f-cd96-491d-bf9e-08a50160dbc7",
+        "model": "W1_CoatedCoplanarWaveguideWithLowerGnd1B",
+        "input_parameters": {
+          "H1": 8.2835,
+          "Er1": 4.4,
+          "W1": 7.0,
+          "W2": 6.5,
+          "D1": 5,
+          "T1": 1.378,
+          "C1": 1.0,
+          "C2": 0.6,
+          "CEr": 3.8,
+          "Zo": 50,
+          "dCalculateMode": 3,
+          "isLinkComputingMode": false,
+          "W2LinkW1Incr": 0.5,
+          "ZoTol": 0.5,
+          "MinW1": 1.0,
+          "MaxW1": 200.0
+        },
+        "http_status": 200,
+        "post_accepted": true,
+        "solver_status": 6,
+        "geometry": null,
+        "error_observation": "Solver reported calculation failure with possibly missing or invalid parameters; root cause not established.",
+        "request_variant": "public client visible recipe fields"
+      },
+      {
+        "id": 2,
+        "request_body_file": "calc-2.json.request.json",
+        "response_file": "calc-2.json",
+        "result_message_file": "second-ws-001-received.payload",
+        "access_id": "c3553655-8fd2-49b5-9aef-384c8c872510",
+        "uuid": "7f5157d0-0fe0-4cf5-bc3d-d896c663d31b",
+        "model": "W1_CoatedCoplanarWaveguideWithLowerGnd1B",
+        "input_parameters": {
+          "H1": 8.2835,
+          "Er1": 4.4,
+          "W1": 7.0,
+          "W2": 6.5,
+          "G1": 20.0,
+          "D1": 6,
+          "T1": 1.378,
+          "C1": 1.0,
+          "C2": 0.6,
+          "CEr": 3.8,
+          "HZ0": 53.0,
+          "Zo": 50,
+          "dCalculateMode": 3,
+          "isLinkComputingMode": false,
+          "W2LinkW1Incr": 0.5,
+          "ZoTol": 0.5,
+          "MinW1": 1.0,
+          "MaxW1": 200.0
+        },
+        "http_status": 200,
+        "post_accepted": true,
+        "solver_status": 6,
+        "geometry": null,
+        "error_observation": "Solver reported calculation failure with possibly missing or invalid parameters; root cause not established.",
+        "request_variant": "same recipe plus exact non-null hidden G1=20 and HZ0=53"
+      },
+      {
+        "id": 3,
+        "request_body_file": "calc-3.json.request.json",
+        "response_file": "calc-3.json",
+        "result_message_file": "third-ws-001-received.payload",
+        "access_id": "43413702-463a-4cb2-88be-b84ab6583d3e",
+        "uuid": "7c6cfcb2-744b-4206-92c3-5f2af590cda1",
+        "model": "W1_SurfaceCoplanarWaveguideWithLowerGnd1B",
+        "input_parameters": {
+          "H1": 8.2835,
+          "Er1": 4.4,
+          "W1": 7.0,
+          "W2": 6.5,
+          "D1": 8,
+          "T1": 1.378,
+          "Zo": 50,
+          "dCalculateMode": 3,
+          "isLinkComputingMode": false,
+          "W2LinkW1Incr": 0.5,
+          "ZoTol": 0.5,
+          "MinW1": 1.0,
+          "MaxW1": 200.0
+        },
+        "http_status": 200,
+        "post_accepted": true,
+        "solver_status": 6,
+        "geometry": null,
+        "error_observation": "Solver reported calculation failure with possibly missing or invalid parameters; root cause not established.",
+        "request_variant": "public uncoated coplanar recipe visible fields"
+      }
+    ],
+    "model_recipe_fetched": true,
+    "anonymous_websocket_opened": true,
+    "authentication_required": false,
+    "login_attempted": false,
+    "credentials_used": false,
+    "payment_attempted": false,
+    "project_uploaded": false,
+    "captcha_encountered": false,
+    "additional_calculations_attempted": false,
+    "extracted_geometry": null,
+    "rf_constraints_emitted": false,
+    "raw_bytes_committed": false,
+    "transport_limit": "All received messages and sent control frames are retained; the client sent a close frame then closed each socket without waiting for a server close reply.",
+    "producer_identities": [
+      {
+        "file": "capture.py",
+        "sha256": "ac9631068a2aa13d344d118f06032568d79c57d364f47a6e264dc8237248e099",
+        "bytes": 2157
+      },
+      {
+        "file": "get_recipe.py",
+        "sha256": "5da4d49a3763861c670b07b38146e00dee038b481f996d864cbf80bcbc29aba8",
+        "bytes": 658
+      },
+      {
+        "file": "calculate-1.py",
+        "sha256": "0840b6590e693718910aa7b0c7f90d2f75e32983b2a537b4af72e71c0b17f38a",
+        "bytes": 5280
+      },
+      {
+        "file": "calculate-2.py",
+        "sha256": "7a7b19f6401d504a66b2f06cf4da1127877ce58274107a4884821a1cd20c3108",
+        "bytes": 5311
+      },
+      {
+        "file": "calculate.py",
+        "sha256": "7b014d3a55582178d9612d8bac0b2589753e6cb5243157c58f7667c38d548131",
+        "bytes": 5222
+      },
+      {
+        "file": "client-hash.js",
+        "sha256": "af980af5e37eff20b34024ba0ffa018e4c98be147b4fc77884572b24cab29dbd",
+        "bytes": 3153
+      }
+    ],
+    "client_hash_probe_runtime": "v24.21.0"
+  }
 }

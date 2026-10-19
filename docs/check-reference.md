@@ -565,7 +565,11 @@ existing baseline criteria keep their historical meaning.
 The [GNSS RF controls](gnss-rf-path.md) exercise this per-net width binding and
 native maximum length with synthetic dimensions. They do not establish a
 JLCPCB calculation or impedance. The pod requirement map keeps the 50 ohm target
-as a limitation; a calculator source capture remains blocked.
+as a limitation. The authorized anonymous host workflow captured three accepted
+calculation POSTs, each followed by a UUID/accessId-bound WebSocket solver failure
+(status 6, null geometry). HTTP success supplies no RF width/gap. No source-derived
+RF_50 constraints were emitted. The RF maximum length remains unbound; the
+controls' 15 mm is a test value only.
 
 Width is not ampacity. A zone's `filled` flag is not a full polygon/return-path
 analysis. Review actual saved native polygons and connectivity when needed;
