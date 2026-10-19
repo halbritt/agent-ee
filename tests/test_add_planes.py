@@ -71,6 +71,13 @@ class PlaneFixture:
     def assert_ok(self,report):
         self.assertEqual(report['execution'],'ok',report)
 
+    def bad_fill(self, text):
+        zone = next(z for z in benchmark.children(benchmark.parse(text), 'zone')
+                    if benchmark.uid(z) == planes.zone_ids(self.plan)[0])
+        fill = benchmark.children(zone, 'filled_polygon')[0]
+        bad = '(filled_polygon (layer "In1.Cu") (pts (xy 11 11) (xy 49 11) (xy 49 49) (xy 11 49)))'
+        return benchmark.replace_spans(text, [(fill.start, fill.end, bad)])
+
 
 class AddPlanesTests(PlaneFixture, unittest.TestCase):
     def test_plan_applied(self):
@@ -132,19 +139,54 @@ class AddPlanesTests(PlaneFixture, unittest.TestCase):
 
     def test_native_drc_rejects_copper_in_keepout_and_foreign_pads(self):
         original = planes.splice_zones
-        def corrupt(*args):
-            text = original(*args)
-            zone = next(z for z in benchmark.children(benchmark.parse(text), 'zone')
-                        if benchmark.uid(z) == planes.zone_ids(self.plan)[0])
-            fill = benchmark.children(zone, 'filled_polygon')[0]
-            bad = '(filled_polygon (layer "In1.Cu") (pts (xy 11 11) (xy 49 11) (xy 49 49) (xy 11 49)))'
-            return benchmark.replace_spans(text, [(fill.start, fill.end, bad)])
-        with patch.object(planes, 'splice_zones', side_effect=corrupt):
+        with patch.object(planes, 'splice_zones', side_effect=lambda *args:self.bad_fill(original(*args))):
             report = self.run_plan()
         self.assertEqual(report['execution'], 'failed', report)
         self.assertIn('native DRC found an error', str(report['findings']))
         self.assertTrue(report['drc']['planned_zone_errors'])
         self.assertFalse((self.root/'run/board.kicad_pcb').exists())
+        native = read_json(self.root/'run/drc/report.json')
+        for field, bad in [('severity', None), ('severity', []), ('severity', 'unknown'),
+                           ('type', ''), ('type', []), ('type', None), ('items', None), ('items', []),
+                           ('items', [None]), ('items', [{}]), ('items', [{'uuid':None}]),
+                           ('items', [{'uuid':'not-a-uuid'}])]:
+            with self.subTest(field=field, bad=bad):
+                malformed = copy.deepcopy(native)
+                error = next(v for v in malformed['violations'] if v['severity']=='error')
+                error[field] = bad
+                with self.assertRaises(ValueError):
+                    planes._planned_zone_errors(malformed, planes.zone_ids(self.plan))
+        for severities in (None, ['warning','exclusion'], ['error', [], 'exclusion']):
+            malformed = dict(native, included_severities=severities)
+            with self.assertRaises(ValueError):
+                planes._planned_zone_errors(malformed, planes.zone_ids(self.plan))
+
+    def test_missing_native_error_metadata_never_publishes_board(self):
+        splice, execute_native = planes.splice_zones, planes.execute
+        for missing in ('severity', 'uuid'):
+            with self.subTest(missing=missing):
+                native_errors = []
+                def corrupt_report(inputs, work, argv, **kwargs):
+                    result = execute_native(inputs, work, argv, **kwargs)
+                    if argv[0] == '/usr/bin/kicad-cli':
+                        path = work/'report.json'; data = read_json(path)
+                        for violation in data['violations']:
+                            if violation['severity']=='error' and any(i['uuid'] in planes.zone_ids(self.plan) for i in violation['items']):
+                                native_errors.append(copy.deepcopy(violation))
+                                if missing=='severity':
+                                    del violation['severity']
+                                else:
+                                    for item in violation['items']:
+                                        del item['uuid']
+                        write_json(path, data)
+                    return result
+                with patch.object(planes, 'splice_zones', side_effect=lambda *args:self.bad_fill(splice(*args))), \
+                     patch.object(planes, 'execute', side_effect=corrupt_report):
+                    report = self.run_plan('missing-'+missing)
+                self.assertTrue(native_errors, 'the probe must first produce actual native planned-zone errors')
+                self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'), report)
+                self.assertIn('malformed', str(report['findings']))
+                self.assertFalse((self.root/('missing-'+missing)/'board.kicad_pcb').exists())
 
     def test_declared_step_receipt_adopts_only_board(self):
         spec=planes.step(Path(planes.__file__).resolve().parents[1],board=self.board,plan=self.plan_path)

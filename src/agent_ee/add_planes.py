@@ -127,6 +127,42 @@ def _verify_inputs(candidate, board, plan, generated, out):
     return root
 
 
+def _planned_zone_errors(checks, planned):
+    """Classify only complete, attributed native records; unknown is a refusal."""
+    if not isinstance(checks, dict):
+        raise ValueError('native plane DRC report is malformed')
+    severities = checks.get('included_severities')
+    if (not isinstance(severities, list) or
+            any(s not in ('error', 'warning', 'exclusion') for s in severities) or
+            set(severities) != {'error', 'warning', 'exclusion'}):
+        raise ValueError('native plane DRC report lacks complete severity coverage')
+    violations = checks.get('violations')
+    if not isinstance(violations, list):
+        raise ValueError('native plane DRC report is malformed')
+    errors = []
+    for violation in violations:
+        if (not isinstance(violation, dict) or
+                violation.get('severity') not in ('error', 'warning', 'exclusion') or
+                not isinstance(violation.get('type'), str) or not violation['type'].strip() or
+                not isinstance(violation.get('items'), list)):
+            raise ValueError('native plane DRC violation metadata is malformed')
+        items = violation['items']
+        if violation['severity'] == 'error' and not items:
+            raise ValueError('native plane DRC error has no item attribution')
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get('uuid'), str):
+                raise ValueError('native plane DRC item attribution is malformed')
+            try:
+                valid = str(uuid.UUID(item['uuid'])) == item['uuid']
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError('native plane DRC item attribution is malformed')
+        if violation['severity'] == 'error' and any(item['uuid'] in planned for item in items):
+            errors.append(violation)
+    return errors
+
+
 def generate(candidate, board, plan_path, out):
     candidate, out = Path(candidate).resolve(), Path(out).absolute()
     for path in (board, plan_path):
@@ -150,15 +186,9 @@ def generate(candidate, board, plan_path, out):
         if drc['execution'] != 'ok' or drc['exit_code'] != 0:
             raise ValueError('native plane DRC execution failed')
         checks = read_json(out/'drc/report.json')
-        violations = checks.get('violations') if isinstance(checks, dict) else None
-        if (not isinstance(violations, list) or
-                any(not isinstance(v, dict) or not isinstance(v.get('items'), list) or
-                    any(not isinstance(item, dict) for item in v['items']) for v in violations)):
-            raise ValueError('native plane DRC report is malformed')
-        zone_errors = [v for v in violations if v.get('severity') == 'error' and
-                       any(item.get('uuid') in zone_ids(plan) for item in v.get('items', []))]
+        zone_errors = _planned_zone_errors(checks, zone_ids(plan))
         report.update(pcbnew_version=facts['pcbnew_version'], zones=facts['zones'],
-                      drc=dict(violations=len(violations), planned_zone_errors=zone_errors,
+                      drc=dict(violations=len(checks['violations']), planned_zone_errors=zone_errors,
                                report_sha256=digest(out/'drc/report.json')))
         if zone_errors:
             raise ValueError('native DRC found an error involving a planned zone')

@@ -91,6 +91,10 @@ A second native child opens the delivered form and checks zone inventory,
 settings, outlines and nonempty actual fill. Native DRC then checks that form
 without refilling or saving it. Execution failure, malformed DRC output, or an
 error citing a planned zone prevents publication of `out/board.kicad_pcb`.
+The report must include all native severities; each violation must have a known
+severity, nonempty type, and well-formed item UUIDs. An error without item
+attribution is unknown and refuses publication, rather than being classified as
+unrelated to the planes.
 The report retains the whole native DRC and counts other findings; existing
 unconnected items and unrelated defects remain subject to later campaign checks.
 
