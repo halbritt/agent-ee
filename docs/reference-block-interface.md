@@ -141,6 +141,11 @@ pre-created child sheet and maps its requirements to fresh board checks. The
 instance and source remain immutable; the ordinary repair writer edits the child.
 `block_provenance` reports semantic changes and checks native boundary bindings.
 Source qualification never supplies board check results.
+Multi-instance source blocks such as the [pod CAN reference sets](pod-can.md)
+require an explicit captured composition plan for adaptation. Selected-reference
+composition independently exports every source instance and grades component and
+net differences as defects; requests without a plan remain unsupported. This
+leaves the historical capture and its source qualification status unchanged.
 
 ## Reference sets, contracts and pending requirements (AGENTEE-105)
 

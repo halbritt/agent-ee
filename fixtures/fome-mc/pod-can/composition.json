@@ -1,0 +1,114 @@
+{
+  "schema": "agent-ee.block-composition/1",
+  "reason": "AGENTEE-175 owner-selected composition from two pinned sheets; preserve each selected native pin connection and explicitly join the two CAN buses. Source capture remains unverified.",
+  "sources": [
+    {
+      "sheet": "sheets/wbo1.kicad_sch",
+      "uuid_path": "/a1000000-0000-4000-8000-000000000004/",
+      "sha256": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73",
+      "references": {
+        "C308": "C308",
+        "U307": "U307"
+      },
+      "nets": {
+        "+3V3_WBO1": "+3V3",
+        "+5V": "+5V",
+        "GND": "GND",
+        "/CAN_TX": "TXD",
+        "/CAN_RX": "RXD",
+        "/CANH2": "CAN+",
+        "/CANL2": "CAN-"
+      },
+      "reason": "Selected reference set from captured instance. Native flat-sheet net names mapped to delivered logical ports; +3V3_WBO1 is explicitly the delivered +3V3 domain."
+    },
+    {
+      "sheet": "sheets/psu.kicad_sch",
+      "uuid_path": "/00000000-0000-0000-0000-00005da72eff/",
+      "sha256": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb",
+      "references": {
+        "D4": "D4",
+        "R9": "R9"
+      },
+      "nets": {
+        "GND": "GND",
+        "/CANH": "CAN+",
+        "/CANL": "CAN-"
+      },
+      "reason": "Selected reference set from captured instance. Native flat-sheet net names mapped to delivered logical ports; +3V3_WBO1 is explicitly the delivered +3V3 domain."
+    }
+  ],
+  "ports": [
+    {
+      "name": "CAN+",
+      "net_name": "CAN+",
+      "direction": "bidirectional",
+      "voltage_domain": "CAN bus",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    },
+    {
+      "name": "CAN-",
+      "net_name": "CAN-",
+      "direction": "bidirectional",
+      "voltage_domain": "CAN bus",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    },
+    {
+      "name": "TXD",
+      "net_name": "TXD",
+      "direction": "input",
+      "voltage_domain": "3.3 V",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    },
+    {
+      "name": "RXD",
+      "net_name": "RXD",
+      "direction": "output",
+      "voltage_domain": "3.3 V",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    },
+    {
+      "name": "S",
+      "net_name": "GND",
+      "direction": "input",
+      "voltage_domain": "GND strap",
+      "current_a": null,
+      "alias_of": "GND",
+      "reason": "U307:8 is grounded in the pinned native source; S is a visible GND alias, not an independent control."
+    },
+    {
+      "name": "+5V",
+      "net_name": "+5V",
+      "direction": "input",
+      "voltage_domain": "5 V",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    },
+    {
+      "name": "+3V3",
+      "net_name": "+3V3",
+      "direction": "input",
+      "voltage_domain": "3.3 V",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    },
+    {
+      "name": "GND",
+      "net_name": "GND",
+      "direction": "passive",
+      "voltage_domain": "0 V",
+      "current_a": null,
+      "alias_of": null,
+      "reason": "Selected source connectivity; voltage domain is a declared requirement, not a measurement."
+    }
+  ]
+}
