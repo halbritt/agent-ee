@@ -143,6 +143,11 @@ A coordinator can declare `layer_policy` in the step or campaign declaration:
  "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/POD_GNSS_RF"]}}
 ```
 
+The `0.5` above is an example, not a pod value. For how to derive a bound from
+the placed routing input and a declared signal-via budget, see the
+[pod routing policy determination](pod-routing-policy-determination.md)
+(`agent_ee.pour_budget`).
+
 `signal_layers` and `pour_area_loss_pct` (0 to 100) are required. `layer_costs`
 (one multiplier from 1 to 1000 per signal layer) and `reference` are optional.
 The attempt receives it as one canonical JSON argument, `--layer-policy`. The
