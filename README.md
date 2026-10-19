@@ -281,8 +281,9 @@ and DRC width rules. Widths for declared currents come from an IPC-2152 fit, and
 `copper-width/1` reads the per-net minimums. Impedance is recorded, not computed.
 The [GNSS RF controls](docs/gnss-rf-path.md) exercise width and length separately;
 the pod's source-derived RF dimensions and 50 ohm impedance remain unverified.
-The calculator capture is blocked at request preflight, and the pod RF maximum
-length remains unbound; the controls' 15 mm is a test value only.
+Three anonymous calculator submissions were accepted but returned solver failures
+with null geometry. The pod RF maximum length remains unbound; the controls'
+15 mm is a test value only.
 The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
 board-bound manifest offline. It requires identical assembled designators
 across the board and CSVs before completing the package. A declared

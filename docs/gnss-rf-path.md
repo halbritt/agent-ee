@@ -12,44 +12,63 @@ puts it in scope limitations, outside executable acceptance requirements.
 test also verifies that compiled limitations survive into the run result and
 evidence index.
 
-## Source capture preflight blocker
+## Captured calculator failures
 
 The host fetched the [JLCPCB calculator page](https://jlcpcb.com/pcb-impedance-calculator/)
-on 2026-10-19 UTC (2026-10-18 local). The HTML contains no calculated width/gap
-for JLC04161H-7628. The first worker stopped at the GET-only capture boundary;
-the old cart calculator URL returned HTTP 404. Agent-463's delegated amendment
-then authorized a bounded host-side POST to `/jlcTools/impedance/calc`, using
-public dimensions, without login, payment, uploads or a cookie/session/token.
+and public client on 2026-10-19 UTC (2026-10-18 local). Earlier workers stopped
+before calculation submission under narrower authorization. Decision a2
+(agent-463 under the owner's delegated authority, 2026-10-18 19:38) authorized
+the bounded anonymous recipe lookup, supporting endpoints, calculation POST
+and UUID-bound WebSocket transport, including ordinary anonymous initialization.
 
-The continuation captured the public pages and client JavaScript again. The
-client obtains `impedanceType` and `parameterData` through a separate POST to
-`/jlcTools/impedance/selectPageImpedancePicture`; the static calculator HTML
-does not supply that model recipe. Its calculation request carries a UUID,
-and its result handler receives output over
-`wss://tools.jlc.com/jlcTools/webSocket/{uuid}`. Those additional protocol
-operations exceed the calc-only amendment. No model-catalog POST, WebSocket
-session or incomplete calculation POST was attempted. This is a **request
-preflight blocker**, not an observed server refusal: authentication requirements
-and the availability of a synchronous alternative have not been tested.
+The authorized workflow fetched the model recipe through
+`POST /api/jlcTools/impedance/selectPageImpedancePicture`, the standard
+JLC04161H-7628 template, coating and copper configuration, and parameter ranges.
+It submitted exactly three calculations through
+`POST /api/jlcTools/impedance/calc`, receiving results through
+`wss://tools.jlc.com/jlcTools/webSocket/{uuid}`. Each POST returned HTTP 200
+and submission success. **Each bound solver result returned status 6 and a
+null result.** The error suggests missing or invalid parameters; its precise
+cause is unknown. No login, payment, credential, upload or captcha was needed.
+The three-calculation budget is exhausted; no fourth calculation was submitted.
 
-[Capture metadata](../fixtures/telemetry-pod/rf-source-capture.json) records the
-URLs, UTC times, tool and raw response hashes for both workers, plus the known
-stackup dimensions and the missing model inputs. The public stackup page records
-7628's dielectric constant as 4.4; that fact supplies no calculated width or gap.
-No candidate geometry was submitted and no calculation response exists.
-Raw HTML/JavaScript stays in worker
-scratch; it is not committed or an owner evidence store. These identities
-record the unsuccessful capture, not a calculator result or an offline replay.
+The fetched standard template and fixture agree on 0.2104 mm prepreg,
+dielectric constant 4.4 and 0.035 mm F.Cu over the 0.0152 mm In1.Cu reference
+copper. The requests
+use H1=8.2835 mil and T1=1.3780 mil at the public client's four-decimal conversion
+precision. T1 explicitly models the fixture's 0.035 mm copper rather than
+silently using the client's 1.6 mil plated-copper default. The input gaps below
+were selected for the bounded calculation; they are not calculated outputs.
 
-Completion requires a source-bound model recipe and an authorized result
-transport, then a genuine result with the selected coplanar gap, width, target, stackup,
-signal/reference layers and copper identities bound to hashed raw bytes.
-Only then can those dimensions populate `RF_50` using the existing
-[net-constraint emitter](net-constraints.md). Its `impedance_ohm: 50` must retain
-`recorded_not_enforced`; no check may claim verified impedance. The pod RF
-maximum length also needs a captured design bound. It remains a scope limitation;
-the fixture's 15 mm test bound does not supply one. The spec's 500 mm antenna
-cable limit is for the cable to the SMA, not the PCB RF trace.
+| Submission | Target | Input gap | Recipe and variation | Observed result |
+| --- | --- | --- | --- | --- |
+| 1 | 50 ohm | 5 mil / 0.127 mm | Coated coplanar with lower ground; public client visible fields | Solver status 6, null geometry |
+| 2 | 50 ohm | 6 mil / 0.1524 mm | Same recipe with its exact non-null hidden G1=20 and HZ0=53 fields | Solver status 6, null geometry |
+| 3 | 50 ohm | 8 mil / 0.2032 mm | Public uncoated coplanar with lower ground recipe; visible fields | Solver status 6, null geometry |
+
+Each request asks for inverse W1 calculation. Coating and taper inputs come
+from the fetched recipes/configuration; neither alternative claims actual
+mask or impedance qualification. Plans and the two bounded diagnostic amendments
+were recorded in the worker result before the corresponding submissions.
+
+[Capture metadata](../fixtures/telemetry-pod/rf-source-capture.json) retains
+URL, UTC timestamp, tool, request and response identities, and every received
+socket message and sent control frame hash. Raw vendor bytes stay in worker
+scratch; they are not committed or an owner evidence store. The historical
+`raw_captures` and `continuation` describe the earlier workers;
+`anonymous_workflow` records the three actual calculations. Hashes establish
+byte identity, not vendor authentication or committed offline replay. HTTP
+submission success cannot supply calculated width or gap.
+
+Completion requires a successful source-bound result with its selected coplanar
+gap, calculated width, target, stackup and signal/reference copper identities.
+Further host calculations need a new bounded plan. Only a successful result can
+populate `RF_50` through the existing [net-constraint emitter](net-constraints.md).
+Its `impedance_ohm: 50` must retain `recorded_not_enforced`; no check may claim
+verified impedance. The pod RF maximum length also needs a captured design
+bound. It remains a scope limitation; the fixture's 15 mm test bound does not
+supply one. The spec's 500 mm antenna cable limit applies to the cable to the
+SMA, not the PCB RF trace.
 
 ## Native mechanism controls
 

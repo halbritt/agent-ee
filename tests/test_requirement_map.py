@@ -100,7 +100,9 @@ class RequirementMapTests(unittest.TestCase):
         limitation, = [s for s in scope['limitations'] if s.startswith(rid + ':')]
         for fact in ('50 ohm', 'Impedance remains unverified', 'JLC04161H-7628',
                      'https://jlcpcb.com/pcb-impedance-calculator/',
-                     'not a captured calculation', 'request preflight',
+                     'three calculation submissions', 'solver status 6 and null geometry',
+                     'HTTP acceptance is not a successful calculation',
+                     'Source-derived RF_50 width and clearance remain undeclared',
                      'RF maximum length remains unbound', '15 mm is a test value only'):
             self.assertIn(fact, limitation)
         self.assertNotIn(rid, compile_coverage(scope, self.provenance_files())['requirements'])
