@@ -711,6 +711,8 @@
       "paths": [
         "fixtures/active-spice/active.kicad_pcb",
         "fixtures/active-spice/active.kicad_sch",
+        "fixtures/active-spice/ldo/ldo.kicad_sch",
+        "fixtures/active-spice/ldo/ldo.lib",
         "fixtures/active-spice/owned.lib",
         "fixtures/dc-path/arc.kicad_pcb",
         "fixtures/dc-path/dc_path.kicad_sch",

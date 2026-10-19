@@ -1,0 +1,72 @@
+{
+  "schema": "agent-ee.interface/1",
+  "components": {
+    "regulator": {
+      "locations": [
+        {
+          "sheet": "/",
+          "reference": "U1"
+        }
+      ],
+      "symbols": [
+        "agent:Regulator3"
+      ]
+    }
+  },
+  "terminals": {
+    "vin": {
+      "component": "regulator",
+      "pin": "1"
+    },
+    "gnd": {
+      "component": "regulator",
+      "pin": "2"
+    },
+    "vout": {
+      "component": "regulator",
+      "pin": "3"
+    }
+  },
+  "allowed_edits": [],
+  "invariants": [
+    {
+      "id": "vin-net",
+      "requirement": "R-interface",
+      "source": {
+        "path": "design/requirements.md",
+        "locator": "R-interface"
+      },
+      "kind": "named_net",
+      "terminal": "vin",
+      "names": [
+        "/VIN"
+      ]
+    },
+    {
+      "id": "gnd-net",
+      "requirement": "R-interface",
+      "source": {
+        "path": "design/requirements.md",
+        "locator": "R-interface"
+      },
+      "kind": "named_net",
+      "terminal": "gnd",
+      "names": [
+        "/GND"
+      ]
+    },
+    {
+      "id": "vout-net",
+      "requirement": "R-interface",
+      "source": {
+        "path": "design/requirements.md",
+        "locator": "R-interface"
+      },
+      "kind": "named_net",
+      "terminal": "vout",
+      "names": [
+        "/VOUT"
+      ]
+    }
+  ]
+}

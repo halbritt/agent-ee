@@ -139,6 +139,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
+| `active_spice` | `/usr/bin/ngspice --version`, then `/usr/bin/ngspice -n -b -o /work/ngspice.log /work/control.sp` once per declared or [template-generated](spice-templates.md) analysis ([details](active-spice.md)) | 600 s per call, bounded by run deadline |
 | `block_provenance` | Earlier board XML plus sandboxed source and instrumented boundary netlist exports; [block adaptation](block-adaptation.md) | 120 s per export, bounded by run deadline |
 | `schematic_lint` | Coordinator reads the captured sheets and the earlier netlist check's sealed `design.xml`; no tool launched ([details](schematic-lint.md)) | Enclosing run deadline |
 | `fab_export` | `kicad-cli version`, then `pcb export stats`, `gerbers`, `drill`, `pos` on BOARD, and `sch export bom --variant NAME` on the schematic only with a declared `bom_variant`; see [fab export](fab-export.md) | 600 s per step |

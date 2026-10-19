@@ -15,6 +15,7 @@ product's hardware qualification.
 | Prepare captured pod inputs and inspect a checks-only scaffold | [Pod campaign driver](pod-driver.md) |
 | Bind a simulator/parser or combine cross-domain margins | [Measurement adapters](measurement-adapters.md) |
 | Qualify an unloaded RC tolerance envelope | [Passive corners](passive-corners.md) |
+| Simulate captured active models; derive regulator/amplifier/filter testbenches from targets | [Active SPICE](active-spice.md), [SPICE templates](spice-templates.md) |
 | Request missing concern evidence or export a proposed check | [Evidence requests](evidence-requests.md) |
 | Ingest bench samples and calibrate subsequent verification | [Bench feedback](bench-feedback.md) |
 | Map telemetry-pod criteria to sealed checks and outstanding obligations | [Pod evidence index](evidence-index.md) |

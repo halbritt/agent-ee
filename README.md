@@ -206,8 +206,10 @@ and an ideal passive R/C/L transient simulation through ngspice. An optional
 [qualified RC tolerance check](docs/passive-corners.md) retains complete endpoint
 ensembles for one unloaded first-order topology. A separate
 [captured active-device check](docs/active-spice.md) supports explicit subcircuit
-pin bindings and declared transient/AC measurements. Its committed control model
-is synthetic; vendor-model qualification and publication rights are separate
+pin bindings and declared transient/AC/DC-sweep measurements, with
+[role-keyed templates](docs/spice-templates.md) that derive regulator,
+amplifier and filter testbenches from captured targets without defaults. Its
+committed control models are synthetic; vendor-model qualification and publication rights are separate
 evidence obligations.
 Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.

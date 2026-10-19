@@ -246,10 +246,104 @@ class TraceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     read_trace(path, 'transient')
             path.write_bytes(original)
-            analysis = {'kind': 'transient', 'measurements': [{'name': 'v', 'unit': 'V',
+            analysis = {'kind': 'transient', 'measurements': [{'name': 'v', 'unit': 'V', 'observable': 'voltage',
                 'positive_net': 'in', 'negative_net': 'gnd', 'at_s': 2}]}
             with self.assertRaisesRegex(ValueError, 'outside retained trace'):
                 extract_metrics(path, analysis, {'in': 'n1', 'out': 'n2', 'gnd': '0'}, {})
+
+
+def raw(path, plot, axis, rows):
+    """Owned real-valued ngspice-shaped trace: axis then v(n1), v(n2)."""
+    header = (f'Title: owned test\nPlotname: {plot}\nFlags: real\nNo. Variables: 3\n'
+              f'No. Points: {len(rows)}\nVariables:\n\t0\t{axis[0]}\t{axis[1]}\n'
+              '\t1\tv(n1)\tvoltage\n\t2\tv(n2)\tvoltage\nBinary:\n')
+    path.write_bytes(header.encode() + array('d', [v for row in rows for v in row]).tobytes())
+
+
+class SweepLoadAndWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.params = read_json(FIXTURE / 'control.scope.json')['checks'][1]['params']
+        self.params['current_sources'] = [{'id': 'load', 'positive_net': '/OUT', 'negative_net': '/GND',
+            'dc_a': 0.001, 'step': {'initial_a': 0.001, 'final_a': 0.01, 'delay_s': 0.001, 'rise_s': 1e-6}}]
+        self.params['analyses'].append({'id': 'line', 'kind': 'dc', 'source': 'positive', 'start_v': 12,
+            'stop_v': 15, 'points': 31, 'measurements': [
+                {'name': 'out_12v', 'observable': 'voltage', 'positive_net': '/OUT', 'negative_net': '/GND',
+                 'at_v': 12, 'unit': 'V', 'max': 1},
+                {'name': 'out_change', 'observable': 'voltage_change', 'positive_net': '/OUT',
+                 'negative_net': '/GND', 'from_v': 12, 'to_v': 15, 'unit': 'V', 'min': -1, 'max': 1}]})
+        self.params['analyses'][0]['measurements'].append(
+            {'name': 'out_floor', 'observable': 'voltage_minimum', 'positive_net': '/OUT',
+             'negative_net': '/GND', 'from_s': 0.001, 'to_s': 0.005, 'unit': 'V', 'min': 0})
+
+    def test_dc_sweep_current_load_and_window_declarations(self):
+        validate_params(self.params)
+        nodes = {'/OUT': 'n1', '/GND': '0'}
+        from agent_ee.active_spice import analysis_command, source_lines
+        self.assertEqual(analysis_command(self.params, self.params['analyses'][2]), '.dc V1 12 15 0.10000000000000001')
+        line = source_lines({'sources': [], 'current_sources': self.params['current_sources']}, nodes)[0]
+        self.assertEqual(line, 'I0 n1 0 DC 0.001 PWL(0 0.001 0.001 0.001 0.0010009999999999999 0.01)')
+        mutations = [lambda p: p['analyses'][2].update(points=1),
+                     lambda p: p['analyses'][2].update(points=2.0),
+                     lambda p: p['analyses'][2].update(start_v=15),
+                     lambda p: p['analyses'][2].update(source='load'),
+                     lambda p: p['analyses'][2].update(source='absent'),
+                     lambda p: p['analyses'][2]['measurements'][0].update(at_v=16),
+                     lambda p: p['analyses'][2]['measurements'][0].update(unit='V/V'),
+                     lambda p: p['analyses'][2]['measurements'][0].update(observable='voltage_minimum'),
+                     lambda p: p['analyses'][2]['measurements'][1].pop('to_v'),
+                     lambda p: p['analyses'][0]['measurements'][1].update(to_s=0.001),
+                     lambda p: p['analyses'][0]['measurements'][1].update(at_s=0.002),
+                     lambda p: p['current_sources'][0].update(dc_a=0),
+                     lambda p: p['current_sources'][0].update(id='positive'),
+                     lambda p: p['current_sources'][0]['step'].update(rise_s=0),
+                     lambda p: p['current_sources'][0]['step'].pop('final_a'),
+                     lambda p: p['current_sources'][0].update(dc_a=float('nan')),
+                     lambda p: p['current_sources'][0].update(ac_magnitude_v=1),
+                     lambda p: p['analyses'][2].update(kind='op')]
+        for mutate in mutations:
+            p = copy.deepcopy(self.params)
+            mutate(p)
+            with self.subTest(params=p), self.assertRaises(ValueError):
+                validate_params(p)
+
+    def test_transient_change_and_window_extremes_use_interpolant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'trace.raw'
+            raw(path, 'Transient Analysis', ('time', 'time'), [(0, 0, 1), (1, 2, 1), (2, 1, 1), (3, 3, 1)])
+            analysis = {'kind': 'transient', 'stop_s': 3, 'measurements': [
+                {'name': 'change', 'observable': 'voltage_change', 'positive_net': 'a', 'negative_net': 'g',
+                 'from_s': 0.5, 'to_s': 2.5, 'unit': 'V'},
+                {'name': 'low', 'observable': 'voltage_minimum', 'positive_net': 'a', 'negative_net': 'g',
+                 'from_s': 0.5, 'to_s': 2.5, 'unit': 'V'},
+                {'name': 'high', 'observable': 'voltage_maximum', 'positive_net': 'a', 'negative_net': 'b',
+                 'from_s': 1.5, 'to_s': 3, 'unit': 'V', 'max': 2}]}
+            metrics, limits, _ = extract_metrics(path, analysis, {'a': 'n1', 'b': 'n2', 'g': '0'}, {})
+            self.assertEqual(metrics['change']['value'], 2 - 1)
+            self.assertEqual(metrics['low']['value'], 1)
+            self.assertEqual(metrics['high']['value'], 2)
+            self.assertEqual(sorted(limits), ['high'])
+
+    def test_dc_trace_must_match_declared_grid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'trace.raw'
+            analysis = {'kind': 'dc', 'start_v': 1, 'stop_v': 2, 'points': 3, 'measurements': [
+                {'name': 'top', 'observable': 'voltage', 'positive_net': 'a', 'negative_net': 'g',
+                 'at_v': 2, 'unit': 'V'},
+                {'name': 'rise', 'observable': 'voltage_change', 'positive_net': 'a', 'negative_net': 'g',
+                 'from_v': 1, 'to_v': 1.25, 'unit': 'V'}]}
+            nodes = {'a': 'n1', 'b': 'n2', 'g': '0'}
+            raw(path, 'DC transfer characteristic', ('v(v-sweep)', 'voltage'),
+                [(1, 0, 0), (1.5, 1, 0), (2 - 1e-14, 3, 0)])
+            metrics, _, _ = extract_metrics(path, analysis, nodes, {})
+            self.assertEqual((metrics['top']['value'], metrics['rise']['value']), (3, 0.5))
+            for rows in ([(1, 0, 0), (1.5, 1, 0)], [(1, 0, 0), (1.4, 1, 0), (2, 3, 0)],
+                         [(1, 0, 0), (1.5, 1, 0), (2.1, 3, 0)]):
+                raw(path, 'DC transfer characteristic', ('v(v-sweep)', 'voltage'), rows)
+                with self.subTest(rows=rows), self.assertRaisesRegex(ValueError, 'DC sweep samples'):
+                    extract_metrics(path, analysis, nodes, {})
+            raw(path, 'Transient Analysis', ('time', 'time'), [(1, 0, 0), (1.5, 1, 0), (2, 3, 0)])
+            with self.assertRaisesRegex(ValueError, 'wrong raw analysis'):
+                read_trace(path, 'dc')
 
 
 class NativeActiveTests(unittest.TestCase):

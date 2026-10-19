@@ -171,7 +171,7 @@ def compile_baseline(scope, files, inputs=None):
             paths.update(descriptor["immutable_inputs"])
         if spec.get("kind") == "active_spice":
             from .active_spice import capability
-            descriptor = capability(params, files)
+            descriptor = capability(params, files, inputs, scope)
             paths.update(descriptor["immutable_inputs"])
         if spec.get("kind") == "dc_path":
             from .dc_path import load_inputs

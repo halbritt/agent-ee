@@ -1,0 +1,20 @@
+{
+  "schema": "agent-ee.spice-architecture/1",
+  "blocks": {
+    "ldo1": {
+      "role": "ldo",
+      "terminals": {"vin": "vin", "vout": "vout", "gnd": "gnd"},
+      "conditions": {
+        "vin_min": "4.5 V",
+        "vin_max": "6 V",
+        "vin_nominal": "5 V",
+        "load_light": "10 mA",
+        "load_heavy": "100 mA",
+        "load_step_delay": "100 us",
+        "load_step_rise": "1 us",
+        "load_step_stop": "200 us",
+        "load_step_resolution": "100 ns"
+      }
+    }
+  }
+}
