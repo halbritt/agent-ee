@@ -16,6 +16,16 @@ from build_core import build as build_core
 from power_cad import write_cad
 from mode_cad import write_primary_spi
 from prepare_intent import prepare, probe_and_power_features
+from j1_courtyard import derive as derive_j1
+
+
+def add_footprint(footprints, library, member, blob):
+    members = footprints.setdefault(library, {})
+    # Multiple selected parts can use byte-identical captures of one FPID.
+    # Preserve the existing last-path selection only when the content agrees.
+    if member in members and members[member]['sha256'] != blob['sha256']:
+        raise ValueError("duplicate footprint identity: " + library + ":" + member)
+    members[member] = blob
 
 
 def build(output, roots):
@@ -30,6 +40,10 @@ def build(output, roots):
         if item['path'] in inputs:
             raise ValueError('duplicate captured path')
         inputs[item['path']] = raw
+    j1_decision = (here / "j1-placement-exclusion.json").read_bytes()
+    j1_raw, j1_receipt = derive_j1(inputs, j1_decision)
+    if j1_receipt["derived"]["path"] in inputs:
+        raise ValueError("J1 generated path collides with captured input")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     build_core(output / 'core', roots)
@@ -48,7 +62,13 @@ def build(output, roots):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
-    for name in ('power-selections.json', 'power-source-lock.json', 'power_cad.py',
+    derived_path = output / j1_receipt['derived']['path']
+    derived_path.parent.mkdir(parents=True, exist_ok=True)
+    with derived_path.open('xb') as stream:
+        stream.write(j1_raw)
+    write('j1-courtyard-derivation.json', j1_receipt)
+
+    for name in ('j1-placement-exclusion.json', 'j1_courtyard.py', 'power-selections.json', 'power-source-lock.json', 'power_cad.py',
                  'complete-decisions.md', 'support-decisions.json', 'mode_cad.py', 'prepare_intent.py',
                  'probe-selections.json'):
         (output / name).write_bytes((here / name).read_bytes())
@@ -93,8 +113,14 @@ def build(output, roots):
         libraries[library] = dict(name=library, **blob(symbol_path))
         fp_lib, member = p['footprint'].split(':')
         fp_path = ('authored-cad/' if fp_lib == 'PodPower' else prefix + 'footprints/') + fp_lib + '.pretty/' + member + '.kicad_mod'
-        footprints.setdefault(fp_lib, {})[member] = blob(fp_path)
+        if p['id'] == 'connector-j1':
+            if (p['reference'], p['footprint'], p['lcsc']) != ('J1', 'ampseal:ampseal-23', 'C498958'):
+                raise ValueError('J1 selected identity differs from courtyard decision')
+            fp_path = j1_receipt['derived']['path']
+        add_footprint(footprints, fp_lib, member, blob(fp_path))
         record = prepare_record(output, p['lcsc'], blob(p['catalog']), blob(p['datasheets']), p['datasheet_id'])
+        if p['id'] == 'connector-j1' and record['mpn'] != '776228-1':
+            raise ValueError('J1 actual ordering code differs from courtyard decision')
         record_path = 'records/' + p['id'] + '.json'
         write(record_path, record)
         parts.append(dict(id=p['id'], role=p['role'], required=True,
@@ -208,7 +234,7 @@ def build(output, roots):
         files=[blob(str(p.relative_to(output))) for p in sorted(output.rglob('*')) if p.is_file()],
         limitations=['Input inventory only; no campaign seal, engineering acceptance or fabrication release.',
                      'Canonical166 power projection remains unresolved because the spec delegates exact regulator selection; actual selections are explicit in parts/1 and source-bound engineering decisions.',
-                     'Temperature, connector orientation/height, manufacturer land-pattern qualification and physical/bench conditions remain open.']))
+                     'Temperature, connector orientation/height, manufacturer land-pattern qualification and physical/bench conditions remain open.'] + j1_receipt['limitations']))
     return manifest, result
 
 
