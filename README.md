@@ -167,6 +167,10 @@ With a declared fab step in the stage order, the fab checks require its sealed
 package and compare it with fresh sandbox exports before passing.
 Optional campaign `pre_receipts` import coordinator receipts made before run 1;
 `verify-campaign` revalidates them against the exact initial capture in their folders.
+The [block-first gate](docs/block-first.md) checks separately captured child sheets
+with native ERC and exact topology parity, refuses integration until every block
+has current sealed evidence, and runs fresh checks before publishing the proposed
+hierarchy. Interface or dependency edits require a new block run.
 A complete generation rung with live model review and fabrication
 acceptance remains pending.
 
