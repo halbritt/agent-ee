@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import sys
 import unittest
+import uuid
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -11,7 +12,7 @@ from test_scaffold import ScaffoldFixture
 from toolchain import require_toolchain
 from agent_ee import pod_driver as pod, kicad_route_attempt as attempt
 from tests.kicad_route_fixture import make_checkout, FAKE_PIN
-from agent_ee.storage import read_json, write_json, digest
+from agent_ee.storage import read_json, write_json, digest, identity
 from agent_ee.stage_receipts import validate_pre_receipt
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -210,7 +211,8 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.assertFalse((self.root/'refused').exists())
 
     def use_placement_adapter(self, policy='policy.json'):
-        write_json(self.source/'policy.json',{'schema':'agent-ee.packing-policy/1','fixed_refs':[]})
+        write_json(self.source/'policy.json',{'schema':'agent-ee.packing-policy/1','fixed_refs':[],
+            'step_budget':10000,'gap_nm':500000,'priority_refs':[],'ground_nets':[],'obstacles':[]})
         self.plan['implementation_steps']=[s for s in self.plan['implementation_steps'] if s['step']!='place-board']
         self.plan['placement_adapter']=dict(schema='agent-ee.placement-adapter/1',helper='agent-ee.placer/1',
             policy=policy,fixed_footprints=[],timeout_s=900)
@@ -218,6 +220,9 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
 
     def test_owned_placement_adapter_replaces_generic_placement_step(self):
         self.use_placement_adapter()
+        policy=read_json(self.source/'policy.json')
+        policy.update(fixed_refs=['J1'],priority_refs=['R1'],min_courtyard_edge_mm=0.25)
+        write_json(self.source/'policy.json',policy)
         with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
             receipt=self.build()
         config=read_json(self.root/'run/campaign.json')
@@ -246,6 +251,43 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.plan['placement_adapter']['helper']='invented-placer'
         with self.assertRaisesRegex(ValueError,'placement helper'):
             pod.validate_plan(self.plan)
+
+    def test_null_placement_helper_refused_before_output(self):
+        self.use_placement_adapter()
+        for helper, policy in ((None, None), (None, 'policy.json'), ('agent-ee.placer/1', None)):
+            with self.subTest(helper=helper, policy=policy):
+                self.plan['placement_adapter'].update(helper=helper, policy=policy)
+                self.save()
+                with self.assertRaisesRegex(ValueError, 'requires.*(helper|packing policy)'):
+                    pod.validate_plan(self.plan)
+                with self.assertRaisesRegex(ValueError, 'requires.*(helper|packing policy)'):
+                    pod.build(self.plan_path,self.root/'refused')
+                self.assertFalse((self.root/'refused').exists())
+
+    def test_invalid_packing_policy_refused_before_output(self):
+        self.use_placement_adapter()
+        valid=read_json(self.source/'policy.json')
+        cases=[([], 'expected an agent-ee.packing-policy/1 object'),
+               ({**valid,'schema':'wrong'},'unsupported packing policy'),
+               ({**valid,'step_budget':True},'step budget must be 1..1000000'),
+               ({**valid,'gap_nm':'wide'},'gap must be nonnegative integer nanometres'),
+               ({**valid,'min_courtyard_edge_mm':-1},'min_courtyard_edge_mm must be nonnegative'),
+               ({**valid,'fixed_refs':['R1','R1']},'expected unique explicit fixed_refs'),
+               ({**valid,'priority_refs':['absent']},'unknown declared reference'),
+               ({**valid,'obstacles':[{'side':'sideways'}]},'obstacle side required'),
+               ({**valid,'groups':[]},'placement groups must be a nonempty list'),
+               ({**valid,'fixed_overhangs':[]},'fixed_overhangs come only from a captured envelope, never from the packing policy')]
+        for policy,reason in cases:
+            with self.subTest(policy=policy):
+                write_json(self.source/'policy.json',policy)
+                with self.assertRaises(ValueError) as caught:
+                    pod.build(self.plan_path,self.root/'refused')
+                self.assertEqual(str(caught.exception),'invalid pod placement policy policy.json: '+reason)
+                self.assertFalse((self.root/'refused').exists())
+        (self.source/'policy.json').write_text('{broken')
+        with self.assertRaisesRegex(ValueError,'invalid pod placement policy policy.json:'):
+            pod.build(self.plan_path,self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
 
     def use_envelope_content(self, fixed=False, **content):
         # Original synthetic mechanics: board-only holes and a rule area, no part placement.
@@ -311,6 +353,92 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
                          ['pre-receipts/1/receipt.json','pre-receipts/2/receipt.json'])
         self.verify_first_capture(root)
 
+    def _setup_valid_emitter_inputs(self):
+        """Prepare valid connectivity-intent/1 and schematic-layout/1 matching self.parts (R1, C1, J1)."""
+        assignments = read_json(self.source / 'assignments.json')
+        library = self.source / 'Owned.kicad_sym'
+        raw_lib = library.read_bytes()
+        if b'(property "Footprint"' not in raw_lib:
+            library.write_bytes(raw_lib.replace(
+                b'(property "Value"',
+                b'(property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)))) (property "Value"'))
+        assignments['libraries'][0]['sha256'] = digest(library)
+        write_json(self.source / 'assignments.json', assignments)
+        cad = read_json(self.source / 'cad.json')
+        for name in ('manifest', 'assignments'):
+            blob = self.parts['cad'][name]
+            blob['sha256'] = digest(self.source / blob['path'])
+        members = [m for lib in cad['libraries'] for m in lib['members']]
+        self.parts['cad']['members_sha256'] = identity(sorted(
+            [*members, dict(path='Owned.kicad_sym', sha256=digest(library))],
+            key=lambda m: m['path']))
+        write_json(self.source / 'parts.json', self.parts)
+        intent = dict(
+            schema='agent-ee.connectivity-intent/1',
+            libraries=assignments['libraries'],
+            components=[
+                dict(id=p['id'], reference=p['instances'][0]['reference'], lib_id=p['lib_id'],
+                     footprint=p['footprint'], value=p['mpn'], units=[1])
+                for p in self.parts['parts']
+            ],
+            nets=[],
+            no_connects=[
+                dict(component=p['id'], pin=dict(number=n))
+                for p in self.parts['parts']
+                for n in ('123' if p['id'] == 'header' else '12')
+            ],
+        )
+        write_json(self.source / 'intent.json', intent)
+        layout = dict(
+            schema='agent-ee.schematic-layout/1',
+            namespace=str(uuid.uuid5(uuid.NAMESPACE_URL, 'probe-ee224-fixed')),
+            project='design',
+            transforms={},
+        )
+        write_json(self.source / 'layout.json', layout)
+        return intent, layout
+
+    def test_fixed_footprints_and_imu_in_content_custody_chain(self):
+        """Probe 1: pod_driver.build with non-empty fixed_footprints (J1), intent, layout, and imu_reference."""
+        from agent_ee import board_envelope, candidate, stage_receipts
+        from agent_ee.symbol_library import children, parse_sexpr
+        self._setup_valid_emitter_inputs()
+        # Keep fixed_footprints=[J1] from ScaffoldFixture and add holes + keepout + imu_reference='J1'
+        self.use_envelope_content(
+            fixed=True,
+            intent='intent.json',
+            layout='layout.json',
+            imu_reference='J1',
+        )
+        with mock.patch('agent_ee.campaign.run_campaign', side_effect=AssertionError('inference forbidden')):
+            record = self.build('run-fixed')
+        run = self.root / 'run-fixed'
+        config = read_json(run / 'campaign.json')
+        self.assertEqual(len(config['pre_receipts']), 2)
+        scaffolded, content = stage_receipts.validate_pre_receipt_chain(run, config['pre_receipts'])
+        self.assertEqual(content['status'], 'completed')
+        self.assertEqual(content['spec']['step'], 'envelope-content')
+        self.assertIn('--layout', content['spec']['argv'])
+        self.assertIn('--imu-reference', content['spec']['argv'])
+        board_path = run / 'inputs' / self.scope['board']
+        # Verify J1 fixed footprint round-trip against envelope.json
+        rt = board_envelope.round_trip((self.source / 'envelope.json').read_bytes(), board_path.read_bytes())
+        compared = [f for f in rt['fields'] if f['status'] not in ('not_in_board', 'not_compared')]
+        self.assertTrue(all(f['status'] == 'match' for f in compared), rt)
+        fixed_fields = [f for f in rt['fields'] if f['field'].startswith('/fixed_footprints/')]
+        self.assertEqual(len(fixed_fields), 1)
+        self.assertEqual(fixed_fields[0]['status'], 'match')
+        # Verify IMU_AXES silkscreen text was written by content_step
+        sexpr = parse_sexpr(board_path.read_bytes())
+        texts = [t for t in children(sexpr, 'gr_text') if 'IMU_AXES' in str(t)]
+        self.assertEqual(len(texts), 1)
+        # Verify campaign start and run-1 capture binding
+        camp = self.start_campaign(run='run-fixed', name='campaign-fixed')
+        (camp / 'runs/1').mkdir(parents=True)
+        candidate.capture(run / 'scope.json', camp / 'runs/1')
+        state = {**read_json(camp / 'state.json'), 'history': [{'run': str(camp / 'runs/1')}]}
+        stage_receipts.verify_pre_receipts(camp, state, read_json(camp / 'config.json')['pre_receipts'])
+
     def test_envelope_content_custody_refusals(self):
         from agent_ee import campaign
         self.use_envelope_content()
@@ -357,6 +485,17 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         # The envelope declares fixed J1, which needs the emitter's intent and layout.
         self.use_envelope_content(fixed=True,intent='intent.json')
         with self.assertRaisesRegex(ValueError,'require declared envelope_content intent and layout'):
+            pod.build(self.plan_path,self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
+
+    def test_antenna_without_facts_refused_before_output(self):
+        self.use_envelope_content()
+        envelope=read_json(self.source/'envelope.json')
+        envelope['keepouts']=[dict(id='antenna',antenna=dict(reference='U2',facts_check='facts'),
+            layers=['F.Cu','B.Cu'],forbid=['tracks','vias','pads','copper_pours','footprints'])]
+        write_json(self.source/'envelope.json',envelope)
+        self.save()
+        with self.assertRaisesRegex(ValueError,'antenna keepout requires declared envelope_content antenna_facts'):
             pod.build(self.plan_path,self.root/'refused')
         self.assertFalse((self.root/'refused').exists())
 

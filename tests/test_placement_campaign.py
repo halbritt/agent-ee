@@ -793,22 +793,36 @@ class FailureCampaignTest(PlacementCampaignFixture):
 
     def test_helper_cancellation(self):
         import _thread
-        import threading
-        from agent_ee import stage_receipts
-        real = stage_receipts.execute
+        from agent_ee import executor, stage_receipts
+        real_execute, real_popen = stage_receipts.execute, executor.subprocess.Popen
+        started = []
+        # The real sandboxed launcher acknowledges entry, then waits for cancellation.
+        # Its coordinator interrupts only inside communicate(), where executor cleanup owns it.
+        launcher = ("from pathlib import Path\nimport time\n"
+                    "Path('/work/helper-started').write_text('started')\n"
+                    "time.sleep(60)\n" + pa.LAUNCHER)
         def interrupted(inputs, work, argv, **kwargs):
-            # A real interrupt of the coordinator while the sandboxed helper process itself runs.
             if argv[:4] != ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
-                return real(inputs, work, argv, **kwargs)
-            timer = threading.Timer(0.15, _thread.interrupt_main)
-            timer.start()
-            try:
-                return real(inputs, work, argv, **kwargs)
-            finally:
-                timer.cancel()
+                return real_execute(inputs, work, argv, **kwargs)
+            marker = Path(work) / 'helper-started'
+            def launch(*args, **kw):
+                proc = real_popen(*args, **kw)
+                communicate = proc.communicate
+                def wait_for_helper(*a, **k):
+                    if marker.exists() and not started:
+                        self.assertIsNone(proc.poll())
+                        started.append(proc)
+                        _thread.interrupt_main()
+                    return communicate(*a, **k)
+                proc.communicate = wait_for_helper
+                return proc
+            with patch('agent_ee.executor.subprocess.Popen', side_effect=launch):
+                return real_execute(inputs, work, argv, **kwargs)
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
-        patch('agent_ee.stage_receipts.execute', side_effect=interrupted).start()
-        state, record = self.failed('KeyboardInterrupt', receipt_status='cancelled')
+        with patch.object(pa, 'LAUNCHER', launcher), patch('agent_ee.stage_receipts.execute', side_effect=interrupted):
+            state, record = self.failed('KeyboardInterrupt', receipt_status='cancelled')
+        self.assertEqual(len(started), 1)
+        self.assertIsNotNone(started[0].poll())
         self.assertEqual((record['status'], record['error']), ('cancelled', 'KeyboardInterrupt'))
 
     def test_writer_failure_runs_no_placement_step(self):
