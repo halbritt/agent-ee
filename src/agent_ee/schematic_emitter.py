@@ -4,7 +4,8 @@ Run ``python -m agent_ee.schematic_emitter --help`` for the standalone boundary.
 The emitter resolves raw intent against captured library bytes in the same
 invocation (AGENTEE-39) and never accepts an authored resolved record as pin
 geometry. Every pin endpoint receives a net label or an explicit no-connect
-marker; no wires are drawn. Hierarchical (connectivity-intent/2) designs get
+marker; no wires are drawn, unless a flat layout selects the AGENTEE-222
+functional presentation (``schematic_presentation``). Hierarchical (connectivity-intent/2) designs get
 one file per sheet occurrence: a declared port becomes one sheet pin on the
 child's sheet symbol and hierarchical labels on its child segment, and every
 other segment uses local labels. Its receipt is diagnostic: native ERC,
@@ -56,6 +57,10 @@ INSTANCE_FLAGS = (('exclude_from_sim', 'no'), ('in_bom', 'yes'), ('on_board', 'y
 SYMBOL_KEYS = frozenset(('power', 'pin_numbers', 'pin_names', 'exclude_from_sim', 'in_bom', 'on_board',
                          'in_pos_files', 'duplicate_pin_numbers_are_jumpers', 'jumper_pin_groups',
                          'property', 'symbol', 'embedded_fonts', 'body_styles'))
+# AGENTEE-222: "rows" is the original label-only packing (the default);
+# "functional" groups parts, wires local satellites and titles each group.
+PRESENTATIONS = ('rows', 'functional')
+MAX_GROUPS = 64
 
 
 class EmissionError(ValueError):
@@ -218,9 +223,11 @@ def _uuid(namespace, *parts):
 
 
 def _validate_layout(layout, components):
-    if not isinstance(layout, dict) or set(layout) - {'schema', 'namespace', 'project', 'transforms'} or \
+    if not isinstance(layout, dict) or set(layout) - {'schema', 'namespace', 'project', 'transforms',
+                                                      'presentation', 'groups'} or \
             {'schema', 'namespace', 'project'} - set(layout):
-        raise EmissionError('layout_schema', 'layout requires schema, namespace, project and optional transforms')
+        raise EmissionError('layout_schema', 'layout requires schema, namespace, project and optional transforms, '
+                                             'presentation and groups')
     if layout['schema'] != LAYOUT_SCHEMA:
         raise EmissionError('layout_schema', 'unknown layout schema')
     try:
@@ -242,7 +249,32 @@ def _validate_layout(layout, components):
                 value['mirror'] not in (None, 'x', 'y'):
             raise EmissionError('layout_schema', 'transform requires rotation 0/90/180/270 and mirror null/x/y',
                                 '/transforms/' + cid)
-    return namespace, layout['project'], transforms
+    presentation = layout.get('presentation', 'rows')
+    if presentation not in PRESENTATIONS:
+        raise EmissionError('layout_schema', 'presentation must be "rows" or "functional"', '/presentation')
+    groups = layout.get('groups', [])
+    if groups and presentation != 'functional':
+        raise EmissionError('layout_schema', 'groups require the functional presentation', '/groups')
+    if not isinstance(groups, list) or len(groups) > MAX_GROUPS:
+        raise EmissionError('layout_schema', f'groups must be a list of at most {MAX_GROUPS}', '/groups')
+    seen_ids, seen_members = set(), set()
+    for index, group in enumerate(groups):
+        location = f'/groups/{index}'
+        if not isinstance(group, dict) or set(group) != {'id', 'title', 'components'} or \
+                not isinstance(group['id'], str) or not NAME.fullmatch(group['id']) or group['id'] in seen_ids or \
+                not isinstance(group['title'], str) or not 0 < len(group['title']) <= 64 or \
+                not isinstance(group['components'], list) or not group['components']:
+            raise EmissionError('layout_schema', 'a group requires a unique safe id, a title of 1-64 characters '
+                                                 'and a nonempty component list', location)
+        _field_text(group['title'], 'layout_schema', location + '/title')
+        seen_ids.add(group['id'])
+        for cid in group['components']:
+            if not isinstance(cid, str) or cid not in components:
+                raise EmissionError('layout_schema', 'group member is not a component', location)
+            if cid in seen_members:
+                raise EmissionError('layout_schema', 'a component belongs to at most one group', location)
+            seen_members.add(cid)
+    return namespace, layout['project'], transforms, presentation, groups
 
 
 def _library_symbol(tree, symbol, lib_id, location, sources):
@@ -306,8 +338,13 @@ def _field_text(value, code, location):
     return value
 
 
-def _property(prop, value, anchor, matrix, rotation):
-    """Instance property from a library property, at transformed sheet position."""
+def _property(prop, value, anchor, matrix, rotation, placed=None):
+    """Instance property from a library property, at transformed sheet position.
+
+    ``placed`` (functional presentation) is an anchor-relative offset for a
+    visible field drawn horizontally and centred: KiCad toggles a field's drawn
+    angle for a symbol rotated 90/270, so the written angle is that rotation.
+    """
     at = children(prop, 'at')
     fx, fy, fangle = (0, 0, 0)
     if at:
@@ -317,13 +354,17 @@ def _property(prop, value, anchor, matrix, rotation):
         fangle = _nm(at[0][3]) // 1000000 if len(at[0]) == 4 else 0
     dx, dy = _apply(matrix, fx, fy)
     angle = (fangle + rotation) % 180
+    effects = children(prop, 'effects')
+    effects = effects[0] if effects else ['effects', ['font', ['size', '1.27', '1.27']]]
+    if placed is not None:
+        (dx, dy), angle = placed, rotation % 180
+        effects = [x for x in effects if not (isinstance(x, list) and x[:1] == ['justify'])]
     node = ['property', Q(prop[1]), Q(value), ['at', _mm(anchor[0] + dx), _mm(anchor[1] + dy), str(angle)]]
     hide = children(prop, 'hide')
     if hide:
         node.append(['hide', 'yes' if hide[0][1:] in ([], ['yes']) else 'no'])
     node += [['show_name', 'no'], ['do_not_autoplace', 'no']]
-    effects = children(prop, 'effects')
-    node.append(effects[0] if effects else ['effects', ['font', ['size', '1.27', '1.27']]])
+    node.append(effects)
     return node
 
 
@@ -430,37 +471,66 @@ def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
             if not bbox or bbox['coverage'] != 'complete':
                 raise EmissionError('unsupported_graphic', (bbox or {}).get('reason', 'unit bounds unavailable'),
                                     unit_location)
-            x0, y0, x1, y1 = bbox['bounds_nm']
-            points = [_apply(matrix, x, y) for x in (x0, x1) for y in (y0, y1)]
-            labels = []
-            for pin in sorted(pins, key=lambda p: p['number']):
-                key = (comp['id'], pin['number'])
-                x, y, away = transformed_pin(pin, (0, 0), rotation, mirror)
-                if key in nc:
-                    labels.append((pin, None, x, y, away))
-                    points += [(x - FONT, y - FONT), (x + FONT, y + FONT)]
-                    continue
-                net = net_of[key]
-                labels.append((pin, net, x, y, away))
-                # Conservative reservation: label text plus its flag outline.
-                length = (len(net['name']) + 3) * FONT
-                ux, uy = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}[away]
-                points += [(x + ux * length - FONT * 2, y + uy * length - FONT * 2),
-                           (x + ux * length + FONT * 2, y + uy * length + FONT * 2)]
-            for prop in properties:
-                if prop[1] in ('Reference', 'Value') and not children(prop, 'hide'):
-                    at = children(prop, 'at')
-                    if at:
-                        px, py = _apply(matrix, _nm(at[0][1]), _nm(at[0][2]))
-                        text = comp['reference'] if prop[1] == 'Reference' else comp['value']
-                        width = (len(text) + 1) * FONT
-                        points += [(px - width, py - 2 * FONT), (px + width, py + 2 * FONT)]
-            units.append(dict(comp=comp, unit=unit, matrix=matrix, rotation=rotation, mirror=mirror,
-                              # Every unit instance lists all symbol pins, as KiCad saves it.
-                              pin_numbers=sorted({p[0] for p in context_pins}, key=_natural),
-                              embedded=embedded, flags=flags, properties=properties,
-                              box=_box(points), labels=labels))
+            item = dict(comp=comp, unit=unit, bounds=bbox['bounds_nm'], pins=pins,
+                        nets={p['number']: (None if (comp['id'], p['number']) in nc
+                                            else net_of[comp['id'], p['number']]) for p in pins},
+                        # Every unit instance lists all symbol pins, as KiCad saves it.
+                        pin_numbers=sorted({p[0] for p in context_pins}, key=_natural),
+                        embedded=embedded, flags=flags, properties=properties,
+                        fixed=comp['id'] in transforms)
+            item.update(_geometry(item, rotation, mirror))
+            units.append(item)
     return units, global_nets
+
+
+def _geometry(item, rotation, mirror):
+    """Unit-local label points, the legacy reservation box, and presentation bounds.
+
+    ``box`` is the conservative row-packing reservation, computed exactly as
+    before AGENTEE-222. ``body`` covers the symbol graphics, pin segments,
+    no-connect markers and visible Reference/Value text at their written angle;
+    ``ends`` maps each connected pin to its unit-local endpoint and label angle.
+    """
+    comp, matrix = item['comp'], _matrix(rotation, mirror)
+    x0, y0, x1, y1 = item['bounds']
+    points = [_apply(matrix, x, y) for x in (x0, x1) for y in (y0, y1)]
+    labels, ends = [], {}
+    shapes = [_box(points)]
+    for pin in sorted(item['pins'], key=lambda p: p['number']):
+        net = item['nets'][pin['number']]
+        x, y, away = transformed_pin(pin, (0, 0), rotation, mirror)
+        if net is None:
+            labels.append((pin, None, x, y, away))
+            points += [(x - FONT, y - FONT), (x + FONT, y + FONT)]
+            shapes.append([x - FONT, y - FONT, x + FONT, y + FONT])
+            continue
+        labels.append((pin, net, x, y, away))
+        # Conservative reservation: label text plus its flag outline.
+        length = (len(net['name']) + 3) * FONT
+        ux, uy = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}[away]
+        points += [(x + ux * length - FONT * 2, y + uy * length - FONT * 2),
+                   (x + ux * length + FONT * 2, y + uy * length + FONT * 2)]
+        ends[pin['number']] = (x, y, away)
+    for prop in item['properties']:
+        if prop[1] in ('Reference', 'Value') and not children(prop, 'hide'):
+            at = children(prop, 'at')
+            if at:
+                px, py = _apply(matrix, _nm(at[0][1]), _nm(at[0][2]))
+                text = comp['reference'] if prop[1] == 'Reference' else comp['value']
+                width = (len(text) + 1) * FONT
+                points += [(px - width, py - 2 * FONT), (px + width, py + 2 * FONT)]
+                # Native display keeps the library text angle under any symbol
+                # rotation (the written angle adds the rotation, drawing undoes it).
+                angle = (_nm(at[0][3]) // 1000000 if len(at[0]) == 4 else 0) % 180
+                # About 0.8 em per glyph. A justified field may flip sides under
+                # the symbol transform, so it is reserved on both sides.
+                justified = any(j[1:] and {'left', 'right'} & set(j[1:])
+                                for e in children(prop, 'effects') for j in children(e, 'justify'))
+                half = len(text) * FONT * 4 // 5 // (1 if justified else 2) + FONT // 2
+                shapes.append([px - half, py - FONT, px + half, py + FONT] if angle == 0 else
+                              [px - FONT, py - half, px + FONT, py + half])
+    return dict(matrix=matrix, rotation=rotation, mirror=mirror, labels=labels, box=_box(points),
+                shapes=shapes, body=_box([p for s in shapes for p in (s[:2], s[2:])]), ends=ends)
 
 
 def _pack(units):
@@ -512,11 +582,12 @@ def _label(net, point, away, uid):
             ['uuid', Q(uid('label'))]]
 
 
-def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets):
+def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets, omit=frozenset()):
     """One placed unit: its instance node, plus a label or marker on every pin endpoint.
 
     ``key`` is the unit's identity prefix for every derived UUID, and ``path``
-    is its native sheet-occurrence path.
+    is its native sheet-occurrence path. Pins in ``omit`` are wired to a
+    labelled pin of the same net (functional presentation) and carry no label.
     """
     comp, unit = item['comp'], item['unit']
     instance = ['symbol', ['lib_id', Q(comp['lib_id'])], ['at', _mm(anchor[0]), _mm(anchor[1]), str(item['rotation'])]]
@@ -531,7 +602,8 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets)
     for prop in item['properties']:
         if prop[1].startswith('ki_'):
             continue
-        instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation']))
+        instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation'],
+                                  item.get('fields', {}).get(prop[1])))
         written.add(prop[1])
     for name, value in sorted({**comp.get('part_binding', {}), 'Footprint': comp['footprint']}.items()):
         if name not in written:
@@ -558,18 +630,26 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets)
         if net is None:
             markers.append(['no_connect', ['at', _mm(point[0]), _mm(point[1])],
                             ['uuid', Q(_uuid(namespace, 'no_connect', *ident))]])
-        else:
+        elif pin['number'] not in omit:
             kind = dict(net, **{'global': net['id'] in global_nets})
             labels.append(_label(kind, point, away, lambda tag: _uuid(namespace, tag, *ident)))
     return instance, labels, markers
 
 
-def _document(uid, paper, lib_symbols, markers, labels, symbols, sheets=(), root=False):
+# Native item order, as a KiCad 10.0.7 forced re-save writes it: shapes, text,
+# junctions, no-connects and wires, then the label kinds, symbols and sheets,
+# each by UUID.
+DRAWN_ORDER = ('rectangle', 'text', 'junction', 'no_connect', 'wire')
+
+
+def _document(uid, paper, lib_symbols, markers, labels, symbols, sheets=(), root=False, drawn=()):
     # Native order: item type, then UUID (KiCad's SCH_ITEM::cmp_items).
     nodes = ['kicad_sch', ['version', SCH_VERSION], ['generator', Q(GENERATOR)],
              ['generator_version', Q(GENERATOR_VERSION)], ['uuid', Q(uid)], ['paper', Q(paper)],
-             ['lib_symbols', *[lib_symbols[k] for k in sorted(lib_symbols)]],
-             *sorted(markers, key=_item_uuid)]
+             ['lib_symbols', *[lib_symbols[k] for k in sorted(lib_symbols)]]]
+    items = [*markers, *drawn]
+    for kind in DRAWN_ORDER:
+        nodes += sorted([x for x in items if x[0] == kind], key=_item_uuid)
     for kind in ('label', 'global_label', 'hierarchical_label'):
         nodes += sorted([x for x in labels if x[0] == kind], key=_item_uuid)
     nodes += sorted(symbols, key=_item_uuid) + sorted(sheets, key=_item_uuid)
@@ -590,18 +670,24 @@ def _project_file(project, root, sheets):
     return (json.dumps(project_file, indent=2, sort_keys=True) + '\n').encode('utf-8')
 
 
-def _emit(resolved, units, global_nets, namespace, project):
+def _emit(resolved, units, global_nets, namespace, project, presentation='rows', groups=()):
     root = _uuid(namespace, 'sheet', '/')
-    paper, placed = _pack(units)
+    omit, drawn = {}, []
+    if presentation == 'functional':
+        from .schematic_presentation import arrange
+        paper, placed, omit, drawn = arrange(units, resolved, global_nets, groups, namespace)
+    else:
+        paper, placed = _pack(units)
     endpoints, lib_symbols, symbols, labels, markers = {}, {}, [], [], []
     for item, anchor in placed:
         lib_symbols[item['comp']['lib_id']] = item['embedded']
         symbol, unit_labels, unit_markers = _symbol(item, anchor, namespace, (item['comp']['id'],), project,
-                                                    '/' + root, endpoints, global_nets)
+                                                    '/' + root, endpoints, global_nets,
+                                                    omit.get((item['comp']['id'], item['unit']), frozenset()))
         symbols.append(symbol)
         labels += unit_labels
         markers += unit_markers
-    schematic = _document(root, paper, lib_symbols, markers, labels, symbols, root=True)
+    schematic = _document(root, paper, lib_symbols, markers, labels, symbols, root=True, drawn=drawn)
     pro = _project_file(project, root, [[root, 'Root']])
     return {project + '.kicad_pro': pro, project + '.kicad_sch': schematic}, root, paper
 
@@ -799,13 +885,16 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
                 canonical_resolved(resolved):
             raise EmissionError('resolved_mismatch', 'supplied resolved record differs from fresh resolution')
         components = {c['id']: c for c in resolved['components']}
-        namespace, project, transforms = _validate_layout(layout, components)
+        namespace, project, transforms, presentation, groups = _validate_layout(layout, components)
         if resolved['schema'] == HIERARCHY_SCHEMA:
+            if presentation != 'rows':
+                raise EmissionError('layout_schema', 'the functional presentation is qualified for flat designs only',
+                                    '/presentation')
             files, root, paper = _emit_hierarchy(*_hierarchy(resolved, captured_libraries, raw['libraries'],
                                                              transforms, project, cache, trees), namespace, project)
         else:
             units, global_nets = _plan(resolved, captured_libraries, raw['libraries'], transforms, cache, trees)
-            files, root, paper = _emit(resolved, units, global_nets, namespace, project)
+            files, root, paper = _emit(resolved, units, global_nets, namespace, project, presentation, groups)
         if symbol_table is not None:
             files['sym-lib-table'] = _table('symbol', symbol_table)
         if footprint_table is not None:
@@ -871,4 +960,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    # One module identity: schematic_presentation imports Q and EmissionError
+    # from agent_ee.schematic_emitter, which is not this __main__ copy.
+    from agent_ee.schematic_emitter import main as _canonical_main
+    raise SystemExit(_canonical_main())

@@ -1,0 +1,26 @@
+{
+  "schema": "agent-ee.schematic-layout/1",
+  "namespace": "3b1f6c52-8a7e-5d2b-9c41-7e0d2a6b5f18",
+  "project": "presentation",
+  "transforms": {},
+  "presentation": "functional",
+  "groups": [
+    {
+      "id": "input",
+      "title": "Input connector",
+      "components": [
+        "j_in",
+        "flag_vin",
+        "flag_gnd",
+        "gnd"
+      ]
+    },
+    {
+      "id": "regulator",
+      "title": "Regulator and output filter",
+      "components": [
+        "reg"
+      ]
+    }
+  ]
+}

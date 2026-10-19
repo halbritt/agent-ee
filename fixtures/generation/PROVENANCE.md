@@ -32,6 +32,13 @@ the AGENTEE-40 schematic emitter and AGENTEE-52 forward-annotation tests on
   existed. `three_level.*` adds a pass-through middle sheet with no parts and a
   sibling sheet; it has no hand-written expectations, and its tests compare
   against the fresh resolution through AGENTEE-41 parity and native ERC.
+- `presentation.*` (AGENTEE-222): an original flat design for the functional
+  presentation. It has two owned three-way connectors, the owned regulator,
+  five owned capacitors (two on the input rail, one output, one in series and
+  one filter capacitor after it) and the declared ground symbol and flags. Its
+  layout lists two titled groups. The native nets in
+  `tests/test_schematic_presentation.py` were written from the intent, not read
+  from emitter output.
 - `regulator.kicad_pcb`: an owned 30 x 20 mm two-layer board built once with
   pcbnew 10.0.7 by a scratch script. It places J1, U1 and C1 from the owned
   footprints, with native paths derived from the regulator layout namespace

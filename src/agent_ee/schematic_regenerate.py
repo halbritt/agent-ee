@@ -136,7 +136,10 @@ def _planned(raw, captures, layout):
     if files is None:
         raise emitter.EmissionError('emission_rejected', str(receipt['findings']))
     resolved = resolve_intent(raw, captures)
-    namespace, project, transforms = emitter._validate_layout(layout, {c['id']: c for c in resolved['components']})
+    namespace, project, transforms, presentation, _ = emitter._validate_layout(
+        layout, {c['id']: c for c in resolved['components']})
+    if presentation != 'rows':  # AGENTEE-222 wires and frames are not retained here.
+        raise emitter.EmissionError('layout_schema', 'stable regeneration supports the rows presentation only')
     units, globals_ = emitter._plan(resolved, captures, raw['libraries'], transforms, ParsedLibraries(), {})
     return resolved, units, globals_, namespace, project, files
 
