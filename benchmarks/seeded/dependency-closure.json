@@ -1,0 +1,696 @@
+{
+  "schema": "agent-ee.benchmark-dependency-closure/1",
+  "manifest_sha256": "88fa3fb7eee3ba0f2f9ccb3d153eac185bd0a3e816c3fac0328d6fb6f25f1c52",
+  "image_id": "sha256:d6094c3b35574d45654b2744b3323966a9937757b2df5e5e85960b20459e0234",
+  "image": {
+    "id": "sha256:d6094c3b35574d45654b2744b3323966a9937757b2df5e5e85960b20459e0234",
+    "description": "agent-ee with KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0 and Python 3.12 (Ubuntu 24.04)",
+    "licence_class": "aggregate of Ubuntu packages, each under its own licence",
+    "redistributed": false,
+    "not_consumed": [
+      "ngspice: present in the image; no benchmark scope declares a simulation check"
+    ]
+  },
+  "consumption": {
+    "embedded": "ERC, DRC and netlist export read the symbol and footprint copies embedded in the pinned native files. Those copies are distributed by upstream inside the design files under the board hardware grant; KiCad stock copies also fall under the KiCad library design-use exception.",
+    "kicad-stock": "Referenced nickname of an installed stock library. The check sandbox has no global library table, so it is never loaded; native tools report the absence (adjudicated as environment false alarms).",
+    "third-party-custom": "Referenced nickname of an upstream custom library that is not acquired, loaded or copied.",
+    "project": "Resolved by a captured project table to captured project footprints, pinned in the manifest.",
+    "none": "Footprint without a library nickname.",
+    "model_roots": "ERC and DRC never load 3D models; no model is acquired. kicad-embed:/ names models embedded in the pinned board file."
+  },
+  "boards": [
+    {
+      "board_id": "qwiic-dpad",
+      "hardware_grant": "CC-BY-SA-4.0",
+      "licence_class": "CC-BY-SA-4.0: attribution, share-alike",
+      "symbol_libraries": [
+        {
+          "nickname": "SparkFun-Aesthetic",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Capacitor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Connector",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Hardware",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-IC-Special-Function",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Jumper",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-LED",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-PowerSymbol",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Resistor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Switch",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        }
+      ],
+      "footprint_libraries": [
+        {
+          "nickname": "",
+          "origin": "none",
+          "licence_class": "board hardware grant (embedded copy)"
+        },
+        {
+          "nickname": "SparkFun-Aesthetic",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Capacitor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Connector",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Hardware",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Jumper",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-LED",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Resistor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Semiconductor-Standard",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Switch",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        }
+      ],
+      "model_roots": [
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/LED",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Semiconductor-Standard",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Switch"
+      ],
+      "project_tables": {}
+    },
+    {
+      "board_id": "usb-host-pmod",
+      "hardware_grant": "CERN-OHL-P-2.0",
+      "licence_class": "CERN-OHL-P-2.0: permissive hardware licence",
+      "symbol_libraries": [
+        {
+          "nickname": "Connector",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Connector_Generic",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Device",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Power_Protection",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Regulator_Switching",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "power",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        }
+      ],
+      "footprint_libraries": [
+        {
+          "nickname": "Capacitor_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Inductor_SMD_Wurth",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Package_SON",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Package_TO_SOT_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Resistor_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "host-usb-pmod",
+          "origin": "project",
+          "licence_class": "board hardware grant (captured project file)"
+        }
+      ],
+      "model_roots": [
+        "${KICAD6_3DMODEL_DIR}/Capacitor_SMD.3dshapes",
+        "${KICAD6_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes",
+        "${KICAD6_3DMODEL_DIR}/Connector_USB.3dshapes",
+        "${KICAD6_3DMODEL_DIR}/Inductor_SMD_Wurth.3dshapes",
+        "${KICAD6_3DMODEL_DIR}/Package_SON.3dshapes",
+        "${KICAD6_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes",
+        "${KICAD6_3DMODEL_DIR}/Resistor_SMD.3dshapes",
+        "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes"
+      ],
+      "project_tables": {
+        "fp-lib-table": {
+          "host-usb-pmod": "${KIPRJMOD}/host-usb-pmod.pretty"
+        }
+      }
+    },
+    {
+      "board_id": "tmf8829",
+      "hardware_grant": "CERN-OHL-P-2.0",
+      "licence_class": "CERN-OHL-P-2.0: permissive hardware licence",
+      "symbol_libraries": [
+        {
+          "nickname": "Connector_Generic",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Device",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Jumper",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Mechanical",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Protocentral",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "Regulator_Linear",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "power",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        }
+      ],
+      "footprint_libraries": [
+        {
+          "nickname": "",
+          "origin": "none",
+          "licence_class": "board hardware grant (embedded copy)"
+        },
+        {
+          "nickname": "Capacitor_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Connector_JST",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Connector_PinHeader_2.54mm",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Jumper",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "MountingHole",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Package_TO_SOT_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Resistor_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "SparkFun-Aesthetic",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "ToF Components",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        }
+      ],
+      "model_roots": [
+        "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes",
+        "kicad-embed:/"
+      ],
+      "project_tables": {}
+    },
+    {
+      "board_id": "i2c-rj45",
+      "hardware_grant": "CERN-OHL-S-2.0",
+      "licence_class": "CERN-OHL-S-2.0: strongly reciprocal hardware licence",
+      "symbol_libraries": [
+        {
+          "nickname": "Connector",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Connector_Generic",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Device",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Interface",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Jumper",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "power",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        }
+      ],
+      "footprint_libraries": [
+        {
+          "nickname": "Capacitor_SMD",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Connector_PinHeader_2.54mm",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Connector_RJ",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Jumper",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "MountingHole",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        },
+        {
+          "nickname": "Package_SO",
+          "origin": "kicad-stock",
+          "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)"
+        }
+      ],
+      "model_roots": [
+        "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Connector_RJ.3dshapes",
+        "${KICAD10_3DMODEL_DIR}/Package_SO.3dshapes"
+      ],
+      "project_tables": {}
+    },
+    {
+      "board_id": "rfid-usbc",
+      "hardware_grant": "CC-BY-SA-4.0",
+      "licence_class": "CC-BY-SA-4.0: attribution, share-alike",
+      "symbol_libraries": [
+        {
+          "nickname": "SparkFun-Aesthetic",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Capacitor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Connector",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-DiscreteSemi",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Electromechanical",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Fuse",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Hardware",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-IC-Comm",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Jumper",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-LED",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-PowerSymbol",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-RF",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Resistor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        }
+      ],
+      "footprint_libraries": [
+        {
+          "nickname": "",
+          "origin": "none",
+          "licence_class": "board hardware grant (embedded copy)"
+        },
+        {
+          "nickname": "SparkFun-Aesthetic",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Capacitor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Connector",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Electromechanical",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Fuse",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Hardware",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Jumper",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-LED",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-RF",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Resistor",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        },
+        {
+          "nickname": "SparkFun-Semiconductor-Standard",
+          "origin": "third-party-custom",
+          "licence_class": "board hardware grant (embedded copy; source library not acquired)"
+        }
+      ],
+      "model_roots": [
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Capacitor",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Connector",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Electromechanical",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Fuse",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Hardware",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/LED",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Resistor",
+        "${SPARKFUN_KICAD_LIBRARY}/Footprints/SparkFun-3D-models/Semiconductor-Standard"
+      ],
+      "project_tables": {}
+    }
+  ],
+  "alternate_library": {
+    "record_sha256": "6b76b215aa3b810c67ae5831cbea47c5a0e29fbf08b19fc8f1d898590a256b08",
+    "licence_class": "CC-BY-SA-4.0 with KiCad design-use exception",
+    "footprints": [
+      {
+        "name": "PinHeader_1x04_P1.27mm_Vertical.kicad_mod",
+        "sha256": "3d10b1d38de8cfe55f933865ba14fad76f5f404e8fa7d55c7d07a6963810edf2"
+      },
+      {
+        "name": "PinHeader_1x05_P1.27mm_Horizontal.kicad_mod",
+        "sha256": "036ed11a6574ad73c268d6a44e8511e2a71225a8a3a6a17a4dbb62e591397fee"
+      },
+      {
+        "name": "PinHeader_2x06_P1.27mm_Horizontal.kicad_mod",
+        "sha256": "de684d9f197c727b446ca16f8f4d6e58d2819716069bdf538fb2ab6645db6cea"
+      }
+    ],
+    "pin": "installed package kicad-footprints 10.0.7~ubuntu24.04.1 and exact footprint bytes; upstream source commit not recoverable offline"
+  },
+  "tools": [
+    {
+      "name": "kicad-cli",
+      "path": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61",
+      "package": "kicad",
+      "version": "10.0.7",
+      "licence_class": "GPL (copyleft)",
+      "licence_evidence": {
+        "path": "/usr/share/doc/kicad/copyright",
+        "sha256": "881837e20f6788ecac3225804e0dc9fac56de54da22f71669fdad3ac59d0e499"
+      },
+      "use": "native ERC, DRC and netlist export in the networkless check sandbox"
+    },
+    {
+      "name": "pcbnew",
+      "path": "/usr/lib/python3/dist-packages/_pcbnew.so",
+      "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8",
+      "package": "kicad",
+      "version": "10.0.7~ubuntu24.04.1",
+      "licence_class": "GPL (copyleft)",
+      "licence_evidence": {
+        "path": "/usr/share/doc/kicad/copyright",
+        "sha256": "881837e20f6788ecac3225804e0dc9fac56de54da22f71669fdad3ac59d0e499"
+      },
+      "use": "host preparation receipts (saved-copper partitions) and report copper islands"
+    },
+    {
+      "name": "bwrap",
+      "path": "/usr/bin/bwrap",
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71",
+      "package": "bubblewrap",
+      "version": "0.9.0-1ubuntu0.3",
+      "licence_class": "LGPL-2.0-or-later (weak copyleft)",
+      "licence_evidence": {
+        "path": "/usr/share/doc/bubblewrap/copyright",
+        "sha256": "229a402fddba5c81005950f28de162359383cba731f5b859b8f82a03c338bf01"
+      },
+      "use": "check sandbox"
+    },
+    {
+      "name": "/usr/bin/python3",
+      "path": "/usr/bin/python3",
+      "sha256": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f",
+      "package": "python3.12-minimal",
+      "version": "3.12.3-1ubuntu0.17",
+      "licence_class": "PSF-2.0 (permissive)",
+      "licence_evidence": {
+        "path": "/usr/share/doc/python3.12-minimal/copyright",
+        "sha256": "f1cbf908e1daa8789b389fdcf17811ed36b675d736b39a103591399861350382"
+      },
+      "use": "agent-ee runtime; standard library only"
+    },
+    {
+      "name": "git",
+      "path": "/usr/bin/git",
+      "sha256": "2a8c18fbf43da9f692d75474c72bea9dfd796c260b0f3dfe456376abc3bbd668",
+      "package": "git",
+      "version": "1:2.43.0-1ubuntu7.3",
+      "licence_class": "GPL-2.0 (copyleft)",
+      "licence_evidence": {
+        "path": "/usr/share/doc/git/copyright",
+        "sha256": "e7efbd67e2dac6d950e4607b541778a610561ec77562b8b0a9704a7a3fcbc39c"
+      },
+      "use": "host only: expectation ancestry and implementation archive"
+    },
+    {
+      "name": "docker",
+      "path": "/usr/bin/docker",
+      "sha256": "5fbf1d65d05315a4e89f561fee89731cec1f95094b86a56fac47e240edbf7bac",
+      "package": "docker-ce-cli",
+      "version": "5:29.8.2-1~ubuntu.24.04~noble",
+      "licence_class": "Apache-2.0 (permissive)",
+      "licence_evidence": {
+        "path": "/usr/share/doc/docker-ce/README.md",
+        "sha256": "455e8580e7f49de89b0b1983489973e4f578c17f3c2e75f9b587c7a6c17ae5b2"
+      },
+      "use": "host only: launches the pinned image; not part of results"
+    }
+  ],
+  "fonts": {
+    "use": "KiCad substitutes these image fonts for TrueType fonts the boards name. DRC text-thickness and silkscreen records depend on the substitute, so another font set gives other native records.",
+    "substitutions": {
+      "Arial": "DejaVu Sans Book",
+      "Arial Black": "DejaVu Sans Bold",
+      "Futura": "DejaVu Sans Bold"
+    },
+    "packages": [
+      {
+        "package": "fonts-dejavu-core",
+        "version": "2.37-8",
+        "licence_class": "Bitstream Vera licence (permissive); DejaVu changes public domain",
+        "licence_evidence": {
+          "location": "image",
+          "path": "/usr/share/doc/fonts-dejavu-core/copyright",
+          "sha256": "63d3ba759d12804c5b31a9d5940d855c1820d1f5999e6b0872eb1c7ff045fbc9"
+        }
+      },
+      {
+        "package": "fonts-dejavu-mono",
+        "version": "2.37-8",
+        "licence_class": "Bitstream Vera licence (permissive); DejaVu changes public domain",
+        "licence_evidence": {
+          "location": "image",
+          "path": "/usr/share/doc/fonts-dejavu-mono/copyright",
+          "sha256": "63d3ba759d12804c5b31a9d5940d855c1820d1f5999e6b0872eb1c7ff045fbc9"
+        }
+      },
+      {
+        "package": "fontconfig",
+        "version": "2.15.0-1.1ubuntu2",
+        "licence_class": "HPND-style permissive notice",
+        "licence_evidence": {
+          "location": "image",
+          "path": "/usr/share/doc/fontconfig/copyright",
+          "sha256": "b215a61cdd3e62b5b17cc28b1852c78acb3dd38be0fb30706f7efc050dba91db"
+        }
+      }
+    ]
+  },
+  "redistribution": {
+    "benchmark_publishes": false,
+    "publication": "Owner gate: no third-party board, derivative, library or result is published or copied into this repository.",
+    "eligibility": "Recorded from the upstream grants only; it is not an owner publication decision."
+  },
+  "source": "Generated from the pinned cache by design_dependencies and library_origin; verify with seeded_benchmark.py closure."
+}

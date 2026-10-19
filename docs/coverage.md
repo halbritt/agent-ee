@@ -461,11 +461,15 @@ protection deletion preserves remaining schematic and saved-copper groups. These
 structural gates are preparation, not detector performance. Nine value cases are
 assembly contracts and fourteen wiring cases intentionally change only schematic
 conductors. Native-clean controls and functional electrical failures are not
-claimed. Complete external-library/model and redistribution closure is unqualified.
-Reports keep misses, unsupported execution, unrelated findings and unresolved
-control findings separate. No adjudicated false-alarm rate or model-review
-performance is established by this preregistration. Third-party source files and
-generated candidates/results remain scratch-only pending publication approval.
+claimed. A verified dependency closure pins every tool, font and library the
+benchmark consumes, with licence classes; external libraries and 3D models are
+listed but never loaded. Reports keep misses, unsupported execution, unrelated
+findings and control records separate. Fixed rules classify control records:
+hardware-interface invariants give a 0/12 false-alarm rate, and native ERC/DRC
+give only share bounds, because most of their records stay unadjudicated. Native
+reruns in the pinned image agree by connection semantics; DRC witness choice
+varies. No model-review performance is established. Third-party source files
+and generated candidates/results remain scratch-only pending publication approval.
 
 ## Captured routing constraints
 
