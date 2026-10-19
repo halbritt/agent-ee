@@ -40,6 +40,7 @@ product's hardware qualification.
 | Run DFM geometry rules (annular ring, aspect ratio, acid traps, bridge gap, spacing, skew, copper balance) | [DFM geometry](dfm-geometry.md) |
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |
 | Gate the BOM for JLC assembly: LCSC binding, stock freshness, Extended parts | [Assembly readiness](assembly-readiness.md) |
+| Check source-bound component choices and captured deviations | [Component decisions](part-decisions.md) |
 | Check part-binding properties in symbols and footprints | [Part binding](part-binding.md) |
 | Export a captured board into a JLCPCB fab package | [Fab export](fab-export.md) |
 | Verify sealed fabrication outputs against captured design evidence | [Fab-package consistency](fab-consistency.md) |

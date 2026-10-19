@@ -115,11 +115,35 @@ def _components(root, parts, sheets, pinless=False):
             'datasheet': _datasheet(comp, properties), 'footprint': _footprint(comp), 'populated': 'dnp' not in properties,
             'on_board': 'exclude_from_board' not in properties,
             'in_bom': 'exclude_from_bom' not in properties, 'properties': properties,
+            'binding_fields': _binding_fields(comp, properties),
             'pins': tuple(selected), 'units': tuple(units),
             'pin_metadata': {pin: parts[symbol][pin] for pin in selected},
             'library_pins': tuple(sorted(parts[symbol])),
             'locator': f'components/comp[@ref={ref!r}], sheet={sheet}, UUID={uuid}'}
     return components
+
+
+def _binding_fields(comp, properties):
+    """Reconcile part-binding identities in native fields and properties.
+
+    Value and libsource are deliberately not manufacturer part identities.
+    """
+    from .part_binding import BINDING_FIELDS
+    result = {}
+    for name in sorted(BINDING_FIELDS - {'Datasheet'}):
+        fields = comp.findall(f"./fields/field[@name='{name}']")
+        if len(fields) > 1 or any(set(f.attrib) != {'name'} or len(f) for f in fields):
+            raise ValueError(f'ambiguous native {name} field')
+        values = [(f.text or '') for f in fields]
+        if name in properties:
+            prop = comp.find(f"./property[@name='{name}']")
+            if set(prop.attrib) != {'name', 'value'} or len(prop) or (prop.text or '').strip():
+                raise ValueError(f'unqualified native {name} property')
+            values.append(properties[name])
+        if values and any(v != values[0] for v in values):
+            raise ValueError(f'contradictory native {name} representations')
+        result[name] = values[0] if values else None
+    return result
 
 
 def _datasheet(comp, properties):
