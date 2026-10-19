@@ -2769,6 +2769,20 @@
     },
     {
       "paths": [
+        "fixtures/kicad-happy/ac4-false-positives/EXPECTATIONS.md",
+        "fixtures/kicad-happy/ac4-false-positives/expected.json",
+        "fixtures/kicad-happy/ac4-false-positives/generate.py",
+        "fixtures/kicad-happy/ac4-false-positives/reproducer.kicad_pro",
+        "fixtures/kicad-happy/ac4-false-positives/reproducer.kicad_sch"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-219 analyzer false-positive reproducer, generator and expectations, reviewed 2026-10-19. Every symbol, pin list, net name and coordinate is authored here; no pod, third-party design, stock library or footprint bytes. LSM6DSO32 is a part-number fact only; the kicad-happy commit and installation hashes are identifiers, not copied analyzer content."
+    },
+    {
+      "paths": [
         "fixtures/jlc-dfm/"
       ],
       "kind": "owned-fixture",

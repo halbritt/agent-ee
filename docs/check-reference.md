@@ -769,7 +769,9 @@ preflight and public `verify` recheck the installed pin. Scope/3 predicates are
 See the [schema, failure boundaries and original fixtures](happy-severity-gate.md).
 Thermal and SPICE are excluded from this kind. Existing `kicad_happy` stages and
 policy are unchanged. This is a severity policy over emitted findings, not
-complete analyzer rule coverage or electrical/EMC certification.
+complete analyzer rule coverage or electrical/EMC certification. Pinned 2.3.1
+PP-001 and PR-001 have [known false positives](happy-severity-gate.md#known-analyzer-limitations-pinned-231)
+that stay blocking errors until a requalified pin replaces them.
 
 ## Hardware interface invariants
 

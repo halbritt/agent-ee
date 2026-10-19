@@ -105,3 +105,28 @@ Set `AGENT_EE_KICAD_HAPPY` when the pinned installation is outside
 `$HOME/git/kicad-happy`. The strict host run also includes the legacy analyzer,
 registration, baseline, checks and preflight tests. Container qualification is
 separate from this host evidence.
+
+## Known analyzer limitations (pinned 2.3.1)
+
+Two pinned heuristics emit errors that the netlist contradicts (AGENTEE-219,
+found on the native-v5 pod criterion-4 run):
+
+- PP-001 (`audit_power_pin_dc_paths`) counts a net as supplied only by name,
+  connector or a passive bridge. It ignores another component's `power_out`
+  pin (a buck switch node feeding an inductor, a reference buffer output) and
+  never crosses a P-MOSFET whose gate is held at ground.
+- PR-001 (`validate_i2c_bus`) builds an I2C bus from SDA/SCL pin names. A
+  dual-mode sensor whose chip-select a controller drives is wired for SPI, yet
+  it is reported as an I2C bus without pull-ups.
+
+These errors stay blocking. They are recorded known limitations, never a pass:
+no disposition waives an error, and the pod circuit is not changed to silence
+them. The [owned reproducer](../fixtures/kicad-happy/ac4-false-positives/EXPECTATIONS.md)
+triggers each mechanism plus real violations that must keep failing.
+`tests.test_happy_ac4_false_positives` asserts the pinned errors through the
+real gate. It also asserts that a proposed correction clears only the false
+positives. That correction is an exact commit recorded in the fixture's
+`expected.json`, exported read-only from the `AGENT_EE_KICAD_HAPPY` object
+store, or named by `AGENT_EE_KICAD_HAPPY_CORRECTED`. It is not adopted.
+Adopting it changes the analyzer pin and requires requalification plus a
+criterion-4 rerun.
