@@ -110,8 +110,8 @@ def models(directory, plan, exporter):
     return result
 
 
-def produce(root, block_dir, plan, occurrence, project):
-    """Produce bytes before the destination write; private native export work only."""
+def native_models(root, block_dir, plan):
+    """Read selected components through private networkless native exports."""
     from .executor import execute
     from .native_netlist import read_native_inventory
     with tempfile.TemporaryDirectory(prefix='agent-ee-block-composition-') as tmp:
@@ -123,8 +123,12 @@ def produce(root, block_dir, plan, occurrence, project):
             if record['execution'] != 'ok' or record['exit_code'] != 0:
                 raise ValueError('composition source native export failed')
             return read_native_inventory(work / 'design.xml')
-        selected = models(Path(root) / block_dir, plan, export)
-        return emit(selected, plan, occurrence, project)
+        return models(Path(root) / block_dir, plan, export)
+
+
+def produce(root, block_dir, plan, occurrence, project):
+    """Produce bytes before the destination write; private native export work only."""
+    return emit(native_models(root, block_dir, plan), plan, occurrence, project)
 
 
 def emit(selected, plan, occurrence, project):

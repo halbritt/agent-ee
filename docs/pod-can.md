@@ -112,3 +112,11 @@ Draft parts, undeclared source boundary limits and absent complete sealed source
 reviews keep the capture `unverified`. AGENTEE-149/204 source-review qualification,
 fresh board checks, ERC/DRC, independent engineering review and physical checks
 remain open. This producer is an input for AGENTEE-176, not an accepted pod design.
+
+## Flat staged-generator consumer
+
+[Flat composition](block-adaptation.md#flat-intent-composition-agentee-176) converts
+the explicit four-part capture into intent/1 with deterministic reference ranges,
+immutable both-source provenance and fresh native adaptation reporting. The
+positive control connects a real seven-pin board interface; it is not a completed
+pod board. Source review and full-pod qualification remain open.

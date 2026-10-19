@@ -55,6 +55,9 @@ def _source(root, block, composition=None):
 
 def _instance(root, rel):
     record = _read(_local(root, rel))
+    if record.get('schema') == 'agent-ee.flat-block-instance/1':
+        from .block_flat import read_instance
+        return read_instance(root, record)
     exact_keys(record, 'schema id block block_id version sha256 sheet instance_path bindings requirements' +
                (' composition' if 'composition' in record else ''))
     if record['schema'] != INSTANCE_SCHEMA:
@@ -149,7 +152,9 @@ def capability(params, scope, files, inputs, check_id):
             raise ValueError('block requirement mapping differs from board baseline')
     predicates = ['block-boundary:' + p['name'] for p in source['boundary_ports']]
     if '_composition' in source:
-        predicates += ['block-composition:components', 'block-composition:pin-nets']
+        predicates += (['block-flat:component-adaptations', 'block-flat:pin-net-adaptations']
+                       if record['schema'] == 'agent-ee.flat-block-instance/1' else
+                       ['block-composition:components', 'block-composition:pin-nets'])
     return {'instance': record, 'block': source, 'immutable_inputs': dependencies,
             'predicates': predicates}
 
@@ -353,6 +358,9 @@ def check_block_provenance(ctx):
     try:
         descriptor = capability(ctx.params, ctx.scope, ctx.manifest['files'], ctx.inputs, ctx.cid)
         record, block = descriptor['instance'], descriptor['block']
+        if record['schema'] == 'agent-ee.flat-block-instance/1':
+            from .block_flat import check
+            return check(ctx, descriptor)
         xml = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'design.xml')
         connectivity = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'connectivity.json')
         actual = read_native_inventory(xml)
@@ -459,6 +467,16 @@ def check_block_provenance(ctx):
         raise
     except (OSError, ValueError, KeyError, TypeError, StopIteration, ParseError) as exc:
         raise CheckError('unsupported', str(exc)) from exc
+
+
+def compose_flat(root, intent, blocks, bindings, *, captured_libraries):
+    """Return intent/1, captured libraries and immutable block-instance sidecars.
+
+    Does not publish files. All block sources must already be captured under root.
+    The completed board intent, including real surrounding terminals, must resolve.
+    """
+    from .block_flat import compose
+    return compose(root, intent, blocks, bindings, captured_libraries)
 
 
 def main(argv=None):

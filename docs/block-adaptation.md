@@ -168,3 +168,109 @@ retains both source exports. Legacy single-source adaptations continue reporting
 component/net changes as information. Multi-source requests without an explicit
 plan remain unsupported. Neither mode supplies source qualification or electrical
 suitability from provenance alone.
+
+## Flat intent composition (AGENTEE-176)
+
+`block_adaptation.compose_flat(root, intent, blocks, bindings,
+captured_libraries=...)` composes selected captured components into the existing
+`agent-ee.connectivity-intent/1`. It returns an `intent`, a path-to-bytes `captures`
+map, and immutable `block_instances` sidecars. It writes no project files. The
+caller publishes the returned bytes into its owned scaffold, captures the
+sidecars and source dependencies, and uses the ordinary schematic stage to emit
+and later repair the mutable intent. Intent/2 hierarchy is outside this path.
+
+Each block request contains exactly `id`, `block`, `composition`,
+`reference_ranges`, `sheet`, and `requirements`. `block` and `composition` name
+captured paths beneath `root`; `sheet` names the eventual flat root schematic.
+`requirements` maps every original block requirement to fresh board checks, as
+in hierarchical instantiation. The current path requires an explicit selected
+reference composition plan, including every source instance and pin net; it
+does not infer a selection or silently import a whole source sheet.
+
+For example, `reference_ranges` can be
+`{"C": [100, 109], "D": [100, 109], "R": [100, 109], "U": [100, 109]}`.
+Numeric source-reference order allocates each prefix from its declared lower
+bound. Existing references anywhere in the range, overlapping ranges between
+instances, insufficient ranges and logical component-ID collisions refuse.
+Flattened logical IDs are `<instance-id>/<selected-reference>`, such as
+`can/R9`; the display reference can become `R100`. Input ordering does not change
+the result. The caller must explicitly choose ranges; allocation never hunts
+for an apparently free reference outside them.
+
+`bindings` maps each instance ID to all its logical ports and named intent nets.
+The CAN block requires eight entries, including `S` and `GND` bound to the same
+net. It retains the source ground strap. Distinct canonical source nets cannot
+merge implicitly. A boundary with only one selected physical pin must gain a
+real surrounding-board terminal before the complete intent can resolve. Missing
+connections are refused; the producer adds no dummy components and does not
+weaken the resolver's singleton or pin-accounting checks.
+
+Symbols come from the captured native source definitions, never ambient symbol
+search. Derived libraries use deterministic instance-specific namespaces and
+hashes; the returned capture map must be published with the intent. Old
+`pin_names` hide-token ordering is serialized in the existing emitter's order.
+Native empty pin names and datasheet values are preserved explicitly, preventing
+legacy `~` placeholders or embedded-library defaults from silently changing
+source metadata. The generated libraries remain derived from the recorded
+upstream sources. No new licensing permission follows from composition.
+
+### Immutable flat instance record
+
+Each `agent-ee.flat-block-instance/1` sidecar records:
+
+- Original block ID, version, primary sheet hash, and captured plan path/hash.
+- `source_parts`: original sheet, native source instance and source reference,
+  keyed by selected reference. Both CAN source instances remain accountable.
+- `references` and `reference_ranges`: selected-to-board reference mapping and
+  the reserved ranges.
+- `bindings`: named intent nets, and `native_bindings`: their exact expected
+  KiCad XML names. Ordinary flat local labels receive the native `/` prefix;
+  resolved virtual power symbols make their nets global. The receipt declares
+  the distinction instead of stripping prefixes during comparison.
+- The flat root `sheet`, `instance_path: "/"`, and original requirement mapping.
+
+Keep these sidecars immutable across writer turns. They are separate from the
+mutable intent and are not opaque ignored intent fields. Add an ordinary
+`block_provenance` check with `params.instance` naming the sidecar and
+`params.netlist_check` naming a prior fresh native netlist check. Capture the
+original block, plan, sidecar, root schematic and fresh board requirement inputs.
+Preserve the original requirement statements and source locators when binding
+fresh checks; native source-export-only requirements remain informational.
+
+The flat checker freshly exports both source sheets, compares mapped component
+identities and all selected physical pin memberships with the delivered root
+netlist, and names component and net changes as **adaptations**. Generated UUIDs
+are not compared to source UUIDs; reference and source-instance mappings supply
+custody. Unexpected components inside the reserved reference ranges are also
+reported. Unrelated board components outside those ranges belong to the board's
+other requirements.
+
+Verdicts have a narrow meaning:
+
+| Observation | Outcome |
+| --- | --- |
+| Source identities/topology and boundary bindings unchanged | `pass` for this provenance predicate |
+| Component adaptation, such as R9 120 ohm to 60 ohm, with boundaries intact | `info`, never approval |
+| Missing/rebound selected boundary terminal | `defect`, with the topology adaptation retained |
+| Missing, unreadable or inconsistent source/capture/native evidence | Unsupported/unknown coverage |
+
+A reported adaptation does not qualify the source or approve the changed circuit.
+A 60-ohm resistor still fails the fresh interface requirement that declares
+120 ohms. Part-decision authority, source qualification under AGENTEE-149/204 and
+all other board requirements remain independent. The existing hierarchical
+selected-composition path continues to treat source-component changes as defects.
+
+### Part selection handoff to AGENTEE-174
+
+The ticket's `part_ref` vocabulary is distinct from captured source provenance.
+Intent/1 uses its existing `part_binding` fields; `source_parts` identifies the
+upstream source component. A source reference or LCSC string does not select a
+supply-manifest offer.
+
+The coordinated binding-fill interface uses a separate typed immutable
+`agent-ee.part-refs/1` sidecar with `components` mapping exact intent component IDs
+to `{ "part_ref": "<explicit parts/1 part id>" }`. The caller explicitly maps
+`can/R9` and every other non-power component to its manifest choice.
+AGENTEE-174 owns exhaustive coverage validation and supplied-binding mismatch
+refusal. This producer does not implement or bypass that validator, invent part
+IDs, or add fields that intent/1 ignores.

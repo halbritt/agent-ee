@@ -2908,6 +2908,17 @@
         "T16"
       ],
       "note": "Explicit owner-scoped source reference and native net mappings for the existing admitted CAN capture. Preserves source custody and licence boundaries; no source-review qualification or new publication grant."
+    },
+    {
+      "paths": [
+        "src/agent_ee/block_flat.py",
+        "tests/test_block_compose.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-176 flat composition and native regression controls. Source symbols and stock connector library are read from separately admitted captures or the installed toolchain at runtime; no third-party symbol bodies are embedded in this code."
     }
   ]
 }
