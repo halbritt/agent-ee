@@ -156,10 +156,14 @@ def validate_manifest(document):
                 raise ValueError('unique sheet/reference selector required')
             selectors.add((sheet, ref))
         sheet = part['datasheet']
+        if isinstance(sheet, dict) and 'source_selection' in sheet:
+            from .datasheet_selection import validate_ref
+            validate_ref(sheet['source_selection'])
         if not isinstance(sheet, dict) or type(sheet.get('required')) is not bool:
             raise ValueError('explicit datasheet obligation required')
         if sheet.get('status') == 'captured':
-            exact_fields(sheet, ('status', 'required', 'artifact', 'provenance'))
+            fields = ('status', 'required', 'artifact', 'provenance')
+            exact_fields(sheet, (*fields, 'source_selection') if 'source_selection' in sheet else fields)
             _blob(sheet['artifact'])
             _blob(sheet['provenance'], True)
         elif sheet.get('status') == 'unavailable':
@@ -222,12 +226,25 @@ def dependency_closure(document, root):
         if is_probe(part):
             blobs += [part['probe']['symbol'], part['probe']['footprint']]
             continue
+        sheet = part['datasheet']
+        context = f'part={part["id"]} purchase={part["lcsc"]} instances={part["instances"]}'
+        if 'source_selection' in sheet:
+            from .datasheet_selection import check_binding, datasheet
+            check_binding(root, sheet['source_selection'], sheet['artifact'], sheet['provenance'], context=context)
+            _, paths = datasheet(root, part)
+            blobs += [dict(path=p, sha256=h) for p, h in paths.items()]
+            blobs.append({k: sheet['source_selection'][k] for k in ('path', 'sha256')})
         if named_selection(part):
             from .part_record import qualify_record, qualify_external_record
             record_blob = _named_blob(part)
             record = strict_json(_read_blob(root, record_blob))
             qualifier = qualify_external_record if part['selection']['kind'] == 'external' else qualify_record
-            dependencies = qualifier(record, root)
+            if 'source_selection' in record and sheet.get('source_selection') != record['source_selection']:
+                raise ValueError(context + ': manifest must retain part-record source_selection')
+            try:
+                dependencies = qualifier(record, root)
+            except ValueError as exc:
+                raise ValueError(context + ': ' + str(exc)) from exc
             blobs += [record_blob, part['selection']['decision_ref']]
             blobs += [dict(path=p, sha256=h) for p, h in dependencies.items()]
         if 'pin_contract' in part:

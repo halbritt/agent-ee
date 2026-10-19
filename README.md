@@ -409,6 +409,9 @@ circuit acceptance. Snapshot stock and prices describe their recorded dates.
 `parts/1` through per-LCSC records derived offline from captured JLCPCB responses
 and datasheet acquisitions. The subset check and scaffold producer replay exact
 identity and freeze those sources; suitability and live stock need separate evidence.
+Captured part bindings can pin
+[selected and rejected datasheet sources](docs/binding-fill.md#captured-datasheet-source-selection)
+while preserving the purchased part identity.
 
 An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.

@@ -273,3 +273,16 @@ record fields, immutable dependency closure and requalification rules.
 ## Manufactured probe features
 
 The parts/1 union also admits one required [bare copper probe feature](probe-features.md) kind with exact captured symbol, footprint, pin and native net identity. This variant has no catalog or purchased identity; the ordinary part schema is unchanged.
+
+## Explicit datasheet source decisions
+
+A captured `datasheet` optionally adds `source_selection: {path, sha256,
+part_key}` referencing the strict
+[`agent-ee.datasheet-source-selection/1` contract](binding-fill.md#captured-datasheet-source-selection).
+The named part record may also declare this field, in which case the manifest
+must retain the identical reference. Qualification rejects a bound rejected
+source by hash, requires exactly one selected source for the declared key, and
+replays its acquisition and immutable dependencies. Purchase identity and CAD
+remain independent of the acquisition alias. Legacy declarations without this
+field establish custody only; source selection does not establish electrical
+ratings or exact ordering-code correspondence.
