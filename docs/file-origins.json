@@ -2133,7 +2133,7 @@
       "origins": [
         "AE"
       ],
-      "reviewed": "Original regression-test code; the HTML literal is a synthetic non-JSON body the DigiKey v4 parser must refuse and the PDF literal is a minimal owned envelope served by a loopback stub. Part numbers, manufacturers and responses are invented; no DigiKey response or datasheet is copied."
+      "reviewed": "Original regression-test code; the HTML literal is a synthetic non-JSON body the DigiKey v4 parser must refuse and the PDF literal is a minimal owned envelope served by a loopback stub. Responses are invented; the AGENTEE-262 regression fixtures quote the real part numbers 776228-1 and NEO-M9N-00B, their manufacturer names and a few parameter facts (package text, connector type, positions, rows, pitch, mounting) as facts inside owned synthetic documents; other part numbers and manufacturers are invented, and no DigiKey response or datasheet is copied."
     },
     {
       "paths": [

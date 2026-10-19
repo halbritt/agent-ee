@@ -55,6 +55,48 @@ def details(item):
                       ensure_ascii=False).encode()
 
 
+# AGENTEE-262 regression shapes. Owned synthetic documents that model the two
+# live v4 ProductDetails shapes reported for these real part numbers; the part
+# numbers, manufacturer names and parameter values are facts quoted from the
+# ticket, everything else (descriptions, URLs, prices, ids) is invented.
+def zero_stock_module(*, quantity='omitted'):
+    """NEO-M9N-00B shape: zero stock on every variation and no top-level QuantityAvailable."""
+    item = product('NEO-M9N-00B', manufacturer='u-blox', price=None,
+                   datasheet='https://example.invalid/neo-m9n.pdf', variations=[
+                       {'DigiKeyProductNumber': 'SYN-NEO-M9N-00BTR-ND', 'MinimumOrderQuantity': 250,
+                        'QuantityAvailableforPackageType': 0},
+                       {'DigiKeyProductNumber': 'SYN-NEO-M9N-00BCT-ND', 'MinimumOrderQuantity': 1,
+                        'QuantityAvailableforPackageType': 0}],
+                   parameters=[{'ParameterId': 16, 'ParameterText': 'Package / Case', 'ValueText': '24-SMD Module'},
+                               {'ParameterId': 252, 'ParameterText': 'Operating Temperature',
+                                'ValueText': '-40°C ~ 85°C'}])
+    if quantity == 'omitted':
+        del item['QuantityAvailable']
+    else:
+        item['QuantityAvailable'] = quantity
+    return item
+
+
+CONNECTOR_PARAMETERS = [
+    {'ParameterId': 2000, 'ParameterText': 'Connector Type', 'ValueText': 'Header, Male Pins'},
+    {'ParameterId': 88, 'ParameterText': 'Number of Positions', 'ValueText': '23'},
+    {'ParameterId': 89, 'ParameterText': 'Number of Rows', 'ValueText': '3'},
+    {'ParameterId': 90, 'ParameterText': 'Pitch - Mating', 'ValueText': '0.157" (4.00mm)'},
+    {'ParameterId': 69, 'ParameterText': 'Mounting Type', 'ValueText': 'Panel Mount, Through Hole, Right Angle'},
+    {'ParameterId': 252, 'ParameterText': 'Operating Temperature', 'ValueText': '-40°C ~ 125°C'}]
+CONNECTOR_PACKAGE = ('Connector Type: Header, Male Pins; Number of Positions: 23; Number of Rows: 3; '
+                     'Pitch - Mating: 0.157" (4.00mm); Mounting Type: Panel Mount, Through Hole, Right Angle')
+
+
+def connector(parameters=None):
+    """776228-1 shape: connector parameters and no 'Package / Case' parameter."""
+    return product('776228-1', manufacturer='TE Connectivity AMP Connectors',
+                   datasheet='https://example.invalid/776228.pdf', variations=[
+                       {'DigiKeyProductNumber': 'SYN-A106-ND', 'MinimumOrderQuantity': 1,
+                        'QuantityAvailableforPackageType': 41}],
+                   parameters=CONNECTOR_PARAMETERS if parameters is None else parameters)
+
+
 def keyword(*items, exact=()):
     return json.dumps({'Products': list(items), 'ProductsCount': len(items), 'ExactMatches': list(exact)}).encode()
 
@@ -215,6 +257,7 @@ class DigiKeyCaptureTests(unittest.TestCase):
         self.assertEqual(doc['parts']['hdr'], {
             'query': 'AE-HDR-35', 'mpn': 'AE-HDR-35', 'manufacturer': 'Example Connector Co.',
             'digikey_part_number': 'AE-HDR-35-CT-ND', 'package': 'Synthetic 35-pin header',
+            'package_source': {'rule': 'package_case', 'parameters': ['Package / Case']},
             'primary_datasheet_url': 'https://example.invalid/hdr.pdf', 'quantity_available': 120,
             'unit_price': 1.25, 'product_status': 'Active', 'seated_height': '12.30mm',
             'operating_temperature': '-40°C ~ 125°C', 'parameters': [
@@ -371,6 +414,9 @@ class DigiKeyCaptureTests(unittest.TestCase):
                'nan': details(good).replace(b'1.25', b'NaN'),
                'negative stock': details(product('AE-P1', quantity=-1)),
                'bool stock': details(product('AE-P1', quantity=True)),
+               'string stock': details(product('AE-P1', quantity='0')),
+               'float stock': details(product('AE-P1', quantity=1.0)),
+               'object stock': details(product('AE-P1', quantity={})),
                'price': details(product('AE-P1', price='1.25')),
                'datasheet scheme': details(product('AE-P1', datasheet='ftp://example.invalid/x.pdf')),
                'conflicting height': details(conflicting), 'no parameters': details({**good, 'Parameters': None}),
@@ -397,7 +443,8 @@ class DigiKeyCaptureTests(unittest.TestCase):
             return copy
         cases = {f'forged {field}': (lambda field: lambda d: d['parts']['a'].update(
                      {field: (7 if isinstance(d['parts']['a'][field], (int, float)) else 'forged')}))(field)
-                 for field in ('mpn', 'manufacturer', 'digikey_part_number', 'package', 'primary_datasheet_url',
+                 for field in ('mpn', 'manufacturer', 'digikey_part_number', 'package', 'package_source',
+                               'primary_datasheet_url',
                                'quantity_available', 'unit_price', 'seated_height', 'operating_temperature',
                                'last_seen', 'query')}
         cases.update({
@@ -492,6 +539,130 @@ class DigiKeyCaptureTests(unittest.TestCase):
         for field in ('mpn', 'manufacturer', 'package'):
             with self.subTest(field), self.assertRaisesRegex(ValueError, 'differs from the DigiKey capture'):
                 verify_external_identity(self.root, {**identity, field: 'forged'})
+
+    def test_live_shape_zero_stock_omits_quantity_available(self):
+        # AGENTEE-262: NEO-M9N-00B shape. Omitted (or null) top-level stock is
+        # recorded as unknown (null), never zero, and the capture still validates.
+        server = self.stub({'NEO-M9N-00B': (200, details(zero_stock_module())),
+                            'SYN-NULL-STOCK': (200, details({**zero_stock_module(quantity=None),
+                                                             'ManufacturerProductNumber': 'SYN-NULL-STOCK'}))})
+        items = [q('neo', 'NEO-M9N-00B'), q('null', 'SYN-NULL-STOCK')]
+        doc = self.capture(server, items)
+        self.assertEqual({r['key']: (r['status'], r['reason']) for r in doc['requests']},
+                         {'neo': ('found', None), 'null': ('found', None)})
+        part = doc['parts']['neo']
+        self.assertNotIn(b'"QuantityAvailable"', (self.root / 'cap/responses/neo.json').read_bytes())
+        self.assertIsNone(part['quantity_available'])
+        self.assertIsNone(doc['parts']['null']['quantity_available'])
+        self.assertEqual((part['mpn'], part['manufacturer'], part['package'], part['package_source'],
+                          part['product_status'], part['digikey_part_number'], part['primary_datasheet_url']),
+                         ('NEO-M9N-00B', 'u-blox', '24-SMD Module',
+                          {'rule': 'package_case', 'parameters': ['Package / Case']}, 'Active',
+                          'SYN-NEO-M9N-00BCT-ND', 'https://example.invalid/neo-m9n.pdf'))
+        path = 'cap/' + dk.MANIFEST
+        info = load_capture(self.root, path, expected=items)[1]  # no allow_failed: the capture is consumable
+        self.assertEqual((info['found'], info['failed']), (['neo', 'null'], {}))
+        read = lambda rel: (self.root / 'cap' / rel).read_bytes()  # noqa: E731
+        for forged in (0, 1, 0.0, False):  # unknown stock never becomes a number
+            copy = json.loads(json.dumps(doc))
+            copy['parts']['neo']['quantity_available'] = forged
+            with self.subTest(forged=forged), self.assertRaisesRegex(ValueError, 're-derived'):
+                validate_capture(copy, read)
+        projection = project_external(self.root, path, 'neo')
+        self.assertEqual(projection['identity']['package'], '24-SMD Module')
+        self.assertIn('quantity_available=unknown (QuantityAvailable not reported)',
+                      projection['hand_fit_evidence']['purchase_source'])
+        self.assertEqual(verify_external_identity(self.root, projection['identity']), projection['dependencies'])
+        # The keyword parser shares the derivation.
+        self.assertIsNone(parse_response(keyword(zero_stock_module()), 'keyword', 'NEO-M9N-00B')[1]
+                          ['quantity_available'])
+        # A present top-level value is still read exactly, including a real zero.
+        self.assertEqual(parse_response(details(zero_stock_module(quantity=0)), 'product', 'NEO-M9N-00B')[1]
+                         ['quantity_available'], 0)
+
+    def test_live_shape_connector_package_from_explicit_parameters(self):
+        # AGENTEE-262: 776228-1 shape. No 'Package / Case'; the package is the
+        # verbatim connector parameters with provenance, else unknown.
+        from agent_ee.datasheet_capture import capture_datasheets
+        from agent_ee.part_record import prepare_external_record, qualify_external_record
+        from agent_ee.storage import digest, write_json
+        server = self.stub({})
+        missing_pitch = [p for p in CONNECTOR_PARAMETERS if p['ParameterText'] != 'Pitch - Mating']
+        no_rows = [p for p in CONNECTOR_PARAMETERS if p['ParameterText'] != 'Number of Rows']
+        conflicting = [*CONNECTOR_PARAMETERS, {'ParameterText': 'Number of Positions', 'ValueText': '24'}]
+        supplier = [{'ParameterText': 'Supplier Device Package', 'ValueText': 'SYN-24-MOD'}, *CONNECTOR_PARAMETERS]
+        both = [{'ParameterText': 'Package / Case', 'ValueText': 'Synthetic Case'},
+                {'ParameterText': 'Supplier Device Package', 'ValueText': 'SYN-24-MOD'},
+                {'ParameterText': 'Supplier Device Package', 'ValueText': 'SYN-OTHER'}]
+        server.routes.update({
+            '776228-1': (200, details({**connector(), 'DatasheetUrl': server.url + '/ds/776228.pdf'})),
+            'SYN-NOPITCH': (200, details({**connector(missing_pitch), 'ManufacturerProductNumber': 'SYN-NOPITCH'})),
+            'SYN-NOROWS': (200, details({**connector(no_rows), 'ManufacturerProductNumber': 'SYN-NOROWS'})),
+            'SYN-CONFLICT': (200, details({**connector(conflicting), 'ManufacturerProductNumber': 'SYN-CONFLICT'})),
+            'SYN-SDP': (200, details({**connector(supplier), 'ManufacturerProductNumber': 'SYN-SDP'})),
+            'SYN-BOTH': (200, details({**connector(both), 'ManufacturerProductNumber': 'SYN-BOTH'}))})
+        items = [q('amp', '776228-1'), q('nopitch', 'SYN-NOPITCH'), q('norows', 'SYN-NOROWS'),
+                 q('conflict', 'SYN-CONFLICT'), q('sdp', 'SYN-SDP'), q('both', 'SYN-BOTH')]
+        doc = self.capture(server, items)
+        self.assertEqual({r['key']: r['status'] for r in doc['requests']}, {k['key']: 'found' for k in items})
+        parts = doc['parts']
+        self.assertEqual((parts['amp']['package'], parts['amp']['package_source']), (CONNECTOR_PACKAGE, {
+            'rule': 'connector_parameters', 'parameters': ['Connector Type', 'Number of Positions',
+                                                           'Number of Rows', 'Pitch - Mating', 'Mounting Type']}))
+        self.assertEqual(parts['norows']['package_source']['parameters'],
+                         ['Connector Type', 'Number of Positions', 'Pitch - Mating', 'Mounting Type'])
+        self.assertEqual(parts['norows']['package'], CONNECTOR_PACKAGE.replace('Number of Rows: 3; ', ''))
+        # Insufficient or conflicting connector parameters: unknown, never a guess.
+        for key in ('nopitch', 'conflict'):
+            self.assertEqual((parts[key]['package'], parts[key]['package_source']), (None, None), key)
+        self.assertEqual((parts['sdp']['package'], parts['sdp']['package_source']),
+                         ('SYN-24-MOD', {'rule': 'supplier_device_package', 'parameters': ['Supplier Device Package']}))
+        # 'Package / Case' wins, and a later rule's conflict cannot refuse it.
+        self.assertEqual(parts['both']['package'], 'Synthetic Case')
+        path = 'cap/' + dk.MANIFEST
+        load_capture(self.root, path, expected=items)
+        for key in ('nopitch', 'conflict'):
+            with self.subTest(key), self.assertRaisesRegex(ValueError, 'package unknown.*needs a package'):
+                project_external(self.root, path, key)
+        read = lambda rel: (self.root / 'cap' / rel).read_bytes()  # noqa: E731
+        for label, change in {'guessed package': {'package': 'Header 23 pos'},
+                              'dropped provenance': {'package_source': None},
+                              'other rule': {'package_source': {'rule': 'package_case',
+                                                                'parameters': ['Package / Case']}}}.items():
+            copy = json.loads(json.dumps(doc))
+            copy['parts']['nopitch' if label == 'guessed package' else 'amp'].update(change)
+            with self.subTest(label), self.assertRaisesRegex(ValueError, 're-derived'):
+                validate_capture(copy, read)
+        projection = project_external(self.root, path, 'amp')
+        self.assertEqual(canonical(projection), canonical(project_external(self.root, path, 'amp')))
+        self.assertEqual({k: projection['identity'][k] for k in ('schema', 'mpn', 'manufacturer', 'package')}, {
+            'schema': 'agent-ee.external-part-identity/1', 'mpn': '776228-1',
+            'manufacturer': 'TE Connectivity AMP Connectors', 'package': CONNECTOR_PACKAGE})
+        self.assertEqual(projection['package_provenance'], {
+            'capture': {'path': path, 'sha256': projection['dependencies'][path]},
+            'response': {'path': 'cap/responses/amp.json',
+                         'sha256': hashlib.sha256((self.root / 'cap/responses/amp.json').read_bytes()).hexdigest()},
+            'key': 'amp', 'locator': 'Product.Parameters', **parts['amp']['package_source']})
+        # The connector identity is consumed unchanged by the external part record.
+        capture_datasheets([projection['datasheet_binding']], self.root / 'datasheets')
+        write_json(self.root / 'external-identity.json', projection['identity'])
+        write_json(self.root / 'deviations.json', {'schema': 'agent-ee.part-deviations/1', 'deviations': [{
+            'requirement_id': 'SYN-CONNECTOR', 'original': {'mpn': '776228-1', 'lcsc': None},
+            'assembly': 'hand_soldered', 'reason': 'Owned synthetic hand-fit decision.',
+            'stock_deviation': {'reason': 'No JLC assembly supply declared.'}, **projection['hand_fit_evidence']}]})
+
+        def blob(rel, **extra):
+            return {'path': rel, 'sha256': digest(self.root / rel), **extra}
+        record = prepare_external_record(self.root, blob('external-identity.json', locator='/'),
+                                         blob('datasheets/manifest.json'), 'amp', blob('deviations.json', index=0))
+        self.assertEqual((record['package'], record['stock']), (CONNECTOR_PACKAGE, None))
+        self.assertIn('cap/responses/amp.json', qualify_external_record(record, self.root))
+        verify_external_identity(self.root, projection['identity'])
+        # A 'Package / Case' conflict still refuses the response, as before.
+        clash = connector([{'ParameterText': 'Package / Case', 'ValueText': 'A'},
+                           {'ParameterText': 'Package / Case', 'ValueText': 'B'}])
+        with self.assertRaisesRegex(ValueError, 'conflicting'):
+            parse_response(details(clash), 'product', '776228-1')
 
     def test_no_check_or_offline_module_imports_the_producer(self):
         # AGENTEE-248: the host-side datasheet cascade producer replays captures
