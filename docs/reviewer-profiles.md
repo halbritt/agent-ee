@@ -55,6 +55,11 @@ is an entry point, not the entire available evidence. Tool calls and outputs
 remain in native harness logs. Reviewers are instructed to save experiments,
 retrieved references and command/measurement notes under `/work/experiments`;
 validated citations can name `review-work/<role>/experiments/<file>`.
+The packet's `citation_files` inventory names coordinator evidence formats and
+locator choices. Reviewers use line ranges for native KiCad S-expressions and
+other text, JSON pointers for JSON, and XPath for XML. They must omit unused
+locator fields. [Citation errors](result-reference.md#structured-citations)
+identify the file and supplied/required kinds for bounded output resubmission.
 
 The existing Bubblewrap mounts protect `/candidate` and separate initial
 reviewers. `/evidence/work` and `/evidence/checks` expose completed native results

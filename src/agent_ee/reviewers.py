@@ -11,15 +11,15 @@ from pathlib import Path
 from .executor import Cancellation, execute
 from .storage import digest, identity, read_json, write_json
 from .review_run import OutputFormatRefusal
-from .findings import CITATION_PATH_RULE, REVIEW_VERSION, DECISIONS_VERSION
+from .findings import CITATION_PATH_RULE, REVIEW_VERSION, DECISIONS_VERSION, citation_format
 
 _CITATION_PROPERTIES = {
     "path": {"type": "string", "minLength": 1, "description": "Run-relative file: " + CITATION_PATH_RULE},
     "locator": {"type": "string", "minLength": 1, "description": "Human-readable description; never parsed"},
-    "pointer": {"type": "string", "description": "RFC 6901 pointer resolving in the cited JSON document"},
+    "pointer": {"type": "string", "description": "JSON only: RFC 6901 pointer resolving in the cited document. Omit for KiCad S-expressions and other text; an empty pointer is not an unused placeholder."},
     "lines": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 2, "maxItems": 2,
               "description": "Inclusive [start, end], 1-based, within the cited UTF-8 text file"},
-    "xpath": {"type": "string", "minLength": 1, "description": "ElementTree-supported path resolving in cited XML"}}
+    "xpath": {"type": "string", "minLength": 1, "description": "XML only: ElementTree-supported path resolving in cited XML. Omit for JSON, KiCad S-expressions and other text; do not supply placeholder paths."}}
 # Each union member is already strict: Codex must not add nullable unused fields.
 EVIDENCE_SCHEMA = {"type": "array", "items": {"anyOf": [
     {"type": "object", "required": ["path", "locator", *fields],
@@ -32,7 +32,16 @@ CITATION_INSTRUCTIONS = (
     "lines ([start,end], inclusive 1-based lines in the cited UTF-8 text file), or xpath "
     "(an xml.etree.ElementTree-supported path into cited XML, e.g. /export/components/comp[@ref='R1']/value). "
     "Every supplied structured field must resolve in that exact file. Descriptive locator prose is not parsed "
-    "or verified as an engineering claim. Inspect the document before choosing a structured location. ")
+    "or verified as an engineering claim. Inspect the document before choosing a structured location. "
+    "Use pointer for JSON, xpath for XML, and lines for UTF-8 text (including .kicad_sch, .kicad_pcb, "
+    ".kicad_sym, .txt, .log, .md and S-expressions). JSON and UTF-8 XML may also use lines. "
+    "Choose the schema variant containing only the locator fields you actually use; OMIT unused fields. "
+    "Never fill pointer with an empty string or xpath with '.' or './unused' as a placeholder. "
+    "For example, a native schematic citation is {\"path\":\"inputs/project/board.kicad_sch\", "
+    "\"locator\":\"symbol pins\", \"lines\":[10,20]} after checking those exact lines. "
+    "The packet citation_files inventory lists complete coordinator evidence files, formats and allowed locator kinds; "
+    "it is navigation, not proof of a claim. For new experiments inspect the bytes using the same rules. "
+    "Binary files require a captured text extraction, not a fabricated locator. ")
 REVIEW_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["schema", "candidate_id", "run_id", "packet_sha256", "role", "coverage", "limitations", "findings"],
     "properties": {**{k: {"type": "string"} for k in ("schema", "candidate_id", "run_id", "packet_sha256", "role")},
@@ -97,6 +106,24 @@ def build_packet(run_dir, checks, run_id):
     if any(p not in evidence_paths for p in priorities):
         raise ValueError("packet_artifacts must name evidence produced by this run's declared checks")
     paths += priorities + evidence_paths
+    # Include files beyond the text excerpt budget, without exposing peer work.
+    citation_paths = {"inputs/" + p for p in m["files"]}
+    citation_paths.update(paths)
+    citation_paths.update(p.relative_to(run_dir).as_posix()
+                          for parent in ("checks", "work")
+                          for p in (run_dir / parent).rglob("*") if p.is_file())
+    if baseline is not None:
+        citation_paths.add("baseline.json")
+    packet["citation_files"] = []
+    from .findings import validate_citation_path
+    for rel in sorted(citation_paths):
+        # Apply the common containment/link rules before reading any bytes.
+        try:
+            validate_citation_path(rel, run_dir)
+        except ValueError as exc:
+            packet["packet_limits"].append(f"citation inventory unavailable: {rel}: {exc}")
+            continue
+        packet["citation_files"].append({"path": rel, **citation_format((run_dir / rel).read_bytes())})
     remaining = scope.get("packet_max_bytes", 240_000)
     for rel in dict.fromkeys(paths):
         p = (run_dir / rel).resolve()

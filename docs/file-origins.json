@@ -413,6 +413,16 @@
   "rules": [
     {
       "paths": [
+        "tests/test_citation_locators.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-204 protocol regression tests. The minimal empty schematic S-expression and format samples are authored here; other design bytes come from the existing owned FindingsTests fixture. No retained reviewer response, upstream design or vendor document text is embedded."
+    },
+    {
+      "paths": [
         ".dockerignore",
         ".gitattributes",
         ".gitignore",

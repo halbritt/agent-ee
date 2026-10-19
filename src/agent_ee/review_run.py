@@ -87,6 +87,11 @@ def structured_call(run, role, prompt, schema, call, validate, *, limit=0, invar
                     accepted = validate(copy.deepcopy(value))
                 except (ValueError, KeyError, TypeError) as exc:
                     record.update(execution='malformed', refusal_kind='structured_output', error=str(exc))
+                    from .findings import CitationValidationError
+                    if isinstance(exc, CitationValidationError):
+                        record['error'] += (' Correct the locator fields in every affected citation, omitting '
+                                            'incompatible fields rather than adding placeholders. Preserve the '
+                                            'same judgment and finding set; every supplied locator must resolve.')
         if invariant is not None:
             try:
                 invariant()
