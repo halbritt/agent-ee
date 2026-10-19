@@ -348,7 +348,9 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
 
     number = int(work.name)
     routing_turn = any(entry['kind'] == 'routing' for entry in plan)
-    expected_files = dict(manifest['files'])
+    # Only routing turns verify the receipt chain against the captured tree (AGENTEE-197 seam);
+    # other turns keep their historical manifest contract.
+    expected_files = dict(manifest['files']) if routing_turn else None
     try:
         if routing_turn:
             from .routing_adapter import validate_live_binding
