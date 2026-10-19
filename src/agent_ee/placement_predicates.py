@@ -112,7 +112,11 @@ def _overlap(left, right):
 
 
 def courtyard_overlap(probe, report):
-    """Native courtyards_overlap items are the defect authority."""
+    """Native courtyards_overlap items are the defect authority.
+
+    A pair whose exact helper bounds overlap only in a curved courtyard's
+    tolerance band (outer bounds overlap, inner bounds do not) is unknown
+    (courtyard_approximation): native DRC silence never proves it clear."""
     names = {f['uuid']: f['ref'] for f in probe['footprints']}
     defects, unknown, disagreements = [], [], []
     native_pairs = set()
@@ -136,18 +140,22 @@ def courtyard_overlap(probe, report):
             else:
                 disagreements.append({'kind': 'cross_check_unavailable', 'ref': fp['ref'], 'reason': reason})
             continue
-        qualified.append((fp, polygons))
-    for i, (fp, left) in enumerate(qualified):
-        for other, right in qualified[i+1:]:
+        qualified.append((fp, polygons, courtyards(fp)[0]))
+    for i, (fp, left, left_outer) in enumerate(qualified):
+        for other, right, right_outer in qualified[i+1:]:
             for side in sorted(set(left) & set(right)):
-                if not boxes_meet(left[side], right[side]):
+                pair = frozenset((fp['uuid'], other['uuid']))
+                if pair in native_pairs or not boxes_meet(left_outer[side], right_outer[side]):
                     continue
                 area = _overlap(left[side], right[side])
-                pair = frozenset((fp['uuid'], other['uuid']))
-                if area > 0 and pair not in native_pairs:
+                if area > 0:
                     unknown.append({'kind': 'helper_disagreement', 'refs': [fp['ref'], other['ref']], 'side': side,
                                     'overlap_area_mm2': float(area / 10**12),
                                     'reason': 'helper geometry overlaps but native DRC reported no item'})
+                elif ((left[side] != left_outer[side] or right[side] != right_outer[side]) and
+                      _overlap(left_outer[side], right_outer[side]) > 0):
+                    unknown.append({'kind': 'courtyard_approximation', 'refs': [fp['ref'], other['ref']],
+                                    'side': side, 'reason': 'overlap lies only between the declared curve bounds'})
     return {'criterion': 'courtyard-overlap/1', 'status': verdict(defects, unknown),
             'defects': defects, 'unknown': unknown, 'notes': disagreements}
 
@@ -230,7 +238,10 @@ def edge_clearance(probe, minimum_nm):
 # ---------------------------------------------------------------- keepouts
 
 def footprint_keepout(probe, report):
-    """Native items_not_allowed citing a footprint, over a complete rule-area inventory."""
+    """Native items_not_allowed citing a footprint, over a complete rule-area inventory.
+
+    A curved courtyard meeting a keepout only in its tolerance band (outer bound
+    intersects, inner bound does not) is unknown (courtyard_approximation)."""
     areas = probe.get('rule_areas')
     if not isinstance(areas, list):
         raise ValueError('probe has no rule-area inventory')
@@ -268,19 +279,27 @@ def footprint_keepout(probe, report):
     for fp in sorted(probe['footprints'], key=lambda f: (f['ref'], f['uuid'])):
         layer = SIDE_LAYER.get(fp.get('side'))
         here = [(a, p) for a, p in applicable if layer in a['layers']]
-        hits = []
+        hits, band = [], []
         if here:
             polygons, reason = courtyards(fp, inner=True)
             if polygons is None:
                 unknown.append({'kind': 'courtyard', 'ref': fp['ref'], 'uuid': fp['uuid'], 'reason': reason})
             else:
-                hits = sorted(a['uuid'] for a, p in here if any(intersection_area(c, p) > 0 for c in polygons[fp['side']]))
+                outer = courtyards(fp)[0][fp['side']]
+                def meets(contours, p):
+                    return any(intersection_area(c, p) > 0 for c in contours)
+                hits = sorted(a['uuid'] for a, p in here if meets(polygons[fp['side']], p))
+                if outer != polygons[fp['side']]:
+                    band = sorted(a['uuid'] for a, p in here if a['uuid'] not in hits and meets(outer, p))
         if fp['uuid'] in flagged:
             defects.append({'kind': 'footprint_in_keepout', 'ref': fp['ref'], 'uuid': fp['uuid'],
                             'helper_areas': hits, 'native': flagged[fp['uuid']]})
         elif hits:
             unknown.append({'kind': 'helper_disagreement', 'ref': fp['ref'], 'areas': hits,
                             'reason': 'helper geometry intersects a footprint keepout but native DRC reported no item'})
+        elif band:
+            unknown.append({'kind': 'courtyard_approximation', 'ref': fp['ref'], 'uuid': fp['uuid'], 'areas': band,
+                            'reason': 'keepout intersection lies only between the declared curve bounds'})
     return {'criterion': 'footprint-keepout/1', 'status': verdict(defects, unknown), 'defects': defects,
             'unknown': unknown, 'rule_areas': inventory}
 
